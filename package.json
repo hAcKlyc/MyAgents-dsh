@@ -1,0 +1,48 @@
+{
+  "name": "myagents-dsh",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.8.0",
+  "engines": {
+    "node": "24.13.1",
+    "npm": "11.8.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.13.1",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "11.8.0",
+      "onFail": "error"
+    }
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "preinstall": "node scripts/verify-toolchain.mjs",
+    "clean": "node scripts/clean.mjs",
+    "check:workspace": "tsx scripts/verify-workspace.ts",
+    "check:migration": "tsx scripts/verify-migration-inventory.ts",
+    "check:foundation": "npm run check:workspace && npm run check:migration",
+    "snapshot:migration-source": "tsx scripts/snapshot-migration-source.ts",
+    "typecheck": "npm run check:foundation && tsc -b --pretty false",
+    "lint": "eslint . --max-warnings 0",
+    "test": "npm run check:foundation && vitest run",
+    "build": "npm run check:foundation && tsc -b --pretty false"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.3",
+    "eslint": "10.8.1",
+    "tsx": "4.23.11",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.66.0",
+    "vitest": "4.1.10"
+  }
+}

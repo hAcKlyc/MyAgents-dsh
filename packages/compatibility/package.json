@@ -1,0 +1,7 @@
+{
+  "name": "@myagents-dsh/compatibility",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Versioned sanitized product compatibility declarations"
+}

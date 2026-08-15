@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/artifact-verifier",
+    "tsBuildInfoFile": "../../dist/packages/artifact-verifier/.tsbuildinfo"
+  },
+  "files": []
+}

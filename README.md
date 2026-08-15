@@ -76,7 +76,7 @@ Batch 1 also includes an “Agent tests Agent” release gate. Codex acts as the
 - Read the relevant architecture section before changing ownership, lifecycle, persistence, protocol, or security boundaries.
 - Default tests must use fake providers, fake Host ports, temporary roots, and no real credentials or network.
 
-The expected repository-wide gates will be established during the Pre-Batch Foundation:
+The repository-wide gates are established and run under the exact pinned Node/npm toolchain:
 
 ```bash
 npm run typecheck

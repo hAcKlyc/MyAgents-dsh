@@ -1,0 +1,7 @@
+{
+  "name": "@myagents-dsh/product-profile",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Official profile manifest and invariant owner"
+}

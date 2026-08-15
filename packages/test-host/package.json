@@ -1,0 +1,7 @@
+{
+  "name": "@myagents-dsh/test-host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Generated-client-only Standard Host owner; exports begin with PRE-A7"
+}

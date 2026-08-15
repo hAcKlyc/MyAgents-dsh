@@ -1,0 +1,7 @@
+{
+  "name": "@myagents-dsh/artifact-verifier",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Artifact provenance, identity, and forbidden-content audit owner"
+}

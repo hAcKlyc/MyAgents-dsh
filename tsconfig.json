@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/protocol" },
+    { "path": "./packages/compatibility" },
+    { "path": "./packages/product-profile" },
+    { "path": "./packages/runtime-product" },
+    { "path": "./packages/test-host" },
+    { "path": "./packages/artifact-verifier" },
+    { "path": "./apps/runtime-server" },
+    { "path": "./tests" },
+    { "path": "./tsconfig.tools.json" }
+  ]
+}

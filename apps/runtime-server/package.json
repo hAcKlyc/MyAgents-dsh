@@ -1,0 +1,7 @@
+{
+  "name": "@myagents-dsh/runtime-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Composition boundary for the future verified MyAgents-dsh runtime artifact"
+}

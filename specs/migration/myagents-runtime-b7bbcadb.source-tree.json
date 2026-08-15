@@ -1,0 +1,833 @@
+{
+  "formatVersion": 1,
+  "source": {
+    "repository": "myagents-runtime",
+    "commit": "b7bbcadb172254defc0ea86229dd5de043fbb5f3",
+    "tree": "091be155a6b60cdd86d003dd0172e7e969b7fe24"
+  },
+  "includedPaths": [
+    ".npmrc",
+    ".nvmrc",
+    "apps/runtime-server",
+    "eslint.config.js",
+    "package-lock.json",
+    "package.json",
+    "packages/agent-sdk",
+    "packages/dynamic-e2e",
+    "packages/protocol",
+    "packages/runtime-core",
+    "packages/test-host",
+    "scripts",
+    "tests",
+    "tsconfig.base.json",
+    "tsconfig.json",
+    "tsconfig.tools.json",
+    "vitest.config.ts",
+    "specs/prd/prd_0.1_pi_native_agent_runtime.md",
+    "specs/prd/prd_0.1_pi_native_agent_runtime_20_tools_technical_rfc.md",
+    "specs/prd/prd_0.1_pi_native_agent_runtime_core_protocol.md",
+    "specs/prd/prd_0.1_pi_native_agent_runtime_dynamic_e2e.md"
+  ],
+  "entries": [
+    {
+      "path": ".npmrc",
+      "objectId": "e96b4022cc9be98ae96a236e900921522ef54b32"
+    },
+    {
+      "path": ".nvmrc",
+      "objectId": "32f8c50de0cdbb7d55144a97453b8e8587475ecb"
+    },
+    {
+      "path": "apps/runtime-server/package.json",
+      "objectId": "495cdb57dfc6c0043d09c7f49415d0da1d3e2be4"
+    },
+    {
+      "path": "apps/runtime-server/src/artifact-self-check.ts",
+      "objectId": "f918ed079fce657eede3de0afcc4979308625f34"
+    },
+    {
+      "path": "apps/runtime-server/src/main.ts",
+      "objectId": "80e6778c4b615f21854d0291463626eaa515113b"
+    },
+    {
+      "path": "apps/runtime-server/tsconfig.json",
+      "objectId": "88ced610a196af3d2c1a9e359e9b6b8fb69a6ed3"
+    },
+    {
+      "path": "eslint.config.js",
+      "objectId": "f901735de76af7fec65f285263d7ce2edfb23def"
+    },
+    {
+      "path": "package-lock.json",
+      "objectId": "cbfa08a003e588f554c43fad7d4fc3e18ddd049d"
+    },
+    {
+      "path": "package.json",
+      "objectId": "e9a570811219b043b5292aa73d2f1d2ee640197c"
+    },
+    {
+      "path": "packages/agent-sdk/.npmignore",
+      "objectId": "72f6876e84ef1ede19e866d5ce5638dc11b83e7a"
+    },
+    {
+      "path": "packages/agent-sdk/README.md",
+      "objectId": "42ccb6a9bf92dde77f8f083b05f189d0c48a69de"
+    },
+    {
+      "path": "packages/agent-sdk/compatibility/myagents-agent-sdk-compatibility-v1.json",
+      "objectId": "fc3e694d5482eaeaf0597bae94999b5c3333549a"
+    },
+    {
+      "path": "packages/agent-sdk/package.json",
+      "objectId": "fd3723260614cdd949a75655b44bd2e222545a61"
+    },
+    {
+      "path": "packages/agent-sdk/src/artifact.ts",
+      "objectId": "b2e94d8c4585b5514db250b403f46ef385630726"
+    },
+    {
+      "path": "packages/agent-sdk/src/async-output.ts",
+      "objectId": "a0d1abb9ced147e7e1c9be71f5c31152ef13949b"
+    },
+    {
+      "path": "packages/agent-sdk/src/async-output.unit.test.ts",
+      "objectId": "d59cb54536abc59b40b6ee8a165c3e0a03fcf76b"
+    },
+    {
+      "path": "packages/agent-sdk/src/canonical-tools.generated.ts",
+      "objectId": "98ecba964cfa28f9c4da9ff2540db7f54b74448a"
+    },
+    {
+      "path": "packages/agent-sdk/src/canonical-tools.ts",
+      "objectId": "650e185a9089d9230e7376ddf1e30ce78fb15497"
+    },
+    {
+      "path": "packages/agent-sdk/src/compatibility-call-shapes.ts",
+      "objectId": "2391c7982adc34a7e361058e60eb327fd9b56998"
+    },
+    {
+      "path": "packages/agent-sdk/src/compatibility.ts",
+      "objectId": "70862fe5d8cc5d656a4555ab338d22b19866434f"
+    },
+    {
+      "path": "packages/agent-sdk/src/compatibility.unit.test.ts",
+      "objectId": "382cb55e9a2e923c504e2a6669ea99dc23b8d030"
+    },
+    {
+      "path": "packages/agent-sdk/src/extension-sources.ts",
+      "objectId": "007d3028fee77d6ff94b7b963e00c7ea3e80f466"
+    },
+    {
+      "path": "packages/agent-sdk/src/index.ts",
+      "objectId": "5dbf52c291a55f63634ba49dc1f9a2e3b58ebb2a"
+    },
+    {
+      "path": "packages/agent-sdk/src/local-sdk-host.ts",
+      "objectId": "5731ff1dfe5bd678ebdd89232fe28a3f79025d7e"
+    },
+    {
+      "path": "packages/agent-sdk/src/local-sdk-host.unit.test.ts",
+      "objectId": "5b06bf64b53496bf76bbf1da03414c35626f264c"
+    },
+    {
+      "path": "packages/agent-sdk/src/message-projector.ts",
+      "objectId": "20e0f5e1a183795d7b260aad8a3f1c1e2b2dcb0d"
+    },
+    {
+      "path": "packages/agent-sdk/src/message-projector.unit.test.ts",
+      "objectId": "8190254668c087991dea276b3bf8f323c409fd98"
+    },
+    {
+      "path": "packages/agent-sdk/src/options.ts",
+      "objectId": "215457a0623e2ec14752556461eed52a5cbcd76a"
+    },
+    {
+      "path": "packages/agent-sdk/src/options.unit.test.ts",
+      "objectId": "3fe2f98282c5df9b8319046018440a30dfddd469"
+    },
+    {
+      "path": "packages/agent-sdk/src/query.ts",
+      "objectId": "8db8c95148a6daf58a0761b18c9fa10f7b4ce477"
+    },
+    {
+      "path": "packages/agent-sdk/src/sdk-tools.ts",
+      "objectId": "06f23828595b1bb3b234dde53a21336f5eade95b"
+    },
+    {
+      "path": "packages/agent-sdk/src/session-api.ts",
+      "objectId": "fe8f528a8a63b078fb7851ce86e32a039033bb16"
+    },
+    {
+      "path": "packages/agent-sdk/src/session-api.unit.test.ts",
+      "objectId": "141c644d76a2e53a8386622325ce2aef67f64d2e"
+    },
+    {
+      "path": "packages/agent-sdk/src/session-reader.ts",
+      "objectId": "a7d29865506a9cae3346ada7464391bb13a058b0"
+    },
+    {
+      "path": "packages/agent-sdk/src/session-reader.unit.test.ts",
+      "objectId": "b6b3fbb8ed3cdca29c23737af771a45cc6465b9d"
+    },
+    {
+      "path": "packages/agent-sdk/src/tools.ts",
+      "objectId": "a6dca0a65dcbebbb7b9e6741200deab053011380"
+    },
+    {
+      "path": "packages/agent-sdk/src/types.ts",
+      "objectId": "4608b2d279866cb747e29aa00032ee2ebf9078f0"
+    },
+    {
+      "path": "packages/agent-sdk/tsconfig.json",
+      "objectId": "7a44a7ef6c2c1510392686acea983211915e7536"
+    },
+    {
+      "path": "packages/dynamic-e2e/REPORTER_PROMPT.md",
+      "objectId": "33f8d021abd8c1d2a7f05ce7c8d59e0b4cb2931c"
+    },
+    {
+      "path": "packages/dynamic-e2e/fixtures/project-lab/README.md",
+      "objectId": "2d1a5ffca49a21bf87ce9ad0e352734a0b75119a"
+    },
+    {
+      "path": "packages/dynamic-e2e/fixtures/project-lab/config/settings.json",
+      "objectId": "47077db7fceb3af642d067929cc6e0df2a2fcca3"
+    },
+    {
+      "path": "packages/dynamic-e2e/fixtures/project-lab/mcp/server.mjs",
+      "objectId": "65efb5ae9c0cdbf131351d016112b941f0c32a8b"
+    },
+    {
+      "path": "packages/dynamic-e2e/fixtures/project-lab/package.json",
+      "objectId": "35b71c12d820299c533689272389cf7d271a9c11"
+    },
+    {
+      "path": "packages/dynamic-e2e/fixtures/project-lab/scripts/check.mjs",
+      "objectId": "1e119f1ce13d7f6c183ef8bd5622ca41cfd5c791"
+    },
+    {
+      "path": "packages/dynamic-e2e/fixtures/project-lab/skills/fixture-audit/SKILL.md",
+      "objectId": "5d63f4b272b451c17e2f1d903211f1d9e4cdacf4"
+    },
+    {
+      "path": "packages/dynamic-e2e/fixtures/project-lab/src/catalog.ts",
+      "objectId": "51633b7d43f937b32c5f878bdd6bb6c5f8dc2637"
+    },
+    {
+      "path": "packages/dynamic-e2e/fixtures/project-lab/src/service.ts",
+      "objectId": "205cb1fdee7e24f0e19bfeb7fadd0c8da09677e9"
+    },
+    {
+      "path": "packages/dynamic-e2e/fixtures/sealed-report-regressions/coding-workspace-campaign-4ee11c75.md",
+      "objectId": "cc3d44e055699a0ec731213b70b72c7d785c9dc9"
+    },
+    {
+      "path": "packages/dynamic-e2e/fixtures/sealed-report-regressions/task-graph.md",
+      "objectId": "b1fbf5aaa5896f502fd469db70f3b5ba32857818"
+    },
+    {
+      "path": "packages/dynamic-e2e/package.json",
+      "objectId": "ec3cfb725846362571cd3fb96a87dd57553053d8"
+    },
+    {
+      "path": "packages/dynamic-e2e/scenarios/coding-workspace.md",
+      "objectId": "7ebf6b905a6dabad6bfb19823dcacb94dff0cc1d"
+    },
+    {
+      "path": "packages/dynamic-e2e/scenarios/components-collaboration.md",
+      "objectId": "3c91101f4c110806bd70f45ea1cb4c5e0fe0c54e"
+    },
+    {
+      "path": "packages/dynamic-e2e/scenarios/crash-resume.md",
+      "objectId": "a4b97fd2037f0c1de652ee4d716d00ad880571a7"
+    },
+    {
+      "path": "packages/dynamic-e2e/scenarios/interaction-plan.md",
+      "objectId": "0b89705e070badb131d979cf0c5b37039bbed42c"
+    },
+    {
+      "path": "packages/dynamic-e2e/scenarios/managed-mutation.md",
+      "objectId": "127760211ef092042dbe2cd5d1b04ec860ba9542"
+    },
+    {
+      "path": "packages/dynamic-e2e/scenarios/safety-failures.md",
+      "objectId": "c233b53e2a3c31aed77dff01c0cb174f9cb02a6f"
+    },
+    {
+      "path": "packages/dynamic-e2e/scenarios/session-lifecycle.md",
+      "objectId": "a7c3008018bea61b756b95f3df65729347446db7"
+    },
+    {
+      "path": "packages/dynamic-e2e/scenarios/task-graph.md",
+      "objectId": "f02378ace739640a043edb0d13709cab19d91573"
+    },
+    {
+      "path": "packages/dynamic-e2e/scenarios/web-research.md",
+      "objectId": "6be4932290d03d5ffb41a6d7f87ea4a9cabbe6a9"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/artifact.ts",
+      "objectId": "cbec203d04d8b3f2504a2298a9baf34741fdc9f5"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/artifact.unit.test.ts",
+      "objectId": "36004a03b72463aab0bd959dc32b8c0aec03059d"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/campaign.ts",
+      "objectId": "bfefe9b133bc59b97e88835551f52c8c2897ffa0"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/campaign.unit.test.ts",
+      "objectId": "b55a2491b656fbb14979e07188ebb19189ec8467"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/cli.ts",
+      "objectId": "b0e91eeb9c2f408f1b655057780502c1ed350584"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/cli.unit.test.ts",
+      "objectId": "773880bf6130c6fe327a8f6491058ba2bd58e2ce"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/credential.ts",
+      "objectId": "3d2e0858d5a3dd5bda1aa5cd6501ef6e88a7048c"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/credential.unit.test.ts",
+      "objectId": "d3b0f3b45419e521ddea3539d31bc7295ad6fd66"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/evidence.ts",
+      "objectId": "eba1e06d783d15b6f45d048f156045b2b66188c4"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/evidence.unit.test.ts",
+      "objectId": "a490cdb5fbf17a4d2d22a1d97f6d630af835f762"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/host.ts",
+      "objectId": "3dd48eac7dd4d37cca107fb0204b4093d79f9b45"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/host.unit.test.ts",
+      "objectId": "b7bee042ce15825655da29471b5aa2a63b5ed44f"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/redaction.ts",
+      "objectId": "9e630942a2500013aa79c9542fc48d87c5ba8ff6"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/redaction.unit.test.ts",
+      "objectId": "202a82e5682a9de94b8ec6318d40810503933335"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/runner.ts",
+      "objectId": "2adc45a5a628585cca88edd255d65b9b0085cd7d"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/runner.unit.test.ts",
+      "objectId": "e2bacb3bc4edf2a173b529dc1ad9df5a63b16584"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/scenario.ts",
+      "objectId": "1c1743e7eeeb7ddbfb51b6ac8c7f098d4e13888e"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/scenario.unit.test.ts",
+      "objectId": "e2811a8e747b0d98cacd4273ca68dd2ff5515a72"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/types.ts",
+      "objectId": "1c9c7342cb1d902c091f643ca037bd81abe5c0ea"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/workspace.ts",
+      "objectId": "3bf9cd5883bff2d09c935c2d58c88c224ebc1184"
+    },
+    {
+      "path": "packages/dynamic-e2e/src/workspace.unit.test.ts",
+      "objectId": "aaf4c89059033587c949eabc2aff7359420a4e9c"
+    },
+    {
+      "path": "packages/dynamic-e2e/tsconfig.json",
+      "objectId": "89f0e5e1f915cc24daebf0b389bc120472715a4c"
+    },
+    {
+      "path": "packages/protocol/generated/host-client.generated.ts",
+      "objectId": "820c8cd825e300831cd8b33eadba6531714bdd97"
+    },
+    {
+      "path": "packages/protocol/generated/protocol-fixtures.json",
+      "objectId": "a7107e62b17057208dd3ee52b9b3adb4ee6579b8"
+    },
+    {
+      "path": "packages/protocol/generated/protocol-meta.json",
+      "objectId": "8961abd7cec2a186359c6db30e3dafedd1f5449b"
+    },
+    {
+      "path": "packages/protocol/generated/protocol.schema.json",
+      "objectId": "2bbcef9f30986f44507eb042ff045ecb0aa9674f"
+    },
+    {
+      "path": "packages/protocol/package.json",
+      "objectId": "8fd79849277209eba50d4e8eabf44cb12d33423d"
+    },
+    {
+      "path": "packages/protocol/src/canonical-digests.ts",
+      "objectId": "0e766eba8db1c25a3cb419955c0bf4655f99235f"
+    },
+    {
+      "path": "packages/protocol/src/contract-source.ts",
+      "objectId": "de8d7ee24aeea4f824a2bbd7f0a0b7a8e98d318f"
+    },
+    {
+      "path": "packages/protocol/src/errors.ts",
+      "objectId": "de0b02f82bddb78456ce8223bc6b129d37b1da8d"
+    },
+    {
+      "path": "packages/protocol/src/index.ts",
+      "objectId": "62f3379ad0f31cf7b4a8fc3c915f4fbd3885d9b7"
+    },
+    {
+      "path": "packages/protocol/src/peer.ts",
+      "objectId": "e555597e908d9fc8c67ab6bdde14cd4fcc0fe51b"
+    },
+    {
+      "path": "packages/protocol/src/peer.unit.test.ts",
+      "objectId": "0512ef9709ba2a9512246b02fe19abef2b57e9b5"
+    },
+    {
+      "path": "packages/protocol/src/validation.ts",
+      "objectId": "334a02d1626641f9cec42e7714ee73eeb191442c"
+    },
+    {
+      "path": "packages/protocol/src/validation.unit.test.ts",
+      "objectId": "b7946f611a7bc78defb178af5f37434f3a572b26"
+    },
+    {
+      "path": "packages/protocol/tsconfig.json",
+      "objectId": "027167ad3e77c32004b9738f113c99b4b111247d"
+    },
+    {
+      "path": "packages/runtime-core/generated/base-profile-v1.json",
+      "objectId": "f5b8060b3bc3e593a724e3fe182ef32d65497a64"
+    },
+    {
+      "path": "packages/runtime-core/generated/effective-catalog.reference.json",
+      "objectId": "95c3c4e499f5b8826a742376dca39a01fb0d528f"
+    },
+    {
+      "path": "packages/runtime-core/generated/effective-catalog.restricted.json",
+      "objectId": "c826877a5a5a6785ad3663261bc71befb90c6e5c"
+    },
+    {
+      "path": "packages/runtime-core/generated/tool-catalog.schema.json",
+      "objectId": "ce918fc557e2331fafec219b07795ba88521afbc"
+    },
+    {
+      "path": "packages/runtime-core/generated/tool-contract-meta.json",
+      "objectId": "3689ed1619de4e80fae146f02eb1b4b6392eb06c"
+    },
+    {
+      "path": "packages/runtime-core/package.json",
+      "objectId": "4c7baee25fa5ef0f6466580e6b95cdb6171a7bd3"
+    },
+    {
+      "path": "packages/runtime-core/src/activity.ts",
+      "objectId": "ca61862ede59e960209957909074794701b5a64f"
+    },
+    {
+      "path": "packages/runtime-core/src/attachment/manager.ts",
+      "objectId": "ca6e3dc14fe750641521dbd84c57026c87ec7c66"
+    },
+    {
+      "path": "packages/runtime-core/src/attachment/manager.unit.test.ts",
+      "objectId": "a3aeba64a15db1f210784edf78cd9a65d4cefb38"
+    },
+    {
+      "path": "packages/runtime-core/src/checkpoint/coordinator.ts",
+      "objectId": "9bd6ab46ec4b19bf5c025a1416efa6770edc1bf9"
+    },
+    {
+      "path": "packages/runtime-core/src/checkpoint/coordinator.unit.test.ts",
+      "objectId": "b4da08d338a459fcad273fd97720d4e3ec0f88df"
+    },
+    {
+      "path": "packages/runtime-core/src/checkpoint/types.ts",
+      "objectId": "9b35041fbf101cfaf4053fab8d74b2b7c9f3ef94"
+    },
+    {
+      "path": "packages/runtime-core/src/component/agents.ts",
+      "objectId": "5072789156aa92a3a6f1457db5013bc4cdcb3794"
+    },
+    {
+      "path": "packages/runtime-core/src/component/commands.ts",
+      "objectId": "5286174d159caafa02ba1021895fd1c6bd411596"
+    },
+    {
+      "path": "packages/runtime-core/src/component/commands.unit.test.ts",
+      "objectId": "1182cfd7cdda956676a3e5a32bb3feb296096aa0"
+    },
+    {
+      "path": "packages/runtime-core/src/component/hooks.ts",
+      "objectId": "c95f33b723d32e87bbf95dad0a86ef645e09c8bc"
+    },
+    {
+      "path": "packages/runtime-core/src/component/host-tools.ts",
+      "objectId": "cda4b71af54be95d4af571b881a22dc2fbdc4f37"
+    },
+    {
+      "path": "packages/runtime-core/src/component/host-tools.unit.test.ts",
+      "objectId": "c5474a9c4cff729f6d83fe87fcc74ad016018274"
+    },
+    {
+      "path": "packages/runtime-core/src/component/mcp.ts",
+      "objectId": "e3b21590ee0f3390ff0cfe45c86107d4b89d888e"
+    },
+    {
+      "path": "packages/runtime-core/src/component/mcp.unit.test.ts",
+      "objectId": "10b56732e2fea2e8a91fec56548f847cf989dc3a"
+    },
+    {
+      "path": "packages/runtime-core/src/component/registry.ts",
+      "objectId": "ebd7e9cf5f15d08efa9a2be58c398b765259e65b"
+    },
+    {
+      "path": "packages/runtime-core/src/errors.ts",
+      "objectId": "854e9e28345fab265e0133736c0ed45916e248fd"
+    },
+    {
+      "path": "packages/runtime-core/src/events/runtime-event-bus.ts",
+      "objectId": "c592239de9e0ab9a9fd5d8117b15213239e6552b"
+    },
+    {
+      "path": "packages/runtime-core/src/events/runtime-event-bus.unit.test.ts",
+      "objectId": "888bfb036fe8ac3e3c8fc648645ac0fbbc7195a8"
+    },
+    {
+      "path": "packages/runtime-core/src/execution/environment.ts",
+      "objectId": "b6e8d3e505de38576f09c5db22a964d85c28ffeb"
+    },
+    {
+      "path": "packages/runtime-core/src/execution/file-state.ts",
+      "objectId": "bbc60e57d3d7dffd3ff4437ed83003549669d93b"
+    },
+    {
+      "path": "packages/runtime-core/src/execution/file-state.unit.test.ts",
+      "objectId": "9bfdba21371b780c26c80eb3ad49de3be6ec64b9"
+    },
+    {
+      "path": "packages/runtime-core/src/execution/web.ts",
+      "objectId": "b9b9a7a0e11826eec53de9ebf7a1b7fedb6c0d07"
+    },
+    {
+      "path": "packages/runtime-core/src/execution/web.unit.test.ts",
+      "objectId": "9ee037d511cedb71660fcc79154a89591ebd36dd"
+    },
+    {
+      "path": "packages/runtime-core/src/foundation-primitives.unit.test.ts",
+      "objectId": "d12a769453cbc482e1c345c58be5b41d43554db4"
+    },
+    {
+      "path": "packages/runtime-core/src/index.ts",
+      "objectId": "a6110e00accbac7c67f1656cc7a0ee1d5a60f2a7"
+    },
+    {
+      "path": "packages/runtime-core/src/interaction/broker.ts",
+      "objectId": "97ceb0fd35a4e9f13a3dbe4151e8878820a6288d"
+    },
+    {
+      "path": "packages/runtime-core/src/interaction/broker.unit.test.ts",
+      "objectId": "9c8b862039b27ad82d4477bdf8985d14d28eb3c0"
+    },
+    {
+      "path": "packages/runtime-core/src/permission/gate.ts",
+      "objectId": "7801ea9a2d3e9c92a86ab4531e5d66cbe444aa16"
+    },
+    {
+      "path": "packages/runtime-core/src/pi/ls-contract.ts",
+      "objectId": "765806e4cb5a14236c97047a608ba8aee680a8f9"
+    },
+    {
+      "path": "packages/runtime-core/src/pi/native-entry-validation.ts",
+      "objectId": "6850c07c2f00e21cc69d829620254a92acb8e1ca"
+    },
+    {
+      "path": "packages/runtime-core/src/pi/pi-session-factory.ts",
+      "objectId": "bbe9b0cfcde632a4008df3945d2cf1d12915841b"
+    },
+    {
+      "path": "packages/runtime-core/src/pi/pi-session-factory.unit.test.ts",
+      "objectId": "5dd35cd5e960a2da46df5af37b4db02dbc4328ab"
+    },
+    {
+      "path": "packages/runtime-core/src/pi/runtime-entry-validation.ts",
+      "objectId": "ba068de9433f759f1b0c797a72377e5ca7feccad"
+    },
+    {
+      "path": "packages/runtime-core/src/pi/types.ts",
+      "objectId": "ef899bb8878badb569e6197bca9f30f46d78bc12"
+    },
+    {
+      "path": "packages/runtime-core/src/pi/usage.ts",
+      "objectId": "c9af453601b68995dd65bbc2b2bb0ffdbb3376d3"
+    },
+    {
+      "path": "packages/runtime-core/src/provider/credential-resolver.ts",
+      "objectId": "2cd49fe2be2fb161c7b1e8a2436505b57cce0dc7"
+    },
+    {
+      "path": "packages/runtime-core/src/provider/credential-resolver.unit.test.ts",
+      "objectId": "a4ae672aec2f35fd39f8136ec4091622d2d74a13"
+    },
+    {
+      "path": "packages/runtime-core/src/provider/profile-security.ts",
+      "objectId": "d09960a7ca78a702ddff3a1c488e7abd81ecf0cf"
+    },
+    {
+      "path": "packages/runtime-core/src/provider/reasoning.ts",
+      "objectId": "bfc553aea2776caaab807596a8137acb2fa144b4"
+    },
+    {
+      "path": "packages/runtime-core/src/provider/reasoning.unit.test.ts",
+      "objectId": "791d74b7c5b697557b31f6a1a5d5b9575ea6e51c"
+    },
+    {
+      "path": "packages/runtime-core/src/provider/web-search.ts",
+      "objectId": "b728f41019cfdfe5697f5ef198a07ea72d5260a0"
+    },
+    {
+      "path": "packages/runtime-core/src/provider/web-search.unit.test.ts",
+      "objectId": "e500bae89f89c6c2051f3cf09b44821a090d96bd"
+    },
+    {
+      "path": "packages/runtime-core/src/runtime/kernel.ts",
+      "objectId": "31213a995e2a65473dd7ec2b6cbff44171d55fad"
+    },
+    {
+      "path": "packages/runtime-core/src/session/controller.ts",
+      "objectId": "afba204e5925a5db27d54f9e270138e146ccf9b0"
+    },
+    {
+      "path": "packages/runtime-core/src/session/locator-store.ts",
+      "objectId": "3cd6ad03f4fe35285d7cb729afe871282c4f3b1e"
+    },
+    {
+      "path": "packages/runtime-core/src/session/operation-correlation.ts",
+      "objectId": "5a6fe03831ecdb7fce1d8fa1c214cae4a88a2420"
+    },
+    {
+      "path": "packages/runtime-core/src/session/plan-state.ts",
+      "objectId": "af2b716f286477865f3484a852921ea2217ea427"
+    },
+    {
+      "path": "packages/runtime-core/src/session/plan-state.unit.test.ts",
+      "objectId": "29c794d4fac60fcd2620390613de761cc1dd3c65"
+    },
+    {
+      "path": "packages/runtime-core/src/session/task-graph.ts",
+      "objectId": "2ca30ffdffab10ca1b52a03a94520b9bd7b74c12"
+    },
+    {
+      "path": "packages/runtime-core/src/session/task-graph.unit.test.ts",
+      "objectId": "50f95e5e4d8649e53719b6db2b5969f10053fe5d"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/builtins/agents.ts",
+      "objectId": "802550a8553a3218165ddc145939df1cf2a5c4a2"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/builtins/coding-core.ts",
+      "objectId": "80bfb7a985e39d9fa5180ae8a93dd33b2b6e8c3d"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/builtins/interaction-plan.ts",
+      "objectId": "bee768cccbe8e7ef1a83471f9492ad1322a47826"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/builtins/runtime-added.unit.test.ts",
+      "objectId": "d9fb1f959069c5355248da002bd4e0b3f6d7c74d"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/builtins/skill.ts",
+      "objectId": "c23665a773d81c57b696fa41b662651126e3bbdd"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/builtins/task-graph.ts",
+      "objectId": "a88742fd14c24b63629c30d5282c2d058ce4153c"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/builtins/web.ts",
+      "objectId": "03613a715faaf1fdf5c50c56f2486f742229bffe"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/contracts.ts",
+      "objectId": "68e8585b6684347b74f392d2314318babbd70ba7"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/contracts.unit.test.ts",
+      "objectId": "4fbdbb7901ed05cf9b1c0508c3fd0bb971b0b9c3"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/golden-contracts.ts",
+      "objectId": "3cc06aaf429522a7d085f88b4e6b0d6bbd1daa4b"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/profile.ts",
+      "objectId": "7b3ba48827c89acd75f04a6865d061c3fa529f92"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/result.ts",
+      "objectId": "eca6a1e2c5af65ea98d627e0ac204af44903e426"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/runtime.ts",
+      "objectId": "24fd8159f6358df47f7a7025d6700f6e6cfecf71"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/runtime.unit.test.ts",
+      "objectId": "e91a90ba2aa2ecc08c53fb8578c3557d2135c429"
+    },
+    {
+      "path": "packages/runtime-core/src/tools/validate-contracts.ts",
+      "objectId": "d77b123d70fbc04fe92ecf5eab24316eff774b69"
+    },
+    {
+      "path": "packages/runtime-core/src/turn/coordinator.ts",
+      "objectId": "033167a42169acb3b34de0baed4d273dedec3956"
+    },
+    {
+      "path": "packages/runtime-core/src/work/registry.ts",
+      "objectId": "21d09f79d35f9b852018f1cdafb818ee3d010c73"
+    },
+    {
+      "path": "packages/runtime-core/src/work/types.ts",
+      "objectId": "89c9f19229357a2b394a0d3714572ee928dfda4e"
+    },
+    {
+      "path": "packages/runtime-core/tsconfig.json",
+      "objectId": "89f0e5e1f915cc24daebf0b389bc120472715a4c"
+    },
+    {
+      "path": "packages/test-host/package.json",
+      "objectId": "7757123da01ee16ba0f06f6782f0d6e9358acf10"
+    },
+    {
+      "path": "packages/test-host/src/index.ts",
+      "objectId": "2a65959d9e75a7da9cfd1001d8f42880697d1ca5"
+    },
+    {
+      "path": "packages/test-host/src/memory-transport.ts",
+      "objectId": "4588c6776d740f69cc5e75278e6606e556839354"
+    },
+    {
+      "path": "packages/test-host/src/standard-test-host.ts",
+      "objectId": "4080909c892381b2af0a0d28c8ebd38e8552c8f2"
+    },
+    {
+      "path": "packages/test-host/src/work-completion-dedupe.ts",
+      "objectId": "67d75be01d17bf695c0951b0a8209a352bc4c69d"
+    },
+    {
+      "path": "packages/test-host/tsconfig.json",
+      "objectId": "89f0e5e1f915cc24daebf0b389bc120472715a4c"
+    },
+    {
+      "path": "scripts/build-artifact.mjs",
+      "objectId": "72720dfa7ae364d2698a25cfd307946e2ff92ead"
+    },
+    {
+      "path": "scripts/clean.mjs",
+      "objectId": "dab5cccf9b16d9969558a53b3b783aee085dbeb0"
+    },
+    {
+      "path": "scripts/generate-protocol.ts",
+      "objectId": "ad9c80175680189e621dacf7286c936941f27e48"
+    },
+    {
+      "path": "scripts/generate-tool-contracts.ts",
+      "objectId": "c8bf6dcabe1a9f9abc68baa801a1b7bab2bee978"
+    },
+    {
+      "path": "scripts/platform-smoke.mjs",
+      "objectId": "9525e89a6d8aeb3e6fb584e0b84e91bf95b176fa"
+    },
+    {
+      "path": "scripts/prepare-agent-sdk-package.mjs",
+      "objectId": "bcd02923574e39ebd78bc98ebaecbbae80c49b62"
+    },
+    {
+      "path": "scripts/run-agent-sdk-campaign.mjs",
+      "objectId": "5289ced50544230b234e518cf306c495877d2c1b"
+    },
+    {
+      "path": "scripts/verify-agent-sdk-package.mjs",
+      "objectId": "6f14c0a6c12f5d5a2afc7491c5be3ac8c5d69349"
+    },
+    {
+      "path": "scripts/verify-artifact.mjs",
+      "objectId": "0d0f20378ab06baf2be7a44a62fd22bd408afa91"
+    },
+    {
+      "path": "specs/prd/prd_0.1_pi_native_agent_runtime.md",
+      "objectId": "f26d4d13ff31e5ac628d5381a10b9bc6b331a742"
+    },
+    {
+      "path": "specs/prd/prd_0.1_pi_native_agent_runtime_20_tools_technical_rfc.md",
+      "objectId": "c1c91dd31b3f57155b998f260814b75751cfcbfd"
+    },
+    {
+      "path": "specs/prd/prd_0.1_pi_native_agent_runtime_core_protocol.md",
+      "objectId": "980e4d78b18aebbe9a6cf194d0a85b243094d397"
+    },
+    {
+      "path": "specs/prd/prd_0.1_pi_native_agent_runtime_dynamic_e2e.md",
+      "objectId": "f8308dedb073a11f4c120ff85917e08d8e5dfeea"
+    },
+    {
+      "path": "tests/protocol.conformance.test.ts",
+      "objectId": "36205b13a2fdef25153eb6d17b347503934810c9"
+    },
+    {
+      "path": "tests/runtime-foundation.conformance.test.ts",
+      "objectId": "0501da5dd160156781a34de941d824d5d4f566c0"
+    },
+    {
+      "path": "tests/runtime-server-process.conformance.test.ts",
+      "objectId": "74f208a2bb4b7d751ef724de9ddf20c519cacb6d"
+    },
+    {
+      "path": "tests/support/compaction-evidence.ts",
+      "objectId": "8fa4edd3c612f2359f09d55b23c645bdbb72b1d0"
+    },
+    {
+      "path": "tests/support/fake-pi.ts",
+      "objectId": "f4a62dcc317be69fb104595bec062854622672a1"
+    },
+    {
+      "path": "tests/tsconfig.json",
+      "objectId": "cb37b3e09649bde6212562cb2e41be7f79b51569"
+    },
+    {
+      "path": "tests/work-registry.conformance.test.ts",
+      "objectId": "17029645cac41d96edef16cf1a8528e1878da85c"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "objectId": "c209f2688ba3fdd8d31ca6203fae514aa7e9ae33"
+    },
+    {
+      "path": "tsconfig.json",
+      "objectId": "bd2457afcf0c03e4ca5437d56918bddab5a0002f"
+    },
+    {
+      "path": "tsconfig.tools.json",
+      "objectId": "bef091987e3c97801b8d6987dc694dd39005c59f"
+    },
+    {
+      "path": "vitest.config.ts",
+      "objectId": "016c90dc40c78ea351c6dca2af390d99fbf1c47d"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "@myagents-dsh/runtime-product",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Product coordination service owner; Runtime behavior begins in Batch 1"
+}

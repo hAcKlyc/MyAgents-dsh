@@ -1,0 +1,7 @@
+{
+  "name": "@myagents-dsh/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Canonical native RPC contract owner; exports begin with PRE-A6"
+}
