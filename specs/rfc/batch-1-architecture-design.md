@@ -39,7 +39,7 @@ This design was checked against:
 - current `myagents-runtime` canonical tool authorities `packages/runtime-core/src/tools/{contracts,golden-contracts,profile}.ts` and generated profile;
 - the implemented old Runtime Core/RPC RFC, 20-tool RFC, and dynamic Agent acceptance PRD.
 
-The migration inputs from `myagents-runtime` are behavior contracts and synthetic fixtures. Pi controllers, Pi entry/tree assumptions, and Pi tool executors are not implementation dependencies.
+The migration inputs from `myagents-runtime` include behavior contracts, synthetic fixtures, tests, and reusable engine-neutral source modules. Pi controllers and Pi entry/tree assumptions are not implementation dependencies; copied tool/infrastructure code must replace Pi registration, context, event, and lifecycle glue with DSH-native ownership.
 
 ## 3. Target process topology
 

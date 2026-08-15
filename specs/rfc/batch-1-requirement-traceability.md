@@ -14,7 +14,7 @@ depends_on:
 
 The previous `myagents-runtime` Batch 1 delivered more than a JSON-RPC server and a tool list. This trace prevents its proven Runtime boundary from being reduced while moving from Pi to DSH.
 
-The old repository is evidence and migration input, not a dependency. “Covered” below means the DSH Batch 1 PRD accepts the same product capability; it does not mean the Pi implementation can be copied unchanged.
+The old repository is evidence, the preferred source migration input, and the working behavior/test baseline; it is not a runtime dependency. “Covered” below means the DSH Batch 1 PRD accepts the same product capability. Engine-neutral implementation should be copied or adapted under the plan's reuse policy, while Pi-coupled code cannot be copied unchanged.
 
 ## 2. Old source inventory
 

@@ -16,7 +16,7 @@ depends_on:
 
 This RFC defines how the canonical MyAgents Agent experience is implemented as first-party DSH modules. It covers the exact catalog authority, the common tool pipeline, the canonical twenty tools, permission and interaction, plan state, Skills, child/background work, TaskGraph, managed-file observation, and the one DSH seam that current public APIs cannot express.
 
-The product contract is migrated from the implemented `myagents-runtime` tool authorities and synthetic fixtures. Pi registrations and executors are not copied as runtime dependencies.
+The product contract, engine-neutral tool implementation, and synthetic fixtures are migrated from the implemented `myagents-runtime` authorities under the plan's reuse-before-rewrite policy. The old repository is not a runtime dependency: Pi registration/context/event glue is replaced by DSH-native modules, while reusable tool bodies and helpers may be copied and adapted.
 
 ## 2. Source evidence
 

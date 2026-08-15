@@ -7,7 +7,7 @@ This repository builds a production-oriented Agent Harness distribution on DeepS
 1. Exact installed APIs, versions, scripts, and executable constraints: code, tests, `package.json`, and the lockfile.
 2. Current owners, process boundaries, lifecycle placement, and data flow: `specs/ARCHITECTURE.md`.
 3. Wire behavior: the future canonical protocol contract source; until the Pre-Batch Foundation creates it, `specs/protocol/runtime-rpc-v2.md`.
-4. Batch scope and acceptance: `specs/prd/plan.md` and the active Batch PRD. Batch 1 workstream chapters refine implementation but do not create independent product gates.
+4. Development entry, repository/migration relationships, Batch scope, status, and acceptance: `specs/prd/plan.md` and the active Batch PRD. Batch 1 workstream chapters refine implementation but do not create independent product gates.
 5. Compatibility claims: versioned compatibility manifests and executable fixtures, never README prose alone.
 
 ## Architecture invariants

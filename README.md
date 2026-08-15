@@ -62,7 +62,7 @@ Batch 1 also includes an “Agent tests Agent” release gate. Codex acts as the
 
 - [Architecture](./specs/ARCHITECTURE.md)
 - [Runtime RPC protocol](./specs/protocol/runtime-rpc-v2.md)
-- [Development plan](./specs/prd/plan.md)
+- [Development entrypoint and plan](./specs/prd/plan.md)
 - [Batch PRDs and internal workstreams](./specs/prd/README.md)
 - [Batch 1 technical RFC design set and open evidence gates](./specs/rfc/README.md)
 - [Architecture decision register](./specs/adr/README.md)
@@ -72,7 +72,7 @@ Batch 1 also includes an “Agent tests Agent” release gate. Codex acts as the
 - [AGENTS.md](./AGENTS.md) is the single development and Agent-instruction authority.
 - `CLAUDE.md` is a symbolic link to `AGENTS.md`; do not maintain a second copy.
 - Work on `dev` or a feature branch after repository bootstrap.
-- Read the overall plan plus the active Batch and internal workstream ledger before implementation.
+- Start from the development plan for project background, repository relationships, Pi-source reuse policy, current readiness, and the active Batch/ledger.
 - Read the relevant architecture section before changing ownership, lifecycle, persistence, protocol, or security boundaries.
 - Default tests must use fake providers, fake Host ports, temporary roots, and no real credentials or network.
 

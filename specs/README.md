@@ -8,7 +8,7 @@ This directory contains the product, architecture, protocol, and delivery author
 | --- | --- |
 | Owners, lifecycle, data flow, trust boundaries | [ARCHITECTURE.md](./ARCHITECTURE.md) |
 | Native Host ↔ Runtime wire contract | [protocol/runtime-rpc-v2.md](./protocol/runtime-rpc-v2.md) |
-| Project status, Batch dependencies, and acceptance | [prd/plan.md](./prd/plan.md) |
+| Development entrypoint, background, repository relationships, migration policy, status, Batch dependencies, and acceptance | [prd/plan.md](./prd/plan.md) |
 | Batch-specific product scope and internal workstreams | The corresponding document under `prd/` |
 | Implementation design over pinned DSH public seams | [rfc/README.md](./rfc/README.md) |
 | Accepted irreversible decisions and evidence state | [adr/README.md](./adr/README.md) |
