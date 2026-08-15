@@ -30,7 +30,10 @@
     "check:workspace": "tsx scripts/verify-workspace.ts",
     "check:migration": "tsx scripts/verify-migration-inventory.ts",
     "check:dsh": "tsx scripts/verify-dsh-baseline.ts",
-    "check:foundation": "npm run check:workspace && npm run check:migration && npm run check:dsh",
+    "generate:protocol": "tsx scripts/generate-protocol.ts",
+    "check:protocol": "tsx scripts/generate-protocol.ts --check",
+    "check:compatibility": "tsx scripts/verify-compatibility.ts",
+    "check:foundation": "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:protocol && npm run check:compatibility",
     "snapshot:migration-source": "tsx scripts/snapshot-migration-source.ts",
     "snapshot:dsh-baseline": "tsx scripts/snapshot-dsh-baseline.ts",
     "check:dsh-source": "tsx scripts/snapshot-dsh-baseline.ts --check --check-source ../deepseek-harness",
@@ -40,6 +43,7 @@
     "build": "npm run check:foundation && tsc -b --pretty false"
   },
   "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.220",
     "@eslint/js": "10.0.1",
     "@types/node": "24.13.3",
     "eslint": "10.8.1",

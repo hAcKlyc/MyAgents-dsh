@@ -14,7 +14,7 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Candidate version `2.0.0-draft.1` is not a released compatibility promise. The Pre-Batch Foundation must translate this specification into one canonical TypeBox contract source, generated JSON Schema, generated clients, fixtures, and conformance tests. After that translation, code and tests are authoritative for exact shapes while this document remains authoritative for intent and ownership.
+Candidate version `2.0.0-draft.1` is not a released compatibility promise. Pre-Batch P0-3 translates this specification into the canonical TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and conformance tests. Code, generated digests, and tests are authoritative for exact shapes; this document remains authoritative for intent and ownership.
 
 This wire is independent of `@deepseek-ai/dsh-sdk-protocol`. The DSH SDK protocol's three request methods and four notifications are not a base version of this contract, and its JSON-RPC server is not loaded in the official profile. Both protocols may use NDJSON JSON-RPC and DSH event values without sharing method or lifecycle authority.
 
@@ -482,9 +482,11 @@ Configuration may tighten initialize-frozen workspace, execution-environment, cr
 `extension/replace` accepts a complete declarative snapshot with:
 
 - format version, revision, and digest;
-- agent, command, Hook, MCP, and Host-tool descriptors;
-- bounded content resources;
-- Skill source roots and enabled paths.
+- agent, command, Hook, MCP, and Host-tool components with required enabled state, optional bounded metadata, and exact kind-specific descriptors;
+- bounded command-template, Agent-prompt, and Skill-document resources with non-executable media types;
+- governed Skill source roots and explicit bounded relative enabled paths without traversal or glob syntax.
+
+The MCP descriptor selects either a trusted stdio launch-profile reference or a bounded non-secret HTTP(S) endpoint plus an opaque credential reference. Host-tool input schemas use the protocol's closed declarative JSON Schema subset. Component, descriptor, annotation, credential-reference, resource, and path objects all reject unknown fields.
 
 The snapshot MUST NOT contain executable JavaScript, credentials, or unbounded filesystem discovery instructions.
 
@@ -676,6 +678,7 @@ protocol-meta.json
 protocol-fixtures.json
 host-client.generated.ts
 runtime-client.generated.ts, if separately required
+protocol-2.0.0-draft.1-evidence.json
 ```
 
 Conformance tests must prove:

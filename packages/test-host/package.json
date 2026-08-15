@@ -3,5 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Generated-client-only Standard Host owner; exports begin with PRE-A7"
+  "description": "Generated-client-only Standard Host test-kit owner",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/protocol": "0.0.0"
+  }
 }

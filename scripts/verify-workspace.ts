@@ -22,13 +22,17 @@ const expectedScripts = new Map([
   ["preinstall", "node scripts/verify-toolchain.mjs"],
   ["check:dsh", "tsx scripts/verify-dsh-baseline.ts"],
   ["check:dsh-source", "tsx scripts/snapshot-dsh-baseline.ts --check --check-source ../deepseek-harness"],
-  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh"],
+  ["generate:protocol", "tsx scripts/generate-protocol.ts"],
+  ["check:protocol", "tsx scripts/generate-protocol.ts --check"],
+  ["check:compatibility", "tsx scripts/verify-compatibility.ts"],
+  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:protocol && npm run check:compatibility"],
   ["typecheck", "npm run check:foundation && tsc -b --pretty false"],
   ["lint", "eslint . --max-warnings 0"],
   ["test", "npm run check:foundation && vitest run"],
   ["build", "npm run check:foundation && tsc -b --pretty false"],
 ]);
 const expectedDevelopmentDependencies = new Map([
+  ["@anthropic-ai/claude-agent-sdk", "0.3.220"],
   ["@eslint/js", "10.0.1"],
   ["@types/node", "24.13.3"],
   ["eslint", "10.8.1"],
@@ -36,6 +40,28 @@ const expectedDevelopmentDependencies = new Map([
   ["typescript", "5.9.3"],
   ["typescript-eslint", "8.66.0"],
   ["vitest", "4.1.10"],
+]);
+const expectedWorkspaceFiles = new Map([
+  ["apps/runtime-server", []],
+  ["packages/artifact-verifier", []],
+  ["packages/compatibility", [
+    "manifests/myagents-agent-sdk-compatibility-v1.json",
+    "src/agent-sdk-0.3.220-shapes.ts",
+    "src/compatibility-call-shapes.compile.ts",
+    "src/index.ts",
+    "src/manifest.ts",
+  ]],
+  ["packages/product-profile", ["src/dsh-public-surface.compile.ts"]],
+  ["packages/protocol", [
+    "src/contract-source.ts",
+    "src/errors.ts",
+    "src/index.ts",
+    "src/peer.ts",
+    "src/validation.ts",
+    "generated/host-client.generated.ts",
+  ]],
+  ["packages/runtime-product", []],
+  ["packages/test-host", ["src/index.ts", "src/memory-peer.ts", "src/standard-test-host.ts"]],
 ]);
 
 const readJson = async (path: string): Promise<JsonObject> => {
@@ -141,9 +167,8 @@ for (const relativePath of workspacePackages.keys()) {
     `${relativePath} must participate in the root TypeScript project graph`,
   );
   const workspaceTsconfig = await readJson(resolve(repositoryRoot, relativePath, "tsconfig.json"));
-  const expectedFiles = relativePath === "packages/product-profile"
-    ? ["src/dsh-public-surface.compile.ts"]
-    : [];
+  const expectedFiles = expectedWorkspaceFiles.get(relativePath);
+  assert(expectedFiles !== undefined, `${relativePath} must declare an exact source-file authority`);
   assert(
     JSON.stringify(workspaceTsconfig.files) === JSON.stringify(expectedFiles),
     `${relativePath}/tsconfig.json must own exactly ${JSON.stringify(expectedFiles)}`,

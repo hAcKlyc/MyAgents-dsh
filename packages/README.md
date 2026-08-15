@@ -1,6 +1,6 @@
 # Package ownership
 
-The Pre-Batch workspace freezes package ownership before behavior is implemented. Packages remain private and expose no API until their owning action or Batch supplies executable contracts and tests.
+The Pre-Batch workspace freezes package ownership before behavior is implemented. Packages remain private and expose only APIs whose owning action or Batch has supplied executable contracts and tests.
 
 | Package | Owner |
 | --- | --- |

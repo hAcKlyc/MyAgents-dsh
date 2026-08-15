@@ -1,13 +1,16 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
+    "lib": ["ES2024", "DOM"],
     "rootDir": "..",
     "outDir": "../dist/tests",
     "tsBuildInfoFile": "../dist/tests/.tsbuildinfo"
   },
-  "include": [
-    "**/*.ts",
-    "../scripts/dsh-baseline-policy.ts",
-    "../scripts/verify-migration-inventory.ts"
+  "include": ["**/*.ts"],
+  "references": [
+    { "path": "../packages/protocol" },
+    { "path": "../packages/compatibility" },
+    { "path": "../packages/test-host" },
+    { "path": "../tsconfig.tools.json" }
   ]
 }
