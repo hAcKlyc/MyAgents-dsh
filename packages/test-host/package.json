@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Generated-client-only Standard Host test-kit owner",
+  "files": ["src"],
   "exports": {
     ".": "./src/index.ts"
   },

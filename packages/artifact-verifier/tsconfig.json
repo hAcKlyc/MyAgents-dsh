@@ -5,5 +5,9 @@
     "outDir": "../../dist/packages/artifact-verifier",
     "tsBuildInfoFile": "../../dist/packages/artifact-verifier/.tsbuildinfo"
   },
-  "files": []
+  "files": [
+    "src/artifact-policy.ts",
+    "src/forbidden-content.ts",
+    "src/index.ts"
+  ]
 }

@@ -6,5 +6,11 @@
     "tsBuildInfoFile": "../../dist/packages/product-profile/.tsbuildinfo",
     "lib": ["ES2024", "DOM", "DOM.Iterable"]
   },
-  "files": ["src/dsh-public-surface.compile.ts"]
+  "files": [
+    "src/dsh-public-surface.compile.ts",
+    "src/official-profile-authority.generated.ts",
+    "src/index.ts",
+    "src/platform-contract.ts",
+    "src/profile.ts"
+  ]
 }

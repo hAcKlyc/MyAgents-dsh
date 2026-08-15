@@ -6,6 +6,7 @@ export default defineConfig({
     restoreMocks: true,
     clearMocks: true,
     unstubGlobals: true,
+    setupFiles: ["./tests/setup/default-isolation.ts"],
     testTimeout: 10_000,
     include: ["packages/**/*.unit.test.ts", "apps/**/*.unit.test.ts", "tests/**/*.unit.test.ts"],
   },

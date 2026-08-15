@@ -83,6 +83,8 @@ export const publicSeams: PublicSeamEvidence[] = [
   { id: "web-helpers", package: "@deepseek-ai/dsh-tool-web", importPath: "@deepseek-ai/dsh-tool-web", classification: "helper", batchUse: ["B1-W2"], values: ["formatFetchOutput", "formatSearchOutput", "parseFetchArgs", "parseSearchArgs"], types: ["WebFetchMeta", "WebSearchMeta"] },
 ];
 
+const allowedPublicDshImportPaths = new Set(publicSeams.map(({ importPath }) => importPath));
+
 export const knownLimitations = [
   {
     id: "source-release-association-unproven",
@@ -320,22 +322,53 @@ const unwrapExpression = (expression: ts.Expression): ts.Expression => {
   return current;
 };
 
-const requireTargetKind = (expression: ts.Expression): "require" | "require.resolve" | undefined => {
+const requireTargetKind = (
+  expression: ts.Expression,
+  requireAliases: ReadonlySet<string>,
+  createRequireNames: ReadonlySet<string>,
+  moduleObjectNames: ReadonlySet<string>,
+): "require" | "require.resolve" | undefined => {
   const target = unwrapExpression(expression);
-  if (ts.isIdentifier(target) && target.text === "require") return "require";
+  if (ts.isIdentifier(target) && requireAliases.has(target.text)) return "require";
+  if (ts.isCallExpression(target)) {
+    const factory = unwrapExpression(target.expression);
+    if (isCreateRequireFactory(factory, createRequireNames, moduleObjectNames)) return "require";
+  }
   if (ts.isPropertyAccessExpression(target)) {
     const owner = unwrapExpression(target.expression);
-    if (ts.isIdentifier(owner) && owner.text === "require" && target.name.text === "resolve") return "require.resolve";
+    if (ts.isIdentifier(owner) && requireAliases.has(owner.text) && target.name.text === "resolve") return "require.resolve";
   }
   if (ts.isElementAccessExpression(target)) {
     const owner = unwrapExpression(target.expression);
     if (
       ts.isIdentifier(owner)
-      && owner.text === "require"
+      && requireAliases.has(owner.text)
       && staticStringValue(target.argumentExpression) === "resolve"
     ) return "require.resolve";
   }
   return undefined;
+};
+
+const isCreateRequireFactory = (
+  expression: ts.Expression,
+  createRequireNames: ReadonlySet<string>,
+  moduleObjectNames: ReadonlySet<string>,
+): boolean => {
+  const target = unwrapExpression(expression);
+  if (ts.isIdentifier(target)) return createRequireNames.has(target.text);
+  if (ts.isPropertyAccessExpression(target)) {
+    const owner = unwrapExpression(target.expression);
+    return ts.isIdentifier(owner)
+      && moduleObjectNames.has(owner.text)
+      && target.name.text === "createRequire";
+  }
+  if (ts.isElementAccessExpression(target)) {
+    const owner = unwrapExpression(target.expression);
+    return ts.isIdentifier(owner)
+      && moduleObjectNames.has(owner.text)
+      && staticStringValue(target.argumentExpression) === "createRequire";
+  }
+  return false;
 };
 
 interface ModuleLoadAnalysis {
@@ -347,6 +380,67 @@ export const analyzeModuleLoads = (sourceText: string, filename = "source.ts"): 
   const source = ts.createSourceFile(filename, sourceText, ts.ScriptTarget.Latest, true);
   const specifiers: string[] = [];
   const unresolvedDynamicLoads: string[] = [];
+  const createRequireNames = new Set(["createRequire"]);
+  const moduleObjectNames = new Set<string>();
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)
+      || (statement.moduleSpecifier.text !== "node:module" && statement.moduleSpecifier.text !== "module")) continue;
+    const importClause = statement.importClause;
+    if (importClause?.name !== undefined) moduleObjectNames.add(importClause.name.text);
+    const bindings = importClause?.namedBindings;
+    if (bindings !== undefined) {
+      if (ts.isNamespaceImport(bindings)) {
+        moduleObjectNames.add(bindings.name.text);
+      } else {
+        for (const element of bindings.elements) {
+          if ((element.propertyName?.text ?? element.name.text) === "createRequire") {
+            createRequireNames.add(element.name.text);
+          }
+        }
+      }
+    }
+  }
+  const requireAliases = new Set(["require"]);
+  let aliasesChanged = true;
+  while (aliasesChanged) {
+    aliasesChanged = false;
+    const addAlias = (set: Set<string>, name: string): void => {
+      if (!set.has(name)) {
+        set.add(name);
+        aliasesChanged = true;
+      }
+    };
+    const collectLoaderAliases = (node: ts.Node): void => {
+      if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
+        const initializer = unwrapExpression(node.initializer);
+        if (ts.isIdentifier(node.name)) {
+          if (ts.isIdentifier(initializer) && moduleObjectNames.has(initializer.text)) {
+            addAlias(moduleObjectNames, node.name.text);
+          }
+          if (isCreateRequireFactory(initializer, createRequireNames, moduleObjectNames)) {
+            addAlias(createRequireNames, node.name.text);
+          }
+          if (ts.isCallExpression(initializer)
+            && isCreateRequireFactory(initializer.expression, createRequireNames, moduleObjectNames)) {
+            addAlias(requireAliases, node.name.text);
+          }
+          if (ts.isIdentifier(initializer) && requireAliases.has(initializer.text)) {
+            addAlias(requireAliases, node.name.text);
+          }
+        } else if (ts.isObjectBindingPattern(node.name)
+          && ts.isIdentifier(initializer) && moduleObjectNames.has(initializer.text)) {
+          for (const element of node.name.elements) {
+            const importedName = element.propertyName?.getText(source) ?? element.name.getText(source);
+            if (importedName === "createRequire" && ts.isIdentifier(element.name)) {
+              addAlias(createRequireNames, element.name.text);
+            }
+          }
+        }
+      }
+      ts.forEachChild(node, collectLoaderAliases);
+    };
+    collectLoaderAliases(source);
+  }
   const requireReferences = new Map<number, ts.Identifier>();
   const consumedRequireReferences = new Set<number>();
   const addExpression = (expression: ts.Expression | undefined, node: ts.Node, kind: string): void => {
@@ -359,11 +453,14 @@ export const analyzeModuleLoads = (sourceText: string, filename = "source.ts"): 
     }
   };
   const consumeRequireReferences = (node: ts.Node): void => {
-    if (ts.isIdentifier(node) && node.text === "require") consumedRequireReferences.add(node.getStart(source));
+    if (ts.isIdentifier(node) && requireAliases.has(node.text)) consumedRequireReferences.add(node.getStart(source));
     ts.forEachChild(node, consumeRequireReferences);
   };
   const visit = (node: ts.Node): void => {
-    if (ts.isIdentifier(node) && node.text === "require") requireReferences.set(node.getStart(source), node);
+    if (ts.isIdentifier(node) && requireAliases.has(node.text)
+      && !(ts.isVariableDeclaration(node.parent) && node.parent.name === node)) {
+      requireReferences.set(node.getStart(source), node);
+    }
     if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier)) {
       specifiers.push(node.moduleSpecifier.text);
     } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
@@ -371,7 +468,7 @@ export const analyzeModuleLoads = (sourceText: string, filename = "source.ts"): 
     } else if (ts.isCallExpression(node) && node.arguments.length > 0) {
       const argument = node.arguments[0];
       const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
-      const requireKind = requireTargetKind(node.expression);
+      const requireKind = requireTargetKind(node.expression, requireAliases, createRequireNames, moduleObjectNames);
       if (isDynamicImport || requireKind !== undefined) {
         if (requireKind !== undefined) consumeRequireReferences(node.expression);
         addExpression(argument, node, isDynamicImport ? "dynamic import" : requireKind ?? "require");
@@ -392,9 +489,12 @@ export const moduleSpecifiers = (sourceText: string, filename = "source.ts"): st
   analyzeModuleLoads(sourceText, filename).specifiers;
 
 export const forbiddenPrivateImports = (sourceText: string, filename = "source.ts"): string[] =>
-  moduleSpecifiers(sourceText, filename).filter((specifier) =>
-    /^@deepseek-ai\/[^/]+\/(?:src|dist)(?:\/|$)/u.test(specifier),
-  );
+  moduleSpecifiers(sourceText, filename).filter((specifier) => {
+    const normalized = specifier.replaceAll("\\", "/");
+    if (/(?:^|\/)node_modules\/@deepseek-ai\//u.test(normalized)) return true;
+    if (!normalized.startsWith("@deepseek-ai/")) return false;
+    return !allowedPublicDshImportPaths.has(normalized);
+  });
 
 export const unresolvedDynamicModuleLoads = (sourceText: string, filename = "source.ts"): string[] =>
   analyzeModuleLoads(sourceText, filename).unresolvedDynamicLoads;

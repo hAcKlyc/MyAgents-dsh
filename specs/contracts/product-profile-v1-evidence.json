@@ -1,0 +1,19 @@
+{
+  "activationState": "forbidden-until-patched-dsh-and-batch-1-gate",
+  "authority": "packages/product-profile/src/profile.ts",
+  "formatVersion": 1,
+  "generator": "scripts/generate-product-profile.ts",
+  "installedPluginCount": 0,
+  "outputs": {
+    "official-product-profile-v1.json": "576750b01773f59c71572f122f38501b006662339bf7ebc12c6012aad4be1526",
+    "official-profile-authority.generated.ts": "fdb5ebf51224f91e92b7bcbb604e8b88ab03fe6289fdf716107c3e1ecc971d2b",
+    "platform-targets-v1.json": "85a74f66e4a6b9ab268020bf79df5f6a2feea2309e714363585e5d80d795d4e6"
+  },
+  "platformEvidenceStates": {
+    "darwin-arm64": "contract_defined",
+    "linux-x64": "contract_defined",
+    "win32-x64": "contract_defined"
+  },
+  "profileDigest": "576750b01773f59c71572f122f38501b006662339bf7ebc12c6012aad4be1526",
+  "profileId": "myagents-dsh-official-v1"
+}

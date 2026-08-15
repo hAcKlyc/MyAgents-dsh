@@ -1,0 +1,109 @@
+diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
+index 668ef65826..56f08c9681 100644
+--- a/packages/core/agent-loop/src/agent.ts
++++ b/packages/core/agent-loop/src/agent.ts
+@@ -16,7 +16,7 @@ import type {
+   RequestErrorAction,
+ } from '@deepseek-ai/dsh-agent'
+ import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
+-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
++import type { GenerateOptions, LlmCallConfig, Message, MessageId, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+ import {
+   BlockAssembler,
+   LlmError,
+@@ -119,6 +119,14 @@ export class ReactLoopAgent implements Agent {
+     if (wakeup) this.wakeDriver(wakingAfterAbort)
+   }
+ 
++  wakePending(messageId: MessageId): boolean {
++    const pending = [...this.inbox.nextStep, ...this.inbox.nextTurn]
++      .some(message => message.id === messageId)
++    if (!pending) return false
++    this.wakeDriver(this.phase.kind !== 'idle' && this.phase.abort.signal.aborted)
++    return true
++  }
++
+   followup(input: UserMessage): void {
+     this.send(input, 'next-turn', true)
+   }
+diff --git a/packages/core/agent-loop/tests/cancel.spec.ts b/packages/core/agent-loop/tests/cancel.spec.ts
+index 28423bb430..63cf386471 100644
+--- a/packages/core/agent-loop/tests/cancel.spec.ts
++++ b/packages/core/agent-loop/tests/cancel.spec.ts
+@@ -55,6 +55,46 @@ function userTexts(agent: Agent): string[] {
+ }
+ 
+ describe('Agent.cancel()', () => {
++  it('wakePending latches the same pending identity across aborted-driver convergence', async () => {
++    const adapter = new MockAdapter(['hang-slow', textResponse('recovered reply')])
++    const ctx = await harness(adapter)
++    const agent = ctx.agentLoop.create(SessionId('wake-pending-abort-window'), { provider: 'mock', model: 'mock' })
++
++    send(agent, 'active')
++    await new Promise(resolve => setTimeout(resolve, 30))
++    const pending = createUserMessage({
++      content: [{ type: 'text', text: 'preserved' }],
++      source: { kind: 'user' },
++    })
++    agent.send(pending, 'next-turn', false)
++    agent.cancel({ kind: 'user' }, { keepInbox: true })
++
++    expect(agent.wakePending?.(pending.id)).toBe(true)
++    await agent.whenIdle()
++
++    expect(userTexts(agent)).toEqual(['active', 'preserved'])
++    expect(adapter.requests).toHaveLength(2)
++    expect(agent.inbox.nextTurn).toHaveLength(0)
++    expect(agent.wakePending?.(pending.id)).toBe(false)
++  })
++
++  it('wakePending preserves queued FIFO and never inserts a durable splice', async () => {
++    const adapter = new MockAdapter([textResponse('reply')])
++    const ctx = await harness(adapter)
++    const agent = ctx.agentLoop.create(SessionId('wake-pending-fifo'), { provider: 'mock', model: 'mock' })
++    const first = createUserMessage({ content: [{ type: 'text', text: 'first' }], source: { kind: 'user' } })
++    const second = createUserMessage({ content: [{ type: 'text', text: 'second' }], source: { kind: 'user' } })
++    agent.send(first, 'next-turn', false)
++    agent.send(second, 'next-turn', false)
++    expect(agent.wakePending?.(first.id)).toBe(true)
++    await agent.whenIdle()
++
++    expect(userTexts(agent)).toEqual(['first', 'second'])
++    expect(agent.session.events.some(event => event.type === 'agent/inbox/spliced'
++      && event.data.outcome === 'canceled')).toBe(false)
++    expect(agent.wakePending?.(first.id)).toBe(false)
++  })
++
+   it('cancel() on an idle agent with nothing queued is a no-op; the next prompt runs (F2 leak guard)', async () => {
+     const adapter = new MockAdapter([textResponse('reply')])
+     const ctx = await harness(adapter)
+diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
+index 7d713f8c77..7fd4e706d1 100644
+--- a/packages/core/agent/src/runtime-types.ts
++++ b/packages/core/agent/src/runtime-types.ts
+@@ -7,7 +7,7 @@
+ 
+ import type { Context } from '@deepseek-ai/cordis'
+ import type { Scoped } from '@deepseek-ai/dsh-scope'
+-import type { LlmCallConfig, LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
++import type { LlmCallConfig, LlmFailure, MessageId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+ import type { AgentCancelCause, Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
+ export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
+ import type { Inbox } from './inbox.ts'
+@@ -92,6 +92,16 @@ export interface Agent {
+    */
+   whenIdle(): Promise<void>
+ 
++  /**
++   * Wake the driver only when the exact identity is already pending. This
++   * performs no Inbox mutation and therefore preserves durable FIFO order and
++   * cancellation history. Repeated calls are safe: the driver wake is already
++   * a level-triggered/latching operation.
++   * @param messageId - an existing next-step or next-turn message identity.
++   * @returns whether that identity was still pending when the wake was requested.
++   */
++  wakePending?(messageId: MessageId): boolean
++
+   /**
+    * Run one non-turn maintenance task from the true idle phase. The task starts
+    * synchronously after claiming that phase; later waking input remains in the

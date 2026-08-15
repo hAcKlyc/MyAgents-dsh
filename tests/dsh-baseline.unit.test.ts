@@ -110,7 +110,7 @@ describe("DSH public boundary", () => {
     );
   });
 
-  it("rejects source and distribution private imports across static and dynamic forms", () => {
+  it("rejects every unregistered DSH subpath and node_modules bypass across load forms", () => {
     const source = [
       'import value from "@deepseek-ai/dsh-agent/src/private.js";',
       'export * from "@deepseek-ai/dsh-tools/dist/internal.js";',
@@ -122,6 +122,23 @@ describe("DSH public boundary", () => {
       'const parenthesized = (require)("@deepseek-ai/dsh-agent/src/parenthesized.js");',
       'const parenthesizedResolve = (require.resolve)("@deepseek-ai/dsh-tools/dist/parenthesized.js");',
       'const elementResolve = require["resolve"]("@deepseek-ai/dsh-tools/dist/element.js");',
+      'import { createRequire as makeRequire } from "node:module";',
+      'const loadPrivate = makeRequire(import.meta.url);',
+      'const aliased = loadPrivate("@deepseek-ai/dsh-session/lib/types/json.js");',
+      'import * as Module from "node:module";',
+      'const namespaceRequire = Module.createRequire(import.meta.url);',
+      'const namespacePrivate = namespaceRequire("./node_modules/@deepseek-ai/dsh-session/lib/types/json.js");',
+      'import ModuleDefault from "node:module";',
+      'const defaultRequire = ModuleDefault["createRequire"](import.meta.url);',
+      'const defaultPrivate = defaultRequire("./node_modules/@deepseek-ai/dsh-session/lib/types/json.js");',
+      'const ModuleAlias = Module;',
+      'const namespaceFactory = ModuleAlias.createRequire;',
+      'const secondOrderRequire = namespaceFactory(import.meta.url);',
+      'const secondOrderPrivate = secondOrderRequire("./node_modules/@deepseek-ai/dsh-session/lib/types/json.js");',
+      'const { createRequire: destructuredFactory } = Module;',
+      'const destructuredRequire = destructuredFactory(import.meta.url);',
+      'const destructuredPrivate = destructuredRequire("./node_modules/@deepseek-ai/dsh-session/lib/types/json.js");',
+      'import relativePrivate from "../node_modules/@deepseek-ai/dsh-session/lib/types/json.js";',
     ].join("\n");
 
     expect(forbiddenPrivateImports(source)).toEqual([
@@ -135,6 +152,12 @@ describe("DSH public boundary", () => {
       "@deepseek-ai/dsh-agent/src/parenthesized.js",
       "@deepseek-ai/dsh-tools/dist/parenthesized.js",
       "@deepseek-ai/dsh-tools/dist/element.js",
+      "@deepseek-ai/dsh-session/lib/types/json.js",
+      "./node_modules/@deepseek-ai/dsh-session/lib/types/json.js",
+      "./node_modules/@deepseek-ai/dsh-session/lib/types/json.js",
+      "./node_modules/@deepseek-ai/dsh-session/lib/types/json.js",
+      "./node_modules/@deepseek-ai/dsh-session/lib/types/json.js",
+      "../node_modules/@deepseek-ai/dsh-session/lib/types/json.js",
     ]);
     expect(forbiddenPrivateImports('import { Session } from "@deepseek-ai/dsh-session";')).toEqual([]);
   });

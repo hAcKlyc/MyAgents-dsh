@@ -8,8 +8,10 @@
   },
   "include": ["**/*.ts"],
   "references": [
+    { "path": "../packages/artifact-verifier" },
     { "path": "../packages/protocol" },
     { "path": "../packages/compatibility" },
+    { "path": "../packages/product-profile" },
     { "path": "../packages/test-host" },
     { "path": "../tsconfig.tools.json" }
   ]

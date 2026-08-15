@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "description": "Versioned sanitized product compatibility declarations",
+  "files": [
+    "manifests/myagents-agent-sdk-compatibility-v1.json",
+    "src/agent-sdk-0.3.220-shapes.ts",
+    "src/index.ts",
+    "src/manifest.ts"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./myagents-agent-sdk-compatibility-v1.json": "./manifests/myagents-agent-sdk-compatibility-v1.json"

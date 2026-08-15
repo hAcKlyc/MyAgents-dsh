@@ -22,10 +22,16 @@ const expectedScripts = new Map([
   ["preinstall", "node scripts/verify-toolchain.mjs"],
   ["check:dsh", "tsx scripts/verify-dsh-baseline.ts"],
   ["check:dsh-source", "tsx scripts/snapshot-dsh-baseline.ts --check --check-source ../deepseek-harness"],
+  ["generate:dsh-seams", "tsx scripts/generate-dsh-seams.ts"],
+  ["check:dsh-seams", "tsx scripts/verify-dsh-seams.ts"],
+  ["check:dsh-seams-source", "tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test"],
   ["generate:protocol", "tsx scripts/generate-protocol.ts"],
   ["check:protocol", "tsx scripts/generate-protocol.ts --check"],
   ["check:compatibility", "tsx scripts/verify-compatibility.ts"],
-  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:protocol && npm run check:compatibility"],
+  ["generate:profile", "tsx scripts/generate-product-profile.ts"],
+  ["check:profile", "tsx scripts/generate-product-profile.ts --check"],
+  ["check:security", "tsx scripts/verify-repository-security.ts"],
+  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:dsh-seams && npm run check:protocol && npm run check:compatibility && npm run check:profile && npm run check:security"],
   ["typecheck", "npm run check:foundation && tsc -b --pretty false"],
   ["lint", "eslint . --max-warnings 0"],
   ["test", "npm run check:foundation && vitest run"],
@@ -43,7 +49,11 @@ const expectedDevelopmentDependencies = new Map([
 ]);
 const expectedWorkspaceFiles = new Map([
   ["apps/runtime-server", []],
-  ["packages/artifact-verifier", []],
+  ["packages/artifact-verifier", [
+    "src/artifact-policy.ts",
+    "src/forbidden-content.ts",
+    "src/index.ts",
+  ]],
   ["packages/compatibility", [
     "manifests/myagents-agent-sdk-compatibility-v1.json",
     "src/agent-sdk-0.3.220-shapes.ts",
@@ -51,7 +61,13 @@ const expectedWorkspaceFiles = new Map([
     "src/index.ts",
     "src/manifest.ts",
   ]],
-  ["packages/product-profile", ["src/dsh-public-surface.compile.ts"]],
+  ["packages/product-profile", [
+    "src/dsh-public-surface.compile.ts",
+    "src/official-profile-authority.generated.ts",
+    "src/index.ts",
+    "src/platform-contract.ts",
+    "src/profile.ts",
+  ]],
   ["packages/protocol", [
     "src/contract-source.ts",
     "src/errors.ts",

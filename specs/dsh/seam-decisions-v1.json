@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-08-16",
+  "authority": {
+    "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
+    "commit": "47f943859bef60e4160492346772ded9b24f765a",
+    "tree": "f904efab9ef435201d6ba4da88a34d6366568272",
+    "declaredRelease": "0.1.0-rc.5",
+    "executablePackageAssociation": "unproven",
+    "files": [
+      {
+        "path": "packages/core/agent/src/runtime-types.ts",
+        "blob": "7d713f8c77112f8e74150bc060ec677bb5107f90",
+        "sha256": "c2151e5b245fef908e8fcb0a1ea8d0a32e222c753cbaea23aee6dc865e2d6010"
+      },
+      {
+        "path": "packages/core/agent-loop/src/agent.ts",
+        "blob": "668ef6582657ed0e1e4420777696ee50251371ad",
+        "sha256": "e775e59f3761240ee571a9b997d0d29deb97a283b6c2fc3a071091b2743d22b4"
+      },
+      {
+        "path": "packages/session/session-persistence/src/coordinator.ts",
+        "blob": "eb5f9714c4838e492500b8452e28012c53b58bf5",
+        "sha256": "e7bbc321bdb09ea8870027bd5a3e285472dddc8e4346f95f85addacf6eb784d1"
+      },
+      {
+        "path": "packages/core/agent-loop/tests/cancel.spec.ts",
+        "blob": "28423bb4303f3e688ecbfbbfc235b5d92a766d0c",
+        "sha256": "21d0071e9139cf96700c003c0ecb507677b9d8f36db96a83ee0de95231e2fb54"
+      },
+      {
+        "path": "packages/core/scope/src/scoped-events.generated.ts",
+        "blob": "672914c5c30f1ef683994e5ed213888505aff332",
+        "sha256": "640535447222732e8ea276d4c5d461d00a7300d8aabc37624d3233246cc231ec"
+      },
+      {
+        "path": "packages/core/scope/tests/invariant.spec.ts",
+        "blob": "345766b04231d36c96c431543a8607cdba9acd48",
+        "sha256": "6c9b41559c4a77482c40bb521087c7b1d4b15b0aff30c1d2c179168760faa518"
+      },
+      {
+        "path": "packages/session/session-persistence/tests/persistence.spec.ts",
+        "blob": "50ad798e04239d46f85da909d51653dff5d321f1",
+        "sha256": "5b16d2f9d5a4d41125b9da76727d823c000fef778c53886f85492a94edbe589e"
+      }
+    ]
+  },
+  "productProfileActivation": "forbidden-until-patched-DSH-artifact-and-batch-1-gate",
+  "patchSeries": [
+    {
+      "order": 1,
+      "path": "specs/dsh/patches/0001-agent-wake-pending.patch",
+      "sha256": "2a0908542e544c3f23b7320e3d76658a7d79a40bdd84488f2dd9e4476637c506"
+    },
+    {
+      "order": 2,
+      "path": "specs/dsh/patches/0002-pre-assistant-commit.patch",
+      "sha256": "f762e0c0619b5727af4c33a34ef96b5425ba311d63a3d79b05e7461425b6191c"
+    },
+    {
+      "order": 3,
+      "path": "specs/dsh/patches/0003-persistence-known-event-predicate.patch",
+      "sha256": "8d0a09f87c42cd58123205b530b3518484af36ecc6188e42ab7c9b60c4c12c10"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "DSH-SEAM-001",
+      "seam": "restart-wake-existing-inbox-message",
+      "status": "required_upstream_patch_accepted",
+      "adr": "specs/adr/0001-wake-existing-inbox-message.md",
+      "rejected": "remove-and-reinsert-with-public-Inbox-and-Agent-followup",
+      "selectedPublicApi": "Agent.wakePending?(messageId: MessageId): boolean; required by official composition",
+      "patch": {
+        "order": 1,
+        "path": "specs/dsh/patches/0001-agent-wake-pending.patch",
+        "sha256": "2a0908542e544c3f23b7320e3d76658a7d79a40bdd84488f2dd9e4476637c506"
+      },
+      "executableEvidence": [
+        "actual Inbox FIFO reorder under remove/reinsert",
+        "no-splice wake preserves MessageId and FIFO",
+        "crash after intent/wake/completion converges",
+        "patched ReactLoopAgent abort-to-idle latch and FIFO regressions",
+        "one pending identity is claimed exactly once"
+      ],
+      "removalCondition": "an installed DSH release exposes an equivalent tested public wake-existing seam"
+    },
+    {
+      "id": "DSH-SEAM-002",
+      "seam": "authoritative-pre-assistant-tool-input-transform",
+      "status": "required_upstream_patch_accepted",
+      "adr": "specs/adr/0002-pre-assistant-commit-waterfall.md",
+      "rejected": "rewrite-only-execution-input-or-proxy-tool-runtime",
+      "selectedPublicApi": "agent/pre-assistant-commit waterfall over PreparedAssistantCommit",
+      "patch": {
+        "order": 2,
+        "path": "specs/dsh/patches/0002-pre-assistant-commit.patch",
+        "sha256": "f762e0c0619b5727af4c33a34ef96b5425ba311d63a3d79b05e7461425b6191c"
+      },
+      "executableEvidence": [
+        "model-order multi-call transformation",
+        "one value across assistant history, tool/call, permission, UI, execution, result and resume",
+        "denial, timeout, crash, invalid value and cancellation append no authoritative identity",
+        "extra message, source, block, and prepared-plan keys are rejected before canonical reconstruction",
+        "text-only and max-token output bypass; no-listener equivalence and real in-flight listener replacement"
+      ],
+      "removalCondition": "an installed DSH release exposes an equivalent tested authoritative transform"
+    },
+    {
+      "id": "DSH-SEAM-003",
+      "seam": "product-required-session-event-recognition",
+      "status": "required_upstream_patch_accepted",
+      "adr": "specs/adr/0003-product-session-event-predicate.md",
+      "rejected": "mark-required-events-ignorable-or-import-private-known-event-state",
+      "selectedPublicApi": "PersistenceCoordinatorOptions.isKnownEventType",
+      "patch": {
+        "order": 3,
+        "path": "specs/dsh/patches/0003-persistence-known-event-predicate.patch",
+        "sha256": "8d0a09f87c42cd58123205b530b3518484af36ecc6188e42ab7c9b60c4c12c10"
+      },
+      "executableEvidence": [
+        "real coordinator append/inspect/prepare/load/replacement accepts the exact product predicate",
+        "unregistered required event remains refused through the real coordinator",
+        "omitted option preserves stock read-side refusal behavior"
+      ],
+      "removalCondition": "an installed DSH release exposes an equivalent tested required-event registry"
+    },
+    {
+      "id": "DSH-SEAM-004",
+      "seam": "persistence-mutation-and-rewind-composition",
+      "status": "public_provider_composition_accepted",
+      "adr": "specs/adr/0004-shared-backend-lock-and-immutable-rewind-generation.md",
+      "rejected": "surface-shadow-rewind-or-private-storage-import",
+      "selectedPublicApi": "product PersistenceBackend plus mutation companion sharing one per-Session lock",
+      "executableEvidence": [
+        "backend append and mutation commit serialize",
+        "retirement and exact revision are commit preconditions",
+        "stale revision fails closed after an in-flight append",
+        "retirement drains, aborted mutation commits nothing, and preparation cache invalidates",
+        "cold rewind generation preserves immutable stable prefix, product fold, and derived history",
+        "public PersistenceBackend plus exact-revision recoverable tombstone delete survives response loss"
+      ],
+      "removalCondition": "superseding ADR after production SQLite fault evidence proves a narrower composition"
+    }
+  ],
+  "evidenceOwners": {
+    "runtimeSemantics": "tests/dsh-seam-spikes.unit.test.ts",
+    "patchedSourceTypecheck": "tsc -b tsconfig.host.json",
+    "patchedSourceTests": [
+      "packages/core/agent-loop/tests/cancel.spec.ts",
+      "packages/core/agent-loop/tests/pre-assistant-commit.spec.ts",
+      "packages/core/scope/tests/invariant.spec.ts",
+      "packages/session/session-persistence/tests/persistence.spec.ts"
+    ]
+  }
+}

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Canonical native RPC contract and strict peer owner",
+  "files": ["generated", "src"],
   "exports": {
     ".": "./src/index.ts",
     "./generated/host-client": "./generated/host-client.generated.ts",

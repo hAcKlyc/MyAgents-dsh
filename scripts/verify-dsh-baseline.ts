@@ -63,10 +63,17 @@ if (Array.isArray(productionPackages)) {
 for (const seam of publicSeams) {
   const manifest = await readJson(resolve(repositoryRoot, "node_modules", seam.package, "package.json"));
   const exportsField = manifest.exports;
+  const exportKey = seam.importPath === seam.package
+    ? "."
+    : `.${seam.importPath.slice(seam.package.length)}`;
+  assert(
+    seam.importPath === seam.package || seam.importPath.startsWith(`${seam.package}/`),
+    `${seam.id} import path must belong to its recorded package`,
+  );
   assert(
     typeof exportsField === "object" && exportsField !== null && !Array.isArray(exportsField)
-      && (exportsField as JsonObject)["."] !== undefined,
-    `${seam.package} must retain a public root export for ${seam.id}`,
+      && (exportsField as JsonObject)[exportKey] !== undefined,
+    `${seam.package} must retain exact public export ${exportKey} for ${seam.id}`,
   );
   assert(
     !/(?:^|\/)(?:src|dist)(?:\/|$)/u.test(seam.importPath),
