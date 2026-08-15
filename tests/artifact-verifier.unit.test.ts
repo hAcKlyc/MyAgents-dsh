@@ -1,3 +1,7 @@
+import { link, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,6 +9,7 @@ import {
   auditPackedContent,
   auditPackedFileList,
   normalizeArtifactPath,
+  readRegularFileNoFollow,
   scanForbiddenContent,
 } from "../packages/artifact-verifier/src/index.js";
 
@@ -13,9 +18,12 @@ describe("repository and packed-artifact forbidden-content policy", () => {
     const canaries = [
       ["sk", "-", "A".repeat(32)].join(""),
       ["gh", "p_", "B".repeat(24)].join(""),
+      ["npm", "_", "N".repeat(36)].join(""),
       ["AK", "IA", "C".repeat(16)].join(""),
       ["DEEPSEEK_", "API_KEY", "=", "D".repeat(24)].join(""),
       ["{\"API_", "KEY\":\"", "F".repeat(24), "\"}"].join(""),
+      ["Authorization", ": Bearer ", "J".repeat(32)].join(""),
+      ["https://fixture:", "P".repeat(24), "@registry.invalid"].join(""),
       ["-----BEGIN ", "PRIVATE KEY-----"].join(""),
     ];
     const rules = canaries.flatMap((canary) =>
@@ -23,9 +31,12 @@ describe("repository and packed-artifact forbidden-content policy", () => {
     expect(rules).toEqual([
       "provider-token",
       "github-token",
+      "npm-token",
       "aws-access-key",
       "assigned-secret-value",
       "assigned-secret-value",
+      "authorization-credential",
+      "url-userinfo-credential",
       "private-key-material",
     ]);
     const utf16 = Buffer.from(["{\"API_", "KEY\":\"", "G".repeat(24), "\"}"].join(""), "utf16le");
@@ -40,10 +51,36 @@ describe("repository and packed-artifact forbidden-content policy", () => {
       path: "fixture/safe-be.json",
       line: 1,
     });
+    const oddUtf16 = Buffer.concat([
+      Buffer.from(["API_", "KEY=", "K".repeat(24)].join(""), "utf16le"),
+      Buffer.from([0xff]),
+    ]);
+    expect(scanForbiddenContent("fixture/odd-utf16.txt", oddUtf16)).toContainEqual({
+      rule: "assigned-secret-value",
+      path: "fixture/odd-utf16.txt",
+      line: 1,
+    });
     const escapedJsonKey = ["{\"API", "\\u005f", "KEY\":\"", "I".repeat(24), "\"}"].join("");
     expect(scanForbiddenContent("fixture/escaped.json", escapedJsonKey)).toContainEqual({
       rule: "assigned-secret-value",
       path: "fixture/escaped.json",
+      line: 1,
+    });
+    const utf32Text = ["API_", "KEY=", "Q".repeat(24)].join("");
+    const utf32le = Buffer.alloc(utf32Text.length * 4);
+    const utf32be = Buffer.alloc(utf32Text.length * 4);
+    Array.from(utf32Text).forEach((character, index) => {
+      utf32le.writeUInt32LE(character.codePointAt(0) ?? 0, index * 4);
+      utf32be.writeUInt32BE(character.codePointAt(0) ?? 0, index * 4);
+    });
+    expect(scanForbiddenContent("fixture/utf32-le.txt", utf32le)).toContainEqual({
+      rule: "assigned-secret-value",
+      path: "fixture/utf32-le.txt",
+      line: 1,
+    });
+    expect(scanForbiddenContent("fixture/utf32-be.txt", utf32be)).toContainEqual({
+      rule: "assigned-secret-value",
+      path: "fixture/utf32-be.txt",
       line: 1,
     });
   });
@@ -64,6 +101,20 @@ describe("repository and packed-artifact forbidden-content policy", () => {
       rule: "environment-file",
       path: "nested/.env",
     });
+    expect(scanForbiddenContent(".npmrc", "engine-strict=true\nsave-exact=true\n")).toEqual([]);
+    for (const path of [
+      "nested/.npmrc",
+      "nested/.npmrc.bak",
+      "nested/.git-credentials",
+      "nested/.git-credentials.old",
+      "nested/.netrc",
+      "nested/.netrc.backup",
+    ]) {
+      expect(scanForbiddenContent(path, "synthetic")).toContainEqual({
+        rule: "credential-file",
+        path,
+      });
+    }
     expect(scanForbiddenContent("nested/runtime.log", "synthetic")).toContainEqual({
       rule: "log-file",
       path: "nested/runtime.log",
@@ -108,6 +159,24 @@ describe("repository and packed-artifact forbidden-content policy", () => {
     expect(() => normalizeArtifactPath("windows\\path")).toThrow("relative POSIX");
   });
 
+  it("never follows repository symlinks while reading audit bytes", async () => {
+    const repositoryRoot = resolve(import.meta.dirname, "..");
+    await expect(readRegularFileNoFollow(resolve(repositoryRoot, "AGENTS.md")))
+      .resolves.toBeInstanceOf(Buffer);
+    await expect(readRegularFileNoFollow(resolve(repositoryRoot, "CLAUDE.md")))
+      .rejects.toThrow("singly linked regular file");
+    const hardlinkRoot = await mkdtemp(resolve(tmpdir(), "myagents-dsh-hardlink-canary-"));
+    try {
+      const source = resolve(hardlinkRoot, "source.txt");
+      const alias = resolve(hardlinkRoot, "alias.txt");
+      await writeFile(source, "SYNTHETIC_CANARY");
+      await link(source, alias);
+      await expect(readRegularFileNoFollow(alias)).rejects.toThrow("singly linked regular file");
+    } finally {
+      await rm(hardlinkRoot, { force: true, recursive: true });
+    }
+  });
+
   it("requires exact package file allowlists and rejects source maps", () => {
     const policy = PACKED_WORKSPACE_POLICIES.find(({ packageName }) =>
       packageName === "@myagents-dsh/runtime-server");
@@ -133,5 +202,36 @@ describe("repository and packed-artifact forbidden-content policy", () => {
       path: "fixture-package/src/config.ts",
       line: 1,
     }]);
+    expect(auditPackedContent("fixture-package", [{
+      path: "src/auth.ts",
+      bytes: ["Authorization", ": Basic ", "L".repeat(32)].join(""),
+    }])).toEqual([{
+      rule: "authorization-credential",
+      path: "fixture-package/src/auth.ts",
+      line: 1,
+    }]);
+    expect(auditPackedContent("fixture-package", [{
+      path: "src/headers.ts",
+      bytes: ["headers.set(\"Authorization\", \"Bearer ", "R".repeat(32), "\")"].join(""),
+    }])).toEqual([{
+      rule: "authorization-credential",
+      path: "fixture-package/src/headers.ts",
+      line: 1,
+    }]);
+    expect(auditPackedContent("fixture-package", [{
+      path: ".npmrc",
+      bytes: ["//registry.npmjs.org/:_authToken=npm", "_", "M".repeat(36)].join(""),
+    }])).toEqual(expect.arrayContaining([{
+      rule: "credential-file",
+      path: "fixture-package/.npmrc",
+    }, {
+      rule: "npm-token",
+      path: "fixture-package/.npmrc",
+      line: 1,
+    }, {
+      rule: "npm-auth-config",
+      path: "fixture-package/.npmrc",
+      line: 1,
+    }]));
   });
 });

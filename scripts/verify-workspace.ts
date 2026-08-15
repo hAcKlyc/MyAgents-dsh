@@ -53,6 +53,7 @@ const expectedWorkspaceFiles = new Map([
     "src/artifact-policy.ts",
     "src/forbidden-content.ts",
     "src/index.ts",
+    "src/repository-entry.ts",
   ]],
   ["packages/compatibility", [
     "manifests/myagents-agent-sdk-compatibility-v1.json",

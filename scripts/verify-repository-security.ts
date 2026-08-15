@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -10,6 +10,7 @@ import {
   auditPackedContent,
   auditPackedFileList,
   normalizeArtifactPath,
+  readRegularFileNoFollow,
   scanForbiddenContent,
   type PackedFile,
 } from "../packages/artifact-verifier/src/index.js";
@@ -39,23 +40,37 @@ const networkCapablePackages = new Set([
 ]);
 const networkGuardPath = "tests/setup/default-isolation.ts";
 
-const safeEnvironment = (): NodeJS.ProcessEnv => Object.fromEntries([
-  "COMSPEC",
-  "LANG",
-  "LC_ALL",
-  "LC_CTYPE",
-  "PATH",
-  "PATHEXT",
-  "SystemRoot",
-  "TEMP",
-  "TMP",
-  "TMPDIR",
-  "TZ",
-  "WINDIR",
-].flatMap((name) => {
-  const value = process.env[name];
-  return value === undefined ? [] : [[name, value]];
-}));
+interface PackIsolationPaths {
+  readonly cache: string;
+  readonly globalConfig: string;
+  readonly home: string;
+  readonly userConfig: string;
+}
+
+const safeEnvironment = (isolation: PackIsolationPaths): NodeJS.ProcessEnv => ({
+  ...Object.fromEntries([
+    "COMSPEC",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "PATH",
+    "PATHEXT",
+    "SystemRoot",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "TZ",
+    "WINDIR",
+  ].flatMap((name) => {
+    const value = process.env[name];
+    return value === undefined ? [] : [[name, value]];
+  })),
+  HOME: isolation.home,
+  NPM_CONFIG_CACHE: isolation.cache,
+  NPM_CONFIG_GLOBALCONFIG: isolation.globalConfig,
+  NPM_CONFIG_USERCONFIG: isolation.userConfig,
+  USERPROFILE: isolation.home,
+});
 
 const isNetworkCapableModule = (specifier: string): boolean => {
   const canonical = specifier.startsWith("node:") ? specifier.slice(5) : specifier;
@@ -73,7 +88,26 @@ const repositoryFiles = await execute("git", ["ls-files", "--cached", "--others"
 });
 const repositoryPaths = Buffer.from(repositoryFiles.stdout).toString("utf8").split("\0").filter(Boolean);
 for (const relativePath of repositoryPaths) {
-  const bytes = await readFile(resolve(repositoryRoot, relativePath));
+  const absolutePath = resolve(repositoryRoot, relativePath);
+  const entry = await lstat(absolutePath);
+  if (entry.isSymbolicLink()) {
+    const target = await readlink(absolutePath);
+    if (relativePath !== "CLAUDE.md" || target !== "AGENTS.md") {
+      failures.push(`repository ${relativePath} must be a regular file, not a symlink`);
+    }
+    continue;
+  }
+  if (!entry.isFile()) {
+    failures.push(`repository ${relativePath} must be a regular file`);
+    continue;
+  }
+  let bytes: Buffer;
+  try {
+    bytes = await readRegularFileNoFollow(absolutePath);
+  } catch (error) {
+    failures.push(`repository ${relativePath} cannot be audited without following an alias: ${String(error)}`);
+    continue;
+  }
   for (const finding of scanForbiddenContent(relativePath, bytes)) {
     failures.push(`repository ${finding.path}${finding.line === undefined ? "" : `:${finding.line}`} violates ${finding.rule}`);
   }
@@ -97,6 +131,44 @@ const npmCli = process.env.npm_execpath
   ?? resolve(dirname(process.execPath), "../../npm/bin/npm-cli.js");
 const packRoot = await mkdtemp(resolve(tmpdir(), "myagents-dsh-pack-audit-"));
 try {
+  const packIsolation: PackIsolationPaths = {
+    cache: resolve(packRoot, "npm-cache"),
+    globalConfig: resolve(packRoot, "global.npmrc"),
+    home: resolve(packRoot, "home"),
+    userConfig: resolve(packRoot, "user.npmrc"),
+  };
+  await Promise.all([
+    mkdir(packIsolation.cache),
+    mkdir(packIsolation.home),
+    writeFile(packIsolation.globalConfig, "", { mode: 0o600 }),
+    writeFile(packIsolation.userConfig, "", { mode: 0o600 }),
+  ]);
+  const packEnvironment = safeEnvironment(packIsolation);
+  const credentialEnvironmentNames = Object.keys(packEnvironment).filter((name) =>
+    /(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTHORIZATION|(?:^|_)PAT(?:_|$)|(?:^|_)JWT(?:_|$)|(?:^|_)AUTH(?:_|$))/iu.test(name));
+  if (credentialEnvironmentNames.length > 0) {
+    failures.push(`pack environment contains credential-bearing names: ${credentialEnvironmentNames.join(", ")}`);
+  }
+  const homeProbe = await execute(process.execPath, [
+    "-e",
+    "process.stdout.write(require('node:os').homedir())",
+  ], { env: packEnvironment });
+  if (homeProbe.stdout !== packIsolation.home) {
+    failures.push(`pack subprocess home escaped isolation: ${homeProbe.stdout}`);
+  }
+  for (const [setting, expected] of [
+    ["cache", packIsolation.cache],
+    ["globalconfig", packIsolation.globalConfig],
+    ["userconfig", packIsolation.userConfig],
+  ] as const) {
+    const configured = await execute(process.execPath, [npmCli, "config", "get", setting], {
+      cwd: repositoryRoot,
+      env: packEnvironment,
+    });
+    if (configured.stdout.trim() !== expected) {
+      failures.push(`pack npm ${setting} escaped isolation: ${configured.stdout.trim()}`);
+    }
+  }
   for (const policy of PACKED_WORKSPACE_POLICIES) {
     const packageRoot = resolve(packRoot, policy.packageName.replaceAll("/", "__").replaceAll("@", ""));
     await mkdir(packageRoot);
@@ -111,7 +183,7 @@ try {
       policy.packageName,
     ], {
       cwd: repositoryRoot,
-      env: safeEnvironment(),
+      env: packEnvironment,
       maxBuffer: 16 * 1024 * 1024,
     });
     const parsed: unknown = JSON.parse(packed.stdout);
@@ -136,7 +208,7 @@ try {
     }
     const archivePath = resolve(packageRoot, result.filename);
     const listed = await execute("tar", ["-tzf", archivePath], {
-      env: safeEnvironment(),
+      env: packEnvironment,
       maxBuffer: 16 * 1024 * 1024,
     });
     const archivePaths = listed.stdout.split("\n").filter((path) => path.length > 0);

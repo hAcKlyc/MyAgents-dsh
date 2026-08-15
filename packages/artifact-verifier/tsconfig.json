@@ -8,6 +8,7 @@
   "files": [
     "src/artifact-policy.ts",
     "src/forbidden-content.ts",
-    "src/index.ts"
+    "src/index.ts",
+    "src/repository-entry.ts"
   ]
 }

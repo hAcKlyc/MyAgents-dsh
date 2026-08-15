@@ -14,6 +14,8 @@ import { tmpdir } from "node:os";
 import tls from "node:tls";
 import workerThreads from "node:worker_threads";
 
+const originalSymlinkSync = fs.symlinkSync.bind(fs);
+
 export class DefaultNetworkIsolationError extends Error {
   readonly code = "default_network_disabled";
 
@@ -99,10 +101,27 @@ const credentialFile = (value: unknown): boolean => {
   return leaf === ".env" || leaf.startsWith(".env.");
 };
 
-const guardFileMethod = (owner: object, method: string, capability: string): void => {
+const credentialFileOrAlias = (value: unknown): boolean => {
+  if (credentialFile(value)) return true;
+  if (!(value instanceof URL) && typeof value !== "string" && !Buffer.isBuffer(value)) return false;
+  try {
+    return credentialFile(fs.realpathSync(value));
+  } catch {
+    return false;
+  }
+};
+
+const guardFileMethod = (
+  owner: object,
+  method: string,
+  capability: string,
+  pathArgumentIndexes: readonly number[] = [0],
+): void => {
   const original = Reflect.get(owner, method) as (...args: unknown[]) => unknown;
   replace(owner, method, function guardedCredentialFile(this: unknown, ...args: unknown[]): unknown {
-    if (credentialFile(args[0])) throw new DefaultNetworkIsolationError(capability);
+    if (pathArgumentIndexes.some((index) => credentialFileOrAlias(args[index]))) {
+      throw new DefaultNetworkIsolationError(capability);
+    }
     return Reflect.apply(original, this, args);
   });
 };
@@ -112,6 +131,15 @@ for (const method of ["open", "openSync", "readFile", "readFileSync", "createRea
 }
 for (const method of ["open", "readFile"] as const) {
   guardFileMethod(fsPromises, method, `node:fs/promises.${method}(.env)`);
+}
+for (const method of [
+  "copyFile", "copyFileSync", "cp", "cpSync", "link", "linkSync", "rename", "renameSync",
+  "symlink", "symlinkSync",
+] as const) {
+  guardFileMethod(fs, method, `node:fs.${method}(.env)`, [0, 1]);
+}
+for (const method of ["copyFile", "cp", "link", "rename", "symlink"] as const) {
+  guardFileMethod(fsPromises, method, `node:fs/promises.${method}(.env)`, [0, 1]);
 }
 
 replace(process, "loadEnvFile", blocked("process.loadEnvFile"));
@@ -273,6 +301,55 @@ export const probeDefaultNetworkBlocks = async (): Promise<void> => {
     throw new Error("environment-file promises canary unexpectedly passed");
   } catch (error) {
     if (!(error instanceof DefaultNetworkIsolationError)) throw error;
+  }
+  const aliasRoot = fs.mkdtempSync(resolve(tmpdir(), "myagents-dsh-env-alias-canary-"));
+  const credentialSource = resolve(aliasRoot, "source", ".env");
+  const aliasPath = resolve(aliasRoot, "alias.txt");
+  fs.mkdirSync(resolve(aliasRoot, "source"));
+  fs.writeFileSync(credentialSource, "SYNTHETIC_CANARY");
+  try {
+    for (const [capability, invoke] of [
+      ["copyFile", () => fs.copyFile(credentialSource, resolve(aliasRoot, "copy.txt"), () => undefined)],
+      ["copyFileSync", () => fs.copyFileSync(credentialSource, resolve(aliasRoot, "copy-sync.txt"))],
+      ["cp", () => fs.cp(credentialSource, resolve(aliasRoot, "cp.txt"), () => undefined)],
+      ["cpSync", () => fs.cpSync(credentialSource, resolve(aliasRoot, "cp-sync.txt"))],
+      ["link", () => fs.link(credentialSource, resolve(aliasRoot, "link.txt"), () => undefined)],
+      ["linkSync", () => fs.linkSync(credentialSource, resolve(aliasRoot, "link-sync.txt"))],
+      ["rename", () => fs.rename(credentialSource, resolve(aliasRoot, "rename.txt"), () => undefined)],
+      ["renameSync", () => fs.renameSync(credentialSource, resolve(aliasRoot, "rename-sync.txt"))],
+      ["symlink", () => fs.symlink(credentialSource, resolve(aliasRoot, "symlink.txt"), () => undefined)],
+      ["symlinkSync", () => fs.symlinkSync(credentialSource, resolve(aliasRoot, "symlink-sync.txt"))],
+    ] as const) {
+      try {
+        invoke();
+        throw new Error(`${capability} credential alias canary unexpectedly passed`);
+      } catch (error) {
+        if (!(error instanceof DefaultNetworkIsolationError)) throw error;
+      }
+    }
+    for (const [capability, invoke] of [
+      ["copyFile", () => fsPromises.copyFile(credentialSource, resolve(aliasRoot, "promise-copy.txt"))],
+      ["cp", () => fsPromises.cp(credentialSource, resolve(aliasRoot, "promise-cp.txt"))],
+      ["link", () => fsPromises.link(credentialSource, resolve(aliasRoot, "promise-link.txt"))],
+      ["rename", () => fsPromises.rename(credentialSource, resolve(aliasRoot, "promise-rename.txt"))],
+      ["symlink", () => fsPromises.symlink(credentialSource, resolve(aliasRoot, "promise-symlink.txt"))],
+    ] as const) {
+      try {
+        await invoke();
+        throw new Error(`promises.${capability} credential alias canary unexpectedly passed`);
+      } catch (error) {
+        if (!(error instanceof DefaultNetworkIsolationError)) throw error;
+      }
+    }
+    originalSymlinkSync(credentialSource, aliasPath);
+    try {
+      fs.readFileSync(aliasPath);
+      throw new Error("environment-file realpath alias canary unexpectedly passed");
+    } catch (error) {
+      if (!(error instanceof DefaultNetworkIsolationError)) throw error;
+    }
+  } finally {
+    fs.rmSync(aliasRoot, { force: true, recursive: true });
   }
   await blockedAsync("canary")().catch((error: unknown) => {
     if (!(error instanceof DefaultNetworkIsolationError)) throw error;

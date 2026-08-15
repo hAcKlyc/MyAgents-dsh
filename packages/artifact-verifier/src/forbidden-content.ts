@@ -20,6 +20,10 @@ const secretPatterns = [
     expression: new RegExp(["gh", "[pousr]_[A-Za-z0-9]{20,}"].join(""), "u"),
   },
   {
+    rule: "npm-token",
+    expression: new RegExp(["npm", "_[A-Za-z0-9_-]{20,}"].join(""), "u"),
+  },
+  {
     rule: "aws-access-key",
     expression: new RegExp(["AK", "IA[0-9A-Z]{16}"].join(""), "u"),
   },
@@ -33,12 +37,45 @@ const secretPatterns = [
       "iu",
     ),
   },
+  {
+    rule: "authorization-credential",
+    expression: new RegExp(
+      ["AUTHORIZATION", "[\"']?\\s*[:=,]\\s*[\"']?", "(?:BEARER|BASIC)", "\\s+[A-Za-z0-9+./=_-]{12,}"].join(""),
+      "iu",
+    ),
+  },
+  {
+    rule: "url-userinfo-credential",
+    expression: new RegExp(
+      ["(?:https?|registry):\\/\\/", "[^\\s:/@]+", ":[^\\s/@]{8,}@"].join(""),
+      "iu",
+    ),
+  },
+  {
+    rule: "npm-auth-config",
+    expression: new RegExp(
+      ["(?:^|\\n)\\s*", "(?://[^=\\n]*:)?", "(?:_AUTH(?:TOKEN)?|_", "PASS", "WORD|USERNAME)", "\\s*="].join(""),
+      "imu",
+    ),
+  },
 ] as const;
 
 const syntheticHomeOwners = new Set(["fixture", "private", "runner", "user"]);
 
 const lineNumber = (text: string, index: number): number =>
   text.slice(0, index).split("\n").length;
+
+const decodeUtf32 = (buffer: Buffer, endian: "le" | "be"): string => {
+  const codePoints: string[] = [];
+  const alignedLength = buffer.length - (buffer.length % 4);
+  for (let offset = 0; offset < alignedLength; offset += 4) {
+    const value = endian === "le" ? buffer.readUInt32LE(offset) : buffer.readUInt32BE(offset);
+    codePoints.push(value <= 0x10ffff && (value < 0xd800 || value > 0xdfff)
+      ? String.fromCodePoint(value)
+      : "\ufffd");
+  }
+  return codePoints.join("");
+};
 
 const homePathFindings = (path: string, text: string): ForbiddenContentFinding[] => {
   const findings: ForbiddenContentFinding[] = [];
@@ -82,6 +119,11 @@ export const scanForbiddenContent = (
     findings.push({ rule: "private-agent-memory", path });
   }
   if (leaf === ".env" || leaf.startsWith(".env.")) findings.push({ rule: "environment-file", path });
+  const credentialLeaf = [".npmrc", ".git-credentials", ".netrc"].some((name) =>
+    leaf === name || leaf.startsWith(`${name}.`));
+  if (credentialLeaf && path !== ".npmrc") {
+    findings.push({ rule: "credential-file", path });
+  }
   if (leaf.endsWith(".log")) findings.push({ rule: "log-file", path });
   if (leaf.endsWith(".pem") || leaf.endsWith(".key")) findings.push({ rule: "key-file", path });
   if (/(?:^|[-_.])(?:transcript|conversation)(?:[-_.]|$)/iu.test(leaf)) {
@@ -90,10 +132,12 @@ export const scanForbiddenContent = (
 
   const buffer = typeof bytes === "string" ? Buffer.from(bytes, "utf8") : Buffer.from(bytes);
   const decoded = [buffer.toString("utf8")];
-  if (buffer.length >= 4 && buffer.length % 2 === 0) {
-    const byteSwapped = Buffer.from(buffer);
+  if (buffer.length >= 4) {
+    const evenBytes = buffer.subarray(0, buffer.length - (buffer.length % 2));
+    const byteSwapped = Buffer.from(evenBytes);
     byteSwapped.swap16();
-    decoded.push(buffer.toString("utf16le"), byteSwapped.toString("utf16le"));
+    decoded.push(evenBytes.toString("utf16le"), byteSwapped.toString("utf16le"));
+    decoded.push(decodeUtf32(buffer, "le"), decodeUtf32(buffer, "be"));
   }
   const semanticTexts = [...decoded];
   if (leaf.endsWith(".json")) {

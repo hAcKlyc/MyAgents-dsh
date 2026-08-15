@@ -21,7 +21,13 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/artifact-verifier",
     relativeDirectory: "packages/artifact-verifier",
-    allowedFiles: ["package.json", "src/artifact-policy.ts", "src/forbidden-content.ts", "src/index.ts"],
+    allowedFiles: [
+      "package.json",
+      "src/artifact-policy.ts",
+      "src/forbidden-content.ts",
+      "src/index.ts",
+      "src/repository-entry.ts",
+    ],
   },
   {
     packageName: "@myagents-dsh/compatibility",
