@@ -5,5 +5,9 @@
     "outDir": "../dist/tests",
     "tsBuildInfoFile": "../dist/tests/.tsbuildinfo"
   },
-  "include": ["**/*.ts", "../scripts/verify-migration-inventory.ts"]
+  "include": [
+    "**/*.ts",
+    "../scripts/dsh-baseline-policy.ts",
+    "../scripts/verify-migration-inventory.ts"
+  ]
 }

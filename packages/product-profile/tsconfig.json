@@ -3,7 +3,8 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "../../dist/packages/product-profile",
-    "tsBuildInfoFile": "../../dist/packages/product-profile/.tsbuildinfo"
+    "tsBuildInfoFile": "../../dist/packages/product-profile/.tsbuildinfo",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"]
   },
-  "files": []
+  "files": ["src/dsh-public-surface.compile.ts"]
 }

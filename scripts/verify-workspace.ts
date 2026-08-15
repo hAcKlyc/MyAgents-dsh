@@ -20,6 +20,9 @@ const workspacePackages = new Map([
 
 const expectedScripts = new Map([
   ["preinstall", "node scripts/verify-toolchain.mjs"],
+  ["check:dsh", "tsx scripts/verify-dsh-baseline.ts"],
+  ["check:dsh-source", "tsx scripts/snapshot-dsh-baseline.ts --check --check-source ../deepseek-harness"],
+  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh"],
   ["typecheck", "npm run check:foundation && tsc -b --pretty false"],
   ["lint", "eslint . --max-warnings 0"],
   ["test", "npm run check:foundation && vitest run"],
@@ -92,7 +95,6 @@ for (const [dependency, version] of expectedDevelopmentDependencies) {
     `${dependency} must remain exactly pinned to ${version}`,
   );
 }
-
 assert((await readFile(resolve(repositoryRoot, ".nvmrc"), "utf8")).trim() === "24.13.1", ".nvmrc must match the Node engine");
 
 const npmrc = await readFile(resolve(repositoryRoot, ".npmrc"), "utf8");
@@ -139,9 +141,12 @@ for (const relativePath of workspacePackages.keys()) {
     `${relativePath} must participate in the root TypeScript project graph`,
   );
   const workspaceTsconfig = await readJson(resolve(repositoryRoot, relativePath, "tsconfig.json"));
+  const expectedFiles = relativePath === "packages/product-profile"
+    ? ["src/dsh-public-surface.compile.ts"]
+    : [];
   assert(
-    Array.isArray(workspaceTsconfig.files) && workspaceTsconfig.files.length === 0,
-    `${relativePath}/tsconfig.json must explicitly own an empty source set until implementation begins`,
+    JSON.stringify(workspaceTsconfig.files) === JSON.stringify(expectedFiles),
+    `${relativePath}/tsconfig.json must own exactly ${JSON.stringify(expectedFiles)}`,
   );
 }
 

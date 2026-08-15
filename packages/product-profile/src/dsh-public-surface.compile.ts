@@ -1,0 +1,132 @@
+import { Context, Service } from "@deepseek-ai/cordis";
+import type { Plugin } from "@deepseek-ai/cordis";
+import { AgentRegistry } from "@deepseek-ai/dsh-agent";
+import type { Agent, AgentFactory, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from "@deepseek-ai/dsh-agent";
+import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
+import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
+import { AttachmentId, AttachmentStore } from "@deepseek-ai/dsh-attachment";
+import type { ImageAttachmentRef, StoredImageAttachment } from "@deepseek-ai/dsh-attachment";
+import { CredentialProvider, credentialRef } from "@deepseek-ai/dsh-credentials";
+import type { CredentialInfo, ResolvedCredential } from "@deepseek-ai/dsh-credentials";
+import { CompactionEngine, CompactionId } from "@deepseek-ai/dsh-compaction";
+import type { CompactionAgentContext, CompactionResult } from "@deepseek-ai/dsh-compaction";
+import { FileSystem, FsTargetKey, FsVersion } from "@deepseek-ai/dsh-fs";
+import type { FsEditRequest, FsWriteIntent } from "@deepseek-ai/dsh-fs";
+import { JobId, JobRegistry } from "@deepseek-ai/dsh-jobs";
+import type { JobSnapshot, JobStart } from "@deepseek-ai/dsh-jobs";
+import { LlmAdapter, LlmRuntime } from "@deepseek-ai/dsh-llm";
+import type { GenerateOptions, StreamChunk } from "@deepseek-ai/dsh-llm";
+import { apply as applyMcpClient } from "@deepseek-ai/dsh-mcp-client";
+import type { Config as McpConfig, McpResult } from "@deepseek-ai/dsh-mcp-client";
+import { PlanModeController, foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
+import type { PlanProjection } from "@deepseek-ai/dsh-plan-mode";
+import { Session, SessionId, SessionStore } from "@deepseek-ai/dsh-session";
+import type { SessionEvent, SessionHeader } from "@deepseek-ai/dsh-session";
+import { createScope } from "@deepseek-ai/dsh-scope";
+import type { Scope, ScopeKey, Scoped } from "@deepseek-ai/dsh-scope";
+import { PersistenceCoordinator, SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
+import type { PersistenceBackend, SessionInspection, SessionPersistenceSnapshot } from "@deepseek-ai/dsh-session-persistence";
+import { SqliteSessionPersistence } from "@deepseek-ai/dsh-session-persistence-sqlite";
+import type { Config as SqlitePersistenceConfig } from "@deepseek-ai/dsh-session-persistence-sqlite";
+import { ShellExecutor, parseExitStatus } from "@deepseek-ai/dsh-shell";
+import type { ShellExecRequest, ShellRunResult } from "@deepseek-ai/dsh-shell";
+import { SkillRegistry } from "@deepseek-ai/dsh-skill";
+import type { SkillDefinition, SkillProvider } from "@deepseek-ai/dsh-skill";
+import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
+import type { SubagentProvider, SubagentResult } from "@deepseek-ai/dsh-subagent";
+import { SubprocessRuntime, scrubbedParentEnv } from "@deepseek-ai/dsh-subprocess";
+import type { SubprocessHandle, SubprocessSpawnSpec } from "@deepseek-ai/dsh-subprocess";
+import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import type { PromptAssembly, PromptContext, PromptSection } from "@deepseek-ai/dsh-system-prompt";
+import { ToolRuntime, defineTool } from "@deepseek-ai/dsh-tools";
+import type { ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext } from "@deepseek-ai/dsh-tools";
+import { buildGlobCommand, buildGrepCommand, parseGlobArgs, parseGrepArgs } from "@deepseek-ai/dsh-tool-fs-search";
+import type { GlobInput, GrepInput, RipgrepRun } from "@deepseek-ai/dsh-tool-fs-search";
+import { formatFetchOutput, formatSearchOutput, parseFetchArgs, parseSearchArgs } from "@deepseek-ai/dsh-tool-web";
+import type { WebFetchMeta, WebSearchMeta } from "@deepseek-ai/dsh-tool-web";
+import { ApprovalRequestId, ApprovalService } from "@deepseek-ai/dsh-user-approval";
+import type { ApprovalOutcome, ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
+import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
+import type { AskUserQuestionRequest, UserQuestionProvider } from "@deepseek-ai/dsh-user-questions";
+import { WebRuntime } from "@deepseek-ai/dsh-web";
+import type { WebFetchProvider, WebSearchProvider } from "@deepseek-ai/dsh-web";
+
+export const dshPublicSurfaceValues = Object.freeze({
+  AgentLoop,
+  AgentRegistry,
+  ApprovalRequestId,
+  ApprovalService,
+  AttachmentId,
+  AttachmentStore,
+  CompactionEngine,
+  CompactionId,
+  Context,
+  CredentialProvider,
+  FileSystem,
+  FsTargetKey,
+  FsVersion,
+  JobId,
+  JobRegistry,
+  LlmAdapter,
+  LlmRuntime,
+  PersistenceCoordinator,
+  PlanModeController,
+  Service,
+  Session,
+  SessionId,
+  SessionPersistence,
+  SessionStore,
+  ShellExecutor,
+  SkillRegistry,
+  SqliteSessionPersistence,
+  SubagentRuntime,
+  SubprocessRuntime,
+  SystemPrompt,
+  ToolRuntime,
+  UserQuestionService,
+  WebRuntime,
+  applyMcpClient,
+  buildGlobCommand,
+  buildGrepCommand,
+  credentialRef,
+  createScope,
+  defineTool,
+  foldPlanMode,
+  formatFetchOutput,
+  formatSearchOutput,
+  parseFetchArgs,
+  parseGlobArgs,
+  parseGrepArgs,
+  parseSearchArgs,
+  parseExitStatus,
+  scrubbedParentEnv,
+});
+
+export interface DshPublicSurfaceTypes {
+  agent: [Agent, AgentFactory, AgentHandle, CreateAgentOptions, ResumeAgentOptions];
+  agentLoop: [AgentLoopConfig];
+  approval: [ApprovalOutcome, ApprovalRequest];
+  attachment: [ImageAttachmentRef, StoredImageAttachment];
+  cordis: [Plugin];
+  compaction: [CompactionAgentContext, CompactionResult];
+  credentials: [CredentialInfo, ResolvedCredential];
+  filesystem: [FsEditRequest, FsWriteIntent];
+  fsSearchHelpers: [GlobInput, GrepInput, RipgrepRun];
+  jobs: [JobSnapshot, JobStart];
+  llm: [GenerateOptions, StreamChunk];
+  mcp: [McpConfig, McpResult];
+  persistence: [PersistenceBackend, SessionInspection, SessionPersistenceSnapshot];
+  planMode: [PlanProjection];
+  session: [SessionEvent, SessionHeader];
+  scope: [Scope, ScopeKey, Scoped<object>];
+  shell: [ShellExecRequest, ShellRunResult];
+  skill: [SkillDefinition, SkillProvider];
+  sqlitePersistence: [SqlitePersistenceConfig];
+  subagent: [SubagentProvider, SubagentResult];
+  subprocess: [SubprocessHandle, SubprocessSpawnSpec];
+  systemPrompt: [PromptAssembly, PromptContext, PromptSection];
+  tools: [ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext];
+  userQuestions: [AskUserQuestionRequest, UserQuestionProvider];
+  web: [WebFetchProvider, WebSearchProvider];
+  webHelpers: [WebFetchMeta, WebSearchMeta];
+}
