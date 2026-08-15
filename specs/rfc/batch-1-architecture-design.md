@@ -2,7 +2,7 @@
 type: technical-rfc
 status: draft
 batch: 1
-updated: 2026-08-15
+updated: 2026-08-16
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ../protocol/runtime-rpc-v2.md
@@ -214,15 +214,15 @@ DSH `idle`, an enqueue receipt, or the most recent assistant event is not a term
 
 ### 7.2 Resume and crash gap
 
-DSH persists pending inbox messages but a resumed Agent does not expose a public “wake existing inbox without inserting a message” operation. The operation spike must prove a public-seam recovery algorithm. The current candidate is:
+DSH persists pending inbox messages but the fixed baseline originally exposed no public “wake existing inbox without inserting a message” operation. Foundation Spike evidence rejected remove/reinsert because it changes FIFO order and records false cancellation/reinsertion history. ADR 0001 accepts the minimal optional public `Agent.wakePending(messageId)` seam, which the official composition requires in its patched DSH artifact:
 
 - fold product events and the DSH inbox;
 - if acceptance is durable but its root message is absent, admit only the exact immutable `turn/start` retry needed to reconstruct that identified message once;
-- if an accepted message is still pending, remove and reinsert the same immutable MessageId to create a waking delivery without duplicating logical identity;
+- if an accepted message is still pending, append a product recovery-wake intent, call `agent.wakePending(messageId)` without mutating Inbox, append the matching completion receipt, and flush;
 - if a claimed turn was crash-repaired, settle from repaired DSH facts without replaying side effects;
 - if the final `turn/end` is durable but the product terminal is missing, append the recoverable terminal before accepting new work.
 
-This candidate is not accepted until race and restart fixtures prove ordering, queue projection, and exactly-once terminal behavior.
+The crash/FIFO matrix and real patched `ReactLoopAgent` regressions prove repeated wake attempts preserve MessageId/order and converge without a second claim. A missing `wakePending` implementation is a startup invariant failure, not permission to fall back to remove/reinsert or a product scheduler.
 
 ## 8. Tool execution design
 
@@ -368,7 +368,7 @@ Work may overlap only after its shared contract owners freeze. No implementation
 
 | Decision | Current candidate | Required evidence |
 | --- | --- | --- |
-| Operation recovery wake | remove/reinsert same pending MessageId, then normal DSH followup/steer | queued/restart/cancel/race spike |
+| Operation recovery wake | accepted `Agent.wakePending(messageId)` patch with durable product intent/completion receipts and no Inbox splice | ADR 0001, queued/restart/cancel/FIFO/crash matrix, patched-source regressions |
 | Operation terminal | quiescent owned queue plus durable DSH turn facts, product terminal appended and flushed before Runtime event projection | one-to-many turn and crash-gap matrix |
 | PreTool input rewrite | upstream-ready pre-identity transaction before assistant/tool-call audit commit | provider replay, UI/audit, cancellation and revalidation tests |
 | Required product events | optional generated known-event predicate in the public coordinator | append/load/inspect/prepare/resume/HMR and unknown-required refusal spike |

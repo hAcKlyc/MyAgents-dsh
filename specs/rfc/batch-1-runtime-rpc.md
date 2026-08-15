@@ -3,7 +3,7 @@ type: technical-rfc
 status: draft
 batch: 1
 workstream: B1-W1
-updated: 2026-08-15
+updated: 2026-08-16
 depends_on:
   - ../protocol/runtime-rpc-v2.md
   - ./batch-1-architecture-design.md
@@ -29,7 +29,7 @@ The design is verified against DSH commit `47f943859bef60e4160492346772ded9b24f7
 | `turn/start` is appended before Inbox claim; `agent/inbox/claimed` is live-only | product correlation must append its own durable claim fact if it needs crash-stable MessageId-to-turn mapping |
 | one waking driver drains pending next-turn items into successive DSH turns | one product operation may own multiple DSH engine turns |
 | `whenIdle()` is whole-Agent quiescence, not message settlement | it is only one terminal precondition |
-| a resumed Agent reconstructs pending Inbox state but exposes no wake-existing-inbox call | restart wake requires an executable seam proof |
+| a resumed Agent reconstructs pending Inbox state; the fixed baseline lacks a wake-existing-inbox call | the accepted patched artifact must expose optional public `Agent.wakePending(messageId)`, required by official composition |
 | `Session.append` supports declaration-merged log-only events | operation facts can share the Session log at runtime |
 | stock `PersistenceCoordinator` accepts only its generated known-event catalog unless an event is `ignorable` | required out-of-repo product events need a minimal known-event seam or a replacement coordination layer |
 | the DSH SDK wire has three requests and four notifications and returns only enqueue receipts | it is excluded; the native peer is implemented independently |
@@ -212,7 +212,7 @@ interface ProductOperationRecoveryWake {
   clientOperationId: string
   messageId: string
   attemptId: string
-  phase: "intent" | "reinserted"
+  phase: "intent" | "completed"
   recordedAt: number
 }
 
@@ -277,8 +277,8 @@ Fold invariants:
 - every claimed MessageId was previously owned by that operation;
 - one MessageId is owned by one operation;
 - DSH turn numbers increase and cannot be assigned across operations;
-- a cancelled message cannot later be claimed unless a recovery-wake receipt explicitly reactivates the same identity;
-- every recovery-wake receipt has one earlier matching intent and neither phase may change operation ownership or MessageId;
+- a cancelled message cannot later be claimed or reactivated by recovery;
+- every recovery-wake completion has one earlier matching intent, targets the same still-pending MessageId, and neither phase changes operation ownership or Inbox history;
 - terminal is last and immutable;
 - malformed product event sequences put the Session in `recovery_required`.
 
@@ -374,20 +374,21 @@ Resume performs these steps before Session ready:
 
 The `accepted_undelivered` case additionally exposes only the exact-retry admission described in section 11.1. It is not a general turn path and cannot advance another operation.
 
-### 13.1 Pending Inbox wake Spike
+### 13.1 Accepted pending Inbox wake seam
 
-The current candidate uses only public APIs:
+ADR 0001 and the Foundation source-patch gate accept this public API on the fixed DSH baseline:
 
 ```text
-read the exact pending UserMessage
+fold and read the exact still-pending MessageId
   -> append product recovery-wake intent
-  -> agent.inbox.remove(messageId)
-  -> agent.followup(the same immutable message and MessageId)
-  -> append product recovery-wake reinserted receipt
+  -> agent.wakePending(messageId)
+  -> append product recovery-wake completed receipt
   -> flush
 ```
 
-The remove creates a durable cancelled splice and followup reinserts the identity while waking the idle driver. The Spike must prove, under crashes after every line:
+`wakePending` is level-triggered/latching, writes no Inbox event, and returns whether the identity was still pending. The official profile fails startup unless the concrete Agent implements it. Under a `false` result or a crash after any line, recovery refolds durable Inbox/turn facts; it never guesses that the message was claimed and never falls back to remove/reinsert.
+
+The accepted Spike and patched-source regressions prove:
 
 - no duplicate model-visible user message;
 - no duplicate operation ownership;
@@ -396,8 +397,6 @@ The remove creates a durable cancelled splice and followup reinserts the identit
 - the same MessageId is claimable exactly once after recovery;
 - repeated resume converges;
 - `foldConsumedWork` and Session repair remain correct.
-
-If it fails, propose the smallest DSH Agent public method that wakes an already-pending Inbox without inserting another message. Do not reach into `ReactLoopAgent.wakeDriver()`.
 
 ## 14. Event projection
 
@@ -497,7 +496,7 @@ Wire errors carry stable code, retryable flag, and bounded safe detail. They nev
 ### 18.3 DSH seam Spikes required before RFC acceptance
 
 1. Product required Session events survive append, persistence, inspect, prepare, resume, HMR adoption, and unknown-event refusal through the proposed known-event predicate.
-2. Pending Inbox restart wake converges under the complete crash/race matrix.
+2. The accepted `Agent.wakePending` patch remains green under the complete crash/FIFO/race matrix.
 3. PreTool authoritative input rewrite is decided for Workstream 2, even though its implementation is owned by the Agent Experience RFC.
 
 ## 19. Rejected alternatives
