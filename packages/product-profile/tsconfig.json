@@ -7,9 +7,11 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"]
   },
   "files": [
+    "manifests/accepted-patched-dsh-artifact-v1.json",
     "src/dsh-public-surface.compile.ts",
     "src/official-profile-authority.generated.ts",
     "src/index.ts",
+    "src/patched-dsh-artifact.ts",
     "src/platform-contract.ts",
     "src/profile.ts"
   ]

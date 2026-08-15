@@ -44,11 +44,13 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     packageName: "@myagents-dsh/product-profile",
     relativeDirectory: "packages/product-profile",
     allowedFiles: [
+      "manifests/accepted-patched-dsh-artifact-v1.json",
       "manifests/official-product-profile-v1.json",
       "manifests/platform-targets-v1.json",
       "package.json",
       "src/index.ts",
       "src/official-profile-authority.generated.ts",
+      "src/patched-dsh-artifact.ts",
       "src/platform-contract.ts",
       "src/profile.ts",
     ],
@@ -72,12 +74,17 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/runtime-product",
     relativeDirectory: "packages/runtime-product",
-    allowedFiles: ["package.json"],
+    allowedFiles: ["package.json", "src/composition.ts", "src/index.ts"],
   },
   {
     packageName: "@myagents-dsh/test-host",
     relativeDirectory: "packages/test-host",
     allowedFiles: ["package.json", "src/index.ts", "src/memory-peer.ts", "src/standard-test-host.ts"],
+  },
+  {
+    packageName: "@myagents-dsh/testkit",
+    relativeDirectory: "packages/testkit",
+    allowedFiles: ["package.json", "src/fake-llm-adapter.ts", "src/index.ts"],
   },
 ]);
 

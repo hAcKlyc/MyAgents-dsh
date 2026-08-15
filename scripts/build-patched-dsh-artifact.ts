@@ -732,7 +732,7 @@ const verifyArtifactCompile = (
   });
 };
 
-const verifyExistingBundle = (
+export const verifyExistingBundle = (
   artifactRoot: string,
   expectedManifestSha256: string,
   environment: NodeJS.ProcessEnv,

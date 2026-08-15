@@ -16,6 +16,7 @@ const workspacePackages = new Map([
   ["packages/protocol", "@myagents-dsh/protocol"],
   ["packages/runtime-product", "@myagents-dsh/runtime-product"],
   ["packages/test-host", "@myagents-dsh/test-host"],
+  ["packages/testkit", "@myagents-dsh/testkit"],
 ]);
 
 const expectedScripts = new Map([
@@ -26,6 +27,7 @@ const expectedScripts = new Map([
   ["check:dsh-seams", "tsx scripts/verify-dsh-seams.ts"],
   ["build:dsh-artifact", "tsx scripts/build-patched-dsh-artifact.ts"],
   ["verify:dsh-artifact", "tsx scripts/build-patched-dsh-artifact.ts"],
+  ["check:dsh-runtime-composition", "tsx scripts/verify-dsh-runtime-composition.ts"],
   ["check:dsh-seams-source", "tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test"],
   ["generate:protocol", "tsx scripts/generate-protocol.ts"],
   ["check:protocol", "tsx scripts/generate-protocol.ts --check"],
@@ -65,9 +67,11 @@ const expectedWorkspaceFiles = new Map([
     "src/manifest.ts",
   ]],
   ["packages/product-profile", [
+    "manifests/accepted-patched-dsh-artifact-v1.json",
     "src/dsh-public-surface.compile.ts",
     "src/official-profile-authority.generated.ts",
     "src/index.ts",
+    "src/patched-dsh-artifact.ts",
     "src/platform-contract.ts",
     "src/profile.ts",
   ]],
@@ -79,8 +83,9 @@ const expectedWorkspaceFiles = new Map([
     "src/validation.ts",
     "generated/host-client.generated.ts",
   ]],
-  ["packages/runtime-product", []],
+  ["packages/runtime-product", ["src/composition.ts", "src/index.ts"]],
   ["packages/test-host", ["src/index.ts", "src/memory-peer.ts", "src/standard-test-host.ts"]],
+  ["packages/testkit", ["src/fake-llm-adapter.ts", "src/index.ts"]],
 ]);
 
 const readJson = async (path: string): Promise<JsonObject> => {
