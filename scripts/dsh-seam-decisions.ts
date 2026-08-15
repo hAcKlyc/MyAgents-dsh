@@ -61,11 +61,18 @@ export const PATCHED_SOURCE_TESTS = Object.freeze([
 const WAKE_PATCH = "specs/dsh/patches/0001-agent-wake-pending.patch";
 const PRE_ASSISTANT_COMMIT_PATCH = "specs/dsh/patches/0002-pre-assistant-commit.patch";
 const KNOWN_EVENT_PATCH = "specs/dsh/patches/0003-persistence-known-event-predicate.patch";
-const PATCHES = Object.freeze([
+export const DSH_SEAM_PATCHES = Object.freeze([
   WAKE_PATCH,
   PRE_ASSISTANT_COMMIT_PATCH,
   KNOWN_EVENT_PATCH,
-]);
+] as const);
+
+export interface DshSeamPatchSnapshot {
+  readonly bytes: Buffer;
+  readonly order: number;
+  readonly path: typeof DSH_SEAM_PATCHES[number];
+  readonly sha256: string;
+}
 
 function sha256(bytes: string | Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -83,9 +90,21 @@ function patchEvidence(path: string, order: number): {
   });
 }
 
+export function readDshSeamPatchSet(): readonly DshSeamPatchSnapshot[] {
+  return Object.freeze(DSH_SEAM_PATCHES.map((path, index) => {
+    const bytes = Buffer.from(readFileSync(resolve(repositoryRoot, path)));
+    return Object.freeze({
+      bytes,
+      order: index + 1,
+      path,
+      sha256: sha256(bytes),
+    });
+  }));
+}
+
 export function buildDshSeamDecisions(): object {
-  const patchEvidenceByPath = new Map(
-    PATCHES.map((path, index) => [path, patchEvidence(path, index + 1)]),
+  const patchEvidenceByPath = new Map<string, ReturnType<typeof patchEvidence>>(
+    DSH_SEAM_PATCHES.map((path, index) => [path, patchEvidence(path, index + 1)]),
   );
   const patch = (path: string): ReturnType<typeof patchEvidence> => {
     const evidence = patchEvidenceByPath.get(path);
@@ -98,7 +117,7 @@ export function buildDshSeamDecisions(): object {
     recordedAt: "2026-08-16",
     authority: DSH_SEAM_SOURCE,
     productProfileActivation: "forbidden-until-patched-DSH-artifact-and-batch-1-gate",
-    patchSeries: PATCHES.map((path, index) => patchEvidence(path, index + 1)),
+    patchSeries: DSH_SEAM_PATCHES.map((path, index) => patchEvidence(path, index + 1)),
     decisions: [
       {
         id: "DSH-SEAM-001",
@@ -179,23 +198,29 @@ export function serializeDshSeamDecisions(): string {
   return `${JSON.stringify(buildDshSeamDecisions(), null, 2)}\n`;
 }
 
-function git(sourceRoot: string, args: string[], env?: NodeJS.ProcessEnv): Buffer {
+function git(sourceRoot: string, args: string[], env?: NodeJS.ProcessEnv, input?: Buffer): Buffer {
   return execFileSync("git", ["-C", sourceRoot, ...args], {
     encoding: "buffer",
     env: env ?? process.env,
+    input,
     maxBuffer: 16 * 1024 * 1024,
   });
 }
 
-const run = (command: string, args: string[], cwd: string): void => {
+const run = (command: string, args: string[], cwd: string, input?: Buffer): void => {
   execFileSync(command, args, {
     cwd,
     env: process.env,
-    stdio: "inherit",
+    input,
+    stdio: input === undefined ? "inherit" : ["pipe", "inherit", "inherit"],
   });
 };
 
-export function verifyDshSeamSource(sourceRoot: string, compileAndTest = false): void {
+export function verifyDshSeamSource(
+  sourceRoot: string,
+  compileAndTest = false,
+  patchSet: readonly DshSeamPatchSnapshot[] = readDshSeamPatchSet(),
+): void {
   const root = resolve(sourceRoot);
   const commit = git(root, ["rev-parse", `${DSH_SEAM_SOURCE.commit}^{commit}`]).toString("utf8").trim();
   const tree = git(root, ["rev-parse", `${DSH_SEAM_SOURCE.commit}^{tree}`]).toString("utf8").trim();
@@ -218,10 +243,9 @@ export function verifyDshSeamSource(sourceRoot: string, compileAndTest = false):
   };
   try {
     git(root, ["read-tree", DSH_SEAM_SOURCE.commit], environment);
-    for (const patchPath of PATCHES) {
-      const absolutePatch = resolve(repositoryRoot, patchPath);
-      git(root, ["apply", "--cached", "--check", absolutePatch], environment);
-      git(root, ["apply", "--cached", absolutePatch], environment);
+    for (const patch of patchSet) {
+      git(root, ["apply", "--cached", "--check", "-"], environment, patch.bytes);
+      git(root, ["apply", "--cached", "-"], environment, patch.bytes);
     }
     git(root, ["diff", "--cached", "--check"], environment);
   } finally {
@@ -233,8 +257,8 @@ export function verifyDshSeamSource(sourceRoot: string, compileAndTest = false):
   const worktree = join(worktreeParent, "deepseek-harness");
   try {
     run("git", ["-C", root, "worktree", "add", "--detach", worktree, DSH_SEAM_SOURCE.commit], root);
-    for (const patchPath of PATCHES) {
-      run("git", ["apply", resolve(repositoryRoot, patchPath)], worktree);
+    for (const patch of patchSet) {
+      run("git", ["apply", "-"], worktree, patch.bytes);
     }
     run("git", ["diff", "--check"], worktree);
     run("corepack", [

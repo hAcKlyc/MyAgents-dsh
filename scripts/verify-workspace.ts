@@ -24,6 +24,8 @@ const expectedScripts = new Map([
   ["check:dsh-source", "tsx scripts/snapshot-dsh-baseline.ts --check --check-source ../deepseek-harness"],
   ["generate:dsh-seams", "tsx scripts/generate-dsh-seams.ts"],
   ["check:dsh-seams", "tsx scripts/verify-dsh-seams.ts"],
+  ["build:dsh-artifact", "tsx scripts/build-patched-dsh-artifact.ts"],
+  ["verify:dsh-artifact", "tsx scripts/build-patched-dsh-artifact.ts"],
   ["check:dsh-seams-source", "tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test"],
   ["generate:protocol", "tsx scripts/generate-protocol.ts"],
   ["check:protocol", "tsx scripts/generate-protocol.ts --check"],

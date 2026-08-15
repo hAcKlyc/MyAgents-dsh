@@ -10,6 +10,7 @@ import {
   auditPackedFileList,
   normalizeArtifactPath,
   readRegularFileNoFollow,
+  readRegularFileNoFollowSync,
   scanForbiddenContent,
 } from "../packages/artifact-verifier/src/index.js";
 
@@ -165,6 +166,9 @@ describe("repository and packed-artifact forbidden-content policy", () => {
       .resolves.toBeInstanceOf(Buffer);
     await expect(readRegularFileNoFollow(resolve(repositoryRoot, "CLAUDE.md")))
       .rejects.toThrow("singly linked regular file");
+    expect(readRegularFileNoFollowSync(resolve(repositoryRoot, "AGENTS.md"))).toBeInstanceOf(Buffer);
+    expect(() => readRegularFileNoFollowSync(resolve(repositoryRoot, "CLAUDE.md")))
+      .toThrow("singly linked regular file");
     const hardlinkRoot = await mkdtemp(resolve(tmpdir(), "myagents-dsh-hardlink-canary-"));
     try {
       const source = resolve(hardlinkRoot, "source.txt");
@@ -172,6 +176,7 @@ describe("repository and packed-artifact forbidden-content policy", () => {
       await writeFile(source, "SYNTHETIC_CANARY");
       await link(source, alias);
       await expect(readRegularFileNoFollow(alias)).rejects.toThrow("singly linked regular file");
+      expect(() => readRegularFileNoFollowSync(alias)).toThrow("singly linked regular file");
     } finally {
       await rm(hardlinkRoot, { force: true, recursive: true });
     }

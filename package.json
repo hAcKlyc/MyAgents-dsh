@@ -32,6 +32,8 @@
     "check:dsh": "tsx scripts/verify-dsh-baseline.ts",
     "generate:dsh-seams": "tsx scripts/generate-dsh-seams.ts",
     "check:dsh-seams": "tsx scripts/verify-dsh-seams.ts",
+    "build:dsh-artifact": "tsx scripts/build-patched-dsh-artifact.ts",
+    "verify:dsh-artifact": "tsx scripts/build-patched-dsh-artifact.ts",
     "generate:protocol": "tsx scripts/generate-protocol.ts",
     "check:protocol": "tsx scripts/generate-protocol.ts --check",
     "check:compatibility": "tsx scripts/verify-compatibility.ts",

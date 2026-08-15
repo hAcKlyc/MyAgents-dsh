@@ -1,0 +1,33 @@
+import type { Context } from "@deepseek-ai/cordis";
+import type {
+  Agent,
+  PreparedAssistantCommit,
+  PreparedAssistantToolCall,
+} from "@deepseek-ai/dsh-agent";
+import type { MessageId } from "@deepseek-ai/dsh-llm";
+import type { PersistenceCoordinatorOptions } from "@deepseek-ai/dsh-session-persistence";
+
+export interface PatchedDshSeamTypes {
+  readonly commit: PreparedAssistantCommit;
+  readonly toolCall: PreparedAssistantToolCall;
+}
+
+export const compilePatchedDshSeams = (
+  ctx: Context,
+  agent: Agent,
+  messageId: MessageId,
+  persistence: PersistenceCoordinatorOptions,
+): PersistenceCoordinatorOptions => {
+  const woke: boolean | undefined = agent.wakePending?.(messageId);
+  void woke;
+  ctx.on("agent/pre-assistant-commit", async ({ commit, signal }, next) => {
+    const prepared: Readonly<PreparedAssistantCommit> = commit;
+    signal.throwIfAborted();
+    void prepared;
+    return next();
+  });
+  return {
+    ...persistence,
+    isKnownEventType: (type: string) => type.startsWith("myagents/"),
+  };
+};
