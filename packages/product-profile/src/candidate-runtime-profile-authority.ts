@@ -1,6 +1,9 @@
 import candidateProfileJson from "../manifests/batch-1-candidate-profile-v1.json" with { type: "json" };
 
-import { BATCH1_CANDIDATE_PROFILE_SHA256 } from "./official-profile-authority.generated.js";
+import {
+  BATCH1_CANDIDATE_PROFILE_SHA256,
+  REQUIRED_RUNTIME_NODE_VERSION,
+} from "./official-profile-authority.generated.js";
 import {
   BATCH1_INSTALLED_PLUGIN_ALLOWLIST,
   candidateRuntimeProfileDigest,
@@ -24,4 +27,15 @@ const deepFreeze = <Value>(value: Value): Value => {
 };
 
 export const BATCH1_CANDIDATE_PROFILE = deepFreeze(candidate);
-export { BATCH1_CANDIDATE_PROFILE_SHA256 };
+export { BATCH1_CANDIDATE_PROFILE_SHA256, REQUIRED_RUNTIME_NODE_VERSION };
+
+export const assertRuntimeNodeVersion = (value: unknown): string => {
+  if (typeof value !== "string"
+    || !/^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/u.test(value)) {
+    throw new TypeError("Runtime Node version must be exact semver");
+  }
+  if (value !== REQUIRED_RUNTIME_NODE_VERSION) {
+    throw new Error(`Runtime requires Node ${REQUIRED_RUNTIME_NODE_VERSION}; received ${value}`);
+  }
+  return value;
+};

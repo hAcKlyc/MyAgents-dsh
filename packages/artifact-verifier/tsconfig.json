@@ -9,6 +9,12 @@
     "src/artifact-policy.ts",
     "src/forbidden-content.ts",
     "src/index.ts",
-    "src/repository-entry.ts"
+    "src/repository-entry.ts",
+    "src/runtime-artifact.ts",
+    "src/self-check.ts"
+  ],
+  "references": [
+    { "path": "../product-profile" },
+    { "path": "../protocol" }
   ]
 }

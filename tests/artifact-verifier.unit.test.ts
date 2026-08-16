@@ -13,8 +13,44 @@ import {
   readRegularFileNoFollowSync,
   scanForbiddenContent,
 } from "../packages/artifact-verifier/src/index.js";
+import {
+  ARTIFACT_LAUNCHER_PATH,
+  isExactArtifactLauncherChildProcessSource,
+} from "../scripts/repository-security-policy.js";
 
 describe("repository and packed-artifact forbidden-content policy", () => {
+  it("recognizes only the exact AST-bound child-process launcher import", () => {
+    const exact = [
+      "import {",
+      "  spawn,",
+      "  spawnSync,",
+      "  type ChildProcessWithoutNullStreams,",
+      "  type SpawnOptionsWithoutStdio,",
+      "} from \"node:child_process\";",
+    ].join("\n");
+    expect(isExactArtifactLauncherChildProcessSource(
+      ARTIFACT_LAUNCHER_PATH,
+      "node:child_process",
+      exact,
+    )).toBe(true);
+
+    const textDecoyAndEscapedDefault = [
+      "// import { spawn, spawnSync } from \"node:child_process\";",
+      "import childProcess from \"node:child\\u005fprocess\";",
+      "void childProcess;",
+    ].join("\n");
+    expect(isExactArtifactLauncherChildProcessSource(
+      ARTIFACT_LAUNCHER_PATH,
+      "node:child_process",
+      textDecoyAndEscapedDefault,
+    )).toBe(false);
+    expect(isExactArtifactLauncherChildProcessSource(
+      "packages/runtime-product/src/escape.ts",
+      "node:child_process",
+      exact,
+    )).toBe(false);
+  });
+
   it("detects credential canaries without embedding a credential in the repository", () => {
     const canaries = [
       ["sk", "-", "A".repeat(32)].join(""),

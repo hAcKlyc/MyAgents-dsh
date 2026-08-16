@@ -220,6 +220,7 @@ export class JsonRpcPeer {
     this.#input.on("data", this.#onData);
     this.#input.once("end", this.#onInputEnd);
     this.#input.once("error", this.#onInputError);
+    this.#input.once("close", this.#onInputClose);
     this.#output.once("error", this.#onOutputError);
     this.#output.once("close", this.#onOutputClose);
     if (this.#input.destroyed || this.#input.readableEnded) {
@@ -436,6 +437,7 @@ export class JsonRpcPeer {
     this.#input.off("data", this.#onData);
     this.#input.off("end", this.#onInputEnd);
     this.#input.off("error", this.#onInputError);
+    this.#input.off("close", this.#onInputClose);
     this.#output.off("error", this.#onOutputError);
     this.#output.off("close", this.#onOutputClose);
     for (const completion of this.#activeWriteCompletions) completion.reject(reason);
@@ -514,6 +516,10 @@ export class JsonRpcPeer {
 
   readonly #onInputError = (error: Error): void => {
     this.#fatal(new ProtocolError("protocol_input_error", error.message, true));
+  };
+
+  readonly #onInputClose = (): void => {
+    this.#fatal(new ProtocolError("protocol_input_closed", "Protocol input closed", true));
   };
 
   readonly #onOutputError = (error: Error): void => {

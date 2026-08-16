@@ -16,7 +16,13 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/runtime-server",
     relativeDirectory: "apps/runtime-server",
-    allowedFiles: ["package.json", "src/index.ts", "src/lifecycle.ts"],
+    allowedFiles: [
+      "package.json",
+      "src/index.ts",
+      "src/lifecycle.ts",
+      "src/process.ts",
+      "src/self-check.ts",
+    ],
   },
   {
     packageName: "@myagents-dsh/artifact-verifier",
@@ -27,6 +33,8 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/forbidden-content.ts",
       "src/index.ts",
       "src/repository-entry.ts",
+      "src/runtime-artifact.ts",
+      "src/self-check.ts",
     ],
   },
   {
@@ -100,7 +108,13 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/test-host",
     relativeDirectory: "packages/test-host",
-    allowedFiles: ["package.json", "src/index.ts", "src/memory-peer.ts", "src/standard-test-host.ts"],
+    allowedFiles: [
+      "package.json",
+      "src/artifact-launcher.ts",
+      "src/index.ts",
+      "src/memory-peer.ts",
+      "src/standard-test-host.ts",
+    ],
   },
   {
     packageName: "@myagents-dsh/testkit",

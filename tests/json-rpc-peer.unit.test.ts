@@ -690,6 +690,7 @@ describe("strict bidirectional JSON-RPC peer", () => {
       },
     });
     const inputBaseline = {
+      close: input.listenerCount("close"),
       data: input.listenerCount("data"),
       end: input.listenerCount("end"),
       error: input.listenerCount("error"),
@@ -723,6 +724,7 @@ describe("strict bidirectional JSON-RPC peer", () => {
     expect(input.listenerCount("data")).toBe(inputBaseline.data);
     expect(input.listenerCount("end")).toBe(inputBaseline.end);
     expect(input.listenerCount("error")).toBe(inputBaseline.error);
+    expect(input.listenerCount("close")).toBe(inputBaseline.close);
     expect(output.listenerCount("error")).toBe(outputBaseline.error);
     expect(output.listenerCount("close")).toBe(outputBaseline.close);
     input.destroy();
@@ -762,5 +764,25 @@ describe("strict bidirectional JSON-RPC peer", () => {
     outputPeer.close();
     openInput.destroy();
     endedOutput.destroy();
+  });
+
+  it("fails closed when an open input stream is destroyed without EOF", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    output.resume();
+    const fatals: ProtocolError[] = [];
+    const peer = new JsonRpcPeer({
+      input,
+      output,
+      role: "host",
+      limits: REFERENCE_PROTOCOL_LIMITS,
+      onFatalError: (error) => fatals.push(error),
+    });
+    input.destroy();
+    await tick();
+    expect(fatals).toHaveLength(1);
+    expect(fatals[0]?.code).toBe("protocol_input_closed");
+    peer.close();
+    output.destroy();
   });
 });

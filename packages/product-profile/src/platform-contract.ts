@@ -10,6 +10,19 @@ export const PLATFORM_TARGETS = Object.freeze([
 
 export type PlatformTarget = (typeof PLATFORM_TARGETS)[number];
 
+export const resolveRuntimePlatformTarget = (
+  platform: unknown,
+  architecture: unknown,
+): PlatformTarget => {
+  if (typeof platform !== "string" || typeof architecture !== "string") {
+    throw new TypeError("Runtime platform and architecture must be primitive strings");
+  }
+  if (platform === "darwin" && architecture === "arm64") return "darwin-arm64";
+  if (platform === "win32" && architecture === "x64") return "win32-x64";
+  if (platform === "linux" && architecture === "x64") return "linux-x64";
+  throw new Error(`unsupported Runtime platform target: ${platform}-${architecture}`);
+};
+
 export const PLATFORM_EVIDENCE_STATES = Object.freeze([
   "contract_defined",
   "implementation-complete_pending-native-validation",

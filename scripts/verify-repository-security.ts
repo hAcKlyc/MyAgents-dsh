@@ -15,6 +15,10 @@ import {
   type PackedFile,
 } from "../packages/artifact-verifier/src/index.js";
 import { analyzeModuleLoads } from "./dsh-baseline-policy.js";
+import {
+  ARTIFACT_LAUNCHER_PATH,
+  isExactArtifactLauncherChildProcessSource,
+} from "./repository-security-policy.js";
 
 type PackResult = {
   name?: unknown;
@@ -39,7 +43,6 @@ const networkCapablePackages = new Set([
   "undici",
 ]);
 const networkGuardPath = "tests/setup/default-isolation.ts";
-
 interface PackIsolationPaths {
   readonly cache: string;
   readonly globalConfig: string;
@@ -128,7 +131,8 @@ for (const relativePath of repositoryPaths) {
     && /\.(?:[cm]?[jt]s|[jt]sx)$/u.test(relativePath)) {
     const source = bytes.toString("utf8");
     for (const specifier of analyzeModuleLoads(source, relativePath).specifiers) {
-      if (isNetworkCapableModule(specifier)) {
+      if (isNetworkCapableModule(specifier)
+        && !isExactArtifactLauncherChildProcessSource(relativePath, specifier, source)) {
         failures.push(`${relativePath} imports network-capable module ${specifier} outside the isolation/composition owner`);
       }
     }
@@ -137,6 +141,10 @@ for (const relativePath of repositoryPaths) {
       failures.push(`${relativePath} contains a direct environment-file path outside the isolation-policy test owner`);
     }
   }
+}
+
+if (!repositoryPaths.includes(ARTIFACT_LAUNCHER_PATH)) {
+  failures.push("artifact process launcher security owner is absent from the repository inventory");
 }
 
 const npmCli = process.env.npm_execpath

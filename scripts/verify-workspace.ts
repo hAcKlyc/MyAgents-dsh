@@ -54,12 +54,14 @@ const expectedDevelopmentDependencies = new Map([
   ["vitest", "4.1.10"],
 ]);
 const expectedWorkspaceFiles = new Map([
-  ["apps/runtime-server", ["src/index.ts", "src/lifecycle.ts"]],
+  ["apps/runtime-server", ["src/index.ts", "src/lifecycle.ts", "src/process.ts", "src/self-check.ts"]],
   ["packages/artifact-verifier", [
     "src/artifact-policy.ts",
     "src/forbidden-content.ts",
     "src/index.ts",
     "src/repository-entry.ts",
+    "src/runtime-artifact.ts",
+    "src/self-check.ts",
   ]],
   ["packages/compatibility", [
     "manifests/myagents-agent-sdk-compatibility-v1.json",
@@ -98,7 +100,12 @@ const expectedWorkspaceFiles = new Map([
   ]],
   ["packages/rpc-server", ["src/event-projector.ts", "src/index.ts", "src/native-rpc-service.ts"]],
   ["packages/runtime-product", ["src/composition.ts", "src/index.ts", "src/primary-session.ts"]],
-  ["packages/test-host", ["src/index.ts", "src/memory-peer.ts", "src/standard-test-host.ts"]],
+  ["packages/test-host", [
+    "src/artifact-launcher.ts",
+    "src/index.ts",
+    "src/memory-peer.ts",
+    "src/standard-test-host.ts",
+  ]],
   ["packages/testkit", ["src/fake-llm-adapter.ts", "src/index.ts"]],
 ]);
 

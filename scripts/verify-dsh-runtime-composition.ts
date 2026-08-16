@@ -1,11 +1,14 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -16,9 +19,18 @@ import { parseArgs } from "node:util";
 
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
+  BATCH1_CANDIDATE_PROFILE,
   BATCH1_CANDIDATE_PROFILE_SHA256,
 } from "@myagents-dsh/product-profile";
 import protocolMetaJson from "@myagents-dsh/protocol/protocol-meta.json" with { type: "json" };
+
+import {
+  createRuntimeArtifactManifest,
+  serializeRuntimeArtifactManifest,
+  verifyInstalledRuntimeArtifact,
+  type RuntimeArtifactBuildAuthority,
+  type RuntimeArtifactManifestAuthority,
+} from "../packages/artifact-verifier/src/runtime-artifact.js";
 
 import {
   assertContainedNodeModules,
@@ -31,6 +43,67 @@ import { evaluateToolchain } from "./toolchain-policy.mjs";
 type JsonObject = Record<string, unknown>;
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
+const compareCodePoint = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+const digestBytes = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+
+const runtimeCompositionSourcePaths = [
+  "apps/runtime-server/src/index.ts",
+  "apps/runtime-server/src/lifecycle.ts",
+  "apps/runtime-server/src/process.ts",
+  "apps/runtime-server/src/self-check.ts",
+  "packages/artifact-verifier/src/artifact-policy.ts",
+  "packages/artifact-verifier/src/forbidden-content.ts",
+  "packages/artifact-verifier/src/index.ts",
+  "packages/artifact-verifier/src/repository-entry.ts",
+  "packages/artifact-verifier/src/runtime-artifact.ts",
+  "packages/artifact-verifier/src/self-check.ts",
+  "packages/operation-runtime/src/events.ts",
+  "packages/operation-runtime/src/fold.ts",
+  "packages/operation-runtime/src/index.ts",
+  "packages/operation-runtime/src/limits.ts",
+  "packages/operation-runtime/src/service.ts",
+  "packages/operation-runtime/src/terminal.ts",
+  "packages/product-profile/src/candidate-runtime-profile-authority.ts",
+  "packages/product-profile/src/candidate-runtime-profile.ts",
+  "packages/product-profile/src/index.ts",
+  "packages/product-profile/src/official-profile-authority.generated.ts",
+  "packages/product-profile/src/patched-dsh-artifact.ts",
+  "packages/product-profile/src/platform-contract.ts",
+  "packages/product-profile/src/profile.ts",
+  "packages/protocol/generated/host-client.generated.ts",
+  "packages/protocol/src/contract-source.ts",
+  "packages/protocol/src/errors.ts",
+  "packages/protocol/src/index.ts",
+  "packages/protocol/src/peer.ts",
+  "packages/protocol/src/validation.ts",
+  "packages/rpc-server/src/index.ts",
+  "packages/rpc-server/src/event-projector.ts",
+  "packages/rpc-server/src/native-rpc-service.ts",
+  "packages/runtime-product/src/composition.ts",
+  "packages/runtime-product/src/index.ts",
+  "packages/runtime-product/src/primary-session.ts",
+  "packages/test-host/src/artifact-launcher.ts",
+  "packages/test-host/src/index.ts",
+  "packages/test-host/src/memory-peer.ts",
+  "packages/test-host/src/standard-test-host.ts",
+  "packages/testkit/src/fake-llm-adapter.ts",
+  "packages/testkit/src/index.ts",
+  "tests/fixtures/dsh-runtime-composition.artifact.ts",
+  "tests/fixtures/runtime-process-conformance.artifact.ts",
+  "tests/fixtures/runtime-server-process.artifact.ts",
+] as const;
+
+const runtimePackageWorkspaces = [
+  ["packages/product-profile", "@myagents-dsh/product-profile"],
+  ["packages/protocol", "@myagents-dsh/protocol"],
+  ["packages/operation-runtime", "@myagents-dsh/operation-runtime"],
+  ["packages/rpc-server", "@myagents-dsh/rpc-server"],
+  ["packages/runtime-product", "@myagents-dsh/runtime-product"],
+  ["packages/testkit", "@myagents-dsh/testkit"],
+  ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
+  ["apps/runtime-server", "@myagents-dsh/runtime-server"],
+] as const;
+const runtimeVendoredExternalPackages = ["typebox"] as const;
 
 const run = (
   command: string,
@@ -138,6 +211,25 @@ const collectDshVersions = (tree: JsonObject): Map<string, Set<string>> => {
   return versions;
 };
 
+const runtimeDependencySection = (
+  value: unknown,
+  description: string,
+): Record<string, string> | undefined => {
+  if (value === undefined) return undefined;
+  const section = exactObject(value, description);
+  const result: Record<string, string> = {};
+  for (const [name, range] of Object.entries(section).sort(([left], [right]) =>
+    compareCodePoint(left, right))) {
+    if (typeof range !== "string") throw new TypeError(`${description}.${name} must be a string`);
+    result[name] = name.startsWith("@myagents-dsh/")
+      ? "0.0.0"
+      : name.startsWith("@deepseek-ai/dsh-")
+        ? ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
+        : range;
+  }
+  return result;
+};
+
 const stageBuiltPackage = (
   consumerRoot: string,
   buildRoot: string,
@@ -185,13 +277,39 @@ const stageBuiltPackage = (
       "./protocol-fixtures.json": "./generated/protocol-fixtures.json",
       "./protocol-meta.json": "./generated/protocol-meta.json",
     };
+  } else if (workspaceDirectory === "apps/runtime-server") {
+    packageExports = {
+      ".": "./src/index.js",
+      "./process": "./src/process.js",
+      "./self-check": "./src/self-check.js",
+    };
+  } else if (workspaceDirectory === "packages/artifact-verifier") {
+    packageExports = {
+      ".": "./src/index.js",
+      "./runtime-artifact": "./src/runtime-artifact.js",
+      "./self-check": "./src/self-check.js",
+    };
   }
+  const workspaceManifest = exactObject(
+    JSON.parse(readFileSync(resolve(repositoryRoot, workspaceDirectory, "package.json"), "utf8")) as unknown,
+    `${workspaceDirectory} package manifest`,
+  );
+  const dependencies = runtimeDependencySection(
+    workspaceManifest.dependencies,
+    `${workspaceDirectory} dependencies`,
+  );
+  const peerDependencies = runtimeDependencySection(
+    workspaceManifest.peerDependencies,
+    `${workspaceDirectory} peer dependencies`,
+  );
   writeFileSync(resolve(destination, "package.json"), `${JSON.stringify({
     name: packageName,
     version: "0.0.0",
     private: true,
     type: "module",
     exports: packageExports,
+    ...(dependencies === undefined ? {} : { dependencies }),
+    ...(peerDependencies === undefined ? {} : { peerDependencies }),
   }, null, 2)}\n`);
 };
 
@@ -201,36 +319,6 @@ const cleanBuildRuntimeComposition = (
 ): string => {
   const buildRoot = resolve(temporaryRoot, "clean-build");
   const configPath = resolve(temporaryRoot, "runtime-composition.tsconfig.json");
-  const sourcePaths = [
-    "apps/runtime-server/src/index.ts",
-    "apps/runtime-server/src/lifecycle.ts",
-    "packages/operation-runtime/src/events.ts",
-    "packages/operation-runtime/src/fold.ts",
-    "packages/operation-runtime/src/index.ts",
-    "packages/operation-runtime/src/limits.ts",
-    "packages/operation-runtime/src/service.ts",
-    "packages/product-profile/src/candidate-runtime-profile-authority.ts",
-    "packages/product-profile/src/candidate-runtime-profile.ts",
-    "packages/product-profile/src/index.ts",
-    "packages/product-profile/src/official-profile-authority.generated.ts",
-    "packages/product-profile/src/patched-dsh-artifact.ts",
-    "packages/product-profile/src/platform-contract.ts",
-    "packages/product-profile/src/profile.ts",
-    "packages/protocol/generated/host-client.generated.ts",
-    "packages/protocol/src/contract-source.ts",
-    "packages/protocol/src/errors.ts",
-    "packages/protocol/src/index.ts",
-    "packages/protocol/src/peer.ts",
-    "packages/protocol/src/validation.ts",
-    "packages/rpc-server/src/index.ts",
-    "packages/rpc-server/src/native-rpc-service.ts",
-    "packages/runtime-product/src/composition.ts",
-    "packages/runtime-product/src/index.ts",
-    "packages/runtime-product/src/primary-session.ts",
-    "packages/testkit/src/fake-llm-adapter.ts",
-    "packages/testkit/src/index.ts",
-    "tests/fixtures/dsh-runtime-composition.artifact.ts",
-  ];
   writeFileSync(configPath, `${JSON.stringify({
     extends: resolve(repositoryRoot, "tsconfig.base.json"),
     compilerOptions: {
@@ -242,7 +330,7 @@ const cleanBuildRuntimeComposition = (
       sourceMap: false,
       typeRoots: [resolve(repositoryRoot, "node_modules/@types")],
     },
-    files: sourcePaths.map((path) => resolve(repositoryRoot, path)),
+    files: runtimeCompositionSourcePaths.map((path) => resolve(repositoryRoot, path)),
   }, null, 2)}\n`);
   run(process.execPath, [
     resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
@@ -251,6 +339,29 @@ const cleanBuildRuntimeComposition = (
     "--pretty",
     "false",
   ], repositoryRoot, environment);
+  const missingSourceAuthorities: string[] = [];
+  const walkCompiledJavaScript = (absoluteDirectory: string, relativeDirectory: string): void => {
+    for (const entry of readdirSync(absoluteDirectory, { withFileTypes: true })) {
+      const relativePath = relativeDirectory === ""
+        ? entry.name
+        : `${relativeDirectory}/${entry.name}`;
+      const absolutePath = resolve(absoluteDirectory, entry.name);
+      if (entry.isDirectory()) {
+        walkCompiledJavaScript(absolutePath, relativePath);
+      } else if (entry.isFile() && relativePath.endsWith(".js")) {
+        const sourcePath = `${relativePath.slice(0, -3)}.ts`;
+        if (!runtimeBuilderInputPaths.includes(sourcePath)) {
+          missingSourceAuthorities.push(sourcePath);
+        }
+      }
+    }
+  };
+  walkCompiledJavaScript(buildRoot, "");
+  if (missingSourceAuthorities.length > 0) {
+    throw new Error(
+      `Runtime compiled JavaScript lacks source authority: ${missingSourceAuthorities.sort(compareCodePoint).join(", ")}`,
+    );
+  }
   return buildRoot;
 };
 
@@ -282,13 +393,297 @@ const stageExactWorkspaceDependency = (
   cpSync(source, destination, { dereference: true, recursive: true });
 };
 
+const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
+  ...runtimeCompositionSourcePaths,
+  "package.json",
+  "package-lock.json",
+  "tsconfig.base.json",
+  "scripts/verify-dsh-runtime-composition.ts",
+  "scripts/build-patched-dsh-artifact.ts",
+  "scripts/patched-dsh-artifact-policy.ts",
+  "scripts/dsh-baseline-policy.ts",
+  "scripts/dsh-seam-decisions.ts",
+  "scripts/toolchain-policy.mjs",
+  "packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json",
+  "packages/product-profile/manifests/batch-1-candidate-profile-v1.json",
+  "packages/protocol/generated/protocol-fixtures.json",
+  "packages/protocol/generated/protocol-meta.json",
+  ...runtimePackageWorkspaces.map(([workspace]) => `${workspace}/package.json`),
+])).sort(compareCodePoint));
+
+const createRuntimeBuildAuthority = (
+  environment: NodeJS.ProcessEnv,
+): RuntimeArtifactManifestAuthority["build"] => {
+  const inputs = runtimeBuilderInputPaths.map((path) => Object.freeze({
+    path,
+    sha256: digestBytes(readFileSync(resolve(repositoryRoot, path))),
+  }));
+  const npmVersion = run("npm", ["--version"], repositoryRoot, environment);
+  const typescriptManifest = exactObject(JSON.parse(readFileSync(
+    resolve(repositoryRoot, "node_modules/typescript/package.json"),
+    "utf8",
+  )) as unknown, "installed TypeScript manifest");
+  if (typeof typescriptManifest.version !== "string") {
+    throw new TypeError("installed TypeScript manifest lacks its exact version");
+  }
+  return Object.freeze({
+    repositoryHead: run("git", ["rev-parse", "HEAD"], repositoryRoot, environment),
+    rootLockSha256: digestBytes(readFileSync(resolve(repositoryRoot, "package-lock.json"))),
+    builderAuthoritySha256: digestBytes(Buffer.from(JSON.stringify(inputs))),
+    toolchain: Object.freeze({
+      node: process.versions.node,
+      npm: npmVersion,
+      typescript: typescriptManifest.version,
+    }),
+    inputs: Object.freeze(inputs),
+  });
+};
+
+const assertArtifactLocalFileReferences = (value: unknown, description: string): void => {
+  if (typeof value === "string") {
+    if (value.startsWith("file:") && !/^file:vendor\/[A-Za-z0-9._-]+\.tgz$/u.test(value)) {
+      throw new Error(`${description} contains a non-local file dependency: ${value}`);
+    }
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertArtifactLocalFileReferences(
+      item,
+      `${description}[${String(index)}]`,
+    ));
+    return;
+  }
+  for (const [key, item] of Object.entries(value as JsonObject)) {
+    assertArtifactLocalFileReferences(item, `${description}.${key}`);
+  }
+};
+
+const assertCleanRuntimeDependencyTree = (
+  candidateRoot: string,
+  environment: NodeJS.ProcessEnv,
+): void => {
+  const tree = exactObject(
+    JSON.parse(run("npm", ["ls", "--all", "--json"], candidateRoot, environment)) as unknown,
+    "installed Runtime dependency tree",
+  );
+  if (Array.isArray(tree.problems) && tree.problems.length > 0) {
+    throw new Error(`installed Runtime dependency tree is invalid: ${JSON.stringify(tree.problems)}`);
+  }
+  const dshVersions = collectDshVersions(tree);
+  if (dshVersions.size !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount) {
+    throw new Error(`installed Runtime resolved ${String(dshVersions.size)} DSH packages; expected 46`);
+  }
+  for (const [name, versions] of dshVersions) {
+    if (versions.size !== 1 || !versions.has(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion)) {
+      throw new Error(`${name} resolved outside the single accepted patched DSH graph`);
+    }
+  }
+};
+
+const buildInstalledRuntimeCandidate = (
+  candidateRoot: string,
+  bundleRoot: string,
+  stagedConsumerRoot: string,
+  buildRoot: string,
+  environment: NodeJS.ProcessEnv,
+): void => {
+  mkdirSync(candidateRoot, { recursive: true });
+  const vendorRoot = resolve(candidateRoot, "vendor");
+  mkdirSync(vendorRoot);
+  const bundleManifest = exactObject(JSON.parse(readFileSync(
+    resolve(bundleRoot, "patched-dsh-artifact-v1.json"),
+    "utf8",
+  )) as unknown, "patched DSH bundle manifest");
+  if (!Array.isArray(bundleManifest.packages)) {
+    throw new TypeError("patched DSH bundle package inventory must be an array");
+  }
+  for (const [index, value] of bundleManifest.packages.entries()) {
+    const row = exactObject(value, `patched DSH package ${String(index + 1)}`);
+    if (typeof row.tarball !== "string" || !/^[A-Za-z0-9._-]+\.tgz$/u.test(row.tarball)) {
+      throw new TypeError("patched DSH package has an unsafe tarball name");
+    }
+    cpSync(resolve(bundleRoot, row.tarball), resolve(vendorRoot, row.tarball));
+  }
+
+  const stagedConsumerManifest = exactObject(JSON.parse(readFileSync(
+    resolve(stagedConsumerRoot, "package.json"),
+    "utf8",
+  )) as unknown, "staged DSH consumer manifest");
+  const stagedDependencies = exactObject(
+    stagedConsumerManifest.dependencies,
+    "staged DSH consumer dependencies",
+  );
+  const dependencies: Record<string, string> = {};
+  for (const [name, value] of Object.entries(stagedDependencies)) {
+    if (typeof value !== "string") throw new TypeError(`staged dependency ${name} is not a string`);
+    dependencies[name] = value.startsWith("file:../")
+      ? `file:vendor/${value.slice("file:../".length)}`
+      : value;
+  }
+  for (const [, packageName] of runtimePackageWorkspaces) {
+    const packageRoot = resolve(stagedConsumerRoot, "node_modules", ...packageName.split("/"));
+    const packOutput = JSON.parse(run("npm", [
+      "pack",
+      "--json",
+      "--ignore-scripts",
+      "--pack-destination",
+      vendorRoot,
+    ], packageRoot, environment)) as unknown;
+    if (!Array.isArray(packOutput) || packOutput.length !== 1) {
+      throw new Error(`${packageName} pack output differs from the exact one-package contract`);
+    }
+    const packed = exactObject(packOutput[0], `${packageName} pack output`);
+    if (typeof packed.filename !== "string" || !/^[A-Za-z0-9._-]+\.tgz$/u.test(packed.filename)) {
+      throw new Error(`${packageName} pack output lacks a safe tarball filename`);
+    }
+    dependencies[packageName] = `file:vendor/${packed.filename}`;
+  }
+  for (const packageName of runtimeVendoredExternalPackages) {
+    const packageRoot = resolve(stagedConsumerRoot, "node_modules", ...packageName.split("/"));
+    const packOutput = JSON.parse(run("npm", [
+      "pack",
+      "--json",
+      "--ignore-scripts",
+      "--pack-destination",
+      vendorRoot,
+    ], packageRoot, environment)) as unknown;
+    if (!Array.isArray(packOutput) || packOutput.length !== 1) {
+      throw new Error(`${packageName} pack output differs from the exact one-package contract`);
+    }
+    const packed = exactObject(packOutput[0], `${packageName} pack output`);
+    if (typeof packed.filename !== "string" || !/^[A-Za-z0-9._-]+\.tgz$/u.test(packed.filename)) {
+      throw new Error(`${packageName} pack output lacks a safe tarball filename`);
+    }
+    dependencies[packageName] = `file:vendor/${packed.filename}`;
+  }
+  const orderedDependencies = Object.fromEntries(
+    Object.entries(dependencies).sort(([left], [right]) => compareCodePoint(left, right)),
+  );
+  writeFileSync(resolve(candidateRoot, "package.json"), `${JSON.stringify({
+    name: "@myagents-dsh/w1-runtime-candidate",
+    version: protocolMetaJson.runtimeVersion,
+    private: true,
+    type: "module",
+    engines: { node: "24.13.1", npm: "11.8.0" },
+    dependencies: orderedDependencies,
+  }, null, 2)}\n`);
+  cpSync(
+    resolve(buildRoot, "tests/fixtures/runtime-server-process.artifact.js"),
+    resolve(candidateRoot, "runtime-server-process.artifact.mjs"),
+  );
+  assertNoAncestorNodeModules(candidateRoot);
+  run("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], candidateRoot, environment);
+  assertContainedNodeModules(candidateRoot);
+  assertCleanRuntimeDependencyTree(candidateRoot, environment);
+  const initialLock = JSON.parse(readFileSync(resolve(candidateRoot, "package-lock.json"), "utf8")) as unknown;
+  assertArtifactLocalFileReferences(initialLock, "installed Runtime lock");
+  rmSync(resolve(candidateRoot, "node_modules"), { force: true, recursive: true });
+  run("npm", ["ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], candidateRoot, environment);
+  assertContainedNodeModules(candidateRoot);
+  assertCleanRuntimeDependencyTree(candidateRoot, environment);
+  const finalLock = JSON.parse(readFileSync(resolve(candidateRoot, "package-lock.json"), "utf8")) as unknown;
+  assertArtifactLocalFileReferences(finalLock, "reinstalled Runtime lock");
+};
+
+const assertRuntimeProcessEvidence = (
+  processOutput: string,
+  expectedRuntimeManifestSha256: string,
+  expectedBuild: RuntimeArtifactBuildAuthority,
+): JsonObject => {
+  const processEvidence = exactObject(
+    JSON.parse(processOutput) as unknown,
+    "Runtime process conformance evidence",
+  );
+  const selfCheck = exactObject(processEvidence.selfCheck, "Runtime artifact self-check evidence");
+  const selfCheckRuntime = exactObject(selfCheck.runtime, "Runtime self-check runtime identity");
+  const selfCheckDsh = exactObject(selfCheck.dsh, "Runtime self-check DSH identity");
+  const selfCheckProtocol = exactObject(selfCheck.protocol, "Runtime self-check protocol identity");
+  const selfCheckProfile = exactObject(selfCheck.profile, "Runtime self-check profile identity");
+  const processFaults = exactObject(processEvidence.faults, "Runtime process fault evidence");
+  const transportClosures = exactObject(
+    processEvidence.transportClosures,
+    "Runtime process transport-close evidence",
+  );
+  const expectedTransportScenarios = [
+    "SIGINT",
+    "SIGTERM",
+    "eof",
+    "forcedKill",
+    "invalidUtf8",
+    "malformed",
+    "normal",
+    "oversized",
+    "preStartSignal",
+    "restart",
+    "timeout",
+    "writerFailure",
+  ];
+  const observedTransportScenarios = Object.keys(transportClosures).sort();
+  const transportEvidenceValid = JSON.stringify(observedTransportScenarios)
+    === JSON.stringify(expectedTransportScenarios)
+    && observedTransportScenarios.every((scenario) => {
+      const code = transportClosures[scenario];
+      if (scenario === "writerFailure") return code === "protocol_input_closed";
+      return code === "protocol_eof" || code === "protocol_output_closed";
+    });
+  if (selfCheck.formatVersion !== 1 || selfCheck.mode !== "self-check"
+    || selfCheckRuntime.requiredNodeVersion !== "24.13.1"
+    || selfCheckRuntime.actualNodeVersion !== "24.13.1"
+    || selfCheckRuntime.activation !== "workstream-evidence-only"
+    || selfCheckRuntime.artifactManifestSha256 !== expectedRuntimeManifestSha256
+    || !Number.isSafeInteger(selfCheckRuntime.artifactFileCount)
+    || (selfCheckRuntime.artifactFileCount as number) < 1
+    || selfCheckRuntime.repositoryHead !== expectedBuild.repositoryHead
+    || selfCheckRuntime.builderAuthoritySha256 !== expectedBuild.builderAuthoritySha256
+    || selfCheckRuntime.rootLockSha256 !== expectedBuild.rootLockSha256
+    || JSON.stringify(selfCheckRuntime.toolchain) !== JSON.stringify(expectedBuild.toolchain)
+    || selfCheckDsh.artifactVersion !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
+    || selfCheckDsh.artifactManifestSha256 !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
+    || typeof selfCheckDsh.sourceCommit !== "string"
+    || typeof selfCheckDsh.patchSeriesSha256 !== "string"
+    || !Array.isArray(selfCheckDsh.patches)
+    || selfCheckDsh.patches.length !== 4
+    || selfCheckDsh.packageCount !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount
+    || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
+    || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
+    || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
+    || selfCheckProfile.stage !== "batch-1-w1-a10"
+    || processEvidence.invalidCliRejected !== true
+    || processEvidence.stdoutProtocolOnly !== true
+    || processEvidence.stderrClean !== true
+    || processFaults.eof !== 1
+    || processFaults.forcedKill !== "SIGKILL"
+    || processFaults.invalidUtf8 !== 1
+    || processFaults.malformed !== 1
+    || processFaults.oversized !== 1
+    || processFaults.preStartSignal !== "SIGTERM"
+    || processFaults.restart !== 0
+    || processFaults.timeoutCleanup !== "SIGKILL"
+    || processFaults.writerFailure !== 1
+    || (process.platform === "win32"
+      ? processFaults.detachedDescendantCleanup !== "not-applicable"
+      : processFaults.detachedDescendantCleanup !== true)
+    || !transportEvidenceValid
+    || JSON.stringify(processFaults.signals) !== JSON.stringify([
+      { signal: "SIGINT", code: 130 },
+      { signal: "SIGTERM", code: 143 },
+    ])) {
+    throw new Error("Runtime process/self-check evidence differs from the exact A10 contract");
+  }
+  return processEvidence;
+};
+
 const main = (): void => {
   const { values } = parseArgs({
     allowPositionals: false,
     options: {
       artifact: { type: "string" },
       "expected-manifest-sha256": { type: "string" },
+      "expected-runtime-manifest-sha256": { type: "string" },
       "npm-cache": { type: "string" },
+      "runtime-artifact": { type: "string" },
+      "runtime-artifact-out": { type: "string" },
     },
   });
   const failures = evaluateToolchain({
@@ -296,18 +691,74 @@ const main = (): void => {
     npmUserAgent: process.env.npm_config_user_agent,
   });
   if (failures.length > 0) throw new Error(failures.join("\n"));
+  if (values["runtime-artifact"] !== undefined) {
+    if (values.artifact !== undefined || values["expected-manifest-sha256"] !== undefined
+      || values["runtime-artifact-out"] !== undefined) {
+      throw new Error("installed Runtime artifact verification cannot be combined with build inputs");
+    }
+    if (values["expected-runtime-manifest-sha256"] === undefined
+      || values["npm-cache"] === undefined) {
+      throw new Error(
+        "installed Runtime verification requires --expected-runtime-manifest-sha256 and --npm-cache",
+      );
+    }
+    const requestedRuntimeRoot = resolve(values["runtime-artifact"]);
+    const runtimeRoot = realpathSync(requestedRuntimeRoot);
+    if (runtimeRoot !== requestedRuntimeRoot) {
+      throw new Error("installed Runtime artifact path must not contain a symlink alias");
+    }
+    const installed = verifyInstalledRuntimeArtifact(
+      runtimeRoot,
+      values["expected-runtime-manifest-sha256"],
+    );
+    assertNoAncestorNodeModules(runtimeRoot);
+    assertContainedNodeModules(runtimeRoot);
+    const verificationRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "myagents-dsh-runtime-artifact-verify-")),
+    );
+    try {
+      const environment = isolatedEnvironment(verificationRoot, values["npm-cache"]);
+      assertCleanRuntimeDependencyTree(runtimeRoot, environment);
+      const installedLock = JSON.parse(readFileSync(
+        resolve(runtimeRoot, "package-lock.json"),
+        "utf8",
+      )) as unknown;
+      assertArtifactLocalFileReferences(installedLock, "installed Runtime lock");
+      const processOutput = run(process.execPath, [
+        resolve(repositoryRoot, "node_modules/tsx/dist/cli.mjs"),
+        resolve(repositoryRoot, "tests/fixtures/runtime-process-conformance.artifact.ts"),
+        resolve(runtimeRoot, installed.manifest.entrypoint),
+      ], runtimeRoot, environment);
+      assertRuntimeProcessEvidence(processOutput, installed.manifestSha256, installed.manifest.build);
+      verifyInstalledRuntimeArtifact(runtimeRoot, installed.manifestSha256);
+      process.stdout.write(
+        `installed Runtime artifact verified: manifest=${installed.manifestSha256}, `
+        + `files=${String(installed.fileCount)}\n`,
+      );
+    } finally {
+      rmSync(verificationRoot, { force: true, recursive: true });
+    }
+    return;
+  }
+  if (values["expected-runtime-manifest-sha256"] !== undefined) {
+    throw new Error("--expected-runtime-manifest-sha256 is valid only with --runtime-artifact");
+  }
   if (values.artifact === undefined || values["expected-manifest-sha256"] === undefined
     || values["npm-cache"] === undefined) {
     throw new Error(
-      "usage: verify-dsh-runtime-composition --artifact <bundle> --expected-manifest-sha256 <digest> --npm-cache <primed cache>",
+      "usage: verify-dsh-runtime-composition --artifact <bundle> --expected-manifest-sha256 <digest> --npm-cache <primed cache> [--runtime-artifact-out <new directory>]",
     );
   }
   if (values["expected-manifest-sha256"] !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256) {
     throw new Error("runtime composition gate must use the accepted product-profile artifact digest");
   }
-  const artifactRoot = realpathSync(resolve(values.artifact));
+  const requestedArtifactRoot = resolve(values.artifact);
+  const artifactRoot = realpathSync(requestedArtifactRoot);
+  if (artifactRoot !== requestedArtifactRoot) {
+    throw new Error("patched DSH artifact path must not contain a symlink alias");
+  }
   verifyExistingBundle(artifactRoot, values["expected-manifest-sha256"], process.env);
-  const temporaryRoot = mkdtempSync(join(tmpdir(), "myagents-dsh-runtime-composition-"));
+  const temporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), "myagents-dsh-runtime-composition-")));
   try {
     const bundleRoot = resolve(temporaryRoot, "bundle");
     stageVerifiedBundle(artifactRoot, bundleRoot);
@@ -352,6 +803,13 @@ const main = (): void => {
       "@myagents-dsh/runtime-product",
     );
     stageBuiltPackage(consumerRoot, buildRoot, "packages/testkit", "@myagents-dsh/testkit");
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/artifact-verifier",
+      "@myagents-dsh/artifact-verifier",
+    );
+    stageBuiltPackage(consumerRoot, buildRoot, "packages/test-host", "@myagents-dsh/test-host");
     stageBuiltPackage(consumerRoot, buildRoot, "apps/runtime-server", "@myagents-dsh/runtime-server");
     assertContainedNodeModules(consumerRoot);
     const runnerSource = resolve(
@@ -500,7 +958,91 @@ const main = (): void => {
       || usageEvent.runtimeContextWindow !== 8_192) {
       throw new Error("Runtime usage/context projection differs from the durable DSH accounting facts");
     }
-    process.stdout.write(`patched DSH runtime composition verified: ${output}\n`);
+    rmSync(runner);
+    const runtimeArtifactOutput = values["runtime-artifact-out"];
+    let candidateRoot = resolve(temporaryRoot, "runtime-artifact");
+    let publicationStagingRoot: string | undefined;
+    let finalRuntimeArtifactRoot: string | undefined;
+    if (runtimeArtifactOutput !== undefined) {
+      finalRuntimeArtifactRoot = resolve(runtimeArtifactOutput);
+      if (existsSync(finalRuntimeArtifactRoot)) {
+        throw new Error("Runtime artifact output must not already exist");
+      }
+      const outputParent = resolve(dirname(finalRuntimeArtifactRoot));
+      if (realpathSync(outputParent) !== outputParent) {
+        throw new Error("Runtime artifact output parent must have no symlink component");
+      }
+      publicationStagingRoot = mkdtempSync(resolve(outputParent, ".myagents-dsh-runtime-artifact-"));
+      candidateRoot = resolve(publicationStagingRoot, "runtime");
+    }
+    buildInstalledRuntimeCandidate(candidateRoot, bundleRoot, consumerRoot, buildRoot, environment);
+    const dshBundleManifest = exactObject(
+      JSON.parse(readFileSync(resolve(bundleRoot, "patched-dsh-artifact-v1.json"), "utf8")) as unknown,
+      "patched DSH bundle manifest",
+    );
+    const dshAuthority = exactObject(dshBundleManifest.authority, "patched DSH bundle authority");
+    if (!Array.isArray(dshAuthority.patches)) {
+      throw new Error("patched DSH bundle lacks its exact patch inventory");
+    }
+    const runtimeArtifactAuthority: RuntimeArtifactManifestAuthority = {
+      artifactKind: "myagents-dsh-w1-runtime-candidate",
+      entrypoint: "runtime-server-process.artifact.mjs",
+      runtimeVersion: protocolMetaJson.runtimeVersion,
+      activation: "workstream-evidence-only",
+      build: createRuntimeBuildAuthority(environment),
+      dsh: {
+        artifactVersion: ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion,
+        artifactManifestSha256: ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256,
+        sourceCommit: dshAuthority.sourceCommit as string,
+        patchSeriesSha256: dshAuthority.patchSeriesSha256 as string,
+        patches: dshAuthority.patches as RuntimeArtifactManifestAuthority["dsh"]["patches"],
+      },
+      profile: {
+        id: BATCH1_CANDIDATE_PROFILE.profileId,
+        digest: BATCH1_CANDIDATE_PROFILE_SHA256,
+      },
+      protocol: {
+        version: protocolMetaJson.protocolVersion,
+        schemaSha256: protocolMetaJson.schemaSha256,
+      },
+    };
+    const runtimeArtifactManifest = createRuntimeArtifactManifest(
+      candidateRoot,
+      runtimeArtifactAuthority,
+    );
+    writeFileSync(
+      resolve(candidateRoot, "runtime-artifact-v1.json"),
+      serializeRuntimeArtifactManifest(runtimeArtifactManifest),
+    );
+    const installedRuntime = verifyInstalledRuntimeArtifact(candidateRoot);
+    const processEntrypoint = resolve(candidateRoot, runtimeArtifactManifest.entrypoint);
+    const processConformanceRunner = resolve(
+      repositoryRoot,
+      "tests/fixtures/runtime-process-conformance.artifact.ts",
+    );
+    const tsxCli = resolve(repositoryRoot, "node_modules/tsx/dist/cli.mjs");
+    const processOutput = run(
+      process.execPath,
+      [tsxCli, processConformanceRunner, processEntrypoint],
+      candidateRoot,
+      environment,
+    );
+    assertRuntimeProcessEvidence(
+      processOutput,
+      installedRuntime.manifestSha256,
+      installedRuntime.manifest.build,
+    );
+    if (finalRuntimeArtifactRoot !== undefined && publicationStagingRoot !== undefined) {
+      renameSync(candidateRoot, finalRuntimeArtifactRoot);
+      verifyInstalledRuntimeArtifact(finalRuntimeArtifactRoot, installedRuntime.manifestSha256);
+      rmSync(publicationStagingRoot, { force: true, recursive: true });
+    }
+    process.stdout.write(
+      `patched DSH runtime composition verified: ${output}\n`
+      + `patched DSH runtime process verified: ${processOutput}\n`
+      + `installed Runtime artifact verified: manifest=${installedRuntime.manifestSha256}, `
+      + `files=${String(installedRuntime.fileCount)}\n`,
+    );
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });
   }
