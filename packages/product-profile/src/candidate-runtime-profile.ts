@@ -3,35 +3,36 @@ import { createHash } from "node:crypto";
 import { PLATFORM_CONTRACT_VERSION, PLATFORM_TARGETS } from "./platform-contract.js";
 import { serializeProfileAuthority } from "./profile.js";
 
-export const BATCH1_A2_CANDIDATE_PROFILE_ID = "myagents-dsh-batch-1-a2-candidate-v1" as const;
-export const BATCH1_A2_ADAPTER_REGISTRATION_PLUGIN_ID =
+export const BATCH1_CANDIDATE_PROFILE_ID = "myagents-dsh-batch-1-candidate-v1" as const;
+export const BATCH1_ADAPTER_REGISTRATION_PLUGIN_ID =
   "@myagents-dsh/runtime-product:adapterRegistration" as const;
-export const BATCH1_A2_AVAILABLE_HOST_METHODS = Object.freeze([
+export const BATCH1_AVAILABLE_HOST_METHODS = Object.freeze([
   "initialize",
   "runtime/status",
   "runtime/shutdown",
 ] as const);
-export const BATCH1_A2_AVAILABLE_REVERSE_METHODS = Object.freeze([] as const);
-export const BATCH1_A2_AVAILABLE_NOTIFICATIONS = Object.freeze([
+export const BATCH1_AVAILABLE_REVERSE_METHODS = Object.freeze([] as const);
+export const BATCH1_AVAILABLE_NOTIFICATIONS = Object.freeze([
   "initialized",
   "rpc/cancel",
 ] as const);
 
-export const BATCH1_A2_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
+export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
   "@deepseek-ai/dsh-session:SessionStore",
   "@deepseek-ai/dsh-agent:AgentRegistry",
   "@deepseek-ai/dsh-llm:LlmRuntime",
   "@deepseek-ai/dsh-system-prompt:SystemPrompt",
   "@deepseek-ai/dsh-tools:ToolRuntime",
-  BATCH1_A2_ADAPTER_REGISTRATION_PLUGIN_ID,
+  BATCH1_ADAPTER_REGISTRATION_PLUGIN_ID,
   "@deepseek-ai/dsh-agent-loop:AgentLoop",
+  "@myagents-dsh/runtime-product:ProductSessionService",
   "@myagents-dsh/rpc-server:NativeRpcServer",
 ] as const);
 
-export interface Batch1A2CandidateProfileManifest {
+export interface Batch1CandidateProfileManifest {
   readonly formatVersion: 1;
-  readonly profileId: typeof BATCH1_A2_CANDIDATE_PROFILE_ID;
-  readonly stage: "batch-1-w1-a2";
+  readonly profileId: typeof BATCH1_CANDIDATE_PROFILE_ID;
+  readonly stage: "batch-1-w1-a3";
   readonly runtimeActivation: "workstream-evidence-only";
   readonly protocol: Readonly<{
     version: string;
@@ -50,13 +51,13 @@ export interface Batch1A2CandidateProfileManifest {
     targets: typeof PLATFORM_TARGETS;
   }>;
   readonly composition: Readonly<{
-    maxPrimaryRootSessions: 0;
-    installedPluginAllowlist: typeof BATCH1_A2_INSTALLED_PLUGIN_ALLOWLIST;
+    maxPrimaryRootSessions: 1;
+    installedPluginAllowlist: typeof BATCH1_INSTALLED_PLUGIN_ALLOWLIST;
     packageAuthorities: Readonly<Record<string, string>>;
   }>;
 }
 
-export interface BuildBatch1A2CandidateProfileInput {
+export interface BuildBatch1CandidateProfileInput {
   readonly protocolVersion: string;
   readonly protocolSchemaSha256: string;
   readonly availableHostMethods: readonly string[];
@@ -103,12 +104,12 @@ const exactList = (value: readonly string[], description: string): readonly stri
   return Object.freeze(result);
 };
 
-export const buildBatch1A2CandidateProfile = (
-  input: BuildBatch1A2CandidateProfileInput,
-): Batch1A2CandidateProfileManifest => Object.freeze({
+export const buildBatch1CandidateProfile = (
+  input: BuildBatch1CandidateProfileInput,
+): Batch1CandidateProfileManifest => Object.freeze({
   formatVersion: 1,
-  profileId: BATCH1_A2_CANDIDATE_PROFILE_ID,
-  stage: "batch-1-w1-a2",
+  profileId: BATCH1_CANDIDATE_PROFILE_ID,
+  stage: "batch-1-w1-a3",
   runtimeActivation: "workstream-evidence-only",
   protocol: Object.freeze({
     version: exactIdentifier(input.protocolVersion, "candidate protocol version"),
@@ -124,12 +125,12 @@ export const buildBatch1A2CandidateProfile = (
   }),
   platform: Object.freeze({ contractVersion: PLATFORM_CONTRACT_VERSION, targets: PLATFORM_TARGETS }),
   composition: Object.freeze({
-    maxPrimaryRootSessions: 0,
-    installedPluginAllowlist: BATCH1_A2_INSTALLED_PLUGIN_ALLOWLIST,
+    maxPrimaryRootSessions: 1,
+    installedPluginAllowlist: BATCH1_INSTALLED_PLUGIN_ALLOWLIST,
     packageAuthorities: sortedRecord(input.packageAuthorities, "candidate composition package"),
   }),
 });
 
 export const candidateRuntimeProfileDigest = (
-  manifest: Batch1A2CandidateProfileManifest,
+  manifest: Batch1CandidateProfileManifest,
 ): string => createHash("sha256").update(serializeProfileAuthority(manifest)).digest("hex");

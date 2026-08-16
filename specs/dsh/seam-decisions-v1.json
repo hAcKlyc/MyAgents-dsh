@@ -14,6 +14,11 @@
         "sha256": "c2151e5b245fef908e8fcb0a1ea8d0a32e222c753cbaea23aee6dc865e2d6010"
       },
       {
+        "path": "packages/core/agent/src/index.ts",
+        "blob": "81052096dc057b69cc454c4db870a0edb7b4ae9f",
+        "sha256": "e4986fec8aa6e991378f0195df4e931e4ca5bf31b2af886f55a3242691db6804"
+      },
+      {
         "path": "packages/core/agent-loop/src/agent.ts",
         "blob": "668ef6582657ed0e1e4420777696ee50251371ad",
         "sha256": "e775e59f3761240ee571a9b997d0d29deb97a283b6c2fc3a071091b2743d22b4"
@@ -22,6 +27,11 @@
         "path": "packages/session/session-persistence/src/coordinator.ts",
         "blob": "eb5f9714c4838e492500b8452e28012c53b58bf5",
         "sha256": "e7bbc321bdb09ea8870027bd5a3e285472dddc8e4346f95f85addacf6eb784d1"
+      },
+      {
+        "path": "packages/core/session/src/index.ts",
+        "blob": "2d82a88623cf8b8d381f9ba905ba2e7088cbfe12",
+        "sha256": "9594e128e8b170845d703e37a54902cd0cd8b2e73e8555e94594575bd18af8f9"
       },
       {
         "path": "packages/core/agent-loop/tests/cancel.spec.ts",
@@ -61,6 +71,11 @@
       "order": 3,
       "path": "specs/dsh/patches/0003-persistence-known-event-predicate.patch",
       "sha256": "8d0a09f87c42cd58123205b530b3518484af36ecc6188e42ab7c9b60c4c12c10"
+    },
+    {
+      "order": 4,
+      "path": "specs/dsh/patches/0004-publication-guards.patch",
+      "sha256": "39b743ea5446f9aa5c2ef1b4be65ff5c549cf98fea4b435d89541a5f060c6541"
     }
   ],
   "decisions": [
@@ -141,12 +156,34 @@
         "public PersistenceBackend plus exact-revision recoverable tombstone delete survives response loss"
       ],
       "removalCondition": "superseding ADR after production SQLite fault evidence proves a narrower composition"
+    },
+    {
+      "id": "DSH-SEAM-005",
+      "seam": "root-agent-and-session-publication-guards",
+      "status": "required_upstream_patch_accepted",
+      "adr": "specs/adr/0005-root-publication-guards.md",
+      "rejected": "post-publication-agent-created-veto-and-registry-snapshot-detection",
+      "selectedPublicApi": "AgentRegistry.setPublicationGuard and SessionStore.setPublicationGuard",
+      "patch": {
+        "order": 4,
+        "path": "specs/dsh/patches/0004-publication-guards.patch",
+        "sha256": "39b743ea5446f9aa5c2ef1b4be65ff5c549cf98fea4b435d89541a5f060c6541"
+      },
+      "executableEvidence": [
+        "Session guard rejects before store or attachment mutation",
+        "Agent guard rejects before registry mutation with exact runtime-owner input",
+        "guard registration is exclusive, effect-scoped, and restores stock behavior on disposal",
+        "official one-root permit covers Session and Agent entry plus reentrant publication observation",
+        "direct Session and advanced Agent publication bypasses fail before visibility"
+      ],
+      "removalCondition": "an installed DSH release exposes equivalent synchronous pre-publication guards"
     }
   ],
   "evidenceOwners": {
     "runtimeSemantics": "tests/dsh-seam-spikes.unit.test.ts",
     "patchedSourceTypecheck": "tsc -b tsconfig.host.json",
     "patchedSourceTests": [
+      "packages/core/agent-loop/tests/publication-guards.spec.ts",
       "packages/core/agent-loop/tests/cancel.spec.ts",
       "packages/core/agent-loop/tests/pre-assistant-commit.spec.ts",
       "packages/core/scope/tests/invariant.spec.ts",

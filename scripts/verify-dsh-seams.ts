@@ -23,8 +23,8 @@ if (sourceIndex >= 0) {
 
 console.log(
   sourceIndex < 0
-    ? "DSH seam decisions OK: 4 accepted decisions, 3 pinned patches"
+    ? "DSH seam decisions OK: 5 accepted decisions, 4 pinned patches"
     : process.argv.includes("--compile-test")
-      ? "DSH seam decisions/source OK: 4 accepted decisions, patched source typecheck and regression matrix pass"
-      : "DSH seam decisions/source OK: 4 accepted decisions, 3 patches apply in order",
+      ? "DSH seam decisions/source OK: 5 accepted decisions, patched source typecheck and regression matrix pass"
+      : "DSH seam decisions/source OK: 5 accepted decisions, 4 patches apply in order",
 );

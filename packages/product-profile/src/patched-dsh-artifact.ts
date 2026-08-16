@@ -29,6 +29,8 @@ export interface AcceptedPatchedDshArtifactAuthority {
     "agent.wakePending",
     "agent/pre-assistant-commit",
     "session-persistence.isKnownEventType",
+    "agents.setPublicationGuard",
+    "sessions.setPublicationGuard",
   ];
 }
 
@@ -84,6 +86,8 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "agent.wakePending",
     "agent/pre-assistant-commit",
     "session-persistence.isKnownEventType",
+    "agents.setPublicationGuard",
+    "sessions.setPublicationGuard",
   ];
   if (!Array.isArray(requiredPatchedSeams)
     || JSON.stringify(requiredPatchedSeams) !== JSON.stringify(expectedSeams)) {

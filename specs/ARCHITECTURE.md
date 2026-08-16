@@ -108,7 +108,7 @@ Product coordination is implemented inside Cordis as DSH-native services:
 - `SdkOperationService`: prompt admission, idempotency, turn correlation, terminal settlement, and operation lookup.
 - `ProductComponentService`: desired/effective component staging and atomic promotion.
 - `HostPortService` definitions and RPC-backed providers.
-- `ProductSessionService`: native RPC session projection, read cursors, and mutation coordination.
+- `ProductSessionService`: generation-wide canonical workspace binding, one-primary-Session admission and exact DSH `AgentHandle` ownership, native RPC session projection, read cursors, and mutation coordination. The official composition installs its exact-object permit through the pinned public `SessionStore` and `AgentRegistry` pre-publication guards; DSH remains the Session/Agent registry and lifecycle authority.
 - `ProductInvariantService`: startup and runtime checks for the official profile.
 
 These services coordinate DSH; they do not drive a second model loop.

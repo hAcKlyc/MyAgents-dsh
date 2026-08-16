@@ -45,7 +45,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     relativeDirectory: "packages/product-profile",
     allowedFiles: [
       "manifests/accepted-patched-dsh-artifact-v1.json",
-      "manifests/batch-1-a2-candidate-profile-v1.json",
+      "manifests/batch-1-candidate-profile-v1.json",
       "manifests/official-product-profile-v1.json",
       "manifests/platform-targets-v1.json",
       "package.json",
@@ -82,7 +82,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/runtime-product",
     relativeDirectory: "packages/runtime-product",
-    allowedFiles: ["package.json", "src/composition.ts", "src/index.ts"],
+    allowedFiles: ["package.json", "src/composition.ts", "src/index.ts", "src/primary-session.ts"],
   },
   {
     packageName: "@myagents-dsh/test-host",

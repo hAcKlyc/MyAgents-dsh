@@ -1,6 +1,9 @@
 import { Context } from "@deepseek-ai/cordis";
 import { NativeRpcServer } from "@myagents-dsh/rpc-server";
-import type { NativeRpcLifecycleAuthority } from "@myagents-dsh/runtime-product";
+import type {
+  NativeRpcLifecycleAuthority,
+  ProductSessionService,
+} from "@myagents-dsh/runtime-product";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +12,10 @@ describe("native RPC engine authority", () => {
     const input = new PassThrough();
     const output = new PassThrough();
     const root = new Context();
+    root.provide("productSession", {
+      bindWorkspace: (workspace: unknown) => workspace,
+      snapshot: () => Object.freeze({ state: "unbound" as const }),
+    } as ProductSessionService);
     try {
       await expect(root.plugin(NativeRpcServer, {
         compositionAuthority: Object.freeze({}) as NativeRpcLifecycleAuthority,

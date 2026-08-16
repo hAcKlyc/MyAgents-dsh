@@ -2,7 +2,7 @@ import { Type, type Static, type TSchema } from "typebox";
 
 export const PROTOCOL_VERSION = "2.0.0-draft.1" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
-export const DSH_ENGINE_VERSION = "0.1.0-rc.5.myagents.47f943859bef.79f64a697638" as const;
+export const DSH_ENGINE_VERSION = "0.1.0-rc.5.myagents.47f943859bef.822013237935" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
 export const MAX_FRAME_BYTES = 1_048_576;
 export const MIN_FRAME_BYTES = 4_096;
@@ -705,8 +705,8 @@ export const REFERENCE_RUNTIME_CAPABILITIES: RuntimeCapabilityProfile = {
   security: { execution: "trusted-local-user-process", osSandbox: false, secrets: "reverse-port-only", checkpoint: "root-write-edit-only-v1" },
 };
 
-export const A2_RUNTIME_CAPABILITIES = Object.freeze({
-  profile: "myagents-dsh-batch-1-a2-candidate-v1",
+export const BATCH1_RUNTIME_CAPABILITIES = Object.freeze({
+  profile: "myagents-dsh-batch-1-candidate-v1",
   sessions: Object.freeze({ resume: "unavailable", history: "unavailable", compact: "unavailable", fork: "unavailable", rewind: "unavailable", delete: "unavailable" }),
   turns: Object.freeze({ steer: "unavailable", followUp: "unavailable", interrupt: "unavailable", terminal: "unavailable", idempotency: "unavailable" }),
   interaction: Object.freeze({ permission: "unavailable", askUser: "unavailable", plan: "unavailable", settlement: "unavailable", headless: "unavailable" }),

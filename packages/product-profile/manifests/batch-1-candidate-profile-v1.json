@@ -8,9 +8,10 @@
       "@deepseek-ai/dsh-tools:ToolRuntime",
       "@myagents-dsh/runtime-product:adapterRegistration",
       "@deepseek-ai/dsh-agent-loop:AgentLoop",
+      "@myagents-dsh/runtime-product:ProductSessionService",
       "@myagents-dsh/rpc-server:NativeRpcServer"
     ],
-    "maxPrimaryRootSessions": 0,
+    "maxPrimaryRootSessions": 1,
     "packageAuthorities": {
       "@myagents-dsh/product-profile": "0.0.0",
       "@myagents-dsh/protocol": "0.0.0",
@@ -21,16 +22,16 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "31e2d03e7eb0c9790e05c71faf442ecd9298801632cd41ad8edea8b6ed5e406f",
-    "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
+    "artifactManifestSha256": "2c6ce446c86784aa5c18ed50dc64e221f701397d8fe563efdf48168d12cc68fd",
+    "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",
-      "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-      "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-      "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-      "@deepseek-ai/dsh-session": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-      "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-      "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638"
+      "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+      "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+      "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+      "@deepseek-ai/dsh-session": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+      "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+      "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.822013237935"
     }
   },
   "formatVersion": 1,
@@ -42,7 +43,7 @@
       "linux-x64"
     ]
   },
-  "profileId": "myagents-dsh-batch-1-a2-candidate-v1",
+  "profileId": "myagents-dsh-batch-1-candidate-v1",
   "protocol": {
     "availableHostMethods": [
       "initialize",
@@ -54,9 +55,9 @@
       "rpc/cancel"
     ],
     "availableReverseMethods": [],
-    "schemaSha256": "64e270a2bd8f4a9761839b18d3c29d3bfe1a1ad94f27c54a158b5e9a85fc8ab3",
+    "schemaSha256": "62846a30c8b92104d95f1ff7dd428ba8880d65a3dc291e8f9314c4948be00767",
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "workstream-evidence-only",
-  "stage": "batch-1-w1-a2"
+  "stage": "batch-1-w1-a3"
 }

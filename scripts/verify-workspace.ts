@@ -69,7 +69,7 @@ const expectedWorkspaceFiles = new Map([
   ]],
   ["packages/product-profile", [
     "manifests/accepted-patched-dsh-artifact-v1.json",
-    "manifests/batch-1-a2-candidate-profile-v1.json",
+    "manifests/batch-1-candidate-profile-v1.json",
     "src/candidate-runtime-profile-authority.ts",
     "src/candidate-runtime-profile.ts",
     "src/dsh-public-surface.compile.ts",
@@ -88,7 +88,7 @@ const expectedWorkspaceFiles = new Map([
     "generated/host-client.generated.ts",
   ]],
   ["packages/rpc-server", ["src/index.ts", "src/native-rpc-service.ts"]],
-  ["packages/runtime-product", ["src/composition.ts", "src/index.ts"]],
+  ["packages/runtime-product", ["src/composition.ts", "src/index.ts", "src/primary-session.ts"]],
   ["packages/test-host", ["src/index.ts", "src/memory-peer.ts", "src/standard-test-host.ts"]],
   ["packages/testkit", ["src/fake-llm-adapter.ts", "src/index.ts"]],
 ]);

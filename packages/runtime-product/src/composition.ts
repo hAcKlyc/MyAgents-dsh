@@ -11,9 +11,10 @@ import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
-  BATCH1_A2_ADAPTER_REGISTRATION_PLUGIN_ID,
+  BATCH1_ADAPTER_REGISTRATION_PLUGIN_ID,
   assertAcceptedDshRuntimeGraph,
 } from "@myagents-dsh/product-profile";
+import { ProductSessionService, type PrimarySessionState } from "./primary-session.js";
 
 export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "session-store",
@@ -23,6 +24,7 @@ export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "tool-runtime",
   "llm-adapter",
   "agent-loop",
+  "product-session",
 ] as const);
 
 export interface DshRootCompositionOptions {
@@ -38,6 +40,8 @@ export interface DshRootCompositionSnapshot {
   readonly artifactVersion: string;
   readonly liveRootAgents: number;
   readonly providers: readonly string[];
+  readonly primarySessionState: PrimarySessionState;
+  readonly runtimeSessionId?: string;
   readonly serviceOrder: typeof DSH_ROOT_SERVICE_ORDER;
 }
 
@@ -145,7 +149,7 @@ const adapterPlugin = (
   const install: Plugin.Function<void> = function adapterRegistration(ctx) {
     return ctx.llm.registerAdapter([...providers], adapter);
   };
-  if (`@myagents-dsh/runtime-product:${install.name}` !== BATCH1_A2_ADAPTER_REGISTRATION_PLUGIN_ID) {
+  if (`@myagents-dsh/runtime-product:${install.name}` !== BATCH1_ADAPTER_REGISTRATION_PLUGIN_ID) {
     throw new Error("DSH adapter-registration plugin identity differs from the candidate profile");
   }
   install.inject = ["llm"];
@@ -248,11 +252,16 @@ export class DshRootComposition {
     if (JSON.stringify(registeredProviders) !== JSON.stringify(expectedProviders)) {
       throw new Error("DSH root composition provider registry differs from its authority");
     }
+    const primarySession = this.context.productSession.snapshot();
     return Object.freeze({
       artifactManifestSha256: ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256,
       artifactVersion: ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion,
-      liveRootAgents: this.context.agents.roots().length,
+      liveRootAgents: primarySession.liveRootAgents,
+      primarySessionState: primarySession.state,
       providers: Object.freeze(registeredProviders),
+      ...(primarySession.runtimeSessionId === undefined
+        ? {}
+        : { runtimeSessionId: primarySession.runtimeSessionId }),
       serviceOrder: DSH_ROOT_SERVICE_ORDER,
     });
   }
@@ -287,6 +296,7 @@ export const composeDshRootServices = async (
       ...agentLoop,
       agents: [],
     });
+    await root.plugin(ProductSessionService);
     const composition = new DshRootComposition(root, providers);
     composition.snapshot();
     compositionAuthorities.set(root, {

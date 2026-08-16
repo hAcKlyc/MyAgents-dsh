@@ -5,8 +5,8 @@ import { dirname, posix, resolve, win32 } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  BATCH1_A2_CANDIDATE_PROFILE,
-  BATCH1_A2_CANDIDATE_PROFILE_SHA256,
+  BATCH1_CANDIDATE_PROFILE,
+  BATCH1_CANDIDATE_PROFILE_SHA256,
   PLATFORM_EVIDENCE_STATES,
   PLATFORM_TARGETS,
   assertFoundationProfile,
@@ -46,25 +46,28 @@ describe("official product profile authority", () => {
       installedPluginCount: 0,
       activationState: "forbidden-until-patched-dsh-and-batch-1-gate",
     });
-    expect(BATCH1_A2_CANDIDATE_PROFILE).toMatchObject({
-      profileId: "myagents-dsh-batch-1-a2-candidate-v1",
+    expect(BATCH1_CANDIDATE_PROFILE).toMatchObject({
+      profileId: "myagents-dsh-batch-1-candidate-v1",
+      stage: "batch-1-w1-a3",
       runtimeActivation: "workstream-evidence-only",
       composition: {
-        maxPrimaryRootSessions: 0,
+        maxPrimaryRootSessions: 1,
       },
       protocol: {
         availableHostMethods: ["initialize", "runtime/status", "runtime/shutdown"],
         availableReverseMethods: [],
       },
     });
-    expect(BATCH1_A2_CANDIDATE_PROFILE.composition.installedPluginAllowlist)
-      .toContain("@myagents-dsh/rpc-server:NativeRpcServer");
+    expect(BATCH1_CANDIDATE_PROFILE.composition.installedPluginAllowlist).toEqual(expect.arrayContaining([
+      "@myagents-dsh/runtime-product:ProductSessionService",
+      "@myagents-dsh/rpc-server:NativeRpcServer",
+    ]));
     const candidateBytes = await readFile(resolve(
       repositoryRoot,
-      "packages/product-profile/manifests/batch-1-a2-candidate-profile-v1.json",
+      "packages/product-profile/manifests/batch-1-candidate-profile-v1.json",
     ), "utf8");
     expect(createHash("sha256").update(candidateBytes).digest("hex"))
-      .toBe(BATCH1_A2_CANDIDATE_PROFILE_SHA256);
+      .toBe(BATCH1_CANDIDATE_PROFILE_SHA256);
   });
 
   it("fails closed on generated drift and premature Runtime activation", async () => {

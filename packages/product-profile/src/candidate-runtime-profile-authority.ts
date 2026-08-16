@@ -1,18 +1,18 @@
-import candidateProfileJson from "../manifests/batch-1-a2-candidate-profile-v1.json" with { type: "json" };
+import candidateProfileJson from "../manifests/batch-1-candidate-profile-v1.json" with { type: "json" };
 
-import { BATCH1_A2_CANDIDATE_PROFILE_SHA256 } from "./official-profile-authority.generated.js";
+import { BATCH1_CANDIDATE_PROFILE_SHA256 } from "./official-profile-authority.generated.js";
 import {
-  BATCH1_A2_INSTALLED_PLUGIN_ALLOWLIST,
+  BATCH1_INSTALLED_PLUGIN_ALLOWLIST,
   candidateRuntimeProfileDigest,
-  type Batch1A2CandidateProfileManifest,
+  type Batch1CandidateProfileManifest,
 } from "./candidate-runtime-profile.js";
 
-const candidate = structuredClone(candidateProfileJson) as unknown as Batch1A2CandidateProfileManifest;
+const candidate = structuredClone(candidateProfileJson) as unknown as Batch1CandidateProfileManifest;
 
 if (JSON.stringify(candidate.composition.installedPluginAllowlist)
-    !== JSON.stringify(BATCH1_A2_INSTALLED_PLUGIN_ALLOWLIST)
-  || candidateRuntimeProfileDigest(candidate) !== BATCH1_A2_CANDIDATE_PROFILE_SHA256) {
-  throw new TypeError("Batch 1 A2 candidate profile differs from its generated content authority");
+    !== JSON.stringify(BATCH1_INSTALLED_PLUGIN_ALLOWLIST)
+  || candidateRuntimeProfileDigest(candidate) !== BATCH1_CANDIDATE_PROFILE_SHA256) {
+  throw new TypeError("Batch 1 candidate profile differs from its generated content authority");
 }
 
 const deepFreeze = <Value>(value: Value): Value => {
@@ -23,5 +23,5 @@ const deepFreeze = <Value>(value: Value): Value => {
   return value;
 };
 
-export const BATCH1_A2_CANDIDATE_PROFILE = deepFreeze(candidate);
-export { BATCH1_A2_CANDIDATE_PROFILE_SHA256 };
+export const BATCH1_CANDIDATE_PROFILE = deepFreeze(candidate);
+export { BATCH1_CANDIDATE_PROFILE_SHA256 };

@@ -1,7 +1,7 @@
 import { Context } from "@deepseek-ai/cordis";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
-  BATCH1_A2_CANDIDATE_PROFILE_SHA256,
+  BATCH1_CANDIDATE_PROFILE_SHA256,
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
 import {
@@ -15,7 +15,10 @@ import {
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
 import { NativeRpcServer } from "@myagents-dsh/rpc-server";
 import type * as ProductProfileExports from "@myagents-dsh/product-profile";
-import type { NativeRpcLifecycleAuthority } from "@myagents-dsh/runtime-product";
+import type {
+  NativeRpcLifecycleAuthority,
+  ProductSessionService,
+} from "@myagents-dsh/runtime-product";
 import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 
@@ -39,6 +42,14 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
 
 const digest = "a".repeat(64);
 const compositionAuthority = Object.freeze({}) as NativeRpcLifecycleAuthority;
+const createRoot = (): Context => {
+  const root = new Context();
+  root.provide("productSession", {
+    bindWorkspace: (workspace: unknown) => workspace,
+    snapshot: () => Object.freeze({ state: "unbound" as const }),
+  } as ProductSessionService);
+  return root;
+};
 
 const initializeParams = (): InitializeParams => ({
   protocol: { minVersion: PROTOCOL_VERSION, maxVersion: PROTOCOL_VERSION },
@@ -137,7 +148,7 @@ const createHarness = async (platformTarget: PlatformTarget = "darwin-arm64"): P
     limits: REFERENCE_PROTOCOL_LIMITS,
     onFatalError: (error) => hostFatalErrors.push(error),
   });
-  const root = new Context();
+  const root = createRoot();
   await root.plugin(NativeRpcServer, {
     compositionAuthority,
     input: runtimeInput,
@@ -205,7 +216,7 @@ describe("native RPC Cordis service", () => {
           maxPendingRequests: 64,
           eventQueueHighWatermark: 512,
         },
-        profileDigest: BATCH1_A2_CANDIDATE_PROFILE_SHA256,
+        profileDigest: BATCH1_CANDIDATE_PROFILE_SHA256,
       });
       expect(initialized.runtimeEngine.version).toBe(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion);
       await vi.waitFor(() => expect(harness.server.phase).toBe("await_initialized"));
@@ -273,7 +284,7 @@ describe("native RPC Cordis service", () => {
   it("makes initialized admission ordered with the next request and keeps legal unknown requests non-fatal", async () => {
     const runtimeInput = new PassThrough();
     const runtimeOutput = new PassThrough();
-    const root = new Context();
+    const root = createRoot();
     await root.plugin(NativeRpcServer, {
       compositionAuthority,
       input: runtimeInput,
@@ -337,7 +348,7 @@ describe("native RPC Cordis service", () => {
   it("does not consume initialization when a same-batch cancellation wins before commit", async () => {
     const input = new PassThrough();
     const output = new PassThrough();
-    const root = new Context();
+    const root = createRoot();
     await root.plugin(NativeRpcServer, {
       compositionAuthority,
       input,
@@ -381,7 +392,7 @@ describe("native RPC Cordis service", () => {
       highWaterMark: 1_048_576,
       write(_chunk, _encoding, callback) { callbacks.push(callback); },
     });
-    const root = new Context();
+    const root = createRoot();
     await root.plugin(NativeRpcServer, {
       compositionAuthority,
       input,
@@ -517,7 +528,7 @@ describe("native RPC Cordis service", () => {
   it("rejects invalid or accessor-bearing trusted composition config before transport use", async () => {
     const input = new PassThrough();
     const output = new PassThrough();
-    const root = new Context();
+    const root = createRoot();
     try {
       await expect(root.plugin(NativeRpcServer, {
         compositionAuthority,

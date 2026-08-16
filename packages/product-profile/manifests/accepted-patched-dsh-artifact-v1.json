@@ -1,22 +1,24 @@
 {
   "formatVersion": 1,
-  "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-  "manifestSha256": "31e2d03e7eb0c9790e05c71faf442ecd9298801632cd41ad8edea8b6ed5e406f",
-  "sha256SumsSha256": "ef48078ccf126af892393a27d393770983a2a840b00c9ffeb669a6ce8062db18",
-  "consumerLockSha256": "d7ccbcec5315ef419cd74ec8eedaaf4a6dab9347883e1b1b48faa7350962cfa8",
+  "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+  "manifestSha256": "2c6ce446c86784aa5c18ed50dc64e221f701397d8fe563efdf48168d12cc68fd",
+  "sha256SumsSha256": "5445f941b366f8255d6e43e5567fb8cd65cb21c176f5c5b72ebd50ff98d915a8",
+  "consumerLockSha256": "28a65a57118898780a2a9d6e84c46da694b0e8e8cda34a5fc8fc5ec3ba2b3c57",
   "packageCount": 46,
   "runtimePackages": {
     "@deepseek-ai/cordis": "4.0.1",
-    "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-    "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-    "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-    "@deepseek-ai/dsh-session": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-    "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
-    "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638"
+    "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+    "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+    "@deepseek-ai/dsh-session": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+    "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.822013237935"
   },
   "requiredPatchedSeams": [
     "agent.wakePending",
     "agent/pre-assistant-commit",
-    "session-persistence.isKnownEventType"
+    "session-persistence.isKnownEventType",
+    "agents.setPublicationGuard",
+    "sessions.setPublicationGuard"
   ]
 }

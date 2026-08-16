@@ -16,6 +16,7 @@ The program-level policy already permits a pinned, minimal, upstream-ready DSH p
 | Required downstream Session events use an optional generated known-event predicate in `PersistenceCoordinator` | accepted | [ADR 0003](./0003-product-session-event-predicate.md) |
 | Production persistence is a MyAgents SQLite Provider plus mutation companion over one storage owner | composition accepted; production implementation/fault campaign remain B1-W4 | [ADR 0004](./0004-shared-backend-lock-and-immutable-rewind-generation.md) |
 | Rewind creates an immutable storage generation and atomically switches the active locator | accepted; production journal/locator implementation remains B1-W4 | [ADR 0004](./0004-shared-backend-lock-and-immutable-rewind-generation.md) |
+| One primary root Session is fenced at the DSH Session and Agent pre-publication commit boundaries | accepted | [ADR 0005](./0005-root-publication-guards.md) |
 | Dynamic component replacement uses prepared generations and an operation-quiescent commit | RFC interfaces selected; unresolved until spike | zero-visibility/atomicity/rollback/leak spike |
 
 The register is an index, not a substitute for the numbered ADR created when a choice is accepted.

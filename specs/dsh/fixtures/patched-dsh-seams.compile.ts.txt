@@ -1,10 +1,12 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type {
   Agent,
+  AgentPublicationGuard,
   PreparedAssistantCommit,
   PreparedAssistantToolCall,
 } from "@deepseek-ai/dsh-agent";
 import type { MessageId } from "@deepseek-ai/dsh-llm";
+import type { SessionPublicationGuard } from "@deepseek-ai/dsh-session";
 import type { PersistenceCoordinatorOptions } from "@deepseek-ai/dsh-session-persistence";
 
 export interface PatchedDshSeamTypes {
@@ -18,6 +20,12 @@ export const compilePatchedDshSeams = (
   messageId: MessageId,
   persistence: PersistenceCoordinatorOptions,
 ): PersistenceCoordinatorOptions => {
+  const agentGuard: AgentPublicationGuard = () => undefined;
+  const sessionGuard: SessionPublicationGuard = () => undefined;
+  const disposeAgentGuard = ctx.agents.setPublicationGuard(agentGuard);
+  const disposeSessionGuard = ctx.sessions.setPublicationGuard(sessionGuard);
+  disposeSessionGuard();
+  disposeAgentGuard();
   const woke: boolean | undefined = agent.wakePending?.(messageId);
   void woke;
   ctx.on("agent/pre-assistant-commit", async ({ commit, signal }, next) => {

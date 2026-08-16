@@ -5,6 +5,9 @@
     "outDir": "../../dist/packages/runtime-product",
     "tsBuildInfoFile": "../../dist/packages/runtime-product/.tsbuildinfo"
   },
-  "files": ["src/composition.ts", "src/index.ts"],
-  "references": [{ "path": "../product-profile" }]
+  "files": ["src/composition.ts", "src/index.ts", "src/primary-session.ts"],
+  "references": [
+    { "path": "../product-profile" },
+    { "path": "../protocol" }
+  ]
 }

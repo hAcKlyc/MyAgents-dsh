@@ -1,17 +1,17 @@
 import { Service, type Context } from "@deepseek-ai/cordis";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
-  BATCH1_A2_AVAILABLE_HOST_METHODS,
-  BATCH1_A2_AVAILABLE_NOTIFICATIONS,
-  BATCH1_A2_AVAILABLE_REVERSE_METHODS,
-  BATCH1_A2_CANDIDATE_PROFILE,
-  BATCH1_A2_CANDIDATE_PROFILE_SHA256,
+  BATCH1_AVAILABLE_HOST_METHODS,
+  BATCH1_AVAILABLE_NOTIFICATIONS,
+  BATCH1_AVAILABLE_REVERSE_METHODS,
+  BATCH1_CANDIDATE_PROFILE,
+  BATCH1_CANDIDATE_PROFILE_SHA256,
   assertAcceptedDshRuntimeGraph,
   selectPlatformAdapter,
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
 import {
-  A2_RUNTIME_CAPABILITIES,
+  BATCH1_RUNTIME_CAPABILITIES,
   DSH_ENGINE_VERSION,
   JsonRpcPeer,
   PROTOCOL_VERSION,
@@ -29,6 +29,7 @@ import protocolMetaJson from "@myagents-dsh/protocol/protocol-meta.json" with { 
 import {
   consumeNativeRpcLifecycleAuthority,
   type NativeRpcLifecycleAuthority,
+  type ProductSessionService,
 } from "@myagents-dsh/runtime-product";
 import { Readable, Writable } from "node:stream";
 
@@ -176,16 +177,16 @@ const assertProtocolArtifactAuthority = (): void => {
     || DSH_ENGINE_VERSION !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
     || protocolMeta.dshArtifactManifestSha256 !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
     || !sha256Pattern.test(protocolMeta.schemaSha256)
-    || protocolMeta.schemaSha256 !== BATCH1_A2_CANDIDATE_PROFILE.protocol.schemaSha256
-    || protocolMeta.protocolVersion !== BATCH1_A2_CANDIDATE_PROFILE.protocol.version
+    || protocolMeta.schemaSha256 !== BATCH1_CANDIDATE_PROFILE.protocol.schemaSha256
+    || protocolMeta.protocolVersion !== BATCH1_CANDIDATE_PROFILE.protocol.version
     || protocolMeta.dshArtifactManifestSha256
-      !== BATCH1_A2_CANDIDATE_PROFILE.dsh.artifactManifestSha256
-    || JSON.stringify(BATCH1_A2_CANDIDATE_PROFILE.protocol.availableHostMethods)
-      !== JSON.stringify(BATCH1_A2_AVAILABLE_HOST_METHODS)
-    || JSON.stringify(BATCH1_A2_CANDIDATE_PROFILE.protocol.availableReverseMethods)
-      !== JSON.stringify(BATCH1_A2_AVAILABLE_REVERSE_METHODS)
-    || JSON.stringify(BATCH1_A2_CANDIDATE_PROFILE.protocol.availableNotifications)
-      !== JSON.stringify(BATCH1_A2_AVAILABLE_NOTIFICATIONS)) {
+      !== BATCH1_CANDIDATE_PROFILE.dsh.artifactManifestSha256
+    || JSON.stringify(BATCH1_CANDIDATE_PROFILE.protocol.availableHostMethods)
+      !== JSON.stringify(BATCH1_AVAILABLE_HOST_METHODS)
+    || JSON.stringify(BATCH1_CANDIDATE_PROFILE.protocol.availableReverseMethods)
+      !== JSON.stringify(BATCH1_AVAILABLE_REVERSE_METHODS)
+    || JSON.stringify(BATCH1_CANDIDATE_PROFILE.protocol.availableNotifications)
+      !== JSON.stringify(BATCH1_AVAILABLE_NOTIFICATIONS)) {
     throw new Error("native RPC protocol metadata differs from the accepted runtime artifact authority");
   }
 };
@@ -327,7 +328,9 @@ const emptyActiveCounts = () => ({
 });
 
 export class NativeRpcServer extends Service {
+  static inject = ["productSession"];
   private readonly peerValue: JsonRpcPeer;
+  private readonly productSessionValue: ProductSessionService;
   private readonly configValue: NormalizedConfig;
   private readonly stopHandlers: Array<() => void> = [];
   private readonly exitRequestedPromise: Promise<NativeRpcExitRequest>;
@@ -338,6 +341,7 @@ export class NativeRpcServer extends Service {
 
   constructor(ctx: Context, config: NativeRpcServerConfig) {
     super(ctx, "nativeRpc");
+    this.productSessionValue = ctx.productSession;
     assertAcceptedDshRuntimeGraph();
     assertProtocolArtifactAuthority();
     this.configValue = validateConfig(config);
@@ -396,6 +400,11 @@ export class NativeRpcServer extends Service {
     }
     assertCompatibleProtocol(params.protocol.minVersion, params.protocol.maxVersion);
     validateInitializationEnvironment(params, this.configValue.platformTarget);
+    this.productSessionValue.bindWorkspace({
+      identity: params.workspace.identity,
+      path: params.workspace.path,
+      platformTarget: this.configValue.platformTarget,
+    });
     const limits = minimumLimits(params.limits, this.configValue.limits);
     context.commit();
     this.peerValue.updateLimits(limits);
@@ -415,18 +424,28 @@ export class NativeRpcServer extends Service {
         buildRevision: ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256,
       },
       sessionFormat: SESSION_FORMAT,
-      runtimeCapabilities: A2_RUNTIME_CAPABILITIES,
+      runtimeCapabilities: BATCH1_RUNTIME_CAPABILITIES,
       limits,
       schemaSha256: protocolMeta.schemaSha256,
-      profileDigest: BATCH1_A2_CANDIDATE_PROFILE_SHA256,
+      profileDigest: BATCH1_CANDIDATE_PROFILE_SHA256,
     };
   }
 
   private statusSnapshot() {
+    const primarySession = this.productSessionValue.snapshot();
     return {
       runtimeGeneration: this.configValue.runtimeGeneration,
       initialized: this.phaseValue === "ready" || this.phaseValue === "shutdown_requested",
-      primarySessionState: "unbound" as const,
+      primarySessionState: primarySession.state,
+      ...(primarySession.runtimeSessionId === undefined
+        ? {}
+        : { runtimeSessionId: primarySession.runtimeSessionId }),
+      ...(primarySession.desiredConfigRevision === undefined
+        ? {}
+        : { desiredConfigRevision: primarySession.desiredConfigRevision }),
+      ...(primarySession.effectiveConfigRevision === undefined
+        ? {}
+        : { effectiveConfigRevision: primarySession.effectiveConfigRevision }),
       active: emptyActiveCounts(),
     };
   }

@@ -16,7 +16,7 @@ import { parseArgs } from "node:util";
 
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
-  BATCH1_A2_CANDIDATE_PROFILE_SHA256,
+  BATCH1_CANDIDATE_PROFILE_SHA256,
 } from "@myagents-dsh/product-profile";
 import protocolMetaJson from "@myagents-dsh/protocol/protocol-meta.json" with { type: "json" };
 
@@ -157,7 +157,7 @@ const stageBuiltPackage = (
     mkdirSync(manifestDirectory);
     for (const filename of [
       "accepted-patched-dsh-artifact-v1.json",
-      "batch-1-a2-candidate-profile-v1.json",
+      "batch-1-candidate-profile-v1.json",
     ]) {
       cpSync(
         resolve(repositoryRoot, "packages/product-profile/manifests", filename),
@@ -221,6 +221,7 @@ const cleanBuildRuntimeComposition = (
     "packages/rpc-server/src/native-rpc-service.ts",
     "packages/runtime-product/src/composition.ts",
     "packages/runtime-product/src/index.ts",
+    "packages/runtime-product/src/primary-session.ts",
     "packages/testkit/src/fake-llm-adapter.ts",
     "packages/testkit/src/index.ts",
     "tests/fixtures/dsh-runtime-composition.artifact.ts",
@@ -359,9 +360,12 @@ const main = (): void => {
       || evidence.snapshotPreflightFailureDisposed !== true
       || evidence.startupFailureDisposed !== true
       || evidence.patchedWakePending !== true
+      || evidence.publicationGuardsVerified !== true
+      || evidence.publicationTransientVerified !== true
+      || evidence.roguePublicationInvisible !== true
       || evidence.nativeRpcEngineVersion !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
       || evidence.nativeRpcInitialized !== true
-      || evidence.nativeRpcProfileDigest !== BATCH1_A2_CANDIDATE_PROFILE_SHA256
+      || evidence.nativeRpcProfileDigest !== BATCH1_CANDIDATE_PROFILE_SHA256
       || evidence.nativeRpcSchemaSha256 !== protocolMetaJson.schemaSha256
       || evidence.nativeRpcShutdown !== "shutdown"
       || evidence.nativeRpcStopped !== true
@@ -383,12 +387,16 @@ const main = (): void => {
     const shutdownResult = exactObject(shutdownFrame?.result, "observed shutdown result");
     if (runtimeEngine.version !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
       || runtimeEngine.buildRevision !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
-      || initializeResult.profileDigest !== BATCH1_A2_CANDIDATE_PROFILE_SHA256
+      || initializeResult.profileDigest !== BATCH1_CANDIDATE_PROFILE_SHA256
       || initializeResult.schemaSha256 !== protocolMetaJson.schemaSha256
-      || capabilities.profile !== "myagents-dsh-batch-1-a2-candidate-v1"
+      || capabilities.profile !== "myagents-dsh-batch-1-candidate-v1"
       || statusResult.initialized !== true
+      || statusResult.primarySessionState !== "ready"
+      || statusResult.runtimeSessionId !== "dsh-artifact-primary"
+      || statusResult.desiredConfigRevision !== "artifact-config-v1"
+      || Object.hasOwn(statusResult, "effectiveConfigRevision")
       || shutdownResult.ok !== true) {
-      throw new Error("observed native RPC frames differ from the content-addressed A2 authority");
+      throw new Error("observed native RPC frames differ from the content-addressed Batch 1 authority");
     }
     process.stdout.write(`patched DSH runtime composition verified: ${output}\n`);
   } finally {

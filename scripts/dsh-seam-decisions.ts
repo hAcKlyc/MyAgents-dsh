@@ -19,6 +19,11 @@ export const DSH_SEAM_SOURCE = Object.freeze({
       sha256: "c2151e5b245fef908e8fcb0a1ea8d0a32e222c753cbaea23aee6dc865e2d6010",
     }),
     Object.freeze({
+      path: "packages/core/agent/src/index.ts",
+      blob: "81052096dc057b69cc454c4db870a0edb7b4ae9f",
+      sha256: "e4986fec8aa6e991378f0195df4e931e4ca5bf31b2af886f55a3242691db6804",
+    }),
+    Object.freeze({
       path: "packages/core/agent-loop/src/agent.ts",
       blob: "668ef6582657ed0e1e4420777696ee50251371ad",
       sha256: "e775e59f3761240ee571a9b997d0d29deb97a283b6c2fc3a071091b2743d22b4",
@@ -27,6 +32,11 @@ export const DSH_SEAM_SOURCE = Object.freeze({
       path: "packages/session/session-persistence/src/coordinator.ts",
       blob: "eb5f9714c4838e492500b8452e28012c53b58bf5",
       sha256: "e7bbc321bdb09ea8870027bd5a3e285472dddc8e4346f95f85addacf6eb784d1",
+    }),
+    Object.freeze({
+      path: "packages/core/session/src/index.ts",
+      blob: "2d82a88623cf8b8d381f9ba905ba2e7088cbfe12",
+      sha256: "9594e128e8b170845d703e37a54902cd0cd8b2e73e8555e94594575bd18af8f9",
     }),
     Object.freeze({
       path: "packages/core/agent-loop/tests/cancel.spec.ts",
@@ -52,6 +62,7 @@ export const DSH_SEAM_SOURCE = Object.freeze({
 });
 
 export const PATCHED_SOURCE_TESTS = Object.freeze([
+  "packages/core/agent-loop/tests/publication-guards.spec.ts",
   "packages/core/agent-loop/tests/cancel.spec.ts",
   "packages/core/agent-loop/tests/pre-assistant-commit.spec.ts",
   "packages/core/scope/tests/invariant.spec.ts",
@@ -61,10 +72,12 @@ export const PATCHED_SOURCE_TESTS = Object.freeze([
 const WAKE_PATCH = "specs/dsh/patches/0001-agent-wake-pending.patch";
 const PRE_ASSISTANT_COMMIT_PATCH = "specs/dsh/patches/0002-pre-assistant-commit.patch";
 const KNOWN_EVENT_PATCH = "specs/dsh/patches/0003-persistence-known-event-predicate.patch";
+const PUBLICATION_GUARDS_PATCH = "specs/dsh/patches/0004-publication-guards.patch";
 export const DSH_SEAM_PATCHES = Object.freeze([
   WAKE_PATCH,
   PRE_ASSISTANT_COMMIT_PATCH,
   KNOWN_EVENT_PATCH,
+  PUBLICATION_GUARDS_PATCH,
 ] as const);
 
 export interface DshSeamPatchSnapshot {
@@ -184,6 +197,23 @@ export function buildDshSeamDecisions(): object {
           "public PersistenceBackend plus exact-revision recoverable tombstone delete survives response loss",
         ],
         removalCondition: "superseding ADR after production SQLite fault evidence proves a narrower composition",
+      },
+      {
+        id: "DSH-SEAM-005",
+        seam: "root-agent-and-session-publication-guards",
+        status: "required_upstream_patch_accepted",
+        adr: "specs/adr/0005-root-publication-guards.md",
+        rejected: "post-publication-agent-created-veto-and-registry-snapshot-detection",
+        selectedPublicApi: "AgentRegistry.setPublicationGuard and SessionStore.setPublicationGuard",
+        patch: patch(PUBLICATION_GUARDS_PATCH),
+        executableEvidence: [
+          "Session guard rejects before store or attachment mutation",
+          "Agent guard rejects before registry mutation with exact runtime-owner input",
+          "guard registration is exclusive, effect-scoped, and restores stock behavior on disposal",
+          "official one-root permit covers Session and Agent entry plus reentrant publication observation",
+          "direct Session and advanced Agent publication bypasses fail before visibility",
+        ],
+        removalCondition: "an installed DSH release exposes equivalent synchronous pre-publication guards",
       },
     ],
     evidenceOwners: {

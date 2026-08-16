@@ -3,17 +3,19 @@ import { PassThrough } from "node:stream";
 import { setImmediate as yieldImmediate } from "node:timers/promises";
 
 import { Context } from "@deepseek-ai/cordis";
+import type { Agent } from "@deepseek-ai/dsh-agent";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
-import { SessionId } from "@deepseek-ai/dsh-session";
+import { Session, SessionId } from "@deepseek-ai/dsh-session";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
-  BATCH1_A2_CANDIDATE_PROFILE_SHA256,
+  BATCH1_CANDIDATE_PROFILE_SHA256,
 } from "@myagents-dsh/product-profile";
 import {
   JsonRpcPeer,
   PROTOCOL_VERSION,
   REFERENCE_PROTOCOL_LIMITS,
   type InitializeParams,
+  type MethodParams,
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
 import { NativeRpcServer } from "@myagents-dsh/rpc-server";
@@ -22,6 +24,7 @@ import {
   claimNativeRpcLifecycleAuthority,
   composeDshRootServices,
   type NativeRpcLifecycleAuthority,
+  type ProductSessionService,
 } from "@myagents-dsh/runtime-product";
 import { ScriptedFakeLlmAdapter } from "@myagents-dsh/testkit";
 
@@ -118,13 +121,31 @@ adapter.enqueue({ kind: "await-abort" });
 const composition = await composeDshRootServices({
   adapter,
   providers: ["fixture"],
-  systemPrompt: { persona: "Synthetic artifact persona." },
+  systemPrompt: { persona: "Composition-owned persona, not the desired Session revision." },
   tools: { mode: "native" },
 });
+assert.throws(() => composition.context.sessions.create(SessionId("rogue-direct-session")),
+  /Session publication lacks the primary Session admission authority/u);
+const advancedRogueSession = Session.create(SessionId("rogue-advanced-agent"));
+const advancedRogueAgent = {
+  id: advancedRogueSession.id,
+  session: advancedRogueSession,
+} as Agent;
+assert.throws(() => composition.context.agents.enter(advancedRogueAgent, undefined),
+  /root Agent publication lacks the primary Session admission authority/u);
+await assert.rejects(composition.context.agents.create({
+  sessionId: SessionId("rogue-before-admission"),
+  agentOptions: { provider: "fixture", model: "fixture-model" },
+}), /lacks the primary Session admission authority/u);
+assert.equal(composition.context.agents.roots().length, 0);
 
 const bareInput = new PassThrough();
 const bareOutput = new PassThrough();
 const bareContext = new Context();
+bareContext.provide("productSession", {
+  bindWorkspace: (workspace: unknown) => workspace,
+  snapshot: () => Object.freeze({ state: "unbound" as const }),
+} as ProductSessionService);
 await assert.rejects(Promise.resolve(bareContext.plugin(NativeRpcServer, {
   compositionAuthority: Object.freeze({}) as NativeRpcLifecycleAuthority,
   input: bareInput,
@@ -256,28 +277,96 @@ directRootOutput.destroy();
 const rpcInitialization = await hostClient.initialize(initializeRequest);
 assert.equal(rpcInitialization.runtimeEngine.version, ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion);
 assert.equal(rpcInitialization.runtimeEngine.buildRevision, ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256);
-assert.equal(rpcInitialization.profileDigest, BATCH1_A2_CANDIDATE_PROFILE_SHA256);
-assert.equal(rpcInitialization.runtimeCapabilities.profile, "myagents-dsh-batch-1-a2-candidate-v1");
+assert.equal(rpcInitialization.profileDigest, BATCH1_CANDIDATE_PROFILE_SHA256);
+assert.equal(rpcInitialization.runtimeCapabilities.profile, "myagents-dsh-batch-1-candidate-v1");
 await waitUntil(() => nativeRpc.phase === "await_initialized", "initialize response completion");
 await hostClient.initialized();
+const primarySessionParams = {
+  clientOperationId: "artifact-primary-session-admission",
+  runtimeSessionId: "dsh-artifact-primary",
+  persistenceRef: "artifact-primary-persistence",
+  provider: {
+    revision: "artifact-provider-v1",
+    providerRouteId: "fixture",
+    api: "openai-completions",
+    provider: "fixture",
+    modelId: "fixture-model",
+    credentialRef: "artifact-credential-ref",
+    contextWindow: 8_192,
+    maxTokens: 1_024,
+  },
+  configRevision: "artifact-config-v1",
+  extensionDigest: rpcDigest,
+  systemPrompt: "Desired Session persona, not yet reconciled by A3.",
+  permissionMode: "default",
+  interactionScenario: "deterministic-headless",
+} satisfies MethodParams<"session/create">;
+let primaryPublicationSnapshotVerified = false;
+let roguePublicationObserved = false;
+composition.context.on("session/created", (session) => {
+  if (session.id === primarySessionParams.runtimeSessionId) {
+    const transient = composition.context.productSession.snapshot();
+    assert.equal(transient.state, "creating");
+    assert.equal(transient.liveRootAgents, 1);
+    assert.deepEqual(composition.context.sessions.list(), [session]);
+    assert.deepEqual(composition.context.agents.roots().map(({ id }) => id), [session.id]);
+    primaryPublicationSnapshotVerified = true;
+  } else if (session.id.startsWith("rogue-")) {
+    roguePublicationObserved = true;
+  }
+});
+const rogueSetupStarted = Promise.withResolvers<undefined>();
+const rogueSetupRelease = Promise.withResolvers<undefined>();
+const concurrentRogue = composition.context.agents.create({
+  sessionId: SessionId("rogue-concurrent-admission"),
+  agentOptions: { provider: "fixture", model: "fixture-model" },
+  setup: async () => {
+    rogueSetupStarted.resolve(undefined);
+    await rogueSetupRelease.promise;
+  },
+});
+await rogueSetupStarted.promise;
+const firstPrimaryAdmission = composition.context.productSession.bindCreate(primarySessionParams);
+const exactPrimaryRetry = composition.context.productSession.bindCreate(primarySessionParams);
+assert.equal(exactPrimaryRetry, firstPrimaryAdmission);
+const primaryBinding = await firstPrimaryAdmission;
+rogueSetupRelease.resolve(undefined);
+await assert.rejects(concurrentRogue, /lacks the primary Session admission authority/u);
+assert.equal(primaryPublicationSnapshotVerified, true);
+assert.equal(roguePublicationObserved, false);
+assert.equal(primaryBinding.state, "ready");
+assert.equal(primaryBinding.runtimeSessionId, "dsh-artifact-primary");
+assert.equal(Object.hasOwn(primaryBinding, "effectiveConfigRevision"), false);
+assert.throws(() => composition.context.productSession.bindCreate({
+  ...primarySessionParams,
+  systemPrompt: "Conflicting primary Session prompt.",
+}), /different or retired primary Session admission/u);
+await assert.rejects(composition.context.agents.create({
+  sessionId: SessionId("rogue-after-admission"),
+  agentOptions: { provider: "fixture", model: "fixture-model" },
+}), /lacks the primary Session admission authority/u);
+assert.throws(() => composition.context.sessions.create(SessionId("rogue-session-after-admission")),
+  /Session publication lacks the primary Session admission authority/u);
+assert.deepEqual(composition.context.sessions.list().map(({ id }) => id), ["dsh-artifact-primary"]);
 const rpcStatus = await hostClient.runtimeStatus({});
 assert.equal(rpcStatus.initialized, true);
+assert.equal(rpcStatus.primarySessionState, "ready");
+assert.equal(rpcStatus.runtimeSessionId, "dsh-artifact-primary");
+assert.equal(rpcStatus.desiredConfigRevision, "artifact-config-v1");
+assert.equal(Object.hasOwn(rpcStatus, "effectiveConfigRevision"), false);
 
-const success = await composition.context.agents.create({
-  sessionId: SessionId("dsh-artifact-success"),
-  agentOptions: { provider: "fixture", model: "fixture-model" },
-});
+const primaryAgent = composition.context.productSession.requireAgent();
 assert.equal(
-  typeof (success.agent as unknown as { wakePending?: unknown }).wakePending,
+  typeof (primaryAgent as unknown as { wakePending?: unknown }).wakePending,
   "function",
   "patched Agent.wakePending seam must be installed",
 );
-success.agent.followup(userMessage("first prompt"));
-await success.agent.whenIdle();
-success.agent.followup(userMessage("second prompt"));
-await success.agent.whenIdle();
+primaryAgent.followup(userMessage("first prompt"));
+await primaryAgent.whenIdle();
+primaryAgent.followup(userMessage("second prompt"));
+await primaryAgent.whenIdle();
 
-assert.deepEqual(success.agent.session.deriveMessages().map(({ role, content }) => ({ role, content })), [
+assert.deepEqual(primaryAgent.session.deriveMessages().map(({ role, content }) => ({ role, content })), [
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
   { role: "assistant", content: [{ type: "text", text: "first completion" }] },
   { role: "user", content: [{ type: "text", text: "second prompt" }] },
@@ -291,38 +380,32 @@ assert.deepEqual(adapter.requests[1]?.messages.map(({ role, content }) => ({ rol
   { role: "assistant", content: [{ type: "text", text: "first completion" }] },
   { role: "user", content: [{ type: "text", text: "second prompt" }] },
 ]);
-const firstAssistant = success.agent.session.events.find(({ type }) => type === "assistant/message");
+const firstAssistant = primaryAgent.session.events.find(({ type }) => type === "assistant/message");
 assert.ok(firstAssistant?.type === "assistant/message");
 assert.deepEqual(
   firstAssistant.data.usage,
   { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3 },
 );
 
-const failed = await composition.context.agents.create({
-  sessionId: SessionId("dsh-artifact-failure"),
-  agentOptions: { provider: "fixture", model: "fixture-model" },
-});
-failed.agent.followup(userMessage("fail this turn"));
-await failed.agent.whenIdle();
-assert.equal(failed.agent.status, "idle");
-const failedTurn = failed.agent.session.events.findLast(({ type }) => type === "turn/end");
+primaryAgent.followup(userMessage("fail this turn"));
+await primaryAgent.whenIdle();
+assert.equal(primaryAgent.status, "idle");
+const failedTurn = primaryAgent.session.events.findLast(({ type }) => type === "turn/end");
 assert.ok(failedTurn?.type === "turn/end");
 assert.equal(failedTurn.data.reason.kind, "error");
 
-const canceled = await composition.context.agents.create({
-  sessionId: SessionId("dsh-artifact-cancel"),
-  agentOptions: { provider: "fixture", model: "fixture-model" },
-});
-canceled.agent.followup(userMessage("cancel this turn"));
+primaryAgent.followup(userMessage("cancel this turn"));
 await waitUntil(() => adapter.activeStreamCount === 1, "fake adapter stream admission");
-canceled.agent.cancel({ kind: "user" });
-await canceled.agent.whenIdle();
-assert.equal(canceled.agent.status, "idle");
+primaryAgent.cancel({ kind: "user" });
+await primaryAgent.whenIdle();
+assert.equal(primaryAgent.status, "idle");
 assert.equal(adapter.activeStreamCount, 0);
-assert.ok(canceled.agent.session.events.some(({ type }) => type === "turn/end"));
+assert.ok(primaryAgent.session.events.some(({ type }) => type === "turn/end"));
 
 const snapshot = composition.snapshot();
-assert.equal(snapshot.liveRootAgents, 3);
+assert.equal(snapshot.liveRootAgents, 1);
+assert.equal(snapshot.primarySessionState, "ready");
+assert.equal(snapshot.runtimeSessionId, "dsh-artifact-primary");
 assert.equal(snapshot.artifactVersion, ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion);
 assert.equal(snapshot.artifactManifestSha256, ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256);
 assert.equal(adapter.pendingScriptCount, 0);
@@ -370,5 +453,8 @@ process.stdout.write(`${JSON.stringify({
   nativeRpcStopped: stopped.disposed,
   nativeRpcFrames: observedRuntimeFrames,
   patchedWakePending: true,
+  publicationGuardsVerified: true,
+  publicationTransientVerified: primaryPublicationSnapshotVerified,
+  roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: ["success", "failure", "cancel"],
 })}\n`);
