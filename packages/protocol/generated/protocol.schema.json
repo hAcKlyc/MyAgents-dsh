@@ -5083,12 +5083,28 @@
                     "type": "string"
                   },
                   "componentStatus": {
-                    "const": "per-component",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "per-component",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "snapshot": {
-                    "const": "replace-by-digest",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "replace-by-digest",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -5102,24 +5118,64 @@
                 "additionalProperties": false,
                 "properties": {
                   "attachments": {
-                    "const": "generation-leases-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "generation-leases-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "credentials": {
-                    "const": "request-connection-scoped",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "request-connection-scoped",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "hooks": {
-                    "const": "reverse-request-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "reverse-request-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "interaction": {
-                    "const": "registration-ack-plus-explicit-response",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "registration-ack-plus-explicit-response",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "tools": {
-                    "const": "reverse-request-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "reverse-request-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -5135,24 +5191,64 @@
                 "additionalProperties": false,
                 "properties": {
                   "askUser": {
-                    "const": "structured-host-request",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "structured-host-request",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "headless": {
-                    "const": "deterministic-scenario-policy",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "deterministic-scenario-policy",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "permission": {
-                    "const": "deny-allow-once-always-rule",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "deny-allow-once-always-rule",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "plan": {
-                    "const": "runtime-state-with-host-approval",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "runtime-state-with-host-approval",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "settlement": {
-                    "const": "register-then-respond",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "register-then-respond",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -5165,15 +5261,25 @@
                 "type": "object"
               },
               "profile": {
-                "const": "myagents-dsh-foundation-v1",
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
                 "type": "string"
               },
               "security": {
                 "additionalProperties": false,
                 "properties": {
                   "checkpoint": {
-                    "const": "root-write-edit-only-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "root-write-edit-only-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "execution": {
                     "const": "trusted-local-user-process",
@@ -5200,28 +5306,76 @@
                 "additionalProperties": false,
                 "properties": {
                   "compact": {
-                    "const": "operation-event-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "operation-event-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "delete": {
-                    "const": "transactional-tombstone-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "transactional-tombstone-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "fork": {
-                    "const": "transactional-stable-boundary-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "transactional-stable-boundary-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "history": {
-                    "const": "dsh-event-log-read-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "dsh-event-log-read-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "resume": {
-                    "const": "dsh-native",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "dsh-native",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "rewind": {
-                    "const": "transactional-stable-boundary-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "transactional-stable-boundary-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -5238,16 +5392,40 @@
                 "additionalProperties": false,
                 "properties": {
                   "compaction": {
-                    "const": "dsh-operation-event-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "dsh-operation-event-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "context": {
-                    "const": "provider-native-occupancy-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "provider-native-occupancy-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "usage": {
-                    "const": "normalized-turn-total-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "normalized-turn-total-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -5261,20 +5439,52 @@
                 "additionalProperties": false,
                 "properties": {
                   "catalog": {
-                    "const": "agent-experience-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "agent-experience-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "hooks": {
-                    "const": "governed-pre-post",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "governed-pre-post",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "hostTools": {
-                    "const": "reverse-request",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "reverse-request",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "pipeline": {
-                    "const": "dsh-ctx-tools-only",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "dsh-ctx-tools-only",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -5289,24 +5499,64 @@
                 "additionalProperties": false,
                 "properties": {
                   "followUp": {
-                    "const": "identified-fifo",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "identified-fifo",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "idempotency": {
-                    "const": "client-operation-id",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "client-operation-id",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "interrupt": {
-                    "const": "abort-signal",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "abort-signal",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "steer": {
-                    "const": "dsh-step-boundary",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "dsh-step-boundary",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "terminal": {
-                    "const": "durable-explicit",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "durable-explicit",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -5322,20 +5572,52 @@
                 "additionalProperties": false,
                 "properties": {
                   "background": {
-                    "const": "dsh-jobs-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "dsh-jobs-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "children": {
-                    "const": "dsh-agent-scope-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "dsh-agent-scope-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "mailbox": {
-                    "const": "identified-delivery-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "identified-delivery-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "taskGraph": {
-                    "const": "product-durable-events-v1",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "product-durable-events-v1",
+                        "type": "string"
+                      },
+                      {
+                        "const": "unavailable",
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -5384,7 +5666,7 @@
                 "type": "string"
               },
               "version": {
-                "const": "0.1.0-rc.6",
+                "const": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638",
                 "type": "string"
               }
             },

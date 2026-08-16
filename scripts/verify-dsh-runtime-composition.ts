@@ -1,18 +1,24 @@
 import { spawnSync } from "node:child_process";
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import { ACCEPTED_PATCHED_DSH_ARTIFACT } from "@myagents-dsh/product-profile";
+import {
+  ACCEPTED_PATCHED_DSH_ARTIFACT,
+  BATCH1_A2_CANDIDATE_PROFILE_SHA256,
+} from "@myagents-dsh/product-profile";
+import protocolMetaJson from "@myagents-dsh/protocol/protocol-meta.json" with { type: "json" };
 
 import {
   assertContainedNodeModules,
@@ -41,7 +47,10 @@ const run = (
   });
   if (result.error !== undefined) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(" ")} exited ${String(result.status)}\n${result.stderr.trim()}`);
+    throw new Error(
+      `${command} ${args.join(" ")} exited ${String(result.status)}`
+      + `\n${[result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n")}`,
+    );
   }
   return result.stdout.trim();
 };
@@ -129,8 +138,13 @@ const collectDshVersions = (tree: JsonObject): Map<string, Set<string>> => {
   return versions;
 };
 
-const stageBuiltPackage = (consumerRoot: string, packageDirectory: string, packageName: string): void => {
-  const sourceRoot = resolve(repositoryRoot, "dist/packages", packageDirectory, "src");
+const stageBuiltPackage = (
+  consumerRoot: string,
+  buildRoot: string,
+  workspaceDirectory: string,
+  packageName: string,
+): void => {
+  const sourceRoot = resolve(buildRoot, workspaceDirectory, "src");
   if (!statSync(sourceRoot).isDirectory()) throw new Error(`built package is missing: ${sourceRoot}`);
   const destination = resolve(consumerRoot, "node_modules", ...packageName.split("/"));
   mkdirSync(destination, { recursive: true });
@@ -138,21 +152,128 @@ const stageBuiltPackage = (consumerRoot: string, packageDirectory: string, packa
     recursive: true,
     filter: (path) => statSync(path).isDirectory() || path.endsWith(".js"),
   });
-  if (packageDirectory === "product-profile") {
+  if (workspaceDirectory === "packages/product-profile") {
     const manifestDirectory = resolve(destination, "manifests");
     mkdirSync(manifestDirectory);
+    for (const filename of [
+      "accepted-patched-dsh-artifact-v1.json",
+      "batch-1-a2-candidate-profile-v1.json",
+    ]) {
+      cpSync(
+        resolve(repositoryRoot, "packages/product-profile/manifests", filename),
+        resolve(manifestDirectory, filename),
+      );
+    }
+  }
+  let packageExports: Record<string, string> = { ".": "./src/index.js" };
+  if (workspaceDirectory === "packages/protocol") {
+    const generatedDirectory = resolve(destination, "generated");
+    mkdirSync(generatedDirectory);
     cpSync(
-      resolve(repositoryRoot, "packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json"),
-      resolve(manifestDirectory, "accepted-patched-dsh-artifact-v1.json"),
+      resolve(buildRoot, "packages/protocol/generated/host-client.generated.js"),
+      resolve(generatedDirectory, "host-client.generated.js"),
     );
+    for (const filename of ["protocol-meta.json", "protocol-fixtures.json"]) {
+      cpSync(
+        resolve(repositoryRoot, "packages/protocol/generated", filename),
+        resolve(generatedDirectory, filename),
+      );
+    }
+    packageExports = {
+      ".": "./src/index.js",
+      "./generated/host-client": "./generated/host-client.generated.js",
+      "./protocol-fixtures.json": "./generated/protocol-fixtures.json",
+      "./protocol-meta.json": "./generated/protocol-meta.json",
+    };
   }
   writeFileSync(resolve(destination, "package.json"), `${JSON.stringify({
     name: packageName,
     version: "0.0.0",
     private: true,
     type: "module",
-    exports: { ".": "./src/index.js" },
+    exports: packageExports,
   }, null, 2)}\n`);
+};
+
+const cleanBuildRuntimeComposition = (
+  temporaryRoot: string,
+  environment: NodeJS.ProcessEnv,
+): string => {
+  const buildRoot = resolve(temporaryRoot, "clean-build");
+  const configPath = resolve(temporaryRoot, "runtime-composition.tsconfig.json");
+  const sourcePaths = [
+    "apps/runtime-server/src/index.ts",
+    "apps/runtime-server/src/lifecycle.ts",
+    "packages/product-profile/src/candidate-runtime-profile-authority.ts",
+    "packages/product-profile/src/candidate-runtime-profile.ts",
+    "packages/product-profile/src/index.ts",
+    "packages/product-profile/src/official-profile-authority.generated.ts",
+    "packages/product-profile/src/patched-dsh-artifact.ts",
+    "packages/product-profile/src/platform-contract.ts",
+    "packages/product-profile/src/profile.ts",
+    "packages/protocol/generated/host-client.generated.ts",
+    "packages/protocol/src/contract-source.ts",
+    "packages/protocol/src/errors.ts",
+    "packages/protocol/src/index.ts",
+    "packages/protocol/src/peer.ts",
+    "packages/protocol/src/validation.ts",
+    "packages/rpc-server/src/index.ts",
+    "packages/rpc-server/src/native-rpc-service.ts",
+    "packages/runtime-product/src/composition.ts",
+    "packages/runtime-product/src/index.ts",
+    "packages/testkit/src/fake-llm-adapter.ts",
+    "packages/testkit/src/index.ts",
+    "tests/fixtures/dsh-runtime-composition.artifact.ts",
+  ];
+  writeFileSync(configPath, `${JSON.stringify({
+    extends: resolve(repositoryRoot, "tsconfig.base.json"),
+    compilerOptions: {
+      composite: false,
+      declaration: false,
+      declarationMap: false,
+      outDir: buildRoot,
+      rootDir: repositoryRoot,
+      sourceMap: false,
+      typeRoots: [resolve(repositoryRoot, "node_modules/@types")],
+    },
+    files: sourcePaths.map((path) => resolve(repositoryRoot, path)),
+  }, null, 2)}\n`);
+  run(process.execPath, [
+    resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
+    "--project",
+    configPath,
+    "--pretty",
+    "false",
+  ], repositoryRoot, environment);
+  return buildRoot;
+};
+
+const stageExactWorkspaceDependency = (
+  consumerRoot: string,
+  workspaceDirectory: string,
+  packageName: string,
+): void => {
+  const workspaceManifest = exactObject(
+    JSON.parse(readFileSync(resolve(repositoryRoot, workspaceDirectory, "package.json"), "utf8")) as unknown,
+    `${workspaceDirectory} package manifest`,
+  );
+  const dependencies = exactObject(workspaceManifest.dependencies, `${workspaceDirectory} dependencies`);
+  const expectedVersion = dependencies[packageName];
+  if (typeof expectedVersion !== "string") {
+    throw new Error(`${workspaceDirectory} does not declare ${packageName}`);
+  }
+  const source = realpathSync(resolve(repositoryRoot, "node_modules", ...packageName.split("/")));
+  const installedManifest = exactObject(
+    JSON.parse(readFileSync(resolve(source, "package.json"), "utf8")) as unknown,
+    `${packageName} installed manifest`,
+  );
+  if (installedManifest.name !== packageName || installedManifest.version !== expectedVersion) {
+    throw new Error(`${packageName} differs from the exact workspace dependency authority`);
+  }
+  const destination = resolve(consumerRoot, "node_modules", ...packageName.split("/"));
+  if (existsSync(destination)) throw new Error(`${packageName} is unexpectedly present before isolated staging`);
+  mkdirSync(dirname(destination), { recursive: true });
+  cpSync(source, destination, { dereference: true, recursive: true });
 };
 
 const main = (): void => {
@@ -187,6 +308,7 @@ const main = (): void => {
     const consumerRoot = resolve(bundleRoot, "consumer");
     assertNoAncestorNodeModules(consumerRoot);
     const environment = isolatedEnvironment(temporaryRoot, values["npm-cache"]);
+    const buildRoot = cleanBuildRuntimeComposition(temporaryRoot, environment);
     run("npm", ["ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], consumerRoot, environment);
     assertContainedNodeModules(consumerRoot);
     const dependencyTree = exactObject(
@@ -202,12 +324,27 @@ const main = (): void => {
         throw new Error(`${name} resolved outside the single accepted patched DSH graph`);
       }
     }
-    stageBuiltPackage(consumerRoot, "product-profile", "@myagents-dsh/product-profile");
-    stageBuiltPackage(consumerRoot, "runtime-product", "@myagents-dsh/runtime-product");
-    stageBuiltPackage(consumerRoot, "testkit", "@myagents-dsh/testkit");
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/product-profile",
+      "@myagents-dsh/product-profile",
+    );
+    stageExactWorkspaceDependency(consumerRoot, "packages/protocol", "typebox");
+    stageBuiltPackage(consumerRoot, buildRoot, "packages/protocol", "@myagents-dsh/protocol");
+    stageBuiltPackage(consumerRoot, buildRoot, "packages/rpc-server", "@myagents-dsh/rpc-server");
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/runtime-product",
+      "@myagents-dsh/runtime-product",
+    );
+    stageBuiltPackage(consumerRoot, buildRoot, "packages/testkit", "@myagents-dsh/testkit");
+    stageBuiltPackage(consumerRoot, buildRoot, "apps/runtime-server", "@myagents-dsh/runtime-server");
+    assertContainedNodeModules(consumerRoot);
     const runnerSource = resolve(
-      repositoryRoot,
-      "dist/tests/tests/fixtures/dsh-runtime-composition.artifact.js",
+      buildRoot,
+      "tests/fixtures/dsh-runtime-composition.artifact.js",
     );
     const runner = resolve(consumerRoot, "dsh-runtime-composition.artifact.mjs");
     cpSync(runnerSource, runner);
@@ -215,9 +352,43 @@ const main = (): void => {
     const evidence = exactObject(JSON.parse(output) as unknown, "runtime composition evidence");
     if (evidence.artifactManifestSha256 !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
       || evidence.artifactVersion !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
+      || evidence.authorityMutationRejected !== true
+      || evidence.bareAcceptedContextRejected !== true
+      || evidence.childScopedLifecycleAuthorityRejected !== true
+      || evidence.directRootLifecycleDisposed !== true
+      || evidence.snapshotPreflightFailureDisposed !== true
+      || evidence.startupFailureDisposed !== true
       || evidence.patchedWakePending !== true
+      || evidence.nativeRpcEngineVersion !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
+      || evidence.nativeRpcInitialized !== true
+      || evidence.nativeRpcProfileDigest !== BATCH1_A2_CANDIDATE_PROFILE_SHA256
+      || evidence.nativeRpcSchemaSha256 !== protocolMetaJson.schemaSha256
+      || evidence.nativeRpcShutdown !== "shutdown"
+      || evidence.nativeRpcStopped !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify(["success", "failure", "cancel"])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
+    }
+    if (!Array.isArray(evidence.nativeRpcFrames) || evidence.nativeRpcFrames.length !== 3) {
+      throw new Error("runtime composition must expose exactly three observed Host-response frames");
+    }
+    const frames = evidence.nativeRpcFrames.map((frame, index) =>
+      exactObject(frame, `observed native RPC frame ${String(index)}`));
+    const initializeFrame = frames.find(({ id }) => id === "h:1");
+    const statusFrame = frames.find(({ id }) => id === "h:2");
+    const shutdownFrame = frames.find(({ id }) => id === "h:3");
+    const initializeResult = exactObject(initializeFrame?.result, "observed initialize result");
+    const runtimeEngine = exactObject(initializeResult.runtimeEngine, "observed Runtime engine");
+    const capabilities = exactObject(initializeResult.runtimeCapabilities, "observed Runtime capabilities");
+    const statusResult = exactObject(statusFrame?.result, "observed status result");
+    const shutdownResult = exactObject(shutdownFrame?.result, "observed shutdown result");
+    if (runtimeEngine.version !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
+      || runtimeEngine.buildRevision !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
+      || initializeResult.profileDigest !== BATCH1_A2_CANDIDATE_PROFILE_SHA256
+      || initializeResult.schemaSha256 !== protocolMetaJson.schemaSha256
+      || capabilities.profile !== "myagents-dsh-batch-1-a2-candidate-v1"
+      || statusResult.initialized !== true
+      || shutdownResult.ok !== true) {
+      throw new Error("observed native RPC frames differ from the content-addressed A2 authority");
     }
     process.stdout.write(`patched DSH runtime composition verified: ${output}\n`);
   } finally {

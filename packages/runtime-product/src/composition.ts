@@ -10,12 +10,10 @@ import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-promp
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
 import {
-  ACCEPTED_DSH_RUNTIME_PACKAGE_NAMES,
   ACCEPTED_PATCHED_DSH_ARTIFACT,
+  BATCH1_A2_ADAPTER_REGISTRATION_PLUGIN_ID,
+  assertAcceptedDshRuntimeGraph,
 } from "@myagents-dsh/product-profile";
-import { readFileSync, realpathSync } from "node:fs";
-import { dirname, parse, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "session-store",
@@ -140,53 +138,95 @@ export const validateDshRootCompositionOptions = (
   });
 };
 
-const readInstalledPackageVersion = (packageName: string): string => {
-  const publicEntry = fileURLToPath(import.meta.resolve(packageName));
-  const filesystemRoot = parse(publicEntry).root;
-  let cursor = dirname(realpathSync(publicEntry));
-  while (cursor !== filesystemRoot) {
-    const manifestPath = resolve(cursor, "package.json");
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
-      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-        const manifest = parsed as JsonObject;
-        if (manifest.name === packageName) {
-          if (typeof manifest.version !== "string") {
-            throw new TypeError(`${packageName} package manifest lacks an exact version`);
-          }
-          return manifest.version;
-        }
-      }
-    } catch (error) {
-      const code = error !== null && typeof error === "object" && "code" in error
-        ? (error as { code?: unknown }).code
-        : undefined;
-      if (code !== "ENOENT") throw error;
-    }
-    const parent = dirname(cursor);
-    if (parent === cursor) break;
-    cursor = parent;
-  }
-  throw new Error(`cannot locate the public package authority for ${packageName}`);
-};
-
-export const assertAcceptedDshRuntimeGraph = (): void => {
-  for (const packageName of ACCEPTED_DSH_RUNTIME_PACKAGE_NAMES) {
-    const actual = readInstalledPackageVersion(packageName);
-    const expected = ACCEPTED_PATCHED_DSH_ARTIFACT.runtimePackages[packageName];
-    if (actual !== expected) {
-      throw new Error(`${packageName} resolved to ${actual}; accepted patched runtime requires ${expected}`);
-    }
-  }
-};
-
 const adapterPlugin = (
   providers: readonly string[],
   adapter: LlmAdapter,
 ): Plugin.Function<void> => {
-  const install: Plugin.Function<void> = (ctx) => ctx.llm.registerAdapter([...providers], adapter);
+  const install: Plugin.Function<void> = function adapterRegistration(ctx) {
+    return ctx.llm.registerAdapter([...providers], adapter);
+  };
+  if (`@myagents-dsh/runtime-product:${install.name}` !== BATCH1_A2_ADAPTER_REGISTRATION_PLUGIN_ID) {
+    throw new Error("DSH adapter-registration plugin identity differs from the candidate profile");
+  }
   install.inject = ["llm"];
   return install;
+};
+
+export interface DshRootCompositionAuthority {
+  readonly artifactManifestSha256: string;
+  readonly artifactVersion: string;
+  readonly context: Context;
+  readonly dispose: () => Promise<void>;
+  readonly serviceOrder: typeof DSH_ROOT_SERVICE_ORDER;
+}
+
+declare const nativeRpcLifecycleAuthorityBrand: unique symbol;
+
+export interface NativeRpcLifecycleAuthority {
+  readonly [nativeRpcLifecycleAuthorityBrand]: "native-rpc-lifecycle-authority";
+}
+
+type CompositionAuthorityState = {
+  readonly composition: DshRootComposition;
+  readonly context: Context;
+  readonly dispose: () => Promise<void>;
+  readonly snapshot: () => DshRootCompositionSnapshot;
+  claimed: boolean;
+};
+
+type NativeRpcLifecycleAuthorityState = {
+  readonly context: Context;
+  readonly dispose: () => Promise<void>;
+  readonly snapshot: () => DshRootCompositionSnapshot;
+  consumed: boolean;
+};
+
+const compositionAuthorities = new WeakMap<Context, CompositionAuthorityState>();
+const nativeRpcLifecycleAuthorities = new WeakMap<object, NativeRpcLifecycleAuthorityState>();
+
+export const claimNativeRpcLifecycleAuthority = (
+  composition: DshRootComposition,
+): NativeRpcLifecycleAuthority => {
+  const context = composition.context;
+  const state = compositionAuthorities.get(context);
+  if (context !== context.root || state?.composition !== composition || state.claimed) {
+    throw new Error("native RPC requires one unconsumed composeDshRootServices Context authority");
+  }
+  state.snapshot();
+  state.claimed = true;
+  const authority = Object.freeze({}) as NativeRpcLifecycleAuthority;
+  nativeRpcLifecycleAuthorities.set(authority, {
+    consumed: false,
+    context: state.context,
+    dispose: state.dispose,
+    snapshot: state.snapshot,
+  });
+  return authority;
+};
+
+export const consumeNativeRpcLifecycleAuthority = (
+  authority: unknown,
+  pluginContext: Context,
+): DshRootCompositionAuthority => {
+  if (authority === null || typeof authority !== "object") {
+    throw new Error("native RPC requires a nominal RuntimeProcessLifecycle authority");
+  }
+  const state = nativeRpcLifecycleAuthorities.get(authority);
+  const installationContext = pluginContext.fiber.parent;
+  if (state?.consumed !== false
+    || installationContext !== pluginContext.root
+    || state.context !== installationContext) {
+    throw new Error("native RPC requires a direct-root RuntimeProcessLifecycle authority");
+  }
+  const snapshot = state.snapshot();
+  state.consumed = true;
+  return Object.freeze({
+    artifactManifestSha256: snapshot.artifactManifestSha256,
+    artifactVersion: snapshot.artifactVersion,
+    context: installationContext,
+    dispose: state.dispose,
+    serviceOrder: DSH_ROOT_SERVICE_ORDER,
+  });
 };
 
 export class DshRootComposition {
@@ -195,7 +235,9 @@ export class DshRootComposition {
   constructor(
     readonly context: Context,
     readonly providers: readonly string[],
-  ) {}
+  ) {
+    Object.freeze(this);
+  }
 
   snapshot(): DshRootCompositionSnapshot {
     if (this.#disposePromise !== undefined) throw new Error("DSH root composition is disposing or disposed");
@@ -216,10 +258,16 @@ export class DshRootComposition {
   }
 
   dispose(): Promise<void> {
-    this.#disposePromise ??= Promise.resolve().then(async () => this.context.fiber.dispose());
+    this.#disposePromise ??= Promise.resolve().then(async () => {
+      compositionAuthorities.delete(this.context);
+      await this.context.fiber.dispose();
+    });
     return this.#disposePromise;
   }
 }
+
+Object.freeze(DshRootComposition.prototype);
+Object.freeze(DshRootComposition);
 
 export const composeDshRootServices = async (
   options: DshRootCompositionOptions,
@@ -241,6 +289,13 @@ export const composeDshRootServices = async (
     });
     const composition = new DshRootComposition(root, providers);
     composition.snapshot();
+    compositionAuthorities.set(root, {
+      claimed: false,
+      composition,
+      context: root,
+      dispose: composition.dispose.bind(composition),
+      snapshot: composition.snapshot.bind(composition),
+    });
     return composition;
   } catch (error) {
     await root.fiber.dispose();

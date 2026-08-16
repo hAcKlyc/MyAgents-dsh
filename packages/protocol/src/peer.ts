@@ -38,6 +38,7 @@ export type RequestContext = {
   requestId: RpcId;
   signal: AbortSignal;
   commit(): void;
+  afterResponse(callback: () => void): void;
 };
 export type RequestHandler<Name extends RpcMethodName> = (
   params: MethodParams<Name>,
@@ -56,9 +57,13 @@ type PendingRequest = {
   cancelSent: boolean;
   abortCleanup?: () => void;
 };
-type InboundRequest = { controller: AbortController; committed: boolean };
-type DrainWaiter = { reject(reason: unknown): void; cleanup(): void };
+type InboundRequest = {
+  controller: AbortController;
+  committed: boolean;
+  afterResponse: Array<() => void>;
+};
 type WriteSlotWaiter = { resolve(): void; reject(reason: unknown): void };
+type ActiveWriteCompletion = { reject(reason: Error): void };
 
 const RECENT_INBOUND_ID_LIMIT = 8_192;
 
@@ -68,6 +73,8 @@ export type JsonRpcPeerOptions = {
   role: PeerRole;
   limits: ProtocolLimits;
   onFatalError?: (error: ProtocolError) => void;
+  authorizeInboundRequest?: (method: string) => void;
+  authorizeInboundNotification?: (method: string) => void;
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -161,12 +168,14 @@ export class JsonRpcPeer {
   readonly #role: PeerRole;
   readonly #idPrefix: "h" | "r";
   readonly #onFatalError: ((error: ProtocolError) => void) | undefined;
+  readonly #authorizeInboundRequest: ((method: string) => void) | undefined;
+  readonly #authorizeInboundNotification: ((method: string) => void) | undefined;
   readonly #pending = new Map<RpcId, PendingRequest>();
   readonly #requestHandlers = new Map<string, RequestHandler<RpcMethodName>>();
   readonly #notificationHandlers = new Map<string, NotificationHandler<RpcNotificationName>>();
   readonly #inbound = new Map<RpcId, InboundRequest>();
-  readonly #drainWaiters = new Set<DrainWaiter>();
   readonly #writeSlotWaiters: WriteSlotWaiter[] = [];
+  readonly #activeWriteCompletions = new Set<ActiveWriteCompletion>();
   readonly #recentInboundIds = new Set<string>();
   readonly #recentInboundIdOrder: string[] = [];
   #limits: ProtocolLimits;
@@ -194,11 +203,18 @@ export class JsonRpcPeer {
     this.#idPrefix = options.role === "host" ? "h" : "r";
     this.#limits = validateProtocolLimits(options.limits);
     this.#onFatalError = options.onFatalError;
+    this.#authorizeInboundRequest = options.authorizeInboundRequest;
+    this.#authorizeInboundNotification = options.authorizeInboundNotification;
     this.#input.on("data", this.#onData);
-    this.#input.once("end", () => this.#fatal(new ProtocolError("protocol_eof", "Protocol input reached EOF", true)));
-    this.#input.once("error", (error) => this.#fatal(new ProtocolError("protocol_input_error", error.message, true)));
-    this.#output.once("error", (error) => this.#fatal(new ProtocolError("protocol_output_error", error.message, true)));
-    this.#output.once("close", () => this.#fatal(new ProtocolError("protocol_output_closed", "Protocol output closed", true)));
+    this.#input.once("end", this.#onInputEnd);
+    this.#input.once("error", this.#onInputError);
+    this.#output.once("error", this.#onOutputError);
+    this.#output.once("close", this.#onOutputClose);
+    if (this.#input.destroyed || this.#input.readableEnded) {
+      this.#fatal(new ProtocolError("protocol_input_closed", "Protocol input was already closed", true));
+    } else if (this.#output.destroyed || this.#output.writableEnded || this.#output.closed) {
+      this.#fatal(new ProtocolError("protocol_output_closed", "Protocol output was already closed", true));
+    }
   }
 
   get role(): PeerRole { return this.#role; }
@@ -378,11 +394,12 @@ export class JsonRpcPeer {
     this.#closed = true;
     this.#closeReason = reason;
     this.#input.off("data", this.#onData);
-    for (const waiter of this.#drainWaiters) {
-      waiter.cleanup();
-      waiter.reject(reason);
-    }
-    this.#drainWaiters.clear();
+    this.#input.off("end", this.#onInputEnd);
+    this.#input.off("error", this.#onInputError);
+    this.#output.off("error", this.#onOutputError);
+    this.#output.off("close", this.#onOutputClose);
+    for (const completion of this.#activeWriteCompletions) completion.reject(reason);
+    this.#activeWriteCompletions.clear();
     for (const waiter of this.#writeSlotWaiters.splice(0)) waiter.reject(reason);
     for (const pending of this.#pending.values()) {
       pending.abortCleanup?.();
@@ -413,6 +430,22 @@ export class JsonRpcPeer {
     const bytes = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.from(chunk);
     this.#buffer = this.#buffer.length === 0 ? bytes : Buffer.concat([this.#buffer, bytes]);
     this.#drainInput();
+  };
+
+  readonly #onInputEnd = (): void => {
+    this.#fatal(new ProtocolError("protocol_eof", "Protocol input reached EOF", true));
+  };
+
+  readonly #onInputError = (error: Error): void => {
+    this.#fatal(new ProtocolError("protocol_input_error", error.message, true));
+  };
+
+  readonly #onOutputError = (error: Error): void => {
+    this.#fatal(new ProtocolError("protocol_output_error", error.message, true));
+  };
+
+  readonly #onOutputClose = (): void => {
+    this.#fatal(new ProtocolError("protocol_output_closed", "Protocol output closed", true));
   };
 
   #drainInput(): void {
@@ -523,25 +556,29 @@ export class JsonRpcPeer {
       await this.#sendError(frame.id, JSON_RPC_ERROR.overloaded, "Maximum concurrent request count reached");
       return;
     }
-    if (!isRpcMethodName(frame.method)) {
-      await this.#sendError(frame.id, JSON_RPC_ERROR.methodNotFound, "Unknown method");
-      return;
-    }
-    try {
-      this.#assertInboundMethod(frame.method);
-    } catch (error) {
-      this.#fatal(error as ProtocolError);
-      return;
-    }
-    const handler = this.#requestHandlers.get(frame.method);
-    if (handler === undefined) {
-      await this.#sendError(frame.id, JSON_RPC_ERROR.methodNotFound, `No handler registered for ${frame.method}`);
-      return;
-    }
     const controller = new AbortController();
-    const inbound: InboundRequest = { controller, committed: false };
+    const inbound: InboundRequest = { controller, committed: false, afterResponse: [] };
     this.#inbound.set(frame.id, inbound);
+    let responseSent = false;
     try {
+      if (!isRpcMethodName(frame.method)) {
+        if (await this.#authorizeRequest(frame.id, frame.method)) {
+          await this.#sendError(frame.id, JSON_RPC_ERROR.methodNotFound, "Unknown method");
+        }
+        return;
+      }
+      try {
+        this.#assertInboundMethod(frame.method);
+      } catch (error) {
+        this.#fatal(error as ProtocolError);
+        return;
+      }
+      if (!await this.#authorizeRequest(frame.id, frame.method)) return;
+      const handler = this.#requestHandlers.get(frame.method);
+      if (handler === undefined) {
+        await this.#sendError(frame.id, JSON_RPC_ERROR.methodNotFound, `No handler registered for ${frame.method}`);
+        return;
+      }
       const params = validateMethodParams(frame.method, frame.params ?? {});
       const result = await handler(params, {
         requestId: frame.id,
@@ -552,6 +589,12 @@ export class JsonRpcPeer {
           }
           inbound.committed = true;
         },
+        afterResponse: (callback) => {
+          if (typeof callback !== "function") {
+            throw new ProtocolError("protocol_invalid_lifecycle_callback", "afterResponse requires a callback");
+          }
+          inbound.afterResponse.push(callback);
+        },
       });
       if (controller.signal.aborted && !inbound.committed) {
         await this.#sendError(frame.id, JSON_RPC_ERROR.cancelled, "Request cancelled");
@@ -561,6 +604,7 @@ export class JsonRpcPeer {
           id: frame.id,
           result: validateMethodResult(frame.method, result),
         });
+        responseSent = true;
       }
     } catch (error) {
       if (controller.signal.aborted) {
@@ -580,10 +624,30 @@ export class JsonRpcPeer {
     } finally {
       this.#inbound.delete(frame.id);
     }
+    if (responseSent) {
+      for (const callback of inbound.afterResponse) {
+        try {
+          callback();
+        } catch {
+          this.#fatal(new ProtocolError(
+            "protocol_lifecycle_callback_failed",
+            "Post-response lifecycle callback failed",
+          ));
+          return;
+        }
+      }
+    }
   }
 
   #admitNotification(frame: JsonRpcNotification): void {
-    if (!isRpcNotificationName(frame.method)) return;
+    if (!isRpcNotificationName(frame.method)) {
+      try {
+        this.#authorizeInboundNotification?.(frame.method);
+      } catch (error) {
+        this.#fatal(asDispatchError(error));
+      }
+      return;
+    }
     const name = frame.method;
     try {
       this.#assertInboundNotification(name);
@@ -594,6 +658,12 @@ export class JsonRpcPeer {
     let params: NotificationParams<RpcNotificationName>;
     try {
       params = validateNotificationParams(name, frame.params ?? {});
+    } catch (error) {
+      this.#fatal(asDispatchError(error));
+      return;
+    }
+    try {
+      this.#authorizeInboundNotification?.(name);
     } catch (error) {
       this.#fatal(asDispatchError(error));
       return;
@@ -657,6 +727,23 @@ export class JsonRpcPeer {
       .catch((error: unknown) => this.#fatal(asDispatchError(error)));
   }
 
+  async #authorizeRequest(id: RpcId, method: string): Promise<boolean> {
+    try {
+      this.#authorizeInboundRequest?.(method);
+      return true;
+    } catch (error) {
+      if (error instanceof ProtocolError) {
+        await this.#sendError(id, JSON_RPC_ERROR.internalError, error.message, {
+          code: error.code,
+          retryable: error.retryable,
+        });
+        return false;
+      }
+      this.#fatal(new ProtocolError("protocol_dispatch_error", "Protocol phase authorization failed"));
+      return false;
+    }
+  }
+
   #acceptInboundId(id: RpcId): boolean {
     const key = createHash("sha256")
       .update(typeof id === "number" ? `number\0${id}` : `string\0${id}`)
@@ -686,8 +773,26 @@ export class JsonRpcPeer {
     try {
       const operation = this.#writeTail.catch(() => undefined).then(async () => {
         this.#assertOpen();
-        const accepted = this.#output.write(payload);
-        if (!accepted) await this.#waitForDrain();
+        await new Promise<void>((resolve, reject) => {
+          const completion: ActiveWriteCompletion = {
+            reject: (reason) => {
+              if (!this.#activeWriteCompletions.delete(completion)) return;
+              reject(reason);
+            },
+          };
+          const finish = (error?: Error | null): void => {
+            if (!this.#activeWriteCompletions.delete(completion)) return;
+            if (error !== undefined && error !== null) reject(error);
+            else resolve();
+          };
+          this.#activeWriteCompletions.add(completion);
+          try {
+            this.#output.write(payload, finish);
+          } catch (error) {
+            finish(error instanceof Error ? error : new Error("Writable.write threw a non-Error value"));
+          }
+        });
+        this.#assertOpen();
       });
       this.#writeTail = operation;
       await operation;
@@ -736,29 +841,6 @@ export class JsonRpcPeer {
       this.#inputPausedForWrites = false;
       this.#drainInput();
       this.#input.resume();
-    });
-  }
-
-  #waitForDrain(): Promise<void> {
-    this.#assertOpen();
-    return new Promise<void>((resolve, reject) => {
-      const onDrain = () => {
-        waiter.cleanup();
-        resolve();
-      };
-      const waiter: DrainWaiter = {
-        reject,
-        cleanup: () => {
-          this.#output.off("drain", onDrain);
-          this.#drainWaiters.delete(waiter);
-        },
-      };
-      this.#drainWaiters.add(waiter);
-      this.#output.once("drain", onDrain);
-      if (this.#closed) {
-        waiter.cleanup();
-        reject(new ProtocolError("protocol_closed", "Protocol peer closed", true));
-      }
     });
   }
 

@@ -1,4 +1,7 @@
 import acceptedAuthorityJson from "../manifests/accepted-patched-dsh-artifact-v1.json" with { type: "json" };
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, parse, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 
@@ -105,6 +108,46 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
 export const ACCEPTED_PATCHED_DSH_ARTIFACT = buildAcceptedAuthority(acceptedAuthorityJson);
 
 export const ACCEPTED_DSH_RUNTIME_PACKAGE_NAMES = expectedRuntimePackageNames;
+
+const readInstalledPackageVersion = (packageName: string): string => {
+  const publicEntry = fileURLToPath(import.meta.resolve(packageName));
+  const filesystemRoot = parse(publicEntry).root;
+  let cursor = dirname(realpathSync(publicEntry));
+  while (cursor !== filesystemRoot) {
+    const manifestPath = resolve(cursor, "package.json");
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const manifest = parsed as Record<string, unknown>;
+        if (manifest.name === packageName) {
+          if (typeof manifest.version !== "string") {
+            throw new TypeError(`${packageName} package manifest lacks an exact version`);
+          }
+          return manifest.version;
+        }
+      }
+    } catch (error) {
+      const code = error !== null && typeof error === "object" && "code" in error
+        ? (error as { code?: unknown }).code
+        : undefined;
+      if (code !== "ENOENT") throw error;
+    }
+    const parent = dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  throw new Error(`cannot locate the public package authority for ${packageName}`);
+};
+
+export const assertAcceptedDshRuntimeGraph = (): void => {
+  for (const packageName of ACCEPTED_DSH_RUNTIME_PACKAGE_NAMES) {
+    const actual = readInstalledPackageVersion(packageName);
+    const expected = ACCEPTED_PATCHED_DSH_ARTIFACT.runtimePackages[packageName];
+    if (actual !== expected) {
+      throw new Error(`${packageName} resolved to ${actual}; accepted patched runtime requires ${expected}`);
+    }
+  }
+};
 
 export const assertAcceptedPatchedDshArtifact = (
   value: unknown,

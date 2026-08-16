@@ -2,7 +2,7 @@ import { Type, type Static, type TSchema } from "typebox";
 
 export const PROTOCOL_VERSION = "2.0.0-draft.1" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
-export const DSH_ENGINE_VERSION = "0.1.0-rc.6" as const;
+export const DSH_ENGINE_VERSION = "0.1.0-rc.5.myagents.47f943859bef.79f64a697638" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
 export const MAX_FRAME_BYTES = 1_048_576;
 export const MIN_FRAME_BYTES = 4_096;
@@ -101,30 +101,32 @@ const applyMode = Type.Union([
   Type.Literal("restart-when-idle"),
   Type.Literal("unsupported"),
 ]);
+const unavailable = Type.Literal("unavailable");
+const capability = <Schema extends TSchema>(schema: Schema) => Type.Union([schema, unavailable]);
 
 export const RuntimeCapabilityProfileSchema = strictObject({
-  profile: Type.Literal("myagents-dsh-foundation-v1"),
+  profile: identifier,
   sessions: strictObject({
-    resume: Type.Literal("dsh-native"),
-    history: Type.Literal("dsh-event-log-read-v1"),
-    compact: Type.Literal("operation-event-v1"),
-    fork: Type.Literal("transactional-stable-boundary-v1"),
-    rewind: Type.Literal("transactional-stable-boundary-v1"),
-    delete: Type.Literal("transactional-tombstone-v1"),
+    resume: capability(Type.Literal("dsh-native")),
+    history: capability(Type.Literal("dsh-event-log-read-v1")),
+    compact: capability(Type.Literal("operation-event-v1")),
+    fork: capability(Type.Literal("transactional-stable-boundary-v1")),
+    rewind: capability(Type.Literal("transactional-stable-boundary-v1")),
+    delete: capability(Type.Literal("transactional-tombstone-v1")),
   }),
   turns: strictObject({
-    steer: Type.Literal("dsh-step-boundary"),
-    followUp: Type.Literal("identified-fifo"),
-    interrupt: Type.Literal("abort-signal"),
-    terminal: Type.Literal("durable-explicit"),
-    idempotency: Type.Literal("client-operation-id"),
+    steer: capability(Type.Literal("dsh-step-boundary")),
+    followUp: capability(Type.Literal("identified-fifo")),
+    interrupt: capability(Type.Literal("abort-signal")),
+    terminal: capability(Type.Literal("durable-explicit")),
+    idempotency: capability(Type.Literal("client-operation-id")),
   }),
   interaction: strictObject({
-    permission: Type.Literal("deny-allow-once-always-rule"),
-    askUser: Type.Literal("structured-host-request"),
-    plan: Type.Literal("runtime-state-with-host-approval"),
-    settlement: Type.Literal("register-then-respond"),
-    headless: Type.Literal("deterministic-scenario-policy"),
+    permission: capability(Type.Literal("deny-allow-once-always-rule")),
+    askUser: capability(Type.Literal("structured-host-request")),
+    plan: capability(Type.Literal("runtime-state-with-host-approval")),
+    settlement: capability(Type.Literal("register-then-respond")),
+    headless: capability(Type.Literal("deterministic-scenario-policy")),
   }),
   configuration: strictObject({
     provider: applyMode,
@@ -137,39 +139,39 @@ export const RuntimeCapabilityProfileSchema = strictObject({
     agents: applyMode,
   }),
   extensions: strictObject({
-    snapshot: Type.Literal("replace-by-digest"),
-    componentStatus: Type.Literal("per-component"),
+    snapshot: capability(Type.Literal("replace-by-digest")),
+    componentStatus: capability(Type.Literal("per-component")),
     arbitraryJavascript: Type.Literal("unsupported"),
   }),
   tools: strictObject({
-    pipeline: Type.Literal("dsh-ctx-tools-only"),
-    catalog: Type.Literal("agent-experience-v1"),
-    hostTools: Type.Literal("reverse-request"),
-    hooks: Type.Literal("governed-pre-post"),
+    pipeline: capability(Type.Literal("dsh-ctx-tools-only")),
+    catalog: capability(Type.Literal("agent-experience-v1")),
+    hostTools: capability(Type.Literal("reverse-request")),
+    hooks: capability(Type.Literal("governed-pre-post")),
   }),
   hostPorts: strictObject({
-    credentials: Type.Literal("request-connection-scoped"),
-    interaction: Type.Literal("registration-ack-plus-explicit-response"),
-    tools: Type.Literal("reverse-request-v1"),
-    hooks: Type.Literal("reverse-request-v1"),
-    attachments: Type.Literal("generation-leases-v1"),
+    credentials: capability(Type.Literal("request-connection-scoped")),
+    interaction: capability(Type.Literal("registration-ack-plus-explicit-response")),
+    tools: capability(Type.Literal("reverse-request-v1")),
+    hooks: capability(Type.Literal("reverse-request-v1")),
+    attachments: capability(Type.Literal("generation-leases-v1")),
   }),
   work: strictObject({
-    children: Type.Literal("dsh-agent-scope-v1"),
-    background: Type.Literal("dsh-jobs-v1"),
-    taskGraph: Type.Literal("product-durable-events-v1"),
-    mailbox: Type.Literal("identified-delivery-v1"),
+    children: capability(Type.Literal("dsh-agent-scope-v1")),
+    background: capability(Type.Literal("dsh-jobs-v1")),
+    taskGraph: capability(Type.Literal("product-durable-events-v1")),
+    mailbox: capability(Type.Literal("identified-delivery-v1")),
   }),
   telemetry: strictObject({
-    usage: Type.Literal("normalized-turn-total-v1"),
-    context: Type.Literal("provider-native-occupancy-v1"),
-    compaction: Type.Literal("dsh-operation-event-v1"),
+    usage: capability(Type.Literal("normalized-turn-total-v1")),
+    context: capability(Type.Literal("provider-native-occupancy-v1")),
+    compaction: capability(Type.Literal("dsh-operation-event-v1")),
   }),
   security: strictObject({
     execution: Type.Literal("trusted-local-user-process"),
     osSandbox: Type.Literal(false),
     secrets: Type.Literal("reverse-port-only"),
-    checkpoint: Type.Literal("root-write-edit-only-v1"),
+    checkpoint: capability(Type.Literal("root-write-edit-only-v1")),
   }),
 });
 
@@ -702,3 +704,22 @@ export const REFERENCE_RUNTIME_CAPABILITIES: RuntimeCapabilityProfile = {
   telemetry: { usage: "normalized-turn-total-v1", context: "provider-native-occupancy-v1", compaction: "dsh-operation-event-v1" },
   security: { execution: "trusted-local-user-process", osSandbox: false, secrets: "reverse-port-only", checkpoint: "root-write-edit-only-v1" },
 };
+
+export const A2_RUNTIME_CAPABILITIES = Object.freeze({
+  profile: "myagents-dsh-batch-1-a2-candidate-v1",
+  sessions: Object.freeze({ resume: "unavailable", history: "unavailable", compact: "unavailable", fork: "unavailable", rewind: "unavailable", delete: "unavailable" }),
+  turns: Object.freeze({ steer: "unavailable", followUp: "unavailable", interrupt: "unavailable", terminal: "unavailable", idempotency: "unavailable" }),
+  interaction: Object.freeze({ permission: "unavailable", askUser: "unavailable", plan: "unavailable", settlement: "unavailable", headless: "unavailable" }),
+  configuration: Object.freeze({ provider: "unsupported", model: "unsupported", reasoningEffort: "unsupported", permissionMode: "unsupported", interactionScenario: "unsupported", systemPrompt: "unsupported", mcp: "unsupported", agents: "unsupported" }),
+  extensions: Object.freeze({ snapshot: "unavailable", componentStatus: "unavailable", arbitraryJavascript: "unsupported" }),
+  tools: Object.freeze({ pipeline: "dsh-ctx-tools-only", catalog: "unavailable", hostTools: "unavailable", hooks: "unavailable" }),
+  hostPorts: Object.freeze({ credentials: "unavailable", interaction: "unavailable", tools: "unavailable", hooks: "unavailable", attachments: "unavailable" }),
+  work: Object.freeze({ children: "unavailable", background: "unavailable", taskGraph: "unavailable", mailbox: "unavailable" }),
+  telemetry: Object.freeze({ usage: "unavailable", context: "unavailable", compaction: "unavailable" }),
+  security: Object.freeze({
+    execution: "trusted-local-user-process",
+    osSandbox: false,
+    secrets: "reverse-port-only",
+    checkpoint: "unavailable",
+  }),
+}) as unknown as RuntimeCapabilityProfile;

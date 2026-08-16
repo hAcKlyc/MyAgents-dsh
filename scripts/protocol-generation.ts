@@ -527,17 +527,35 @@ export const findProtocolArtifactDrift = async (
 
 export const buildProtocolArtifacts = async (repositoryRoot: string): Promise<GeneratedProtocolArtifacts> => {
   const contractSourcePath = resolve(repositoryRoot, "packages/protocol/src/contract-source.ts");
-  const [contractSourceBytes, packageBytes] = await Promise.all([
+  const [contractSourceBytes, packageBytes, acceptedArtifactBytes] = await Promise.all([
     readFile(contractSourcePath, "utf8"),
     readFile(resolve(repositoryRoot, "package.json"), "utf8"),
+    readFile(resolve(
+      repositoryRoot,
+      "packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json",
+    ), "utf8"),
   ]);
   const packageJson = JSON.parse(packageBytes) as {
     version?: unknown;
     dependencies?: Record<string, unknown>;
   };
-  if (packageJson.version !== RUNTIME_VERSION
-    || packageJson.dependencies?.["@deepseek-ai/dsh-agent-loop"] !== DSH_ENGINE_VERSION) {
-    throw new Error("Protocol Runtime and DSH engine versions must match the root package authority");
+  const acceptedArtifact = JSON.parse(acceptedArtifactBytes) as {
+    artifactVersion?: unknown;
+    manifestSha256?: unknown;
+    runtimePackages?: Record<string, unknown>;
+  };
+  const developmentDshVersion = packageJson.dependencies?.["@deepseek-ai/dsh-agent-loop"];
+  if (packageJson.version !== RUNTIME_VERSION) {
+    throw new Error("Protocol Runtime version must match the root package authority");
+  }
+  if (typeof developmentDshVersion !== "string" || developmentDshVersion.length === 0) {
+    throw new Error("Root package must retain an exact development DSH authority");
+  }
+  if (acceptedArtifact.artifactVersion !== DSH_ENGINE_VERSION
+    || acceptedArtifact.runtimePackages?.["@deepseek-ai/dsh-agent-loop"] !== DSH_ENGINE_VERSION
+    || typeof acceptedArtifact.manifestSha256 !== "string"
+    || !/^[a-f0-9]{64}$/u.test(acceptedArtifact.manifestSha256)) {
+    throw new Error("Protocol DSH engine identity must match the accepted patched artifact authority");
   }
   const hostMethods = Object.entries(RPC_METHODS)
     .filter(([, definition]) => definition.direction === "host_to_runtime");
@@ -602,6 +620,8 @@ export const buildProtocolArtifacts = async (repositoryRoot: string): Promise<Ge
     protocolVersion: PROTOCOL_VERSION,
     runtimeVersion: RUNTIME_VERSION,
     dshEngineVersion: DSH_ENGINE_VERSION,
+    dshArtifactManifestSha256: acceptedArtifact.manifestSha256,
+    developmentDshVersion,
     sessionFormat: SESSION_FORMAT,
     contractSourceSha256: sha256(contractSourceBytes),
     schemaSha256: schemaDigest,

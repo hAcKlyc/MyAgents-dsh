@@ -187,9 +187,10 @@ describe("repository and packed-artifact forbidden-content policy", () => {
       packageName === "@myagents-dsh/runtime-server");
     expect(policy).toBeDefined();
     if (policy === undefined) return;
-    expect(auditPackedFileList(policy, [{ path: "package.json", size: 100, mode: 0o644 }])).toEqual([]);
+    const acceptedFiles = policy.allowedFiles.map((path) => ({ path, size: 100, mode: 0o644 }));
+    expect(auditPackedFileList(policy, acceptedFiles)).toEqual([]);
     expect(auditPackedFileList(policy, [
-      { path: "package.json", size: 100, mode: 0o644 },
+      ...acceptedFiles,
       { path: "runtime.js.map", size: 100, mode: 0o644 },
     ])).toEqual(expect.arrayContaining([
       expect.stringContaining("allowlist differs"),

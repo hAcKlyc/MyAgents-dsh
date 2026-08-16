@@ -3,6 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Composition boundary for the future verified MyAgents-dsh runtime artifact",
-  "files": []
+  "description": "Composition and process-lifecycle boundary for the verified MyAgents-dsh runtime artifact",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/rpc-server": "0.0.0",
+    "@myagents-dsh/runtime-product": "0.0.0"
+  }
 }

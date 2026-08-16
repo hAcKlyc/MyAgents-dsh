@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/rpc-server",
+    "tsBuildInfoFile": "../../dist/packages/rpc-server/.tsbuildinfo"
+  },
+  "files": ["src/index.ts", "src/native-rpc-service.ts"],
+  "references": [
+    { "path": "../protocol" },
+    { "path": "../product-profile" },
+    { "path": "../runtime-product" }
+  ]
+}

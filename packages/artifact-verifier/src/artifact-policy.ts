@@ -16,7 +16,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/runtime-server",
     relativeDirectory: "apps/runtime-server",
-    allowedFiles: ["package.json"],
+    allowedFiles: ["package.json", "src/index.ts", "src/lifecycle.ts"],
   },
   {
     packageName: "@myagents-dsh/artifact-verifier",
@@ -45,9 +45,12 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     relativeDirectory: "packages/product-profile",
     allowedFiles: [
       "manifests/accepted-patched-dsh-artifact-v1.json",
+      "manifests/batch-1-a2-candidate-profile-v1.json",
       "manifests/official-product-profile-v1.json",
       "manifests/platform-targets-v1.json",
       "package.json",
+      "src/candidate-runtime-profile-authority.ts",
+      "src/candidate-runtime-profile.ts",
       "src/index.ts",
       "src/official-profile-authority.generated.ts",
       "src/patched-dsh-artifact.ts",
@@ -70,6 +73,11 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/peer.ts",
       "src/validation.ts",
     ],
+  },
+  {
+    packageName: "@myagents-dsh/rpc-server",
+    relativeDirectory: "packages/rpc-server",
+    allowedFiles: ["package.json", "src/index.ts", "src/native-rpc-service.ts"],
   },
   {
     packageName: "@myagents-dsh/runtime-product",

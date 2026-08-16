@@ -5,6 +5,8 @@ import { dirname, posix, resolve, win32 } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  BATCH1_A2_CANDIDATE_PROFILE,
+  BATCH1_A2_CANDIDATE_PROFILE_SHA256,
   PLATFORM_EVIDENCE_STATES,
   PLATFORM_TARGETS,
   assertFoundationProfile,
@@ -24,7 +26,7 @@ const repositoryRoot = resolve(import.meta.dirname, "..");
 describe("official product profile authority", () => {
   it("regenerates the profile, platform matrix, and evidence byte-for-byte", async () => {
     const artifacts = await buildProductProfileArtifacts(repositoryRoot);
-    expect(artifacts.size).toBe(4);
+    expect(artifacts.size).toBe(5);
     expect(await findProductProfileDrift(artifacts, (relativePath) =>
       readFile(resolve(repositoryRoot, relativePath), "utf8"))).toEqual([]);
 
@@ -44,6 +46,25 @@ describe("official product profile authority", () => {
       installedPluginCount: 0,
       activationState: "forbidden-until-patched-dsh-and-batch-1-gate",
     });
+    expect(BATCH1_A2_CANDIDATE_PROFILE).toMatchObject({
+      profileId: "myagents-dsh-batch-1-a2-candidate-v1",
+      runtimeActivation: "workstream-evidence-only",
+      composition: {
+        maxPrimaryRootSessions: 0,
+      },
+      protocol: {
+        availableHostMethods: ["initialize", "runtime/status", "runtime/shutdown"],
+        availableReverseMethods: [],
+      },
+    });
+    expect(BATCH1_A2_CANDIDATE_PROFILE.composition.installedPluginAllowlist)
+      .toContain("@myagents-dsh/rpc-server:NativeRpcServer");
+    const candidateBytes = await readFile(resolve(
+      repositoryRoot,
+      "packages/product-profile/manifests/batch-1-a2-candidate-profile-v1.json",
+    ), "utf8");
+    expect(createHash("sha256").update(candidateBytes).digest("hex"))
+      .toBe(BATCH1_A2_CANDIDATE_PROFILE_SHA256);
   });
 
   it("fails closed on generated drift and premature Runtime activation", async () => {

@@ -387,7 +387,7 @@ describe("strict bidirectional JSON-RPC peer", () => {
     expect(() => eventPeer.updateLimits({ ...eventLimits, eventQueueHighWatermark: 1 }))
       .toThrow(expect.objectContaining({ code: "protocol_limit_conflict" }));
     eventPeer.close();
-    for (const callback of eventWriteCallbacks) callback(new Error("closed"));
+    for (const callback of eventWriteCallbacks) callback();
     await Promise.all([eventOne, eventTwo]);
     eventInput.destroy();
     eventOutput.destroy();
@@ -647,7 +647,7 @@ describe("strict bidirectional JSON-RPC peer", () => {
       .map(({ params }) => params.event.kind)).toEqual(["tool", "turn_terminal"]);
 
     peer.close();
-    for (const callback of writeCallbacks) callback(new Error("closed"));
+    for (const callback of writeCallbacks) callback();
     input.destroy();
     output.destroy();
     await Promise.allSettled([control]);
@@ -669,5 +669,89 @@ describe("strict bidirectional JSON-RPC peer", () => {
     await Promise.all([first, second]);
     requestInput.destroy();
     requestOutput.destroy();
+  });
+
+  it("waits for an accepted Writable callback and releases every borrowed stream listener", async () => {
+    const input = new PassThrough();
+    let writeCallback: ((error?: Error | null) => void) | undefined;
+    const output = new Writable({
+      highWaterMark: 1_048_576,
+      write(_chunk, _encoding, callback) {
+        writeCallback = callback;
+      },
+    });
+    const inputBaseline = {
+      data: input.listenerCount("data"),
+      end: input.listenerCount("end"),
+      error: input.listenerCount("error"),
+    };
+    const outputBaseline = {
+      error: output.listenerCount("error"),
+      close: output.listenerCount("close"),
+    };
+    const peer = new JsonRpcPeer({
+      input,
+      output,
+      role: "runtime",
+      limits: REFERENCE_PROTOCOL_LIMITS,
+    });
+    let settled = false;
+    const notification = peer.notify("rpc/cancel", { requestId: "h:accepted-write" })
+      .then(() => { settled = true; });
+    await waitUntil(() => writeCallback !== undefined);
+    expect(settled).toBe(false);
+    expect(peer.pendingWriteCount).toBe(1);
+    writeCallback?.();
+    await notification;
+    expect(settled).toBe(true);
+
+    writeCallback = undefined;
+    const held = peer.notify("rpc/cancel", { requestId: "h:closed-write" });
+    await waitUntil(() => writeCallback !== undefined);
+    peer.close();
+    await expect(held).rejects.toMatchObject({ code: "protocol_closed" });
+    expect(peer.pendingWriteCount).toBe(0);
+    expect(input.listenerCount("data")).toBe(inputBaseline.data);
+    expect(input.listenerCount("end")).toBe(inputBaseline.end);
+    expect(input.listenerCount("error")).toBe(inputBaseline.error);
+    expect(output.listenerCount("error")).toBe(outputBaseline.error);
+    expect(output.listenerCount("close")).toBe(outputBaseline.close);
+    input.destroy();
+    output.destroy();
+  });
+
+  it("fails closed when either transport stream was already ended or destroyed", () => {
+    const destroyedInput = new PassThrough();
+    const openOutput = new PassThrough();
+    destroyedInput.destroy();
+    const inputFatals: ProtocolError[] = [];
+    const inputPeer = new JsonRpcPeer({
+      input: destroyedInput,
+      output: openOutput,
+      role: "runtime",
+      limits: REFERENCE_PROTOCOL_LIMITS,
+      onFatalError: (error) => inputFatals.push(error),
+    });
+    expect(inputFatals).toHaveLength(1);
+    expect(inputFatals[0]?.code).toBe("protocol_input_closed");
+    inputPeer.close();
+    openOutput.destroy();
+
+    const openInput = new PassThrough();
+    const endedOutput = new PassThrough();
+    endedOutput.end();
+    const outputFatals: ProtocolError[] = [];
+    const outputPeer = new JsonRpcPeer({
+      input: openInput,
+      output: endedOutput,
+      role: "runtime",
+      limits: REFERENCE_PROTOCOL_LIMITS,
+      onFatalError: (error) => outputFatals.push(error),
+    });
+    expect(outputFatals).toHaveLength(1);
+    expect(outputFatals[0]?.code).toBe("protocol_output_closed");
+    outputPeer.close();
+    openInput.destroy();
+    endedOutput.destroy();
   });
 });

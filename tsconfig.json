@@ -4,6 +4,7 @@
     { "path": "./packages/protocol" },
     { "path": "./packages/compatibility" },
     { "path": "./packages/product-profile" },
+    { "path": "./packages/rpc-server" },
     { "path": "./packages/runtime-product" },
     { "path": "./packages/testkit" },
     { "path": "./packages/test-host" },

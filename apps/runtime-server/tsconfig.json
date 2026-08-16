@@ -5,5 +5,9 @@
     "outDir": "../../dist/apps/runtime-server",
     "tsBuildInfoFile": "../../dist/apps/runtime-server/.tsbuildinfo"
   },
-  "files": []
+  "files": ["src/index.ts", "src/lifecycle.ts"],
+  "references": [
+    { "path": "../../packages/rpc-server" },
+    { "path": "../../packages/runtime-product" }
+  ]
 }

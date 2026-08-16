@@ -287,11 +287,11 @@
           "distribution": "myagents-dsh",
           "distributionVersion": "0.0.0",
           "name": "deepseek-harness",
-          "version": "0.1.0-rc.6"
+          "version": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638"
         },
         "runtimeGeneration": "generation-1",
         "runtimeVersion": "0.0.0",
-        "schemaSha256": "5ebd4a6386d92e51e65ec753a63e1627701563c5d2113ec6b02da06032236073",
+        "schemaSha256": "64e270a2bd8f4a9761839b18d3c29d3bfe1a1ad94f27c54a158b5e9a85fc8ab3",
         "sessionFormat": "dsh-session-events-v1"
       }
     },
@@ -1069,7 +1069,7 @@
     }
   ],
   "protocolVersion": "2.0.0-draft.1",
-  "schemaSha256": "5ebd4a6386d92e51e65ec753a63e1627701563c5d2113ec6b02da06032236073",
+  "schemaSha256": "64e270a2bd8f4a9761839b18d3c29d3bfe1a1ad94f27c54a158b5e9a85fc8ab3",
   "valid": [
     {
       "frame": {
@@ -1261,11 +1261,11 @@
             "distribution": "myagents-dsh",
             "distributionVersion": "0.0.0",
             "name": "deepseek-harness",
-            "version": "0.1.0-rc.6"
+            "version": "0.1.0-rc.5.myagents.47f943859bef.79f64a697638"
           },
           "runtimeGeneration": "generation-1",
           "runtimeVersion": "0.0.0",
-          "schemaSha256": "5ebd4a6386d92e51e65ec753a63e1627701563c5d2113ec6b02da06032236073",
+          "schemaSha256": "64e270a2bd8f4a9761839b18d3c29d3bfe1a1ad94f27c54a158b5e9a85fc8ab3",
           "sessionFormat": "dsh-session-events-v1"
         }
       },

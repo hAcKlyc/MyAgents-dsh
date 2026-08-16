@@ -14,6 +14,7 @@ const workspacePackages = new Map([
   ["packages/compatibility", "@myagents-dsh/compatibility"],
   ["packages/product-profile", "@myagents-dsh/product-profile"],
   ["packages/protocol", "@myagents-dsh/protocol"],
+  ["packages/rpc-server", "@myagents-dsh/rpc-server"],
   ["packages/runtime-product", "@myagents-dsh/runtime-product"],
   ["packages/test-host", "@myagents-dsh/test-host"],
   ["packages/testkit", "@myagents-dsh/testkit"],
@@ -52,7 +53,7 @@ const expectedDevelopmentDependencies = new Map([
   ["vitest", "4.1.10"],
 ]);
 const expectedWorkspaceFiles = new Map([
-  ["apps/runtime-server", []],
+  ["apps/runtime-server", ["src/index.ts", "src/lifecycle.ts"]],
   ["packages/artifact-verifier", [
     "src/artifact-policy.ts",
     "src/forbidden-content.ts",
@@ -68,6 +69,9 @@ const expectedWorkspaceFiles = new Map([
   ]],
   ["packages/product-profile", [
     "manifests/accepted-patched-dsh-artifact-v1.json",
+    "manifests/batch-1-a2-candidate-profile-v1.json",
+    "src/candidate-runtime-profile-authority.ts",
+    "src/candidate-runtime-profile.ts",
     "src/dsh-public-surface.compile.ts",
     "src/official-profile-authority.generated.ts",
     "src/index.ts",
@@ -83,6 +87,7 @@ const expectedWorkspaceFiles = new Map([
     "src/validation.ts",
     "generated/host-client.generated.ts",
   ]],
+  ["packages/rpc-server", ["src/index.ts", "src/native-rpc-service.ts"]],
   ["packages/runtime-product", ["src/composition.ts", "src/index.ts"]],
   ["packages/test-host", ["src/index.ts", "src/memory-peer.ts", "src/standard-test-host.ts"]],
   ["packages/testkit", ["src/fake-llm-adapter.ts", "src/index.ts"]],

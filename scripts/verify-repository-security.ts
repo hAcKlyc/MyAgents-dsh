@@ -87,6 +87,18 @@ const repositoryFiles = await execute("git", ["ls-files", "--cached", "--others"
   maxBuffer: 16 * 1024 * 1024,
 });
 const repositoryPaths = Buffer.from(repositoryFiles.stdout).toString("utf8").split("\0").filter(Boolean);
+const discoveredWorkspaceDirectories = repositoryPaths
+  .flatMap((path) => {
+    const match = /^(apps|packages)\/([^/]+)\/package\.json$/u.exec(path);
+    return match === null ? [] : [`${match[1]}/${match[2]}`];
+  })
+  .sort();
+const packedWorkspaceDirectories = PACKED_WORKSPACE_POLICIES
+  .map(({ relativeDirectory }) => relativeDirectory)
+  .sort();
+if (JSON.stringify(discoveredWorkspaceDirectories) !== JSON.stringify(packedWorkspaceDirectories)) {
+  failures.push("every npm workspace must have exactly one packed-artifact security policy");
+}
 for (const relativePath of repositoryPaths) {
   const absolutePath = resolve(repositoryRoot, relativePath);
   const entry = await lstat(absolutePath);

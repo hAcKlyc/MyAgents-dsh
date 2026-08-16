@@ -8,6 +8,9 @@
   },
   "files": [
     "manifests/accepted-patched-dsh-artifact-v1.json",
+    "manifests/batch-1-a2-candidate-profile-v1.json",
+    "src/candidate-runtime-profile-authority.ts",
+    "src/candidate-runtime-profile.ts",
     "src/dsh-public-surface.compile.ts",
     "src/official-profile-authority.generated.ts",
     "src/index.ts",
