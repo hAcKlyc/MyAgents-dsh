@@ -15,11 +15,15 @@ import {
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
 import { NativeRpcServer } from "@myagents-dsh/rpc-server";
+import { RuntimeProcessLifecycle } from "@myagents-dsh/runtime-server";
 import type * as ProductProfileExports from "@myagents-dsh/product-profile";
 import type {
   NativeRpcLifecycleAuthority,
+  DshRootComposition,
+  ProductSessionSettlementFailure,
   ProductSessionService,
 } from "@myagents-dsh/runtime-product";
+import type * as RuntimeProductExports from "@myagents-dsh/runtime-product";
 import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 
@@ -30,7 +34,11 @@ vi.mock("@myagents-dsh/product-profile", async (importOriginal) => {
 
 vi.mock("@myagents-dsh/runtime-product", async () => {
   const profile = await vi.importActual<typeof ProductProfileExports>("@myagents-dsh/product-profile");
+  const actual = await vi.importActual<typeof RuntimeProductExports>(
+    "@myagents-dsh/runtime-product",
+  );
   return {
+    ...actual,
     consumeNativeRpcLifecycleAuthority: (_authority: unknown, context: Context) => Object.freeze({
       artifactManifestSha256: profile.ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256,
       artifactVersion: profile.ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion,
@@ -43,15 +51,19 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
 
 const digest = "a".repeat(64);
 const compositionAuthority = Object.freeze({}) as NativeRpcLifecycleAuthority;
-const createRoot = (): Context => {
+const createRoot = (
+  retire: () => Promise<void> = () => Promise.resolve(),
+  settlementFailure: Promise<ProductSessionSettlementFailure> = new Promise(() => undefined),
+): Context => {
   const root = new Context();
   root.provide("sessions", {
     flush: () => Promise.resolve(true),
   } as never);
   root.provide("productSession", {
     bindWorkspace: (workspace: unknown) => workspace,
-    retire: () => Promise.resolve(),
+    retire,
     snapshot: () => Object.freeze({ state: "unbound" as const }),
+    whenSettlementFailed: () => settlementFailure,
   } as ProductSessionService);
   root.provide("sdkOperations", {
     bindTerminalReservationAuthority: () => undefined,
@@ -263,8 +275,11 @@ describe("native RPC Cordis service", () => {
         reason: "synthetic-complete",
       });
       expect(exitObserved).toBe(true);
-      expect(harness.server.phase).toBe("shutdown_requested");
-      expect(await harness.client.runtimeStatus({})).toMatchObject({ initialized: true });
+      await expect(harness.server.whenStopped()).resolves.toEqual({
+        exit: { kind: "shutdown", reason: "synthetic-complete" },
+        disposed: true,
+      });
+      expect(harness.server.phase).toBe("disposed");
     } finally {
       await harness.close();
     }
@@ -425,10 +440,68 @@ describe("native RPC Cordis service", () => {
         kind: "transport_fatal",
         code: "protocol_phase_error",
       });
-      expect(root.nativeRpc.phase).toBe("terminated");
+      expect(root.nativeRpc.phase).toBe("disposed");
     } finally {
       await root.fiber.dispose();
       for (const callback of callbacks) callback();
+      input.destroy();
+      output.destroy();
+    }
+  });
+
+  it("commits a bounded termination intent before a stalled shutdown response is written", async () => {
+    const input = new PassThrough();
+    const callbacks: Array<(error?: Error | null) => void> = [];
+    const output = new Writable({
+      highWaterMark: 1_048_576,
+      write(_chunk, _encoding, callback) { callbacks.push(callback); },
+    });
+    const root = createRoot();
+    await root.plugin(NativeRpcServer, {
+      compositionAuthority,
+      input,
+      output,
+      runtimeGeneration: "stalled-shutdown-generation",
+      platformTarget: "darwin-arm64",
+    });
+    try {
+      input.write(`${JSON.stringify({
+        jsonrpc: "2.0",
+        id: "raw:initialize-before-stalled-shutdown",
+        method: "initialize",
+        params: initializeParams(),
+      })}\n`);
+      await vi.waitFor(() => expect(callbacks).toHaveLength(1));
+      callbacks.shift()?.();
+      await vi.waitFor(() => expect(root.nativeRpc.phase).toBe("await_initialized"));
+      input.write(`${JSON.stringify({ jsonrpc: "2.0", method: "initialized", params: {} })}\n`);
+      await vi.waitFor(() => expect(root.nativeRpc.phase).toBe("ready"));
+
+      let exitObserved = false;
+      void root.nativeRpc.whenExitRequested().then(() => { exitObserved = true; });
+      input.write(`${JSON.stringify({
+        jsonrpc: "2.0",
+        id: "raw:stalled-shutdown",
+        method: "runtime/shutdown",
+        params: { reason: "stalled-output" },
+      })}\n`);
+      await expect(root.nativeRpc.whenTerminationCommitted()).resolves.toEqual({
+        kind: "shutdown",
+        reason: "stalled-output",
+      });
+      await vi.waitFor(() => expect(callbacks).toHaveLength(1));
+      expect(exitObserved).toBe(false);
+      expect(root.nativeRpc.phase).toBe("shutdown_requested");
+
+      root.nativeRpc.requestProcessSignal("SIGINT");
+      await expect(root.nativeRpc.whenExitRequested()).resolves.toEqual({
+        kind: "shutdown",
+        reason: "stalled-output",
+      });
+      expect(root.nativeRpc.phase).toBe("disposed");
+    } finally {
+      for (const callback of callbacks.splice(0)) callback();
+      await root.fiber.dispose();
       input.destroy();
       output.destroy();
     }
@@ -508,7 +581,7 @@ describe("native RPC Cordis service", () => {
         kind: "transport_fatal",
         code: "protocol_phase_error",
       });
-      expect(premature.server.phase).toBe("terminated");
+      expect(premature.server.phase).toBe("disposed");
     } finally {
       await premature.close();
     }
@@ -534,6 +607,118 @@ describe("native RPC Cordis service", () => {
       });
     } finally {
       await eof.close();
+    }
+  });
+
+  it("closes admission immediately and converges process signals on the shared stop promise", async () => {
+    const harness = await createHarness();
+    try {
+      expect(() => harness.server.requestProcessSignal("SIGHUP")).toThrow("SIGINT or SIGTERM");
+      const firstStop = harness.server.whenStopped();
+      const exactStop = harness.server.whenStopped();
+      expect(exactStop).toBe(firstStop);
+      harness.server.requestProcessSignal("SIGTERM");
+      harness.server.requestProcessSignal("SIGINT");
+      expect(harness.server.phase).toBe("terminated");
+      await expect(harness.server.whenExitRequested()).resolves.toEqual({
+        kind: "signal",
+        signal: "SIGTERM",
+      });
+      await expect(firstStop).resolves.toEqual({
+        exit: { kind: "signal", signal: "SIGTERM" },
+        disposed: true,
+      });
+      expect(harness.server.phase).toBe("disposed");
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it("keeps the hard deadline armed when real Native retirement rejects", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const retirementError = new Error("synthetic primary retirement failure");
+    const root = createRoot(() => Promise.reject(retirementError));
+    await root.plugin(NativeRpcServer, {
+      compositionAuthority,
+      input,
+      output,
+      runtimeGeneration: "failed-retirement-generation",
+      platformTarget: "darwin-arm64",
+    });
+    const cancelForceExit = vi.fn();
+    const unsubscribe = vi.fn();
+    const scheduleForceExit = vi.fn(() => cancelForceExit);
+    const lifecycle = new RuntimeProcessLifecycle(
+      {} as DshRootComposition,
+      root.nativeRpc,
+      {
+        processBoundary: {
+          subscribe: () => unsubscribe,
+          scheduleForceExit,
+        },
+        shutdownGraceMs: 1_000,
+      },
+    );
+    const stopped = lifecycle.whenStopped();
+    void stopped.catch(() => undefined);
+    try {
+      root.nativeRpc.requestProcessSignal("SIGTERM");
+      await vi.waitFor(() => expect(scheduleForceExit).toHaveBeenCalledWith(143, 1_000));
+      await expect(stopped).rejects.toBe(retirementError);
+      expect(unsubscribe).toHaveBeenCalledOnce();
+      expect(cancelForceExit).not.toHaveBeenCalled();
+    } finally {
+      await root.fiber.dispose();
+      input.destroy();
+      output.destroy();
+    }
+  });
+
+  it("turns a product settlement failure into the one Native hard-deadline intent", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const failure = Promise.withResolvers<ProductSessionSettlementFailure>();
+    const retirementError = new Error("synthetic unsettled primary Session");
+    const root = createRoot(() => Promise.reject(retirementError), failure.promise);
+    await root.plugin(NativeRpcServer, {
+      compositionAuthority,
+      input,
+      output,
+      runtimeGeneration: "settlement-failure-generation",
+      platformTarget: "darwin-arm64",
+    });
+    const cancelForceExit = vi.fn();
+    const unsubscribe = vi.fn();
+    const scheduleForceExit = vi.fn(() => cancelForceExit);
+    const lifecycle = new RuntimeProcessLifecycle(
+      {} as DshRootComposition,
+      root.nativeRpc,
+      {
+        processBoundary: { subscribe: () => unsubscribe, scheduleForceExit },
+        shutdownGraceMs: 1_000,
+      },
+    );
+    const stopped = lifecycle.whenStopped();
+    void stopped.catch(() => undefined);
+    try {
+      failure.resolve(Object.freeze({
+        code: "primary_session_settlement_failed",
+        message: "synthetic settlement deadline",
+      }));
+      await expect(root.nativeRpc.whenExitRequested()).resolves.toEqual({
+        kind: "runtime_fatal",
+        code: "primary_session_settlement_failed",
+        retryable: false,
+      });
+      await vi.waitFor(() => expect(scheduleForceExit).toHaveBeenCalledWith(1, 1_000));
+      await expect(stopped).rejects.toBe(retirementError);
+      expect(unsubscribe).toHaveBeenCalledOnce();
+      expect(cancelForceExit).not.toHaveBeenCalled();
+    } finally {
+      await root.fiber.dispose();
+      input.destroy();
+      output.destroy();
     }
   });
 

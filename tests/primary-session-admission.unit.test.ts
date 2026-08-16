@@ -3,6 +3,8 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import type { MethodParams } from "@myagents-dsh/protocol";
 import {
   PrimarySessionAdmission,
+  RuntimeSettlementTimeoutError,
+  createRuntimeSettlementDeadlineAuthority,
   validatePrimarySessionWorkspace,
   type PrimarySessionBackend,
   type PrimarySessionBackendRequest,
@@ -169,6 +171,142 @@ describe("one-primary-session admission", () => {
     });
     await admission.retire(guard);
     expect(guard).toHaveBeenCalledWith(candidate.handle.agent);
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("retires through one exact session/close operation and retains the retired identity", async () => {
+    const candidate = fakeHandle("runtime-primary");
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(candidate.handle, "runtime-primary", 12)),
+      () => Promise.reject(new Error("resume must not run")),
+    ), workspace);
+    await admission.bindCreate(createParams());
+    const guard = vi.fn(() => Promise.resolve());
+    const first = admission.close({ clientOperationId: "close-primary" }, guard);
+    const exactRetry = admission.close({ clientOperationId: "close-primary" }, guard);
+    expect(exactRetry).toBe(first);
+    expect(() => admission.close({ clientOperationId: "different-close" }, guard))
+      .toThrow("clientOperationId differs");
+    await expect(first).resolves.toEqual({ ok: true });
+    expect(candidate.cancel).toHaveBeenCalledWith({ kind: "disposed" }, { keepInbox: true });
+    expect(candidate.whenIdle).toHaveBeenCalledOnce();
+    expect(guard).toHaveBeenCalledOnce();
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+    expect(admission.snapshot()).toEqual({
+      state: "retired",
+      clientOperationId: "bind-primary",
+      desiredConfigRevision: "config-v1",
+      durableSequence: 12,
+      mode: "create",
+      persistenceRef: "persistence-primary",
+      runtimeSessionId: "runtime-primary",
+    });
+    await expect(admission.close({ clientOperationId: "close-primary" }, guard))
+      .resolves.toEqual({ ok: true });
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("rejects close before admission without consuming the close idempotency identity", async () => {
+    const candidate = fakeHandle("runtime-primary");
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(candidate.handle)),
+      () => Promise.reject(new Error("resume must not run")),
+    ), workspace);
+    expect(() => admission.close({ clientOperationId: "close-before-bind" }))
+      .toThrow("no admitted identity");
+    expect(admission.snapshot().state).toBe("unbound");
+
+    await admission.bindCreate(createParams());
+    await expect(admission.close({ clientOperationId: "close-before-bind" }))
+      .resolves.toEqual({ ok: true });
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("runs guard, idle, and disposal even when Agent cancellation throws", async () => {
+    const candidate = fakeHandle("runtime-primary");
+    const cancelError = new Error("synthetic Agent cancellation failure");
+    candidate.cancel.mockImplementation(() => { throw cancelError; });
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(candidate.handle)),
+      () => Promise.reject(new Error("resume must not run")),
+    ), workspace);
+    await admission.bindCreate(createParams());
+    const guard = vi.fn(() => Promise.resolve());
+
+    await expect(admission.retire(guard)).rejects.toBe(cancelError);
+    expect(guard).toHaveBeenCalledOnce();
+    expect(candidate.whenIdle).toHaveBeenCalledOnce();
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+    expect(admission.snapshot().state).toBe("retired");
+  });
+
+  it("bounds a never-settling retirement guard and still disposes exactly once", async () => {
+    const candidate = fakeHandle("runtime-primary");
+    candidate.whenIdle.mockImplementation(() => new Promise<void>(() => undefined));
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(candidate.handle)),
+      () => Promise.reject(new Error("resume must not run")),
+    ), workspace, createRuntimeSettlementDeadlineAuthority(10));
+    await admission.bindCreate(createParams());
+    const guard = vi.fn(() => new Promise<void>(() => undefined));
+    const retirement = admission.retire(guard);
+
+    await expect(retirement).rejects.toBeInstanceOf(RuntimeSettlementTimeoutError);
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+    expect(admission.snapshot().state).toBe("recovery_required");
+    expect(admission.retire(guard)).toBe(retirement);
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("bounds a never-settling handle disposal and exposes recovery-required truth", async () => {
+    const candidate = fakeHandle("runtime-primary");
+    candidate.dispose.mockImplementation(() => new Promise<void>(() => undefined));
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(candidate.handle)),
+      () => Promise.reject(new Error("resume must not run")),
+    ), workspace, createRuntimeSettlementDeadlineAuthority(10));
+    await admission.bindCreate(createParams());
+    const retirement = admission.retire();
+
+    await expect(retirement).rejects.toBeInstanceOf(RuntimeSettlementTimeoutError);
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+    expect(admission.snapshot().state).toBe("recovery_required");
+    expect(admission.retire()).toBe(retirement);
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("keeps recovery-required truth when handle disposal rejects immediately", async () => {
+    const candidate = fakeHandle("runtime-primary");
+    const disposalError = new Error("synthetic immediate handle disposal failure");
+    candidate.dispose.mockImplementation(() => Promise.reject(disposalError));
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(candidate.handle)),
+      () => Promise.reject(new Error("resume must not run")),
+    ), workspace);
+    await admission.bindCreate(createParams());
+
+    await expect(admission.retire()).rejects.toBe(disposalError);
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+    expect(admission.snapshot().state).toBe("recovery_required");
+    expect(() => admission.requireAgent()).toThrow("not ready");
+  });
+
+  it("does not turn a timed-out late disposal rejection into retired truth", async () => {
+    const candidate = fakeHandle("runtime-primary");
+    const disposal = Promise.withResolvers<undefined>();
+    candidate.dispose.mockImplementation(() => disposal.promise);
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(candidate.handle)),
+      () => Promise.reject(new Error("resume must not run")),
+    ), workspace, createRuntimeSettlementDeadlineAuthority(10));
+    await admission.bindCreate(createParams());
+
+    await expect(admission.retire()).rejects.toBeInstanceOf(RuntimeSettlementTimeoutError);
+    expect(admission.snapshot().state).toBe("recovery_required");
+    disposal.reject(new Error("synthetic late handle disposal failure"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(admission.snapshot().state).toBe("recovery_required");
     expect(candidate.dispose).toHaveBeenCalledOnce();
   });
 

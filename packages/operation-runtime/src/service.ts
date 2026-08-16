@@ -33,11 +33,16 @@ export interface OperationBirthAuthority {
   capture(params: MethodParams<"turn/start">): OperationBirthSnapshot | Promise<OperationBirthSnapshot>;
 }
 
+export interface SettlementDeadlineAuthority {
+  readonly wait: <T>(operation: PromiseLike<T>, description: string) => Promise<T>;
+}
+
 export interface SdkOperationServiceConfig {
   readonly birthAuthority: OperationBirthAuthority;
   readonly registerRetirementGuard: (guard: (agent: Agent) => Promise<void>) => void;
   readonly requireAgent: () => Agent;
-  readonly retirePrimary: () => Promise<void>;
+  readonly retirePrimary: (cause?: unknown) => Promise<void>;
+  readonly settlementDeadlineAuthority: SettlementDeadlineAuthority;
   readonly clock?: () => number;
 }
 
@@ -48,6 +53,7 @@ export interface OperationAdmissionControl {
 
 export interface OperationTerminalReservationAuthority {
   readonly reserve: (clientOperationId: string) => void;
+  readonly whenIdle: () => Promise<void>;
 }
 
 export interface SdkOperationSnapshot {
@@ -56,6 +62,8 @@ export interface SdkOperationSnapshot {
 }
 
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+
+const agentIsIdle = (agent: Agent): boolean => agent.status === "idle";
 
 const stableJson = (value: unknown): string => {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -116,7 +124,13 @@ const exactOwnDataObject = (
 const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConfig> => {
   const config = exactOwnDataObject(
     value,
-    ["birthAuthority", "registerRetirementGuard", "requireAgent", "retirePrimary"],
+    [
+      "birthAuthority",
+      "registerRetirementGuard",
+      "requireAgent",
+      "retirePrimary",
+      "settlementDeadlineAuthority",
+    ],
     ["clock"],
     "SdkOperationService config",
   );
@@ -126,9 +140,16 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
     [],
     "operation birth authority",
   );
+  const deadlineAuthority = exactOwnDataObject(
+    config.settlementDeadlineAuthority,
+    ["wait"],
+    [],
+    "operation settlement deadline authority",
+  );
   if (typeof authority.capture !== "function" || typeof config.requireAgent !== "function"
     || typeof config.registerRetirementGuard !== "function"
     || typeof config.retirePrimary !== "function"
+    || typeof deadlineAuthority.wait !== "function"
     || (Object.hasOwn(config, "clock") && typeof config.clock !== "function")) {
     throw new TypeError("SdkOperationService capabilities must be functions");
   }
@@ -136,7 +157,9 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
   const operationBirthReceiver = config.birthAuthority;
   const registerRetirementGuard = config.registerRetirementGuard as
     (guard: (agent: Agent) => Promise<void>) => void;
-  const retirePrimary = config.retirePrimary as () => Promise<void>;
+  const retirePrimary = config.retirePrimary as (cause?: unknown) => Promise<void>;
+  const settlementWait = deadlineAuthority.wait as SettlementDeadlineAuthority["wait"];
+  const settlementDeadlineReceiver = config.settlementDeadlineAuthority;
   return Object.freeze({
     birthAuthority: Object.freeze({
       capture: (params: MethodParams<"turn/start">) =>
@@ -145,7 +168,11 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
     registerRetirementGuard: (guard: (agent: Agent) => Promise<void>) =>
       Reflect.apply(registerRetirementGuard, config, [guard]),
     requireAgent: config.requireAgent as () => Agent,
-    retirePrimary: () => Reflect.apply(retirePrimary, config, []),
+    retirePrimary: (cause?: unknown) => Reflect.apply(retirePrimary, config, [cause]),
+    settlementDeadlineAuthority: Object.freeze({
+      wait: <T>(operation: PromiseLike<T>, description: string): Promise<T> =>
+        Reflect.apply(settlementWait, settlementDeadlineReceiver, [operation, description]),
+    }),
     clock: (config.clock ?? Date.now) as () => number,
   });
 };
@@ -213,11 +240,16 @@ export class SdkOperationService extends Service {
 
   private readonly configValue: Required<SdkOperationServiceConfig>;
   private acceptingValue = true;
+  private readonly cancellationReasonsValue = new Map<
+    string,
+    "user" | "host_shutdown" | "session_replaced"
+  >();
   private correlationDrainValue: Promise<void> = Promise.resolve();
   private failureValue: ProtocolError | undefined;
   private primaryAgentValue: Agent | undefined;
   private readonly pendingRequestContextSeqs = new Set<number>();
   private serialValue: Promise<void> = Promise.resolve();
+  private retirementEscalationValue: Promise<void> | undefined;
   private terminalReservationAuthorityValue: OperationTerminalReservationAuthority | undefined;
 
   constructor(ctx: Context, config: SdkOperationServiceConfig) {
@@ -304,12 +336,18 @@ export class SdkOperationService extends Service {
             || ownedMessage.state !== "queued" || !ownedMessage.delivered) {
             throw new Error("discarded operation message differs from durable ownership");
           }
+          const cancellationReason = this.cancellationReasonsValue.get(message.id);
+          if (cancellationReason === undefined) {
+            throw new Error("operation message discard lacks a product cancellation owner");
+          }
+          this.cancellationReasonsValue.delete(message.id);
           agent.session.append("myagents/operation/message", {
             clientOperationId: source.clientOperationId,
             messageId: message.id,
             kind: ownedMessage.kind,
             clientMessageId: source.clientMessageId,
             state: "cancelled",
+            cancellationReason,
           });
           this.queueCorrelationFlush(agent);
         } catch (error) {
@@ -387,14 +425,20 @@ export class SdkOperationService extends Service {
       throw new Error("product-operation terminal reservation authority must bind exactly once");
     }
     const reserve = Object.getOwnPropertyDescriptor(authority, "reserve");
-    if (Reflect.ownKeys(authority).length !== 1 || reserve === undefined
-      || !reserve.enumerable || !("value" in reserve) || typeof reserve.value !== "function") {
-      throw new TypeError("product-operation terminal reservation authority must expose one own data function");
+    const whenIdle = Object.getOwnPropertyDescriptor(authority, "whenIdle");
+    if (Reflect.ownKeys(authority).length !== 2 || reserve === undefined || whenIdle === undefined
+      || !reserve.enumerable || !("value" in reserve) || typeof reserve.value !== "function"
+      || !whenIdle.enumerable || !("value" in whenIdle) || typeof whenIdle.value !== "function") {
+      throw new TypeError(
+        "product-operation terminal reservation authority must expose reserve and whenIdle own data functions",
+      );
     }
     const receiver = authority;
     const reserveValue = reserve.value as (clientOperationId: string) => void;
+    const whenIdleValue = whenIdle.value as () => Promise<void>;
     this.terminalReservationAuthorityValue = Object.freeze({
       reserve: (clientOperationId: string) => Reflect.apply(reserveValue, receiver, [clientOperationId]),
+      whenIdle: () => Reflect.apply(whenIdleValue, receiver, []),
     });
   }
 
@@ -420,6 +464,18 @@ export class SdkOperationService extends Service {
     this.assertOpen();
     const params = validateMethodParams("turn/start", value);
     return this.serialize(() => this.startValue(params, control));
+  }
+
+  cancelMessage(value: unknown): Promise<MethodResult<"turn/message/cancel">> {
+    this.assertOpen();
+    const params = validateMethodParams("turn/message/cancel", value);
+    return this.serialize(() => this.cancelMessageValue(params));
+  }
+
+  interrupt(value: unknown): Promise<MethodResult<"turn/interrupt">> {
+    this.assertOpen();
+    const params = validateMethodParams("turn/interrupt", value);
+    return this.serialize(() => this.interruptValue(params));
   }
 
   private serialize<T>(task: () => Promise<T>): Promise<T> {
@@ -507,6 +563,122 @@ export class SdkOperationService extends Service {
     return Object.freeze({ state: "accepted", clientOperationId: params.clientOperationId });
   }
 
+  private async cancelMessageValue(
+    params: MethodParams<"turn/message/cancel">,
+  ): Promise<MethodResult<"turn/message/cancel">> {
+    this.assertOpen();
+    this.assertHealthy();
+    const agent = this.primaryAgent();
+    const operation = findProductOperation(this.foldValue(agent), params.clientOperationId);
+    if (operation === undefined) {
+      throw new ProtocolError("turn_operation_unknown", "turn/message/cancel references an unknown operation");
+    }
+    const message = operation.messages.find(({ messageId }) => messageId === params.messageId);
+    if (message === undefined) {
+      throw new ProtocolError("turn_message_unknown", "turn/message/cancel references an unknown message");
+    }
+    if (message.state === "cancelled") {
+      return Object.freeze({ messageId: message.messageId, state: "cancelled" as const });
+    }
+    if (message.state === "claimed") {
+      return this.confirmDurableClaim(agent, params.clientOperationId, message.messageId);
+    }
+    if (!message.delivered) {
+      throw this.fence(new Error("accepted-undelivered operation message cannot be cancelled by guessing"));
+    }
+    const pending = [...agent.inbox.nextStep, ...agent.inbox.nextTurn]
+      .some(({ id }) => id === message.messageId);
+    if (!pending || !this.removePendingMessage(agent, message.messageId, "user")) {
+      const raced = findProductOperation(this.foldValue(agent), params.clientOperationId)
+        ?.messages.find(({ messageId }) => messageId === params.messageId);
+      if (raced?.state === "claimed") {
+        return this.confirmDurableClaim(agent, params.clientOperationId, message.messageId);
+      }
+      if (raced?.state === "cancelled") {
+        return Object.freeze({ messageId: message.messageId, state: "cancelled" as const });
+      }
+      throw this.fence(new Error("queued operation message disappeared during cancellation"));
+    }
+    await this.flush(agent);
+    await this.reconcileAgent(agent);
+    const cancelled = findProductOperation(this.foldValue(agent), params.clientOperationId)
+      ?.messages.find(({ messageId }) => messageId === params.messageId);
+    if (cancelled?.state !== "cancelled") {
+      throw this.fence(new Error("operation message cancellation did not become durable"));
+    }
+    return Object.freeze({ messageId: message.messageId, state: "cancelled" as const });
+  }
+
+  private async interruptValue(
+    params: MethodParams<"turn/interrupt">,
+  ): Promise<MethodResult<"turn/interrupt">> {
+    this.assertOpen();
+    this.assertHealthy();
+    const agent = this.primaryAgent();
+    await this.reconcileAgent(agent);
+    let operation = findProductOperation(this.foldValue(agent), params.clientOperationId);
+    if (operation === undefined) {
+      throw new ProtocolError("turn_operation_unknown", "turn/interrupt references an unknown operation");
+    }
+    if (operation.state === "terminal") {
+      return Object.freeze({ ok: true as const, stillQueuedMessageIds: [], cancelledMessageIds: [] });
+    }
+    const cancelledMessageIds: string[] = [];
+    if (params.cancelQueued === true) {
+      for (const message of operation.messages) {
+        if (message.state !== "queued" || !message.delivered) continue;
+        if (this.removePendingMessage(agent, message.messageId, "user")) {
+          cancelledMessageIds.push(message.messageId);
+        }
+      }
+    }
+    operation = findProductOperation(this.foldValue(agent), params.clientOperationId);
+    if (operation === undefined) {
+      throw this.fence(new Error("turn/interrupt lost its durable operation owner"));
+    }
+    const openTurn = this.openDshTurn(agent);
+    const interruptsActiveTurn = openTurn !== undefined && operation.dshTurns.includes(openTurn);
+    if (interruptsActiveTurn) {
+      try {
+        agent.cancel({ kind: "user" }, { keepInbox: true });
+        await this.configValue.settlementDeadlineAuthority.wait(
+          agent.whenIdle(),
+          "turn/interrupt Agent settlement",
+        );
+      } catch (error) {
+        throw this.escalatePrimaryRetirement(error);
+      }
+    }
+    if (cancelledMessageIds.length > 0 || interruptsActiveTurn) await this.flush(agent);
+    await this.reconcileAgent(agent);
+    const settled = findProductOperation(this.foldValue(agent), params.clientOperationId);
+    if (settled === undefined) {
+      throw this.fence(new Error("turn/interrupt lost its settled operation owner"));
+    }
+    if (interruptsActiveTurn && this.openDshTurn(agent) === openTurn) {
+      throw this.escalatePrimaryRetirement(
+        new Error("turn/interrupt did not close its active DSH turn"),
+      );
+    }
+    const stillQueuedMessageIds = settled.messages
+      .filter(({ state }) => state === "queued")
+      .map(({ messageId }) => messageId);
+    return Object.freeze({
+      ok: true as const,
+      stillQueuedMessageIds,
+      cancelledMessageIds,
+    });
+  }
+
+  private openDshTurn(agent: Agent): number | undefined {
+    let open: number | undefined;
+    for (const event of agent.session.events) {
+      if (event.type === "turn/start") open = event.data.turn;
+      else if (event.type === "turn/end" && event.data.turn === open) open = undefined;
+    }
+    return open;
+  }
+
   private assertAdmissionNotCancelled(control: OperationAdmissionControl | undefined): void {
     if (control?.signal.aborted === true) {
       throw new ProtocolError("protocol_cancelled", "turn/start was cancelled before durable admission", true);
@@ -534,9 +706,28 @@ export class SdkOperationService extends Service {
   }
 
   private async flush(agent: Agent): Promise<void> {
-    if (!await this.ctx.sessions.flush(agent.session)) {
+    const participated = await this.configValue.settlementDeadlineAuthority.wait(
+      this.ctx.sessions.flush(agent.session),
+      "product-operation durability flush",
+    );
+    if (!participated) {
       throw new Error("no Session durability Provider participated in the operation flush");
     }
+  }
+
+  private async confirmDurableClaim(
+    agent: Agent,
+    clientOperationId: string,
+    messageId: string,
+  ): Promise<MethodResult<"turn/message/cancel">> {
+    await this.correlationDrainValue;
+    this.assertHealthy();
+    const claimed = findProductOperation(this.foldValue(agent), clientOperationId)
+      ?.messages.find((message) => message.messageId === messageId);
+    if (claimed?.state !== "claimed") {
+      throw this.fence(new Error("claimed operation delivery lacks its durability barrier"));
+    }
+    return Object.freeze({ messageId, state: "delivered" as const });
   }
 
   private primaryAgent(): Agent {
@@ -630,15 +821,15 @@ export class SdkOperationService extends Service {
     });
   }
 
-  private async reconcileAgent(agent: Agent): Promise<void> {
+  private async reconcileAgent(agent: Agent, allowClosing = false): Promise<void> {
     try {
-      await this.settleEligibleOperations(agent);
+      await this.settleEligibleOperations(agent, allowClosing);
     } catch (error) {
       throw this.fence(error);
     }
   }
 
-  private async settleEligibleOperations(agent: Agent): Promise<void> {
+  private async settleEligibleOperations(agent: Agent, allowClosing: boolean): Promise<void> {
     let fold = this.foldValue(agent);
     for (const operation of fold.operations) {
       if (operation.state !== "terminal") this.reserveTerminal(operation.clientOperationId);
@@ -647,10 +838,14 @@ export class SdkOperationService extends Service {
       operation.state === "settling" && operation.terminal === undefined
         && (operation.dshTurns.length > 0
           || operation.messages.every(({ state }) => state === "cancelled")))) return;
-    await agent.whenIdle();
-    if (!this.acceptingValue || agent.status !== "idle") return;
+    if (!agentIsIdle(agent)) return;
+    await this.configValue.settlementDeadlineAuthority.wait(
+      agent.whenIdle(),
+      "operation terminal idle settlement",
+    );
+    if ((!this.acceptingValue && !allowClosing) || !agentIsIdle(agent)) return;
     this.assertHealthy();
-    if (agent !== this.configValue.requireAgent()) {
+    if (!allowClosing && agent !== this.configValue.requireAgent()) {
       throw new Error("primary Session changed before product-operation terminal settlement");
     }
     fold = this.foldValue(agent);
@@ -683,10 +878,36 @@ export class SdkOperationService extends Service {
     }
     this.primaryAgentValue = agent;
     this.cancelPendingForRetirement(agent);
-    await this.serialValue;
+    await this.configValue.settlementDeadlineAuthority.wait(
+      this.serialValue,
+      "primary retirement operation admission drain",
+    );
     this.assertHealthy();
     this.cancelPendingForRetirement(agent);
-    await this.correlationDrainValue;
+    await this.configValue.settlementDeadlineAuthority.wait(
+      this.correlationDrainValue,
+      "primary retirement correlation durability",
+    );
+    this.assertHealthy();
+    await this.configValue.settlementDeadlineAuthority.wait(
+      agent.whenIdle(),
+      "primary retirement Agent settlement",
+    );
+    await this.configValue.settlementDeadlineAuthority.wait(
+      this.settleEligibleOperations(agent, true),
+      "primary retirement terminal settlement",
+    );
+    const settledFold = this.foldValue(agent);
+    if (settledFold.operations.length > 0) {
+      const terminalAuthority = this.terminalReservationAuthorityValue;
+      if (terminalAuthority === undefined) {
+        throw this.fence(new Error("primary retirement lost terminal-delivery ownership"));
+      }
+      await this.configValue.settlementDeadlineAuthority.wait(
+        terminalAuthority.whenIdle(),
+        "primary retirement terminal projection drain",
+      );
+    }
     this.assertHealthy();
   }
 
@@ -696,7 +917,7 @@ export class SdkOperationService extends Service {
     for (const operation of fold.operations) {
       for (const message of operation.messages) {
         if (!message.delivered || message.state !== "queued") continue;
-        if (!agent.inbox.remove(MessageId(message.messageId))) {
+        if (!this.removePendingMessage(agent, message.messageId, "host_shutdown")) {
           throw this.fence(new Error("quiescent primary retirement lost one pending operation message"));
         }
         const updated = findProductOperation(
@@ -714,6 +935,7 @@ export class SdkOperationService extends Service {
             kind: message.kind,
             clientMessageId: message.clientMessageId,
             state: "cancelled",
+            cancellationReason: "host_shutdown",
           });
           directCancellationAppended = true;
         }
@@ -728,6 +950,22 @@ export class SdkOperationService extends Service {
       throw this.fence(error);
     });
     void this.correlationDrainValue.catch(() => undefined);
+  }
+
+  private removePendingMessage(
+    agent: Agent,
+    messageId: string,
+    reason: "user" | "host_shutdown" | "session_replaced",
+  ): boolean {
+    if (this.cancellationReasonsValue.has(messageId)) {
+      throw this.fence(new Error("operation message already has an in-flight cancellation owner"));
+    }
+    this.cancellationReasonsValue.set(messageId, reason);
+    try {
+      return agent.inbox.remove(MessageId(messageId));
+    } finally {
+      this.cancellationReasonsValue.delete(messageId);
+    }
   }
 
   private foldValue(agent: Agent): ProductOperationFold {
@@ -758,6 +996,16 @@ export class SdkOperationService extends Service {
     if (!this.acceptingValue) {
       throw new ProtocolError("protocol_closed", "product-operation admission is closing or disposed");
     }
+  }
+
+  private escalatePrimaryRetirement(cause: unknown): ProtocolError {
+    const failure = this.fence(cause);
+    this.retirementEscalationValue ??= Promise.resolve()
+      .then(() => this.configValue.retirePrimary(failure))
+      .catch((error: unknown) => {
+        this.fence(error);
+      });
+    return failure;
   }
 
   private fence(cause: unknown): ProtocolError {

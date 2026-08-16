@@ -54,6 +54,7 @@ export interface ProductOperationMessage {
   readonly kind: "root" | "steer" | "follow_up";
   readonly clientMessageId: string;
   readonly state: "queued" | "cancelled";
+  readonly cancellationReason?: "user" | "host_shutdown" | "session_replaced";
 }
 
 export interface ProductOperationClaim {

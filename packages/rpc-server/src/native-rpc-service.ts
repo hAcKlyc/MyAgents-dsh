@@ -52,6 +52,8 @@ export type NativeRpcPhase =
 export type NativeRpcExitRequest = Readonly<
   | { kind: "shutdown"; reason?: string }
   | { kind: "transport_fatal"; code: string; retryable: boolean }
+  | { kind: "runtime_fatal"; code: string; retryable: boolean }
+  | { kind: "signal"; signal: "SIGINT" | "SIGTERM" }
   | { kind: "disposed" }
 >;
 
@@ -335,11 +337,14 @@ export class NativeRpcServer extends Service {
   private readonly operationsValue: SdkOperationService;
   private readonly configValue: NormalizedConfig;
   private readonly stopHandlers: Array<() => void> = [];
+  private readonly terminationCommittedPromise: Promise<NativeRpcExitRequest>;
   private readonly exitRequestedPromise: Promise<NativeRpcExitRequest>;
   private readonly stoppedPromise: Promise<NativeRpcProcessStop>;
+  private resolveTermination!: (request: NativeRpcExitRequest) => void;
   private resolveExit!: (request: NativeRpcExitRequest) => void;
   private disposePromise: Promise<void> | undefined;
   private exitRequestValue: NativeRpcExitRequest | undefined;
+  private terminationRequestValue: NativeRpcExitRequest | undefined;
   private phaseValue: NativeRpcPhase = "await_initialize";
 
   constructor(ctx: Context, config: NativeRpcServerConfig) {
@@ -359,9 +364,26 @@ export class NativeRpcServer extends Service {
         !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256) {
       throw new Error("native RPC composition authority differs from the accepted DSH root graph");
     }
+    this.terminationCommittedPromise = new Promise((resolve) => {
+      this.resolveTermination = resolve;
+    });
     this.exitRequestedPromise = new Promise((resolve) => { this.resolveExit = resolve; });
     this.stoppedPromise = this.exitRequestedPromise.then(async (exit) => {
-      await compositionAuthority.dispose();
+      const failures: unknown[] = [];
+      try {
+        await compositionAuthority.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        await this.disposeTransport();
+      } catch (error) {
+        if (!failures.includes(error)) failures.push(error);
+      }
+      if (failures.length === 1) throw failures[0];
+      if (failures.length > 1) {
+        throw new AggregateError(failures, "Native Runtime quiescence failed");
+      }
       return Object.freeze({ exit, disposed: true as const });
     });
     void this.stoppedPromise.catch(() => undefined);
@@ -383,7 +405,27 @@ export class NativeRpcServer extends Service {
           this.handleShutdown(params, context)),
         this.peerValue.registerNotificationHandler("initialized", () => undefined),
       );
-      ctx.effect(() => () => this.disposeTransport(), "native-rpc-transport");
+      ctx.effect(
+        () => () => this.disposeTransport().catch(() => undefined),
+        "native-rpc-transport",
+      );
+      void this.productSessionValue.whenSettlementFailed().then((failure) => {
+        if (this.phaseValue === "disposed" || this.phaseValue === "terminated") return;
+        this.phaseValue = "terminated";
+        this.requestExit(Object.freeze({
+          kind: "runtime_fatal",
+          code: failure.code,
+          retryable: false,
+        }));
+      }, () => {
+        if (this.phaseValue === "disposed" || this.phaseValue === "terminated") return;
+        this.phaseValue = "terminated";
+        this.requestExit(Object.freeze({
+          kind: "runtime_fatal",
+          code: "primary_session_settlement_authority_failed",
+          retryable: false,
+        }));
+      });
     } catch (error) {
       void this.disposeTransport();
       throw error;
@@ -396,7 +438,20 @@ export class NativeRpcServer extends Service {
 
   whenExitRequested(): Promise<NativeRpcExitRequest> { return this.exitRequestedPromise; }
 
+  whenTerminationCommitted(): Promise<NativeRpcExitRequest> {
+    return this.terminationCommittedPromise;
+  }
+
   whenStopped(): Promise<NativeRpcProcessStop> { return this.stoppedPromise; }
+
+  requestProcessSignal(signal: unknown): void {
+    if (signal !== "SIGINT" && signal !== "SIGTERM") {
+      throw new TypeError("Runtime process signal must be SIGINT or SIGTERM");
+    }
+    if (this.phaseValue === "disposed" || this.exitRequestValue !== undefined) return;
+    this.phaseValue = "terminated";
+    this.requestExit(Object.freeze({ kind: "signal", signal }));
+  }
 
   private handleInitialize(params: InitializeParams, context: RequestContext): InitializeResult {
     if (this.phaseValue !== "await_initialize") {
@@ -479,6 +534,7 @@ export class NativeRpcServer extends Service {
       : { kind: "shutdown" as const, reason: params.reason });
     context.commit();
     this.phaseValue = "shutdown_requested";
+    this.publishTerminationIntent(request);
     context.afterResponse(() => this.requestExit(request));
     return { ok: true };
   }
@@ -532,9 +588,20 @@ export class NativeRpcServer extends Service {
   }
 
   private requestExit(request: NativeRpcExitRequest): void {
+    this.publishTerminationIntent(request);
     if (this.exitRequestValue !== undefined) return;
-    this.exitRequestValue = request;
-    this.resolveExit(request);
+    const committed = this.terminationRequestValue;
+    if (committed === undefined) {
+      throw new Error("Native Runtime exit lacks its committed termination intent");
+    }
+    this.exitRequestValue = committed;
+    this.resolveExit(committed);
+  }
+
+  private publishTerminationIntent(request: NativeRpcExitRequest): void {
+    if (this.terminationRequestValue !== undefined) return;
+    this.terminationRequestValue = request;
+    this.resolveTermination(request);
   }
 
   private disposeTransport(): Promise<void> {

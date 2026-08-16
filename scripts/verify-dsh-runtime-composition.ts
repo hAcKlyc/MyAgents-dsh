@@ -381,8 +381,13 @@ const main = (): void => {
       || evidence.nativeRpcShutdown !== "shutdown"
       || evidence.nativeRpcStopped !== true
       || evidence.operationCorrelationVerified !== true
+      || evidence.operationInterruptVerified !== true
+      || evidence.queuedCancellationVerified !== true
       || evidence.runtimeEventProjectionVerified !== true
-      || JSON.stringify(evidence.terminalCases) !== JSON.stringify(["success", "failure", "cancel"])) {
+      || evidence.sessionCloseVerified !== true
+      || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
+        "success", "failure", "interrupt", "queued_cancel", "session_close",
+      ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
     }
     if (!Array.isArray(evidence.nativeRpcFrames) || evidence.nativeRpcFrames.length < 3) {
@@ -398,6 +403,10 @@ const main = (): void => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
       return Object.hasOwn(result, "primarySessionState");
     });
+    const retiredStatusFrame = frames.find(({ result }) => {
+      if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
+      return (result as Record<string, unknown>).primarySessionState === "retired";
+    });
     const shutdownFrame = frames.find(({ result }) => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
       return (result as Record<string, unknown>).ok === true;
@@ -406,6 +415,10 @@ const main = (): void => {
     const runtimeEngine = exactObject(initializeResult.runtimeEngine, "observed Runtime engine");
     const capabilities = exactObject(initializeResult.runtimeCapabilities, "observed Runtime capabilities");
     const statusResult = exactObject(statusFrame?.result, "observed status result");
+    const retiredStatusResult = exactObject(
+      retiredStatusFrame?.result,
+      "observed retired status result",
+    );
     const shutdownResult = exactObject(shutdownFrame?.result, "observed shutdown result");
     if (runtimeEngine.version !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
       || runtimeEngine.buildRevision !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
@@ -417,11 +430,26 @@ const main = (): void => {
       || statusResult.runtimeSessionId !== "dsh-artifact-primary"
       || statusResult.desiredConfigRevision !== "artifact-config-v1"
       || Object.hasOwn(statusResult, "effectiveConfigRevision")
+      || retiredStatusResult.primarySessionState !== "retired"
+      || exactObject(retiredStatusResult.active, "observed retired activity").rootTurns !== 0
+      || exactObject(retiredStatusResult.active, "observed retired activity").queuedInputs !== 0
       || shutdownResult.ok !== true) {
       throw new Error("observed native RPC frames differ from the content-addressed Batch 1 authority");
     }
     if (frames.some(({ method }) => method === "runtime/event")) {
       throw new Error("inactive candidate profile emitted an unavailable Runtime notification");
+    }
+    const processBoundaryEvidence = exactObject(
+      evidence.processBoundaryEvidence,
+      "observed Runtime process-boundary evidence",
+    );
+    if (!Array.isArray(processBoundaryEvidence.schedules)
+      || JSON.stringify(processBoundaryEvidence.schedules) !== JSON.stringify([
+        { exitCode: 1, graceMs: 30_000 },
+      ])
+      || processBoundaryEvidence.deadlineCancelHits !== 1
+      || processBoundaryEvidence.unsubscribeHits !== 1) {
+      throw new Error("Runtime process hard-deadline evidence differs from the exact shutdown contract");
     }
     if (!Array.isArray(evidence.workstreamRuntimeEvents)) {
       throw new Error("runtime composition must expose isolated A5 workstream projection evidence");
@@ -441,17 +469,27 @@ const main = (): void => {
       "turn_admitted", "turn_started", "queued_message", "assistant_delta",
       "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message",
+      "turn_admitted", "queued_message", "turn_terminal", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
     ];
     if (JSON.stringify(projectedEvents.map(({ kind }) => kind)) !== JSON.stringify(expectedEventKinds)) {
-      throw new Error("Runtime workstream event sequence differs from the exact 24-event evidence");
+      throw new Error(
+        `Runtime workstream event sequence differs from exact evidence: ${JSON.stringify(
+          projectedEvents.map(({ kind }) => kind),
+        )}`,
+      );
     }
-    const terminalKinds = projectedEvents
+    const terminalOutcomes = projectedEvents
       .filter(({ kind }) => kind === "turn_terminal")
-      .map(({ terminal }, index) =>
-        exactObject(terminal, `observed Runtime terminal ${String(index)}`).kind);
-    if (JSON.stringify(terminalKinds) !== JSON.stringify(["succeeded", "succeeded", "failed", "aborted"])) {
-      throw new Error("Runtime terminal projection differs from the four real DSH operation outcomes");
+      .map(({ terminal }, index) => {
+        const value = exactObject(terminal, `observed Runtime terminal ${String(index)}`);
+        return value.kind === "aborted" ? `${value.kind}:${String(value.reason)}` : value.kind;
+      });
+    if (JSON.stringify(terminalOutcomes) !== JSON.stringify([
+      "succeeded", "succeeded", "failed", "aborted:user", "aborted:user", "aborted:host_shutdown",
+    ])) {
+      throw new Error("Runtime terminal projection differs from the six real DSH operation outcomes");
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");
     const usage = exactObject(usageEvent?.usage, "observed Runtime usage");

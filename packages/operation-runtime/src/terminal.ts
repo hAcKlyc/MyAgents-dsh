@@ -283,7 +283,16 @@ export const deriveOperationTerminal = (
       throw new TypeError("operation terminal requires one owned DSH turn or all messages cancelled");
     }
     return Object.freeze({
-      terminal: validateTurnTerminal({ kind: "aborted", reason: "user" }),
+      terminal: validateTurnTerminal({
+        kind: "aborted",
+        reason: operation.messages.some(({ cancellationReason }) =>
+          cancellationReason === "host_shutdown")
+          ? "host_shutdown"
+          : operation.messages.some(({ cancellationReason }) =>
+            cancellationReason === "session_replaced")
+            ? "session_replaced"
+            : "user",
+      }),
     });
   }
   const boundary = operationTurnBoundary(events, operation, finalDshTurn);
@@ -292,6 +301,30 @@ export const deriveOperationTerminal = (
     throw new TypeError("operation terminal lacks its final DSH turn closure");
   }
   const usage = deriveOperationUsageSummary(events, operation);
+  const cancellationAfterFinalTurn = operation.messages.filter(
+    ({ state, cancelledAtSeq }) => state === "cancelled"
+      && cancelledAtSeq !== undefined
+      && cancelledAtSeq > finalEnd.seq,
+  );
+  if (cancellationAfterFinalTurn.length > 0) {
+    const reason = cancellationAfterFinalTurn.some(
+      ({ cancellationReason }) => cancellationReason === "host_shutdown",
+    )
+      ? "host_shutdown"
+      : cancellationAfterFinalTurn.some(
+        ({ cancellationReason }) => cancellationReason === "session_replaced",
+      )
+        ? "session_replaced"
+        : "user";
+    return Object.freeze({
+      finalDshTurn,
+      terminal: validateTurnTerminal({
+        kind: "aborted",
+        reason,
+        ...(usage === undefined ? {} : { usage }),
+      }),
+    });
+  }
   const finalAssistant = events.findLast(
     (event) => event.type === "assistant/message"
       && event.data.turn === finalDshTurn

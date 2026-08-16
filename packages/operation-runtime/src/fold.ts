@@ -29,6 +29,8 @@ export interface ProductOperationMessageRecord {
   readonly state: "queued" | "claimed" | "cancelled";
   readonly delivered: boolean;
   readonly dshTurn?: number;
+  readonly cancellationReason?: "user" | "host_shutdown" | "session_replaced";
+  readonly cancelledAtSeq?: number;
 }
 
 export interface ProductOperationRecord {
@@ -74,6 +76,8 @@ type MutableMessage = {
   state: "queued" | "claimed" | "cancelled";
   delivered: boolean;
   dshTurn?: number;
+  cancellationReason?: "user" | "host_shutdown" | "session_replaced";
+  cancelledAtSeq?: number;
 };
 
 type MutableOperation = {
@@ -225,19 +229,34 @@ const validateAccepted = (value: unknown): ProductOperationAccepted => {
 const validateMessage = (value: unknown): ProductOperationMessage => {
   const event = exactOwnDataObject(value, [
     "clientOperationId", "messageId", "kind", "clientMessageId", "state",
-  ], [], "operation message event");
+  ], ["cancellationReason"], "operation message event");
   if (event.kind !== "root" && event.kind !== "steer" && event.kind !== "follow_up") {
     return fail("operation message kind is invalid");
   }
   if (event.state !== "queued" && event.state !== "cancelled") {
     return fail("operation message state is invalid");
   }
+  if (event.state === "queued" && Object.hasOwn(event, "cancellationReason")) {
+    return fail("queued operation message must not carry a cancellation reason");
+  }
+  if (event.state === "cancelled"
+    && event.cancellationReason !== "user"
+    && event.cancellationReason !== "host_shutdown"
+    && event.cancellationReason !== "session_replaced") {
+    return fail("cancelled operation message requires a supported cancellation reason");
+  }
+  const cancellationReason = event.state === "cancelled"
+    ? event.cancellationReason as "user" | "host_shutdown" | "session_replaced"
+    : undefined;
   return Object.freeze({
     clientOperationId: boundedIdentifier(event.clientOperationId, "operation message owner"),
     messageId: boundedIdentifier(event.messageId, "operation message identity"),
     kind: event.kind,
     clientMessageId: boundedIdentifier(event.clientMessageId, "client message identity"),
     state: event.state,
+    ...(cancellationReason === undefined
+      ? {}
+      : { cancellationReason }),
   });
 };
 
@@ -405,6 +424,10 @@ const immutableOperation = (operation: MutableOperation): ProductOperationRecord
     state: message.state,
     delivered: message.delivered,
     ...(message.dshTurn === undefined ? {} : { dshTurn: message.dshTurn }),
+    ...(message.cancellationReason === undefined
+      ? {}
+      : { cancellationReason: message.cancellationReason }),
+    ...(message.cancelledAtSeq === undefined ? {} : { cancelledAtSeq: message.cancelledAtSeq }),
   }))),
   dshTurns: Object.freeze([...operation.dshTurns]),
   state: terminalState(operation),
@@ -491,6 +514,9 @@ const foldProductOperationsValue = (
             return fail("operation cancellation lacks its exact durable Inbox discard");
           }
           existing.state = "cancelled";
+          existing.cancellationReason = messageEvent.cancellationReason
+            ?? fail("cancelled operation message lost its cancellation reason");
+          existing.cancelledAtSeq = event.seq;
           removedDiscardCandidates.delete(messageEvent.messageId);
         }
         break;

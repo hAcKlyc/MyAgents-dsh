@@ -2,10 +2,12 @@ import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent, AgentHandle, AgentSetup } from "@deepseek-ai/dsh-agent";
 import { SessionId, type Session } from "@deepseek-ai/dsh-session";
 import { selectPlatformAdapter, type PlatformTarget } from "@myagents-dsh/product-profile";
+import type { SettlementDeadlineAuthority } from "@myagents-dsh/operation-runtime";
 import {
   ProtocolError,
   validateMethodParams,
   type MethodParams,
+  type MethodResult,
 } from "@myagents-dsh/protocol";
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
@@ -72,6 +74,11 @@ export interface ProductSessionSnapshot extends PrimarySessionAdmissionSnapshot 
   readonly liveRootAgents: number;
 }
 
+export interface ProductSessionSettlementFailure {
+  readonly code: "primary_session_settlement_failed";
+  readonly message: string;
+}
+
 export type PrimarySessionRetirementGuard = (agent: Agent) => Promise<void>;
 
 export interface PrimarySessionBinding {
@@ -100,6 +107,38 @@ type AdmissionRecord = {
 };
 
 type JsonObject = Record<string, unknown>;
+
+export const DEFAULT_RUNTIME_QUIESCENCE_GRACE_MS = 30_000;
+
+export class RuntimeSettlementTimeoutError extends Error {
+  constructor(description: string) {
+    super(`${description} exceeded the Runtime quiescence grace`);
+    this.name = "RuntimeSettlementTimeoutError";
+  }
+}
+
+export const createRuntimeSettlementDeadlineAuthority = (
+  graceMs = DEFAULT_RUNTIME_QUIESCENCE_GRACE_MS,
+): SettlementDeadlineAuthority => {
+  if (!Number.isSafeInteger(graceMs) || graceMs < 1 || graceMs > 300_000) {
+    throw new TypeError("Runtime quiescence grace must be a bounded positive integer");
+  }
+  return Object.freeze({
+    wait: <T>(operation: PromiseLike<T>, description: string): Promise<T> => {
+      if (typeof description !== "string" || description.length === 0 || description.length > 256) {
+        throw new TypeError("Runtime settlement description must be bounded");
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new RuntimeSettlementTimeoutError(description)), graceMs);
+        timer.unref();
+      });
+      return Promise.race([Promise.resolve(operation), timeout]).finally(() => {
+        if (timer !== undefined) clearTimeout(timer);
+      });
+    },
+  });
+};
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
@@ -442,13 +481,17 @@ export class PrimarySessionAdmission {
   #binding: PrimarySessionBinding | undefined;
   #handle: AgentHandle | undefined;
   #controller: AbortController | undefined;
+  #closeOperationId: string | undefined;
+  #closePromise: Promise<MethodResult<"session/close">> | undefined;
   #retiring = false;
   #retirePromise: Promise<void> | undefined;
   readonly #workspace: PrimarySessionWorkspace;
+  readonly #settlementDeadline: SettlementDeadlineAuthority;
 
   constructor(
     private readonly backend: PrimarySessionBackend,
     workspace: PrimarySessionWorkspace,
+    settlementDeadline: SettlementDeadlineAuthority = createRuntimeSettlementDeadlineAuthority(),
   ) {
     const candidate: unknown = backend;
     if (candidate === null || typeof candidate !== "object" || utilTypes.isProxy(candidate)
@@ -456,6 +499,20 @@ export class PrimarySessionAdmission {
       || typeof (candidate as Partial<PrimarySessionBackend>).resume !== "function") {
       throw new TypeError("primary Session backend must implement create and resume");
     }
+    const deadline = exactOwnDataObject(
+      settlementDeadline,
+      ["wait"],
+      [],
+      "primary Session settlement deadline authority",
+    );
+    if (typeof deadline.wait !== "function") {
+      throw new TypeError("primary Session settlement deadline authority must provide wait");
+    }
+    const wait = deadline.wait as SettlementDeadlineAuthority["wait"];
+    this.#settlementDeadline = Object.freeze({
+      wait: <T>(operation: PromiseLike<T>, description: string): Promise<T> =>
+        Reflect.apply(wait, settlementDeadline, [operation, description]),
+    });
     this.#workspace = validatePrimarySessionWorkspace(workspace);
   }
 
@@ -502,6 +559,28 @@ export class PrimarySessionAdmission {
   retire(beforeDispose?: PrimarySessionRetirementGuard): Promise<void> {
     this.#retirePromise ??= this.#retire(beforeDispose);
     return this.#retirePromise;
+  }
+
+  close(
+    value: unknown,
+    beforeDispose?: PrimarySessionRetirementGuard,
+  ): Promise<MethodResult<"session/close">> {
+    const params = validateMethodParams("session/close", value);
+    if (this.#closeOperationId !== undefined) {
+      if (params.clientOperationId !== this.#closeOperationId || this.#closePromise === undefined) {
+        throw new ProtocolError(
+          "session_idempotency_conflict",
+          "session/close clientOperationId differs from the retired primary Session operation",
+        );
+      }
+      return this.#closePromise;
+    }
+    if (this.#record === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session has no admitted identity to close");
+    }
+    this.#closeOperationId = params.clientOperationId;
+    this.#closePromise = this.retire(beforeDispose).then(() => Object.freeze({ ok: true as const }));
+    return this.#closePromise;
   }
 
   #bind(
@@ -597,49 +676,74 @@ export class PrimarySessionAdmission {
     this.#retiring = true;
     this.#state = "closing";
     this.#controller?.abort(new ProtocolError("primary_session_retired", "primary Session owner is disposing"));
-    try {
-      await this.#record?.promise;
-    } catch {
-      // The failed admission remains the fenced identity; retirement still drains its owned result.
-    }
-    const handle = this.#handle;
-    let settlementError: Error | undefined;
-    try {
-      if (handle !== undefined && beforeDispose !== undefined) {
-        handle.agent.cancel({ kind: "disposed" }, { keepInbox: true });
-        let guardPromise: Promise<void>;
-        try {
-          guardPromise = beforeDispose(handle.agent);
-        } catch (error) {
-          guardPromise = Promise.reject(retirementError(error, "primary Session retirement guard failed"));
-        }
-        let idlePromise: Promise<void>;
-        try {
-          idlePromise = handle.agent.whenIdle();
-        } catch (error) {
-          idlePromise = Promise.reject(retirementError(error, "primary Session idle wait failed"));
-        }
-        const failures = (await Promise.allSettled([idlePromise, guardPromise]))
-          .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-          .map(({ reason }) => retirementError(reason, "primary Session settlement failed"));
-        const [failure] = failures;
-        if (failures.length === 1 && failure !== undefined) throw failure;
-        if (failures.length > 1) {
-          throw new AggregateError(failures, "primary Session settlement failed during retirement");
+    const settlementFailures: Error[] = [];
+    if (this.#record !== undefined) {
+      try {
+        await this.#settlementDeadline.wait(
+          this.#record.promise,
+          "primary Session admission settlement",
+        );
+      } catch (error) {
+        if (error instanceof RuntimeSettlementTimeoutError) {
+          settlementFailures.push(retirementError(error, "primary Session admission settlement failed"));
         }
       }
-    } catch (error) {
-      settlementError = retirementError(error, "primary Session settlement failed during retirement");
+    }
+    const handle = this.#handle;
+    if (handle !== undefined && beforeDispose !== undefined) {
+      try {
+        handle.agent.cancel({ kind: "disposed" }, { keepInbox: true });
+      } catch (error) {
+        settlementFailures.push(retirementError(error, "primary Session cancellation failed"));
+      }
+      const guardPromise = Promise.resolve().then(() => beforeDispose(handle.agent));
+      const idlePromise = Promise.resolve().then(() => handle.agent.whenIdle());
+      try {
+        const results = await this.#settlementDeadline.wait(
+          Promise.allSettled([idlePromise, guardPromise]),
+          "primary Session retirement settlement",
+        );
+        settlementFailures.push(...results
+          .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+          .map(({ reason }) => retirementError(reason, "primary Session settlement failed")));
+      } catch (error) {
+        settlementFailures.push(retirementError(error, "primary Session settlement deadline failed"));
+      }
     }
     let disposalError: Error | undefined;
-    try {
-      await handle?.dispose();
-    } catch (error) {
-      disposalError = retirementError(error, "primary Session handle disposal failed");
-    } finally {
+    const settlementTimedOut = settlementFailures.some(
+      (error) => error instanceof RuntimeSettlementTimeoutError,
+    );
+    if (handle !== undefined) {
+      const disposal = Promise.resolve().then(() => handle.dispose());
+      try {
+        await this.#settlementDeadline.wait(disposal, "primary Session handle disposal");
+      } catch (error) {
+        disposalError = retirementError(error, "primary Session handle disposal failed");
+      }
+      if (disposalError instanceof RuntimeSettlementTimeoutError) {
+        this.#state = "recovery_required";
+        void disposal.then(() => {
+          if (this.#handle === handle) this.#handle = undefined;
+          this.#state = settlementTimedOut ? "recovery_required" : "retired";
+        }, () => {
+          this.#state = "recovery_required";
+        });
+      } else if (disposalError !== undefined) {
+        this.#state = "recovery_required";
+      } else {
+        this.#handle = undefined;
+        this.#state = settlementTimedOut ? "recovery_required" : "retired";
+      }
+    } else {
       this.#handle = undefined;
-      this.#state = "retired";
+      this.#state = settlementTimedOut ? "recovery_required" : "retired";
     }
+    const settlementError = settlementFailures.length === 0
+      ? undefined
+      : settlementFailures.length === 1
+        ? settlementFailures[0]
+        : new AggregateError(settlementFailures, "primary Session settlement failed during retirement");
     if (settlementError !== undefined && disposalError !== undefined) {
       throw new AggregateError(
         [settlementError, disposalError],
@@ -698,6 +802,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
 
 export interface ProductSessionServiceConfig {
   readonly backend?: PrimarySessionBackend;
+  readonly quiescenceGraceMs?: number;
 }
 
 export class ProductSessionService extends Service {
@@ -707,11 +812,31 @@ export class ProductSessionService extends Service {
   private workspaceValue: PrimarySessionWorkspace | undefined;
   private admissionValue: PrimarySessionAdmission | undefined;
   private retirementGuardValue: PrimarySessionRetirementGuard | undefined;
+  private readonly settlementDeadlineValue: SettlementDeadlineAuthority;
+  private readonly settlementFailurePromiseValue: Promise<ProductSessionSettlementFailure>;
+  private resolveSettlementFailure!: (failure: ProductSessionSettlementFailure) => void;
+  private settlementFailureValue: ProductSessionSettlementFailure | undefined;
 
   constructor(ctx: Context, config: ProductSessionServiceConfig = {}) {
     super(ctx, "productSession");
+    const normalized = exactOwnDataObject(
+      config,
+      [],
+      ["backend", "quiescenceGraceMs"],
+      "ProductSessionService config",
+    );
     this.publicationFenceValue = new PrimaryRootPublicationFence(ctx);
-    this.backendValue = config.backend ?? new DshPrimarySessionBackend(ctx, this.publicationFenceValue);
+    this.backendValue = Object.hasOwn(normalized, "backend")
+      ? normalized.backend as PrimarySessionBackend
+      : new DshPrimarySessionBackend(ctx, this.publicationFenceValue);
+    this.settlementDeadlineValue = createRuntimeSettlementDeadlineAuthority(
+      Object.hasOwn(normalized, "quiescenceGraceMs")
+        ? normalized.quiescenceGraceMs as number
+        : DEFAULT_RUNTIME_QUIESCENCE_GRACE_MS,
+    );
+    this.settlementFailurePromiseValue = new Promise((resolve) => {
+      this.resolveSettlementFailure = resolve;
+    });
     ctx.effect(function* (this: ProductSessionService) {
       const [disposeSessionGuard, disposeAgentGuard] = this.publicationFenceValue.install();
       yield disposeSessionGuard;
@@ -729,7 +854,11 @@ export class ProductSessionService extends Service {
       return this.workspaceValue;
     }
     this.workspaceValue = workspace;
-    this.admissionValue = new PrimarySessionAdmission(this.backendValue, workspace);
+    this.admissionValue = new PrimarySessionAdmission(
+      this.backendValue,
+      workspace,
+      this.settlementDeadlineValue,
+    );
     return workspace;
   }
 
@@ -753,6 +882,13 @@ export class ProductSessionService extends Service {
     return this.admissionValue.bindResume(value, signal);
   }
 
+  close(value: unknown): Promise<MethodResult<"session/close">> {
+    if (this.admissionValue === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session is not initialized");
+    }
+    return this.observeRetirement(this.admissionValue.close(value, this.retirementGuardValue));
+  }
+
   requireAgent(): Agent {
     if (this.admissionValue === undefined) {
       throw new ProtocolError("primary_session_not_ready", "primary Session is not initialized");
@@ -767,7 +903,38 @@ export class ProductSessionService extends Service {
     this.retirementGuardValue = guard;
   }
 
-  retire(): Promise<void> {
-    return this.admissionValue?.retire(this.retirementGuardValue) ?? Promise.resolve();
+  settlementDeadlineAuthority(): SettlementDeadlineAuthority {
+    return this.settlementDeadlineValue;
+  }
+
+  whenSettlementFailed(): Promise<ProductSessionSettlementFailure> {
+    return this.settlementFailurePromiseValue;
+  }
+
+  retire(cause?: unknown): Promise<void> {
+    if (cause !== undefined) this.publishSettlementFailure(cause);
+    return this.observeRetirement(
+      this.admissionValue?.retire(this.retirementGuardValue) ?? Promise.resolve(),
+    );
+  }
+
+  private observeRetirement<T>(retirement: Promise<T>): Promise<T> {
+    void retirement.catch((error: unknown) => {
+      this.publishSettlementFailure(error);
+    });
+    return retirement;
+  }
+
+  private publishSettlementFailure(reason: unknown): void {
+    if (this.settlementFailureValue !== undefined) return;
+    const rawMessage = reason instanceof Error
+      ? reason.message
+      : "primary Session settlement failed";
+    const failure = Object.freeze({
+      code: "primary_session_settlement_failed" as const,
+      message: rawMessage.length <= 4_096 ? rawMessage : `${rawMessage.slice(0, 4_095)}…`,
+    });
+    this.settlementFailureValue = failure;
+    this.resolveSettlementFailure(failure);
   }
 }

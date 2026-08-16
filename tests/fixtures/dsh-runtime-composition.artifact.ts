@@ -116,6 +116,7 @@ adapter.enqueue({
 });
 adapter.enqueue({ kind: "error", message: "synthetic provider failure" });
 adapter.enqueue({ kind: "await-abort" });
+adapter.enqueue({ kind: "await-abort" });
 
 const rpcDigest = "a".repeat(64);
 const composition = await composeDshRootServices({
@@ -198,11 +199,29 @@ const hostPeer = new JsonRpcPeer({
   onFatalError: (error) => hostFatalErrors.push(error),
 });
 const projectedRuntimeEvents: RuntimeEventEnvelope[] = [];
+let processSignalListener: ((signal: "SIGINT" | "SIGTERM") => void) | undefined;
+let processBoundaryUnsubscribeHits = 0;
+let processBoundaryDeadlineCancelHits = 0;
+const processBoundarySchedules: Array<{ exitCode: number; graceMs: number }> = [];
 const runtimeLifecycle = await startNativeRpcLifecycle(composition, {
   input: runtimeInput,
   output: runtimeOutput,
   runtimeGeneration: "artifact-generation",
   platformTarget: "darwin-arm64",
+}, {
+  processBoundary: {
+    subscribe: (listener) => {
+      processSignalListener = listener;
+      return () => {
+        processBoundaryUnsubscribeHits += 1;
+        processSignalListener = undefined;
+      };
+    },
+    scheduleForceExit: (exitCode, graceMs) => {
+      processBoundarySchedules.push({ exitCode, graceMs });
+      return () => { processBoundaryDeadlineCancelHits += 1; };
+    },
+  },
 });
 const nativeRpc: NativeRpcServer = runtimeLifecycle.nativeRpc;
 const hostClient = new GeneratedHostClient(hostPeer);
@@ -410,6 +429,7 @@ const workstreamProjector = new RuntimeEventProjector({
 });
 composition.context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({
   reserve: (clientOperationId: string) => workstreamProjector.reserve(clientOperationId),
+  whenIdle: () => workstreamProjector.whenIdle(),
 }));
 let durableOperationEvents: readonly SessionEvent[] = [];
 composition.context.on("session/flush", (session) => {
@@ -542,11 +562,30 @@ await composition.context.sdkOperations.start({
   input: { parts: [{ kind: "text", text: "cancel this turn" }] },
 });
 await waitUntil(() => adapter.activeStreamCount === 1, "fake adapter stream admission");
-primaryAgent.cancel({ kind: "user" });
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-operation-5",
+  clientUserMessageId: "artifact-user-message-5",
+  input: { parts: [{ kind: "text", text: "cancel before claim" }] },
+});
+const queuedCancellation = composition.context.sdkOperations.lookup("artifact-operation-5")?.messages[0];
+assert.ok(queuedCancellation);
+assert.deepEqual(await composition.context.sdkOperations.cancelMessage({
+  clientOperationId: "artifact-operation-5",
+  messageId: queuedCancellation.messageId,
+}), { messageId: queuedCancellation.messageId, state: "cancelled" });
+assert.deepEqual(await composition.context.sdkOperations.interrupt({
+  clientOperationId: "artifact-operation-4",
+  cancelQueued: false,
+}), { ok: true, stillQueuedMessageIds: [], cancelledMessageIds: [] });
 await primaryAgent.whenIdle();
 await waitUntil(
   () => composition.context.sdkOperations.lookup("artifact-operation-4")?.state === "terminal",
   "cancelled durable operation terminal",
+);
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-operation-5")?.state === "terminal",
+  "queued-cancel durable operation terminal",
 );
 assert.equal(primaryAgent.status, "idle");
 assert.equal(adapter.activeStreamCount, 0);
@@ -555,14 +594,52 @@ assert.deepEqual(composition.context.sdkOperations.lookup("artifact-operation-4"
   kind: "aborted",
   reason: "user",
 });
+assert.deepEqual(composition.context.sdkOperations.lookup("artifact-operation-5")?.terminal, {
+  kind: "aborted",
+  reason: "user",
+});
+
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-operation-6",
+  clientUserMessageId: "artifact-user-message-6",
+  input: { parts: [{ kind: "text", text: "close this active Session" }] },
+});
+await waitUntil(() => adapter.activeStreamCount === 1, "active stream before session/close");
+const firstSessionClose = composition.context.productSession.close({
+  clientOperationId: "artifact-primary-session-close",
+});
+const exactSessionClose = composition.context.productSession.close({
+  clientOperationId: "artifact-primary-session-close",
+});
+assert.equal(exactSessionClose, firstSessionClose);
+assert.throws(() => composition.context.productSession.close({
+  clientOperationId: "artifact-conflicting-session-close",
+}), /clientOperationId differs/u);
+assert.deepEqual(await firstSessionClose, { ok: true });
+assert.equal(composition.context.productSession.snapshot().state, "retired");
+const shutdownTerminal = primaryAgent.session.events.findLast((event) =>
+  event.type === "myagents/operation/terminal"
+    && event.data.clientOperationId === "artifact-operation-6");
+assert.ok(shutdownTerminal?.type === "myagents/operation/terminal");
+assert.deepEqual(shutdownTerminal.data.terminal, { kind: "aborted", reason: "host_shutdown" });
+const retiredRpcStatus = await hostClient.runtimeStatus({});
+assert.equal(retiredRpcStatus.primarySessionState, "retired");
+assert.equal(retiredRpcStatus.active.rootTurns, 0);
+assert.equal(retiredRpcStatus.active.queuedInputs, 0);
+await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 4,
-  "four projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 6,
+  "six projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
-    .map(({ event }) => event.kind === "turn_terminal" ? event.terminal.kind : "missing"),
-  ["succeeded", "succeeded", "failed", "aborted"],
+    .map(({ event }) => event.kind === "turn_terminal"
+      ? event.terminal.kind === "aborted"
+        ? `${event.terminal.kind}:${event.terminal.reason}`
+        : event.terminal.kind
+      : "missing"),
+  ["succeeded", "succeeded", "failed", "aborted:user", "aborted:user", "aborted:host_shutdown"],
 );
 const firstUsage = projectedRuntimeEvents.find(({ event }) => event.kind === "usage");
 assert.ok(firstUsage?.event.kind === "usage");
@@ -584,8 +661,8 @@ projectionInput.destroy();
 projectionOutput.destroy();
 
 const snapshot = composition.snapshot();
-assert.equal(snapshot.liveRootAgents, 1);
-assert.equal(snapshot.primarySessionState, "ready");
+assert.equal(snapshot.liveRootAgents, 0);
+assert.equal(snapshot.primarySessionState, "retired");
 assert.equal(snapshot.runtimeSessionId, "dsh-artifact-primary");
 assert.equal(snapshot.artifactVersion, ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion);
 assert.equal(snapshot.artifactManifestSha256, ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256);
@@ -594,6 +671,10 @@ assert.equal(adapter.pendingScriptCount, 0);
 const cleanupGate = Promise.withResolvers<undefined>();
 composition.context.effect(() => async () => cleanupGate.promise, "artifact-fixture-cleanup-gate");
 await hostClient.runtimeShutdown({ reason: "artifact-fixture-complete" });
+await waitUntil(() => processBoundarySchedules.length === 1, "Runtime forced-exit deadline scheduling");
+assert.deepEqual(processBoundarySchedules, [{ exitCode: 1, graceMs: 30_000 }]);
+assert.equal(processBoundaryDeadlineCancelHits, 0);
+assert.equal(processBoundaryUnsubscribeHits, 0);
 const rpcShutdown = await nativeRpc.whenExitRequested();
 assert.equal(rpcShutdown.kind, "shutdown");
 const firstDispose = runtimeLifecycle.whenStopped();
@@ -608,6 +689,9 @@ const stopped = await firstDispose;
 assert.equal(stopped.disposed, true);
 assert.equal(stopped.exit.kind, "shutdown");
 await secondDispose;
+assert.equal(processBoundaryDeadlineCancelHits, 1);
+assert.equal(processBoundaryUnsubscribeHits, 1);
+assert.equal(processSignalListener, undefined);
 assert.equal(adapter.activeStreamCount, 0);
 assert.equal(nativeRpc.phase, "disposed");
 assert.throws(() => composition.snapshot(), /disposing or disposed/u);
@@ -632,13 +716,21 @@ process.stdout.write(`${JSON.stringify({
   nativeRpcSchemaSha256: rpcInitialization.schemaSha256,
   nativeRpcShutdown: rpcShutdown.kind,
   nativeRpcStopped: stopped.disposed,
+  processBoundaryEvidence: {
+    schedules: processBoundarySchedules,
+    deadlineCancelHits: processBoundaryDeadlineCancelHits,
+    unsubscribeHits: processBoundaryUnsubscribeHits,
+  },
   operationCorrelationVerified: true,
+  operationInterruptVerified: true,
+  queuedCancellationVerified: true,
   runtimeEventProjectionVerified: true,
+  sessionCloseVerified: true,
   nativeRpcFrames: observedRuntimeFrames,
   workstreamRuntimeEvents: projectedRuntimeEvents,
   patchedWakePending: true,
   publicationGuardsVerified: true,
   publicationTransientVerified: primaryPublicationSnapshotVerified,
   roguePublicationInvisible: !roguePublicationObserved,
-  terminalCases: ["success", "failure", "cancel"],
+  terminalCases: ["success", "failure", "interrupt", "queued_cancel", "session_close"],
 })}\n`);

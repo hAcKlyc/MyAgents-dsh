@@ -10,8 +10,10 @@ import {
   normalizeDshTokenUsage,
   type OperationBirthSnapshot,
   type OperationBirthAuthority,
+  type SettlementDeadlineAuthority,
 } from "@myagents-dsh/operation-runtime";
 import { ProtocolError, type MethodParams } from "@myagents-dsh/protocol";
+import { createRuntimeSettlementDeadlineAuthority } from "@myagents-dsh/runtime-product";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const digest = (character: string): string => character.repeat(64);
@@ -68,11 +70,17 @@ const mounted: Context[] = [];
 
 type RetirementGuard = (agent: Agent) => Promise<void>;
 
+const immediateSettlementDeadline = Object.freeze({
+  wait: <T>(operation: PromiseLike<T>): Promise<T> => Promise.resolve(operation),
+}) satisfies SettlementDeadlineAuthority;
+
 const mountService = async (
   birthAuthority: OperationBirthAuthority = Object.freeze({ capture: () => birth() }),
   seed?: readonly SessionEvent[],
   retirePrimary: (agent: Agent, guard: RetirementGuard) => Promise<void> = (agent, guard) => guard(agent),
   reserveTerminal: (clientOperationId: string) => void = () => undefined,
+  settlementDeadlineAuthority: SettlementDeadlineAuthority = immediateSettlementDeadline,
+  bindTerminalReservation = true,
 ): Promise<MountedService> => {
   const context = new Context();
   mounted.push(context);
@@ -125,9 +133,15 @@ const mountService = async (
       if (retirementGuard === undefined) throw new Error("operation retirement guard was not registered");
       return retirePrimary(agent, retirementGuard);
     },
+    settlementDeadlineAuthority,
     clock: () => 1_800_000_000_000,
   });
-  context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({ reserve: reserveTerminal }));
+  if (bindTerminalReservation) {
+    context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({
+      reserve: reserveTerminal,
+      whenIdle: () => Promise.resolve(),
+    }));
+  }
   return {
     agent,
     context,
@@ -366,6 +380,18 @@ describe("SdkOperationService admission and idempotency", () => {
     expect(fixture.agent.session.events).toEqual([]);
   });
 
+  it("retires an operation-free primary Agent without activating a projector authority", async () => {
+    const fixture = await mountService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      immediateSettlementDeadline,
+      false,
+    );
+    await expect(fixture.dispose()).resolves.toBeUndefined();
+  });
+
   it("flushes before acceptance and returns exact known truth without duplicating input", async () => {
     const fixture = await mountService();
     await fixture.service.start(params());
@@ -471,14 +497,21 @@ describe("SdkOperationService admission and idempotency", () => {
     await fixture.service.start(params());
     await fixture.dispose();
     expect(retirementCalls).toBe(1);
-    expect(fixture.agent.session.events.at(-1)).toMatchObject({
-      type: "myagents/operation/message",
-      data: { state: "cancelled" },
+    const cancellation = fixture.agent.session.events.find(
+      (event) => event.type === "myagents/operation/message" && event.data.state === "cancelled",
+    );
+    expect(cancellation?.data).toMatchObject({
+      state: "cancelled",
+      cancellationReason: "host_shutdown",
     });
     expect(findProductOperation(
       foldProductOperations(fixture.agent.session.events, fixture.agent.id),
       "operation-1",
-    )).toMatchObject({ state: "settling", messages: [{ state: "cancelled" }] });
+    )).toMatchObject({
+      state: "terminal",
+      messages: [{ state: "cancelled", cancellationReason: "host_shutdown" }],
+      terminal: { kind: "aborted", reason: "host_shutdown" },
+    });
   });
 
   it("settles pending work after a concurrent admission drain delays disposal", async () => {
@@ -497,7 +530,74 @@ describe("SdkOperationService admission and idempotency", () => {
     expect(findProductOperation(
       foldProductOperations(fixture.agent.session.events, fixture.agent.id),
       "operation-a",
-    )).toMatchObject({ state: "settling", messages: [{ state: "cancelled" }] });
+    )).toMatchObject({
+      state: "terminal",
+      messages: [{ state: "cancelled", cancellationReason: "host_shutdown" }],
+      terminal: { kind: "aborted", reason: "host_shutdown" },
+    });
+  });
+
+  it("settles an active claimed turn as host shutdown before retirement completes", async () => {
+    const fixture = await mountService(undefined, undefined, async (agent, guard) => {
+      agent.cancel({ kind: "disposed" }, { keepInbox: true });
+      await Promise.all([agent.whenIdle(), guard(agent)]);
+    });
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("step/start", { turn: 1, step: 1 });
+    fixture.agent.session.append("request/context", {
+      provider: "fixture",
+      model: "fixture-model",
+      contextWindow: 4_096,
+    });
+    fixture.agent.session.append("assistant/message", {
+      turn: 1,
+      step: 1,
+      message: freezeMessage({
+        id: MessageId("assistant-before-host-shutdown"),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture-model" },
+        content: [{ type: "text", text: "completed before queued follow-up shutdown" }],
+      }),
+      usage: { inputTokens: 7, outputTokens: 2 },
+    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    fixture.agent.session.append("step/end", { turn: 1, step: 1 });
+    const mutableAgent = fixture.agent as unknown as {
+      cancel: (cause: { kind: string }, options: { keepInbox: boolean }) => void;
+      status: string;
+    };
+    mutableAgent.status = "running";
+    mutableAgent.cancel = (cause, options) => {
+      expect({ cause, options }).toEqual({
+        cause: { kind: "disposed" },
+        options: { keepInbox: true },
+      });
+      fixture.agent.session.append("turn/end", {
+        turn: 1,
+        reason: { kind: "aborted", reason: { kind: "disposed" } },
+      });
+      mutableAgent.status = "idle";
+    };
+
+    await fixture.dispose();
+    expect(findProductOperation(
+      foldProductOperations(fixture.agent.session.events, fixture.agent.id),
+      "operation-1",
+    )).toMatchObject({
+      state: "terminal",
+      dshTurns: [1],
+      terminal: {
+        kind: "aborted",
+        reason: "host_shutdown",
+        usage: {
+          inputTokens: 7,
+          outputTokens: 2,
+          totalTokens: 9,
+          runtimeContextWindow: 4_096,
+        },
+      },
+    });
   });
 
   it("recovers only an exact accepted-undelivered retry in a fresh service lifecycle", async () => {
@@ -520,10 +620,11 @@ describe("SdkOperationService admission and idempotency", () => {
       registerRetirementGuard: () => undefined,
       requireAgent: () => fixture.agent,
       retirePrimary: () => Promise.resolve(),
+      settlementDeadlineAuthority: immediateSettlementDeadline,
       clock: () => 1_900_000_000_000,
     });
     fixture.context.sdkOperations.bindTerminalReservationAuthority(
-      Object.freeze({ reserve: () => undefined }),
+      Object.freeze({ reserve: () => undefined, whenIdle: () => Promise.resolve() }),
     );
     await expect(fixture.context.sdkOperations.start(params())).resolves.toMatchObject({
       state: "already_known",
@@ -561,8 +662,12 @@ describe("SdkOperationService admission and idempotency", () => {
       registerRetirementGuard: () => undefined,
       requireAgent: () => agent,
       retirePrimary: () => Promise.resolve(),
+      settlementDeadlineAuthority: immediateSettlementDeadline,
     });
-    context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({ reserve: () => undefined }));
+    context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({
+      reserve: () => undefined,
+      whenIdle: () => Promise.resolve(),
+    }));
     await expect(context.sdkOperations.start(params())).rejects.toEqual(expect.objectContaining({
       code: "session_recovery_required",
     } satisfies Partial<ProtocolError>));
@@ -674,9 +779,10 @@ describe("SdkOperationService admission and idempotency", () => {
     const operation = fixture.service.lookup("operation-1");
     const rootMessage = operation?.messages[0];
     if (rootMessage === undefined) throw new Error("cancel-before-turn fixture lacks its operation");
-    expect(fixture.inbox.remove(MessageId(rootMessage.messageId))).toBe(true);
-
-    await fixture.service.reconcile();
+    await fixture.service.cancelMessage({
+      clientOperationId: "operation-1",
+      messageId: rootMessage.messageId,
+    });
 
     expect(fixture.service.lookup("operation-1")).toMatchObject({
       state: "terminal",
@@ -687,6 +793,295 @@ describe("SdkOperationService admission and idempotency", () => {
       (event) => event.type === "myagents/operation/terminal",
     );
     expect(terminal).not.toHaveProperty("data.finalDshTurn");
+  });
+
+  it("cancels only an exact queued message and preserves claimed delivery truth", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    const root = fixture.service.lookup("operation-1")?.messages[0];
+    if (root === undefined) throw new Error("queued cancellation fixture lacks its root message");
+
+    await expect(fixture.service.cancelMessage({
+      clientOperationId: "operation-1",
+      messageId: root.messageId,
+    })).resolves.toEqual({ messageId: root.messageId, state: "cancelled" });
+    await expect(fixture.service.cancelMessage({
+      clientOperationId: "operation-1",
+      messageId: root.messageId,
+    })).resolves.toEqual({ messageId: root.messageId, state: "cancelled" });
+    expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      dshTurns: [],
+      terminal: { kind: "aborted", reason: "user" },
+    });
+
+    await fixture.service.start(params("operation-claimed"));
+    const claimed = fixture.service.lookup("operation-claimed")?.messages[0];
+    if (claimed === undefined) throw new Error("claimed cancellation fixture lacks its root message");
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    await expect(fixture.service.cancelMessage({
+      clientOperationId: "operation-claimed",
+      messageId: claimed.messageId,
+    })).resolves.toEqual({ messageId: claimed.messageId, state: "delivered" });
+    expect(fixture.service.lookup("operation-claimed")?.messages[0]).toMatchObject({
+      state: "claimed",
+      dshTurn: 1,
+    });
+    await expect(fixture.service.cancelMessage({
+      clientOperationId: "operation-missing",
+      messageId: claimed.messageId,
+    })).rejects.toMatchObject({ code: "turn_operation_unknown" });
+    await expect(fixture.service.cancelMessage({
+      clientOperationId: "operation-claimed",
+      messageId: "message-missing",
+    })).rejects.toMatchObject({ code: "turn_message_unknown" });
+  });
+
+  it("does not acknowledge a claimed delivery before its correlation flush is durable", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    const claimed = fixture.service.lookup("operation-1")?.messages[0];
+    if (claimed === undefined) throw new Error("claim durability fixture lacks its root message");
+    const durability = Promise.withResolvers<undefined>();
+    const stop = fixture.context.on("session/flush", () => durability.promise);
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+
+    let acknowledged = false;
+    const cancellation = fixture.service.cancelMessage({
+      clientOperationId: "operation-1",
+      messageId: claimed.messageId,
+    }).then((result) => {
+      acknowledged = true;
+      return result;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(acknowledged).toBe(false);
+    durability.resolve(undefined);
+    await expect(cancellation).resolves.toEqual({ messageId: claimed.messageId, state: "delivered" });
+    stop();
+  });
+
+  it("interrupts only the target active operation and optionally cancels its queued input", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params("operation-active"));
+    await fixture.service.start(params("operation-queued"));
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    const mutableAgent = fixture.agent as unknown as {
+      cancel: (cause: { kind: string }, options: { keepInbox: boolean }) => void;
+      status: string;
+      whenIdle: () => Promise<void>;
+    };
+    mutableAgent.status = "running";
+    let cancellations = 0;
+    mutableAgent.cancel = (cause, options) => {
+      cancellations += 1;
+      expect({ cause, options }).toEqual({ cause: { kind: "user" }, options: { keepInbox: true } });
+      fixture.agent.session.append("turn/end", {
+        turn: 1,
+        reason: { kind: "aborted", reason: { kind: "user" } },
+      });
+      mutableAgent.status = "idle";
+    };
+
+    await expect(fixture.service.interrupt({
+      clientOperationId: "operation-queued",
+      cancelQueued: false,
+    })).resolves.toMatchObject({
+      ok: true,
+      cancelledMessageIds: [],
+      stillQueuedMessageIds: [expect.stringMatching(/^message-/u)],
+    });
+    expect(cancellations).toBe(0);
+
+    await expect(fixture.service.interrupt({
+      clientOperationId: "operation-active",
+      cancelQueued: false,
+    })).resolves.toEqual({
+      ok: true,
+      cancelledMessageIds: [],
+      stillQueuedMessageIds: [],
+    });
+    expect(cancellations).toBe(1);
+    expect(fixture.service.lookup("operation-active")).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "aborted", reason: "user" },
+    });
+
+    const queuedMessageId = fixture.service.lookup("operation-queued")?.messages[0]?.messageId;
+    if (queuedMessageId === undefined) throw new Error("queued interrupt fixture lacks its message");
+    await expect(fixture.service.interrupt({
+      clientOperationId: "operation-queued",
+      cancelQueued: true,
+    })).resolves.toEqual({
+      ok: true,
+      cancelledMessageIds: [queuedMessageId],
+      stillQueuedMessageIds: [],
+    });
+    expect(cancellations).toBe(1);
+    expect(fixture.service.lookup("operation-queued")).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "aborted", reason: "user" },
+    });
+  });
+
+  it("bounds active interruption and fences an idle result that leaves its DSH turn open", async () => {
+    const deadline = createRuntimeSettlementDeadlineAuthority(10);
+    let retirementHits = 0;
+    let retirement: Promise<void> | undefined;
+    const retireOnce = (): Promise<void> => {
+      retirement ??= Promise.resolve().then(() => { retirementHits += 1; });
+      return retirement;
+    };
+    const timedOut = await mountService(
+      undefined,
+      undefined,
+      () => retireOnce(),
+      undefined,
+      deadline,
+    );
+    await timedOut.service.start(params());
+    timedOut.agent.session.append("turn/start", { turn: 1 });
+    timedOut.inbox.claim("next-turn", 1);
+    const timedOutAgent = timedOut.agent as unknown as {
+      cancel: () => void;
+      status: string;
+      whenIdle: () => Promise<void>;
+    };
+    timedOutAgent.status = "running";
+    timedOutAgent.cancel = () => undefined;
+    timedOutAgent.whenIdle = () => new Promise<void>(() => undefined);
+    await expect(timedOut.service.interrupt({
+      clientOperationId: "operation-1",
+      cancelQueued: false,
+    })).rejects.toMatchObject({ code: "session_recovery_required" });
+    await vi.waitFor(() => expect(retirementHits).toBe(1));
+
+    const open = await mountService();
+    await open.service.start(params());
+    open.agent.session.append("turn/start", { turn: 1 });
+    open.inbox.claim("next-turn", 1);
+    const openAgent = open.agent as unknown as {
+      cancel: () => void;
+      status: string;
+      whenIdle: () => Promise<void>;
+    };
+    openAgent.status = "running";
+    openAgent.cancel = () => { openAgent.status = "idle"; };
+    openAgent.whenIdle = () => Promise.resolve();
+    await expect(open.service.interrupt({
+      clientOperationId: "operation-1",
+      cancelQueued: false,
+    })).rejects.toMatchObject({ code: "session_recovery_required" });
+  });
+
+  it("lets a post-turn host shutdown cancellation override an earlier completed turn", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("step/start", { turn: 1, step: 1 });
+    fixture.agent.session.append("request/context", {
+      provider: "fixture",
+      model: "fixture-model",
+      contextWindow: 4_096,
+    });
+    fixture.agent.session.append("assistant/message", {
+      turn: 1,
+      step: 1,
+      message: freezeMessage({
+        id: MessageId("assistant-before-post-turn-shutdown"),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture-model" },
+        content: [{ type: "text", text: "durable completed answer before follow-up" }],
+      }),
+      usage: { inputTokens: 7, outputTokens: 2 },
+    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    fixture.agent.session.append("step/end", { turn: 1, step: 1 });
+    const followupId = "operation-followup-before-close";
+    fixture.agent.session.append("myagents/operation/message", {
+      clientOperationId: "operation-1",
+      messageId: followupId,
+      kind: "follow_up",
+      clientMessageId: "client-followup-before-close",
+      state: "queued",
+    });
+    fixture.agent.followup(freezeMessage({
+      id: MessageId(followupId),
+      role: "user",
+      content: [{ type: "text", text: "continue after the first completed turn" }],
+      source: {
+        kind: "myagents-operation",
+        clientOperationId: "operation-1",
+        clientMessageId: "client-followup-before-close",
+        delivery: "follow_up",
+      },
+    }));
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+
+    await fixture.dispose();
+    expect(findProductOperation(
+      foldProductOperations(fixture.agent.session.events, fixture.agent.id),
+      "operation-1",
+    )).toMatchObject({
+      state: "terminal",
+      messages: [
+        { state: "claimed", dshTurn: 1 },
+        { state: "cancelled", cancellationReason: "host_shutdown" },
+      ],
+      terminal: {
+        kind: "aborted",
+        reason: "host_shutdown",
+        usage: {
+          inputTokens: 7,
+          outputTokens: 2,
+          totalTokens: 9,
+          runtimeContextWindow: 4_096,
+        },
+      },
+    });
+  });
+
+  it("acknowledges one durable queued cancellation without waiting for another active operation", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params("operation-active"));
+    await fixture.service.start(params("operation-queued"));
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    const whenIdle = vi.fn(() => new Promise<void>(() => undefined));
+    const mutableAgent = fixture.agent as unknown as {
+      status: string;
+      whenIdle: () => Promise<void>;
+    };
+    mutableAgent.status = "running";
+    mutableAgent.whenIdle = whenIdle;
+    const queuedMessage = fixture.service.lookup("operation-queued")?.messages[0];
+    if (queuedMessage === undefined) throw new Error("concurrent cancel fixture lacks queued work");
+
+    await expect(fixture.service.cancelMessage({
+      clientOperationId: "operation-queued",
+      messageId: queuedMessage.messageId,
+    })).resolves.toEqual({ messageId: queuedMessage.messageId, state: "cancelled" });
+    expect(whenIdle).not.toHaveBeenCalled();
+    expect(fixture.service.lookup("operation-queued")).toMatchObject({
+      state: "settling",
+      messages: [{ state: "cancelled", cancellationReason: "user" }],
+    });
+
+    fixture.agent.session.append("turn/end", {
+      turn: 1,
+      reason: { kind: "error", error: { code: "DONE", message: "active operation ended" } },
+    });
+    mutableAgent.status = "idle";
+    mutableAgent.whenIdle = () => Promise.resolve();
+    await fixture.service.reconcile();
+    expect(fixture.service.lookup("operation-queued")).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "aborted", reason: "user" },
+    });
   });
 
   it("rejects non-exact runtime token-usage objects before terminal derivation", () => {

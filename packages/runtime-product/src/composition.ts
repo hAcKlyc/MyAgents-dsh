@@ -330,7 +330,8 @@ export const composeDshRootServices = async (
       birthAuthority: operationBirthAuthority,
       registerRetirementGuard: (guard) => root.productSession.registerRetirementGuard(guard),
       requireAgent: () => root.productSession.requireAgent(),
-      retirePrimary: () => root.productSession.retire(),
+      retirePrimary: (cause) => root.productSession.retire(cause),
+      settlementDeadlineAuthority: root.productSession.settlementDeadlineAuthority(),
     });
     const composition = new DshRootComposition(root, providers);
     composition.snapshot();
