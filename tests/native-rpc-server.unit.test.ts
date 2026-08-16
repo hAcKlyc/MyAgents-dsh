@@ -4,6 +4,7 @@ import {
   BATCH1_CANDIDATE_PROFILE_SHA256,
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
+import type { SdkOperationService } from "@myagents-dsh/operation-runtime";
 import {
   DSH_ENGINE_VERSION,
   JsonRpcPeer,
@@ -44,10 +45,21 @@ const digest = "a".repeat(64);
 const compositionAuthority = Object.freeze({}) as NativeRpcLifecycleAuthority;
 const createRoot = (): Context => {
   const root = new Context();
+  root.provide("sessions", {
+    flush: () => Promise.resolve(true),
+  } as never);
   root.provide("productSession", {
     bindWorkspace: (workspace: unknown) => workspace,
+    retire: () => Promise.resolve(),
     snapshot: () => Object.freeze({ state: "unbound" as const }),
   } as ProductSessionService);
+  root.provide("sdkOperations", {
+    bindTerminalReservationAuthority: () => undefined,
+    lookup: () => undefined,
+    reconcile: () => Promise.resolve(),
+    snapshot: () => Object.freeze({ recoveryRequired: false, operations: Object.freeze([]) }),
+    start: () => Promise.reject(new Error("synthetic turn admission is not configured")),
+  } as unknown as SdkOperationService);
   return root;
 };
 

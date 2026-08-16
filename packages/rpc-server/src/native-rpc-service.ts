@@ -10,6 +10,7 @@ import {
   selectPlatformAdapter,
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
+import type { SdkOperationService } from "@myagents-dsh/operation-runtime";
 import {
   BATCH1_RUNTIME_CAPABILITIES,
   DSH_ENGINE_VERSION,
@@ -328,20 +329,23 @@ const emptyActiveCounts = () => ({
 });
 
 export class NativeRpcServer extends Service {
-  static inject = ["productSession"];
+  static inject = ["sessions", "productSession", "sdkOperations"];
   private readonly peerValue: JsonRpcPeer;
   private readonly productSessionValue: ProductSessionService;
+  private readonly operationsValue: SdkOperationService;
   private readonly configValue: NormalizedConfig;
   private readonly stopHandlers: Array<() => void> = [];
   private readonly exitRequestedPromise: Promise<NativeRpcExitRequest>;
   private readonly stoppedPromise: Promise<NativeRpcProcessStop>;
   private resolveExit!: (request: NativeRpcExitRequest) => void;
+  private disposePromise: Promise<void> | undefined;
   private exitRequestValue: NativeRpcExitRequest | undefined;
   private phaseValue: NativeRpcPhase = "await_initialize";
 
   constructor(ctx: Context, config: NativeRpcServerConfig) {
     super(ctx, "nativeRpc");
     this.productSessionValue = ctx.productSession;
+    this.operationsValue = ctx.sdkOperations;
     assertAcceptedDshRuntimeGraph();
     assertProtocolArtifactAuthority();
     this.configValue = validateConfig(config);
@@ -381,7 +385,7 @@ export class NativeRpcServer extends Service {
       );
       ctx.effect(() => () => this.disposeTransport(), "native-rpc-transport");
     } catch (error) {
-      this.disposeTransport();
+      void this.disposeTransport();
       throw error;
     }
   }
@@ -431,8 +435,19 @@ export class NativeRpcServer extends Service {
     };
   }
 
-  private statusSnapshot() {
+  private async statusSnapshot() {
     const primarySession = this.productSessionValue.snapshot();
+    if (primarySession.state === "ready") await this.operationsValue.reconcile();
+    const operationSnapshot = primarySession.state === "ready"
+      ? this.operationsValue.snapshot()
+      : undefined;
+    const activeOperations = operationSnapshot?.operations.filter(
+      ({ state }) => state === "active" || state === "settling",
+    ) ?? [];
+    const queuedInputs = operationSnapshot?.operations.reduce(
+      (total, operation) => total + operation.messages.filter(({ state }) => state === "queued").length,
+      0,
+    ) ?? 0;
     return {
       runtimeGeneration: this.configValue.runtimeGeneration,
       initialized: this.phaseValue === "ready" || this.phaseValue === "shutdown_requested",
@@ -446,7 +461,11 @@ export class NativeRpcServer extends Service {
       ...(primarySession.effectiveConfigRevision === undefined
         ? {}
         : { effectiveConfigRevision: primarySession.effectiveConfigRevision }),
-      active: emptyActiveCounts(),
+      active: {
+        ...emptyActiveCounts(),
+        rootTurns: activeOperations.length,
+        queuedInputs,
+      },
     };
   }
 
@@ -518,11 +537,26 @@ export class NativeRpcServer extends Service {
     this.resolveExit(request);
   }
 
-  private disposeTransport(): void {
-    if (this.phaseValue === "disposed") return;
-    for (const stop of this.stopHandlers.splice(0).reverse()) stop();
-    this.phaseValue = "disposed";
-    this.peerValue.close(new ProtocolError("runtime_disposed", "Native RPC transport was disposed", true));
-    this.requestExit(Object.freeze({ kind: "disposed" }));
+  private disposeTransport(): Promise<void> {
+    this.disposePromise ??= (async () => {
+      if (this.phaseValue === "disposed") return;
+      for (const stop of this.stopHandlers.splice(0).reverse()) stop();
+      let failure: unknown;
+      try {
+        await this.productSessionValue.retire();
+      } catch (error) {
+        failure = error;
+      } finally {
+        this.phaseValue = "disposed";
+        this.peerValue.close(new ProtocolError("runtime_disposed", "Native RPC transport was disposed", true));
+        this.requestExit(Object.freeze({ kind: "disposed" }));
+      }
+      if (failure !== undefined) {
+        throw failure instanceof Error
+          ? failure
+          : new Error("native RPC transport disposal failed", { cause: failure });
+      }
+    })();
+    return this.disposePromise;
   }
 }

@@ -1,6 +1,6 @@
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { validateTurnTerminal, type TurnTerminal } from "@myagents-dsh/protocol";
-import { types as utilTypes } from "node:util";
+import { isDeepStrictEqual, types as utilTypes } from "node:util";
 
 import {
   type MyAgentsOperationMessageSource,
@@ -8,10 +8,12 @@ import {
   type ProductOperationAccepted,
   type ProductOperationClaim,
   type ProductOperationMessage,
+  type ProductOperationRequestContext,
   type ProductOperationRecoveryWake,
   type ProductOperationTerminal,
 } from "./events.js";
 import { validateOperationLimits } from "./limits.js";
+import { deriveOperationTerminal } from "./terminal.js";
 
 export type ProductOperationState =
   | "accepted_undelivered"
@@ -81,6 +83,7 @@ type MutableOperation = {
   closedTurns: Set<number>;
   terminal?: TurnTerminal;
   terminalSeen: boolean;
+  requestContextAssistantSeqs: Set<number>;
   wakeAttempts: Map<string, { completed: boolean; messageId: string }>;
 };
 
@@ -252,6 +255,38 @@ const validateClaim = (value: unknown): ProductOperationClaim => {
   });
 };
 
+const validateRequestContext = (value: unknown): ProductOperationRequestContext => {
+  const event = exactOwnDataObject(
+    value,
+    [
+      "clientOperationId",
+      "dshTurn",
+      "dshStep",
+      "assistantEventSeq",
+      "provider",
+      "model",
+      "contextWindow",
+    ],
+    [],
+    "operation request-context anchor",
+  );
+  if (!Number.isSafeInteger(event.assistantEventSeq) || (event.assistantEventSeq as number) < 0) {
+    return fail("operation request-context assistant sequence is invalid");
+  }
+  if (!Number.isSafeInteger(event.contextWindow) || (event.contextWindow as number) < 1) {
+    return fail("operation request-context window is invalid");
+  }
+  return Object.freeze({
+    clientOperationId: boundedIdentifier(event.clientOperationId, "request-context operation owner"),
+    dshTurn: positiveTurn(event.dshTurn, "request-context DSH turn"),
+    dshStep: positiveTurn(event.dshStep, "request-context DSH step"),
+    assistantEventSeq: event.assistantEventSeq as number,
+    provider: boundedIdentifier(event.provider, "request-context provider"),
+    model: boundedIdentifier(event.model, "request-context model"),
+    contextWindow: event.contextWindow as number,
+  });
+};
+
 const validateTerminal = (value: unknown): ProductOperationTerminal => {
   const event = exactOwnDataObject(
     value,
@@ -357,11 +392,32 @@ const terminalState = (operation: MutableOperation): ProductOperationState => {
   return operation.dshTurns.length === 0 ? "accepted" : "active";
 };
 
+const immutableOperation = (operation: MutableOperation): ProductOperationRecord => Object.freeze({
+  clientOperationId: operation.accepted.clientOperationId,
+  fingerprint: operation.accepted.fingerprint,
+  productTurnId: operation.accepted.productTurnId,
+  birth: operation.accepted.birth,
+  acceptedAt: operation.accepted.acceptedAt,
+  messages: Object.freeze(operation.messages.map((message) => Object.freeze({
+    messageId: message.messageId,
+    clientMessageId: message.clientMessageId,
+    kind: message.kind,
+    state: message.state,
+    delivered: message.delivered,
+    ...(message.dshTurn === undefined ? {} : { dshTurn: message.dshTurn }),
+  }))),
+  dshTurns: Object.freeze([...operation.dshTurns]),
+  state: terminalState(operation),
+  ...(operation.terminal === undefined ? {} : { terminal: operation.terminal }),
+});
+
 const foldProductOperationsValue = (
   events: readonly SessionEvent[],
+  runtimeSessionId: string,
   liveClaim: LiveOperationClaimCandidate | undefined,
   liveDiscard: LiveOperationDiscardCandidate | undefined,
 ): ProductOperationFold => {
+  boundedIdentifier(runtimeSessionId, "operation fold runtime Session identity");
   const operations = new Map<string, MutableOperation>();
   const messageOwners = new Map<string, string>();
   const dshTurnOwners = new Map<number, string>();
@@ -398,6 +454,7 @@ const foldProductOperationsValue = (
           messages: [root],
           dshTurns: [],
           closedTurns: new Set(),
+          requestContextAssistantSeqs: new Set(),
           terminalSeen: false,
           wakeAttempts: new Map(),
         });
@@ -473,6 +530,52 @@ const foldProductOperationsValue = (
         removedClaimCandidates.delete(claim.messageId);
         break;
       }
+      case "myagents/operation/request-context": {
+        const anchor = validateRequestContext(event.data);
+        const operation = operationFor(
+          operations,
+          anchor.clientOperationId,
+          "operation request-context anchor",
+        );
+        if (operation.terminalSeen || operation.requestContextAssistantSeqs.has(anchor.assistantEventSeq)) {
+          return fail("operation request-context anchor follows terminal or duplicates an assistant");
+        }
+        if (dshTurnOwners.get(anchor.dshTurn) !== anchor.clientOperationId
+          || turns.get(anchor.dshTurn) === undefined) {
+          return fail("operation request-context anchor lacks its owned DSH turn");
+        }
+        const assistant = events[anchor.assistantEventSeq];
+        if (assistant?.type !== "assistant/message"
+          || assistant.seq >= event.seq
+          || assistant.data.turn !== anchor.dshTurn
+          || assistant.data.step !== anchor.dshStep
+          || assistant.data.usage === undefined
+          || assistant.data.message.source.provider !== anchor.provider
+          || assistant.data.message.source.model !== anchor.model) {
+          return fail("operation request-context anchor differs from its assistant request");
+        }
+        const stepStart = events.findLast((candidate) => candidate.seq < assistant.seq
+          && candidate.type === "step/start"
+          && candidate.data.turn === anchor.dshTurn
+          && candidate.data.step === anchor.dshStep);
+        if (stepStart?.type !== "step/start" || events.some((candidate) =>
+          candidate.seq > stepStart.seq && candidate.seq < assistant.seq
+            && candidate.type === "step/end"
+            && candidate.data.turn === anchor.dshTurn
+            && candidate.data.step === anchor.dshStep)) {
+          return fail("operation request-context anchor lacks an open request step");
+        }
+        const dshContext = events.findLast((candidate) =>
+          candidate.seq < assistant.seq && candidate.type === "request/context");
+        if (dshContext?.type !== "request/context"
+          || dshContext.data.provider !== anchor.provider
+          || dshContext.data.model !== anchor.model
+          || dshContext.data.contextWindow !== anchor.contextWindow) {
+          return fail("operation request-context anchor differs from DSH context authority");
+        }
+        operation.requestContextAssistantSeqs.add(anchor.assistantEventSeq);
+        break;
+      }
       case "myagents/operation/terminal": {
         const terminal = validateTerminal(event.data);
         const operation = operationFor(operations, terminal.clientOperationId, "operation terminal");
@@ -489,6 +592,20 @@ const foldProductOperationsValue = (
         const finalTurn = operation.dshTurns.at(-1);
         if (terminal.finalDshTurn !== finalTurn) {
           return fail("operation terminal final DSH turn differs from its owned turn fold");
+        }
+        let derived;
+        try {
+          derived = deriveOperationTerminal(
+            runtimeSessionId,
+            events.slice(0, index),
+            immutableOperation(operation),
+          );
+        } catch {
+          return fail("operation terminal cannot be derived from its exact DSH turn facts");
+        }
+        if (derived.finalDshTurn !== terminal.finalDshTurn
+          || !isDeepStrictEqual(derived.terminal, terminal.terminal)) {
+          return fail("operation terminal differs from its exact durable DSH derivation");
         }
         operation.terminal = terminal.terminal;
         operation.terminalSeen = true;
@@ -662,34 +779,20 @@ const foldProductOperationsValue = (
     }
   }
 
-  const folded = [...operations.values()].map((operation): ProductOperationRecord => Object.freeze({
-    clientOperationId: operation.accepted.clientOperationId,
-    fingerprint: operation.accepted.fingerprint,
-    productTurnId: operation.accepted.productTurnId,
-    birth: operation.accepted.birth,
-    acceptedAt: operation.accepted.acceptedAt,
-    messages: Object.freeze(operation.messages.map((message) => Object.freeze({
-      messageId: message.messageId,
-      clientMessageId: message.clientMessageId,
-      kind: message.kind,
-      state: message.state,
-      delivered: message.delivered,
-      ...(message.dshTurn === undefined ? {} : { dshTurn: message.dshTurn }),
-    }))),
-    dshTurns: Object.freeze([...operation.dshTurns]),
-    state: terminalState(operation),
-    ...(operation.terminal === undefined ? {} : { terminal: operation.terminal }),
-  }));
+  const folded = [...operations.values()].map(immutableOperation);
   return Object.freeze({ operations: Object.freeze(folded) });
 };
 
-export const foldProductOperations = (events: readonly SessionEvent[]): ProductOperationFold =>
-  foldProductOperationsValue(events, undefined, undefined);
+export const foldProductOperations = (
+  events: readonly SessionEvent[],
+  runtimeSessionId: string,
+): ProductOperationFold => foldProductOperationsValue(events, runtimeSessionId, undefined, undefined);
 
 export const foldProductOperationsForLiveClaim = (
   events: readonly SessionEvent[],
   candidate: LiveOperationClaimCandidate,
-): ProductOperationFold => foldProductOperationsValue(events, Object.freeze({
+  runtimeSessionId: string,
+): ProductOperationFold => foldProductOperationsValue(events, runtimeSessionId, Object.freeze({
   messageId: boundedIdentifier(candidate.messageId, "live claim message identity"),
   dshTurn: positiveTurn(candidate.dshTurn, "live claim DSH turn"),
 }), undefined);
@@ -697,7 +800,8 @@ export const foldProductOperationsForLiveClaim = (
 export const foldProductOperationsForLiveDiscard = (
   events: readonly SessionEvent[],
   candidate: LiveOperationDiscardCandidate,
-): ProductOperationFold => foldProductOperationsValue(events, undefined, Object.freeze({
+  runtimeSessionId: string,
+): ProductOperationFold => foldProductOperationsValue(events, runtimeSessionId, undefined, Object.freeze({
   messageId: boundedIdentifier(candidate.messageId, "live discard message identity"),
 }));
 

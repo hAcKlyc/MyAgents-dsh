@@ -48,6 +48,12 @@ export type NotificationHandler<Name extends RpcNotificationName> = (
   params: NotificationParams<Name>,
 ) => void | Promise<void>;
 
+export interface TerminalNotificationReservation {
+  readonly reservationId: string;
+  deliver(params: NotificationParams<"runtime/event">): Promise<void>;
+  release(): void;
+}
+
 type PendingRequest = {
   method: RpcMethodName;
   resolve(value: unknown): void;
@@ -64,6 +70,11 @@ type InboundRequest = {
 };
 type WriteSlotWaiter = { resolve(): void; reject(reason: unknown): void };
 type ActiveWriteCompletion = { reject(reason: Error): void };
+type TerminalReservationState = {
+  readonly reservationId: string;
+  readonly reservation: TerminalNotificationReservation;
+  delivering: boolean;
+};
 
 const RECENT_INBOUND_ID_LIMIT = 8_192;
 
@@ -178,6 +189,7 @@ export class JsonRpcPeer {
   readonly #activeWriteCompletions = new Set<ActiveWriteCompletion>();
   readonly #recentInboundIds = new Set<string>();
   readonly #recentInboundIdOrder: string[] = [];
+  readonly #terminalReservations = new Map<string, TerminalReservationState>();
   #limits: ProtocolLimits;
   #nextId = 1;
   #buffer = Buffer.alloc(0);
@@ -233,7 +245,8 @@ export class JsonRpcPeer {
       || this.#activeTerminalNotifications > 1
       || this.#outboundNotifications > validatedLimits.eventQueueHighWatermark
       || this.#outboundControlNotifications > controlNotificationCapacity(validatedLimits)
-      || this.#outboundTerminalNotifications > 1
+      || this.#outboundTerminalNotifications > validatedLimits.maxPendingRequests
+      || this.#terminalReservations.size > validatedLimits.maxPendingRequests
       || this.#pendingWrites > writeQueueCapacity(validatedLimits)
       || this.#writeSlotWaiters.length > 0) {
       throw new ProtocolError("protocol_limit_conflict", "Negotiated limits are below current transport activity");
@@ -354,6 +367,33 @@ export class JsonRpcPeer {
     }
   }
 
+  reserveTerminalNotification(reservationId: string): TerminalNotificationReservation {
+    this.#assertOpen();
+    if (typeof reservationId !== "string" || reservationId.length === 0
+      || reservationId.length > 256 || hasAsciiControl(reservationId)) {
+      throw new ProtocolError("protocol_reservation_invalid", "Terminal reservation identity is invalid");
+    }
+    const existing = this.#terminalReservations.get(reservationId);
+    if (existing !== undefined) return existing.reservation;
+    if (this.#terminalReservations.size >= this.#limits.maxPendingRequests) {
+      throw new ProtocolError(
+        "protocol_overloaded",
+        "No terminal notification reservation remains for another admitted operation",
+        true,
+      );
+    }
+    const state = { reservationId, delivering: false } as TerminalReservationState;
+    const reservation = Object.freeze({
+      reservationId,
+      deliver: (params: NotificationParams<"runtime/event">) =>
+        this.#deliverReservedTerminal(state, params),
+      release: () => this.#releaseTerminalReservation(state),
+    });
+    Object.assign(state, { reservation });
+    this.#terminalReservations.set(reservationId, state);
+    return reservation;
+  }
+
   async flush(): Promise<void> {
     this.#assertOpen();
     await this.#writeTail;
@@ -410,6 +450,7 @@ export class JsonRpcPeer {
     this.#inbound.clear();
     this.#recentInboundIds.clear();
     this.#recentInboundIdOrder.splice(0);
+    this.#terminalReservations.clear();
     if (reportFatal) {
       try {
         this.#onFatalError?.(reason);
@@ -422,6 +463,41 @@ export class JsonRpcPeer {
   #assertOpen(): void {
     if (this.#closed) {
       throw this.#closeReason ?? new ProtocolError("protocol_closed", "Protocol peer is closed", true);
+    }
+  }
+
+  async #deliverReservedTerminal(
+    state: TerminalReservationState,
+    params: NotificationParams<"runtime/event">,
+  ): Promise<void> {
+    this.#assertOpen();
+    if (this.#terminalReservations.get(state.reservationId) !== state || state.delivering) {
+      throw new ProtocolError(
+        "protocol_reservation_invalid",
+        "Terminal notification reservation is absent or already delivering",
+      );
+    }
+    this.#assertOutboundNotification("runtime/event");
+    const validatedParams = validateNotificationParams("runtime/event", params);
+    if (classifyNotification("runtime/event", validatedParams) !== "terminal") {
+      throw new ProtocolError(
+        "protocol_reservation_invalid",
+        "Terminal notification reservation cannot deliver an ordinary event",
+      );
+    }
+    state.delivering = true;
+    this.#outboundTerminalNotifications += 1;
+    try {
+      await this.#send({ jsonrpc: "2.0", method: "runtime/event", params: validatedParams });
+    } finally {
+      this.#outboundTerminalNotifications -= 1;
+      this.#terminalReservations.delete(state.reservationId);
+    }
+  }
+
+  #releaseTerminalReservation(state: TerminalReservationState): void {
+    if (!state.delivering && this.#terminalReservations.get(state.reservationId) === state) {
+      this.#terminalReservations.delete(state.reservationId);
     }
   }
 

@@ -50,6 +50,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/index.ts",
       "src/limits.ts",
       "src/service.ts",
+      "src/terminal.ts",
     ],
   },
   {
@@ -89,7 +90,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/rpc-server",
     relativeDirectory: "packages/rpc-server",
-    allowedFiles: ["package.json", "src/index.ts", "src/native-rpc-service.ts"],
+    allowedFiles: ["package.json", "src/event-projector.ts", "src/index.ts", "src/native-rpc-service.ts"],
   },
   {
     packageName: "@myagents-dsh/runtime-product",

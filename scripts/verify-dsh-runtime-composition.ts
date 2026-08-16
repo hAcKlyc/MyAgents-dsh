@@ -381,17 +381,27 @@ const main = (): void => {
       || evidence.nativeRpcShutdown !== "shutdown"
       || evidence.nativeRpcStopped !== true
       || evidence.operationCorrelationVerified !== true
+      || evidence.runtimeEventProjectionVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify(["success", "failure", "cancel"])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
     }
-    if (!Array.isArray(evidence.nativeRpcFrames) || evidence.nativeRpcFrames.length !== 3) {
-      throw new Error("runtime composition must expose exactly three observed Host-response frames");
+    if (!Array.isArray(evidence.nativeRpcFrames) || evidence.nativeRpcFrames.length < 3) {
+      throw new Error("runtime composition must expose the observed Host-response frames");
     }
     const frames = evidence.nativeRpcFrames.map((frame, index) =>
       exactObject(frame, `observed native RPC frame ${String(index)}`));
-    const initializeFrame = frames.find(({ id }) => id === "h:1");
-    const statusFrame = frames.find(({ id }) => id === "h:2");
-    const shutdownFrame = frames.find(({ id }) => id === "h:3");
+    const initializeFrame = frames.find(({ result }) => {
+      if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
+      return Object.hasOwn(result, "runtimeEngine");
+    });
+    const statusFrame = frames.find(({ result }) => {
+      if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
+      return Object.hasOwn(result, "primarySessionState");
+    });
+    const shutdownFrame = frames.find(({ result }) => {
+      if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
+      return (result as Record<string, unknown>).ok === true;
+    });
     const initializeResult = exactObject(initializeFrame?.result, "observed initialize result");
     const runtimeEngine = exactObject(initializeResult.runtimeEngine, "observed Runtime engine");
     const capabilities = exactObject(initializeResult.runtimeCapabilities, "observed Runtime capabilities");
@@ -409,6 +419,48 @@ const main = (): void => {
       || Object.hasOwn(statusResult, "effectiveConfigRevision")
       || shutdownResult.ok !== true) {
       throw new Error("observed native RPC frames differ from the content-addressed Batch 1 authority");
+    }
+    if (frames.some(({ method }) => method === "runtime/event")) {
+      throw new Error("inactive candidate profile emitted an unavailable Runtime notification");
+    }
+    if (!Array.isArray(evidence.workstreamRuntimeEvents)) {
+      throw new Error("runtime composition must expose isolated A5 workstream projection evidence");
+    }
+    const eventEnvelopes = evidence.workstreamRuntimeEvents.map((event, index) =>
+      exactObject(event, `observed workstream Runtime event ${String(index)}`));
+    if (eventEnvelopes.length === 0 || eventEnvelopes.some(
+      ({ sequence }, index) => sequence !== index + 1,
+    )) {
+      throw new Error("Runtime event projection must expose one contiguous generation-local sequence");
+    }
+    const projectedEvents = eventEnvelopes.map(({ event }, index) =>
+      exactObject(event, `observed Runtime event payload ${String(index)}`));
+    const expectedEventKinds = [
+      "turn_admitted", "turn_started", "queued_message", "context",
+      "assistant_delta", "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "assistant_delta",
+      "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "turn_terminal",
+    ];
+    if (JSON.stringify(projectedEvents.map(({ kind }) => kind)) !== JSON.stringify(expectedEventKinds)) {
+      throw new Error("Runtime workstream event sequence differs from the exact 24-event evidence");
+    }
+    const terminalKinds = projectedEvents
+      .filter(({ kind }) => kind === "turn_terminal")
+      .map(({ terminal }, index) =>
+        exactObject(terminal, `observed Runtime terminal ${String(index)}`).kind);
+    if (JSON.stringify(terminalKinds) !== JSON.stringify(["succeeded", "succeeded", "failed", "aborted"])) {
+      throw new Error("Runtime terminal projection differs from the four real DSH operation outcomes");
+    }
+    const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");
+    const usage = exactObject(usageEvent?.usage, "observed Runtime usage");
+    if (usage.inputTokens !== 7 || usage.outputTokens !== 2
+      || usage.cacheReadTokens !== 3 || usage.cacheWriteTokens !== 0
+      || usage.totalTokens !== 12 || usage.costUsd !== null
+      || usageEvent?.contextOccupiedTokens !== null
+      || usageEvent.runtimeContextWindow !== 8_192) {
+      throw new Error("Runtime usage/context projection differs from the durable DSH accounting facts");
     }
     process.stdout.write(`patched DSH runtime composition verified: ${output}\n`);
   } finally {

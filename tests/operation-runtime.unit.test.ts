@@ -7,11 +7,12 @@ import {
   SdkOperationService,
   findProductOperation,
   foldProductOperations,
+  normalizeDshTokenUsage,
   type OperationBirthSnapshot,
   type OperationBirthAuthority,
 } from "@myagents-dsh/operation-runtime";
-import type { MethodParams, ProtocolError } from "@myagents-dsh/protocol";
-import { afterEach, describe, expect, it } from "vitest";
+import { ProtocolError, type MethodParams } from "@myagents-dsh/protocol";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const digest = (character: string): string => character.repeat(64);
 
@@ -71,6 +72,7 @@ const mountService = async (
   birthAuthority: OperationBirthAuthority = Object.freeze({ capture: () => birth() }),
   seed?: readonly SessionEvent[],
   retirePrimary: (agent: Agent, guard: RetirementGuard) => Promise<void> = (agent, guard) => guard(agent),
+  reserveTerminal: (clientOperationId: string) => void = () => undefined,
 ): Promise<MountedService> => {
   const context = new Context();
   mounted.push(context);
@@ -125,6 +127,7 @@ const mountService = async (
     },
     clock: () => 1_800_000_000_000,
   });
+  context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({ reserve: reserveTerminal }));
   return {
     agent,
     context,
@@ -157,7 +160,10 @@ describe("durable product-operation fold", () => {
     expect(accepted?.data).not.toHaveProperty("input");
     expect(accepted?.data).not.toHaveProperty("prompt");
 
-    const queued = findProductOperation(foldProductOperations(fixture.agent.session.events), "operation-1");
+    const queued = findProductOperation(
+      foldProductOperations(fixture.agent.session.events, fixture.agent.id),
+      "operation-1",
+    );
     expect(queued).toMatchObject({
       state: "accepted",
       messages: [{ kind: "root", state: "queued", delivered: true }],
@@ -199,7 +205,7 @@ describe("durable product-operation fold", () => {
     fixture.inbox.claim("next-turn", 2);
     fixture.agent.session.append("turn/end", { turn: 2, reason: { kind: "completed" } });
     expect(findProductOperation(
-      foldProductOperations(fixture.agent.session.events),
+      foldProductOperations(fixture.agent.session.events, fixture.agent.id),
       "operation-1",
     )).toMatchObject({
       state: "settling",
@@ -209,12 +215,17 @@ describe("durable product-operation fold", () => {
     fixture.agent.session.append("myagents/operation/terminal", {
       clientOperationId: "operation-1",
       productTurnId: queued?.productTurnId ?? "missing-product-turn",
-      terminal: { kind: "failed", code: "synthetic_failure", message: "failed", retryable: false },
+      terminal: {
+        kind: "failed",
+        code: "no_final_assistant",
+        message: "Final DSH turn completed without a durable non-empty assistant and usage anchor",
+        retryable: false,
+      },
       finalDshTurn: 2,
       terminalAt: 1_800_000_000_100,
     });
     expect(findProductOperation(
-      foldProductOperations(fixture.agent.session.events),
+      foldProductOperations(fixture.agent.session.events, fixture.agent.id),
       "operation-1",
     )?.state).toBe("terminal");
     fixture.agent.session.append("myagents/operation/terminal", {
@@ -224,7 +235,8 @@ describe("durable product-operation fold", () => {
       finalDshTurn: 2,
       terminalAt: 1_800_000_000_101,
     });
-    expect(() => foldProductOperations(fixture.agent.session.events)).toThrow("terminal is duplicated");
+    expect(() => foldProductOperations(fixture.agent.session.events, fixture.agent.id))
+      .toThrow("terminal is duplicated");
   });
 
   it("rejects cross-operation turns, duplicate terminals, and malformed persisted payloads", async () => {
@@ -256,7 +268,7 @@ describe("durable product-operation fold", () => {
       seq: 0,
       time: 0,
       data: proxy,
-    } as never])).toThrow("must not be a Proxy");
+    } as never], "operation-proxy-test")).toThrow("must not be a Proxy");
   });
 
   it("fails closed across impossible turn claims and the durable Inbox-delete crash gap", async () => {
@@ -270,26 +282,32 @@ describe("durable product-operation fold", () => {
       removedCount: 1,
       inserted: [],
     });
-    expect(() => foldProductOperations(deleted)).toThrow(
+    expect(() => foldProductOperations(deleted, fixture.agent.id)).toThrow(
       "Inbox claim lacks durable product-operation ownership",
     );
     expect(() => foldProductOperations(appendEvent(deleted, "myagents/operation/claimed", {
       clientOperationId: "operation-1",
-      messageId: findProductOperation(foldProductOperations(inserted), "operation-1")?.messages[0]?.messageId
+      messageId: findProductOperation(
+        foldProductOperations(inserted, fixture.agent.id),
+        "operation-1",
+      )?.messages[0]?.messageId
         ?? "missing-message",
       dshTurn: 99,
-    }))).toThrow("open DSH turn boundary");
+    }), fixture.agent.id)).toThrow("open DSH turn boundary");
     expect(() => foldProductOperations(appendEvent(opened, "turn/end", {
       turn: 1,
       reason: { kind: "completed" },
-    }))).not.toThrow();
+    }), fixture.agent.id)).not.toThrow();
     const closed = appendEvent(opened, "turn/end", { turn: 1, reason: { kind: "completed" } });
     expect(() => foldProductOperations(appendEvent(closed, "myagents/operation/claimed", {
       clientOperationId: "operation-1",
-      messageId: findProductOperation(foldProductOperations(inserted), "operation-1")?.messages[0]?.messageId
+      messageId: findProductOperation(
+        foldProductOperations(inserted, fixture.agent.id),
+        "operation-1",
+      )?.messages[0]?.messageId
         ?? "missing-message",
       dshTurn: 1,
-    }))).toThrow("open DSH turn boundary");
+    }), fixture.agent.id)).toThrow("open DSH turn boundary");
   });
 
   it("accepts recovery-wake completion after the synchronous wake claimed its message", async () => {
@@ -313,7 +331,7 @@ describe("durable product-operation fold", () => {
       phase: "completed",
       recordedAt: 1_800_000_000_002,
     });
-    expect(() => foldProductOperations(fixture.agent.session.events)).not.toThrow();
+    expect(() => foldProductOperations(fixture.agent.session.events, fixture.agent.id)).not.toThrow();
   });
 
   it("rejects persisted operation timestamps outside the Date epoch range", async () => {
@@ -323,7 +341,8 @@ describe("durable product-operation fold", () => {
       event.type === "myagents/operation/accepted"
         ? { ...event, data: { ...event.data, acceptedAt: 8_640_000_000_000_001 } }
         : event);
-    expect(() => foldProductOperations(invalid)).toThrow("valid non-negative epoch millisecond");
+    expect(() => foldProductOperations(invalid, fixture.agent.id))
+      .toThrow("valid non-negative epoch millisecond");
     const restored = await mountService(Object.freeze({ capture: () => birth() }), invalid);
     await expect(restored.service.start(params())).rejects.toMatchObject({
       code: "session_recovery_required",
@@ -332,6 +351,21 @@ describe("durable product-operation fold", () => {
 });
 
 describe("SdkOperationService admission and idempotency", () => {
+  it("rejects before durable acceptance when no terminal reservation is available", async () => {
+    const fixture = await mountService(
+      undefined,
+      undefined,
+      (agent, guard) => guard(agent),
+      () => {
+        throw new ProtocolError("protocol_overloaded", "synthetic terminal reserve exhaustion", true);
+      },
+    );
+    await expect(fixture.service.start(params())).rejects.toMatchObject({
+      code: "protocol_overloaded",
+    });
+    expect(fixture.agent.session.events).toEqual([]);
+  });
+
   it("flushes before acceptance and returns exact known truth without duplicating input", async () => {
     const fixture = await mountService();
     await fixture.service.start(params());
@@ -442,7 +476,7 @@ describe("SdkOperationService admission and idempotency", () => {
       data: { state: "cancelled" },
     });
     expect(findProductOperation(
-      foldProductOperations(fixture.agent.session.events),
+      foldProductOperations(fixture.agent.session.events, fixture.agent.id),
       "operation-1",
     )).toMatchObject({ state: "settling", messages: [{ state: "cancelled" }] });
   });
@@ -461,7 +495,7 @@ describe("SdkOperationService admission and idempotency", () => {
     await expect(pendingAdmission).rejects.toMatchObject({ code: "protocol_closed" });
     await disposal;
     expect(findProductOperation(
-      foldProductOperations(fixture.agent.session.events),
+      foldProductOperations(fixture.agent.session.events, fixture.agent.id),
       "operation-a",
     )).toMatchObject({ state: "settling", messages: [{ state: "cancelled" }] });
   });
@@ -473,7 +507,7 @@ describe("SdkOperationService admission and idempotency", () => {
       code: "session_recovery_required",
     });
     expect(findProductOperation(
-      foldProductOperations(fixture.agent.session.events),
+      foldProductOperations(fixture.agent.session.events, fixture.agent.id),
       "operation-1",
     )?.state).toBe("accepted_undelivered");
 
@@ -488,6 +522,9 @@ describe("SdkOperationService admission and idempotency", () => {
       retirePrimary: () => Promise.resolve(),
       clock: () => 1_900_000_000_000,
     });
+    fixture.context.sdkOperations.bindTerminalReservationAuthority(
+      Object.freeze({ reserve: () => undefined }),
+    );
     await expect(fixture.context.sdkOperations.start(params())).resolves.toMatchObject({
       state: "already_known",
     });
@@ -525,11 +562,348 @@ describe("SdkOperationService admission and idempotency", () => {
       requireAgent: () => agent,
       retirePrimary: () => Promise.resolve(),
     });
+    context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({ reserve: () => undefined }));
     await expect(context.sdkOperations.start(params())).rejects.toEqual(expect.objectContaining({
       code: "session_recovery_required",
     } satisfies Partial<ProtocolError>));
     await expect(context.sdkOperations.start(params())).rejects.toMatchObject({
       code: "session_recovery_required",
     });
+  });
+
+  it("derives and flushes one authoritative terminal with normalized DSH usage", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("step/start", { turn: 1, step: 1 });
+    fixture.agent.session.append("request/context", {
+      provider: "fixture",
+      model: "fixture-model",
+      contextWindow: 8_192,
+    });
+    fixture.agent.session.append("assistant/message", {
+      turn: 1,
+      step: 1,
+      message: freezeMessage({
+        id: MessageId("assistant-terminal-anchor"),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture-model" },
+        content: [{ type: "text", text: "durable answer" }],
+      }),
+      usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 1 },
+    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    fixture.agent.session.append("step/end", { turn: 1, step: 1 });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+
+    await vi.waitFor(() => expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: {
+        kind: "succeeded",
+        usage: {
+          inputTokens: 7,
+          outputTokens: 2,
+          cacheReadTokens: 3,
+          cacheWriteTokens: 1,
+          totalTokens: 13,
+          costUsd: null,
+          normalizedAs: "turn_total",
+          contextOccupiedTokens: null,
+          runtimeContextWindow: 8_192,
+          modelProfileRevision: "model-profile-1",
+        },
+      },
+    }));
+    const terminal = fixture.service.lookup("operation-1")?.terminal;
+    expect(terminal?.kind).toBe("succeeded");
+    if (terminal?.kind !== "succeeded") throw new Error("operation did not derive success");
+    expect(terminal.assistantEventId).toMatch(/^dsh-event-/u);
+    expect(fixture.agent.session.events.filter(
+      (event) => event.type === "myagents/operation/terminal",
+    )).toHaveLength(1);
+
+    const valid = structuredClone(fixture.agent.session.events);
+    const forged = valid.map((event): SessionEvent => event.type === "myagents/operation/terminal"
+      && event.data.terminal.kind === "succeeded"
+      ? {
+          ...event,
+          data: {
+            ...event.data,
+            terminal: { ...event.data.terminal, assistantEventId: "invented-assistant-anchor" },
+          },
+        }
+      : event);
+    expect(() => foldProductOperations(forged, fixture.agent.id))
+      .toThrow("differs from its exact durable DSH derivation");
+
+    const terminalIndex = valid.findIndex((event) => event.type === "myagents/operation/terminal");
+    const persistedTerminal = valid[terminalIndex];
+    if (persistedTerminal?.type !== "myagents/operation/terminal") {
+      throw new Error("terminal fixture is incomplete");
+    }
+    const lateAssistant: SessionEvent = {
+      type: "assistant/message",
+      seq: persistedTerminal.seq,
+      time: persistedTerminal.time,
+      data: {
+        turn: 1,
+        step: 2,
+        message: freezeMessage({
+          id: MessageId("late-assistant-after-turn-end"),
+          role: "assistant",
+          source: { kind: "model", provider: "fixture", model: "fixture-model" },
+          content: [{ type: "text", text: "must not become authoritative" }],
+        }),
+        usage: { inputTokens: 1, outputTokens: 1 },
+      },
+      surfaceOp: "append",
+      sourceEventSeqs: [],
+    };
+    const late = [
+      ...valid.slice(0, terminalIndex),
+      lateAssistant,
+      { ...persistedTerminal, seq: persistedTerminal.seq + 1 },
+    ] as readonly SessionEvent[];
+    expect(() => foldProductOperations(late, fixture.agent.id))
+      .toThrow("cannot be derived from its exact DSH turn facts");
+  });
+
+  it("settles an operation cancelled before its first DSH turn", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    const operation = fixture.service.lookup("operation-1");
+    const rootMessage = operation?.messages[0];
+    if (rootMessage === undefined) throw new Error("cancel-before-turn fixture lacks its operation");
+    expect(fixture.inbox.remove(MessageId(rootMessage.messageId))).toBe(true);
+
+    await fixture.service.reconcile();
+
+    expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      dshTurns: [],
+      terminal: { kind: "aborted", reason: "user" },
+    });
+    const terminal = fixture.agent.session.events.find(
+      (event) => event.type === "myagents/operation/terminal",
+    );
+    expect(terminal).not.toHaveProperty("data.finalDshTurn");
+  });
+
+  it("rejects non-exact runtime token-usage objects before terminal derivation", () => {
+    expect(() => normalizeDshTokenUsage({
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: null,
+    })).toThrow("cacheReadTokens");
+    expect(() => normalizeDshTokenUsage({
+      inputTokens: 1,
+      outputTokens: 1,
+      reasoningTokens: Number.NaN,
+    })).toThrow("reasoningTokens");
+    expect(() => normalizeDshTokenUsage(Object.defineProperty({
+      inputTokens: 1,
+      outputTokens: 1,
+    }, "cacheWriteTokens", { get: () => 1, enumerable: true })))
+      .toThrow("own data properties");
+  });
+
+  it("persists an exact per-request anchor when DSH reuses unchanged context state", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("step/start", { turn: 1, step: 1 });
+    fixture.agent.session.append("request/context", {
+      provider: "fixture",
+      model: "fixture-model",
+      contextWindow: 4_096,
+    });
+    fixture.agent.session.append("assistant/message", {
+      turn: 1,
+      step: 1,
+      message: freezeMessage({
+        id: MessageId("assistant-first-turn"),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture-model" },
+        content: [{ type: "text", text: "first" }],
+      }),
+      usage: { inputTokens: 2, outputTokens: 1 },
+    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    fixture.agent.session.append("step/end", { turn: 1, step: 1 });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    const followupId = "operation-followup-without-context";
+    fixture.agent.session.append("myagents/operation/message", {
+      clientOperationId: "operation-1",
+      messageId: followupId,
+      kind: "follow_up",
+      clientMessageId: "client-followup-without-context",
+      state: "queued",
+    });
+    fixture.agent.followup(freezeMessage({
+      id: MessageId(followupId),
+      role: "user",
+      content: [{ type: "text", text: "second" }],
+      source: {
+        kind: "myagents-operation",
+        clientOperationId: "operation-1",
+        clientMessageId: "client-followup-without-context",
+        delivery: "follow_up",
+      },
+    }));
+    fixture.agent.session.append("turn/start", { turn: 2 });
+    fixture.inbox.claim("next-turn", 2);
+    fixture.agent.session.append("step/start", { turn: 2, step: 1 });
+    fixture.agent.session.append("assistant/message", {
+      turn: 2,
+      step: 1,
+      message: freezeMessage({
+        id: MessageId("assistant-second-turn"),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture-model" },
+        content: [{ type: "text", text: "second" }],
+      }),
+      usage: { inputTokens: 3, outputTokens: 1 },
+    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    fixture.agent.session.append("step/end", { turn: 2, step: 1 });
+    fixture.agent.session.append("turn/end", { turn: 2, reason: { kind: "completed" } });
+
+    await expect(fixture.service.reconcile()).resolves.toBeUndefined();
+    expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: { usage: { runtimeContextWindow: 4_096 } },
+    });
+    const anchors = fixture.agent.session.events.filter(
+      (event) => event.type === "myagents/operation/request-context",
+    );
+    expect(anchors).toHaveLength(2);
+    expect(anchors.map(({ data }) => data.assistantEventSeq)).toEqual(
+      fixture.agent.session.events.filter((event) => event.type === "assistant/message")
+        .map(({ seq }) => seq),
+    );
+  });
+
+  it("persists a live anchor after another operation birth releases serialization", async () => {
+    const secondBirth = Promise.withResolvers<OperationBirthSnapshot>();
+    let captures = 0;
+    const fixture = await mountService({
+      capture: () => ++captures === 1 ? birth() : secondBirth.promise,
+    });
+    await fixture.service.start(params("operation-1"));
+    const secondAdmission = fixture.service.start(params("operation-2"));
+    await Promise.resolve();
+
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("step/start", { turn: 1, step: 1 });
+    fixture.agent.session.append("request/context", {
+      provider: "fixture",
+      model: "fixture-model",
+      contextWindow: 4_096,
+    });
+    const assistant = fixture.agent.session.append("assistant/message", {
+      turn: 1,
+      step: 1,
+      message: freezeMessage({
+        id: MessageId("assistant-blocked-context-anchor"),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture-model" },
+        content: [{ type: "text", text: "anchored after birth" }],
+      }),
+      usage: { inputTokens: 3, outputTokens: 2 },
+    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    const hasAnchor = (): boolean => fixture.agent.session.events.some(
+      (event) => event.type === "myagents/operation/request-context"
+        && event.data.assistantEventSeq === assistant.seq,
+    );
+    await Promise.resolve();
+    expect(hasAnchor()).toBe(false);
+
+    secondBirth.resolve(birth());
+    await secondAdmission;
+    await vi.waitFor(() => expect(hasAnchor()).toBe(true));
+  });
+
+  it("reconciles a restored settling operation before admitting new work", async () => {
+    const original = await mountService();
+    await original.service.start(params());
+    original.agent.session.append("turn/start", { turn: 1 });
+    original.inbox.claim("next-turn", 1);
+    original.agent.session.append("turn/end", {
+      turn: 1,
+      reason: { kind: "error", error: { code: "RESTORED", message: "restored failure" } },
+    });
+    const seed = structuredClone(original.agent.session.events).filter(
+      (event) => event.type !== "myagents/operation/terminal",
+    );
+    const restored = await mountService(Object.freeze({ capture: () => birth() }), seed);
+    await expect(restored.service.start(params("operation-after-restore")))
+      .resolves.toMatchObject({ state: "accepted" });
+    const terminalIndex = restored.agent.session.events.findIndex(
+      (event) => event.type === "myagents/operation/terminal",
+    );
+    const newAcceptanceIndex = restored.agent.session.events.findIndex(
+      (event) => event.type === "myagents/operation/accepted"
+        && event.data.clientOperationId === "operation-after-restore",
+    );
+    expect(terminalIndex).toBeGreaterThanOrEqual(0);
+    expect(newAcceptanceIndex).toBeGreaterThan(terminalIndex);
+    expect(restored.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "failed", code: "RESTORED" },
+    });
+  });
+
+  it("maps a durable DSH error terminal without inventing usage", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("turn/end", {
+      turn: 1,
+      reason: {
+        kind: "error",
+        error: { code: "PROVIDER_DOWN", message: "synthetic provider failure" },
+      },
+    });
+
+    await vi.waitFor(() => expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: {
+        kind: "failed",
+        code: "PROVIDER_DOWN",
+        message: "synthetic provider failure",
+        retryable: false,
+      },
+    }));
+    expect(fixture.service.lookup("operation-1")?.terminal).not.toHaveProperty("usage");
+  });
+
+  it("lets transport cancellation win only before durable operation acceptance", async () => {
+    const capture = Promise.withResolvers<OperationBirthSnapshot>();
+    const fixture = await mountService({ capture: () => capture.promise });
+    const controller = new AbortController();
+    let commits = 0;
+    const admission = fixture.service.start(params(), {
+      signal: controller.signal,
+      commit: () => { commits += 1; },
+    });
+    await Promise.resolve();
+    controller.abort();
+    capture.resolve(birth());
+    await expect(admission).rejects.toMatchObject({ code: "protocol_cancelled" });
+    expect(commits).toBe(0);
+    expect(fixture.agent.session.events).toHaveLength(0);
+
+    const accepted = await mountService();
+    let acceptanceObservedAtCommit = false;
+    await expect(accepted.service.start(params(), {
+      signal: new AbortController().signal,
+      commit: () => {
+        acceptanceObservedAtCommit = accepted.agent.session.events.some(
+          (event) => event.type === "myagents/operation/accepted",
+        );
+      },
+    })).resolves.toMatchObject({ state: "accepted" });
+    expect(acceptanceObservedAtCommit).toBe(true);
   });
 });

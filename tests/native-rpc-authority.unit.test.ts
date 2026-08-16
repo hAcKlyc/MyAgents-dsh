@@ -12,10 +12,15 @@ describe("native RPC engine authority", () => {
     const input = new PassThrough();
     const output = new PassThrough();
     const root = new Context();
+    root.provide("sessions", { flush: () => Promise.resolve(true) } as never);
     root.provide("productSession", {
       bindWorkspace: (workspace: unknown) => workspace,
+      retire: () => Promise.resolve(),
       snapshot: () => Object.freeze({ state: "unbound" as const }),
     } as ProductSessionService);
+    root.provide("sdkOperations", {
+      bindTerminalReservationAuthority: () => undefined,
+    } as never);
     try {
       await expect(root.plugin(NativeRpcServer, {
         compositionAuthority: Object.freeze({}) as NativeRpcLifecycleAuthority,

@@ -21,6 +21,7 @@ import {
   type ProductOperationFold,
   type ProductOperationRecord,
 } from "./fold.js";
+import { deriveOperationTerminal } from "./terminal.js";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -38,6 +39,15 @@ export interface SdkOperationServiceConfig {
   readonly requireAgent: () => Agent;
   readonly retirePrimary: () => Promise<void>;
   readonly clock?: () => number;
+}
+
+export interface OperationAdmissionControl {
+  readonly signal: AbortSignal;
+  readonly commit: () => void;
+}
+
+export interface OperationTerminalReservationAuthority {
+  readonly reserve: (clientOperationId: string) => void;
 }
 
 export interface SdkOperationSnapshot {
@@ -206,7 +216,9 @@ export class SdkOperationService extends Service {
   private correlationDrainValue: Promise<void> = Promise.resolve();
   private failureValue: ProtocolError | undefined;
   private primaryAgentValue: Agent | undefined;
+  private readonly pendingRequestContextSeqs = new Set<number>();
   private serialValue: Promise<void> = Promise.resolve();
+  private terminalReservationAuthorityValue: OperationTerminalReservationAuthority | undefined;
 
   constructor(ctx: Context, config: SdkOperationServiceConfig) {
     super(ctx, "sdkOperations");
@@ -230,7 +242,7 @@ export class SdkOperationService extends Service {
           const fold = foldProductOperationsForLiveClaim(agent.session.events, {
             messageId: message.id,
             dshTurn: turn,
-          });
+          }, agent.id);
           const operation = findProductOperation(fold, source.clientOperationId);
           const ownedMessage = operation?.messages.find(({ messageId }) => messageId === message.id);
           if (operation === undefined || ownedMessage?.clientMessageId !== source.clientMessageId
@@ -263,6 +275,7 @@ export class SdkOperationService extends Service {
             messageId: message.id,
             dshTurn: turn,
           });
+          this.queueCorrelationFlush(agent);
         } catch (error) {
           this.fence(error);
           throw error;
@@ -284,7 +297,7 @@ export class SdkOperationService extends Service {
           }
           const fold = foldProductOperationsForLiveDiscard(agent.session.events, {
             messageId: message.id,
-          });
+          }, agent.id);
           const operation = findProductOperation(fold, source.clientOperationId);
           const ownedMessage = operation?.messages.find(({ messageId }) => messageId === message.id);
           if (operation === undefined || ownedMessage?.clientMessageId !== source.clientMessageId
@@ -304,6 +317,17 @@ export class SdkOperationService extends Service {
           throw error;
         }
       });
+      const stopStatus = ctx.on("agent/status", ({ agent, status }) => {
+        if (status === "idle" && this.isPrimaryAgent(agent)) this.queueTerminalEvaluation(agent);
+      });
+      const stopSessionEvent = ctx.on("session/event", (session, event) => {
+        if (!this.primaryAgentForSession(session)) return;
+        const agent = this.primaryAgentValue;
+        if (agent === undefined) return;
+        if (event.type === "assistant/message" && event.data.usage !== undefined) {
+          this.queueRequestContextCapture(agent, event);
+        } else if (event.type === "turn/end") this.queueTerminalEvaluation(agent);
+      });
       yield async () => {
         this.acceptingValue = false;
         const failures: unknown[] = [];
@@ -317,6 +341,16 @@ export class SdkOperationService extends Service {
         } catch (error) {
           if (!failures.includes(error)) failures.push(error);
         } finally {
+          try {
+            stopSessionEvent();
+          } catch (error) {
+            failures.push(error);
+          }
+          try {
+            stopStatus();
+          } catch (error) {
+            failures.push(error);
+          }
           try {
             stopDiscarded();
           } catch (error) {
@@ -346,8 +380,32 @@ export class SdkOperationService extends Service {
     });
   }
 
+  bindTerminalReservationAuthority(authority: unknown): void {
+    this.assertOpen();
+    if (this.terminalReservationAuthorityValue !== undefined
+      || authority === null || typeof authority !== "object" || utilTypes.isProxy(authority)) {
+      throw new Error("product-operation terminal reservation authority must bind exactly once");
+    }
+    const reserve = Object.getOwnPropertyDescriptor(authority, "reserve");
+    if (Reflect.ownKeys(authority).length !== 1 || reserve === undefined
+      || !reserve.enumerable || !("value" in reserve) || typeof reserve.value !== "function") {
+      throw new TypeError("product-operation terminal reservation authority must expose one own data function");
+    }
+    const receiver = authority;
+    const reserveValue = reserve.value as (clientOperationId: string) => void;
+    this.terminalReservationAuthorityValue = Object.freeze({
+      reserve: (clientOperationId: string) => Reflect.apply(reserveValue, receiver, [clientOperationId]),
+    });
+  }
+
+  reconcile(): Promise<void> {
+    this.assertOpen();
+    return this.serialize(() => this.reconcileAgent(this.primaryAgent()));
+  }
+
   lookup(clientOperationId: string): ProductOperationRecord | undefined {
     this.assertOpen();
+    this.assertHealthy();
     if (typeof clientOperationId !== "string" || clientOperationId.length === 0
       || clientOperationId.length > 256) {
       throw new ProtocolError("turn_operation_invalid", "client operation identity is invalid");
@@ -355,10 +413,13 @@ export class SdkOperationService extends Service {
     return findProductOperation(this.foldValue(this.primaryAgent()), clientOperationId);
   }
 
-  start(value: unknown): Promise<MethodResult<"turn/start">> {
+  start(
+    value: unknown,
+    control?: OperationAdmissionControl,
+  ): Promise<MethodResult<"turn/start">> {
     this.assertOpen();
     const params = validateMethodParams("turn/start", value);
-    return this.serialize(() => this.startValue(params));
+    return this.serialize(() => this.startValue(params, control));
   }
 
   private serialize<T>(task: () => Promise<T>): Promise<T> {
@@ -367,13 +428,19 @@ export class SdkOperationService extends Service {
     return result;
   }
 
-  private async startValue(params: MethodParams<"turn/start">): Promise<MethodResult<"turn/start">> {
+  private async startValue(
+    params: MethodParams<"turn/start">,
+    control?: OperationAdmissionControl,
+  ): Promise<MethodResult<"turn/start">> {
     this.assertOpen();
     this.assertHealthy();
+    this.assertAdmissionNotCancelled(control);
     const agent = this.primaryAgent();
+    await this.reconcileAgent(agent);
     const fold = this.foldValue(agent);
     const existing = findProductOperation(fold, params.clientOperationId);
     if (existing !== undefined) {
+      if (existing.state !== "terminal") this.reserveTerminal(existing.clientOperationId);
       if (operationFingerprint(params, existing.birth) !== existing.fingerprint) {
         throw new ProtocolError(
           "turn_idempotency_conflict",
@@ -381,6 +448,8 @@ export class SdkOperationService extends Service {
         );
       }
       if (existing.state === "accepted_undelivered") {
+        this.assertAdmissionNotCancelled(control);
+        control?.commit();
         await this.recoverUndelivered(agent, params, existing);
         const recovered = findProductOperation(this.foldValue(agent), params.clientOperationId);
         if (recovered === undefined || recovered.state === "accepted_undelivered") {
@@ -388,11 +457,14 @@ export class SdkOperationService extends Service {
         }
         return knownResult(recovered);
       }
+      this.assertAdmissionNotCancelled(control);
+      control?.commit();
       return knownResult(existing);
     }
 
     const captured = await this.configValue.birthAuthority.capture(params);
     this.assertOpen();
+    this.assertAdmissionNotCancelled(control);
     if (agent !== this.configValue.requireAgent()) {
       throw new ProtocolError("primary_session_replaced", "primary Session changed during operation admission");
     }
@@ -414,6 +486,7 @@ export class SdkOperationService extends Service {
       throw new TypeError("operation clock must return a valid non-negative epoch millisecond");
     }
 
+    this.reserveTerminal(params.clientOperationId);
     try {
       agent.session.append("myagents/operation/accepted", {
         clientOperationId: params.clientOperationId,
@@ -424,6 +497,7 @@ export class SdkOperationService extends Service {
         birth,
         acceptedAt,
       });
+      control?.commit();
       agent.followup(rootMessage(params, rootMessageId));
       await this.flush(agent);
       this.assertOpen();
@@ -431,6 +505,12 @@ export class SdkOperationService extends Service {
       throw this.fence(error);
     }
     return Object.freeze({ state: "accepted", clientOperationId: params.clientOperationId });
+  }
+
+  private assertAdmissionNotCancelled(control: OperationAdmissionControl | undefined): void {
+    if (control?.signal.aborted === true) {
+      throw new ProtocolError("protocol_cancelled", "turn/start was cancelled before durable admission", true);
+    }
   }
 
   private async recoverUndelivered(
@@ -464,6 +544,138 @@ export class SdkOperationService extends Service {
     return this.primaryAgentValue;
   }
 
+  private isPrimaryAgent(agent: Agent): boolean {
+    if (this.primaryAgentValue !== undefined) return this.primaryAgentValue === agent;
+    try {
+      this.primaryAgentValue = this.configValue.requireAgent();
+    } catch {
+      return false;
+    }
+    return this.primaryAgentValue === agent;
+  }
+
+  private primaryAgentForSession(session: Agent["session"]): boolean {
+    if (this.primaryAgentValue === undefined) {
+      try {
+        this.primaryAgentValue = this.configValue.requireAgent();
+      } catch {
+        return false;
+      }
+    }
+    return this.primaryAgentValue.session === session;
+  }
+
+  private captureRequestContext(
+    agent: Agent,
+    event: Extract<Agent["session"]["events"][number], { type: "assistant/message" }>,
+  ): void {
+    try {
+      this.assertHealthy();
+      const operation = this.foldValue(agent).operations.find(
+        ({ dshTurns }) => dshTurns.includes(event.data.turn),
+      );
+      const contextEvent = agent.session.events.findLast((candidate) =>
+        candidate.seq < event.seq && candidate.type === "request/context");
+      const context = contextEvent?.type === "request/context" ? contextEvent.data : undefined;
+      const contextWindow = context?.contextWindow;
+      const source = event.data.message.source;
+      if (operation === undefined
+        || context?.provider !== source.provider
+        || context.model !== source.model
+        || typeof contextWindow !== "number"
+        || !Number.isSafeInteger(contextWindow)
+        || contextWindow < 1) {
+        throw new Error("assistant usage lacks exact DSH request-context authority");
+      }
+      agent.session.append("myagents/operation/request-context", {
+        clientOperationId: operation.clientOperationId,
+        dshTurn: event.data.turn,
+        dshStep: event.data.step,
+        assistantEventSeq: event.seq,
+        provider: source.provider,
+        model: source.model,
+        contextWindow,
+      });
+      this.queueCorrelationFlush(agent);
+    } catch (error) {
+      this.fence(error);
+      throw error;
+    }
+  }
+
+  private queueRequestContextCapture(
+    agent: Agent,
+    event: Extract<Agent["session"]["events"][number], { type: "assistant/message" }>,
+  ): void {
+    if (!this.acceptingValue || this.failureValue !== undefined) return;
+    const capture = this.serialize(() => {
+      try {
+        this.captureRequestContext(agent, event);
+      } finally {
+        this.pendingRequestContextSeqs.delete(event.seq);
+      }
+      return Promise.resolve();
+    });
+    this.pendingRequestContextSeqs.add(event.seq);
+    void capture.catch((error: unknown) => {
+      this.fence(error);
+    });
+  }
+
+  private queueTerminalEvaluation(agent: Agent): void {
+    if (!this.acceptingValue || this.failureValue !== undefined) return;
+    const evaluation = this.serialize(() => this.reconcileAgent(agent));
+    void evaluation.catch((error: unknown) => {
+      this.fence(error);
+    });
+  }
+
+  private async reconcileAgent(agent: Agent): Promise<void> {
+    try {
+      await this.settleEligibleOperations(agent);
+    } catch (error) {
+      throw this.fence(error);
+    }
+  }
+
+  private async settleEligibleOperations(agent: Agent): Promise<void> {
+    let fold = this.foldValue(agent);
+    for (const operation of fold.operations) {
+      if (operation.state !== "terminal") this.reserveTerminal(operation.clientOperationId);
+    }
+    if (!fold.operations.some((operation) =>
+      operation.state === "settling" && operation.terminal === undefined
+        && (operation.dshTurns.length > 0
+          || operation.messages.every(({ state }) => state === "cancelled")))) return;
+    await agent.whenIdle();
+    if (!this.acceptingValue || agent.status !== "idle") return;
+    this.assertHealthy();
+    if (agent !== this.configValue.requireAgent()) {
+      throw new Error("primary Session changed before product-operation terminal settlement");
+    }
+    fold = this.foldValue(agent);
+    if (this.pendingRequestContextSeqs.size > 0) return;
+    for (const operation of fold.operations) {
+      if (operation.state !== "settling" || operation.terminal !== undefined
+        || (operation.dshTurns.length === 0
+          && operation.messages.some(({ state }) => state !== "cancelled"))) continue;
+      const derived = deriveOperationTerminal(agent.id, agent.session.events, operation);
+      const terminalAt = this.configValue.clock();
+      if (!Number.isSafeInteger(terminalAt) || terminalAt < 0
+        || terminalAt > 8_640_000_000_000_000) {
+        throw new TypeError("operation terminal clock must return a valid non-negative epoch millisecond");
+      }
+      agent.session.append("myagents/operation/terminal", {
+        clientOperationId: operation.clientOperationId,
+        productTurnId: operation.productTurnId,
+        terminal: derived.terminal,
+        ...(derived.finalDshTurn === undefined ? {} : { finalDshTurn: derived.finalDshTurn }),
+        terminalAt,
+      });
+      await this.flush(agent);
+    }
+  }
+
   private async preparePrimaryRetirement(agent: Agent): Promise<void> {
     this.acceptingValue = false;
     if (this.primaryAgentValue !== undefined && this.primaryAgentValue !== agent) {
@@ -488,7 +700,11 @@ export class SdkOperationService extends Service {
           throw this.fence(new Error("quiescent primary retirement lost one pending operation message"));
         }
         const updated = findProductOperation(
-          foldProductOperationsForLiveDiscard(agent.session.events, { messageId: message.messageId }),
+          foldProductOperationsForLiveDiscard(
+            agent.session.events,
+            { messageId: message.messageId },
+            agent.id,
+          ),
           operation.clientOperationId,
         )?.messages.find(({ messageId }) => messageId === message.messageId);
         if (updated?.state !== "cancelled") {
@@ -516,7 +732,7 @@ export class SdkOperationService extends Service {
 
   private foldValue(agent: Agent): ProductOperationFold {
     try {
-      return foldProductOperations(agent.session.events);
+      return foldProductOperations(agent.session.events, agent.id);
     } catch (error) {
       throw this.fence(error);
     }
@@ -524,6 +740,18 @@ export class SdkOperationService extends Service {
 
   private assertHealthy(): void {
     if (this.failureValue !== undefined) throw this.failureValue;
+  }
+
+  private reserveTerminal(clientOperationId: string): void {
+    const authority = this.terminalReservationAuthorityValue;
+    if (authority === undefined) {
+      throw new ProtocolError(
+        "terminal_delivery_unavailable",
+        "turn admission requires a bound terminal-delivery reservation authority",
+        true,
+      );
+    }
+    authority.reserve(clientOperationId);
   }
 
   private assertOpen(): void {

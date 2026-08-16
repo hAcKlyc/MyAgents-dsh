@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
-import { setImmediate as yieldImmediate } from "node:timers/promises";
+import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers/promises";
 
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
@@ -15,9 +15,10 @@ import {
   REFERENCE_PROTOCOL_LIMITS,
   type InitializeParams,
   type MethodParams,
+  type RuntimeEventEnvelope,
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
-import { NativeRpcServer } from "@myagents-dsh/rpc-server";
+import { NativeRpcServer, RuntimeEventProjector } from "@myagents-dsh/rpc-server";
 import { startNativeRpcLifecycle } from "@myagents-dsh/runtime-server";
 import {
   claimNativeRpcLifecycleAuthority,
@@ -108,7 +109,11 @@ adapter.enqueue({
   text: ["first ", "completion"],
   usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3 },
 });
-adapter.enqueue({ kind: "complete", text: "second completion" });
+adapter.enqueue({
+  kind: "complete",
+  text: "second completion",
+  usage: { inputTokens: 4, outputTokens: 1 },
+});
 adapter.enqueue({ kind: "error", message: "synthetic provider failure" });
 adapter.enqueue({ kind: "await-abort" });
 
@@ -154,10 +159,12 @@ assert.equal(composition.context.agents.roots().length, 0);
 const bareInput = new PassThrough();
 const bareOutput = new PassThrough();
 const bareContext = new Context();
+bareContext.provide("sessions", { flush: () => Promise.resolve(true) } as never);
 bareContext.provide("productSession", {
   bindWorkspace: (workspace: unknown) => workspace,
   snapshot: () => Object.freeze({ state: "unbound" as const }),
 } as ProductSessionService);
+bareContext.provide("sdkOperations", {} as never);
 await assert.rejects(Promise.resolve(bareContext.plugin(NativeRpcServer, {
   compositionAuthority: Object.freeze({}) as NativeRpcLifecycleAuthority,
   input: bareInput,
@@ -190,6 +197,7 @@ const hostPeer = new JsonRpcPeer({
   limits: REFERENCE_PROTOCOL_LIMITS,
   onFatalError: (error) => hostFatalErrors.push(error),
 });
+const projectedRuntimeEvents: RuntimeEventEnvelope[] = [];
 const runtimeLifecycle = await startNativeRpcLifecycle(composition, {
   input: runtimeInput,
   output: runtimeOutput,
@@ -372,6 +380,37 @@ assert.equal(
   "function",
   "patched Agent.wakePending seam must be installed",
 );
+const projectionInput = new PassThrough();
+const projectionOutput = new PassThrough();
+const projectionFailures: Error[] = [];
+const projectionRuntimePeer = new JsonRpcPeer({
+  input: projectionInput,
+  output: projectionOutput,
+  role: "runtime",
+  limits: REFERENCE_PROTOCOL_LIMITS,
+  onFatalError: (error) => projectionFailures.push(error),
+});
+const projectionHostPeer = new JsonRpcPeer({
+  input: projectionOutput,
+  output: projectionInput,
+  role: "host",
+  limits: REFERENCE_PROTOCOL_LIMITS,
+  onFatalError: (error) => projectionFailures.push(error),
+});
+projectionHostPeer.registerNotificationHandler("runtime/event", (event) => {
+  projectedRuntimeEvents.push(event);
+});
+const workstreamProjector = new RuntimeEventProjector({
+  context: composition.context,
+  peer: projectionRuntimePeer,
+  productSession: composition.context.productSession,
+  runtimeGeneration: "artifact-a5-workstream-generation",
+  productSessionId: () => "artifact-product-session",
+  onFailure: (error) => projectionFailures.push(error),
+});
+composition.context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({
+  reserve: (clientOperationId: string) => workstreamProjector.reserve(clientOperationId),
+}));
 let durableOperationEvents: readonly SessionEvent[] = [];
 composition.context.on("session/flush", (session) => {
   durableOperationEvents = structuredClone(session.events);
@@ -387,15 +426,32 @@ const turnStartParams = {
   limits: { maxTurns: 4, maxCostUsd: 1, maxDurationMs: 60_000 },
   origin: { kind: "headless", scenario: "artifact-operation" },
 } satisfies MethodParams<"turn/start">;
-assert.deepEqual(await composition.context.sdkOperations.start(turnStartParams), {
+const firstAdmission = composition.context.sdkOperations.start(turnStartParams);
+assert.deepEqual(await Promise.race([
+  firstAdmission,
+  delay(5_000).then(() => {
+    throw new Error(`turn/start stalled: ${JSON.stringify({
+      agentStatus: primaryAgent.status,
+      eventTypes: primaryAgent.session.events.map(({ type }) => type),
+      exitRequest: nativeRpc.exitRequest,
+      hostFatalErrors: hostFatalErrors.map(({ message }) => message),
+      phase: nativeRpc.phase,
+    })}`);
+  }),
+]), {
   state: "accepted",
   clientOperationId: "artifact-operation-1",
 });
 await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-operation-1")?.state === "terminal",
+  "first durable operation terminal",
+);
 await composition.context.sessions.flush(primaryAgent.session);
 const operationSnapshot = composition.context.sdkOperations.lookup("artifact-operation-1");
 assert.ok(operationSnapshot);
-assert.equal(operationSnapshot.state, "settling");
+assert.equal(operationSnapshot.state, "terminal");
+assert.equal(operationSnapshot.terminal?.kind, "succeeded");
 assert.deepEqual(operationSnapshot.dshTurns, [1]);
 assert.equal(operationSnapshot.messages[0]?.state, "claimed");
 assert.ok(durableOperationEvents.some((event) => event.type === "myagents/operation/accepted"));
@@ -406,6 +462,24 @@ assert.deepEqual(await composition.context.sdkOperations.start(structuredClone(t
     turnId: operationSnapshot.productTurnId,
     admittedAt: new Date(operationSnapshot.acceptedAt).toISOString(),
   },
+  terminal: operationSnapshot.terminal,
+});
+const queriedOperation = composition.context.sdkOperations.lookup("artifact-operation-1");
+assert.ok(queriedOperation);
+assert.deepEqual({
+  clientOperationId: queriedOperation.clientOperationId,
+  admission: {
+    turnId: queriedOperation.productTurnId,
+    admittedAt: new Date(queriedOperation.acceptedAt).toISOString(),
+  },
+  ...(queriedOperation.terminal === undefined ? {} : { terminal: queriedOperation.terminal }),
+}, {
+  clientOperationId: "artifact-operation-1",
+  admission: {
+    turnId: operationSnapshot.productTurnId,
+    admittedAt: new Date(operationSnapshot.acceptedAt).toISOString(),
+  },
+  terminal: operationSnapshot.terminal,
 });
 await composition.context.sdkOperations.start({
   ...turnStartParams,
@@ -414,6 +488,14 @@ await composition.context.sdkOperations.start({
   input: { parts: [{ kind: "text", text: "second prompt" }] },
 });
 await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-operation-2")?.state === "terminal",
+  `second durable operation terminal (${JSON.stringify({
+    eventTypes: primaryAgent.session.events.map(({ type }) => type),
+    hostFatalErrors: hostFatalErrors.map(({ message }) => message),
+    phase: nativeRpc.phase,
+  })})`,
+);
 
 assert.deepEqual(primaryAgent.session.deriveMessages().map(({ role, content }) => ({ role, content })), [
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
@@ -443,10 +525,15 @@ await composition.context.sdkOperations.start({
   input: { parts: [{ kind: "text", text: "fail this turn" }] },
 });
 await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-operation-3")?.state === "terminal",
+  "failed durable operation terminal",
+);
 assert.equal(primaryAgent.status, "idle");
 const failedTurn = primaryAgent.session.events.findLast(({ type }) => type === "turn/end");
 assert.ok(failedTurn?.type === "turn/end");
 assert.equal(failedTurn.data.reason.kind, "error");
+assert.equal(composition.context.sdkOperations.lookup("artifact-operation-3")?.terminal?.kind, "failed");
 
 await composition.context.sdkOperations.start({
   ...turnStartParams,
@@ -457,9 +544,44 @@ await composition.context.sdkOperations.start({
 await waitUntil(() => adapter.activeStreamCount === 1, "fake adapter stream admission");
 primaryAgent.cancel({ kind: "user" });
 await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-operation-4")?.state === "terminal",
+  "cancelled durable operation terminal",
+);
 assert.equal(primaryAgent.status, "idle");
 assert.equal(adapter.activeStreamCount, 0);
 assert.ok(primaryAgent.session.events.some(({ type }) => type === "turn/end"));
+assert.deepEqual(composition.context.sdkOperations.lookup("artifact-operation-4")?.terminal, {
+  kind: "aborted",
+  reason: "user",
+});
+await waitUntil(
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 4,
+  "four projected Runtime terminals",
+);
+assert.deepEqual(
+  projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
+    .map(({ event }) => event.kind === "turn_terminal" ? event.terminal.kind : "missing"),
+  ["succeeded", "succeeded", "failed", "aborted"],
+);
+const firstUsage = projectedRuntimeEvents.find(({ event }) => event.kind === "usage");
+assert.ok(firstUsage?.event.kind === "usage");
+assert.deepEqual(firstUsage.event.usage, {
+  inputTokens: 7,
+  outputTokens: 2,
+  cacheReadTokens: 3,
+  cacheWriteTokens: 0,
+  totalTokens: 12,
+  costUsd: null,
+});
+assert.equal(firstUsage.event.contextOccupiedTokens, null);
+assert.equal(firstUsage.event.runtimeContextWindow, 8_192);
+await workstreamProjector.close();
+assert.deepEqual(projectionFailures, []);
+projectionRuntimePeer.close();
+projectionHostPeer.close();
+projectionInput.destroy();
+projectionOutput.destroy();
 
 const snapshot = composition.snapshot();
 assert.equal(snapshot.liveRootAgents, 1);
@@ -511,7 +633,9 @@ process.stdout.write(`${JSON.stringify({
   nativeRpcShutdown: rpcShutdown.kind,
   nativeRpcStopped: stopped.disposed,
   operationCorrelationVerified: true,
+  runtimeEventProjectionVerified: true,
   nativeRpcFrames: observedRuntimeFrames,
+  workstreamRuntimeEvents: projectedRuntimeEvents,
   patchedWakePending: true,
   publicationGuardsVerified: true,
   publicationTransientVerified: primaryPublicationSnapshotVerified,

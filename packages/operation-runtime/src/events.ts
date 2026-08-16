@@ -4,6 +4,7 @@ export const PRODUCT_OPERATION_EVENT_TYPES = Object.freeze([
   "myagents/operation/accepted",
   "myagents/operation/message",
   "myagents/operation/claimed",
+  "myagents/operation/request-context",
   "myagents/operation/terminal",
   "myagents/operation/recovery-wake",
 ] as const);
@@ -61,6 +62,16 @@ export interface ProductOperationClaim {
   readonly dshTurn: number;
 }
 
+export interface ProductOperationRequestContext {
+  readonly clientOperationId: string;
+  readonly dshTurn: number;
+  readonly dshStep: number;
+  readonly assistantEventSeq: number;
+  readonly provider: string;
+  readonly model: string;
+  readonly contextWindow: number;
+}
+
 export interface ProductOperationTerminal {
   readonly clientOperationId: string;
   readonly productTurnId: string;
@@ -89,6 +100,7 @@ declare module "@deepseek-ai/dsh-session/types" {
     "myagents/operation/accepted": ProductOperationAccepted;
     "myagents/operation/message": ProductOperationMessage;
     "myagents/operation/claimed": ProductOperationClaim;
+    "myagents/operation/request-context": ProductOperationRequestContext;
     "myagents/operation/terminal": ProductOperationTerminal;
     "myagents/operation/recovery-wake": ProductOperationRecoveryWake;
   }

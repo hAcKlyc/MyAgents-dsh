@@ -5,8 +5,9 @@
     "outDir": "../../dist/packages/rpc-server",
     "tsBuildInfoFile": "../../dist/packages/rpc-server/.tsbuildinfo"
   },
-  "files": ["src/index.ts", "src/native-rpc-service.ts"],
+  "files": ["src/event-projector.ts", "src/index.ts", "src/native-rpc-service.ts"],
   "references": [
+    { "path": "../operation-runtime" },
     { "path": "../protocol" },
     { "path": "../product-profile" },
     { "path": "../runtime-product" }
