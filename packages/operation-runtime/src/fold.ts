@@ -1,0 +1,709 @@
+import type { SessionEvent } from "@deepseek-ai/dsh-session";
+import { validateTurnTerminal, type TurnTerminal } from "@myagents-dsh/protocol";
+import { types as utilTypes } from "node:util";
+
+import {
+  type MyAgentsOperationMessageSource,
+  type OperationBirthSnapshot,
+  type ProductOperationAccepted,
+  type ProductOperationClaim,
+  type ProductOperationMessage,
+  type ProductOperationRecoveryWake,
+  type ProductOperationTerminal,
+} from "./events.js";
+import { validateOperationLimits } from "./limits.js";
+
+export type ProductOperationState =
+  | "accepted_undelivered"
+  | "accepted"
+  | "active"
+  | "settling"
+  | "terminal";
+
+export interface ProductOperationMessageRecord {
+  readonly messageId: string;
+  readonly clientMessageId: string;
+  readonly kind: "root" | "steer" | "follow_up";
+  readonly state: "queued" | "claimed" | "cancelled";
+  readonly delivered: boolean;
+  readonly dshTurn?: number;
+}
+
+export interface ProductOperationRecord {
+  readonly clientOperationId: string;
+  readonly fingerprint: string;
+  readonly productTurnId: string;
+  readonly birth: OperationBirthSnapshot;
+  readonly acceptedAt: number;
+  readonly messages: readonly ProductOperationMessageRecord[];
+  readonly dshTurns: readonly number[];
+  readonly state: ProductOperationState;
+  readonly terminal?: TurnTerminal;
+}
+
+export interface ProductOperationFold {
+  readonly operations: readonly ProductOperationRecord[];
+}
+
+export interface LiveOperationClaimCandidate {
+  readonly messageId: string;
+  readonly dshTurn: number;
+}
+
+export interface LiveOperationDiscardCandidate {
+  readonly messageId: string;
+}
+
+type InboxTarget = "next-step" | "next-turn";
+
+type PendingInboxMessage = {
+  readonly id: string;
+  readonly source: MyAgentsOperationMessageSource | undefined;
+};
+
+type RemovedClaimCandidate = PendingInboxMessage & {
+  readonly dshTurn: number;
+};
+
+type MutableMessage = {
+  messageId: string;
+  clientMessageId: string;
+  kind: "root" | "steer" | "follow_up";
+  state: "queued" | "claimed" | "cancelled";
+  delivered: boolean;
+  dshTurn?: number;
+};
+
+type MutableOperation = {
+  accepted: ProductOperationAccepted;
+  messages: MutableMessage[];
+  dshTurns: number[];
+  closedTurns: Set<number>;
+  terminal?: TurnTerminal;
+  terminalSeen: boolean;
+  wakeAttempts: Map<string, { completed: boolean; messageId: string }>;
+};
+
+export class ProductOperationFoldError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ProductOperationFoldError";
+  }
+}
+
+const fail = (message: string): never => {
+  throw new ProductOperationFoldError(message);
+};
+
+const exactOwnDataObject = (
+  value: unknown,
+  required: readonly string[],
+  optional: readonly string[],
+  description: string,
+): Record<string, unknown> => {
+  if (utilTypes.isProxy(value)) {
+    return fail(`${description} must not be a Proxy`);
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
+    return fail(`${description} must be a plain object`);
+  }
+  const object = value as Record<string, unknown>;
+  const allowed = new Set([...required, ...optional]);
+  for (const key of Reflect.ownKeys(object)) {
+    const descriptor = typeof key === "string" ? Object.getOwnPropertyDescriptor(object, key) : undefined;
+    if (typeof key !== "string" || !allowed.has(key) || descriptor === undefined
+      || !descriptor.enumerable || !("value" in descriptor)) {
+      return fail(`${description} contains unsupported or non-data fields`);
+    }
+  }
+  for (const key of required) {
+    if (!Object.hasOwn(object, key)) return fail(`${description} is missing ${key}`);
+  }
+  return object;
+};
+
+const boundedIdentifier = (value: unknown, description: string): string => {
+  if (typeof value !== "string" || value.length === 0 || value.length > 256) {
+    return fail(`${description} must be a bounded identifier`);
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return fail(`${description} contains control characters`);
+  }
+  return value;
+};
+
+const sha256 = (value: unknown, description: string): string => {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/u.test(value)) {
+    return fail(`${description} must be a lowercase SHA-256 digest`);
+  }
+  return value;
+};
+
+const nonNegativeTimestamp = (value: unknown, description: string): number => {
+  if (!Number.isSafeInteger(value) || (value as number) < 0
+    || (value as number) > 8_640_000_000_000_000) {
+    return fail(`${description} must be a valid non-negative epoch millisecond`);
+  }
+  return value as number;
+};
+
+const positiveTurn = (value: unknown, description: string): number => {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    return fail(`${description} must be a positive safe integer`);
+  }
+  return value as number;
+};
+
+export const validateOperationBirthSnapshot = (value: unknown): OperationBirthSnapshot => {
+  const birth = exactOwnDataObject(value, [
+    "configRevision",
+    "modelProfileRevision",
+    "componentRevision",
+    "componentDigest",
+    "toolCatalogRevision",
+    "toolCatalogDigest",
+    "executionEnvironmentRevision",
+    "executionEnvironmentDigest",
+    "permissionRevision",
+    "interactionScenarioRevision",
+    "planRevision",
+    "originRevision",
+    "limits",
+  ], [], "operation birth snapshot");
+  return Object.freeze({
+    configRevision: boundedIdentifier(birth.configRevision, "operation config revision"),
+    modelProfileRevision: boundedIdentifier(birth.modelProfileRevision, "operation model profile revision"),
+    componentRevision: boundedIdentifier(birth.componentRevision, "operation component revision"),
+    componentDigest: sha256(birth.componentDigest, "operation component digest"),
+    toolCatalogRevision: boundedIdentifier(birth.toolCatalogRevision, "operation tool catalog revision"),
+    toolCatalogDigest: sha256(birth.toolCatalogDigest, "operation tool catalog digest"),
+    executionEnvironmentRevision: boundedIdentifier(
+      birth.executionEnvironmentRevision,
+      "operation execution-environment revision",
+    ),
+    executionEnvironmentDigest: sha256(
+      birth.executionEnvironmentDigest,
+      "operation execution-environment digest",
+    ),
+    permissionRevision: boundedIdentifier(birth.permissionRevision, "operation permission revision"),
+    interactionScenarioRevision: boundedIdentifier(
+      birth.interactionScenarioRevision,
+      "operation interaction-scenario revision",
+    ),
+    planRevision: boundedIdentifier(birth.planRevision, "operation plan revision"),
+    originRevision: boundedIdentifier(birth.originRevision, "operation origin revision"),
+    limits: validateOperationLimits(birth.limits),
+  });
+};
+
+const validateAccepted = (value: unknown): ProductOperationAccepted => {
+  const event = exactOwnDataObject(value, [
+    "clientOperationId",
+    "clientUserMessageId",
+    "fingerprint",
+    "productTurnId",
+    "rootMessageId",
+    "birth",
+    "acceptedAt",
+  ], [], "operation acceptance");
+  return Object.freeze({
+    clientOperationId: boundedIdentifier(event.clientOperationId, "client operation identity"),
+    clientUserMessageId: boundedIdentifier(event.clientUserMessageId, "client user-message identity"),
+    fingerprint: sha256(event.fingerprint, "operation fingerprint"),
+    productTurnId: boundedIdentifier(event.productTurnId, "product turn identity"),
+    rootMessageId: boundedIdentifier(event.rootMessageId, "root message identity"),
+    birth: validateOperationBirthSnapshot(event.birth),
+    acceptedAt: nonNegativeTimestamp(event.acceptedAt, "operation acceptance time"),
+  });
+};
+
+const validateMessage = (value: unknown): ProductOperationMessage => {
+  const event = exactOwnDataObject(value, [
+    "clientOperationId", "messageId", "kind", "clientMessageId", "state",
+  ], [], "operation message event");
+  if (event.kind !== "root" && event.kind !== "steer" && event.kind !== "follow_up") {
+    return fail("operation message kind is invalid");
+  }
+  if (event.state !== "queued" && event.state !== "cancelled") {
+    return fail("operation message state is invalid");
+  }
+  return Object.freeze({
+    clientOperationId: boundedIdentifier(event.clientOperationId, "operation message owner"),
+    messageId: boundedIdentifier(event.messageId, "operation message identity"),
+    kind: event.kind,
+    clientMessageId: boundedIdentifier(event.clientMessageId, "client message identity"),
+    state: event.state,
+  });
+};
+
+const validateClaim = (value: unknown): ProductOperationClaim => {
+  const event = exactOwnDataObject(
+    value,
+    ["clientOperationId", "messageId", "dshTurn"],
+    [],
+    "operation claim",
+  );
+  return Object.freeze({
+    clientOperationId: boundedIdentifier(event.clientOperationId, "operation claim owner"),
+    messageId: boundedIdentifier(event.messageId, "claimed message identity"),
+    dshTurn: positiveTurn(event.dshTurn, "claimed DSH turn"),
+  });
+};
+
+const validateTerminal = (value: unknown): ProductOperationTerminal => {
+  const event = exactOwnDataObject(
+    value,
+    ["clientOperationId", "productTurnId", "terminal", "terminalAt"],
+    ["finalDshTurn"],
+    "operation terminal",
+  );
+  return Object.freeze({
+    clientOperationId: boundedIdentifier(event.clientOperationId, "operation terminal owner"),
+    productTurnId: boundedIdentifier(event.productTurnId, "terminal product turn identity"),
+    terminal: validateTurnTerminal(event.terminal),
+    ...(Object.hasOwn(event, "finalDshTurn")
+      ? { finalDshTurn: positiveTurn(event.finalDshTurn, "terminal final DSH turn") }
+      : {}),
+    terminalAt: nonNegativeTimestamp(event.terminalAt, "operation terminal time"),
+  });
+};
+
+const validateRecoveryWake = (value: unknown): ProductOperationRecoveryWake => {
+  const event = exactOwnDataObject(
+    value,
+    ["clientOperationId", "messageId", "attemptId", "phase", "recordedAt"],
+    [],
+    "operation recovery wake",
+  );
+  if (event.phase !== "intent" && event.phase !== "completed") {
+    return fail("operation recovery-wake phase is invalid");
+  }
+  return Object.freeze({
+    clientOperationId: boundedIdentifier(event.clientOperationId, "operation wake owner"),
+    messageId: boundedIdentifier(event.messageId, "operation wake message"),
+    attemptId: boundedIdentifier(event.attemptId, "operation wake attempt"),
+    phase: event.phase,
+    recordedAt: nonNegativeTimestamp(event.recordedAt, "operation wake time"),
+  });
+};
+
+export const readOperationMessageSource = (
+  value: unknown,
+): MyAgentsOperationMessageSource | undefined => {
+  if (value !== null && typeof value === "object" && utilTypes.isProxy(value)) {
+    return fail("operation message source must not be a Proxy");
+  }
+  if (value === null || typeof value !== "object") {
+    return fail("operation message source must be an object");
+  }
+  const kind = Object.getOwnPropertyDescriptor(value, "kind");
+  if (kind === undefined || !("value" in kind) || kind.value !== "myagents-operation") return undefined;
+  const source = exactOwnDataObject(
+    value,
+    ["kind", "clientOperationId", "clientMessageId", "delivery"],
+    [],
+    "operation message source",
+  );
+  if (source.kind !== "myagents-operation"
+    || (source.delivery !== "root" && source.delivery !== "steer" && source.delivery !== "follow_up")) {
+    return fail("operation message source has an invalid discriminator");
+  }
+  return Object.freeze({
+    kind: "myagents-operation",
+    clientOperationId: boundedIdentifier(source.clientOperationId, "message-source operation identity"),
+    clientMessageId: boundedIdentifier(source.clientMessageId, "message-source client identity"),
+    delivery: source.delivery,
+  });
+};
+
+const readPendingInboxMessage = (value: unknown): PendingInboxMessage => {
+  if (utilTypes.isProxy(value)) return fail("DSH inbox message must not be a Proxy");
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return fail("DSH inbox message must be an object");
+  }
+  const id = Object.getOwnPropertyDescriptor(value, "id");
+  const source = Object.getOwnPropertyDescriptor(value, "source");
+  if (id === undefined || !("value" in id) || source === undefined || !("value" in source)) {
+    return fail("DSH inbox message identity and source must be own data properties");
+  }
+  return {
+    id: boundedIdentifier(id.value, "DSH inbox message identity"),
+    source: readOperationMessageSource(source.value),
+  };
+};
+
+const operationFor = (
+  operations: Map<string, MutableOperation>,
+  operationId: string,
+  description: string,
+): MutableOperation => operations.get(operationId) ?? fail(`${description} references an unknown operation`);
+
+const messageFor = (
+  operation: MutableOperation,
+  messageId: string,
+  description: string,
+): MutableMessage => operation.messages.find((message) => message.messageId === messageId)
+  ?? fail(`${description} references an unknown owned message`);
+
+const terminalState = (operation: MutableOperation): ProductOperationState => {
+  if (operation.terminal !== undefined) return "terminal";
+  const root = operation.messages[0];
+  if (root?.delivered !== true) return "accepted_undelivered";
+  const noPendingMessages = operation.messages.every((message) => message.state !== "queued");
+  const allTurnsClosed = operation.dshTurns.every((turn) => operation.closedTurns.has(turn));
+  if (noPendingMessages && allTurnsClosed) return "settling";
+  return operation.dshTurns.length === 0 ? "accepted" : "active";
+};
+
+const foldProductOperationsValue = (
+  events: readonly SessionEvent[],
+  liveClaim: LiveOperationClaimCandidate | undefined,
+  liveDiscard: LiveOperationDiscardCandidate | undefined,
+): ProductOperationFold => {
+  const operations = new Map<string, MutableOperation>();
+  const messageOwners = new Map<string, string>();
+  const dshTurnOwners = new Map<number, string>();
+  const turns = new Map<number, { open: boolean }>();
+  const inbox: Record<InboxTarget, PendingInboxMessage[]> = {
+    "next-step": [],
+    "next-turn": [],
+  };
+  const removedClaimCandidates = new Map<string, RemovedClaimCandidate>();
+  const removedDiscardCandidates = new Map<string, PendingInboxMessage>();
+  let openTurn: number | undefined;
+  let lastTurn = 0;
+
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    if (event === undefined) return fail("operation fold encountered a sparse event sequence");
+    if (event.seq !== index) return fail("operation fold requires contiguous Session sequence numbers");
+    const runtimeType: string = event.type;
+
+    switch (event.type) {
+      case "myagents/operation/accepted": {
+        const accepted = validateAccepted(event.data);
+        if (operations.has(accepted.clientOperationId)) return fail("operation acceptance identity duplicated");
+        if (messageOwners.has(accepted.rootMessageId)) return fail("root message identity is already owned");
+        const root: MutableMessage = {
+          messageId: accepted.rootMessageId,
+          clientMessageId: accepted.clientUserMessageId,
+          kind: "root",
+          state: "queued",
+          delivered: false,
+        };
+        operations.set(accepted.clientOperationId, {
+          accepted,
+          messages: [root],
+          dshTurns: [],
+          closedTurns: new Set(),
+          terminalSeen: false,
+          wakeAttempts: new Map(),
+        });
+        messageOwners.set(accepted.rootMessageId, accepted.clientOperationId);
+        break;
+      }
+      case "myagents/operation/message": {
+        const messageEvent = validateMessage(event.data);
+        const operation = operationFor(operations, messageEvent.clientOperationId, "operation message event");
+        if (operation.terminalSeen) return fail("operation message follows its terminal");
+        const existing = operation.messages.find(({ messageId }) => messageId === messageEvent.messageId);
+        if (messageEvent.state === "queued") {
+          if (messageEvent.kind === "root" || existing !== undefined
+            || messageOwners.has(messageEvent.messageId)) {
+            return fail("queued operation message duplicates root or another message identity");
+          }
+          operation.messages.push({
+            messageId: messageEvent.messageId,
+            clientMessageId: messageEvent.clientMessageId,
+            kind: messageEvent.kind,
+            state: "queued",
+            delivered: false,
+          });
+          messageOwners.set(messageEvent.messageId, messageEvent.clientOperationId);
+        } else {
+          if (existing?.state !== "queued"
+            || existing.kind !== messageEvent.kind
+            || existing.clientMessageId !== messageEvent.clientMessageId) {
+            return fail("operation cancellation does not match one pending owned message");
+          }
+          const discarded = removedDiscardCandidates.get(messageEvent.messageId);
+          if (discarded?.source?.clientOperationId !== messageEvent.clientOperationId
+            || discarded.source.clientMessageId !== messageEvent.clientMessageId) {
+            return fail("operation cancellation lacks its exact durable Inbox discard");
+          }
+          existing.state = "cancelled";
+          removedDiscardCandidates.delete(messageEvent.messageId);
+        }
+        break;
+      }
+      case "myagents/operation/claimed": {
+        const claim = validateClaim(event.data);
+        const operation = operationFor(operations, claim.clientOperationId, "operation claim");
+        if (operation.terminalSeen) return fail("operation claim follows its terminal");
+        const message = messageFor(operation, claim.messageId, "operation claim");
+        if (!message.delivered || message.state !== "queued") {
+          return fail("operation claim does not match one delivered pending message");
+        }
+        const turn = turns.get(claim.dshTurn);
+        if (turn?.open !== true || openTurn !== claim.dshTurn) {
+          return fail("operation claim does not match one open DSH turn boundary");
+        }
+        const removed = removedClaimCandidates.get(claim.messageId);
+        if (removed?.dshTurn !== claim.dshTurn
+          || removed.source?.clientOperationId !== claim.clientOperationId
+          || removed.source.clientMessageId !== message.clientMessageId) {
+          return fail("operation claim lacks its exact durable Inbox pure-delete");
+        }
+        const turnOwner = dshTurnOwners.get(claim.dshTurn);
+        if (turnOwner !== undefined && turnOwner !== claim.clientOperationId) {
+          return fail("one DSH turn is assigned across product operations");
+        }
+        const priorTurn = operation.dshTurns.at(-1);
+        if (priorTurn !== undefined && claim.dshTurn < priorTurn) {
+          return fail("operation DSH turns are not monotonic");
+        }
+        if (turnOwner === undefined) {
+          operation.dshTurns.push(claim.dshTurn);
+          dshTurnOwners.set(claim.dshTurn, claim.clientOperationId);
+        }
+        message.state = "claimed";
+        message.dshTurn = claim.dshTurn;
+        removedClaimCandidates.delete(claim.messageId);
+        break;
+      }
+      case "myagents/operation/terminal": {
+        const terminal = validateTerminal(event.data);
+        const operation = operationFor(operations, terminal.clientOperationId, "operation terminal");
+        if (operation.terminalSeen) return fail("operation terminal is duplicated");
+        if (terminal.productTurnId !== operation.accepted.productTurnId) {
+          return fail("operation terminal changed the product turn identity");
+        }
+        if (operation.messages.some((message) => message.state === "queued")) {
+          return fail("operation terminal precedes queued-message settlement");
+        }
+        if (operation.dshTurns.some((turn) => !operation.closedTurns.has(turn))) {
+          return fail("operation terminal precedes owned DSH turn closure");
+        }
+        const finalTurn = operation.dshTurns.at(-1);
+        if (terminal.finalDshTurn !== finalTurn) {
+          return fail("operation terminal final DSH turn differs from its owned turn fold");
+        }
+        operation.terminal = terminal.terminal;
+        operation.terminalSeen = true;
+        break;
+      }
+      case "myagents/operation/recovery-wake": {
+        const wake = validateRecoveryWake(event.data);
+        const operation = operationFor(operations, wake.clientOperationId, "operation recovery wake");
+        if (operation.terminalSeen) return fail("operation recovery wake follows its terminal");
+        const message = messageFor(operation, wake.messageId, "operation recovery wake");
+        const attempt = operation.wakeAttempts.get(wake.attemptId);
+        if (wake.phase === "intent") {
+          const remainsPending = [...inbox["next-step"], ...inbox["next-turn"]]
+            .some(({ id }) => id === wake.messageId);
+          if (!message.delivered || message.state !== "queued" || !remainsPending) {
+            return fail("operation recovery-wake intent does not target a delivered pending message");
+          }
+          if (attempt !== undefined) return fail("operation recovery-wake attempt identity duplicated");
+          operation.wakeAttempts.set(wake.attemptId, { completed: false, messageId: wake.messageId });
+        } else {
+          if (attempt === undefined || attempt.completed || attempt.messageId !== wake.messageId) {
+            return fail("operation recovery-wake completion has no matching intent");
+          }
+          if (!message.delivered || message.state === "cancelled") {
+            return fail("operation recovery-wake completion targets cancelled or undelivered work");
+          }
+          attempt.completed = true;
+        }
+        break;
+      }
+      case "agent/inbox/spliced": {
+        const splice = exactOwnDataObject(
+          event.data,
+          ["target", "start", "inserted"],
+          ["removedCount", "outcome"],
+          "DSH inbox splice",
+        );
+        if (splice.target !== "next-step" && splice.target !== "next-turn") {
+          return fail("DSH inbox splice target is invalid");
+        }
+        if (!Number.isSafeInteger(splice.start) || (splice.start as number) < 0) {
+          return fail("DSH inbox splice start is invalid");
+        }
+        const removedCount = Object.hasOwn(splice, "removedCount") ? splice.removedCount : 0;
+        if (!Number.isSafeInteger(removedCount) || (removedCount as number) < 0) {
+          return fail("DSH inbox splice removal count is invalid");
+        }
+        if (Object.hasOwn(splice, "outcome") && splice.outcome !== "canceled") {
+          return fail("DSH inbox splice outcome is invalid");
+        }
+        if (!Array.isArray(splice.inserted)) return fail("DSH inbox insertion must be an array");
+        const target = inbox[splice.target];
+        const start = splice.start as number;
+        const remove = removedCount as number;
+        if (start > target.length || start + remove > target.length) {
+          return fail("DSH inbox splice exceeds the projected queue");
+        }
+        const insertedMessages = splice.inserted.map((insertedValue) =>
+          readPendingInboxMessage(insertedValue));
+        const removedMessages = new Set(target.slice(start, start + remove));
+        const remainingIds = new Set([
+          ...inbox["next-step"],
+          ...inbox["next-turn"],
+        ].filter((pending) => !removedMessages.has(pending)).map(({ id }) => id));
+        for (const inserted of insertedMessages) {
+          if (remainingIds.has(inserted.id)) return fail("DSH inbox splice duplicates a pending message identity");
+          remainingIds.add(inserted.id);
+        }
+        const removed = target.splice(start, remove, ...insertedMessages);
+        if (splice.outcome === undefined && removed.length > 0) {
+          if (openTurn === undefined) return fail("DSH Inbox pure-delete occurred outside an open turn");
+          for (const pending of removed) {
+            if (removedClaimCandidates.has(pending.id)) {
+              return fail("DSH Inbox message has more than one unowned pure-delete");
+            }
+            removedClaimCandidates.set(pending.id, { ...pending, dshTurn: openTurn });
+          }
+        } else if (splice.outcome === "canceled") {
+          for (const pending of removed) {
+            if (removedDiscardCandidates.has(pending.id)) {
+              return fail("DSH Inbox message has more than one unowned discard");
+            }
+            removedDiscardCandidates.set(pending.id, pending);
+          }
+        }
+        for (const inserted of insertedMessages) {
+          const source = inserted.source;
+          if (source === undefined) continue;
+          const ownerId = messageOwners.get(inserted.id);
+          if (ownerId !== source.clientOperationId) {
+            return fail("operation-sourced Inbox message differs from durable ownership");
+          }
+          const operation = operationFor(operations, ownerId, "operation Inbox insertion");
+          if (operation.terminalSeen) return fail("operation Inbox insertion follows its terminal");
+          const message = messageFor(operation, inserted.id, "operation Inbox insertion");
+          const expectedDelivery = message.kind === "follow_up" ? "follow_up" : message.kind;
+          if (message.delivered || message.clientMessageId !== source.clientMessageId
+            || expectedDelivery !== source.delivery) {
+            return fail("operation Inbox insertion changed or duplicated message provenance");
+          }
+          message.delivered = true;
+        }
+        break;
+      }
+      case "turn/start": {
+        const turnStart = exactOwnDataObject(event.data, ["turn"], [], "DSH turn start");
+        const turn = positiveTurn(turnStart.turn, "opened DSH turn");
+        if (openTurn !== undefined || turn <= lastTurn || turns.has(turn)) {
+          return fail("DSH turn start is duplicated, overlapping, or non-monotonic");
+        }
+        turns.set(turn, { open: true });
+        openTurn = turn;
+        lastTurn = turn;
+        break;
+      }
+      case "turn/end": {
+        const turnEnd = exactOwnDataObject(event.data, ["turn", "reason"], [], "DSH turn end");
+        const turn = positiveTurn(turnEnd.turn, "closed DSH turn");
+        const boundary = turns.get(turn);
+        if (boundary?.open !== true || openTurn !== turn) {
+          return fail("DSH turn end does not close the one open turn boundary");
+        }
+        if ([...removedClaimCandidates.values()].some((candidate) => candidate.dshTurn === turn)) {
+          return fail("DSH turn closed before every Inbox claim gained durable operation ownership");
+        }
+        boundary.open = false;
+        openTurn = undefined;
+        const owner = dshTurnOwners.get(turn);
+        if (owner !== undefined) {
+          const operation = operationFor(operations, owner, "DSH turn end");
+          if (operation.closedTurns.has(turn)) return fail("owned DSH turn closed more than once");
+          operation.closedTurns.add(turn);
+        }
+        break;
+      }
+      default:
+        if (runtimeType.startsWith("myagents/operation/")) {
+          return fail(`operation fold has no implementation for required event ${runtimeType}`);
+        }
+    }
+  }
+
+  if (removedClaimCandidates.size > 0) {
+    if (liveClaim === undefined) {
+      return fail("DSH Inbox claim lacks durable product-operation ownership");
+    }
+    const candidate = removedClaimCandidates.get(liveClaim.messageId);
+    if (candidate?.dshTurn !== liveClaim.dshTurn
+      || [...removedClaimCandidates.values()].some(({ dshTurn }) => dshTurn !== liveClaim.dshTurn)) {
+      return fail("DSH Inbox claim differs from the live claim boundary");
+    }
+  }
+
+  if (removedDiscardCandidates.size > 0) {
+    if (liveDiscard === undefined || !removedDiscardCandidates.has(liveDiscard.messageId)) {
+      return fail("DSH Inbox discard lacks durable product-operation cancellation");
+    }
+  }
+
+  const pendingIds = new Set([...inbox["next-step"], ...inbox["next-turn"]].map(({ id }) => id));
+  for (const operation of operations.values()) {
+    for (const message of operation.messages) {
+      if (message.delivered && message.state === "queued" && !pendingIds.has(message.messageId)
+        && !removedClaimCandidates.has(message.messageId)
+        && !removedDiscardCandidates.has(message.messageId)) {
+        return fail("queued operation message is absent from the durable Inbox projection");
+      }
+      if (message.state !== "queued" && pendingIds.has(message.messageId)) {
+        return fail("settled operation message remains in the durable Inbox projection");
+      }
+    }
+  }
+
+  const folded = [...operations.values()].map((operation): ProductOperationRecord => Object.freeze({
+    clientOperationId: operation.accepted.clientOperationId,
+    fingerprint: operation.accepted.fingerprint,
+    productTurnId: operation.accepted.productTurnId,
+    birth: operation.accepted.birth,
+    acceptedAt: operation.accepted.acceptedAt,
+    messages: Object.freeze(operation.messages.map((message) => Object.freeze({
+      messageId: message.messageId,
+      clientMessageId: message.clientMessageId,
+      kind: message.kind,
+      state: message.state,
+      delivered: message.delivered,
+      ...(message.dshTurn === undefined ? {} : { dshTurn: message.dshTurn }),
+    }))),
+    dshTurns: Object.freeze([...operation.dshTurns]),
+    state: terminalState(operation),
+    ...(operation.terminal === undefined ? {} : { terminal: operation.terminal }),
+  }));
+  return Object.freeze({ operations: Object.freeze(folded) });
+};
+
+export const foldProductOperations = (events: readonly SessionEvent[]): ProductOperationFold =>
+  foldProductOperationsValue(events, undefined, undefined);
+
+export const foldProductOperationsForLiveClaim = (
+  events: readonly SessionEvent[],
+  candidate: LiveOperationClaimCandidate,
+): ProductOperationFold => foldProductOperationsValue(events, Object.freeze({
+  messageId: boundedIdentifier(candidate.messageId, "live claim message identity"),
+  dshTurn: positiveTurn(candidate.dshTurn, "live claim DSH turn"),
+}), undefined);
+
+export const foldProductOperationsForLiveDiscard = (
+  events: readonly SessionEvent[],
+  candidate: LiveOperationDiscardCandidate,
+): ProductOperationFold => foldProductOperationsValue(events, undefined, Object.freeze({
+  messageId: boundedIdentifier(candidate.messageId, "live discard message identity"),
+}));
+
+export const findProductOperation = (
+  fold: ProductOperationFold,
+  clientOperationId: string,
+): ProductOperationRecord | undefined => fold.operations.find(
+  (operation) => operation.clientOperationId === clientOperationId,
+);

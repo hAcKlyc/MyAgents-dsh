@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/protocol" },
     { "path": "./packages/compatibility" },
+    { "path": "./packages/operation-runtime" },
     { "path": "./packages/product-profile" },
     { "path": "./packages/rpc-server" },
     { "path": "./packages/runtime-product" },

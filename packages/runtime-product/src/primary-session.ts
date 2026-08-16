@@ -72,6 +72,8 @@ export interface ProductSessionSnapshot extends PrimarySessionAdmissionSnapshot 
   readonly liveRootAgents: number;
 }
 
+export type PrimarySessionRetirementGuard = (agent: Agent) => Promise<void>;
+
 export interface PrimarySessionBinding {
   readonly state: "ready" | "recovery_required";
   readonly mode: PrimarySessionMode;
@@ -100,6 +102,10 @@ type AdmissionRecord = {
 type JsonObject = Record<string, unknown>;
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
+
+const retirementError = (reason: unknown, description: string): Error => reason instanceof Error
+  ? reason
+  : new Error(description, { cause: reason });
 
 const exactOwnDataObject = (
   value: unknown,
@@ -493,8 +499,8 @@ export class PrimarySessionAdmission {
     return this.#handle.agent;
   }
 
-  retire(): Promise<void> {
-    this.#retirePromise ??= this.#retire();
+  retire(beforeDispose?: PrimarySessionRetirementGuard): Promise<void> {
+    this.#retirePromise ??= this.#retire(beforeDispose);
     return this.#retirePromise;
   }
 
@@ -587,7 +593,7 @@ export class PrimarySessionAdmission {
     return promise;
   }
 
-  async #retire(): Promise<void> {
+  async #retire(beforeDispose: PrimarySessionRetirementGuard | undefined): Promise<void> {
     this.#retiring = true;
     this.#state = "closing";
     this.#controller?.abort(new ProtocolError("primary_session_retired", "primary Session owner is disposing"));
@@ -596,9 +602,52 @@ export class PrimarySessionAdmission {
     } catch {
       // The failed admission remains the fenced identity; retirement still drains its owned result.
     }
-    await this.#handle?.dispose();
-    this.#handle = undefined;
-    this.#state = "retired";
+    const handle = this.#handle;
+    let settlementError: Error | undefined;
+    try {
+      if (handle !== undefined && beforeDispose !== undefined) {
+        handle.agent.cancel({ kind: "disposed" }, { keepInbox: true });
+        let guardPromise: Promise<void>;
+        try {
+          guardPromise = beforeDispose(handle.agent);
+        } catch (error) {
+          guardPromise = Promise.reject(retirementError(error, "primary Session retirement guard failed"));
+        }
+        let idlePromise: Promise<void>;
+        try {
+          idlePromise = handle.agent.whenIdle();
+        } catch (error) {
+          idlePromise = Promise.reject(retirementError(error, "primary Session idle wait failed"));
+        }
+        const failures = (await Promise.allSettled([idlePromise, guardPromise]))
+          .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+          .map(({ reason }) => retirementError(reason, "primary Session settlement failed"));
+        const [failure] = failures;
+        if (failures.length === 1 && failure !== undefined) throw failure;
+        if (failures.length > 1) {
+          throw new AggregateError(failures, "primary Session settlement failed during retirement");
+        }
+      }
+    } catch (error) {
+      settlementError = retirementError(error, "primary Session settlement failed during retirement");
+    }
+    let disposalError: Error | undefined;
+    try {
+      await handle?.dispose();
+    } catch (error) {
+      disposalError = retirementError(error, "primary Session handle disposal failed");
+    } finally {
+      this.#handle = undefined;
+      this.#state = "retired";
+    }
+    if (settlementError !== undefined && disposalError !== undefined) {
+      throw new AggregateError(
+        [settlementError, disposalError],
+        "primary Session settlement and handle disposal failed during retirement",
+      );
+    }
+    if (settlementError !== undefined) throw settlementError;
+    if (disposalError !== undefined) throw disposalError;
   }
 }
 
@@ -657,6 +706,7 @@ export class ProductSessionService extends Service {
   private readonly publicationFenceValue: PrimaryRootPublicationFence;
   private workspaceValue: PrimarySessionWorkspace | undefined;
   private admissionValue: PrimarySessionAdmission | undefined;
+  private retirementGuardValue: PrimarySessionRetirementGuard | undefined;
 
   constructor(ctx: Context, config: ProductSessionServiceConfig = {}) {
     super(ctx, "productSession");
@@ -710,7 +760,14 @@ export class ProductSessionService extends Service {
     return this.admissionValue.requireAgent();
   }
 
+  registerRetirementGuard(guard: PrimarySessionRetirementGuard): void {
+    if (typeof guard !== "function" || this.retirementGuardValue !== undefined) {
+      throw new Error("primary Session accepts exactly one operation-retirement guard");
+    }
+    this.retirementGuardValue = guard;
+  }
+
   retire(): Promise<void> {
-    return this.admissionValue?.retire() ?? Promise.resolve();
+    return this.admissionValue?.retire(this.retirementGuardValue) ?? Promise.resolve();
   }
 }

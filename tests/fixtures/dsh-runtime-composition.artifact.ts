@@ -4,8 +4,7 @@ import { setImmediate as yieldImmediate } from "node:timers/promises";
 
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import { createUserMessage } from "@deepseek-ai/dsh-llm";
-import { Session, SessionId } from "@deepseek-ai/dsh-session";
+import { Session, SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_CANDIDATE_PROFILE_SHA256,
@@ -27,11 +26,6 @@ import {
   type ProductSessionService,
 } from "@myagents-dsh/runtime-product";
 import { ScriptedFakeLlmAdapter } from "@myagents-dsh/testkit";
-
-const userMessage = (text: string) => createUserMessage({
-  content: [{ type: "text", text }],
-  source: { kind: "plugin", plugin: "myagents-dsh-artifact-fixture" },
-});
 
 const waitUntil = async (predicate: () => boolean, description: string): Promise<void> => {
   for (let attempt = 0; attempt < 1_000; attempt += 1) {
@@ -118,8 +112,26 @@ adapter.enqueue({ kind: "complete", text: "second completion" });
 adapter.enqueue({ kind: "error", message: "synthetic provider failure" });
 adapter.enqueue({ kind: "await-abort" });
 
+const rpcDigest = "a".repeat(64);
 const composition = await composeDshRootServices({
   adapter,
+  operationBirthAuthority: Object.freeze({
+    capture: (value: MethodParams<"turn/start">) => Object.freeze({
+      configRevision: value.configRevision,
+      modelProfileRevision: "artifact-provider-v1",
+      componentRevision: "artifact-component-v1",
+      componentDigest: "b".repeat(64),
+      toolCatalogRevision: "artifact-tools-v1",
+      toolCatalogDigest: "c".repeat(64),
+      executionEnvironmentRevision: value.executionEnvironmentRevision,
+      executionEnvironmentDigest: value.executionEnvironmentDigest,
+      permissionRevision: "artifact-permission-v1",
+      interactionScenarioRevision: "artifact-interaction-v1",
+      planRevision: "artifact-plan-v1",
+      originRevision: "artifact-origin-v1",
+      limits: value.limits,
+    }),
+  }),
   providers: ["fixture"],
   systemPrompt: { persona: "Composition-owned persona, not the desired Session revision." },
   tools: { mode: "native" },
@@ -186,7 +198,6 @@ const runtimeLifecycle = await startNativeRpcLifecycle(composition, {
 });
 const nativeRpc: NativeRpcServer = runtimeLifecycle.nativeRpc;
 const hostClient = new GeneratedHostClient(hostPeer);
-const rpcDigest = "a".repeat(64);
 const initializeRequest: InitializeParams = {
   protocol: { minVersion: PROTOCOL_VERSION, maxVersion: PROTOCOL_VERSION },
   host: {
@@ -361,9 +372,47 @@ assert.equal(
   "function",
   "patched Agent.wakePending seam must be installed",
 );
-primaryAgent.followup(userMessage("first prompt"));
+let durableOperationEvents: readonly SessionEvent[] = [];
+composition.context.on("session/flush", (session) => {
+  durableOperationEvents = structuredClone(session.events);
+});
+const turnStartParams = {
+  clientOperationId: "artifact-operation-1",
+  clientUserMessageId: "artifact-user-message-1",
+  input: { parts: [{ kind: "text", text: "first prompt" }] },
+  configRevision: "artifact-config-v1",
+  extensionDigest: rpcDigest,
+  executionEnvironmentRevision: "environment-v1",
+  executionEnvironmentDigest: rpcDigest,
+  limits: { maxTurns: 4, maxCostUsd: 1, maxDurationMs: 60_000 },
+  origin: { kind: "headless", scenario: "artifact-operation" },
+} satisfies MethodParams<"turn/start">;
+assert.deepEqual(await composition.context.sdkOperations.start(turnStartParams), {
+  state: "accepted",
+  clientOperationId: "artifact-operation-1",
+});
 await primaryAgent.whenIdle();
-primaryAgent.followup(userMessage("second prompt"));
+await composition.context.sessions.flush(primaryAgent.session);
+const operationSnapshot = composition.context.sdkOperations.lookup("artifact-operation-1");
+assert.ok(operationSnapshot);
+assert.equal(operationSnapshot.state, "settling");
+assert.deepEqual(operationSnapshot.dshTurns, [1]);
+assert.equal(operationSnapshot.messages[0]?.state, "claimed");
+assert.ok(durableOperationEvents.some((event) => event.type === "myagents/operation/accepted"));
+assert.ok(durableOperationEvents.some((event) => event.type === "myagents/operation/claimed"));
+assert.deepEqual(await composition.context.sdkOperations.start(structuredClone(turnStartParams)), {
+  state: "already_known",
+  admission: {
+    turnId: operationSnapshot.productTurnId,
+    admittedAt: new Date(operationSnapshot.acceptedAt).toISOString(),
+  },
+});
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-operation-2",
+  clientUserMessageId: "artifact-user-message-2",
+  input: { parts: [{ kind: "text", text: "second prompt" }] },
+});
 await primaryAgent.whenIdle();
 
 assert.deepEqual(primaryAgent.session.deriveMessages().map(({ role, content }) => ({ role, content })), [
@@ -387,14 +436,24 @@ assert.deepEqual(
   { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3 },
 );
 
-primaryAgent.followup(userMessage("fail this turn"));
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-operation-3",
+  clientUserMessageId: "artifact-user-message-3",
+  input: { parts: [{ kind: "text", text: "fail this turn" }] },
+});
 await primaryAgent.whenIdle();
 assert.equal(primaryAgent.status, "idle");
 const failedTurn = primaryAgent.session.events.findLast(({ type }) => type === "turn/end");
 assert.ok(failedTurn?.type === "turn/end");
 assert.equal(failedTurn.data.reason.kind, "error");
 
-primaryAgent.followup(userMessage("cancel this turn"));
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-operation-4",
+  clientUserMessageId: "artifact-user-message-4",
+  input: { parts: [{ kind: "text", text: "cancel this turn" }] },
+});
 await waitUntil(() => adapter.activeStreamCount === 1, "fake adapter stream admission");
 primaryAgent.cancel({ kind: "user" });
 await primaryAgent.whenIdle();
@@ -451,6 +510,7 @@ process.stdout.write(`${JSON.stringify({
   nativeRpcSchemaSha256: rpcInitialization.schemaSha256,
   nativeRpcShutdown: rpcShutdown.kind,
   nativeRpcStopped: stopped.disposed,
+  operationCorrelationVerified: true,
   nativeRpcFrames: observedRuntimeFrames,
   patchedWakePending: true,
   publicationGuardsVerified: true,

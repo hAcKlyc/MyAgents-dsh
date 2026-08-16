@@ -30,6 +30,7 @@ const workspacePackagePaths = [
 
 const candidatePackagePaths = [
   "apps/runtime-server",
+  "packages/operation-runtime",
   "packages/product-profile",
   "packages/protocol",
   "packages/rpc-server",

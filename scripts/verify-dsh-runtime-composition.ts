@@ -204,6 +204,11 @@ const cleanBuildRuntimeComposition = (
   const sourcePaths = [
     "apps/runtime-server/src/index.ts",
     "apps/runtime-server/src/lifecycle.ts",
+    "packages/operation-runtime/src/events.ts",
+    "packages/operation-runtime/src/fold.ts",
+    "packages/operation-runtime/src/index.ts",
+    "packages/operation-runtime/src/limits.ts",
+    "packages/operation-runtime/src/service.ts",
     "packages/product-profile/src/candidate-runtime-profile-authority.ts",
     "packages/product-profile/src/candidate-runtime-profile.ts",
     "packages/product-profile/src/index.ts",
@@ -333,6 +338,12 @@ const main = (): void => {
     );
     stageExactWorkspaceDependency(consumerRoot, "packages/protocol", "typebox");
     stageBuiltPackage(consumerRoot, buildRoot, "packages/protocol", "@myagents-dsh/protocol");
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/operation-runtime",
+      "@myagents-dsh/operation-runtime",
+    );
     stageBuiltPackage(consumerRoot, buildRoot, "packages/rpc-server", "@myagents-dsh/rpc-server");
     stageBuiltPackage(
       consumerRoot,
@@ -369,6 +380,7 @@ const main = (): void => {
       || evidence.nativeRpcSchemaSha256 !== protocolMetaJson.schemaSha256
       || evidence.nativeRpcShutdown !== "shutdown"
       || evidence.nativeRpcStopped !== true
+      || evidence.operationCorrelationVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify(["success", "failure", "cancel"])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
     }

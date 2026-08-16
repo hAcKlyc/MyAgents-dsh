@@ -23,25 +23,7 @@ import {
   type PersistenceBackend,
   type StoredPrefix,
 } from "@deepseek-ai/dsh-session-persistence";
-
-declare module "@deepseek-ai/dsh-session" {
-  interface SessionEventMap {
-    "myagents/operation/accepted": {
-      acceptedAt: number;
-      birth: {
-        componentDigest: string;
-        componentRevision: string;
-        configRevision: string;
-        modelProfileRevision: string;
-      };
-      clientOperationId: string;
-      clientUserMessageId: string;
-      fingerprint: string;
-      productTurnId: string;
-      rootMessageId: string;
-    };
-  }
-}
+import { PRODUCT_OPERATION_EVENT_TYPES } from "@myagents-dsh/operation-runtime";
 
 export type OperationSpikeEvent =
   | {
@@ -634,11 +616,7 @@ export function commitPreparedAssistant(
 }
 
 export const PRODUCT_REQUIRED_EVENT_TYPES = Object.freeze([
-  "myagents/operation/accepted",
-  "myagents/operation/message",
-  "myagents/operation/claimed",
-  "myagents/operation/terminal",
-  "myagents/operation/recovery-wake",
+  ...PRODUCT_OPERATION_EVENT_TYPES,
   "myagents/task/created",
   "myagents/task/updated",
 ] as const);

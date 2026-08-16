@@ -6,12 +6,14 @@ import {
   ProtocolLimitsSchema,
   RPC_METHODS,
   RPC_NOTIFICATIONS,
+  TurnTerminalSchema,
   type MethodParams,
   type MethodResult,
   type NotificationParams,
   type ProtocolLimits,
   type RpcMethodName,
   type RpcNotificationName,
+  type TurnTerminal,
 } from "./contract-source.js";
 import { ProtocolError } from "./errors.js";
 
@@ -141,6 +143,18 @@ export const validateProtocolLimits = (value: unknown): ProtocolLimits => {
   if (!Value.Check(ProtocolLimitsSchema, canonical)) {
     const first = Value.Errors(ProtocolLimitsSchema, canonical)[0];
     throw new ProtocolError("protocol_invalid_limits", first?.message ?? "Invalid protocol limits");
+  }
+  return canonical;
+};
+
+export const validateTurnTerminal = (value: unknown): TurnTerminal => {
+  const canonical = canonicalJsonSnapshot(value, "protocol_invalid_terminal");
+  if (!Value.Check(TurnTerminalSchema, canonical)) {
+    const first = Value.Errors(TurnTerminalSchema, canonical)[0];
+    throw new ProtocolError(
+      "protocol_invalid_terminal",
+      first?.message ?? "Invalid product-operation terminal",
+    );
   }
   return canonical;
 };

@@ -12,6 +12,7 @@ const workspacePackages = new Map([
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
   ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
   ["packages/compatibility", "@myagents-dsh/compatibility"],
+  ["packages/operation-runtime", "@myagents-dsh/operation-runtime"],
   ["packages/product-profile", "@myagents-dsh/product-profile"],
   ["packages/protocol", "@myagents-dsh/protocol"],
   ["packages/rpc-server", "@myagents-dsh/rpc-server"],
@@ -66,6 +67,13 @@ const expectedWorkspaceFiles = new Map([
     "src/compatibility-call-shapes.compile.ts",
     "src/index.ts",
     "src/manifest.ts",
+  ]],
+  ["packages/operation-runtime", [
+    "src/events.ts",
+    "src/fold.ts",
+    "src/index.ts",
+    "src/limits.ts",
+    "src/service.ts",
   ]],
   ["packages/product-profile", [
     "manifests/accepted-patched-dsh-artifact-v1.json",

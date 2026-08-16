@@ -10,6 +10,10 @@ import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-promp
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
 import {
+  SdkOperationService,
+  type OperationBirthAuthority,
+} from "@myagents-dsh/operation-runtime";
+import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_ADAPTER_REGISTRATION_PLUGIN_ID,
   assertAcceptedDshRuntimeGraph,
@@ -25,11 +29,13 @@ export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "llm-adapter",
   "agent-loop",
   "product-session",
+  "sdk-operation",
 ] as const);
 
 export interface DshRootCompositionOptions {
   readonly adapter: LlmAdapter;
   readonly agentLoop?: Readonly<Pick<AgentLoopConfig, "maxParallelToolCalls">>;
+  readonly operationBirthAuthority?: OperationBirthAuthority;
   readonly providers: readonly string[];
   readonly systemPrompt?: Readonly<SystemPromptConfig>;
   readonly tools?: Readonly<ToolRuntimeConfig>;
@@ -83,6 +89,7 @@ const optionalPositiveInteger = (value: unknown, description: string): number | 
 interface NormalizedDshRootCompositionOptions {
   readonly adapter: LlmAdapter;
   readonly agentLoop: Readonly<Pick<AgentLoopConfig, "maxParallelToolCalls">>;
+  readonly operationBirthAuthority: OperationBirthAuthority;
   readonly providers: readonly string[];
   readonly systemPrompt: Readonly<SystemPromptConfig>;
   readonly tools: Readonly<ToolRuntimeConfig>;
@@ -107,7 +114,7 @@ export const validateDshRootCompositionOptions = (
 ): NormalizedDshRootCompositionOptions => {
   const options = exactOwnDataKeys(
     value,
-    ["adapter", "agentLoop", "providers", "systemPrompt", "tools"],
+    ["adapter", "agentLoop", "operationBirthAuthority", "providers", "systemPrompt", "tools"],
     "DSH root composition options",
   );
   if (!(options.adapter instanceof LlmAdapter)) {
@@ -133,9 +140,31 @@ export const validateDshRootCompositionOptions = (
   const tools = options.tools === undefined
     ? {}
     : exactOwnDataKeys(options.tools, ["maxParallelSubCalls", "mode"], "DSH ToolRuntime options");
+  const operationBirthAuthority = options.operationBirthAuthority === undefined
+    ? Object.freeze({
+        capture: () => {
+          throw new Error(
+            "operation birth capture remains unavailable until the effective component owners are installed",
+          );
+        },
+      })
+    : exactOwnDataKeys(
+        options.operationBirthAuthority,
+        ["capture"],
+        "operation birth authority",
+      );
+  if (typeof operationBirthAuthority.capture !== "function") {
+    throw new TypeError("operation birth authority capture must be a function");
+  }
+  const captureOperationBirth = operationBirthAuthority.capture as OperationBirthAuthority["capture"];
+  const operationBirthReceiver = operationBirthAuthority;
   return Object.freeze({
     adapter: options.adapter,
     agentLoop: Object.freeze(maxParallelToolCalls === undefined ? {} : { maxParallelToolCalls }),
+    operationBirthAuthority: Object.freeze({
+      capture: (params: Parameters<OperationBirthAuthority["capture"]>[0]) =>
+        Reflect.apply(captureOperationBirth, operationBirthReceiver, [params]),
+    }),
     providers: exactProviders(options.providers as readonly string[]),
     systemPrompt: Object.freeze(structuredClone(systemPrompt)),
     tools: Object.freeze(structuredClone(tools)),
@@ -283,7 +312,7 @@ export const composeDshRootServices = async (
 ): Promise<DshRootComposition> => {
   assertAcceptedDshRuntimeGraph();
   const normalized = validateDshRootCompositionOptions(options);
-  const { adapter, agentLoop, providers, systemPrompt, tools } = normalized;
+  const { adapter, agentLoop, operationBirthAuthority, providers, systemPrompt, tools } = normalized;
   const root = new Context();
   try {
     await root.plugin(SessionStore);
@@ -297,6 +326,12 @@ export const composeDshRootServices = async (
       agents: [],
     });
     await root.plugin(ProductSessionService);
+    await root.plugin(SdkOperationService, {
+      birthAuthority: operationBirthAuthority,
+      registerRetirementGuard: (guard) => root.productSession.registerRetirementGuard(guard),
+      requireAgent: () => root.productSession.requireAgent(),
+      retirePrimary: () => root.productSession.retire(),
+    });
     const composition = new DshRootComposition(root, providers);
     composition.snapshot();
     compositionAuthorities.set(root, {

@@ -54,10 +54,14 @@ const resumeParams = (
 
 const fakeHandle = (id: string) => {
   const dispose = vi.fn(() => Promise.resolve());
-  const agent = { id: SessionId(id) } as unknown as Agent;
+  const cancel = vi.fn();
+  const whenIdle = vi.fn(() => Promise.resolve());
+  const agent = { cancel, id: SessionId(id), whenIdle } as unknown as Agent;
   return {
+    cancel,
     dispose,
     handle: { agent, dispose } satisfies AgentHandle,
+    whenIdle,
   };
 };
 
@@ -148,6 +152,47 @@ describe("one-primary-session admission", () => {
     await first;
     expect(create).toHaveBeenCalledOnce();
     await admission.retire();
+  });
+
+  it("starts the Inbox-preserving retirement guard before awaiting idle and handle disposal", async () => {
+    const candidate = fakeHandle("runtime-primary");
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(candidate.handle)),
+      () => Promise.reject(new Error("resume must not run")),
+    ), workspace);
+    await admission.bindCreate(createParams());
+    const guard = vi.fn(() => {
+      expect(candidate.cancel).toHaveBeenCalledWith({ kind: "disposed" }, { keepInbox: true });
+      expect(candidate.whenIdle).not.toHaveBeenCalled();
+      expect(candidate.dispose).not.toHaveBeenCalled();
+      return Promise.resolve();
+    });
+    await admission.retire(guard);
+    expect(guard).toHaveBeenCalledWith(candidate.handle.agent);
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("retires and disposes exactly once when settlement and cancellation flush fail", async () => {
+    const candidate = fakeHandle("runtime-primary");
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(candidate.handle)),
+      () => Promise.reject(new Error("resume must not run")),
+    ), workspace);
+    await admission.bindCreate(createParams());
+    const guardError = new Error("synthetic cancellation flush failure");
+    const guard = vi.fn(() => Promise.reject(guardError));
+    const firstRetirement = admission.retire(guard);
+    const exactRetry = admission.retire(guard);
+
+    expect(exactRetry).toBe(firstRetirement);
+    await expect(firstRetirement).rejects.toBe(guardError);
+    expect(candidate.cancel).toHaveBeenCalledOnce();
+    expect(candidate.whenIdle).toHaveBeenCalledOnce();
+    expect(candidate.dispose).toHaveBeenCalledOnce();
+    expect(admission.snapshot().state).toBe("retired");
+    expect(() => admission.requireAgent()).toThrow("not ready");
+    await expect(admission.retire(guard)).rejects.toBe(guardError);
+    expect(candidate.dispose).toHaveBeenCalledOnce();
   });
 
   it("fences the first failed identity and disposes an invalid ready handle", async () => {

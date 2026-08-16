@@ -48,7 +48,7 @@ describe("official product profile authority", () => {
     });
     expect(BATCH1_CANDIDATE_PROFILE).toMatchObject({
       profileId: "myagents-dsh-batch-1-candidate-v1",
-      stage: "batch-1-w1-a3",
+      stage: "batch-1-w1-a4",
       runtimeActivation: "workstream-evidence-only",
       composition: {
         maxPrimaryRootSessions: 1,
@@ -60,6 +60,7 @@ describe("official product profile authority", () => {
     });
     expect(BATCH1_CANDIDATE_PROFILE.composition.installedPluginAllowlist).toEqual(expect.arrayContaining([
       "@myagents-dsh/runtime-product:ProductSessionService",
+      "@myagents-dsh/operation-runtime:SdkOperationService",
       "@myagents-dsh/rpc-server:NativeRpcServer",
     ]));
     const candidateBytes = await readFile(resolve(

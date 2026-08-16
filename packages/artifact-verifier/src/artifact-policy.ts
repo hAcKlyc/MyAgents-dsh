@@ -41,6 +41,18 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     ],
   },
   {
+    packageName: "@myagents-dsh/operation-runtime",
+    relativeDirectory: "packages/operation-runtime",
+    allowedFiles: [
+      "package.json",
+      "src/events.ts",
+      "src/fold.ts",
+      "src/index.ts",
+      "src/limits.ts",
+      "src/service.ts",
+    ],
+  },
+  {
     packageName: "@myagents-dsh/product-profile",
     relativeDirectory: "packages/product-profile",
     allowedFiles: [
