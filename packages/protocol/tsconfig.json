@@ -6,10 +6,13 @@
     "tsBuildInfoFile": "../../dist/packages/protocol/.tsbuildinfo"
   },
   "files": [
+    "generated/canonical-tools.generated.ts",
     "src/contract-source.ts",
     "src/errors.ts",
     "src/index.ts",
     "src/peer.ts",
+    "src/tool-catalog-schema.ts",
+    "src/tool-catalog.ts",
     "src/validation.ts",
     "generated/host-client.generated.ts"
   ]

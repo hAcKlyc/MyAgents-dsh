@@ -51,6 +51,10 @@ export interface Batch1CandidateProfileManifest {
     contractVersion: typeof PLATFORM_CONTRACT_VERSION;
     targets: typeof PLATFORM_TARGETS;
   }>;
+  readonly tools: Readonly<{
+    contractProfile: "canonical-agent-experience-v1";
+    contractSha256: string;
+  }>;
   readonly composition: Readonly<{
     maxPrimaryRootSessions: 1;
     installedPluginAllowlist: typeof BATCH1_INSTALLED_PLUGIN_ALLOWLIST;
@@ -66,6 +70,7 @@ export interface BuildBatch1CandidateProfileInput {
   readonly availableNotifications: readonly string[];
   readonly artifactVersion: string;
   readonly artifactManifestSha256: string;
+  readonly toolContractSha256: string;
   readonly runtimePackages: Readonly<Record<string, string>>;
   readonly packageAuthorities: Readonly<Record<string, string>>;
 }
@@ -125,6 +130,10 @@ export const buildBatch1CandidateProfile = (
     runtimePackages: sortedRecord(input.runtimePackages, "candidate DSH runtime package"),
   }),
   platform: Object.freeze({ contractVersion: PLATFORM_CONTRACT_VERSION, targets: PLATFORM_TARGETS }),
+  tools: Object.freeze({
+    contractProfile: "canonical-agent-experience-v1",
+    contractSha256: exactSha256(input.toolContractSha256, "candidate canonical tool contract"),
+  }),
   composition: Object.freeze({
     maxPrimaryRootSessions: 1,
     installedPluginAllowlist: BATCH1_INSTALLED_PLUGIN_ALLOWLIST,

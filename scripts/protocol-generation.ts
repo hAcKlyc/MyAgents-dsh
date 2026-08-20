@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import {
   CANONICAL_TOOL_NAMES,
+  CANONICAL_TOOL_CONTRACT_SHA256,
   DSH_ENGINE_VERSION,
   PROTOCOL_VERSION,
   REFERENCE_PROTOCOL_LIMITS,
@@ -13,6 +14,7 @@ import {
   RUNTIME_VERSION,
   SESSION_FORMAT,
 } from "../packages/protocol/src/contract-source.js";
+import { effectiveToolCatalogDigest } from "../packages/protocol/src/tool-catalog.js";
 
 const codePointCompare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 
@@ -117,6 +119,14 @@ const buildFixtures = (schemaDigest: string): unknown => {
     schemaSha256: schemaDigest,
     profileDigest: "b".repeat(64),
   } as const;
+  const toolCatalogWithoutDigest = {
+    formatVersion: 1 as const,
+    contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
+    implementationCatalog: CANONICAL_TOOL_NAMES,
+    effectiveTools: CANONICAL_TOOL_NAMES,
+    revision: "tools-v1",
+    diagnostics: CANONICAL_TOOL_NAMES.map((tool) => ({ tool, available: true as const })),
+  };
   const sessionBindingResult = {
     state: "ready",
     runtimeSessionId: "runtime-session-1",
@@ -124,11 +134,8 @@ const buildFixtures = (schemaDigest: string): unknown => {
     durableHead: { sequence: 0 },
     effectiveConfigRevision: "config-v1",
     toolCatalog: {
-      implementationCatalog: CANONICAL_TOOL_NAMES,
-      effectiveTools: CANONICAL_TOOL_NAMES,
-      revision: "tools-v1",
-      digest: digestFixture,
-      diagnostics: CANONICAL_TOOL_NAMES.map((tool) => ({ tool, available: true })),
+      ...toolCatalogWithoutDigest,
+      digest: effectiveToolCatalogDigest(toolCatalogWithoutDigest),
     },
     extensionCatalog: {
       revision: "extensions-v1",
@@ -627,6 +634,7 @@ export const buildProtocolArtifacts = async (repositoryRoot: string): Promise<Ge
     schemaSha256: schemaDigest,
     fixturesSha256: fixtureDigest,
     capabilityProfileDigest,
+    canonicalToolContractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
     canonicalTools: CANONICAL_TOOL_NAMES,
     hostMethods: hostMethods.map(([name]) => name),
     reverseMethods: reverseMethods.map(([name]) => name),
@@ -652,6 +660,7 @@ export const buildProtocolArtifacts = async (repositoryRoot: string): Promise<Ge
       canonicalToolCount: CANONICAL_TOOL_NAMES.length,
     },
     capabilityProfileDigest,
+    canonicalToolContractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
     contractSourceSha256: sha256(contractSourceBytes),
   };
 

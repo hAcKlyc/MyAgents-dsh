@@ -1,5 +1,15 @@
 import { Type, type Static, type TSchema } from "typebox";
 
+import {
+  CANONICAL_TOOL_CONTRACT_SHA256,
+  CANONICAL_TOOL_NAMES,
+} from "../generated/canonical-tools.generated.js";
+import { ToolCatalogSchema } from "./tool-catalog.js";
+
+export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
+export { ToolCatalogSchema } from "./tool-catalog.js";
+export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
+
 export const PROTOCOL_VERSION = "2.0.0-draft.1" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.0-rc.5.myagents.47f943859bef.822013237935" as const;
@@ -173,18 +183,6 @@ export const RuntimeCapabilityProfileSchema = strictObject({
     secrets: Type.Literal("reverse-port-only"),
     checkpoint: capability(Type.Literal("root-write-edit-only-v1")),
   }),
-});
-
-export const ToolCatalogSchema = strictObject({
-  implementationCatalog: Type.Array(identifier, { minItems: 20, maxItems: 20, uniqueItems: true }),
-  effectiveTools: Type.Array(identifier, { maxItems: 512, uniqueItems: true }),
-  revision,
-  digest: sha256,
-  diagnostics: Type.Array(strictObject({
-    tool: identifier,
-    available: Type.Boolean(),
-    reasonCode: Type.Optional(identifier),
-  }), { maxItems: 512 }),
 });
 
 const componentState = Type.Union([
@@ -675,14 +673,6 @@ export type RuntimeCapabilityProfile = Static<typeof RuntimeCapabilityProfileSch
 export type RuntimeEventEnvelope = Static<typeof RuntimeEventEnvelopeSchema>;
 export type TurnTerminal = Static<typeof TurnTerminalSchema>;
 export type SessionReadResult = Static<typeof SessionReadResultSchema>;
-
-export const CANONICAL_TOOL_NAMES = [
-  "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls",
-  "WebFetch", "WebSearch", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
-  "Skill", "Agent", "TaskStop", "SendMessage",
-  "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
-] as const;
-export type CanonicalToolName = (typeof CANONICAL_TOOL_NAMES)[number];
 
 export const REFERENCE_PROTOCOL_LIMITS: ProtocolLimits = {
   maxFrameBytes: MAX_FRAME_BYTES,

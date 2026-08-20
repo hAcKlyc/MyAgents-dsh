@@ -1,0 +1,69 @@
+{
+  "artifactFormatVersion": 1,
+  "authority": "packages/tool-contracts/src/contract-source.ts",
+  "bindings": [
+    "packages/protocol/generated/canonical-tools.generated.ts",
+    "packages/protocol/generated/protocol-meta.json",
+    "packages/product-profile/manifests/batch-1-candidate-profile-v1.json"
+  ],
+  "contractSha256": "2165f0a599115ffd766e6301b8726d5114f3429160dd5dd42ee8b228a7e060e5",
+  "generator": "scripts/generate-tool-contracts.ts",
+  "generatorSources": [
+    "scripts/generate-tool-contracts.ts",
+    "scripts/tool-contract-generation.ts",
+    "packages/protocol/src/tool-catalog-schema.ts"
+  ],
+  "inventory": {
+    "behaviorFixtureCount": 100,
+    "canonicalToolCount": 20,
+    "compatToolCount": 20,
+    "stockModelDefinitionCount": 0
+  },
+  "outputs": {
+    "canonical-tool-contracts-v1.json": "2165f0a599115ffd766e6301b8726d5114f3429160dd5dd42ee8b228a7e060e5",
+    "canonical-tools-v1.md": "e3cc16c8c2c5e8a4fd951650e65dcb4b5605ac9778d3ab5744d629aac7fe18b4",
+    "canonical-tools.generated.ts": "3b6f23be04ffb059cef7b5e062127d2fd4a137040279e814b9d55ecf7bd2aa7b",
+    "catalog-fixtures-v1.json": "69dc962ea629710a2f01b03f4dd5ee4c452ec89e5f476c7715afbd17f2643425",
+    "dsh-reuse-matrix-v1.json": "b7f19846b89ff4000ad31bdf4e1c6658c1a0644c33dd44fc2b209e7c87b3e3db",
+    "tool-catalog.schema.json": "8b0ec2d88c5fc7b77cd0ca8a315413991e676228ed538c2a360a1bf08cf2f267",
+    "tool-contract-meta.json": "6a29cfea5b0fb84f397c3f04f28b0a2d1441beb5f29960fe4562388f3952fd9e"
+  },
+  "profile": "canonical-agent-experience-v1",
+  "source": {
+    "commit": "b7bbcadb172254defc0ea86229dd5de043fbb5f3",
+    "engineAdaptation": "Pi registration and lifecycle glue replaced by public DSH service seams",
+    "inventoryDecision": "canonical-tool-contracts",
+    "migratedAuthorities": [
+      "packages/runtime-core/src/tools/contracts.ts",
+      "packages/runtime-core/src/tools/golden-contracts.ts",
+      "packages/runtime-core/src/tools/profile.ts"
+    ],
+    "migratedTests": [
+      "packages/runtime-core/src/tools/contracts.unit.test.ts"
+    ],
+    "repository": "myagents-runtime",
+    "sourceTreeSnapshotSha256": "405aeeba942c46029c6cbac568e909bd149774d0b9f1547ebc9e7a3d6239bebc"
+  },
+  "toolDigests": {
+    "Agent": "f5e5e6e2100a1940106bacb264dd586b9b26eac7618a5d33c6cc36adcaf425c7",
+    "AskUserQuestion": "392ad739849676a61046dc5d40a1aee9d5337ececcf5540ef4a7adae9ec5c040",
+    "Bash": "3547fb08e3084e58baf372af020ee5c161c3dc998a27c51cdcd55139ed26e77f",
+    "Edit": "bc396d6cd6873ec53a55db65da588d04ca964fec7f7bcfc95bd91c1272ee879c",
+    "EnterPlanMode": "34b26520e678f3562eff934e982e178e5e11fbfdfd1a012c2d8d049e22919f4c",
+    "ExitPlanMode": "0956a63d115961c71c471d4ee14bb87bcdfcdffded8c6c216cfb04c42beb0297",
+    "Glob": "030593238cf65e9adef8c7ab17a05e2e50165889a04e8f60c4a6e8765bcf5fd5",
+    "Grep": "1ecd34758c129459091db219cb78deef67bc0eda7da006bd2a952ac03e6687e9",
+    "Read": "556f4da113e713ee0816245b5b65ad3cd9ed6080e13782ca3e04acd7926bb925",
+    "SendMessage": "795ffbee25828378085fd580631d10d2db3cfd554189d75f2e3d63b2a0cb93c7",
+    "Skill": "ee13839da4ae03c0525bd84046de273f211053e498693eba504e2d024d2709a6",
+    "TaskCreate": "6784d094644d2216732ecbae4d5eb62bf3b9b6fe295837689bcde0785ec6ecee",
+    "TaskGet": "8f9f622c645f400316deb95f15e6080a7422e87d6dbb3e362d405691ef68bf99",
+    "TaskList": "f96f92fbc8cb029fe90bbd53586a4906eb8a4bd654a78ce679c977d6eb471df4",
+    "TaskStop": "3dbec0cf3f385d9175f63ae96e638dd2babe85d773e9933f9fbd7e0a0ee1e2dc",
+    "TaskUpdate": "e93ba004fb82e9162e1adfa25bcd690a0adb63a9fb730d33180d9513499ec8a3",
+    "WebFetch": "eb449252f3af1c98bea8e9d5778bd51f73d2a1082c008907a8af5b8729062f8e",
+    "WebSearch": "b46ea8eab3541ff25cd97f94b781692666c4436f7a2d5cd569412cc466e1b4a1",
+    "Write": "b6bb1ab2d330e0872916be0cd5bd543e6bfb97ae5f57f36883ad98bbed184d66",
+    "ls": "ab5e718ec3cb5119e2f671e5a942702c9b959f1cd481be2e9f4eecec18b93409"
+  }
+}

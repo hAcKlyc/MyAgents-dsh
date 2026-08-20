@@ -37,6 +37,7 @@ const candidatePackagePaths = [
   "packages/rpc-server",
   "packages/runtime-product",
   "packages/testkit",
+  "packages/tool-contracts",
 ] as const;
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
@@ -70,13 +71,14 @@ export type GeneratedProductProfileArtifacts = ReadonlyMap<string, string>;
 export const buildProductProfileArtifacts = async (
   repositoryRoot: string,
 ): Promise<GeneratedProductProfileArtifacts> => {
-  const [rootPackage, protocolMeta, acceptedArtifact, dshBaselineBytes] = await Promise.all([
+  const [rootPackage, protocolMeta, acceptedArtifact, toolContractMeta, dshBaselineBytes] = await Promise.all([
     readJson(resolve(repositoryRoot, "package.json")),
     readJson(resolve(repositoryRoot, "packages/protocol/generated/protocol-meta.json")),
     readJson(resolve(
       repositoryRoot,
       "packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json",
     )),
+    readJson(resolve(repositoryRoot, "packages/tool-contracts/generated/tool-contract-meta.json")),
     readFile(resolve(repositoryRoot, "specs/dsh/dsh-baseline-v1.json"), "utf8"),
   ]);
   const foundationPackages: Record<string, string> = {};
@@ -112,6 +114,7 @@ export const buildProductProfileArtifacts = async (
       acceptedArtifact.manifestSha256,
       "accepted artifact manifest digest",
     ),
+    toolContractSha256: requiredString(toolContractMeta.contractSha256, "canonical tool contract digest"),
     runtimePackages: stringRecord(acceptedArtifact.runtimePackages, "accepted runtime packages"),
     packageAuthorities: candidatePackages,
   });

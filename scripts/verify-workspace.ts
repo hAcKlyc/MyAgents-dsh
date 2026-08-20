@@ -19,6 +19,7 @@ const workspacePackages = new Map([
   ["packages/runtime-product", "@myagents-dsh/runtime-product"],
   ["packages/test-host", "@myagents-dsh/test-host"],
   ["packages/testkit", "@myagents-dsh/testkit"],
+  ["packages/tool-contracts", "@myagents-dsh/tool-contracts"],
 ]);
 
 const expectedScripts = new Map([
@@ -30,6 +31,8 @@ const expectedScripts = new Map([
   ["build:dsh-artifact", "tsx scripts/build-patched-dsh-artifact.ts"],
   ["verify:dsh-artifact", "tsx scripts/build-patched-dsh-artifact.ts"],
   ["check:dsh-runtime-composition", "tsx scripts/verify-dsh-runtime-composition.ts"],
+  ["generate:tool-contracts", "tsx scripts/generate-tool-contracts.ts"],
+  ["check:tool-contracts", "tsx scripts/generate-tool-contracts.ts --check"],
   ["check:dsh-seams-source", "tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test"],
   ["generate:protocol", "tsx scripts/generate-protocol.ts"],
   ["check:protocol", "tsx scripts/generate-protocol.ts --check"],
@@ -37,7 +40,7 @@ const expectedScripts = new Map([
   ["generate:profile", "tsx scripts/generate-product-profile.ts"],
   ["check:profile", "tsx scripts/generate-product-profile.ts --check"],
   ["check:security", "tsx scripts/verify-repository-security.ts"],
-  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:dsh-seams && npm run check:protocol && npm run check:compatibility && npm run check:profile && npm run check:security"],
+  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:dsh-seams && npm run check:tool-contracts && npm run check:protocol && npm run check:compatibility && npm run check:profile && npm run check:security"],
   ["typecheck", "npm run check:foundation && tsc -b --pretty false"],
   ["lint", "eslint . --max-warnings 0"],
   ["test", "npm run check:foundation && vitest run"],
@@ -91,10 +94,13 @@ const expectedWorkspaceFiles = new Map([
     "src/profile.ts",
   ]],
   ["packages/protocol", [
+    "generated/canonical-tools.generated.ts",
     "src/contract-source.ts",
     "src/errors.ts",
     "src/index.ts",
     "src/peer.ts",
+    "src/tool-catalog-schema.ts",
+    "src/tool-catalog.ts",
     "src/validation.ts",
     "generated/host-client.generated.ts",
   ]],
@@ -107,6 +113,17 @@ const expectedWorkspaceFiles = new Map([
     "src/standard-test-host.ts",
   ]],
   ["packages/testkit", ["src/fake-llm-adapter.ts", "src/index.ts"]],
+  ["packages/tool-contracts", [
+    "generated/catalog-fixtures-v1.json",
+    "generated/canonical-tool-contracts-v1.json",
+    "generated/dsh-reuse-matrix-v1.json",
+    "generated/tool-catalog.schema.json",
+    "generated/tool-contract-meta.json",
+    "src/contract-source.ts",
+    "src/index.ts",
+    "src/schema.ts",
+    "src/validation.ts",
+  ]],
 ]);
 
 const readJson = async (path: string): Promise<JsonObject> => {

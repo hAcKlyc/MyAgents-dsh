@@ -71,10 +71,13 @@ const runtimeCompositionSourcePaths = [
   "packages/product-profile/src/platform-contract.ts",
   "packages/product-profile/src/profile.ts",
   "packages/protocol/generated/host-client.generated.ts",
+  "packages/protocol/generated/canonical-tools.generated.ts",
   "packages/protocol/src/contract-source.ts",
   "packages/protocol/src/errors.ts",
   "packages/protocol/src/index.ts",
   "packages/protocol/src/peer.ts",
+  "packages/protocol/src/tool-catalog-schema.ts",
+  "packages/protocol/src/tool-catalog.ts",
   "packages/protocol/src/validation.ts",
   "packages/rpc-server/src/index.ts",
   "packages/rpc-server/src/event-projector.ts",
@@ -88,6 +91,10 @@ const runtimeCompositionSourcePaths = [
   "packages/test-host/src/standard-test-host.ts",
   "packages/testkit/src/fake-llm-adapter.ts",
   "packages/testkit/src/index.ts",
+  "packages/tool-contracts/src/contract-source.ts",
+  "packages/tool-contracts/src/index.ts",
+  "packages/tool-contracts/src/schema.ts",
+  "packages/tool-contracts/src/validation.ts",
   "tests/fixtures/dsh-runtime-composition.artifact.ts",
   "tests/fixtures/runtime-process-conformance.artifact.ts",
   "tests/fixtures/runtime-server-process.artifact.ts",
@@ -100,6 +107,7 @@ const runtimePackageWorkspaces = [
   ["packages/rpc-server", "@myagents-dsh/rpc-server"],
   ["packages/runtime-product", "@myagents-dsh/runtime-product"],
   ["packages/testkit", "@myagents-dsh/testkit"],
+  ["packages/tool-contracts", "@myagents-dsh/tool-contracts"],
   ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
 ] as const;
@@ -261,10 +269,15 @@ const stageBuiltPackage = (
   if (workspaceDirectory === "packages/protocol") {
     const generatedDirectory = resolve(destination, "generated");
     mkdirSync(generatedDirectory);
-    cpSync(
-      resolve(buildRoot, "packages/protocol/generated/host-client.generated.js"),
-      resolve(generatedDirectory, "host-client.generated.js"),
-    );
+    for (const filename of [
+      "canonical-tools.generated.js",
+      "host-client.generated.js",
+    ]) {
+      cpSync(
+        resolve(buildRoot, "packages/protocol/generated", filename),
+        resolve(generatedDirectory, filename),
+      );
+    }
     for (const filename of ["protocol-meta.json", "protocol-fixtures.json"]) {
       cpSync(
         resolve(repositoryRoot, "packages/protocol/generated", filename),
@@ -276,6 +289,28 @@ const stageBuiltPackage = (
       "./generated/host-client": "./generated/host-client.generated.js",
       "./protocol-fixtures.json": "./generated/protocol-fixtures.json",
       "./protocol-meta.json": "./generated/protocol-meta.json",
+      "./tool-catalog": "./src/tool-catalog.js",
+    };
+  } else if (workspaceDirectory === "packages/tool-contracts") {
+    const generatedDirectory = resolve(destination, "generated");
+    mkdirSync(generatedDirectory);
+    for (const filename of [
+      "catalog-fixtures-v1.json",
+      "canonical-tool-contracts-v1.json",
+      "dsh-reuse-matrix-v1.json",
+      "tool-catalog.schema.json",
+      "tool-contract-meta.json",
+    ]) {
+      cpSync(
+        resolve(repositoryRoot, "packages/tool-contracts/generated", filename),
+        resolve(generatedDirectory, filename),
+      );
+    }
+    packageExports = {
+      ".": "./src/index.js",
+      "./canonical-tool-contracts-v1.json": "./generated/canonical-tool-contracts-v1.json",
+      "./dsh-reuse-matrix-v1.json": "./generated/dsh-reuse-matrix-v1.json",
+      "./tool-contract-meta.json": "./generated/tool-contract-meta.json",
     };
   } else if (workspaceDirectory === "apps/runtime-server") {
     packageExports = {
@@ -319,6 +354,43 @@ const cleanBuildRuntimeComposition = (
 ): string => {
   const buildRoot = resolve(temporaryRoot, "clean-build");
   const configPath = resolve(temporaryRoot, "runtime-composition.tsconfig.json");
+  const workspaceCompilerPathEntries: Array<readonly [string, readonly string[]]> = [
+    ...runtimePackageWorkspaces.map(([workspace, packageName]): readonly [string, readonly string[]] => [
+      packageName,
+      [resolve(repositoryRoot, workspace, "src/index.ts")],
+    ]),
+    ["@myagents-dsh/protocol/generated/host-client", [resolve(
+      repositoryRoot,
+      "packages/protocol/generated/host-client.generated.ts",
+    )]],
+    ["@myagents-dsh/protocol/protocol-fixtures.json", [resolve(
+      repositoryRoot,
+      "packages/protocol/generated/protocol-fixtures.json",
+    )]],
+    ["@myagents-dsh/protocol/protocol-meta.json", [resolve(
+      repositoryRoot,
+      "packages/protocol/generated/protocol-meta.json",
+    )]],
+    ["@myagents-dsh/protocol/tool-catalog", [resolve(
+      repositoryRoot,
+      "packages/protocol/src/tool-catalog.ts",
+    )]],
+    ["@myagents-dsh/artifact-verifier/runtime-artifact", [resolve(
+      repositoryRoot,
+      "packages/artifact-verifier/src/runtime-artifact.ts",
+    )]],
+    ["@myagents-dsh/artifact-verifier/self-check", [resolve(
+      repositoryRoot,
+      "packages/artifact-verifier/src/self-check.ts",
+    )]],
+    ["@myagents-dsh/tool-contracts/tool-contract-meta.json", [resolve(
+      repositoryRoot,
+      "packages/tool-contracts/generated/tool-contract-meta.json",
+    )]],
+  ];
+  const workspaceCompilerPaths: Record<string, readonly string[]> = Object.fromEntries(
+    workspaceCompilerPathEntries,
+  );
   writeFileSync(configPath, `${JSON.stringify({
     extends: resolve(repositoryRoot, "tsconfig.base.json"),
     compilerOptions: {
@@ -329,16 +401,34 @@ const cleanBuildRuntimeComposition = (
       rootDir: repositoryRoot,
       sourceMap: false,
       typeRoots: [resolve(repositoryRoot, "node_modules/@types")],
+      paths: workspaceCompilerPaths,
     },
     files: runtimeCompositionSourcePaths.map((path) => resolve(repositoryRoot, path)),
   }, null, 2)}\n`);
-  run(process.execPath, [
+  const resolutionTrace = run(process.execPath, [
     resolve(repositoryRoot, "node_modules/typescript/bin/tsc"),
     "--project",
     configPath,
     "--pretty",
     "false",
+    "--traceResolution",
   ], repositoryRoot, environment);
+  for (const [specifier, expectedPath] of [
+    ["@myagents-dsh/tool-contracts", resolve(
+      repositoryRoot,
+      "packages/tool-contracts/src/index.ts",
+    )],
+    ["@myagents-dsh/tool-contracts/tool-contract-meta.json", resolve(
+      repositoryRoot,
+      "packages/tool-contracts/generated/tool-contract-meta.json",
+    )],
+  ] as const) {
+    if (!resolutionTrace.includes(
+      `Module name '${specifier}' was successfully resolved to '${expectedPath}'`,
+    )) {
+      throw new Error(`${specifier} did not resolve to its exact clean-build source authority`);
+    }
+  }
   const missingSourceAuthorities: string[] = [];
   const walkCompiledJavaScript = (absoluteDirectory: string, relativeDirectory: string): void => {
     for (const entry of readdirSync(absoluteDirectory, { withFileTypes: true })) {
@@ -404,8 +494,15 @@ const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
   "scripts/dsh-baseline-policy.ts",
   "scripts/dsh-seam-decisions.ts",
   "scripts/toolchain-policy.mjs",
+  "scripts/generate-tool-contracts.ts",
+  "scripts/tool-contract-generation.ts",
   "packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json",
   "packages/product-profile/manifests/batch-1-candidate-profile-v1.json",
+  "packages/tool-contracts/generated/catalog-fixtures-v1.json",
+  "packages/tool-contracts/generated/canonical-tool-contracts-v1.json",
+  "packages/tool-contracts/generated/dsh-reuse-matrix-v1.json",
+  "packages/tool-contracts/generated/tool-catalog.schema.json",
+  "packages/tool-contracts/generated/tool-contract-meta.json",
   "packages/protocol/generated/protocol-fixtures.json",
   "packages/protocol/generated/protocol-meta.json",
   ...runtimePackageWorkspaces.map(([workspace]) => `${workspace}/package.json`),
@@ -787,7 +884,13 @@ const main = (): void => {
       "packages/product-profile",
       "@myagents-dsh/product-profile",
     );
-    stageExactWorkspaceDependency(consumerRoot, "packages/protocol", "typebox");
+    stageExactWorkspaceDependency(consumerRoot, "packages/tool-contracts", "typebox");
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/tool-contracts",
+      "@myagents-dsh/tool-contracts",
+    );
     stageBuiltPackage(consumerRoot, buildRoot, "packages/protocol", "@myagents-dsh/protocol");
     stageBuiltPackage(
       consumerRoot,
@@ -843,6 +946,7 @@ const main = (): void => {
       || evidence.queuedCancellationVerified !== true
       || evidence.runtimeEventProjectionVerified !== true
       || evidence.sessionCloseVerified !== true
+      || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
         "success", "failure", "interrupt", "queued_cancel", "session_close",
       ])) {

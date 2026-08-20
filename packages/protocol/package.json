@@ -7,6 +7,7 @@
   "files": ["generated", "src"],
   "exports": {
     ".": "./src/index.ts",
+    "./tool-catalog": "./src/tool-catalog.ts",
     "./generated/host-client": "./generated/host-client.generated.ts",
     "./protocol-fixtures.json": "./generated/protocol-fixtures.json",
     "./protocol-meta.json": "./generated/protocol-meta.json",

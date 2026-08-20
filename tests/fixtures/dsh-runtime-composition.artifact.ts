@@ -27,6 +27,40 @@ import {
   type ProductSessionService,
 } from "@myagents-dsh/runtime-product";
 import { ScriptedFakeLlmAdapter } from "@myagents-dsh/testkit";
+import {
+  CANONICAL_TOOL_CONTRACT_SHA256,
+  CANONICAL_TOOL_NAMES,
+  effectiveToolCatalogDigest,
+  validateEffectiveToolCatalog,
+} from "@myagents-dsh/tool-contracts";
+import toolContractMetaJson from "@myagents-dsh/tool-contracts/tool-contract-meta.json" with {
+  type: "json",
+};
+
+assert.equal(Object.isFrozen(CANONICAL_TOOL_NAMES), true);
+assert.equal(CANONICAL_TOOL_NAMES.length, 20);
+assert.equal(toolContractMetaJson.contractSha256, CANONICAL_TOOL_CONTRACT_SHA256);
+assert.equal(toolContractMetaJson.canonicalToolCount, 20);
+const toolCatalogWithoutDigest = Object.freeze({
+  formatVersion: 1 as const,
+  contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
+  implementationCatalog: CANONICAL_TOOL_NAMES,
+  effectiveTools: CANONICAL_TOOL_NAMES,
+  revision: "artifact-tools-v1",
+  diagnostics: CANONICAL_TOOL_NAMES.map((tool) => Object.freeze({
+    tool,
+    available: true as const,
+  })),
+});
+const validatedArtifactToolCatalog = validateEffectiveToolCatalog({
+  ...toolCatalogWithoutDigest,
+  digest: effectiveToolCatalogDigest(toolCatalogWithoutDigest),
+});
+assert.deepEqual(validatedArtifactToolCatalog.implementationCatalog, CANONICAL_TOOL_NAMES);
+assert.throws(() => validateEffectiveToolCatalog({
+  ...validatedArtifactToolCatalog,
+  effectiveTools: ["StockWrongTool"],
+}), /effective tool catalog/u);
 
 const waitUntil = async (predicate: () => boolean, description: string): Promise<void> => {
   for (let attempt = 0; attempt < 1_000; attempt += 1) {
@@ -733,4 +767,5 @@ process.stdout.write(`${JSON.stringify({
   publicationTransientVerified: primaryPublicationSnapshotVerified,
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: ["success", "failure", "interrupt", "queued_cancel", "session_close"],
+  toolContractRuntimeConsumerVerified: true,
 })}\n`);

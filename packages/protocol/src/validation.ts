@@ -16,6 +16,7 @@ import {
   type TurnTerminal,
 } from "./contract-source.js";
 import { ProtocolError } from "./errors.js";
+import { validateNormalizedEffectiveToolCatalog } from "./tool-catalog.js";
 
 const canonicalJsonSnapshot = (value: unknown, code: string): unknown => {
   const objects = new WeakSet<object>();
@@ -123,6 +124,18 @@ export const validateMethodResult = <Name extends RpcMethodName>(name: Name, val
   if (!Value.Check(schema, canonical)) {
     const first = Value.Errors(schema, canonical)[0];
     throw new ProtocolError("protocol_invalid_result", first?.message ?? `Invalid result for ${name}`);
+  }
+  if (name === "session/create" || name === "session/resume") {
+    try {
+      validateNormalizedEffectiveToolCatalog(
+        (canonical as Readonly<{ toolCatalog: unknown }>).toolCatalog,
+      );
+    } catch (error) {
+      throw new ProtocolError(
+        "protocol_invalid_result",
+        error instanceof Error ? error.message : "Invalid effective tool catalog",
+      );
+    }
   }
   if (name === "session/read") validateSessionReadChunks(canonical);
   return canonical as MethodResult<Name>;

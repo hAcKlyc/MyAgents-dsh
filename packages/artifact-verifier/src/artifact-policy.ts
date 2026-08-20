@@ -83,6 +83,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     packageName: "@myagents-dsh/protocol",
     relativeDirectory: "packages/protocol",
     allowedFiles: [
+      "generated/canonical-tools.generated.ts",
       "generated/host-client.generated.ts",
       "generated/protocol-fixtures.json",
       "generated/protocol-meta.json",
@@ -92,6 +93,8 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/errors.ts",
       "src/index.ts",
       "src/peer.ts",
+      "src/tool-catalog-schema.ts",
+      "src/tool-catalog.ts",
       "src/validation.ts",
     ],
   },
@@ -120,6 +123,22 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     packageName: "@myagents-dsh/testkit",
     relativeDirectory: "packages/testkit",
     allowedFiles: ["package.json", "src/fake-llm-adapter.ts", "src/index.ts"],
+  },
+  {
+    packageName: "@myagents-dsh/tool-contracts",
+    relativeDirectory: "packages/tool-contracts",
+    allowedFiles: [
+      "generated/catalog-fixtures-v1.json",
+      "generated/canonical-tool-contracts-v1.json",
+      "generated/dsh-reuse-matrix-v1.json",
+      "generated/tool-catalog.schema.json",
+      "generated/tool-contract-meta.json",
+      "package.json",
+      "src/contract-source.ts",
+      "src/index.ts",
+      "src/schema.ts",
+      "src/validation.ts",
+    ],
   },
 ]);
 
