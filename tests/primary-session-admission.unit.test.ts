@@ -1,10 +1,13 @@
+import { Context } from "@deepseek-ai/cordis";
 import type { Agent, AgentHandle } from "@deepseek-ai/dsh-agent";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import type { MethodParams } from "@myagents-dsh/protocol";
 import {
   PrimarySessionAdmission,
+  ProductSessionService,
   RuntimeSettlementTimeoutError,
   createRuntimeSettlementDeadlineAuthority,
+  validateProductExecutionEnvironment,
   validatePrimarySessionWorkspace,
   type PrimarySessionBackend,
   type PrimarySessionBackendRequest,
@@ -560,5 +563,87 @@ describe("one-primary-session admission", () => {
       path: "/fixture/workspace\0alias",
       platformTarget: "darwin-arm64",
     })).toThrow("canonical initialized absolute path");
+
+    let proxyTraps = 0;
+    const environmentProxy = new Proxy({}, {
+      get: () => { proxyTraps += 1; return undefined; },
+      getOwnPropertyDescriptor: () => { proxyTraps += 1; return undefined; },
+      getPrototypeOf: () => { proxyTraps += 1; return Object.prototype; },
+      ownKeys: () => { proxyTraps += 1; return []; },
+    });
+    expect(() => validateProductExecutionEnvironment(environmentProxy)).toThrow("must not be a Proxy");
+    expect(proxyTraps).toBe(0);
+    expect(() => validateProductExecutionEnvironment({
+      attachmentStagingRoot: "C:\\fixture\\attachments",
+      digest,
+      platformTarget: "win32-x64",
+      revision: "environment-v1",
+      runtimeHome: "C:\\fixture\\runtime",
+      workspace: {
+        allowedReadRoots: ["C:\\fixture\\workspace", "c:\\fixture\\workspace"],
+        allowedWriteRoots: ["C:\\fixture\\workspace"],
+        canonicalRoot: "C:\\fixture\\workspace",
+        identity: "fixture-workspace",
+      },
+    })).toThrow("unique under platform path identity");
+    expect(() => validateProductExecutionEnvironment({
+      attachmentStagingRoot: "\\attachments",
+      digest,
+      platformTarget: "win32-x64",
+      revision: "environment-v1",
+      runtimeHome: "\\runtime",
+      workspace: {
+        allowedReadRoots: ["\\workspace"],
+        allowedWriteRoots: ["\\workspace"],
+        canonicalRoot: "\\workspace",
+        identity: "fixture-workspace",
+      },
+    })).toThrow("fully qualified and absolute");
+    expect(() => validateProductExecutionEnvironment({
+      attachmentStagingRoot: "/attachments",
+      digest,
+      platformTarget: "win32-x64",
+      revision: "environment-v1",
+      runtimeHome: "/runtime",
+      workspace: {
+        allowedReadRoots: ["/workspace"],
+        allowedWriteRoots: ["/workspace"],
+        canonicalRoot: "/workspace",
+        identity: "fixture-workspace",
+      },
+    })).toThrow("fully qualified and absolute");
+  });
+
+  it("keeps workspace and execution-environment authority symmetric in either bind order", async () => {
+    const context = new Context();
+    context.provide("agents", {
+      roots: () => [],
+      setPublicationGuard: () => () => undefined,
+    } as never);
+    context.provide("sessions", {
+      setPublicationGuard: () => () => undefined,
+    } as never);
+    const service = new ProductSessionService(context, {
+      backend: backendWith(
+        () => Promise.reject(new Error("create must not run")),
+        () => Promise.reject(new Error("resume must not run")),
+      ),
+    });
+    service.bindWorkspace(workspace);
+    expect(() => service.bindExecutionEnvironment({
+      attachmentStagingRoot: "/fixture/attachments",
+      digest,
+      platformTarget: "darwin-arm64",
+      revision: "environment-v1",
+      runtimeHome: "/fixture/runtime",
+      workspace: {
+        allowedReadRoots: ["/fixture/other"],
+        allowedWriteRoots: ["/fixture/other"],
+        canonicalRoot: "/fixture/other",
+        identity: "different-workspace",
+      },
+    })).toThrow("differs from the primary Session workspace");
+    await service.retire();
+    await context.fiber.dispose();
   });
 });

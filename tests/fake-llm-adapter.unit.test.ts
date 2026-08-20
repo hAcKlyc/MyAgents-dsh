@@ -83,6 +83,38 @@ describe("ScriptedFakeLlmAdapter", () => {
     expect(adapter.pendingScriptCount).toBe(0);
   });
 
+  it("emits deterministic model tool-call blocks through the real stream vocabulary", async () => {
+    const adapter = new ScriptedFakeLlmAdapter();
+    adapter.enqueue({
+      calls: [{ id: "call-read", name: "Read", arguments: '{"file_path":"/fixture/a.txt"}' }],
+      kind: "tool-calls",
+      usage: { inputTokens: 3, outputTokens: 1 },
+    });
+    const chunks = await collect(adapter, request());
+    expect(chunks).toEqual([
+      { type: "block-start", index: 0, blockType: "tool-call" },
+      {
+        type: "tool-call-delta",
+        index: 0,
+        id: "call-read",
+        name: "Read",
+        argumentsDelta: '{"file_path":"/fixture/a.txt"}',
+      },
+      {
+        type: "block-end",
+        index: 0,
+        block: {
+          type: "tool-call",
+          id: "call-read",
+          name: "Read",
+          arguments: '{"file_path":"/fixture/a.txt"}',
+        },
+      },
+      { type: "usage", usage: { inputTokens: 3, outputTokens: 1 } },
+      { type: "finish", reason: { kind: "tool-calls" } },
+    ]);
+  });
+
   it("rejects invalid context, scripts, and token accounting at enqueue time", () => {
     expect(() => new ScriptedFakeLlmAdapter({ contextWindow: 0 })).toThrow("bounded positive integer");
     expect(() => new ScriptedFakeLlmAdapter({ provider: 1 } as never)).toThrow("bounded identifier");
@@ -136,6 +168,20 @@ describe("ScriptedFakeLlmAdapter", () => {
     } as never)).toThrow("non-negative safe integer");
     expect(() => adapter.enqueue({ kind: "error", message: 1 } as never))
       .toThrow("bounded primitive text");
+    expect(() => adapter.enqueue({ kind: "tool-calls", calls: [] })).toThrow("bounded dense call array");
+    expect(() => adapter.enqueue({
+      kind: "tool-calls",
+      calls: [{ id: "call", name: "Read", arguments: "" }],
+    })).toThrow("bounded text");
+    let proxyTraps = 0;
+    const proxyScript = new Proxy({}, {
+      get: () => { proxyTraps += 1; return undefined; },
+      getOwnPropertyDescriptor: () => { proxyTraps += 1; return undefined; },
+      getPrototypeOf: () => { proxyTraps += 1; return Object.prototype; },
+      ownKeys: () => { proxyTraps += 1; return []; },
+    });
+    expect(() => adapter.enqueue(proxyScript as never)).toThrow("plain object");
+    expect(proxyTraps).toBe(0);
     expect(() => adapter.enqueue({ kind: "unknown" } as never)).toThrow("kind is unsupported");
 
     const symbolUsage = { inputTokens: 1, outputTokens: 1, [Symbol("hidden")]: 1 };

@@ -22,11 +22,13 @@
       "@myagents-dsh/runtime-product": "0.0.0",
       "@myagents-dsh/runtime-server": "0.0.0",
       "@myagents-dsh/testkit": "0.0.0",
-      "@myagents-dsh/tool-contracts": "0.0.0"
+      "@myagents-dsh/tool-contracts": "0.0.0",
+      "@myagents-dsh/tool-runtime-product": "0.0.0",
+      "@myagents-dsh/tools-fs": "0.0.0"
     }
   },
   "dsh": {
-    "artifactManifestSha256": "dd0557a9f0ee79965cb176f8f9ec889d89964b4a6507d70b70abc1fd45392e6a",
+    "artifactManifestSha256": "03129b845f78773f2d1984034575907437b3324db3d39bff0ec929e5a8dedd9d",
     "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",

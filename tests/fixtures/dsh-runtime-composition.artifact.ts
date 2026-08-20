@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers/promises";
 
@@ -23,16 +27,25 @@ import { startNativeRpcLifecycle } from "@myagents-dsh/runtime-server";
 import {
   claimNativeRpcLifecycleAuthority,
   composeDshRootServices,
+  DshRootComposition,
+  installCanonicalFileToolPlane,
+  type CanonicalFileToolPlaneConfig,
   type NativeRpcLifecycleAuthority,
   type ProductSessionService,
 } from "@myagents-dsh/runtime-product";
 import { ScriptedFakeLlmAdapter } from "@myagents-dsh/testkit";
+import type {
+  ProductToolCheckpointRequest,
+  ProductToolContext,
+  ProductToolPermissionRequest,
+} from "@myagents-dsh/tool-runtime-product";
 import {
   CANONICAL_TOOL_CONTRACT_SHA256,
   CANONICAL_TOOL_NAMES,
   effectiveToolCatalogDigest,
   validateEffectiveToolCatalog,
 } from "@myagents-dsh/tool-contracts";
+import type { AttachmentPublicationRequest } from "@myagents-dsh/tools-fs";
 import toolContractMetaJson from "@myagents-dsh/tool-contracts/tool-contract-meta.json" with {
   type: "json",
 };
@@ -45,11 +58,13 @@ const toolCatalogWithoutDigest = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
   implementationCatalog: CANONICAL_TOOL_NAMES,
-  effectiveTools: CANONICAL_TOOL_NAMES,
+  effectiveTools: Object.freeze(["Read", "Write", "Edit"] as const),
   revision: "artifact-tools-v1",
   diagnostics: CANONICAL_TOOL_NAMES.map((tool) => Object.freeze({
     tool,
-    available: true as const,
+    ...(["Read", "Write", "Edit"].includes(tool)
+      ? { available: true as const }
+      : { available: false as const, reasonCode: "not-installed-in-w2-a2" }),
   })),
 });
 const validatedArtifactToolCatalog = validateEffectiveToolCatalog({
@@ -61,6 +76,18 @@ assert.throws(() => validateEffectiveToolCatalog({
   ...validatedArtifactToolCatalog,
   effectiveTools: ["StockWrongTool"],
 }), /effective tool catalog/u);
+
+const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "myagents-dsh-w2-a2-artifact-")));
+const fixtureWorkspace = join(fixtureRoot, "workspace");
+const fixtureRuntimeHome = join(fixtureRoot, "runtime-home");
+const fixtureAttachmentStaging = join(fixtureRoot, "attachments");
+const fixtureFile = join(fixtureWorkspace, "governed.txt");
+await Promise.all([
+  mkdir(fixtureWorkspace),
+  mkdir(fixtureRuntimeHome),
+  mkdir(fixtureAttachmentStaging),
+]);
+await writeFile(fixtureFile, "before\n", "utf8");
 
 const waitUntil = async (predicate: () => boolean, description: string): Promise<void> => {
   for (let attempt = 0; attempt < 1_000; attempt += 1) {
@@ -149,6 +176,19 @@ adapter.enqueue({
   usage: { inputTokens: 4, outputTokens: 1 },
 });
 adapter.enqueue({ kind: "error", message: "synthetic provider failure" });
+adapter.enqueue({
+  calls: [{ id: "artifact-read-call", name: "Read", arguments: JSON.stringify({ file_path: fixtureFile }) }],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [{
+    id: "artifact-write-call",
+    name: "Write",
+    arguments: JSON.stringify({ file_path: fixtureFile, content: "after governed Write\n" }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "governed file tools completed" });
 adapter.enqueue({ kind: "await-abort" });
 adapter.enqueue({ kind: "await-abort" });
 
@@ -161,8 +201,8 @@ const composition = await composeDshRootServices({
       modelProfileRevision: "artifact-provider-v1",
       componentRevision: "artifact-component-v1",
       componentDigest: "b".repeat(64),
-      toolCatalogRevision: "artifact-tools-v1",
-      toolCatalogDigest: "c".repeat(64),
+      toolCatalogRevision: validatedArtifactToolCatalog.revision,
+      toolCatalogDigest: validatedArtifactToolCatalog.digest,
       executionEnvironmentRevision: value.executionEnvironmentRevision,
       executionEnvironmentDigest: value.executionEnvironmentDigest,
       permissionRevision: "artifact-permission-v1",
@@ -176,6 +216,58 @@ const composition = await composeDshRootServices({
   systemPrompt: { persona: "Composition-owned persona, not the desired Session revision." },
   tools: { mode: "native" },
 });
+const fileToolEvidence: string[] = [];
+const fileToolPlaneConfig: CanonicalFileToolPlaneConfig = Object.freeze({
+  attachments: Object.freeze({
+    publish: (request: AttachmentPublicationRequest) => Promise.resolve(Object.freeze({
+      attachmentId: "artifact-attachment",
+      mimeType: request.mimeType,
+      name: request.name,
+      sha256: createHash("sha256").update(request.bytes).digest("hex"),
+      sizeBytes: request.bytes.byteLength,
+    })),
+  }),
+  catalog: () => validatedArtifactToolCatalog,
+  checkpoint: Object.freeze({
+    prepare: (_context: ProductToolContext, request: ProductToolCheckpointRequest) => {
+      fileToolEvidence.push(`prepare:${request.tool}:${request.path}`);
+      assert.equal(createHash("sha256").update(request.afterBytes).digest("hex"), request.afterSha256);
+      if (request.beforeBytes !== undefined) {
+        assert.equal(createHash("sha256").update(request.beforeBytes).digest("hex"), request.beforeSha256);
+      }
+      return Promise.resolve(Object.freeze({
+        abort: () => { fileToolEvidence.push("abort"); return Promise.resolve(); },
+        commit: () => { fileToolEvidence.push("commit"); return Promise.resolve(); },
+        conflict: () => { fileToolEvidence.push("conflict"); return Promise.resolve(); },
+        receipt: Object.freeze({ checkpointId: "artifact-checkpoint", policyRevision: "checkpoint-v1" }),
+      }));
+    },
+  }),
+  permission: Object.freeze({
+    authorize: (_context: ProductToolContext, request: ProductToolPermissionRequest) => {
+      fileToolEvidence.push(`permission:${request.tool}:${request.target}`);
+      return Promise.resolve("allow" as const);
+    },
+  }),
+  platformTarget: "darwin-arm64",
+});
+await assert.rejects(
+  installCanonicalFileToolPlane(
+    new DshRootComposition(composition.context, composition.providers),
+    fileToolPlaneConfig,
+  ),
+  /exact unclaimed root composition authority/u,
+);
+const fileToolPlaneInstallation = installCanonicalFileToolPlane(composition, fileToolPlaneConfig);
+await assert.rejects(
+  installCanonicalFileToolPlane(composition, fileToolPlaneConfig),
+  /exact unclaimed root composition authority/u,
+);
+await fileToolPlaneInstallation;
+await assert.rejects(
+  installCanonicalFileToolPlane(composition, fileToolPlaneConfig),
+  /exact unclaimed root composition authority/u,
+);
 assert.throws(() => composition.context.sessions.create(SessionId("rogue-direct-session")),
   /Session publication lacks the primary Session admission authority/u);
 const advancedRogueSession = Session.create(SessionId("rogue-advanced-agent"));
@@ -196,6 +288,7 @@ const bareOutput = new PassThrough();
 const bareContext = new Context();
 bareContext.provide("sessions", { flush: () => Promise.resolve(true) } as never);
 bareContext.provide("productSession", {
+  bindExecutionEnvironment: (environment: unknown) => environment,
   bindWorkspace: (workspace: unknown) => workspace,
   snapshot: () => Object.freeze({ state: "unbound" as const }),
 } as ProductSessionService);
@@ -269,16 +362,16 @@ const initializeRequest: InitializeParams = {
     nodeVersion: "24.13.1",
   },
   productSessionId: "artifact-product-session",
-  runtimeHome: "/fixture/runtime-home",
-  workspace: { path: "/fixture/workspace", identity: "artifact-workspace" },
+  runtimeHome: fixtureRuntimeHome,
+  workspace: { path: fixtureWorkspace, identity: "artifact-workspace" },
   executionEnvironment: {
     revision: "environment-v1",
     digest: rpcDigest,
     workspace: {
       identity: "artifact-workspace",
-      canonicalRoot: "/fixture/workspace",
-      allowedReadRoots: ["/fixture/workspace"],
-      allowedWriteRoots: ["/fixture/workspace"],
+      canonicalRoot: fixtureWorkspace,
+      allowedReadRoots: [fixtureWorkspace],
+      allowedWriteRoots: [fixtureWorkspace],
     },
     executables: {
       bundledNodeRef: "bundled-node",
@@ -300,7 +393,7 @@ const initializeRequest: InitializeParams = {
       tracksChildAgents: false,
       tracksExternalChanges: false,
     },
-    attachmentStagingRoot: "/fixture/attachments",
+    attachmentStagingRoot: fixtureAttachmentStaging,
   },
   hostCapabilities: {
     interaction: "deterministic-headless",
@@ -331,6 +424,10 @@ await directRootComposition.context.plugin(NativeRpcServer, {
   runtimeGeneration: "direct-root-generation",
   platformTarget: "darwin-arm64",
 });
+await assert.rejects(
+  installCanonicalFileToolPlane(directRootComposition, fileToolPlaneConfig),
+  /exact unclaimed root composition authority/u,
+);
 assert.throws(() => Object.defineProperty(directRootComposition, "dispose", {
   value: () => Promise.resolve(),
 }), TypeError);
@@ -591,6 +688,32 @@ assert.equal(composition.context.sdkOperations.lookup("artifact-operation-3")?.t
 
 await composition.context.sdkOperations.start({
   ...turnStartParams,
+  clientOperationId: "artifact-file-operation",
+  clientUserMessageId: "artifact-file-user-message",
+  input: { parts: [{ kind: "text", text: "Read then update the governed fixture file" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-file-operation")?.state === "terminal",
+  "governed file-tool operation terminal",
+);
+assert.equal(composition.context.sdkOperations.lookup("artifact-file-operation")?.terminal?.kind, "succeeded");
+assert.equal(await readFile(fixtureFile, "utf8"), "after governed Write\n");
+assert.deepEqual(fileToolEvidence, [
+  `permission:Read:${fixtureFile}`,
+  `permission:Write:${fixtureFile}`,
+  `prepare:Write:${fixtureFile}`,
+  "commit",
+]);
+const governedToolResults = primaryAgent.session.events.filter((event) =>
+  event.type === "tool/result" && ["artifact-read-call", "artifact-write-call"]
+    .includes(String(event.data.message.source.callId)));
+assert.equal(governedToolResults.length, 2);
+assert.equal(governedToolResults.every((event) => event.type === "tool/result"
+  && event.data.message.content[0].isError !== true), true);
+
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
   clientOperationId: "artifact-operation-4",
   clientUserMessageId: "artifact-user-message-4",
   input: { parts: [{ kind: "text", text: "cancel this turn" }] },
@@ -663,8 +786,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 6,
-  "six projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 7,
+  "seven projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -673,7 +796,7 @@ assert.deepEqual(
         ? `${event.terminal.kind}:${event.terminal.reason}`
         : event.terminal.kind
       : "missing"),
-  ["succeeded", "succeeded", "failed", "aborted:user", "aborted:user", "aborted:host_shutdown"],
+  ["succeeded", "succeeded", "failed", "succeeded", "aborted:user", "aborted:user", "aborted:host_shutdown"],
 );
 const firstUsage = projectedRuntimeEvents.find(({ event }) => event.kind === "usage");
 assert.ok(firstUsage?.event.kind === "usage");
@@ -733,6 +856,7 @@ assert.deepEqual(hostFatalErrors, []);
 hostPeer.close();
 runtimeInput.destroy();
 runtimeOutput.destroy();
+await rm(fixtureRoot, { force: true, recursive: true });
 
 process.stdout.write(`${JSON.stringify({
   artifactManifestSha256: snapshot.artifactManifestSha256,
@@ -757,6 +881,7 @@ process.stdout.write(`${JSON.stringify({
   },
   operationCorrelationVerified: true,
   operationInterruptVerified: true,
+  canonicalFileToolsVerified: true,
   queuedCancellationVerified: true,
   runtimeEventProjectionVerified: true,
   sessionCloseVerified: true,
@@ -766,6 +891,6 @@ process.stdout.write(`${JSON.stringify({
   publicationGuardsVerified: true,
   publicationTransientVerified: primaryPublicationSnapshotVerified,
   roguePublicationInvisible: !roguePublicationObserved,
-  terminalCases: ["success", "failure", "interrupt", "queued_cancel", "session_close"],
+  terminalCases: ["success", "failure", "file_tools", "interrupt", "queued_cancel", "session_close"],
   toolContractRuntimeConsumerVerified: true,
 })}\n`);

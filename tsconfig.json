@@ -3,6 +3,8 @@
   "references": [
     { "path": "./packages/protocol" },
     { "path": "./packages/tool-contracts" },
+    { "path": "./packages/tool-runtime-product" },
+    { "path": "./packages/tools-fs" },
     { "path": "./packages/compatibility" },
     { "path": "./packages/operation-runtime" },
     { "path": "./packages/product-profile" },

@@ -1,0 +1,22 @@
+{
+  "name": "@myagents-dsh/tools-fs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Composition-selected local filesystem Provider and canonical Read Write Edit tools",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/product-profile": "0.0.0",
+    "@myagents-dsh/tool-contracts": "0.0.0",
+    "@myagents-dsh/tool-runtime-product": "0.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-fs": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6"
+  }
+}

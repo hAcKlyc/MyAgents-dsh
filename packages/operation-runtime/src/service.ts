@@ -457,6 +457,33 @@ export class SdkOperationService extends Service {
     return findProductOperation(this.foldValue(this.primaryAgent()), clientOperationId);
   }
 
+  resolveActiveToolOperation(agent: Agent): Readonly<{
+    dshTurn: number;
+    operation: ProductOperationRecord;
+  }> {
+    this.assertOpen();
+    this.assertHealthy();
+    if (agent !== this.primaryAgent() || agent !== this.configValue.requireAgent()) {
+      throw new ProtocolError(
+        "turn_operation_conflict",
+        "tool execution does not belong to the official primary Agent",
+      );
+    }
+    const dshTurn = this.openDshTurn(agent);
+    if (dshTurn === undefined) {
+      throw new ProtocolError(
+        "turn_operation_conflict",
+        "tool execution lacks one open DSH turn",
+      );
+    }
+    const owners = this.foldValue(agent).operations.filter((operation) =>
+      operation.state !== "terminal" && operation.dshTurns.includes(dshTurn));
+    if (owners.length !== 1 || owners[0] === undefined) {
+      throw this.fence(new Error("open DSH tool turn lacks one durable product-operation owner"));
+    }
+    return Object.freeze({ dshTurn, operation: owners[0] });
+  }
+
   start(
     value: unknown,
     control?: OperationAdmissionControl,

@@ -459,6 +459,14 @@ export class NativeRpcServer extends Service {
     }
     assertCompatibleProtocol(params.protocol.minVersion, params.protocol.maxVersion);
     validateInitializationEnvironment(params, this.configValue.platformTarget);
+    this.productSessionValue.bindExecutionEnvironment({
+      attachmentStagingRoot: params.executionEnvironment.attachmentStagingRoot,
+      digest: params.executionEnvironment.digest,
+      platformTarget: this.configValue.platformTarget,
+      revision: params.executionEnvironment.revision,
+      runtimeHome: params.runtimeHome,
+      workspace: params.executionEnvironment.workspace,
+    });
     this.productSessionValue.bindWorkspace({
       identity: params.workspace.identity,
       path: params.workspace.path,

@@ -95,6 +95,12 @@ const runtimeCompositionSourcePaths = [
   "packages/tool-contracts/src/index.ts",
   "packages/tool-contracts/src/schema.ts",
   "packages/tool-contracts/src/validation.ts",
+  "packages/tool-runtime-product/src/index.ts",
+  "packages/tool-runtime-product/src/keyed-locks.ts",
+  "packages/tool-runtime-product/src/runtime.ts",
+  "packages/tools-fs/src/canonical-file-tools.ts",
+  "packages/tools-fs/src/index.ts",
+  "packages/tools-fs/src/local-filesystem.ts",
   "tests/fixtures/dsh-runtime-composition.artifact.ts",
   "tests/fixtures/runtime-process-conformance.artifact.ts",
   "tests/fixtures/runtime-server-process.artifact.ts",
@@ -108,6 +114,8 @@ const runtimePackageWorkspaces = [
   ["packages/runtime-product", "@myagents-dsh/runtime-product"],
   ["packages/testkit", "@myagents-dsh/testkit"],
   ["packages/tool-contracts", "@myagents-dsh/tool-contracts"],
+  ["packages/tool-runtime-product", "@myagents-dsh/tool-runtime-product"],
+  ["packages/tools-fs", "@myagents-dsh/tools-fs"],
   ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
 ] as const;
@@ -898,6 +906,18 @@ const main = (): void => {
       "packages/operation-runtime",
       "@myagents-dsh/operation-runtime",
     );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/tool-runtime-product",
+      "@myagents-dsh/tool-runtime-product",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/tools-fs",
+      "@myagents-dsh/tools-fs",
+    );
     stageBuiltPackage(consumerRoot, buildRoot, "packages/rpc-server", "@myagents-dsh/rpc-server");
     stageBuiltPackage(
       consumerRoot,
@@ -941,6 +961,7 @@ const main = (): void => {
       || evidence.nativeRpcSchemaSha256 !== protocolMetaJson.schemaSha256
       || evidence.nativeRpcShutdown !== "shutdown"
       || evidence.nativeRpcStopped !== true
+      || evidence.canonicalFileToolsVerified !== true
       || evidence.operationCorrelationVerified !== true
       || evidence.operationInterruptVerified !== true
       || evidence.queuedCancellationVerified !== true
@@ -948,7 +969,7 @@ const main = (): void => {
       || evidence.sessionCloseVerified !== true
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
-        "success", "failure", "interrupt", "queued_cancel", "session_close",
+        "success", "failure", "file_tools", "interrupt", "queued_cancel", "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
     }
@@ -1031,6 +1052,8 @@ const main = (): void => {
       "turn_admitted", "turn_started", "queued_message", "assistant_delta",
       "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "message_event", "usage", "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message",
       "turn_admitted", "queued_message", "turn_terminal", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
@@ -1049,9 +1072,10 @@ const main = (): void => {
         return value.kind === "aborted" ? `${value.kind}:${String(value.reason)}` : value.kind;
       });
     if (JSON.stringify(terminalOutcomes) !== JSON.stringify([
-      "succeeded", "succeeded", "failed", "aborted:user", "aborted:user", "aborted:host_shutdown",
+      "succeeded", "succeeded", "failed", "succeeded",
+      "aborted:user", "aborted:user", "aborted:host_shutdown",
     ])) {
-      throw new Error("Runtime terminal projection differs from the six real DSH operation outcomes");
+      throw new Error("Runtime terminal projection differs from the seven real DSH operation outcomes");
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");
     const usage = exactObject(usageEvent?.usage, "observed Runtime usage");

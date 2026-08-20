@@ -60,6 +60,7 @@ const createRoot = (
     flush: () => Promise.resolve(true),
   } as never);
   root.provide("productSession", {
+    bindExecutionEnvironment: (environment: unknown) => environment,
     bindWorkspace: (workspace: unknown) => workspace,
     retire,
     snapshot: () => Object.freeze({ state: "unbound" as const }),

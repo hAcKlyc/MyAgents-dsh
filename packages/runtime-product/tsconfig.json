@@ -9,6 +9,8 @@
   "references": [
     { "path": "../operation-runtime" },
     { "path": "../product-profile" },
-    { "path": "../protocol" }
+    { "path": "../protocol" },
+    { "path": "../tool-runtime-product" },
+    { "path": "../tools-fs" }
   ]
 }

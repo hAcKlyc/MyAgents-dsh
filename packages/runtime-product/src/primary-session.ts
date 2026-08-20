@@ -35,6 +35,20 @@ export interface PrimarySessionWorkspace {
   readonly platformTarget: PlatformTarget;
 }
 
+export interface ProductExecutionEnvironment {
+  readonly attachmentStagingRoot: string;
+  readonly digest: string;
+  readonly platformTarget: PlatformTarget;
+  readonly revision: string;
+  readonly runtimeHome: string;
+  readonly workspace: Readonly<{
+    readonly allowedReadRoots: readonly string[];
+    readonly allowedWriteRoots: readonly string[];
+    readonly canonicalRoot: string;
+    readonly identity: string;
+  }>;
+}
+
 export interface PrimarySessionBackendRequest {
   readonly mode: PrimarySessionMode;
   readonly params: MethodParams<"session/create"> | MethodParams<"session/resume">;
@@ -217,6 +231,123 @@ export const validatePrimarySessionWorkspace = (value: unknown): PrimarySessionW
     identity,
     path: workspace.path,
     platformTarget,
+  });
+};
+
+const exactPathArray = (
+  value: unknown,
+  description: string,
+  normalize: (path: string) => string,
+): readonly string[] => {
+  if (!Array.isArray(value) || utilTypes.isProxy(value) || value.length < 1 || value.length > 32) {
+    throw new TypeError(`${description} must be a bounded array`);
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const result: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = descriptors[String(index)];
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)
+      || typeof descriptor.value !== "string" || descriptor.value.length > 8_192
+      || descriptor.value.includes("\0") || normalize(descriptor.value) !== descriptor.value) {
+      throw new TypeError(`${description} contains a non-canonical path`);
+    }
+    result.push(descriptor.value);
+  }
+  if (Reflect.ownKeys(value).length !== value.length + 1 || new Set(result).size !== result.length) {
+    throw new TypeError(`${description} must be dense and unique`);
+  }
+  return Object.freeze(result);
+};
+
+const containsPlatformPath = (
+  target: PlatformTarget,
+  parent: string,
+  child: string,
+): boolean => {
+  const foldedParent = target === "win32-x64" ? parent.toLowerCase() : parent;
+  const foldedChild = target === "win32-x64" ? child.toLowerCase() : child;
+  const separator = target === "win32-x64" ? "\\" : "/";
+  return foldedChild === foldedParent
+    || foldedChild.startsWith(foldedParent.endsWith(separator) ? foldedParent : `${foldedParent}${separator}`);
+};
+
+export const validateProductExecutionEnvironment = (
+  value: unknown,
+): ProductExecutionEnvironment => {
+  const environment = exactOwnDataObject(
+    value,
+    ["attachmentStagingRoot", "digest", "platformTarget", "revision", "runtimeHome", "workspace"],
+    [],
+    "product execution environment authority",
+  );
+  const revision = boundedIdentifier(environment.revision, "execution environment revision");
+  if (typeof environment.digest !== "string" || !/^[a-f0-9]{64}$/u.test(environment.digest)) {
+    throw new TypeError("execution environment digest must be a lowercase SHA-256");
+  }
+  if (typeof environment.platformTarget !== "string") {
+    throw new TypeError("execution environment platform target must be a string");
+  }
+  const platformTarget = environment.platformTarget as PlatformTarget;
+  const adapter = selectPlatformAdapter(platformTarget);
+  const workspace = exactOwnDataObject(
+    environment.workspace,
+    ["allowedReadRoots", "allowedWriteRoots", "canonicalRoot", "identity"],
+    [],
+    "execution environment workspace",
+  );
+  const normalize = (path: string): string => adapter.normalizeAbsolutePath(path);
+  const canonicalRoot = typeof workspace.canonicalRoot === "string"
+    ? normalize(workspace.canonicalRoot)
+    : "";
+  if (canonicalRoot !== workspace.canonicalRoot) throw new TypeError("workspace root must be canonical");
+  const allowedReadRoots = exactPathArray(workspace.allowedReadRoots, "allowed read roots", normalize);
+  const allowedWriteRoots = exactPathArray(workspace.allowedWriteRoots, "allowed write roots", normalize);
+  for (const [description, roots] of [
+    ["allowed read roots", allowedReadRoots],
+    ["allowed write roots", allowedWriteRoots],
+  ] as const) {
+    for (let left = 0; left < roots.length; left += 1) {
+      const leftRoot = roots[left];
+      if (leftRoot === undefined) continue;
+      for (let right = left + 1; right < roots.length; right += 1) {
+        const rightRoot = roots[right];
+        if (rightRoot !== undefined && adapter.samePath(leftRoot, rightRoot)) {
+          throw new TypeError(`${description} must be unique under platform path identity`);
+        }
+      }
+    }
+  }
+  const runtimeHome = typeof environment.runtimeHome === "string" ? normalize(environment.runtimeHome) : "";
+  const attachmentStagingRoot = typeof environment.attachmentStagingRoot === "string"
+    ? normalize(environment.attachmentStagingRoot)
+    : "";
+  if (runtimeHome !== environment.runtimeHome || attachmentStagingRoot !== environment.attachmentStagingRoot) {
+    throw new TypeError("execution environment owned roots must be canonical");
+  }
+  if (!allowedReadRoots.some((root) => adapter.samePath(root, canonicalRoot))
+    || !allowedWriteRoots.some((root) => adapter.samePath(root, canonicalRoot))) {
+    throw new TypeError("workspace root must be explicitly readable and writable");
+  }
+  for (const root of [...allowedReadRoots, ...allowedWriteRoots]) {
+    if (containsPlatformPath(platformTarget, root, runtimeHome)
+      || containsPlatformPath(platformTarget, runtimeHome, root)
+      || containsPlatformPath(platformTarget, root, attachmentStagingRoot)
+      || containsPlatformPath(platformTarget, attachmentStagingRoot, root)) {
+      throw new TypeError("allowed workspace roots must not overlap Runtime-owned roots");
+    }
+  }
+  return Object.freeze({
+    attachmentStagingRoot,
+    digest: environment.digest,
+    platformTarget,
+    revision,
+    runtimeHome,
+    workspace: Object.freeze({
+      allowedReadRoots,
+      allowedWriteRoots,
+      canonicalRoot,
+      identity: boundedIdentifier(workspace.identity, "execution environment workspace identity"),
+    }),
   });
 };
 
@@ -809,6 +940,7 @@ export class ProductSessionService extends Service {
   static inject = ["agents", "sessions"];
   private readonly backendValue: PrimarySessionBackend;
   private readonly publicationFenceValue: PrimaryRootPublicationFence;
+  private executionEnvironmentValue: ProductExecutionEnvironment | undefined;
   private workspaceValue: PrimarySessionWorkspace | undefined;
   private admissionValue: PrimarySessionAdmission | undefined;
   private retirementGuardValue: PrimarySessionRetirementGuard | undefined;
@@ -847,6 +979,16 @@ export class ProductSessionService extends Service {
 
   bindWorkspace(value: unknown): PrimarySessionWorkspace {
     const workspace = validatePrimarySessionWorkspace(value);
+    const executionEnvironment = this.executionEnvironmentValue;
+    if (executionEnvironment !== undefined
+      && (workspace.identity !== executionEnvironment.workspace.identity
+        || workspace.path !== executionEnvironment.workspace.canonicalRoot
+        || workspace.platformTarget !== executionEnvironment.platformTarget)) {
+      throw new ProtocolError(
+        "protocol_environment_mismatch",
+        "primary Session workspace differs from the product execution environment",
+      );
+    }
     if (this.workspaceValue !== undefined) {
       if (JSON.stringify(this.workspaceValue) !== JSON.stringify(workspace)) {
         throw new ProtocolError("protocol_environment_mismatch", "primary Session workspace authority changed");
@@ -860,6 +1002,41 @@ export class ProductSessionService extends Service {
       this.settlementDeadlineValue,
     );
     return workspace;
+  }
+
+  bindExecutionEnvironment(value: unknown): ProductExecutionEnvironment {
+    const environment = validateProductExecutionEnvironment(value);
+    const workspace = this.workspaceValue;
+    if (workspace !== undefined
+      && (workspace.identity !== environment.workspace.identity
+        || workspace.path !== environment.workspace.canonicalRoot
+        || workspace.platformTarget !== environment.platformTarget)) {
+      throw new ProtocolError(
+        "protocol_environment_mismatch",
+        "product execution environment differs from the primary Session workspace",
+      );
+    }
+    if (this.executionEnvironmentValue !== undefined) {
+      if (JSON.stringify(this.executionEnvironmentValue) !== JSON.stringify(environment)) {
+        throw new ProtocolError(
+          "protocol_environment_mismatch",
+          "product execution environment authority changed",
+        );
+      }
+      return this.executionEnvironmentValue;
+    }
+    this.executionEnvironmentValue = environment;
+    return environment;
+  }
+
+  requireExecutionEnvironment(): ProductExecutionEnvironment {
+    if (this.executionEnvironmentValue === undefined) {
+      throw new ProtocolError(
+        "protocol_environment_mismatch",
+        "product execution environment is not initialized",
+      );
+    }
+    return this.executionEnvironmentValue;
   }
 
   snapshot(): Readonly<ProductSessionSnapshot> {

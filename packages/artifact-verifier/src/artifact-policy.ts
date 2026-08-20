@@ -140,6 +140,16 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/validation.ts",
     ],
   },
+  {
+    packageName: "@myagents-dsh/tool-runtime-product",
+    relativeDirectory: "packages/tool-runtime-product",
+    allowedFiles: ["package.json", "src/index.ts", "src/keyed-locks.ts", "src/runtime.ts"],
+  },
+  {
+    packageName: "@myagents-dsh/tools-fs",
+    relativeDirectory: "packages/tools-fs",
+    allowedFiles: ["package.json", "src/canonical-file-tools.ts", "src/index.ts", "src/local-filesystem.ts"],
+  },
 ]);
 
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;

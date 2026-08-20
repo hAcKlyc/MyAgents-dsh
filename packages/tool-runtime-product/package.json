@@ -1,0 +1,21 @@
+{
+  "name": "@myagents-dsh/tool-runtime-product",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Product tool execution ownership, policy, checkpoint, lock, and ReadState authority",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/operation-runtime": "0.0.0",
+    "@myagents-dsh/tool-contracts": "0.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6"
+  }
+}

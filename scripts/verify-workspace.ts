@@ -20,6 +20,8 @@ const workspacePackages = new Map([
   ["packages/test-host", "@myagents-dsh/test-host"],
   ["packages/testkit", "@myagents-dsh/testkit"],
   ["packages/tool-contracts", "@myagents-dsh/tool-contracts"],
+  ["packages/tool-runtime-product", "@myagents-dsh/tool-runtime-product"],
+  ["packages/tools-fs", "@myagents-dsh/tools-fs"],
 ]);
 
 const expectedScripts = new Map([
@@ -124,6 +126,8 @@ const expectedWorkspaceFiles = new Map([
     "src/schema.ts",
     "src/validation.ts",
   ]],
+  ["packages/tool-runtime-product", ["src/index.ts", "src/keyed-locks.ts", "src/runtime.ts"]],
+  ["packages/tools-fs", ["src/canonical-file-tools.ts", "src/index.ts", "src/local-filesystem.ts"]],
 ]);
 
 const readJson = async (path: string): Promise<JsonObject> => {

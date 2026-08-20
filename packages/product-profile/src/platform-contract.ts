@@ -268,7 +268,10 @@ const windowsAdapter = (): PlatformAdapterContract => Object.freeze({
   sqlite: Object.freeze({ journalMode: "wal", synchronous: "full", parentDirectoryFlush: "record-unavailable" }),
   artifact: Object.freeze({ archive: "zip", executableSuffix: ".exe", targetTriple: "win32-x64" }),
   normalizeAbsolutePath(value: string): string {
-    if (!win32.isAbsolute(value)) throw new TypeError("win32-x64 path must be absolute");
+    const root = win32.parse(value).root;
+    if (!win32.isAbsolute(value) || root === "\\" || root === "/") {
+      throw new TypeError("win32-x64 path must be fully qualified and absolute");
+    }
     return win32.normalize(value);
   },
   samePath(left: string, right: string): boolean {

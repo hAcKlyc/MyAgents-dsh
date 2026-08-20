@@ -235,7 +235,11 @@ describe("composition-selected platform adapter contracts", () => {
     expect(adapter.normalizeAbsolutePath("C:\\Fixture\\Workspace\\one\\..\\two"))
       .toBe("C:\\Fixture\\Workspace\\two");
     expect(adapter.samePath("C:\\FIXTURE\\workspace", "c:\\fixture\\WORKSPACE")).toBe(true);
-    expect(() => adapter.normalizeAbsolutePath("relative\\path")).toThrow("must be absolute");
+    expect(() => adapter.normalizeAbsolutePath("relative\\path")).toThrow("fully qualified and absolute");
+    expect(() => adapter.normalizeAbsolutePath("\\workspace"))
+      .toThrow("fully qualified and absolute");
+    expect(() => adapter.normalizeAbsolutePath("/workspace"))
+      .toThrow("fully qualified and absolute");
     const plan = adapter.publicationPlan("C:\\Fixture\\state.db", "nonce-1");
     expect(win32.dirname(plan.temporary)).toBe(win32.dirname(plan.target));
     expect(plan.steps).toEqual([

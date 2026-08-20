@@ -1,4 +1,4 @@
-import { LlmAdapter } from "@deepseek-ai/dsh-llm";
+import { CallId, LlmAdapter } from "@deepseek-ai/dsh-llm";
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -8,6 +8,7 @@ import type {
   StreamChunk,
   TokenUsage,
 } from "@deepseek-ai/dsh-llm";
+import { types as utilTypes } from "node:util";
 
 export interface FakeLlmAdapterOptions {
   readonly contextWindow?: number;
@@ -18,6 +19,14 @@ export interface FakeLlmAdapterOptions {
 export type FakeLlmScript = Readonly<{
   kind: "complete";
   text: string | readonly string[];
+  usage?: Readonly<TokenUsage>;
+}> | Readonly<{
+  calls: readonly Readonly<{
+    arguments: string;
+    id: string;
+    name: string;
+  }>[];
+  kind: "tool-calls";
   usage?: Readonly<TokenUsage>;
 }> | Readonly<{
   kind: "error";
@@ -54,6 +63,7 @@ const exactPlainDataRecord = (
   description: string,
 ): JsonObject => {
   if (value === null || typeof value !== "object" || Array.isArray(value)
+    || utilTypes.isProxy(value)
     || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
     throw new TypeError(`${description} must be a plain object`);
   }
@@ -163,7 +173,7 @@ export class ScriptedFakeLlmAdapter extends LlmAdapter {
   enqueue(script: FakeLlmScript): void {
     const candidate = exactPlainDataRecord(
       script,
-      ["kind", "message", "text", "usage"],
+      ["calls", "kind", "message", "text", "usage"],
       "fake LLM script",
     );
     if (candidate.kind === "complete") {
@@ -202,6 +212,34 @@ export class ScriptedFakeLlmAdapter extends LlmAdapter {
       }
       const usage = exactUsage(candidate.usage as Readonly<TokenUsage> | undefined);
       this.#scripts.push(frozenClone({ kind: "complete", text: segments, usage }));
+      return;
+    }
+    if (candidate.kind === "tool-calls") {
+      exactPlainDataRecord(script, ["calls", "kind", "usage"], "fake LLM tool-call script");
+      const calls = candidate.calls;
+      if (!Array.isArray(calls) || utilTypes.isProxy(calls) || Object.getPrototypeOf(calls) !== Array.prototype
+        || calls.length < 1 || calls.length > 32 || Reflect.ownKeys(calls).length !== calls.length + 1) {
+        throw new TypeError("fake LLM tool-call script requires a bounded dense call array");
+      }
+      const normalizedCalls = calls.map((call, index) => {
+        const descriptor = Object.getOwnPropertyDescriptor(calls, String(index));
+        if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+          throw new TypeError("fake LLM tool-call script requires a bounded dense call array");
+        }
+        const record = exactPlainDataRecord(call, ["arguments", "id", "name"], "fake LLM tool call");
+        const id = boundedIdentifier(record.id, "fake LLM tool call id");
+        const name = boundedIdentifier(record.name, "fake LLM tool call name");
+        if (typeof record.arguments !== "string" || record.arguments.length === 0
+          || record.arguments.length > 1_000_000) {
+          throw new TypeError("fake LLM tool call arguments must be bounded text");
+        }
+        return Object.freeze({ arguments: record.arguments, id, name });
+      });
+      this.#scripts.push(frozenClone({
+        calls: normalizedCalls,
+        kind: "tool-calls",
+        usage: exactUsage(candidate.usage as Readonly<TokenUsage> | undefined),
+      }));
       return;
     }
     if (candidate.kind === "error") {
@@ -275,6 +313,32 @@ export class ScriptedFakeLlmAdapter extends LlmAdapter {
           signal.addEventListener("abort", onAbort, { once: true });
           if (signal.aborted) onAbort();
         });
+        return;
+      }
+      if (script.kind === "tool-calls") {
+        for (const [index, call] of script.calls.entries()) {
+          const id = CallId(call.id);
+          throwIfAborted();
+          yield { type: "block-start", index, blockType: "tool-call" };
+          throwIfAborted();
+          yield {
+            type: "tool-call-delta",
+            index,
+            id,
+            name: call.name,
+            argumentsDelta: call.arguments,
+          };
+          throwIfAborted();
+          yield {
+            type: "block-end",
+            index,
+            block: { type: "tool-call", id, name: call.name, arguments: call.arguments },
+          };
+        }
+        throwIfAborted();
+        yield { type: "usage", usage: exactUsage(script.usage) };
+        throwIfAborted();
+        yield { type: "finish", reason: { kind: "tool-calls" } };
         return;
       }
       const segments = typeof script.text === "string" ? [script.text] : script.text;
