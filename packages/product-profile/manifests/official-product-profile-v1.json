@@ -66,6 +66,11 @@
         "version": "0.1.0-rc.6"
       },
       {
+        "name": "@deepseek-ai/dsh-jobs-local",
+        "role": "dsh-library",
+        "version": "0.1.0-rc.6"
+      },
+      {
         "name": "@deepseek-ai/dsh-llm",
         "role": "dsh-library",
         "version": "0.1.0-rc.6"
@@ -161,12 +166,22 @@
         "version": "0.1.0-rc.6"
       },
       {
+        "name": "@deepseek-ai/dsh-subprocess-local",
+        "role": "dsh-library",
+        "version": "0.1.0-rc.6"
+      },
+      {
         "name": "@deepseek-ai/dsh-system-prompt",
         "role": "dsh-library",
         "version": "0.1.0-rc.6"
       },
       {
         "name": "@deepseek-ai/dsh-timeout",
+        "role": "dsh-library",
+        "version": "0.1.0-rc.6"
+      },
+      {
+        "name": "@deepseek-ai/dsh-tool-call-timeout-policy",
         "role": "dsh-library",
         "version": "0.1.0-rc.6"
       },
@@ -243,7 +258,7 @@
     ]
   },
   "dsh": {
-    "baselineSha256": "3c62e8912007a684563c37496a243839ebb9285712e8016b1c4d0c3508fde290",
+    "baselineSha256": "849828e8e4ac77c3d04896462cbd9e67afbd0015b4f68387d39b9592aa191678",
     "release": "0.1.0-rc.6"
   },
   "formatVersion": 1,
@@ -257,7 +272,7 @@
   },
   "profileId": "myagents-dsh-official-v1",
   "protocol": {
-    "schemaSha256": "dafa25fdffaee468ffa41d0810e4688a85e59baa991efb589c9fb182c9234ccc",
+    "schemaSha256": "c72e993e6992336add20453d029ba8c5cca6cbf211776c323ab54567b8814d46",
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "forbidden-until-patched-dsh-and-batch-1-gate",

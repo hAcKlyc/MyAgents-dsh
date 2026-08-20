@@ -9,6 +9,7 @@
   "references": [
     { "path": "../product-profile" },
     { "path": "../tool-contracts" },
-    { "path": "../tool-runtime-product" }
+    { "path": "../tool-runtime-product" },
+    { "path": "../tools-process" }
   ]
 }

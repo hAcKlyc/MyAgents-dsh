@@ -38,7 +38,27 @@ export interface PrimarySessionWorkspace {
 export interface ProductExecutionEnvironment {
   readonly attachmentStagingRoot: string;
   readonly digest: string;
+  readonly environment: Readonly<{
+    readonly allowedKeys: readonly string[];
+    readonly inheritedKeys: readonly string[];
+    readonly secretValues: "reverse-port-only";
+  }>;
+  readonly executables: Readonly<{
+    readonly allowedCommandRefs: readonly string[];
+    readonly bashDialect: "bash";
+    readonly bashRef: string;
+    readonly bundledNodeRef: string;
+    readonly pathPolicy: "sealed";
+    readonly ripgrepRef: string;
+    readonly windowsPowerShellRef?: string;
+    readonly windowsUtf8PreludeRef?: string;
+  }>;
   readonly platformTarget: PlatformTarget;
+  readonly process: Readonly<{
+    readonly backgroundRetention: "allow" | "deny";
+    readonly killTreeOnAbort: true;
+    readonly maxChildren: number;
+  }>;
   readonly revision: string;
   readonly runtimeHome: string;
   readonly workspace: Readonly<{
@@ -201,6 +221,34 @@ const boundedIdentifier = (value: unknown, description: string): string => {
   return value;
 };
 
+const exactIdentifierArray = (
+  value: unknown,
+  description: string,
+  maxItems: number,
+  environmentKeys = false,
+): readonly string[] => {
+  if (!Array.isArray(value) || utilTypes.isProxy(value) || value.length > maxItems) {
+    throw new TypeError(`${description} must be a bounded array`);
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const result: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = descriptors[String(index)];
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new TypeError(`${description} must be a dense own-data array`);
+    }
+    const item = boundedIdentifier(descriptor.value, `${description} item`);
+    if (environmentKeys && !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u.test(item)) {
+      throw new TypeError(`${description} contains an invalid environment key`);
+    }
+    result.push(item);
+  }
+  if (Reflect.ownKeys(value).length !== value.length + 1 || new Set(result).size !== result.length) {
+    throw new TypeError(`${description} must be dense and unique`);
+  }
+  return Object.freeze(result);
+};
+
 export const validatePrimarySessionWorkspace = (value: unknown): PrimarySessionWorkspace => {
   const workspace = exactOwnDataObject(
     value,
@@ -276,7 +324,17 @@ export const validateProductExecutionEnvironment = (
 ): ProductExecutionEnvironment => {
   const environment = exactOwnDataObject(
     value,
-    ["attachmentStagingRoot", "digest", "platformTarget", "revision", "runtimeHome", "workspace"],
+    [
+      "attachmentStagingRoot",
+      "digest",
+      "environment",
+      "executables",
+      "platformTarget",
+      "process",
+      "revision",
+      "runtimeHome",
+      "workspace",
+    ],
     [],
     "product execution environment authority",
   );
@@ -296,6 +354,56 @@ export const validateProductExecutionEnvironment = (
     "execution environment workspace",
   );
   const normalize = (path: string): string => adapter.normalizeAbsolutePath(path);
+  const executableAuthority = exactOwnDataObject(
+    environment.executables,
+    ["allowedCommandRefs", "bashDialect", "bashRef", "bundledNodeRef", "pathPolicy", "ripgrepRef"],
+    ["windowsPowerShellRef", "windowsUtf8PreludeRef"],
+    "execution environment executable authority",
+  );
+  if (executableAuthority.bashDialect !== "bash" || executableAuthority.pathPolicy !== "sealed") {
+    throw new TypeError("execution environment executable authority must select sealed Bash");
+  }
+  const allowedCommandRefs = exactIdentifierArray(
+    executableAuthority.allowedCommandRefs,
+    "allowed command references",
+    128,
+  );
+  const windowsUtf8PreludeRef = Object.hasOwn(executableAuthority, "windowsUtf8PreludeRef")
+    ? boundedIdentifier(executableAuthority.windowsUtf8PreludeRef, "Windows UTF-8 prelude reference")
+    : undefined;
+  const windowsPowerShellRef = Object.hasOwn(executableAuthority, "windowsPowerShellRef")
+    ? boundedIdentifier(executableAuthority.windowsPowerShellRef, "Windows PowerShell executable reference")
+    : undefined;
+  if (platformTarget === "win32-x64"
+    ? windowsUtf8PreludeRef === undefined || windowsPowerShellRef === undefined
+    : windowsUtf8PreludeRef !== undefined || windowsPowerShellRef !== undefined) {
+    throw new TypeError("Windows execution environment requires one exact native process reference set");
+  }
+  const environmentAuthority = exactOwnDataObject(
+    environment.environment,
+    ["allowedKeys", "inheritedKeys", "secretValues"],
+    [],
+    "execution environment variable authority",
+  );
+  if (environmentAuthority.secretValues !== "reverse-port-only") {
+    throw new TypeError("execution environment secrets must remain reverse-port-only");
+  }
+  const allowedKeys = exactIdentifierArray(environmentAuthority.allowedKeys, "allowed environment keys", 256, true);
+  const inheritedKeys = exactIdentifierArray(environmentAuthority.inheritedKeys, "inherited environment keys", 256, true);
+  if (allowedKeys.some((key) => inheritedKeys.includes(key))) {
+    throw new TypeError("allowed and inherited environment keys must not overlap");
+  }
+  const processAuthority = exactOwnDataObject(
+    environment.process,
+    ["backgroundRetention", "killTreeOnAbort", "maxChildren"],
+    [],
+    "execution environment process authority",
+  );
+  if ((processAuthority.backgroundRetention !== "allow" && processAuthority.backgroundRetention !== "deny")
+    || processAuthority.killTreeOnAbort !== true || !Number.isSafeInteger(processAuthority.maxChildren)
+    || (processAuthority.maxChildren as number) < 1 || (processAuthority.maxChildren as number) > 128) {
+    throw new TypeError("execution environment process authority is invalid");
+  }
   const canonicalRoot = typeof workspace.canonicalRoot === "string"
     ? normalize(workspace.canonicalRoot)
     : "";
@@ -339,7 +447,27 @@ export const validateProductExecutionEnvironment = (
   return Object.freeze({
     attachmentStagingRoot,
     digest: environment.digest,
+    environment: Object.freeze({
+      allowedKeys,
+      inheritedKeys,
+      secretValues: "reverse-port-only" as const,
+    }),
+    executables: Object.freeze({
+      allowedCommandRefs,
+      bashDialect: "bash" as const,
+      bashRef: boundedIdentifier(executableAuthority.bashRef, "Bash executable reference"),
+      bundledNodeRef: boundedIdentifier(executableAuthority.bundledNodeRef, "bundled Node executable reference"),
+      pathPolicy: "sealed" as const,
+      ripgrepRef: boundedIdentifier(executableAuthority.ripgrepRef, "ripgrep executable reference"),
+      ...(windowsUtf8PreludeRef === undefined ? {} : { windowsUtf8PreludeRef }),
+      ...(windowsPowerShellRef === undefined ? {} : { windowsPowerShellRef }),
+    }),
     platformTarget,
+    process: Object.freeze({
+      backgroundRetention: processAuthority.backgroundRetention,
+      killTreeOnAbort: true as const,
+      maxChildren: processAuthority.maxChildren as number,
+    }),
     revision,
     runtimeHome,
     workspace: Object.freeze({

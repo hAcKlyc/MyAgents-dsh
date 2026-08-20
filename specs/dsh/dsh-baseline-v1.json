@@ -17,8 +17,8 @@
     "registry": "https://registry.npmjs.org",
     "dshRelease": "0.1.0-rc.6",
     "sourceAssociation": "unproven",
-    "directPackageCount": 39,
-    "productionPackageCount": 165
+    "directPackageCount": 42,
+    "productionPackageCount": 170
   },
   "publicCompileFixture": "packages/product-profile/src/dsh-public-surface.compile.ts",
   "publicSeams": [
@@ -285,6 +285,21 @@
       ]
     },
     {
+      "id": "jobs-local",
+      "package": "@deepseek-ai/dsh-jobs-local",
+      "importPath": "@deepseek-ai/dsh-jobs-local",
+      "classification": "provider",
+      "batchUse": [
+        "B1-W2"
+      ],
+      "values": [
+        "LocalJobRegistry"
+      ],
+      "types": [
+        "Config"
+      ]
+    },
+    {
       "id": "approval",
       "package": "@deepseek-ai/dsh-user-approval",
       "importPath": "@deepseek-ai/dsh-user-approval",
@@ -390,6 +405,19 @@
       ]
     },
     {
+      "id": "subprocess-local",
+      "package": "@deepseek-ai/dsh-subprocess-local",
+      "importPath": "@deepseek-ai/dsh-subprocess-local",
+      "classification": "provider",
+      "batchUse": [
+        "B1-W2"
+      ],
+      "values": [
+        "LocalSubprocessRuntime"
+      ],
+      "types": []
+    },
+    {
       "id": "shell",
       "package": "@deepseek-ai/dsh-shell",
       "importPath": "@deepseek-ai/dsh-shell",
@@ -405,6 +433,20 @@
         "ShellExecRequest",
         "ShellRunResult"
       ]
+    },
+    {
+      "id": "tool-call-timeout-policy",
+      "package": "@deepseek-ai/dsh-tool-call-timeout-policy",
+      "importPath": "@deepseek-ai/dsh-tool-call-timeout-policy",
+      "classification": "provider",
+      "batchUse": [
+        "B1-W2"
+      ],
+      "values": [
+        "TOOL_TIMEOUT",
+        "apply"
+      ],
+      "types": []
     },
     {
       "id": "web",
@@ -525,7 +567,7 @@
     },
     {
       "license": "MIT",
-      "count": 153
+      "count": 158
     },
     {
       "license": "Python-2.0",
@@ -741,6 +783,16 @@
       "version": "0.1.0-rc.6",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-jobs/-/dsh-jobs-0.1.0-rc.6.tgz",
       "integrity": "sha512-fmyvSOVsNObmRnciuH57ZntuCSb0gflRleCeQx1ToGHRoGrR4Ndnstx33SuIXUQt6OSUhD2w2WKQTReXogpnSQ==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-jobs-local",
+      "name": "@deepseek-ai/dsh-jobs-local",
+      "version": "0.1.0-rc.6",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-jobs-local/-/dsh-jobs-local-0.1.0-rc.6.tgz",
+      "integrity": "sha512-vnCcHPjvXLQq2i80No61oKF/165+OvEC2iUBmVTxl6ka87yNECwYf4nrspHKqP9HbVWndtNP0lGgrnz7bo0XCw==",
       "license": "MIT",
       "direct": true,
       "optional": false
@@ -966,6 +1018,16 @@
       "optional": false
     },
     {
+      "path": "node_modules/@deepseek-ai/dsh-subprocess-local",
+      "name": "@deepseek-ai/dsh-subprocess-local",
+      "version": "0.1.0-rc.6",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-subprocess-local/-/dsh-subprocess-local-0.1.0-rc.6.tgz",
+      "integrity": "sha512-D2daTRaprE25ti1Ra69eURPwLULpnRyUHqAGtcMHddcjNIsZ4yR0DGinYOsgoRymzu3t02qLxyoio05atSViRw==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
       "path": "node_modules/@deepseek-ai/dsh-system-prompt",
       "name": "@deepseek-ai/dsh-system-prompt",
       "version": "0.1.0-rc.6",
@@ -981,6 +1043,16 @@
       "version": "0.1.0-rc.6",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-timeout/-/dsh-timeout-0.1.0-rc.6.tgz",
       "integrity": "sha512-CUean0fAnfsJVszFEip7PsU/S26W+JfDFfsza2dCtlw8n6xlkbHA9Gjxdk2aTwqDGCgXEPkRW7mYkdJ0n6FR7w==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-tool-call-timeout-policy",
+      "name": "@deepseek-ai/dsh-tool-call-timeout-policy",
+      "version": "0.1.0-rc.6",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-tool-call-timeout-policy/-/dsh-tool-call-timeout-policy-0.1.0-rc.6.tgz",
+      "integrity": "sha512-PBK6Lkj4AK4LJXBJW+67AfSE1bxMUbjAE8kYL4loKOetGpEpu2iU35jb7HirjsgG7Byz2mRxT/jvbWhW9/uxOA==",
       "license": "MIT",
       "direct": true,
       "optional": false
@@ -1851,6 +1923,26 @@
       "version": "1.0.0",
       "resolved": "https://registry.npmjs.org/negotiator/-/negotiator-1.0.0.tgz",
       "integrity": "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==",
+      "license": "MIT",
+      "direct": false,
+      "optional": false
+    },
+    {
+      "path": "node_modules/node-addon-api",
+      "name": "node-addon-api",
+      "version": "7.1.1",
+      "resolved": "https://registry.npmjs.org/node-addon-api/-/node-addon-api-7.1.1.tgz",
+      "integrity": "sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==",
+      "license": "MIT",
+      "direct": false,
+      "optional": false
+    },
+    {
+      "path": "node_modules/node-pty",
+      "name": "node-pty",
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/node-pty/-/node-pty-1.1.0.tgz",
+      "integrity": "sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==",
       "license": "MIT",
       "direct": false,
       "optional": false

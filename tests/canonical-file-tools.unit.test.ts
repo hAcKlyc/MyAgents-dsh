@@ -3,6 +3,7 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import { CallId, createToolResultMessage } from "@deepseek-ai/dsh-llm";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import type { ProductOperationRecord } from "@myagents-dsh/operation-runtime";
 import {
   CANONICAL_TOOL_CONTRACT_SHA256,
@@ -12,6 +13,7 @@ import {
 import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
 import {
   ProductKeyedLocks,
+  ProductToolError,
   ProductToolRuntime,
   type ProductToolCheckpointHandle,
   type ProductToolCheckpointRequest,
@@ -24,16 +26,21 @@ import {
   type AttachmentPublicationRequest,
   type CanonicalFileToolsConfig,
 } from "@myagents-dsh/tools-fs";
+import type {
+  ProductProcessWorkspaceAuthority,
+  ProductSearchResult,
+} from "@myagents-dsh/tools-process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const temporaryRoots: string[] = [];
 const noOverride = Symbol("no-override");
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(temporaryRoots.splice(0).map((path) => rm(path, { force: true, recursive: true })));
 });
 
@@ -41,10 +48,11 @@ const catalogWithoutDigest = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
   implementationCatalog: CANONICAL_TOOL_NAMES,
-  effectiveTools: Object.freeze(["Read", "Write", "Edit"] as const),
+  effectiveTools: Object.freeze(["Read", "Write", "Edit", "Glob", "Grep", "ls"] as const),
   revision: "file-tools-v1",
   diagnostics: Object.freeze(CANONICAL_TOOL_NAMES.map((tool) => Object.freeze(
-    (["Read", "Write", "Edit"] as const).includes(tool as "Read" | "Write" | "Edit")
+    (["Read", "Write", "Edit", "Glob", "Grep", "ls"] as const)
+      .includes(tool as "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls")
       ? { tool, available: true as const }
       : { tool, available: false as const, reasonCode: "not-yet-installed" },
   ))),
@@ -54,13 +62,19 @@ const catalog = Object.freeze({
   digest: effectiveToolCatalogDigest(catalogWithoutDigest),
 });
 
-const harness = async () => {
+const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {}) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-file-tools-")));
   temporaryRoots.push(root);
   const workspace = join(root, "workspace");
   const runtimeHome = join(root, "runtime-home");
   const attachments = join(root, "attachments");
-  await Promise.all([mkdir(workspace), mkdir(runtimeHome), mkdir(attachments)]);
+  const additionalReadRoot = join(root, "shared-read-root");
+  await Promise.all([
+    mkdir(workspace),
+    mkdir(runtimeHome),
+    mkdir(attachments),
+    ...(options.additionalReadRoot === true ? [mkdir(additionalReadRoot)] : []),
+  ]);
   const context = new Context();
   const session = { id: "session-fixture" };
   const agent = {
@@ -71,11 +85,28 @@ const harness = async () => {
   const environment = Object.freeze({
     attachmentStagingRoot: attachments,
     digest: "a".repeat(64),
+    environment: Object.freeze({
+      allowedKeys: Object.freeze([]),
+      inheritedKeys: Object.freeze([]),
+      secretValues: "reverse-port-only" as const,
+    }),
+    executables: Object.freeze({
+      allowedCommandRefs: Object.freeze([]),
+      bashDialect: "bash" as const,
+      bashRef: "bash-v1",
+      bundledNodeRef: "node-v1",
+      pathPolicy: "sealed" as const,
+      ripgrepRef: "ripgrep-v1",
+    }),
     platformTarget: `${process.platform}-${process.arch}` as "darwin-arm64" | "win32-x64" | "linux-x64",
+    process: Object.freeze({ backgroundRetention: "allow" as const, killTreeOnAbort: true as const, maxChildren: 4 }),
     revision: "environment-v1",
     runtimeHome,
     workspace: Object.freeze({
-      allowedReadRoots: Object.freeze([workspace]),
+      allowedReadRoots: Object.freeze([
+        workspace,
+        ...(options.additionalReadRoot === true ? [additionalReadRoot] : []),
+      ]),
       allowedWriteRoots: Object.freeze([workspace]),
       canonicalRoot: workspace,
       identity: "workspace-v1",
@@ -113,8 +144,13 @@ const harness = async () => {
   let checkpointOverride: unknown = noOverride;
   let checkpointPrepareHook: ((request: ProductToolCheckpointRequest) => Promise<void>) | undefined;
   let attachmentOverride: unknown = noOverride;
+  let searchResult: ProductSearchResult = Object.freeze({ durationMs: 1, exitCode: 1, stderr: "", stdout: "" });
+  let searchImplementation: ((product: ProductToolContext) => Promise<ProductSearchResult>) | undefined;
+  const searchCommands: string[][] = [];
+  const searchWorkdirs: string[] = [];
   await context.plugin(SystemPrompt);
   await context.plugin(ToolRuntime, { mode: "native" });
+  await context.plugin(ToolCallTimeoutPolicy);
   await context.plugin(LocalWorkspaceFileSystem, {
     platform: selectPlatformAdapter(environment.platformTarget),
   });
@@ -147,6 +183,21 @@ const harness = async () => {
     requireAgent: () => agent,
     resolveOperation: () => Object.freeze({ dshTurn: 1, operation }),
   });
+  context.provide("productProcesses", {
+    resolveRetainedOutput: () => Promise.reject(
+      new ProductToolError("path_denied", "fixture path is not a retained process output"),
+    ),
+    runSearch: (
+      _product: ProductToolContext,
+      workdir: ProductProcessWorkspaceAuthority,
+      _tool: "Glob" | "Grep",
+      command: readonly string[],
+    ) => {
+      searchWorkdirs.push(workdir.target.displayPath);
+      searchCommands.push([...command]);
+      return searchImplementation?.(_product) ?? Promise.resolve(searchResult);
+    },
+  } as never);
   await context.plugin(CanonicalFileTools, {
     attachments: Object.freeze({
       publish: (request: AttachmentPublicationRequest) => {
@@ -166,7 +217,7 @@ const harness = async () => {
   let call = 0;
   let durableSequence = 0;
   const executeUncommitted = async (
-    name: "Read" | "Write" | "Edit",
+    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls",
     args: unknown,
     signal = new AbortController().signal,
   ) => {
@@ -199,7 +250,11 @@ const harness = async () => {
       type: "tool/result" as const,
     }));
   };
-  const execute = async (name: "Read" | "Write" | "Edit", args: unknown, signal = new AbortController().signal) => {
+  const execute = async (
+    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls",
+    args: unknown,
+    signal = new AbortController().signal,
+  ) => {
     const execution = await executeUncommitted(name, args, signal);
     commitResult(execution);
     const { result } = execution;
@@ -207,6 +262,7 @@ const harness = async () => {
   };
   return {
     agent,
+    additionalReadRoot,
     attachments,
     checkpoints,
     checkpointRequests,
@@ -216,6 +272,8 @@ const harness = async () => {
     execute,
     executeUncommitted,
     permissions,
+    searchCommands,
+    searchWorkdirs,
     operation,
     root,
     setAttachmentOverride: (value: unknown) => { attachmentOverride = value; },
@@ -225,6 +283,10 @@ const harness = async () => {
     },
     setCheckpointFailure: (error: Error | undefined) => { checkpointFailure = error; },
     setPermissionDecision: (decision: "allow" | "deny") => { permissionDecision = decision; },
+    setSearchResult: (value: ProductSearchResult) => { searchResult = value; },
+    setSearchImplementation: (
+      value: ((product: ProductToolContext) => Promise<ProductSearchResult>) | undefined,
+    ) => { searchImplementation = value; },
     workspace,
   };
 };
@@ -239,7 +301,8 @@ describe("canonical filesystem tools", () => {
       isError: false,
       value: { path, kind: "text", offset: 1, truncated: false },
     });
-    expect(state.context.tools.schemas().map(({ name }) => name)).toEqual(["Read", "Write", "Edit"]);
+    expect(state.context.tools.schemas().map(({ name }) => name))
+      .toEqual(["Read", "Write", "Edit", "Glob", "Grep", "ls"]);
     const write = await state.execute("Write", { file_path: path, content: "updated\n" });
     expect(write).toMatchObject({
       isError: false,
@@ -536,6 +599,439 @@ describe("canonical filesystem tools", () => {
       .resolves.toMatchObject({ isError: true });
     expect(await readFile(path, "utf8")).toBe("external replacement");
     expect({ abortHits, conflictHits }).toEqual({ abortHits: 0, conflictHits: 1 });
+    await state.context.fiber.dispose();
+  });
+
+  it("projects bounded Glob and Grep results through the shared subprocess search authority", async () => {
+    const state = await harness();
+    const nested = join(state.workspace, "src");
+    await mkdir(nested);
+    await Promise.all([
+      writeFile(join(nested, "a.ts"), "const alpha = 1;\n"),
+      writeFile(join(nested, "b.ts"), "const beta = 2;\n"),
+    ]);
+    state.setSearchResult(Object.freeze({
+      durationMs: 7,
+      exitCode: 0,
+      stderr: "",
+      stdout: "./src/b.ts\0./src/a.ts\0",
+    }));
+    await expect(state.execute("Glob", { pattern: "**/*.ts" })).resolves.toMatchObject({
+      isError: false,
+      value: {
+        durationMs: 7,
+        filenames: ["src/b.ts", "src/a.ts"],
+        numFiles: 2,
+        truncated: false,
+      },
+    });
+    expect(state.searchCommands[0]).toContain("--sortr=modified");
+    expect(state.searchCommands[0]).not.toContain("--sort=modified");
+    expect(state.searchCommands[0]).toContain("--null");
+    expect(state.searchWorkdirs[0]).toBe(state.workspace);
+
+    state.setSearchResult(Object.freeze({
+      durationMs: 9,
+      exitCode: 0,
+      stderr: "",
+      stdout: [
+        JSON.stringify({
+          type: "match",
+          data: { path: { text: "./src/a.ts" }, line_number: 1, lines: { text: "const alpha = 1;\n" } },
+        }),
+        JSON.stringify({
+          type: "match",
+          data: { path: { text: "./src/b.ts" }, line_number: 1, lines: { text: "const beta = 2;\n" } },
+        }),
+        "",
+      ].join("\n"),
+    }));
+    await expect(state.execute("Grep", {
+      pattern: "const",
+      output_mode: "count",
+      head_limit: 1,
+    })).resolves.toMatchObject({
+      isError: false,
+      value: {
+        mode: "count",
+        records: [{ path: "src/a.ts", count: 1 }],
+        limit: 1,
+        truncated: true,
+      },
+    });
+    expect(state.searchCommands[1]).toEqual(expect.arrayContaining(["--json", "--no-config", "--sort=path"]));
+    await state.context.fiber.dispose();
+  });
+
+  it("preserves the fixed Grep defaults, mode argv, ordering, and truncation truth", async () => {
+    const state = await harness();
+    const nested = join(state.workspace, "src");
+    await mkdir(nested);
+    const older = join(nested, "older.ts");
+    const newer = join(nested, "newer.ts");
+    await Promise.all([writeFile(older, "const older = 1;\n"), writeFile(newer, "const newer = 2;\n")]);
+    await utimes(older, new Date(1_000), new Date(1_000));
+    await utimes(newer, new Date(2_000), new Date(2_000));
+    state.setSearchResult(Object.freeze({
+      durationMs: 2,
+      exitCode: 0,
+      stderr: "",
+      stdout: ["./src/older.ts", "./src/newer.ts"].map((path) => JSON.stringify({
+        type: "match",
+        data: { path: { text: path }, line_number: 1, lines: { text: "const value = 1;\n" } },
+      })).join("\n"),
+    }));
+    await expect(state.execute("Grep", { pattern: "const" })).resolves.toMatchObject({
+      isError: false,
+      value: {
+        limit: 250,
+        mode: "files_with_matches",
+        records: [{ path: "src/newer.ts" }, { path: "src/older.ts" }],
+        truncated: false,
+      },
+    });
+    expect(state.searchCommands.at(-1)).toEqual(expect.arrayContaining(["--max-count", "1"]));
+    expect(state.searchCommands.at(-1)).not.toContain("--line-number");
+
+    const longLine = "x".repeat(800);
+    state.setSearchResult(Object.freeze({
+      durationMs: 3,
+      exitCode: 0,
+      stderr: "",
+      stdout: JSON.stringify({
+        type: "match",
+        data: {
+          path: { text: "./src/older.ts" },
+          line_number: 9,
+          lines: { text: `${longLine}\n` },
+          submatches: [
+            { match: { text: "x".repeat(600) }, start: 0, end: 600 },
+            { match: { text: "tail" }, start: 601, end: 605 },
+          ],
+        },
+      }),
+    }));
+    const content = await state.execute("Grep", {
+      "-n": false,
+      "-o": true,
+      context: 2,
+      head_limit: 0,
+      multiline: true,
+      output_mode: "content",
+      pattern: "x+",
+    });
+    expect(content).toMatchObject({
+      isError: false,
+      value: {
+        limit: 0,
+        mode: "content",
+        records: [
+          { path: "src/older.ts", text: `${"x".repeat(500)}... [truncated]` },
+          { path: "src/older.ts", text: "tail" },
+        ],
+        truncated: true,
+      },
+    });
+    const contentCommand = state.searchCommands.at(-1) ?? [];
+    expect(contentCommand).toEqual(expect.arrayContaining([
+      "--only-matching",
+      "--multiline",
+      "--multiline-dotall",
+      "--context=2",
+    ]));
+
+    state.setSearchResult(Object.freeze({
+      durationMs: 4,
+      exitCode: 0,
+      stderr: "",
+      stdout: Array.from({ length: 4_097 }, (_, index) => JSON.stringify({
+        type: "match",
+        data: {
+          path: { text: "./src/older.ts" },
+          line_number: index + 1,
+          lines: { text: "x\n" },
+        },
+      })).join("\n"),
+    }));
+    const unbounded = await state.execute("Grep", {
+      head_limit: 0,
+      output_mode: "content",
+      pattern: "x",
+    });
+    expect(unbounded).toMatchObject({
+      isError: false,
+      value: {
+        limit: 0,
+        truncated: true,
+      },
+    });
+    if (unbounded.isError) throw new Error("expected bounded Grep result");
+    const records = (unbounded.value as { records: unknown[] }).records;
+    expect(records).toHaveLength(4_096);
+    expect(records[0]).toEqual({ line: 1, path: "src/older.ts", text: "x" });
+    expect(contentCommand).not.toContain("--line-number");
+
+    state.setSearchResult(Object.freeze({
+      durationMs: 4,
+      exitCode: 0,
+      stderr: "",
+      stdout: JSON.stringify({
+        type: "match",
+        data: { path: { text: "./src/older.ts" }, line_number: 1, lines: { text: "x\n" } },
+      }),
+    }));
+    await expect(state.execute("Grep", {
+      "-o": true,
+      context: 3,
+      output_mode: "count",
+      pattern: "x",
+    })).resolves.toMatchObject({ isError: false, value: { records: [{ count: 1, path: "src/older.ts" }] } });
+    const countCommand = state.searchCommands.at(-1) ?? [];
+    expect(countCommand).not.toContain("--only-matching");
+    expect(countCommand).not.toContain("--context=3");
+
+    state.setSearchResult(Object.freeze({
+      durationMs: 1,
+      exitCode: 2,
+      stderr: "regex parse error: unclosed group",
+      stdout: "",
+    }));
+    await expect(state.execute("Grep", { pattern: "(" })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "invalid_pattern" } },
+    });
+    state.setSearchResult(Object.freeze({
+      durationMs: 1,
+      exitCode: 2,
+      stderr: "rg: error parsing glob '[': unclosed character class",
+      stdout: "",
+    }));
+    await expect(state.execute("Glob", { pattern: "[" })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "invalid_pattern" } },
+    });
+    await expect(state.execute("Grep", { glob: "[", pattern: "fixture" })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "invalid_pattern" } },
+    });
+    state.setSearchResult(Object.freeze({
+      durationMs: 1,
+      exitCode: 2,
+      stderr: "rg: unrecognized file type: unknown",
+      stdout: "",
+    }));
+    await expect(state.execute("Grep", { pattern: "fixture", type: "unknown" })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "invalid_pattern" } },
+    });
+    await state.context.fiber.dispose();
+  });
+
+  it("binds search cwd to the authorized root and rejects malformed, escaped, and cancelled searches", async () => {
+    const state = await harness();
+    await mkdir(join(state.workspace, "nested"));
+    await writeFile(join(state.workspace, "nested", "match.ts"), "fixture\n");
+    state.setSearchResult(Object.freeze({
+      durationMs: 1,
+      exitCode: 0,
+      stderr: "",
+      stdout: "match.ts\0",
+    }));
+    await expect(state.execute("Glob", { path: "nested", pattern: "*.ts" })).resolves.toMatchObject({
+      isError: false,
+      value: { filenames: ["nested/match.ts"] },
+    });
+    expect(state.searchWorkdirs.at(-1)).toBe(join(state.workspace, "nested"));
+
+    await expect(state.execute("Glob", { pattern: "   " })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "invalid_pattern" } },
+    });
+    state.setSearchResult(Object.freeze({
+      durationMs: 1,
+      exitCode: 0,
+      stderr: "",
+      stdout: `${state.root}\0`,
+    }));
+    await expect(state.execute("Glob", { pattern: "*" })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "search_failed" } },
+    });
+    state.setSearchResult(Object.freeze({ durationMs: 1, exitCode: 0, stderr: "", stdout: "not-json\n" }));
+    await expect(state.execute("Grep", { pattern: "fixture" })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "search_failed" } },
+    });
+    const aborted = new AbortController();
+    aborted.abort(new Error("fixture search abort"));
+    await expect(state.execute("Grep", { pattern: "fixture" }, aborted.signal)).resolves.toMatchObject({ isError: true });
+    await state.context.fiber.dispose();
+  });
+
+  it("projects results under an additional allowed read root as canonical absolute paths", async () => {
+    const state = await harness({ additionalReadRoot: true });
+    const match = join(state.additionalReadRoot, "match.ts");
+    await writeFile(match, "fixture\n");
+    state.setSearchResult(Object.freeze({
+      durationMs: 1,
+      exitCode: 0,
+      stderr: "",
+      stdout: "match.ts\0",
+    }));
+    await expect(state.execute("Glob", { path: state.additionalReadRoot, pattern: "*.ts" }))
+      .resolves.toMatchObject({ isError: false, value: { filenames: [match] } });
+    state.setSearchResult(Object.freeze({
+      durationMs: 1,
+      exitCode: 0,
+      stderr: "",
+      stdout: JSON.stringify({
+        type: "match",
+        data: { path: { text: "match.ts" }, line_number: 1, lines: { text: "fixture\n" } },
+      }),
+    }));
+    await expect(state.execute("Grep", {
+      output_mode: "content",
+      path: state.additionalReadRoot,
+      pattern: "fixture",
+    })).resolves.toMatchObject({ isError: false, value: { records: [{ path: match }] } });
+    await state.context.fiber.dispose();
+  });
+
+  it("enforces the DSH tool-call deadline and waits for search and ls bodies to observe cancellation", async () => {
+    vi.useFakeTimers();
+    const searchState = await harness();
+    let searchAbortHits = 0;
+    let observeSearchStart!: () => void;
+    const searchStarted = new Promise<void>((resolve) => { observeSearchStart = resolve; });
+    searchState.setSearchImplementation((product) => new Promise((_resolve, reject) => {
+      observeSearchStart();
+      product.signal.addEventListener("abort", () => {
+        searchAbortHits += 1;
+        reject(product.signal.reason instanceof Error ? product.signal.reason : new Error("search aborted"));
+      }, { once: true });
+    }));
+    const search = searchState.execute("Glob", { pattern: "*.ts" });
+    await searchStarted;
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(search).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "TOOL_TIMEOUT" } },
+    });
+    expect(searchAbortHits).toBe(1);
+    await searchState.context.fiber.dispose();
+
+    const lsState = await harness();
+    const local = lsState.context.fs as LocalWorkspaceFileSystem;
+    let lsAbortHits = 0;
+    let observeLsStart!: () => void;
+    const lsStarted = new Promise<void>((resolve) => { observeLsStart = resolve; });
+    vi.spyOn(local, "listDirectoryEntries").mockImplementation((_authority, _limit, signal) =>
+      new Promise((_resolve, reject) => {
+        observeLsStart();
+        signal?.addEventListener("abort", () => {
+          lsAbortHits += 1;
+          reject(signal.reason instanceof Error ? signal.reason : new Error("ls aborted"));
+        }, { once: true });
+      }));
+    const listing = lsState.execute("ls", {});
+    await lsStarted;
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(listing).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "TOOL_TIMEOUT" } },
+    });
+    expect(lsAbortHits).toBe(1);
+    await lsState.context.fiber.dispose();
+  });
+
+  it("keeps lowercase ls compatibility bounded and fail-closed at the workspace root", async () => {
+    const state = await harness();
+    await Promise.all([
+      writeFile(join(state.workspace, ".hidden"), "hidden"),
+      mkdir(join(state.workspace, "Alpha")),
+      writeFile(join(state.workspace, "beta.txt"), "beta"),
+    ]);
+    await expect(state.execute("ls", {})).resolves.toMatchObject({
+      isError: false,
+      value: ".hidden\nAlpha/\nbeta.txt",
+    });
+    await expect(state.execute("ls", { limit: 0 })).resolves.toMatchObject({
+      isError: false,
+      value: "(empty directory)",
+    });
+    await expect(state.execute("ls", { limit: 0.5 })).resolves.toMatchObject({
+      isError: false,
+      value: ".hidden\n\n[0.5 entries limit reached. Use limit=1 for more]",
+    });
+    await expect(state.execute("ls", { path: "" })).resolves.toMatchObject({
+      isError: false,
+      value: ".hidden\nAlpha/\nbeta.txt",
+    });
+    await expect(state.execute("ls", { path: state.root })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "path_denied" } },
+    });
+    await state.context.fiber.dispose();
+  });
+
+  it("applies the exact ls entry and complete-line byte notices within the 50KB result bound", async () => {
+    const state = await harness();
+    const countDirectory = join(state.workspace, "count-bound");
+    const byteDirectory = join(state.workspace, "byte-bound");
+    await Promise.all([mkdir(countDirectory), mkdir(byteDirectory)]);
+    await Promise.all(Array.from({ length: 501 }, async (_, index) => {
+      await writeFile(join(countDirectory, `entry-${String(index).padStart(3, "0")}`), "");
+    }));
+    const count = await state.execute("ls", { path: "count-bound" });
+    expect(count).toMatchObject({ isError: false });
+    expect((count.value as string).endsWith("[500 entries limit reached. Use limit=1000 for more]")).toBe(true);
+    expect(Buffer.byteLength(count.value as string, "utf8")).toBeLessThanOrEqual(50 * 1_024);
+    const expandedCount = await state.execute("ls", { path: "count-bound", limit: 1_000 });
+    expect(expandedCount).toMatchObject({ isError: false });
+    expect((expandedCount.value as string).split("\n")).toHaveLength(501);
+    expect((expandedCount.value as string).includes("entries limit reached")).toBe(false);
+
+    await Promise.all(Array.from({ length: 220 }, async (_, index) => {
+      const suffix = String(index).padStart(3, "0");
+      await writeFile(join(byteDirectory, `${"x".repeat(235)}-${suffix}`), "");
+    }));
+    const bytes = await state.execute("ls", { path: "byte-bound" });
+    expect(bytes.isError ? bytes : null).toBeNull();
+    expect(bytes).toMatchObject({ isError: false });
+    expect((bytes.value as string).endsWith("[50.0KB limit reached]")).toBe(true);
+    expect(Buffer.byteLength(bytes.value as string, "utf8")).toBeLessThanOrEqual(50 * 1_024);
+    await state.context.fiber.dispose();
+  });
+
+  it("rejects substituted directory authorities and counts skipped entries against the traversal bound", async () => {
+    const state = await harness();
+    const local = state.context.fs as LocalWorkspaceFileSystem;
+    const listed = join(state.workspace, "listed");
+    const displaced = join(state.workspace, "listed-displaced");
+    const unrelated = join(state.root, "unrelated");
+    await Promise.all([mkdir(listed), mkdir(unrelated)]);
+    await writeFile(join(unrelated, "private-name.txt"), "fixture");
+    const target = await local.resolve(listed);
+    const info = await local.stat(target);
+    expect(info?.type).toBe("directory");
+    const authority = Object.freeze({ target, version: String(info?.version) });
+    await rename(listed, displaced);
+    await symlink(unrelated, listed, "dir");
+    await expect(local.listDirectoryEntries(authority, 100_001))
+      .rejects.toThrow("filesystem directory authority changed");
+
+    const skipped = join(state.workspace, "skipped");
+    await mkdir(skipped);
+    await Promise.all([
+      symlink(join(state.root, "missing-a"), join(skipped, "a")),
+      symlink(join(state.root, "missing-b"), join(skipped, "b")),
+    ]);
+    const skippedTarget = await local.resolve(skipped);
+    const skippedInfo = await local.stat(skippedTarget);
+    await expect(local.listDirectoryEntries(Object.freeze({
+      target: skippedTarget,
+      version: String(skippedInfo?.version),
+    }), 1)).rejects.toThrow("filesystem directory exceeds enumeration bound");
     await state.context.fiber.dispose();
   });
 });

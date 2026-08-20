@@ -27,9 +27,7 @@
             "allowedKeys": [
               "LANG"
             ],
-            "inheritedKeys": [
-              "LANG"
-            ],
+            "inheritedKeys": [],
             "secretValues": "reverse-port-only"
           },
           "executables": {
@@ -48,6 +46,7 @@
             "mode": "deny"
           },
           "process": {
+            "backgroundRetention": "allow",
             "killTreeOnAbort": true,
             "maxChildren": 8
           },
@@ -125,9 +124,7 @@
             "allowedKeys": [
               "LANG"
             ],
-            "inheritedKeys": [
-              "LANG"
-            ],
+            "inheritedKeys": [],
             "secretValues": "reverse-port-only"
           },
           "executables": {
@@ -146,6 +143,7 @@
             "mode": "deny"
           },
           "process": {
+            "backgroundRetention": "allow",
             "killTreeOnAbort": true,
             "maxChildren": 8
           },
@@ -291,7 +289,7 @@
         },
         "runtimeGeneration": "generation-1",
         "runtimeVersion": "0.0.0",
-        "schemaSha256": "dafa25fdffaee468ffa41d0810e4688a85e59baa991efb589c9fb182c9234ccc",
+        "schemaSha256": "c72e993e6992336add20453d029ba8c5cca6cbf211776c323ab54567b8814d46",
         "sessionFormat": "dsh-session-events-v1"
       }
     },
@@ -320,7 +318,7 @@
         "runtimeSessionId": "runtime-session-1",
         "state": "ready",
         "toolCatalog": {
-          "contractSha256": "2165f0a599115ffd766e6301b8726d5114f3429160dd5dd42ee8b228a7e060e5",
+          "contractSha256": "7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b6e8",
           "diagnostics": [
             {
               "available": true,
@@ -403,7 +401,7 @@
               "tool": "TaskUpdate"
             }
           ],
-          "digest": "695f36895b7a5a9b1d2474e183524556f02ff08faa271020c6873bfb44ee1ec0",
+          "digest": "e3c39ec3bdf3f44acbd922f40b30b2a2a9f06eb3ea06501af335f64822f331cf",
           "effectiveTools": [
             "Read",
             "Write",
@@ -1071,7 +1069,7 @@
     }
   ],
   "protocolVersion": "2.0.0-draft.1",
-  "schemaSha256": "dafa25fdffaee468ffa41d0810e4688a85e59baa991efb589c9fb182c9234ccc",
+  "schemaSha256": "c72e993e6992336add20453d029ba8c5cca6cbf211776c323ab54567b8814d46",
   "valid": [
     {
       "frame": {
@@ -1098,9 +1096,7 @@
               "allowedKeys": [
                 "LANG"
               ],
-              "inheritedKeys": [
-                "LANG"
-              ],
+              "inheritedKeys": [],
               "secretValues": "reverse-port-only"
             },
             "executables": {
@@ -1119,6 +1115,7 @@
               "mode": "deny"
             },
             "process": {
+              "backgroundRetention": "allow",
               "killTreeOnAbort": true,
               "maxChildren": 8
             },
@@ -1267,7 +1264,7 @@
           },
           "runtimeGeneration": "generation-1",
           "runtimeVersion": "0.0.0",
-          "schemaSha256": "dafa25fdffaee468ffa41d0810e4688a85e59baa991efb589c9fb182c9234ccc",
+          "schemaSha256": "c72e993e6992336add20453d029ba8c5cca6cbf211776c323ab54567b8814d46",
           "sessionFormat": "dsh-session-events-v1"
         }
       },

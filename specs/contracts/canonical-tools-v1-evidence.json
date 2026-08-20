@@ -6,7 +6,7 @@
     "packages/protocol/generated/protocol-meta.json",
     "packages/product-profile/manifests/batch-1-candidate-profile-v1.json"
   ],
-  "contractSha256": "2165f0a599115ffd766e6301b8726d5114f3429160dd5dd42ee8b228a7e060e5",
+  "contractSha256": "7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b6e8",
   "generator": "scripts/generate-tool-contracts.ts",
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
@@ -20,13 +20,13 @@
     "stockModelDefinitionCount": 0
   },
   "outputs": {
-    "canonical-tool-contracts-v1.json": "2165f0a599115ffd766e6301b8726d5114f3429160dd5dd42ee8b228a7e060e5",
-    "canonical-tools-v1.md": "e3cc16c8c2c5e8a4fd951650e65dcb4b5605ac9778d3ab5744d629aac7fe18b4",
-    "canonical-tools.generated.ts": "3b6f23be04ffb059cef7b5e062127d2fd4a137040279e814b9d55ecf7bd2aa7b",
-    "catalog-fixtures-v1.json": "69dc962ea629710a2f01b03f4dd5ee4c452ec89e5f476c7715afbd17f2643425",
-    "dsh-reuse-matrix-v1.json": "b7f19846b89ff4000ad31bdf4e1c6658c1a0644c33dd44fc2b209e7c87b3e3db",
-    "tool-catalog.schema.json": "8b0ec2d88c5fc7b77cd0ca8a315413991e676228ed538c2a360a1bf08cf2f267",
-    "tool-contract-meta.json": "6a29cfea5b0fb84f397c3f04f28b0a2d1441beb5f29960fe4562388f3952fd9e"
+    "canonical-tool-contracts-v1.json": "7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b6e8",
+    "canonical-tools-v1.md": "a622f000669d50062d88ba6a2a42426b9a3c2b166dcf3357d7adb4221b7b50dd",
+    "canonical-tools.generated.ts": "b80952c5bdc40a8784a0aa6eae787f92a4ec16bfaf9eb8dfc09fffe2437a0d00",
+    "catalog-fixtures-v1.json": "9e31b92ea9540867242893c8cf69db342551aa7833e0b90d182f2af217ecbf7a",
+    "dsh-reuse-matrix-v1.json": "5d90ea263b7a66948a1c7b92e3e3156dbed2b9b495721a2086368137606a9ceb",
+    "tool-catalog.schema.json": "3a7b3fe54c7a6ec75cab49a2093417a77243c50d3d545a240653c1fff4e72ca7",
+    "tool-contract-meta.json": "01b7d5cb9620f5fadba88e2a5e21087e0ce8ee9c709c8f50c9aeea729dfbf137"
   },
   "profile": "canonical-agent-experience-v1",
   "source": {
@@ -47,12 +47,12 @@
   "toolDigests": {
     "Agent": "f5e5e6e2100a1940106bacb264dd586b9b26eac7618a5d33c6cc36adcaf425c7",
     "AskUserQuestion": "392ad739849676a61046dc5d40a1aee9d5337ececcf5540ef4a7adae9ec5c040",
-    "Bash": "3547fb08e3084e58baf372af020ee5c161c3dc998a27c51cdcd55139ed26e77f",
+    "Bash": "8b7e759c550b3c7f121793d0a1d1cb416a4f0f00e549b444000d6d6034482a13",
     "Edit": "bc396d6cd6873ec53a55db65da588d04ca964fec7f7bcfc95bd91c1272ee879c",
     "EnterPlanMode": "34b26520e678f3562eff934e982e178e5e11fbfdfd1a012c2d8d049e22919f4c",
     "ExitPlanMode": "0956a63d115961c71c471d4ee14bb87bcdfcdffded8c6c216cfb04c42beb0297",
     "Glob": "030593238cf65e9adef8c7ab17a05e2e50165889a04e8f60c4a6e8765bcf5fd5",
-    "Grep": "1ecd34758c129459091db219cb78deef67bc0eda7da006bd2a952ac03e6687e9",
+    "Grep": "21e630ef90a58ae7c479d7c6cb203c210e9ef7296494ecf9506d06cf453bb373",
     "Read": "556f4da113e713ee0816245b5b65ad3cd9ed6080e13782ca3e04acd7926bb925",
     "SendMessage": "795ffbee25828378085fd580631d10d2db3cfd554189d75f2e3d63b2a0cb93c7",
     "Skill": "ee13839da4ae03c0525bd84046de273f211053e498693eba504e2d024d2709a6",
@@ -64,6 +64,6 @@
     "WebFetch": "eb449252f3af1c98bea8e9d5778bd51f73d2a1082c008907a8af5b8729062f8e",
     "WebSearch": "b46ea8eab3541ff25cd97f94b781692666c4436f7a2d5cd569412cc466e1b4a1",
     "Write": "b6bb1ab2d330e0872916be0cd5bd543e6bfb97ae5f57f36883ad98bbed184d66",
-    "ls": "ab5e718ec3cb5119e2f671e5a942702c9b959f1cd481be2e9f4eecec18b93409"
+    "ls": "4b19aa335126b4d4f020cc754cba3c8989dc6f39439e05e6c6356df7e7d7d10c"
   }
 }

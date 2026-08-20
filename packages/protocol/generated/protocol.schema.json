@@ -4498,6 +4498,12 @@
                     "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
                     "type": "string"
                   },
+                  "windowsPowerShellRef": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
                   "windowsUtf8PreludeRef": {
                     "maxLength": 256,
                     "minLength": 1,
@@ -4561,6 +4567,18 @@
               "process": {
                 "additionalProperties": false,
                 "properties": {
+                  "backgroundRetention": {
+                    "anyOf": [
+                      {
+                        "const": "allow",
+                        "type": "string"
+                      },
+                      {
+                        "const": "deny",
+                        "type": "string"
+                      }
+                    ]
+                  },
                   "killTreeOnAbort": {
                     "const": true,
                     "type": "boolean"
@@ -4572,6 +4590,7 @@
                   }
                 },
                 "required": [
+                  "backgroundRetention",
                   "maxChildren",
                   "killTreeOnAbort"
                 ],
@@ -6505,7 +6524,7 @@
             "additionalProperties": false,
             "properties": {
               "contractSha256": {
-                "const": "2165f0a599115ffd766e6301b8726d5114f3429160dd5dd42ee8b228a7e060e5",
+                "const": "7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b6e8",
                 "type": "string"
               },
               "diagnostics": {
@@ -8864,7 +8883,7 @@
             "additionalProperties": false,
             "properties": {
               "contractSha256": {
-                "const": "2165f0a599115ffd766e6301b8726d5114f3429160dd5dd42ee8b228a7e060e5",
+                "const": "7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b6e8",
                 "type": "string"
               },
               "diagnostics": {

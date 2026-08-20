@@ -23,6 +23,23 @@ const workspace: PrimarySessionWorkspace = Object.freeze({
   platformTarget: "darwin-arm64",
 });
 
+const processEnvironmentFields = (windows = false) => ({
+  environment: { allowedKeys: [], inheritedKeys: [], secretValues: "reverse-port-only" as const },
+  executables: {
+    allowedCommandRefs: [],
+    bashDialect: "bash" as const,
+    bashRef: "bash-v1",
+    bundledNodeRef: "node-v1",
+    pathPolicy: "sealed" as const,
+    ripgrepRef: "ripgrep-v1",
+    ...(windows ? {
+      windowsPowerShellRef: "powershell-v1",
+      windowsUtf8PreludeRef: "utf8-prelude-v1",
+    } : {}),
+  },
+  process: { backgroundRetention: "allow" as const, killTreeOnAbort: true as const, maxChildren: 4 },
+});
+
 const createParams = (
   overrides: Partial<MethodParams<"session/create">> = {},
 ): MethodParams<"session/create"> => ({
@@ -574,6 +591,7 @@ describe("one-primary-session admission", () => {
     expect(() => validateProductExecutionEnvironment(environmentProxy)).toThrow("must not be a Proxy");
     expect(proxyTraps).toBe(0);
     expect(() => validateProductExecutionEnvironment({
+      ...processEnvironmentFields(true),
       attachmentStagingRoot: "C:\\fixture\\attachments",
       digest,
       platformTarget: "win32-x64",
@@ -587,6 +605,7 @@ describe("one-primary-session admission", () => {
       },
     })).toThrow("unique under platform path identity");
     expect(() => validateProductExecutionEnvironment({
+      ...processEnvironmentFields(true),
       attachmentStagingRoot: "\\attachments",
       digest,
       platformTarget: "win32-x64",
@@ -600,6 +619,7 @@ describe("one-primary-session admission", () => {
       },
     })).toThrow("fully qualified and absolute");
     expect(() => validateProductExecutionEnvironment({
+      ...processEnvironmentFields(true),
       attachmentStagingRoot: "/attachments",
       digest,
       platformTarget: "win32-x64",
@@ -631,6 +651,7 @@ describe("one-primary-session admission", () => {
     });
     service.bindWorkspace(workspace);
     expect(() => service.bindExecutionEnvironment({
+      ...processEnvironmentFields(),
       attachmentStagingRoot: "/fixture/attachments",
       digest,
       platformTarget: "darwin-arm64",

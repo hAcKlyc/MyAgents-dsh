@@ -1,0 +1,27 @@
+{
+  "name": "@myagents-dsh/tools-process",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sealed process Provider and canonical Bash execution bridge",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/tool-contracts": "0.0.0",
+    "@myagents-dsh/tool-runtime-product": "0.0.0",
+    "@myagents-dsh/product-profile": "0.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-fs": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-jobs": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-shell": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-subprocess": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-subprocess-local": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.822013237935 || 0.1.0-rc.6"
+  }
+}

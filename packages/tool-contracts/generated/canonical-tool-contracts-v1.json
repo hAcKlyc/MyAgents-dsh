@@ -907,7 +907,7 @@
       "name": "Grep",
       "outputLimits": {
         "maxInlineBytes": 262144,
-        "maxStructuredItems": 2000
+        "maxStructuredItems": 10000
       },
       "outputSchema": {
         "anyOf": [
@@ -955,12 +955,11 @@
                   },
                   "required": [
                     "path",
-                    "line",
                     "text"
                   ],
                   "type": "object"
                 },
-                "maxItems": 2000,
+                "maxItems": 10000,
                 "type": "array"
               },
               "truncated": {
@@ -1015,7 +1014,7 @@
                   ],
                   "type": "object"
                 },
-                "maxItems": 2000,
+                "maxItems": 10000,
                 "type": "array"
               },
               "truncated": {
@@ -1076,7 +1075,7 @@
                   ],
                   "type": "object"
                 },
-                "maxItems": 2000,
+                "maxItems": 10000,
                 "type": "array"
               },
               "truncated": {
@@ -1194,7 +1193,7 @@
       "name": "Bash",
       "outputLimits": {
         "maxInlineBytes": 262144,
-        "maxRetainedOutputBytes": 8388608,
+        "maxRetainedOutputBytes": 262144,
         "maxStructuredItems": 32
       },
       "outputSchema": {
@@ -1340,11 +1339,11 @@
       },
       "name": "ls",
       "outputLimits": {
-        "maxInlineBytes": 51200,
+        "maxInlineBytes": 53248,
         "maxStructuredItems": 500
       },
       "outputSchema": {
-        "maxLength": 51200,
+        "maxLength": 53248,
         "type": "string"
       },
       "permissionClass": "workspace.read",

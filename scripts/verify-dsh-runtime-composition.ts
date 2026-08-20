@@ -92,6 +92,7 @@ const runtimeCompositionSourcePaths = [
   "packages/testkit/src/fake-llm-adapter.ts",
   "packages/testkit/src/index.ts",
   "packages/tool-contracts/src/contract-source.ts",
+  "packages/tool-contracts/src/dsh-schema.ts",
   "packages/tool-contracts/src/index.ts",
   "packages/tool-contracts/src/schema.ts",
   "packages/tool-contracts/src/validation.ts",
@@ -101,6 +102,9 @@ const runtimeCompositionSourcePaths = [
   "packages/tools-fs/src/canonical-file-tools.ts",
   "packages/tools-fs/src/index.ts",
   "packages/tools-fs/src/local-filesystem.ts",
+  "packages/tools-process/src/index.ts",
+  "packages/tools-process/src/runtime.ts",
+  "packages/tools-process/src/windows-job-subprocess.ts",
   "tests/fixtures/dsh-runtime-composition.artifact.ts",
   "tests/fixtures/runtime-process-conformance.artifact.ts",
   "tests/fixtures/runtime-server-process.artifact.ts",
@@ -116,6 +120,7 @@ const runtimePackageWorkspaces = [
   ["packages/tool-contracts", "@myagents-dsh/tool-contracts"],
   ["packages/tool-runtime-product", "@myagents-dsh/tool-runtime-product"],
   ["packages/tools-fs", "@myagents-dsh/tools-fs"],
+  ["packages/tools-process", "@myagents-dsh/tools-process"],
   ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
 ] as const;
@@ -260,6 +265,12 @@ const stageBuiltPackage = (
     recursive: true,
     filter: (path) => statSync(path).isDirectory() || path.endsWith(".js"),
   });
+  if (workspaceDirectory === "packages/tools-process") {
+    cpSync(
+      resolve(repositoryRoot, "packages/tools-process/src/windows-job-host.ps1"),
+      resolve(destination, "src/windows-job-host.ps1"),
+    );
+  }
   if (workspaceDirectory === "packages/product-profile") {
     const manifestDirectory = resolve(destination, "manifests");
     mkdirSync(manifestDirectory);
@@ -513,6 +524,7 @@ const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
   "packages/tool-contracts/generated/tool-contract-meta.json",
   "packages/protocol/generated/protocol-fixtures.json",
   "packages/protocol/generated/protocol-meta.json",
+  "packages/tools-process/src/windows-job-host.ps1",
   ...runtimePackageWorkspaces.map(([workspace]) => `${workspace}/package.json`),
 ])).sort(compareCodePoint));
 
@@ -577,7 +589,9 @@ const assertCleanRuntimeDependencyTree = (
   }
   const dshVersions = collectDshVersions(tree);
   if (dshVersions.size !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount) {
-    throw new Error(`installed Runtime resolved ${String(dshVersions.size)} DSH packages; expected 46`);
+    throw new Error(
+      `installed Runtime resolved ${String(dshVersions.size)} DSH packages; expected ${String(ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount)}`,
+    );
   }
   for (const [name, versions] of dshVersions) {
     if (versions.size !== 1 || !versions.has(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion)) {
@@ -879,7 +893,9 @@ const main = (): void => {
     );
     const dshVersions = collectDshVersions(dependencyTree);
     if (dshVersions.size !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount) {
-      throw new Error(`runtime consumer resolved ${String(dshVersions.size)} DSH packages; expected 46`);
+      throw new Error(
+        `runtime consumer resolved ${String(dshVersions.size)} DSH packages; expected ${String(ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount)}`,
+      );
     }
     for (const [name, versions] of dshVersions) {
       if (versions.size !== 1 || !versions.has(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion)) {
@@ -911,6 +927,12 @@ const main = (): void => {
       buildRoot,
       "packages/tool-runtime-product",
       "@myagents-dsh/tool-runtime-product",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/tools-process",
+      "@myagents-dsh/tools-process",
     );
     stageBuiltPackage(
       consumerRoot,
@@ -962,6 +984,7 @@ const main = (): void => {
       || evidence.nativeRpcShutdown !== "shutdown"
       || evidence.nativeRpcStopped !== true
       || evidence.canonicalFileToolsVerified !== true
+      || evidence.canonicalProcessSearchToolsVerified !== true
       || evidence.operationCorrelationVerified !== true
       || evidence.operationInterruptVerified !== true
       || evidence.queuedCancellationVerified !== true
@@ -969,7 +992,8 @@ const main = (): void => {
       || evidence.sessionCloseVerified !== true
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
-        "success", "failure", "file_tools", "interrupt", "queued_cancel", "session_close",
+        "success", "failure", "file_tools", "process_search_tools", "process_abort",
+        "interrupt", "queued_cancel", "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
     }
@@ -1054,6 +1078,11 @@ const main = (): void => {
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "message_event", "usage", "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message",
       "turn_admitted", "queued_message", "turn_terminal", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
@@ -1072,10 +1101,10 @@ const main = (): void => {
         return value.kind === "aborted" ? `${value.kind}:${String(value.reason)}` : value.kind;
       });
     if (JSON.stringify(terminalOutcomes) !== JSON.stringify([
-      "succeeded", "succeeded", "failed", "succeeded",
-      "aborted:user", "aborted:user", "aborted:host_shutdown",
+      "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
+      "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
     ])) {
-      throw new Error("Runtime terminal projection differs from the seven real DSH operation outcomes");
+      throw new Error("Runtime terminal projection differs from the ten real DSH operation outcomes");
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");
     const usage = exactObject(usageEvent?.usage, "observed Runtime usage");

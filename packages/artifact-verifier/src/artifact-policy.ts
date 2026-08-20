@@ -135,6 +135,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "generated/tool-contract-meta.json",
       "package.json",
       "src/contract-source.ts",
+      "src/dsh-schema.ts",
       "src/index.ts",
       "src/schema.ts",
       "src/validation.ts",
@@ -149,6 +150,17 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     packageName: "@myagents-dsh/tools-fs",
     relativeDirectory: "packages/tools-fs",
     allowedFiles: ["package.json", "src/canonical-file-tools.ts", "src/index.ts", "src/local-filesystem.ts"],
+  },
+  {
+    packageName: "@myagents-dsh/tools-process",
+    relativeDirectory: "packages/tools-process",
+    allowedFiles: [
+      "package.json",
+      "src/index.ts",
+      "src/runtime.ts",
+      "src/windows-job-host.ps1",
+      "src/windows-job-subprocess.ts",
+    ],
   },
 ]);
 

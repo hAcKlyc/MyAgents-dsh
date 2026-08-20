@@ -69,6 +69,7 @@ export const ExecutionEnvironmentProfileSchema = strictObject({
     bundledNodeRef: identifier,
     bashRef: identifier,
     ripgrepRef: identifier,
+    windowsPowerShellRef: Type.Optional(identifier),
     bashDialect: Type.Literal("bash"),
     windowsUtf8PreludeRef: Type.Optional(identifier),
     allowedCommandRefs: Type.Array(identifier, { maxItems: 128, uniqueItems: true }),
@@ -83,7 +84,11 @@ export const ExecutionEnvironmentProfileSchema = strictObject({
     strictObject({ mode: Type.Literal("deny") }),
     strictObject({ mode: Type.Literal("host-policy"), policyRef: identifier }),
   ]),
-  process: strictObject({ maxChildren: Type.Integer({ minimum: 1, maximum: 128 }), killTreeOnAbort: Type.Literal(true) }),
+  process: strictObject({
+    backgroundRetention: Type.Union([Type.Literal("allow"), Type.Literal("deny")]),
+    maxChildren: Type.Integer({ minimum: 1, maximum: 128 }),
+    killTreeOnAbort: Type.Literal(true),
+  }),
   checkpoint: strictObject({
     mode: Type.Literal("managed-file-tools"),
     version: Type.Literal(1),

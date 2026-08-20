@@ -5,8 +5,11 @@ import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
 import { LlmAdapter, LlmRuntime } from "@deepseek-ai/dsh-llm";
 import { SessionStore } from "@deepseek-ai/dsh-session";
+import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
+import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-prompt";
+import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
 import { isProxy } from "node:util/types";
@@ -23,8 +26,17 @@ import {
 } from "@myagents-dsh/product-profile";
 import { ProductToolRuntime, type ProductToolRuntimeConfig } from "@myagents-dsh/tool-runtime-product";
 import {
+  ProductProcessRuntime,
+  SealedBashExecutor,
+  WindowsJobObjectSubprocessRuntime,
+  resolveProductProcessAuthority,
+  validateProductProcessRuntimeConfig,
+  type ProductProcessRuntimeConfig,
+} from "@myagents-dsh/tools-process";
+import {
   CanonicalFileTools,
   LocalWorkspaceFileSystem,
+  requireLocalWorkspaceFileSystem,
   type CanonicalFileToolsConfig,
 } from "@myagents-dsh/tools-fs";
 import { ProductSessionService, type PrimarySessionState } from "./primary-session.js";
@@ -214,7 +226,8 @@ type CompositionAuthorityState = {
   readonly dispose: () => Promise<void>;
   readonly snapshot: () => DshRootCompositionSnapshot;
   claimed: boolean;
-  fileToolPlane: "absent" | "installing" | "installed" | "failed";
+  canonicalToolPlane: "absent" | "installing" | "installed" | "failed";
+  canonicalToolPlaneTarget: PlatformTarget | undefined;
 };
 
 type NativeRpcLifecycleAuthorityState = {
@@ -233,7 +246,7 @@ export const claimNativeRpcLifecycleAuthority = (
   const context = composition.context;
   const state = compositionAuthorities.get(context);
   if (context !== context.root || state?.composition !== composition || state.claimed
-    || state.fileToolPlane === "installing" || state.fileToolPlane === "failed") {
+    || state.canonicalToolPlane === "installing" || state.canonicalToolPlane === "failed") {
     throw new Error("native RPC requires one unconsumed composeDshRootServices Context authority");
   }
   state.snapshot();
@@ -251,6 +264,7 @@ export const claimNativeRpcLifecycleAuthority = (
 export const consumeNativeRpcLifecycleAuthority = (
   authority: unknown,
   pluginContext: Context,
+  platformTarget: PlatformTarget,
 ): DshRootCompositionAuthority => {
   if (authority === null || typeof authority !== "object") {
     throw new Error("native RPC requires a nominal RuntimeProcessLifecycle authority");
@@ -259,7 +273,9 @@ export const consumeNativeRpcLifecycleAuthority = (
   const installationContext = pluginContext.fiber.parent;
   if (state?.consumed !== false
     || installationContext !== pluginContext.root
-    || state.context !== installationContext) {
+    || state.context !== installationContext
+    || (compositionAuthorities.get(installationContext)?.canonicalToolPlane === "installed"
+      && compositionAuthorities.get(installationContext)?.canonicalToolPlaneTarget !== platformTarget)) {
     throw new Error("native RPC requires a direct-root RuntimeProcessLifecycle authority");
   }
   const snapshot = state.snapshot();
@@ -315,44 +331,75 @@ export class DshRootComposition {
   }
 }
 
-export interface CanonicalFileToolPlaneConfig {
+export interface CanonicalToolPlaneConfig {
   readonly attachments: CanonicalFileToolsConfig["attachments"];
   readonly catalog: ProductToolRuntimeConfig["catalog"];
   readonly checkpoint: ProductToolRuntimeConfig["checkpoint"];
   readonly permission: ProductToolRuntimeConfig["permission"];
   readonly platformTarget: PlatformTarget;
+  readonly process: ProductProcessRuntimeConfig;
+  readonly temporaryRoot: string;
 }
 
-export const installCanonicalFileToolPlane = async (
+export const installCanonicalToolPlane = async (
   composition: DshRootComposition,
-  config: CanonicalFileToolPlaneConfig,
+  config: CanonicalToolPlaneConfig,
 ): Promise<void> => {
   const root = composition.context;
   const authority = compositionAuthorities.get(root);
   if (root !== root.root || authority?.composition !== composition || authority.claimed
-    || authority.fileToolPlane !== "absent") {
-    throw new Error("canonical file tool plane requires the exact unclaimed root composition authority");
+    || authority.canonicalToolPlane !== "absent") {
+    throw new Error("canonical tool plane requires the exact unclaimed root composition authority");
   }
   composition.snapshot();
   const candidate: unknown = config;
   if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
     || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
     || Reflect.ownKeys(candidate).some((key) => typeof key !== "string"
-      || !["attachments", "catalog", "checkpoint", "permission", "platformTarget"].includes(key))
-    || Reflect.ownKeys(candidate).length !== 5
+      || !["attachments", "catalog", "checkpoint", "permission", "platformTarget", "process", "temporaryRoot"].includes(key))
+    || Reflect.ownKeys(candidate).length !== 7
     || Reflect.ownKeys(candidate).some((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
       return descriptor === undefined || !descriptor.enumerable || !("value" in descriptor);
     })) {
-    throw new TypeError("canonical file tool plane config has an invalid exact shape");
+    throw new TypeError("canonical tool plane config has an invalid exact shape");
   }
-  const normalized = candidate as CanonicalFileToolPlaneConfig;
+  const normalized = candidate as CanonicalToolPlaneConfig;
+  const processConfig = validateProductProcessRuntimeConfig(normalized.process);
   const fibers: Array<{ dispose(): Promise<void> }> = [];
-  authority.fileToolPlane = "installing";
+  authority.canonicalToolPlane = "installing";
+  authority.canonicalToolPlaneTarget = normalized.platformTarget;
   try {
-    fibers.push(await root.plugin(LocalWorkspaceFileSystem, {
-      platform: selectPlatformAdapter(normalized.platformTarget),
-    }));
+    const platform = selectPlatformAdapter(normalized.platformTarget);
+    const temporaryRoot = platform.normalizeAbsolutePath(normalized.temporaryRoot);
+    if (temporaryRoot !== normalized.temporaryRoot) {
+      throw new TypeError("canonical tool plane temporary root must be canonical for the selected platform");
+    }
+    if (platform.target === "win32-x64") {
+      const powershellPath = processConfig.executablePaths.windowsPowerShell;
+      if (powershellPath === undefined || processConfig.executableRefs.windowsPowerShell === undefined
+        || processConfig.executableSha256.windowsPowerShell === undefined
+        || processConfig.executableRefs.windowsUtf8Prelude !== platform.shell.utf8PreludeRef) {
+        throw new TypeError("Windows canonical tool plane lacks its exact native process authority");
+      }
+      fibers.push(await root.plugin(WindowsJobObjectSubprocessRuntime, {
+        platform,
+        powershellPath,
+        powershellSha256: processConfig.executableSha256.windowsPowerShell,
+        temporaryRoot,
+      }));
+    } else {
+      if (processConfig.executablePaths.windowsPowerShell !== undefined
+        || processConfig.executableRefs.windowsPowerShell !== undefined
+        || processConfig.executableRefs.windowsUtf8Prelude !== undefined) {
+        throw new TypeError("POSIX canonical tool plane must not carry Windows process authority");
+      }
+      fibers.push(await root.plugin(LocalSubprocessRuntime));
+    }
+    fibers.push(await root.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 10 }));
+    fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
+    const processIo = requireLocalWorkspaceFileSystem(root.fs).createProcessIoAuthority();
+    fibers.push(await root.plugin(ToolCallTimeoutPolicy));
     fibers.push(await root.plugin(ProductToolRuntime, {
       catalog: normalized.catalog,
       checkpoint: normalized.checkpoint,
@@ -361,10 +408,18 @@ export const installCanonicalFileToolPlane = async (
       requireAgent: () => root.productSession.requireAgent(),
       resolveOperation: (agent) => root.sdkOperations.resolveActiveToolOperation(agent),
     }));
+    fibers.push(await root.plugin(SealedBashExecutor, {
+      authority: () => resolveProductProcessAuthority(
+        root.productSession.requireExecutionEnvironment(),
+        processConfig,
+      ),
+      io: processIo,
+    }));
+    fibers.push(await root.plugin(ProductProcessRuntime, { io: processIo, process: processConfig }));
     fibers.push(await root.plugin(CanonicalFileTools, { attachments: normalized.attachments }));
-    authority.fileToolPlane = "installed";
+    authority.canonicalToolPlane = "installed";
   } catch (error) {
-    authority.fileToolPlane = "failed";
+    authority.canonicalToolPlane = "failed";
     const cleanup = await Promise.allSettled(fibers.reverse().map((fiber) => fiber.dispose()));
     const cleanupErrors: unknown[] = [];
     for (const result of cleanup) {
@@ -373,7 +428,7 @@ export const installCanonicalFileToolPlane = async (
     if (cleanupErrors.length > 0) {
       throw new AggregateError(
         [error, ...cleanupErrors],
-        "canonical file tool plane installation and cleanup failed",
+        "canonical tool plane installation and cleanup failed",
         { cause: error },
       );
     }
@@ -417,7 +472,8 @@ export const composeDshRootServices = async (
       composition,
       context: root,
       dispose: composition.dispose.bind(composition),
-      fileToolPlane: "absent",
+      canonicalToolPlane: "absent",
+      canonicalToolPlaneTarget: undefined,
       snapshot: composition.snapshot.bind(composition),
     });
     return composition;

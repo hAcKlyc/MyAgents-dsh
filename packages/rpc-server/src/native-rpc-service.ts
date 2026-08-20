@@ -357,6 +357,7 @@ export class NativeRpcServer extends Service {
     const compositionAuthority = consumeNativeRpcLifecycleAuthority(
       this.configValue.compositionAuthority,
       ctx,
+      this.configValue.platformTarget,
     );
     if (compositionAuthority.context !== ctx.root
       || compositionAuthority.artifactVersion !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
@@ -462,7 +463,10 @@ export class NativeRpcServer extends Service {
     this.productSessionValue.bindExecutionEnvironment({
       attachmentStagingRoot: params.executionEnvironment.attachmentStagingRoot,
       digest: params.executionEnvironment.digest,
+      environment: params.executionEnvironment.environment,
+      executables: params.executionEnvironment.executables,
       platformTarget: this.configValue.platformTarget,
+      process: params.executionEnvironment.process,
       revision: params.executionEnvironment.revision,
       runtimeHome: params.runtimeHome,
       workspace: params.executionEnvironment.workspace,

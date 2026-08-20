@@ -184,7 +184,7 @@ const editOutput = strictObject({
 
 const grepContentRecord = strictObject({
   path: boundedPath,
-  line: positiveInteger,
+  line: Type.Optional(positiveInteger),
   text: Type.String({ maxLength: 65_536 }),
 });
 const grepCountRecord = strictObject({ path: boundedPath, count: nonNegativeInteger });
@@ -378,7 +378,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     outputSchema: Type.Union([
       strictObject({
         mode: Type.Literal("content"),
-        records: Type.Array(grepContentRecord, { maxItems: 2_000 }),
+        records: Type.Array(grepContentRecord, { maxItems: 10_000 }),
         offset: nonNegativeInteger,
         limit: nonNegativeInteger,
         truncated: Type.Boolean(),
@@ -386,7 +386,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
       }),
       strictObject({
         mode: Type.Literal("files_with_matches"),
-        records: Type.Array(grepFileRecord, { maxItems: 2_000 }),
+        records: Type.Array(grepFileRecord, { maxItems: 10_000 }),
         offset: nonNegativeInteger,
         limit: nonNegativeInteger,
         truncated: Type.Boolean(),
@@ -394,7 +394,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
       }),
       strictObject({
         mode: Type.Literal("count"),
-        records: Type.Array(grepCountRecord, { maxItems: 2_000 }),
+        records: Type.Array(grepCountRecord, { maxItems: 10_000 }),
         offset: nonNegativeInteger,
         limit: nonNegativeInteger,
         truncated: Type.Boolean(),
@@ -404,7 +404,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     concurrency: "parallel",
     sideEffect: "read",
     timeoutMs: 30_000,
-    outputLimits: outputLimits(262_144, 2_000),
+    outputLimits: outputLimits(262_144, 10_000),
     permissionClass: "workspace.search",
     checkpoint: "none",
     behaviorFixtureIds: ["content_mode_context", "files_with_matches_mode", "count_mode", "head_limit_and_offset", "multiline_and_abort"],
@@ -430,7 +430,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     concurrency: "parallel",
     sideEffect: "process",
     timeoutMs: 600_000,
-    outputLimits: outputLimits(262_144, 32, { maxRetainedOutputBytes: 8 * 1_024 * 1_024 }),
+    outputLimits: outputLimits(262_144, 32, { maxRetainedOutputBytes: 262_144 }),
     permissionClass: "process.execute",
     checkpoint: "none",
     behaviorFixtureIds: ["foreground_success_and_nonzero_exit", "explicit_background_handle", "timeout_promotes_same_work_entry", "disabled_background_kills_tree", "session_close_generation_cleanup"],
@@ -450,11 +450,11 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
       path: Type.Optional(Type.String({ description: "Directory to list (default: current directory)" })),
       limit: Type.Optional(Type.Number({ description: "Maximum number of entries to return (default: 500)" })),
     }),
-    outputSchema: Type.String({ maxLength: 50 * 1_024 }),
+    outputSchema: Type.String({ maxLength: 52 * 1_024 }),
     concurrency: "parallel",
     sideEffect: "read",
     timeoutMs: 30_000,
-    outputLimits: outputLimits(50 * 1_024, 500),
+    outputLimits: outputLimits(52 * 1_024, 500),
     permissionClass: "workspace.read",
     checkpoint: "none",
     behaviorFixtureIds: ["exact_pi_description_and_schema", "alphabetical_directory_suffix", "dotfiles", "500_entry_or_50kb_truncation", "runtime_path_gate"],

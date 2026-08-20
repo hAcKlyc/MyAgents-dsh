@@ -76,11 +76,11 @@ const initializeParams = {
     },
     environment: {
       allowedKeys: ["LANG"],
-      inheritedKeys: ["LANG"],
+      inheritedKeys: [],
       secretValues: "reverse-port-only",
     },
     network: { mode: "deny" },
-    process: { maxChildren: 8, killTreeOnAbort: true },
+    process: { backgroundRetention: "allow", maxChildren: 8, killTreeOnAbort: true },
     checkpoint: {
       mode: "managed-file-tools",
       version: 1,

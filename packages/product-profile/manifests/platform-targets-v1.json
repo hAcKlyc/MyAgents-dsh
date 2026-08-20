@@ -53,7 +53,7 @@
         "runtimeHomeOwner": "host-explicit",
         "temporaryOwner": "platform-adapter"
       },
-      "evidenceState": "contract_defined",
+      "evidenceState": "implementation-complete_pending-native-validation",
       "pathFlavor": "win32",
       "processTree": {
         "forceSignal": "TerminateJobObject",
@@ -88,7 +88,7 @@
         "runtimeHomeOwner": "host-explicit",
         "temporaryOwner": "platform-adapter"
       },
-      "evidenceState": "contract_defined",
+      "evidenceState": "implementation-complete_pending-native-validation",
       "pathFlavor": "posix",
       "processTree": {
         "forceSignal": "SIGKILL",

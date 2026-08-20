@@ -1,9 +1,13 @@
 import { Service, type Context } from "@deepseek-ai/cordis";
 import { FsError, type FsInfo, type FsTarget } from "@deepseek-ai/dsh-fs";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
-import type { JsonSchemaNode, ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
+import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
+import { buildGlobCommand, buildGrepCommand, parseGlobArgs, parseGrepArgs } from "@deepseek-ai/dsh-tool-fs-search";
 import {
   CANONICAL_TOOL_CONTRACTS,
+  CANONICAL_JSON_LIMITS,
+  canonicalInputSchemaForDsh,
+  canonicalOutputSchemaForDsh,
   validateCanonicalToolInput,
   validateCanonicalToolOutput,
 } from "@myagents-dsh/tool-contracts";
@@ -12,9 +16,15 @@ import {
   type ProductToolCheckpointHandle,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
+import type {} from "@myagents-dsh/tools-process";
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
 import { isPromise, isProxy } from "node:util/types";
+import {
+  LocalWorkspaceFileSystem,
+  requireLocalWorkspaceFileSystem,
+  type LocalDirectoryEntry,
+} from "./local-filesystem.js";
 
 export interface AttachmentPublicationRequest {
   readonly bytes: Uint8Array;
@@ -86,42 +96,6 @@ const exactAttachmentReference = (
   });
 };
 
-const dshSchemaJson = (value: unknown): unknown => {
-  const parsed: unknown = JSON.parse(JSON.stringify(value));
-  const convert = (node: unknown): unknown => {
-    if (Array.isArray(node)) return node.map(convert);
-    if (node === null || typeof node !== "object") return node;
-    const record = node as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(record).map(([key, child]) => [
-      key === "anyOf" ? "oneOf" : key,
-      convert(child),
-    ]));
-  };
-  return convert(parsed);
-};
-
-const dshOutputSchema = (value: unknown): JsonSchemaNode => {
-  const allowed = new Set([
-    "type", "anyOf", "oneOf", "properties", "required", "additionalProperties", "items", "enum", "const",
-    "description", "title", "default",
-  ]);
-  const strip = (node: unknown, propertyMap = false): unknown => {
-    if (Array.isArray(node)) return node.map((child) => strip(child));
-    if (node === null || typeof node !== "object") return node;
-    const entries = Object.entries(node as Record<string, unknown>);
-    if (propertyMap) {
-      return Object.fromEntries(entries.map(([key, child]) => [key, strip(child)]));
-    }
-    return Object.fromEntries(entries
-      .filter(([key]) => allowed.has(key))
-      .map(([key, child]) => [
-        key === "anyOf" ? "oneOf" : key,
-        strip(child, key === "properties"),
-      ]));
-  };
-  return strip(JSON.parse(JSON.stringify(value))) as JsonSchemaNode;
-};
-
 const asObject = (value: unknown, description: string): JsonObject => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new ProductToolError("invalid_tool_input", `${description} must be an object`);
@@ -162,6 +136,28 @@ const truncateUtf8 = (value: string, maxBytes: number): Readonly<{ text: string;
   return Object.freeze({ text: bytes.subarray(0, end).toString("utf8"), truncated: true });
 };
 
+const truncateHeadCompleteLines = (
+  value: string,
+  maxBytes: number,
+): Readonly<{ text: string; truncated: boolean }> => {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) {
+    return Object.freeze({ text: value, truncated: false });
+  }
+  const lines = value.split("\n");
+  if (Buffer.byteLength(lines[0] ?? "", "utf8") > maxBytes) {
+    return Object.freeze({ text: "", truncated: true });
+  }
+  const retained: string[] = [];
+  let bytes = 0;
+  for (const line of lines) {
+    const next = Buffer.byteLength(line, "utf8") + (retained.length > 0 ? 1 : 0);
+    if (bytes + next > maxBytes) break;
+    retained.push(line);
+    bytes += next;
+  }
+  return Object.freeze({ text: retained.join("\n"), truncated: true });
+};
+
 const mimeFor = (bytes: Uint8Array, extension: string): string | undefined => {
   const header = Buffer.from(bytes.subarray(0, 16));
   if (header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
@@ -172,8 +168,109 @@ const mimeFor = (bytes: Uint8Array, extension: string): string | undefined => {
   return undefined;
 };
 
+const renderJson = (_args: unknown, value: unknown): ContentBlock[] =>
+  textBlocks(JSON.stringify(value, undefined, 2));
+
+const renderText = (_args: unknown, value: unknown): ContentBlock[] => textBlocks(String(value));
+
+interface RipgrepLineRecord {
+  readonly context: boolean;
+  readonly line: number;
+  readonly matches?: readonly string[];
+  readonly path: string;
+  readonly text: string;
+}
+
+interface SearchRootAuthority {
+  readonly target: FsTarget;
+  readonly version: string;
+}
+
+const ripgrepText = (value: unknown, description: string): string => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProductToolError("search_failed", `${description} is malformed`);
+  }
+  const record = value as JsonObject;
+  if (typeof record.text === "string") return record.text;
+  if (typeof record.bytes === "string") return "(line is not valid UTF-8)";
+  throw new ProductToolError("search_failed", `${description} is malformed`);
+};
+
+const parseRipgrepLines = (stdout: string): readonly RipgrepLineRecord[] => {
+  const records: RipgrepLineRecord[] = [];
+  for (const line of stdout.split("\n")) {
+    if (line.length === 0) continue;
+    let parsed: unknown;
+    try { parsed = JSON.parse(line); } catch (error) {
+      throw new ProductToolError("search_failed", "ripgrep emitted malformed JSON", { cause: error });
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new ProductToolError("search_failed", "ripgrep emitted a malformed record");
+    }
+    const record = parsed as JsonObject;
+    if (record.type !== "match" && record.type !== "context") continue;
+    if (record.data === null || typeof record.data !== "object" || Array.isArray(record.data)) {
+      throw new ProductToolError("search_failed", "ripgrep emitted malformed match data");
+    }
+    const data = record.data as JsonObject;
+    if (!Number.isSafeInteger(data.line_number) || (data.line_number as number) < 1) {
+      throw new ProductToolError("search_failed", "ripgrep emitted an invalid line number");
+    }
+    let submatches: readonly string[] | undefined;
+    if (Object.hasOwn(data, "submatches")) {
+      if (!Array.isArray(data.submatches) || data.submatches.length > 20_000) {
+        throw new ProductToolError("search_failed", "ripgrep emitted malformed submatches");
+      }
+      submatches = Object.freeze(data.submatches.map((submatch) => {
+        if (submatch === null || typeof submatch !== "object" || Array.isArray(submatch)) {
+          throw new ProductToolError("search_failed", "ripgrep emitted malformed submatches");
+        }
+        const candidate = submatch as JsonObject;
+        if (Reflect.ownKeys(candidate).length !== 3
+          || !["end", "match", "start"].every((key) => Object.hasOwn(candidate, key))
+          || !Number.isSafeInteger(candidate.start) || (candidate.start as number) < 0
+          || !Number.isSafeInteger(candidate.end) || (candidate.end as number) < (candidate.start as number)) {
+          throw new ProductToolError("search_failed", "ripgrep emitted malformed submatches");
+        }
+        const text = ripgrepText(candidate.match, "ripgrep submatch");
+        if (Buffer.byteLength(text, "utf8") > 65_536) {
+          throw new ProductToolError("search_failed", "ripgrep submatch exceeded its bound");
+        }
+        return text;
+      }));
+    }
+    records.push(Object.freeze({
+      context: record.type === "context",
+      line: data.line_number as number,
+      ...(submatches === undefined ? {} : { matches: submatches }),
+      path: ripgrepText(data.path, "ripgrep path"),
+      text: ripgrepText(data.lines, "ripgrep line").replace(/\r?\n$/u, ""),
+    }));
+    if (records.length > 20_000) {
+      throw new ProductToolError("search_failed", "ripgrep result count exceeded the raw record bound");
+    }
+  }
+  return Object.freeze(records);
+};
+
+const truncateGrepLine = (value: string): Readonly<{ text: string; truncated: boolean }> =>
+  value.length <= 500
+    ? Object.freeze({ text: value, truncated: false })
+    : Object.freeze({ text: `${value.slice(0, 500)}... [truncated]`, truncated: true });
+
+const searchDiagnostic = (value: string, fallback: string): string => {
+  const normalized = Array.from(value, (character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || codePoint === 0x7f ? " " : character;
+  }).join("").trim().slice(0, 1_024);
+  return normalized.length === 0 ? fallback : normalized;
+};
+
+const searchReportsInvalidPattern = (value: string): boolean =>
+  /(?:regex parse error|error parsing (?:glob|regex)|unrecognized file type|invalid (?:glob|pattern)|glob parse error)/iu.test(value);
+
 export class CanonicalFileTools extends Service {
-  static inject = ["fs", "tools", "productTools"];
+  static inject = ["fs", "tools", "productProcesses", "productTools"];
   readonly #attachments: CanonicalFileToolsConfig["attachments"];
 
   constructor(ctx: Context, config: CanonicalFileToolsConfig) {
@@ -208,13 +305,16 @@ export class CanonicalFileTools extends Service {
         ctx.tools.register(this.#readDefinition(ctx)),
         ctx.tools.register(this.#writeDefinition(ctx)),
         ctx.tools.register(this.#editDefinition(ctx)),
+        ctx.tools.register(this.#globDefinition(ctx)),
+        ctx.tools.register(this.#grepDefinition(ctx)),
+        ctx.tools.register(this.#lsDefinition(ctx)),
       ];
       return () => { for (const dispose of disposers.reverse()) dispose(); };
     }, "canonical-file-tools");
   }
 
   #definition(
-    name: "Read" | "Write" | "Edit",
+    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls",
     render: (args: unknown, value: unknown) => ContentBlock[],
     execute: (args: JsonObject, exec: ToolRunContext) => Promise<unknown>,
   ): ToolDefinition {
@@ -229,9 +329,9 @@ export class CanonicalFileTools extends Service {
       name,
       output: Object.freeze({
         render,
-        schema: dshOutputSchema(contract.outputSchema),
+        schema: canonicalOutputSchemaForDsh(contract.outputSchema),
       }),
-      parameters: dshSchemaJson(contract.inputSchema) as Record<string, unknown>,
+      parameters: canonicalInputSchemaForDsh(contract.inputSchema),
       ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
     });
   }
@@ -538,6 +638,323 @@ export class CanonicalFileTools extends Service {
     });
   }
 
+  #globDefinition(ctx: Context): ToolDefinition {
+    return this.#definition("Glob", renderJson, async (args, exec) => {
+      const product = ctx.productTools.resolve(exec);
+      const rootBefore = await this.#searchRoot(ctx, product, "Glob", args.path as string | undefined);
+      await ctx.productTools.authorize(product, {
+        permissionClass: CANONICAL_TOOL_CONTRACTS.Glob.permissionClass,
+        target: rootBefore.target.displayPath,
+        tool: "Glob",
+      });
+      const root = await this.#revalidateSearchRoot(
+        ctx,
+        product,
+        "Glob",
+        args.path as string | undefined,
+        rootBefore,
+      );
+      let command: string[];
+      try {
+        command = buildGlobCommand(parseGlobArgs({ pattern: args.pattern as string, path: "." }));
+      } catch (error) {
+        throw new ProductToolError("invalid_pattern", "Glob pattern is invalid", { cause: error });
+      }
+      command = command.map((argument) => argument === "--sort=modified" ? "--sortr=modified" : argument);
+      const separator = command.indexOf("--");
+      if (separator < 0) command.push("--null");
+      else command.splice(separator, 0, "--null");
+      const result = await ctx.productProcesses.runSearch(
+        product,
+        root,
+        "Glob",
+        command,
+        8 * 1_024 * 1_024,
+      );
+      if (result.exitCode !== 0 && result.exitCode !== 1) {
+        const diagnostic = searchDiagnostic(result.stderr, "Glob search failed");
+        throw new ProductToolError(
+          searchReportsInvalidPattern(result.stderr) ? "invalid_pattern" : "search_failed",
+          diagnostic,
+        );
+      }
+      const raw = result.stdout.split("\0").filter((value) => value.length > 0);
+      if (raw.length > 20_000) throw new ProductToolError("search_failed", "Glob candidate count exceeded its bound");
+      const filenames: string[] = [];
+      const seen = new Set<string>();
+      for (const value of raw) {
+        const path = await this.#searchResultPath(ctx, product, root.target, value);
+        if (seen.has(path)) continue;
+        seen.add(path);
+        if (filenames.length < 100) filenames.push(path);
+      }
+      while (Buffer.byteLength(JSON.stringify(filenames), "utf8") > 60_000) filenames.pop();
+      return Object.freeze({
+        durationMs: result.durationMs,
+        filenames: Object.freeze(filenames),
+        numFiles: filenames.length,
+        truncated: seen.size > filenames.length,
+      });
+    });
+  }
+
+  #grepDefinition(ctx: Context): ToolDefinition {
+    return this.#definition("Grep", renderJson, async (args, exec) => {
+      const product = ctx.productTools.resolve(exec);
+      const rootBefore = await this.#searchRoot(ctx, product, "Grep", args.path as string | undefined);
+      await ctx.productTools.authorize(product, {
+        permissionClass: CANONICAL_TOOL_CONTRACTS.Grep.permissionClass,
+        target: rootBefore.target.displayPath,
+        tool: "Grep",
+      });
+      const root = await this.#revalidateSearchRoot(
+        ctx,
+        product,
+        "Grep",
+        args.path as string | undefined,
+        rootBefore,
+      );
+      let base: string[];
+      try {
+        base = buildGrepCommand(parseGrepArgs({
+          pattern: args.pattern as string,
+          path: ".",
+          ...(args.glob === undefined ? {} : { include: args.glob as string }),
+        }));
+      } catch (error) {
+        throw new ProductToolError("invalid_pattern", "Grep expression or glob is invalid", { cause: error });
+      }
+      const separator = base.indexOf("--");
+      const mode = (args.output_mode as "content" | "files_with_matches" | "count" | undefined)
+        ?? "files_with_matches";
+      const options: string[] = ["--no-config", "--sort=path"];
+      if (mode === "files_with_matches") options.push("--max-count", "1");
+      if (mode === "content" && args["-n"] !== false) options.push("--line-number");
+      if (args["-i"] === true) options.push("--ignore-case");
+      if (mode === "content" && args["-o"] === true) options.push("--only-matching");
+      if (args.multiline === true) options.push("--multiline", "--multiline-dotall");
+      if (typeof args.type === "string") options.push(`--type=${args.type}`);
+      const before = args["-B"] as number | undefined;
+      const after = args["-A"] as number | undefined;
+      const around = (args.context ?? args["-C"]) as number | undefined;
+      if (mode === "content") {
+        if (around !== undefined) options.push(`--context=${around}`);
+        else {
+          if (before !== undefined) options.push(`--before-context=${before}`);
+          if (after !== undefined) options.push(`--after-context=${after}`);
+        }
+      }
+      const command = separator < 0
+        ? [...base, ...options]
+        : [...base.slice(0, separator), ...options, ...base.slice(separator)];
+      const result = await ctx.productProcesses.runSearch(
+        product,
+        root,
+        "Grep",
+        command,
+        8 * 1_024 * 1_024,
+      );
+      if (result.exitCode !== 0 && result.exitCode !== 1) {
+        const diagnostic = searchDiagnostic(result.stderr, "Grep search failed");
+        throw new ProductToolError(
+          searchReportsInvalidPattern(result.stderr) ? "invalid_pattern" : "search_failed",
+          diagnostic,
+        );
+      }
+      const transport = parseRipgrepLines(result.stdout);
+      const pathRecords = await Promise.all(transport.map(async (record) => Object.freeze({
+        ...record,
+        path: await this.#searchResultPath(ctx, product, root.target, record.path),
+      })));
+      const matches = pathRecords.filter((record) => !record.context);
+      let allRecords: JsonObject[];
+      let lineTruncated = false;
+      if (mode === "files_with_matches") {
+        const ranked = await Promise.all([...new Set(matches.map(({ path }) => path))].map(async (path) => {
+          const target = await ctx.fs.resolve(path, {
+            cwd: product.environment.workspace.canonicalRoot,
+            signal: product.signal,
+          });
+          const info = await ctx.fs.stat(target, product.signal);
+          if (info?.type !== "file") throw new ProductToolError("search_failed", "Grep result identity changed");
+          const mtimeMs = await requireLocalWorkspaceFileSystem(ctx.fs).modificationTime(target, product.signal);
+          return Object.freeze({ mtimeMs, path });
+        }));
+        ranked.sort((left, right) => right.mtimeMs - left.mtimeMs
+          || (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+        allRecords = ranked.map(({ path }) => Object.freeze({ path }));
+      } else if (mode === "count") {
+        const counts = new Map<string, number>();
+        for (const { path } of matches) counts.set(path, (counts.get(path) ?? 0) + 1);
+        allRecords = [...counts].map(([path, count]) => Object.freeze({ count, path }));
+      } else {
+        const contentRecords = args["-o"] === true
+          ? pathRecords.flatMap(({ context, line, matches: submatches, path }) => {
+              if (context) return [];
+              if (submatches === undefined) {
+                throw new ProductToolError("search_failed", "ripgrep omitted required only-match submatches");
+              }
+              return submatches.map((text) => Object.freeze({ line, path, text }));
+            })
+          : pathRecords;
+        const boundedRecords = contentRecords.map(({ line, path, text }) => {
+          const bounded = truncateGrepLine(text);
+          return Object.freeze({ bounded, line, path });
+        });
+        lineTruncated = boundedRecords.some(({ bounded }) => bounded.truncated);
+        allRecords = boundedRecords.map(({ bounded, line, path }) => Object.freeze({
+            ...(args["-n"] === false ? {} : { line }),
+            path,
+            text: bounded.text,
+          }));
+      }
+      const offset = (args.offset as number | undefined) ?? 0;
+      const limit = (args.head_limit as number | undefined) ?? 250;
+      const selected = limit === 0
+        ? allRecords.slice(offset, offset + CANONICAL_JSON_LIMITS.maxArrayItems)
+        : allRecords.slice(offset, offset + Math.min(limit, CANONICAL_JSON_LIMITS.maxArrayItems));
+      let truncated = lineTruncated || offset + selected.length < allRecords.length;
+      while (Buffer.byteLength(JSON.stringify(selected), "utf8") > 250_000 && selected.length > 0) {
+        selected.pop();
+        truncated = true;
+      }
+      return Object.freeze({
+        durationMs: result.durationMs,
+        limit,
+        mode,
+        offset,
+        records: Object.freeze(selected),
+        truncated,
+      });
+    });
+  }
+
+  #lsDefinition(ctx: Context): ToolDefinition {
+    return this.#definition("ls", renderText, async (args, exec) => {
+      const product = ctx.productTools.resolve(exec);
+      const requestedPath = typeof args.path === "string" && args.path.length === 0
+        ? "."
+        : args.path as string | undefined;
+      const rootBefore = await this.#searchRoot(ctx, product, "ls", requestedPath);
+      await ctx.productTools.authorize(product, {
+        permissionClass: CANONICAL_TOOL_CONTRACTS.ls.permissionClass,
+        target: rootBefore.target.displayPath,
+        tool: "ls",
+      });
+      const rootAuthority = await this.#revalidateSearchRoot(
+        ctx,
+        product,
+        "ls",
+        requestedPath,
+        rootBefore,
+      );
+      const info = await ctx.fs.stat(rootAuthority.target, product.signal);
+      if (info?.type !== "directory") {
+        throw new ProductToolError("directory_not_found", "ls target is not a readable directory");
+      }
+      if (!(ctx.fs instanceof LocalWorkspaceFileSystem)) {
+        throw new ProductToolError("list_failed", "ls requires the composition-selected local filesystem Provider");
+      }
+      let entries: readonly LocalDirectoryEntry[];
+      try {
+        entries = await ctx.fs.listDirectoryEntries(rootAuthority, 100_001, product.signal);
+      } catch (error) {
+        product.signal.throwIfAborted();
+        throw new ProductToolError("list_failed", "bounded directory enumeration failed", { cause: error });
+      }
+      const ordered = [...entries].sort((left, right) => {
+        return left.name.toLowerCase().localeCompare(right.name.toLowerCase());
+      });
+      const requested = (args.limit as number | undefined) ?? 500;
+      const effectiveLimit = requested;
+      const retained: string[] = [];
+      let entryLimitReached = false;
+      for (const entry of ordered) {
+        if (retained.length >= effectiveLimit) {
+          entryLimitReached = true;
+          break;
+        }
+        retained.push(`${entry.name}${entry.type === "directory" ? "/" : ""}`);
+      }
+      if (retained.length === 0) return "(empty directory)";
+      const raw = retained.join("\n");
+      const truncated = truncateHeadCompleteLines(raw, 50 * 1_024);
+      const notices: string[] = [];
+      if (entryLimitReached) {
+        notices.push(`${effectiveLimit} entries limit reached. Use limit=${effectiveLimit * 2} for more`);
+      }
+      if (truncated.truncated) notices.push("50.0KB limit reached");
+      const suffix = notices.length === 0 ? "" : `\n\n[${notices.join(". ")}]`;
+      return `${truncated.text}${suffix}`;
+    });
+  }
+
+  async #searchRoot(
+    ctx: Context,
+    product: ProductToolContext,
+    tool: "Glob" | "Grep" | "ls",
+    path: string | undefined,
+  ): Promise<SearchRootAuthority> {
+    product.signal.throwIfAborted();
+    const input = path ?? ".";
+    const pathInfo = await ctx.fs.lstat(input, { cwd: product.environment.workspace.canonicalRoot }, product.signal);
+    if (pathInfo?.type === "symlink") throw new ProductToolError("path_denied", `${tool} rejects symbolic-link roots`);
+    const target = await ctx.fs.resolve(input, {
+      cwd: product.environment.workspace.canonicalRoot,
+      signal: product.signal,
+    });
+    let contained = false;
+    for (const root of product.environment.workspace.allowedReadRoots) {
+      const allowed = await ctx.fs.resolve(root, { signal: product.signal });
+      if (allowed.displayPath !== root) throw new ProductToolError("path_denied", "allowed read root identity changed");
+      if (ctx.fs.contains(allowed, target)) contained = true;
+    }
+    if (!contained) throw new ProductToolError("path_denied", `${tool} root is outside allowed read roots`);
+    const info = await ctx.fs.stat(target, product.signal);
+    if (info?.type !== "directory") {
+      throw new ProductToolError("directory_not_found", `${tool} root is not a readable directory`);
+    }
+    return Object.freeze({ target, version: String(info.version) });
+  }
+
+  async #revalidateSearchRoot(
+    ctx: Context,
+    product: ProductToolContext,
+    tool: "Glob" | "Grep" | "ls",
+    path: string | undefined,
+    before: SearchRootAuthority,
+  ): Promise<SearchRootAuthority> {
+    const after = await this.#searchRoot(ctx, product, tool, path);
+    if (after.target.targetKey !== before.target.targetKey
+      || after.target.displayPath !== before.target.displayPath
+      || after.version !== before.version) {
+      throw new ProductToolError("path_denied", `${tool} root changed during authorization`);
+    }
+    return after;
+  }
+
+  async #searchResultPath(
+    ctx: Context,
+    product: ProductToolContext,
+    searchRoot: FsTarget,
+    value: string,
+  ): Promise<string> {
+    try {
+      const local = requireLocalWorkspaceFileSystem(ctx.fs);
+      const target = await local.resolveRelativeChild(searchRoot, value, product.signal);
+      const workspace = await ctx.fs.resolve(product.environment.workspace.canonicalRoot, {
+        signal: product.signal,
+      });
+      if (workspace.displayPath !== product.environment.workspace.canonicalRoot) {
+        throw new FsError("workspace root identity changed", "FS_STALE_VERSION");
+      }
+      return local.contains(workspace, target) ? local.projectRelative(workspace, target) : target.displayPath;
+    } catch (error) {
+      product.signal.throwIfAborted();
+      throw new ProductToolError("search_failed", "search path projection failed closed", { cause: error });
+    }
+  }
+
   async #authorizedTarget(
     ctx: Context,
     product: ProductToolContext,
@@ -561,7 +978,12 @@ export class CanonicalFileTools extends Service {
       if (rootTarget.displayPath !== root) throw new ProductToolError("path_denied", "allowed root identity changed");
       if (ctx.fs.contains(rootTarget, target)) contained = true;
     }
-    if (!contained) throw new ProductToolError("path_denied", `${tool} target is outside its operation-frozen roots`);
+    if (!contained) {
+      if (tool === "Read" && mode === "read") {
+        return await ctx.productProcesses.resolveRetainedOutput(product, path);
+      }
+      throw new ProductToolError("path_denied", `${tool} target is outside its operation-frozen roots`);
+    }
     return target;
   }
 

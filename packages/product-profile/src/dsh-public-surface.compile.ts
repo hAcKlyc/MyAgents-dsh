@@ -14,6 +14,8 @@ import { FileSystem, FsTargetKey, FsVersion } from "@deepseek-ai/dsh-fs";
 import type { FsEditRequest, FsWriteIntent } from "@deepseek-ai/dsh-fs";
 import { JobId, JobRegistry } from "@deepseek-ai/dsh-jobs";
 import type { JobSnapshot, JobStart } from "@deepseek-ai/dsh-jobs";
+import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
+import type { Config as LocalJobRegistryConfig } from "@deepseek-ai/dsh-jobs-local";
 import { LlmAdapter, LlmRuntime } from "@deepseek-ai/dsh-llm";
 import type { GenerateOptions, StreamChunk } from "@deepseek-ai/dsh-llm";
 import { apply as applyMcpClient } from "@deepseek-ai/dsh-mcp-client";
@@ -36,8 +38,10 @@ import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
 import type { SubagentProvider, SubagentResult } from "@deepseek-ai/dsh-subagent";
 import { SubprocessRuntime, scrubbedParentEnv } from "@deepseek-ai/dsh-subprocess";
 import type { SubprocessHandle, SubprocessSpawnSpec } from "@deepseek-ai/dsh-subprocess";
+import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { PromptAssembly, PromptContext, PromptSection } from "@deepseek-ai/dsh-system-prompt";
+import { TOOL_TIMEOUT, apply as applyToolCallTimeoutPolicy } from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { ToolRuntime, defineTool } from "@deepseek-ai/dsh-tools";
 import type { ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { buildGlobCommand, buildGrepCommand, parseGlobArgs, parseGrepArgs } from "@deepseek-ai/dsh-tool-fs-search";
@@ -67,6 +71,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   FsVersion,
   JobId,
   JobRegistry,
+  LocalJobRegistry,
   LlmAdapter,
   LlmRuntime,
   PersistenceCoordinator,
@@ -81,11 +86,14 @@ export const dshPublicSurfaceValues = Object.freeze({
   SqliteSessionPersistence,
   SubagentRuntime,
   SubprocessRuntime,
+  LocalSubprocessRuntime,
   SystemPrompt,
+  TOOL_TIMEOUT,
   ToolRuntime,
   UserQuestionService,
   WebRuntime,
   applyMcpClient,
+  applyToolCallTimeoutPolicy,
   buildGlobCommand,
   buildGrepCommand,
   credentialRef,
@@ -113,6 +121,7 @@ export interface DshPublicSurfaceTypes {
   filesystem: [FsEditRequest, FsWriteIntent];
   fsSearchHelpers: [GlobInput, GrepInput, RipgrepRun];
   jobs: [JobSnapshot, JobStart];
+  jobsLocal: [LocalJobRegistryConfig];
   llm: [GenerateOptions, StreamChunk];
   mcp: [McpConfig, McpResult];
   persistence: [PersistenceBackend, SessionInspection, SessionPersistenceSnapshot];

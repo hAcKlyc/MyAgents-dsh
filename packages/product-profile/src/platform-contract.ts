@@ -184,7 +184,9 @@ const posixAdapter = (
   target: "darwin-arm64" | "linux-x64",
 ): PlatformAdapterContract => Object.freeze({
   target,
-  evidenceState: "contract_defined",
+  evidenceState: target === "linux-x64"
+    ? "implementation-complete_pending-native-validation"
+    : "contract_defined",
   pathFlavor: "posix",
   shell: Object.freeze({ dialect: "bash", executableRef: "bundled-bash" }),
   processTree: Object.freeze({ owner: "process-group", gracefulSignal: "SIGTERM", forceSignal: "SIGKILL" }),
@@ -247,7 +249,7 @@ const posixAdapter = (
 
 const windowsAdapter = (): PlatformAdapterContract => Object.freeze({
   target: "win32-x64",
-  evidenceState: "contract_defined",
+  evidenceState: "implementation-complete_pending-native-validation",
   pathFlavor: "win32",
   shell: Object.freeze({
     dialect: "bash",

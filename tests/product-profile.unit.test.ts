@@ -152,7 +152,11 @@ describe("composition-selected platform adapter contracts", () => {
     expect(PLATFORM_TARGETS).toEqual(["darwin-arm64", "win32-x64", "linux-x64"]);
     expect(PLATFORM_EVIDENCE_STATES).toContain("implementation-complete_pending-native-validation");
     expect(platformContractManifest.targets.map(({ evidenceState }) => evidenceState))
-      .toEqual(["contract_defined", "contract_defined", "contract_defined"]);
+      .toEqual([
+        "contract_defined",
+        "implementation-complete_pending-native-validation",
+        "implementation-complete_pending-native-validation",
+      ]);
     expect(platformContractManifest.targets.some(({ evidenceState }) => evidenceState === "native_verified"))
       .toBe(false);
     expect(Object.isFrozen(PLATFORM_TARGETS)).toBe(true);

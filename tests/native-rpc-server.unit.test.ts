@@ -107,7 +107,7 @@ const initializeParams = (): InitializeParams => ({
     },
     environment: { allowedKeys: [], inheritedKeys: [], secretValues: "reverse-port-only" },
     network: { mode: "deny" },
-    process: { maxChildren: 1, killTreeOnAbort: true },
+    process: { backgroundRetention: "allow", maxChildren: 1, killTreeOnAbort: true },
     checkpoint: {
       mode: "managed-file-tools",
       version: 1,

@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
   "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
-  "manifestSha256": "03129b845f78773f2d1984034575907437b3324db3d39bff0ec929e5a8dedd9d",
-  "sha256SumsSha256": "fef578f19892c129813cae4ed7c3420b160f610fb986c209d4f5f29dadf0c6fd",
-  "consumerLockSha256": "28a65a57118898780a2a9d6e84c46da694b0e8e8cda34a5fc8fc5ec3ba2b3c57",
-  "packageCount": 46,
+  "manifestSha256": "8591e266e4dae1d4746b1239acbd9e51fe80b2a001aa3ca1d1919e9343f996b9",
+  "sha256SumsSha256": "b0d82bceee22bf6b498fe1bfe258f5fd815796d3b04d3ef32806c37040cd463e",
+  "consumerLockSha256": "93dcd085c9f77921f82d8af49139768ce9135ab7b03760d18e066eade84565d1",
+  "packageCount": 49,
   "runtimePackages": {
     "@deepseek-ai/cordis": "4.0.1",
     "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.822013237935",

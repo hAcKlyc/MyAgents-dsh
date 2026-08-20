@@ -9,6 +9,7 @@ import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { Session, SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { resolveRgPath } from "@deepseek-ai/dsh-tool-fs-search";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_CANDIDATE_PROFILE_SHA256,
@@ -28,8 +29,8 @@ import {
   claimNativeRpcLifecycleAuthority,
   composeDshRootServices,
   DshRootComposition,
-  installCanonicalFileToolPlane,
-  type CanonicalFileToolPlaneConfig,
+  installCanonicalToolPlane,
+  type CanonicalToolPlaneConfig,
   type NativeRpcLifecycleAuthority,
   type ProductSessionService,
 } from "@myagents-dsh/runtime-product";
@@ -58,13 +59,13 @@ const toolCatalogWithoutDigest = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
   implementationCatalog: CANONICAL_TOOL_NAMES,
-  effectiveTools: Object.freeze(["Read", "Write", "Edit"] as const),
+  effectiveTools: Object.freeze(["Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls"] as const),
   revision: "artifact-tools-v1",
   diagnostics: CANONICAL_TOOL_NAMES.map((tool) => Object.freeze({
     tool,
-    ...(["Read", "Write", "Edit"].includes(tool)
+    ...(["Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls"].includes(tool)
       ? { available: true as const }
-      : { available: false as const, reasonCode: "not-installed-in-w2-a2" }),
+      : { available: false as const, reasonCode: "not-installed-in-w2-a3" }),
   })),
 });
 const validatedArtifactToolCatalog = validateEffectiveToolCatalog({
@@ -81,18 +82,21 @@ const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "myagents-dsh-w2
 const fixtureWorkspace = join(fixtureRoot, "workspace");
 const fixtureRuntimeHome = join(fixtureRoot, "runtime-home");
 const fixtureAttachmentStaging = join(fixtureRoot, "attachments");
+const fixtureTemporaryRoot = join(fixtureRoot, "temporary");
 const fixtureFile = join(fixtureWorkspace, "governed.txt");
 await Promise.all([
   mkdir(fixtureWorkspace),
   mkdir(fixtureRuntimeHome),
+  mkdir(fixtureTemporaryRoot),
   mkdir(fixtureAttachmentStaging),
 ]);
 await writeFile(fixtureFile, "before\n", "utf8");
 
 const waitUntil = async (predicate: () => boolean, description: string): Promise<void> => {
-  for (let attempt = 0; attempt < 1_000; attempt += 1) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
     if (predicate()) return;
-    await yieldImmediate();
+    await delay(10);
   }
   throw new Error(`timed out waiting for ${description}`);
 };
@@ -189,8 +193,29 @@ adapter.enqueue({
   kind: "tool-calls",
 });
 adapter.enqueue({ kind: "complete", text: "governed file tools completed" });
-adapter.enqueue({ kind: "await-abort" });
-adapter.enqueue({ kind: "await-abort" });
+adapter.enqueue({
+  calls: [
+    { id: "artifact-glob-call", name: "Glob", arguments: JSON.stringify({ pattern: "**/*.txt" }) },
+    { id: "artifact-grep-call", name: "Grep", arguments: JSON.stringify({ pattern: "governed" }) },
+    { id: "artifact-ls-call", name: "ls", arguments: JSON.stringify({}) },
+    { id: "artifact-bash-call", name: "Bash", arguments: JSON.stringify({ command: "printf artifact-bash" }) },
+    {
+      id: "artifact-background-bash-call",
+      name: "Bash",
+      arguments: JSON.stringify({ command: "/bin/sleep 0.05; printf artifact-background", run_in_background: true }),
+    },
+    {
+      id: "artifact-background-flood-call",
+      name: "Bash",
+      arguments: JSON.stringify({
+        command: `${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(200004))'`,
+        run_in_background: true,
+      }),
+    },
+  ],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "bounded process and search tools completed" });
 
 const rpcDigest = "a".repeat(64);
 const composition = await composeDshRootServices({
@@ -217,7 +242,13 @@ const composition = await composeDshRootServices({
   tools: { mode: "native" },
 });
 const fileToolEvidence: string[] = [];
-const fileToolPlaneConfig: CanonicalFileToolPlaneConfig = Object.freeze({
+const artifactRipgrepPath = await resolveRgPath();
+const executableSha256 = Object.freeze({
+  bash: createHash("sha256").update(await readFile("/bin/bash")).digest("hex"),
+  bundledNode: createHash("sha256").update(await readFile(process.execPath)).digest("hex"),
+  ripgrep: createHash("sha256").update(await readFile(artifactRipgrepPath)).digest("hex"),
+});
+const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
   attachments: Object.freeze({
     publish: (request: AttachmentPublicationRequest) => Promise.resolve(Object.freeze({
       attachmentId: "artifact-attachment",
@@ -250,24 +281,57 @@ const fileToolPlaneConfig: CanonicalFileToolPlaneConfig = Object.freeze({
     },
   }),
   platformTarget: "darwin-arm64",
+  process: Object.freeze({
+    allowedCommandRefs: Object.freeze(["bundled-bash", "bundled-node", "bundled-ripgrep"]),
+    environmentValues: Object.freeze({}),
+    executableSha256,
+    executablePaths: Object.freeze({
+      bash: "/bin/bash",
+      bundledNode: process.execPath,
+      ripgrep: artifactRipgrepPath,
+    }),
+    executableRefs: Object.freeze({
+      bash: "bundled-bash",
+      bundledNode: "bundled-node",
+      ripgrep: "bundled-ripgrep",
+    }),
+  }),
+  temporaryRoot: fixtureTemporaryRoot,
 });
 await assert.rejects(
-  installCanonicalFileToolPlane(
+  installCanonicalToolPlane(
     new DshRootComposition(composition.context, composition.providers),
-    fileToolPlaneConfig,
+    canonicalToolPlaneConfig,
   ),
   /exact unclaimed root composition authority/u,
 );
-const fileToolPlaneInstallation = installCanonicalFileToolPlane(composition, fileToolPlaneConfig);
+const canonicalToolPlaneInstallation = installCanonicalToolPlane(composition, canonicalToolPlaneConfig);
 await assert.rejects(
-  installCanonicalFileToolPlane(composition, fileToolPlaneConfig),
+  installCanonicalToolPlane(composition, canonicalToolPlaneConfig),
   /exact unclaimed root composition authority/u,
 );
-await fileToolPlaneInstallation;
+await canonicalToolPlaneInstallation;
 await assert.rejects(
-  installCanonicalFileToolPlane(composition, fileToolPlaneConfig),
+  installCanonicalToolPlane(composition, canonicalToolPlaneConfig),
   /exact unclaimed root composition authority/u,
 );
+const mismatchedPlatformComposition = await composeDshRootServices({
+  adapter: new ScriptedFakeLlmAdapter(),
+  providers: ["fixture"],
+});
+await installCanonicalToolPlane(mismatchedPlatformComposition, canonicalToolPlaneConfig);
+const mismatchedPlatformInput = new PassThrough();
+const mismatchedPlatformOutput = new PassThrough();
+await assert.rejects(Promise.resolve(mismatchedPlatformComposition.context.plugin(NativeRpcServer, {
+  compositionAuthority: claimNativeRpcLifecycleAuthority(mismatchedPlatformComposition),
+  input: mismatchedPlatformInput,
+  output: mismatchedPlatformOutput,
+  runtimeGeneration: "mismatched-platform-generation",
+  platformTarget: "linux-x64",
+})), /direct-root RuntimeProcessLifecycle authority/u);
+await mismatchedPlatformComposition.dispose();
+mismatchedPlatformInput.destroy();
+mismatchedPlatformOutput.destroy();
 assert.throws(() => composition.context.sessions.create(SessionId("rogue-direct-session")),
   /Session publication lacks the primary Session admission authority/u);
 const advancedRogueSession = Session.create(SessionId("rogue-advanced-agent"));
@@ -378,12 +442,12 @@ const initializeRequest: InitializeParams = {
       bashRef: "bundled-bash",
       ripgrepRef: "bundled-ripgrep",
       bashDialect: "bash",
-      allowedCommandRefs: [],
+      allowedCommandRefs: ["bundled-bash", "bundled-node", "bundled-ripgrep"],
       pathPolicy: "sealed",
     },
     environment: { allowedKeys: [], inheritedKeys: [], secretValues: "reverse-port-only" },
     network: { mode: "deny" },
-    process: { maxChildren: 1, killTreeOnAbort: true },
+    process: { backgroundRetention: "allow", maxChildren: 4, killTreeOnAbort: true },
     checkpoint: {
       mode: "managed-file-tools",
       version: 1,
@@ -425,7 +489,7 @@ await directRootComposition.context.plugin(NativeRpcServer, {
   platformTarget: "darwin-arm64",
 });
 await assert.rejects(
-  installCanonicalFileToolPlane(directRootComposition, fileToolPlaneConfig),
+  installCanonicalToolPlane(directRootComposition, canonicalToolPlaneConfig),
   /exact unclaimed root composition authority/u,
 );
 assert.throws(() => Object.defineProperty(directRootComposition, "dispose", {
@@ -714,6 +778,220 @@ assert.equal(governedToolResults.every((event) => event.type === "tool/result"
 
 await composition.context.sdkOperations.start({
   ...turnStartParams,
+  clientOperationId: "artifact-process-search-operation",
+  clientUserMessageId: "artifact-process-search-user-message",
+  input: { parts: [{ kind: "text", text: "Exercise bounded Bash, Glob, Grep, and ls" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-process-search-operation")?.state === "terminal",
+  "bounded process/search operation terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-process-search-operation")?.terminal?.kind,
+  "succeeded",
+);
+const processSearchCallIds = [
+  "artifact-glob-call",
+  "artifact-grep-call",
+  "artifact-ls-call",
+  "artifact-bash-call",
+  "artifact-background-bash-call",
+  "artifact-background-flood-call",
+];
+const processSearchResults = primaryAgent.session.events.filter((event) =>
+  event.type === "tool/result" && processSearchCallIds.includes(String(event.data.message.source.callId)));
+assert.equal(processSearchResults.length, processSearchCallIds.length);
+assert.equal(processSearchResults.every((event) => event.type === "tool/result"
+  && event.data.message.content[0].isError !== true), true, JSON.stringify(processSearchResults.map((event) => ({
+  callId: event.type === "tool/result" ? String(event.data.message.source.callId) : "unexpected",
+  result: event.type === "tool/result" ? event.data.message.content[0] : undefined,
+}))));
+const processSearchText = (callId: string): string => {
+  const event = processSearchResults.find((candidate) => candidate.type === "tool/result"
+    && String(candidate.data.message.source.callId) === callId);
+  assert.ok(event?.type === "tool/result");
+  const resultBlock = event.data.message.content[0];
+  assert.equal(resultBlock.type, "tool-result");
+  const content = resultBlock.content;
+  assert.equal(content.length, 1);
+  const block = content[0];
+  assert.ok(block?.type === "text");
+  return block.text;
+};
+const globOutput = JSON.parse(processSearchText("artifact-glob-call")) as unknown;
+assert.ok(globOutput !== null && typeof globOutput === "object" && !Array.isArray(globOutput));
+assert.ok(Number.isSafeInteger((globOutput as Record<string, unknown>).durationMs));
+assert.deepEqual({
+  filenames: (globOutput as Record<string, unknown>).filenames,
+  numFiles: (globOutput as Record<string, unknown>).numFiles,
+  truncated: (globOutput as Record<string, unknown>).truncated,
+}, {
+  filenames: ["governed.txt"],
+  numFiles: 1,
+  truncated: false,
+});
+const grepOutput = JSON.parse(processSearchText("artifact-grep-call")) as unknown;
+assert.ok(grepOutput !== null && typeof grepOutput === "object" && !Array.isArray(grepOutput));
+assert.deepEqual({
+  limit: (grepOutput as Record<string, unknown>).limit,
+  mode: (grepOutput as Record<string, unknown>).mode,
+  offset: (grepOutput as Record<string, unknown>).offset,
+  records: (grepOutput as Record<string, unknown>).records,
+  truncated: (grepOutput as Record<string, unknown>).truncated,
+}, {
+  limit: 250,
+  mode: "files_with_matches",
+  offset: 0,
+  records: [{ path: "governed.txt" }],
+  truncated: false,
+});
+assert.equal(processSearchText("artifact-ls-call"), "governed.txt");
+const foregroundBash = JSON.parse(processSearchText("artifact-bash-call")) as unknown;
+assert.ok(foregroundBash !== null && typeof foregroundBash === "object" && !Array.isArray(foregroundBash));
+assert.deepEqual({
+  background: (foregroundBash as Record<string, unknown>).background,
+  exitCode: (foregroundBash as Record<string, unknown>).exitCode,
+  interrupted: (foregroundBash as Record<string, unknown>).interrupted,
+  outputTruncated: (foregroundBash as Record<string, unknown>).outputTruncated,
+  stderr: (foregroundBash as Record<string, unknown>).stderr,
+  stdout: (foregroundBash as Record<string, unknown>).stdout,
+}, {
+  background: false,
+  exitCode: 0,
+  interrupted: false,
+  outputTruncated: false,
+  stderr: "",
+  stdout: "artifact-bash",
+});
+const backgroundBash = JSON.parse(processSearchText("artifact-background-bash-call")) as unknown;
+assert.ok(backgroundBash !== null && typeof backgroundBash === "object" && !Array.isArray(backgroundBash));
+const backgroundRecord = backgroundBash as Record<string, unknown>;
+assert.equal(backgroundRecord.background, true);
+assert.equal(typeof backgroundRecord.outputPath, "string");
+assert.equal(typeof backgroundRecord.taskId, "string");
+const backgroundFlood = JSON.parse(processSearchText("artifact-background-flood-call")) as unknown;
+assert.ok(backgroundFlood !== null && typeof backgroundFlood === "object" && !Array.isArray(backgroundFlood));
+const backgroundFloodRecord = backgroundFlood as Record<string, unknown>;
+assert.equal(backgroundFloodRecord.background, true);
+assert.equal(typeof backgroundFloodRecord.outputPath, "string");
+assert.equal(typeof backgroundFloodRecord.taskId, "string");
+for (const permission of ["Glob", "Grep", "ls", "Bash"]) {
+  assert.ok(fileToolEvidence.some((entry) => entry.startsWith(`permission:${permission}:`)));
+}
+const backgroundJobs = composition.context.jobs.list(primaryAgent);
+assert.equal(backgroundJobs.length, 2);
+const backgroundJob = backgroundJobs.find(({ id }) => id === backgroundRecord.taskId);
+assert.ok(backgroundJob);
+assert.equal(backgroundJob.id, backgroundRecord.taskId);
+await composition.context.jobs.wait(backgroundJob.id, 5_000, primaryAgent);
+assert.equal(await readFile(backgroundRecord.outputPath as string, "utf8"), "artifact-background");
+const backgroundFloodJob = backgroundJobs.find(({ id }) => id === backgroundFloodRecord.taskId);
+assert.ok(backgroundFloodJob);
+await composition.context.jobs.wait(backgroundFloodJob.id, 5_000, primaryAgent);
+const retainedFlood = await readFile(backgroundFloodRecord.outputPath as string, "utf8");
+assert.match(retainedFlood, /^\[myagents: stdout truncated; 80004 earlier bytes omitted\]\n/u);
+assert.equal(retainedFlood.endsWith("x".repeat(120_000)), true);
+assert.equal(Buffer.byteLength(retainedFlood, "utf8") <= 262_144, true);
+assert.equal(composition.context.productProcesses.snapshot().liveProcesses, 0);
+
+const unrelatedRuntimeFile = join(fixtureRuntimeHome, "must-not-read.txt");
+await writeFile(unrelatedRuntimeFile, "private runtime fixture");
+adapter.enqueue({
+  calls: [
+    {
+      id: "artifact-background-read-call",
+      name: "Read",
+      arguments: JSON.stringify({ file_path: backgroundRecord.outputPath }),
+    },
+    {
+      id: "artifact-runtime-private-read-call",
+      name: "Read",
+      arguments: JSON.stringify({ file_path: unrelatedRuntimeFile }),
+    },
+  ],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "retained output read authority checked" });
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-retained-output-operation",
+  clientUserMessageId: "artifact-retained-output-user-message",
+  input: { parts: [{ kind: "text", text: "Read the retained Bash output only" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-retained-output-operation")?.state === "terminal",
+  "retained output Read operation terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-retained-output-operation")?.terminal?.kind,
+  "succeeded",
+);
+const retainedOutputResults = primaryAgent.session.events.filter((event) => event.type === "tool/result"
+  && ["artifact-background-read-call", "artifact-runtime-private-read-call"]
+    .includes(String(event.data.message.source.callId)));
+assert.equal(retainedOutputResults.length, 2);
+const retainedOutputRead = retainedOutputResults.find((event) => event.type === "tool/result"
+  && String(event.data.message.source.callId) === "artifact-background-read-call");
+const unrelatedRuntimeRead = retainedOutputResults.find((event) => event.type === "tool/result"
+  && String(event.data.message.source.callId) === "artifact-runtime-private-read-call");
+assert.ok(retainedOutputRead?.type === "tool/result");
+assert.equal(retainedOutputRead.data.message.content[0].isError, false);
+assert.match(JSON.stringify(retainedOutputRead.data.message.content[0].content), /artifact-background/u);
+assert.ok(unrelatedRuntimeRead?.type === "tool/result");
+assert.equal(unrelatedRuntimeRead.data.message.content[0].isError, true);
+
+adapter.enqueue({
+  calls: [{
+    id: "artifact-aborted-bash-call",
+    name: "Bash",
+    arguments: JSON.stringify({ command: "/bin/sleep 30" }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "await-abort" });
+adapter.enqueue({ kind: "await-abort" });
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-process-abort-operation",
+  clientUserMessageId: "artifact-process-abort-user-message",
+  input: { parts: [{ kind: "text", text: "Abort one owned Bash process tree" }] },
+});
+await waitUntil(
+  () => composition.context.productProcesses.snapshot().liveProcesses === 1,
+  "owned Bash process admission before interrupt",
+).catch((error: unknown) => {
+  const operation = composition.context.sdkOperations.lookup("artifact-process-abort-operation");
+  const recentEvents = primaryAgent.session.events.slice(-12).map((event) => ({
+    type: event.type,
+    ...(event.type === "tool/result" ? { callId: String(event.data.message.source.callId) } : {}),
+  }));
+  throw new Error(`owned Bash admission evidence: ${JSON.stringify({
+    agentStatus: primaryAgent.status,
+    liveProcesses: composition.context.productProcesses.snapshot().liveProcesses,
+    operation,
+    recentEvents,
+    requestCount: adapter.requests.length,
+  })}`, { cause: error });
+});
+assert.deepEqual(await composition.context.sdkOperations.interrupt({
+  clientOperationId: "artifact-process-abort-operation",
+  cancelQueued: false,
+}), { ok: true, stillQueuedMessageIds: [], cancelledMessageIds: [] });
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-process-abort-operation")?.state === "terminal",
+  "aborted Bash process operation terminal",
+);
+const processAbortTerminal = composition.context.sdkOperations
+  .lookup("artifact-process-abort-operation")?.terminal;
+assert.equal(processAbortTerminal?.kind, "aborted");
+assert.equal(processAbortTerminal.reason, "user");
+assert.equal(composition.context.productProcesses.snapshot().liveProcesses, 0);
+
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
   clientOperationId: "artifact-operation-4",
   clientUserMessageId: "artifact-user-message-4",
   input: { parts: [{ kind: "text", text: "cancel this turn" }] },
@@ -786,8 +1064,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 7,
-  "seven projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 10,
+  "ten projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -796,7 +1074,10 @@ assert.deepEqual(
         ? `${event.terminal.kind}:${event.terminal.reason}`
         : event.terminal.kind
       : "missing"),
-  ["succeeded", "succeeded", "failed", "succeeded", "aborted:user", "aborted:user", "aborted:host_shutdown"],
+  [
+    "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
+    "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
+  ],
 );
 const firstUsage = projectedRuntimeEvents.find(({ event }) => event.kind === "usage");
 assert.ok(firstUsage?.event.kind === "usage");
@@ -882,6 +1163,7 @@ process.stdout.write(`${JSON.stringify({
   operationCorrelationVerified: true,
   operationInterruptVerified: true,
   canonicalFileToolsVerified: true,
+  canonicalProcessSearchToolsVerified: true,
   queuedCancellationVerified: true,
   runtimeEventProjectionVerified: true,
   sessionCloseVerified: true,
@@ -891,6 +1173,9 @@ process.stdout.write(`${JSON.stringify({
   publicationGuardsVerified: true,
   publicationTransientVerified: primaryPublicationSnapshotVerified,
   roguePublicationInvisible: !roguePublicationObserved,
-  terminalCases: ["success", "failure", "file_tools", "interrupt", "queued_cancel", "session_close"],
+  terminalCases: [
+    "success", "failure", "file_tools", "process_search_tools", "process_abort",
+    "interrupt", "queued_cancel", "session_close",
+  ],
   toolContractRuntimeConsumerVerified: true,
 })}\n`);

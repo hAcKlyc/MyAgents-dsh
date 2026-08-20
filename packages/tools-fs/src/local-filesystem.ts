@@ -10,17 +10,21 @@ import type {
   FsWriteOutcome,
 } from "@deepseek-ai/dsh-fs";
 import type { Context } from "@deepseek-ai/cordis";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import {
+  access,
   link,
   lstat,
+  mkdir,
   open,
+  opendir,
   readdir,
   realpath,
   rename,
   rm,
   stat,
+  unlink,
 } from "node:fs/promises";
 import { posix, win32, type PlatformPath } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -31,8 +35,14 @@ import {
   type PlatformAdapterContract,
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
+import type {
+  ProductProcessIoAuthority,
+  ProductProcessOutputFile,
+  ProductProcessWorkspaceAuthority,
+} from "@myagents-dsh/tools-process";
 
 type BigStat = Awaited<ReturnType<typeof lstat>>;
+const MAX_RETAINED_OUTPUT_BYTES = 262_144;
 
 const pathApi = (target: PlatformTarget): PlatformPath => target === "win32-x64" ? win32 : posix;
 
@@ -71,9 +81,20 @@ export interface LocalWorkspaceFileSystemConfig {
   readonly platform: PlatformAdapterContract;
 }
 
+export interface LocalDirectoryEntry {
+  readonly name: string;
+  readonly type: "directory" | "file" | "other" | "symlink";
+}
+
+export interface LocalDirectoryAuthority {
+  readonly target: FsTarget;
+  readonly version: string;
+}
+
 export class LocalWorkspaceFileSystem extends FileSystem {
   private readonly adapterValue;
   private readonly pathValue;
+  private readonly retainedOutputVersionsValue = new Map<string, string>();
   private readonly targetsValue = new Map<string, string>();
 
   constructor(ctx: Context, config: LocalWorkspaceFileSystemConfig) {
@@ -140,6 +161,55 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   }
 
   override processPath(target: FsTarget): string { return this.targetPath(target); }
+
+  async modificationTime(target: FsTarget, signal?: AbortSignal): Promise<number> {
+    abortError(signal);
+    const info = await stat(this.targetPath(target)).catch((error: unknown) =>
+      fsError(error, "filesystem modification-time projection failed"));
+    abortError(signal);
+    if (!info.isFile() || !Number.isFinite(info.mtimeMs)) {
+      throw new FsError("filesystem modification-time target is not a regular file", "FS_NOT_FOUND");
+    }
+    return info.mtimeMs;
+  }
+
+  projectRelative(parent: FsTarget, child: FsTarget): string {
+    const parentPath = this.targetPath(parent);
+    const childPath = this.targetPath(child);
+    if (!this.contains(parent, child) || this.adapterValue.samePath(parentPath, childPath)) {
+      throw new FsError("filesystem target cannot be projected relative to its parent", "FS_SANDBOX_DENIED");
+    }
+    const relative = this.pathValue.relative(parentPath, childPath);
+    if (relative.length === 0 || this.pathValue.isAbsolute(relative) || relative === ".."
+      || relative.startsWith(`..${this.pathValue.sep}`)) {
+      throw new FsError("filesystem relative projection escaped its parent", "FS_SANDBOX_DENIED");
+    }
+    return relative.split(this.pathValue.sep).join("/");
+  }
+
+  async resolveRelativeChild(
+    parent: FsTarget,
+    value: string,
+    signal?: AbortSignal,
+  ): Promise<FsTarget> {
+    if (typeof value !== "string" || value.length === 0 || value.length > 8_192 || value.includes("\0")
+      || this.pathValue.isAbsolute(value)) {
+      throw new FsError("filesystem child path is invalid", "FS_SANDBOX_DENIED");
+    }
+    const parentPath = this.targetPath(parent);
+    const lexical = value.startsWith(`.${this.pathValue.sep}`) ? value.slice(2) : value;
+    const pathInfo = await this.lstat(lexical, { cwd: parentPath }, signal);
+    if (pathInfo?.type === "symlink") {
+      throw new FsError("filesystem child path is symbolic", "FS_SANDBOX_DENIED");
+    }
+    const child = await this.resolve(lexical, signal === undefined
+      ? { cwd: parentPath }
+      : { cwd: parentPath, signal });
+    if (!this.contains(parent, child) || this.adapterValue.samePath(parentPath, this.targetPath(child))) {
+      throw new FsError("filesystem child path escaped its parent", "FS_SANDBOX_DENIED");
+    }
+    return child;
+  }
 
   override fileUrl(target: FsTarget): string {
     const path = this.targetPath(target);
@@ -216,25 +286,45 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     abortError(signal);
     const path = this.targetPath(target);
     const before = await lstat(path).catch((error: unknown) => fsError(error, "filesystem read stat failed"));
+    const retainedVersion = this.retainedOutputVersionsValue.get(String(target.targetKey));
     if (!before.isFile() || before.isSymbolicLink()) {
       throw new FsError("filesystem target is not a regular file", "FS_NOT_REGULAR_FILE");
+    }
+    if (retainedVersion !== undefined && (before.nlink !== 1
+      || before.size > MAX_RETAINED_OUTPUT_BYTES || String(versionOf(before)) !== retainedVersion)) {
+      throw new FsError("retained output identity or byte bound changed", "FS_STALE_VERSION");
     }
     if (before.size > maxBytes) throw new FsError("filesystem target exceeds byte bound", "FS_TOO_LARGE");
     const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
     const handle = await open(path, constants.O_RDONLY | noFollow).catch((error: unknown) =>
       fsError(error, "filesystem read open failed"));
+    let result: Uint8Array;
     try {
       const opened = await handle.stat();
-      if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
+      if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino
+        || (retainedVersion !== undefined && (opened.nlink !== 1
+          || opened.size > MAX_RETAINED_OUTPUT_BYTES || String(versionOf(opened)) !== retainedVersion))) {
         throw new FsError("filesystem target identity changed before read", "FS_STALE_VERSION");
       }
       const bytes = await handle.readFile();
       abortError(signal);
       if (bytes.length > maxBytes) throw new FsError("filesystem target exceeds byte bound", "FS_TOO_LARGE");
-      return new Uint8Array(bytes);
+      const settled = await handle.stat();
+      if (retainedVersion !== undefined && (settled.nlink !== 1
+        || settled.size > MAX_RETAINED_OUTPUT_BYTES || String(versionOf(settled)) !== retainedVersion)) {
+        throw new FsError("retained output identity changed during read", "FS_STALE_VERSION");
+      }
+      result = new Uint8Array(bytes);
     } finally {
       await handle.close();
     }
+    if (retainedVersion !== undefined) {
+      const after = await lstat(path).catch((error: unknown) => fsError(error, "retained output final stat failed"));
+      if (after.nlink !== 1 || String(versionOf(after)) !== retainedVersion) {
+        throw new FsError("retained output path identity changed during read", "FS_STALE_VERSION");
+      }
+    }
+    return result;
   }
 
   override async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
@@ -260,6 +350,68 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       }));
     }
     return result;
+  }
+
+  async listDirectoryEntries(
+    authority: LocalDirectoryAuthority,
+    maxEntries: number,
+    signal?: AbortSignal,
+  ): Promise<readonly LocalDirectoryEntry[]> {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > 100_001) {
+      throw new TypeError("filesystem directory enumeration bound is invalid");
+    }
+    abortError(signal);
+    await this.assertDirectoryAuthority(authority, signal);
+    const path = this.targetPath(authority.target);
+    const directory = await opendir(path).catch((error: unknown) =>
+      fsError(error, "filesystem bounded directory listing failed"));
+    const result: LocalDirectoryEntry[] = [];
+    let scanned = 0;
+    try {
+      await this.assertDirectoryAuthority(authority, signal);
+      for await (const entry of directory) {
+        abortError(signal);
+        scanned += 1;
+        if (scanned > maxEntries) {
+          throw new FsError("filesystem directory exceeds enumeration bound", "FS_TOO_LARGE");
+        }
+        await this.assertDirectoryAuthority(authority, signal);
+        const child = await this.resolve(this.pathValue.join(path, entry.name),
+          signal === undefined ? {} : { signal });
+        await this.assertDirectoryAuthority(authority, signal);
+        if (!this.contains(authority.target, child)) {
+          throw new FsError("filesystem directory child escaped its authorized root", "FS_SANDBOX_DENIED");
+        }
+        const info = await this.stat(child, signal);
+        await this.assertDirectoryAuthority(authority, signal);
+        if (info === undefined) continue;
+        result.push(Object.freeze({ name: entry.name, type: info.type }));
+      }
+      await this.assertDirectoryAuthority(authority, signal);
+    } finally {
+      await directory.close().catch(() => undefined);
+    }
+    return Object.freeze(result);
+  }
+
+  private async assertDirectoryAuthority(
+    authority: LocalDirectoryAuthority,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    abortError(signal);
+    const path = this.targetPath(authority.target);
+    const lexical = await lstat(path).catch((error: unknown) =>
+      fsError(error, "filesystem directory authority stat failed"));
+    if (lexical.isSymbolicLink() || !lexical.isDirectory()
+      || String(versionOf(lexical)) !== authority.version) {
+      throw new FsError("filesystem directory authority changed", "FS_STALE_VERSION");
+    }
+    const canonical = await realpath(path).catch((error: unknown) =>
+      fsError(error, "filesystem directory authority resolution failed"));
+    abortError(signal);
+    if (!this.adapterValue.samePath(this.adapterValue.normalizeAbsolutePath(canonical), path)) {
+      throw new FsError("filesystem directory authority contains symlink indirection", "FS_SANDBOX_DENIED");
+    }
   }
 
   override async writeText(
@@ -399,4 +551,304 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     }
     return path;
   }
+
+  createProcessIoAuthority(): ProductProcessIoAuthority {
+    return Object.freeze({
+      captureWorkspace: async (path: string, signal: AbortSignal) =>
+        await this.captureWorkspace(path, signal),
+      createOutputFile: async (runtimeHome: string, operationId: string, signal: AbortSignal) =>
+        await this.createOutputFile(runtimeHome, operationId, signal),
+      normalizeAbsolutePath: (path: string) => this.adapterValue.normalizeAbsolutePath(path),
+      processPath: (target: FsTarget) => this.processPath(target),
+      resolveRetainedOutput: async (path: string, runtimeHome: string, signal: AbortSignal) =>
+        await this.resolveRetainedOutput(path, runtimeHome, signal),
+      revalidateWorkspace: async (
+        authority: ProductProcessWorkspaceAuthority,
+        path: string,
+        signal: AbortSignal,
+      ) => { await this.revalidateWorkspace(authority, path, signal); },
+      verifyExecutable: async (path: string, sha256: string, signal: AbortSignal) => {
+        await this.verifyProcessExecutable(path, sha256, signal);
+      },
+    });
+  }
+
+  private async resolveRetainedOutput(
+    path: string,
+    runtimeHome: string,
+    signal: AbortSignal,
+  ): Promise<FsTarget> {
+    abortError(signal);
+    const canonicalHome = this.adapterValue.normalizeAbsolutePath(runtimeHome);
+    const outputRootPath = this.adapterValue.normalizeAbsolutePath(this.pathValue.join(canonicalHome, "work", "bash"));
+    if (this.adapterValue.normalizeAbsolutePath(path) !== path
+      || this.pathValue.dirname(path) !== outputRootPath) {
+      throw new FsError("retained output path is outside the owned output directory", "FS_SANDBOX_DENIED");
+    }
+    const outputRoot = await this.resolve(outputRootPath, { signal });
+    if (!this.adapterValue.samePath(outputRoot.displayPath, outputRootPath)) {
+      throw new FsError("retained output directory identity changed", "FS_STALE_VERSION");
+    }
+    const pathInfo = await this.lstat(path, undefined, signal);
+    if (pathInfo?.type !== "file") {
+      throw new FsError("retained output is not a regular no-follow file", "FS_NOT_REGULAR_FILE");
+    }
+    const before = await lstat(path).catch((error: unknown) =>
+      fsError(error, "retained output stat failed"));
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1
+      || before.size > MAX_RETAINED_OUTPUT_BYTES) {
+      throw new FsError("retained output is not a bounded singly-linked file", "FS_NOT_REGULAR_FILE");
+    }
+    const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+    const handle = await open(path, constants.O_RDONLY | noFollow).catch((error: unknown) =>
+      fsError(error, "retained output open failed"));
+    try {
+      const opened = await handle.stat();
+      if (!opened.isFile() || opened.nlink !== 1 || opened.size > MAX_RETAINED_OUTPUT_BYTES
+        || String(versionOf(opened)) !== String(versionOf(before))) {
+        throw new FsError("retained output identity changed before authorization", "FS_STALE_VERSION");
+      }
+    } finally {
+      await handle.close();
+    }
+    const target = await this.resolve(path, { signal });
+    if (!this.contains(outputRoot, target) || !this.adapterValue.samePath(target.displayPath, path)) {
+      throw new FsError("retained output escaped its owned output directory", "FS_SANDBOX_DENIED");
+    }
+    const after = await lstat(path).catch((error: unknown) =>
+      fsError(error, "retained output final stat failed"));
+    if (after.nlink !== 1 || String(versionOf(after)) !== String(versionOf(before))) {
+      throw new FsError("retained output identity changed during authorization", "FS_STALE_VERSION");
+    }
+    this.retainedOutputVersionsValue.set(String(target.targetKey), String(versionOf(after)));
+    return target;
+  }
+
+  private async verifyProcessExecutable(
+    path: string,
+    expectedSha256: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    abortError(signal);
+    if (!/^[a-f0-9]{64}$/u.test(expectedSha256)
+      || this.adapterValue.normalizeAbsolutePath(path) !== path) {
+      throw new FsError("process executable authority is invalid", "FS_SANDBOX_DENIED");
+    }
+    const before = await lstat(path).catch((error: unknown) =>
+      fsError(error, "process executable stat failed"));
+    if (!before.isFile() || before.isSymbolicLink()) {
+      throw new FsError("process executable is not a regular no-follow file", "FS_NOT_REGULAR_FILE");
+    }
+    const canonical = await realpath(path).catch((error: unknown) =>
+      fsError(error, "process executable resolution failed"));
+    if (!this.adapterValue.samePath(this.adapterValue.normalizeAbsolutePath(canonical), path)) {
+      throw new FsError("process executable contains symlink indirection", "FS_SANDBOX_DENIED");
+    }
+    await access(path, constants.X_OK).catch((error: unknown) =>
+      fsError(error, "process executable is not executable"));
+    const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+    const handle = await open(path, constants.O_RDONLY | noFollow).catch((error: unknown) =>
+      fsError(error, "process executable open failed"));
+    try {
+      const opened = await handle.stat();
+      if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino
+        || opened.size !== before.size || opened.size > 512 * 1_024 * 1_024) {
+        throw new FsError("process executable identity changed", "FS_STALE_VERSION");
+      }
+      const digest = createHash("sha256").update(await handle.readFile()).digest("hex");
+      abortError(signal);
+      if (digest !== expectedSha256) {
+        throw new FsError("process executable digest changed", "FS_STALE_VERSION");
+      }
+    } finally {
+      await handle.close();
+    }
+    const after = await lstat(path).catch((error: unknown) =>
+      fsError(error, "process executable final stat failed"));
+    if (String(versionOf(after)) !== String(versionOf(before))) {
+      throw new FsError("process executable identity changed", "FS_STALE_VERSION");
+    }
+  }
+
+  private async captureWorkspace(
+    path: string,
+    signal: AbortSignal,
+  ): Promise<ProductProcessWorkspaceAuthority> {
+    const target = await this.resolve(path, { signal });
+    if (!this.adapterValue.samePath(target.displayPath, path)) {
+      throw new FsError("workspace identity differs from its canonical authority", "FS_STALE_VERSION");
+    }
+    const info = await this.stat(target, signal);
+    if (info?.type !== "directory") throw new FsError("workspace is unavailable", "FS_NOT_FOUND");
+    return Object.freeze({ target, version: String(info.version) });
+  }
+
+  private async revalidateWorkspace(
+    authority: ProductProcessWorkspaceAuthority,
+    path: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const current = await this.captureWorkspace(path, signal);
+    if (current.target.targetKey !== authority.target.targetKey
+      || current.target.displayPath !== authority.target.displayPath
+      || current.version !== authority.version) {
+      throw new FsError("workspace identity changed after authorization", "FS_STALE_VERSION");
+    }
+  }
+
+  private async createOutputFile(
+    runtimeHome: string,
+    operationId: string,
+    signal: AbortSignal,
+  ): Promise<ProductProcessOutputFile> {
+    abortError(signal);
+    const root = await this.resolve(runtimeHome, { signal });
+    if (!this.adapterValue.samePath(root.displayPath, runtimeHome)) {
+      throw new FsError("Runtime home identity changed", "FS_SANDBOX_DENIED");
+    }
+    const rootInfo = await this.stat(root, signal);
+    if (rootInfo?.type !== "directory") throw new FsError("Runtime home is unavailable", "FS_NOT_FOUND");
+    const rootPath = this.targetPath(root);
+    const ensureOwnedDirectory = async (parent: string, name: string): Promise<string> => {
+      const directory = this.pathValue.join(parent, name);
+      const before = await lstat(directory).catch((error: unknown) => {
+        if (errorCode(error) === "ENOENT") return undefined;
+        return fsError(error, "Runtime output directory inspection failed");
+      });
+      abortError(signal);
+      if (before === undefined) {
+        await mkdir(directory, { mode: 0o700, recursive: false }).catch((error: unknown) => {
+          if (errorCode(error) !== "EEXIST") return fsError(error, "Runtime output directory creation failed");
+          return undefined;
+        });
+        abortError(signal);
+      } else if (!before.isDirectory() || before.isSymbolicLink()) {
+        throw new FsError("Runtime output directory parent is not an owned directory", "FS_SANDBOX_DENIED");
+      }
+      const after = await lstat(directory);
+      abortError(signal);
+      const canonical = await realpath(directory);
+      abortError(signal);
+      if (!after.isDirectory() || after.isSymbolicLink()
+        || !this.adapterValue.samePath(canonical, directory)) {
+        throw new FsError("Runtime output directory identity is invalid", "FS_STALE_VERSION");
+      }
+      return directory;
+    };
+    const workDirectory = await ensureOwnedDirectory(rootPath, "work");
+    const directory = await ensureOwnedDirectory(workDirectory, "bash");
+    const directoryReal = await realpath(directory).catch((error: unknown) =>
+      fsError(error, "Runtime output directory resolution failed"));
+    abortError(signal);
+    const rootAfter = await this.resolve(runtimeHome, { signal });
+    if (rootAfter.targetKey !== root.targetKey || rootAfter.displayPath !== root.displayPath
+      || !this.adapterValue.samePath(directoryReal, directory)) {
+      throw new FsError("Runtime output directory identity changed", "FS_STALE_VERSION");
+    }
+    const stem = operationId.replace(/[^A-Za-z0-9._-]/gu, "_").slice(0, 64) || "operation";
+    const path = this.pathValue.join(directory, `${stem}-${randomBytes(12).toString("hex")}.log`);
+    const handle = await open(
+      path,
+      constants.O_CREAT | constants.O_EXCL | constants.O_RDWR
+        | (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0),
+      0o600,
+    ).catch((error: unknown) => fsError(error, "Runtime output file allocation failed"));
+    let opened: BigStat;
+    try {
+      abortError(signal);
+      opened = await handle.stat();
+      abortError(signal);
+      if (!opened.isFile() || opened.nlink !== 1) {
+        throw new FsError("Runtime output file identity is invalid", "FS_SANDBOX_DENIED");
+      }
+      await handle.chmod(0o400);
+      abortError(signal);
+    } catch (error) {
+      const cleanupErrors: unknown[] = [];
+      await handle.close().catch((cleanupError: unknown) => { cleanupErrors.push(cleanupError); });
+      await unlink(path).catch((cleanupError: unknown) => {
+        if (errorCode(cleanupError) !== "ENOENT") cleanupErrors.push(cleanupError);
+      });
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError([error, ...cleanupErrors], "Runtime output file allocation cleanup failed", {
+          cause: error,
+        });
+      }
+      if (error instanceof FsError) throw error;
+      return fsError(error, "Runtime output file permission sealing failed");
+    }
+    let state: "discard_failed" | "discarded" | "finalized" | "open" = "open";
+    let handleClosed = false;
+    let fileRemoved = false;
+    const discard = async (): Promise<void> => {
+      if (state === "discarded") return;
+      const errors: unknown[] = [];
+      if (!handleClosed) {
+        try {
+          await handle.close();
+          handleClosed = true;
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (!fileRemoved) {
+        try {
+          await unlink(path);
+          fileRemoved = true;
+        } catch (error) {
+          if (errorCode(error) === "ENOENT") fileRemoved = true;
+          else errors.push(error);
+        }
+      }
+      state = handleClosed && fileRemoved ? "discarded" : "discard_failed";
+      if (errors.length > 0) throw new AggregateError(errors, "Runtime output file discard failed");
+    };
+    const finalize = async (text: string, maxBytes: number): Promise<Readonly<{ truncated: boolean }>> => {
+      if (state !== "open") throw new FsError("Runtime output file is already settled", "FS_STALE_VERSION");
+      if (typeof text !== "string" || !Number.isSafeInteger(maxBytes) || maxBytes < 1
+        || maxBytes > 8 * 1_024 * 1_024) {
+        throw new TypeError("Runtime output file content bound is invalid");
+      }
+      const bytes = Buffer.from(text, "utf8");
+      let end = Math.min(bytes.length, maxBytes);
+      while (end > 0 && (bytes[end] ?? 0) >= 0x80 && (bytes[end] ?? 0) < 0xc0) end -= 1;
+      const retained = bytes.subarray(0, end);
+      try {
+        abortError(signal);
+        const parentAfter = await realpath(directory);
+        const pathInfo = await lstat(path);
+        if (!this.adapterValue.samePath(parentAfter, directory) || !pathInfo.isFile()
+          || pathInfo.isSymbolicLink() || pathInfo.nlink !== 1
+          || pathInfo.dev !== opened.dev || pathInfo.ino !== opened.ino) {
+          throw new FsError("Runtime output file changed before settlement", "FS_STALE_VERSION");
+        }
+        await handle.truncate(0);
+        await handle.writeFile(retained);
+        await handle.sync();
+        await handle.chmod(0o400);
+        await handle.close();
+        handleClosed = true;
+        state = "finalized";
+        return Object.freeze({ truncated: retained.length < bytes.length });
+      } catch (error) {
+        try {
+          await discard();
+        } catch (cleanupError) {
+          throw new AggregateError([error, cleanupError], "Runtime output file settlement cleanup failed", {
+            cause: cleanupError,
+          });
+        }
+        throw error;
+      }
+    };
+    return Object.freeze({ discard, finalize, path });
+  }
+
 }
+
+export const requireLocalWorkspaceFileSystem = (value: FileSystem): LocalWorkspaceFileSystem => {
+  if (!(value instanceof LocalWorkspaceFileSystem)) {
+    throw new FsError("operation requires the composition-selected local filesystem Provider", "FS_SANDBOX_DENIED");
+  }
+  return value;
+};

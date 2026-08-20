@@ -9,6 +9,7 @@ import {
   type EffectiveToolCatalogSnapshot,
 } from "@myagents-dsh/tool-contracts";
 import { types as utilTypes } from "node:util";
+import { isDeepStrictEqual } from "node:util";
 
 import { ProductKeyedLocks } from "./keyed-locks.js";
 
@@ -21,7 +22,27 @@ declare module "@deepseek-ai/cordis" {
 export interface ProductToolExecutionEnvironment {
   readonly attachmentStagingRoot: string;
   readonly digest: string;
+  readonly environment: Readonly<{
+    readonly allowedKeys: readonly string[];
+    readonly inheritedKeys: readonly string[];
+    readonly secretValues: "reverse-port-only";
+  }>;
+  readonly executables: Readonly<{
+    readonly allowedCommandRefs: readonly string[];
+    readonly bashDialect: "bash";
+    readonly bashRef: string;
+    readonly bundledNodeRef: string;
+    readonly pathPolicy: "sealed";
+    readonly ripgrepRef: string;
+    readonly windowsPowerShellRef?: string;
+    readonly windowsUtf8PreludeRef?: string;
+  }>;
   readonly platformTarget: "darwin-arm64" | "win32-x64" | "linux-x64";
+  readonly process: Readonly<{
+    readonly backgroundRetention: "allow" | "deny";
+    readonly killTreeOnAbort: true;
+    readonly maxChildren: number;
+  }>;
   readonly revision: string;
   readonly runtimeHome: string;
   readonly workspace: Readonly<{
@@ -301,6 +322,33 @@ export class ProductToolRuntime extends Service {
     context.signal.throwIfAborted();
     if (decision !== "allow") {
       throw new ProductToolError("permission_denied", `${request.tool} permission was denied`);
+    }
+    this.assertCurrentAuthority(context, request.tool);
+  }
+
+  private assertCurrentAuthority(context: ProductToolContext, tool: CanonicalToolName): void {
+    if (this.configValue.requireAgent() !== context.agent) {
+      throw new ProductToolError("tool_operation_denied", "primary Agent authority changed during permission review");
+    }
+    const { dshTurn, operation } = this.configValue.resolveOperation(context.agent);
+    if (dshTurn !== context.dshTurn || operation.state !== "active"
+      || operation.clientOperationId !== context.clientOperationId
+      || operation.productTurnId !== context.productTurnId
+      || !isDeepStrictEqual(operation.birth, context.birth)) {
+      throw new ProductToolError("tool_operation_denied", "tool operation authority changed during permission review");
+    }
+    const environment = this.configValue.environment();
+    if (!isDeepStrictEqual(environment, context.environment)
+      || operation.birth.executionEnvironmentRevision !== environment.revision
+      || operation.birth.executionEnvironmentDigest !== environment.digest) {
+      throw new ProductToolError("tool_environment_stale", "tool execution environment changed during permission review");
+    }
+    const catalog = validateEffectiveToolCatalog(this.configValue.catalog());
+    if (!isDeepStrictEqual(catalog, context.catalog)
+      || operation.birth.toolCatalogRevision !== catalog.revision
+      || operation.birth.toolCatalogDigest !== catalog.digest
+      || !catalog.effectiveTools.includes(tool)) {
+      throw new ProductToolError("tool_catalog_stale", "tool catalog authority changed during permission review");
     }
   }
 
