@@ -45,10 +45,12 @@
       "classification": "direct",
       "batchUse": [
         "B1-W1",
+        "B1-W2",
         "B1-W3"
       ],
       "values": [
-        "createScope"
+        "createScope",
+        "scopeOf"
       ],
       "types": [
         "Scope",
@@ -244,11 +246,19 @@
         "B1-W3"
       ],
       "values": [
-        "SkillRegistry"
+        "SkillRegistry",
+        "isModelInvocable",
+        "isSkillName",
+        "renderSkillContent"
       ],
       "types": [
+        "SkillCandidate",
         "SkillDefinition",
-        "SkillProvider"
+        "SkillInvocationPolicy",
+        "SkillLookupOptions",
+        "SkillProvider",
+        "SkillProviderControl",
+        "SkillSummary"
       ]
     },
     {
