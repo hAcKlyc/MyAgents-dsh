@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@myagents-dsh/tool-contracts": "0.0.0",
-    "@myagents-dsh/tool-runtime-product": "0.0.0"
+    "@myagents-dsh/tool-runtime-product": "0.0.0",
+    "@myagents-dsh/tools-fs": "0.0.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.1",

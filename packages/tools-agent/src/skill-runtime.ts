@@ -28,7 +28,9 @@ import {
 } from "@myagents-dsh/tool-contracts";
 import {
   ProductToolError,
+  type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
+import { LocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 
 export const PRODUCT_STATIC_SKILL_PROVIDER = "myagents-static-skills";
 
@@ -231,6 +233,19 @@ interface ParsedSkillDocument {
   readonly body: string;
 }
 
+interface StaticSkillRootAuthority {
+  readonly allowedRoot: FsTarget;
+  readonly allowedRootPathVersion: string;
+  readonly allowedRootVersion: string;
+  readonly resourceRoot: FsTarget;
+  readonly resourceRootPathVersion: string;
+  readonly resourceRootVersion: string;
+}
+
+interface StaticSkillLoadPermit {
+  readonly root: StaticSkillRootAuthority;
+}
+
 const parseScalar = (value: string, description: string): string => {
   const trimmed = value.trim();
   if (trimmed.length === 0) throw new TypeError(`${description} must not be empty`);
@@ -254,6 +269,59 @@ const parseScalar = (value: string, description: string): string => {
   return result;
 };
 
+const parseFlowArguments = (value: string): readonly string[] => {
+  const inner = value.slice(1, -1).trim();
+  if (inner.length === 0) return Object.freeze([]);
+  const entries: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | undefined;
+  let escaped = false;
+  for (const character of inner) {
+    if (quote !== undefined) {
+      current += character;
+      if (quote === '"' && escaped) {
+        escaped = false;
+      } else if (quote === '"' && character === "\\") {
+        escaped = true;
+      } else if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      current += character;
+    } else if (character === ",") {
+      entries.push(parseScalar(current, "Skill frontmatter arguments entry"));
+      current = "";
+    } else {
+      current += character;
+    }
+  }
+  if (quote !== undefined || escaped) throw new TypeError("Skill frontmatter arguments array is invalid");
+  entries.push(parseScalar(current, "Skill frontmatter arguments entry"));
+  return Object.freeze(entries);
+};
+
+const parseArgumentNames = (value: string | undefined): readonly string[] => {
+  if (value === undefined) return Object.freeze([]);
+  const trimmed = value.trim();
+  const names = trimmed.startsWith("[") || trimmed.endsWith("]")
+    ? (() => {
+      if (!(trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+        throw new TypeError("Skill frontmatter arguments array is invalid");
+      }
+      return parseFlowArguments(trimmed);
+    })()
+    : Object.freeze(parseScalar(trimmed, "Skill frontmatter arguments").split(/\s+/u).filter(Boolean));
+  if (names.length > MAX_ARGUMENT_NAMES
+    || names.some((name) => !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name))
+    || new Set(names).size !== names.length) {
+    throw new TypeError("Skill argument-name metadata is invalid");
+  }
+  return names;
+};
+
 const parseSkillDocument = (
   source: string,
   descriptor: StaticSkillDescriptor,
@@ -273,7 +341,10 @@ const parseSkillDocument = (
     if (!allowed.has(key) || fields.has(key)) {
       throw new TypeError(`Skill frontmatter field ${key} is unsupported or duplicated`);
     }
-    fields.set(key, parseScalar(line.slice(separator + 1), `Skill frontmatter ${key}`));
+    const rawValue = line.slice(separator + 1);
+    fields.set(key, key === "arguments"
+      ? rawValue.trim()
+      : parseScalar(rawValue, `Skill frontmatter ${key}`));
   }
   if (fields.get("name") !== descriptor.name || fields.get("description") !== descriptor.description) {
     throw new TypeError("Skill frontmatter differs from its static descriptor");
@@ -281,19 +352,12 @@ const parseSkillDocument = (
   if (fields.get("when-to-use") !== descriptor.whenToUse) {
     throw new TypeError("Skill when-to-use metadata differs from its static descriptor");
   }
-  const argumentNames = (fields.get("arguments") ?? "")
-    .split(/\s+/u)
-    .filter(Boolean);
-  if (argumentNames.length > MAX_ARGUMENT_NAMES
-    || argumentNames.some((name) => !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name))
-    || new Set(argumentNames).size !== argumentNames.length) {
-    throw new TypeError("Skill argument-name metadata is invalid");
-  }
+  const argumentNames = parseArgumentNames(fields.get("arguments"));
   const body = normalized.slice(end + 5).trim();
   if (body.length === 0 || Buffer.byteLength(body, "utf8") > MAX_SKILL_SOURCE_BYTES) {
     throw new TypeError("Skill instruction body is empty or too large");
   }
-  return Object.freeze({ argumentNames: Object.freeze(argumentNames), body });
+  return Object.freeze({ argumentNames, body });
 };
 
 const matchingVersion = (left: FsInfo | FsPathInfo, right: FsInfo | FsPathInfo): boolean =>
@@ -309,51 +373,134 @@ const exactTarget = (target: FsTarget, expectedPath: string, description: string
   }
 };
 
+const captureDirectoryIdentity = async (
+  ctx: Context,
+  path: string,
+  signal: AbortSignal,
+  description: string,
+): Promise<Readonly<{ target: FsTarget; pathVersion: string; version: string }>> => {
+  signal.throwIfAborted();
+  const pathInfo = await ctx.fs.lstat(path, undefined, signal);
+  if (pathInfo?.type !== "directory") {
+    throw new TypeError(`${description} must be a direct non-symbolic directory`);
+  }
+  const target = await ctx.fs.resolve(path, { signal });
+  exactTarget(target, path, description);
+  const info = await ctx.fs.stat(target, signal);
+  if (info?.type !== "directory") throw new TypeError(`${description} is not a directory`);
+  return Object.freeze({
+    target,
+    pathVersion: String(pathInfo.version),
+    version: String(info.version),
+  });
+};
+
+const captureApprovedSkillRoot = async (
+  ctx: Context,
+  product: ProductToolContext,
+  resourceRoot: string,
+): Promise<StaticSkillRootAuthority> => {
+  const resource = await captureDirectoryIdentity(
+    ctx,
+    resourceRoot,
+    product.signal,
+    "Skill resource root",
+  );
+  for (const allowedPath of product.environment.workspace.allowedReadRoots) {
+    const allowed = await captureDirectoryIdentity(
+      ctx,
+      allowedPath,
+      product.signal,
+      "Skill allowed read root",
+    );
+    if (ctx.fs.contains(allowed.target, resource.target)) {
+      return Object.freeze({
+        allowedRoot: allowed.target,
+        allowedRootPathVersion: allowed.pathVersion,
+        allowedRootVersion: allowed.version,
+        resourceRoot: resource.target,
+        resourceRootPathVersion: resource.pathVersion,
+        resourceRootVersion: resource.version,
+      });
+    }
+  }
+  throw new TypeError("Skill resource root is outside operation-frozen allowed read roots");
+};
+
+const sameRootAuthority = (
+  left: StaticSkillRootAuthority,
+  right: StaticSkillRootAuthority,
+): boolean => left.allowedRoot.displayPath === right.allowedRoot.displayPath
+  && left.allowedRoot.targetKey === right.allowedRoot.targetKey
+  && left.allowedRootPathVersion === right.allowedRootPathVersion
+  && left.allowedRootVersion === right.allowedRootVersion
+  && left.resourceRoot.displayPath === right.resourceRoot.displayPath
+  && left.resourceRoot.targetKey === right.resourceRoot.targetKey
+  && left.resourceRootPathVersion === right.resourceRootPathVersion
+  && left.resourceRootVersion === right.resourceRootVersion;
+
+const revalidateSkillRoot = async (
+  ctx: Context,
+  expected: StaticSkillRootAuthority,
+  signal: AbortSignal,
+): Promise<void> => {
+  const [allowed, resource] = await Promise.all([
+    captureDirectoryIdentity(ctx, expected.allowedRoot.displayPath, signal, "Skill allowed read root"),
+    captureDirectoryIdentity(ctx, expected.resourceRoot.displayPath, signal, "Skill resource root"),
+  ]);
+  const observed = Object.freeze({
+    allowedRoot: allowed.target,
+    allowedRootPathVersion: allowed.pathVersion,
+    allowedRootVersion: allowed.version,
+    resourceRoot: resource.target,
+    resourceRootPathVersion: resource.pathVersion,
+    resourceRootVersion: resource.version,
+  });
+  if (!ctx.fs.contains(allowed.target, resource.target) || !sameRootAuthority(expected, observed)) {
+    throw new TypeError("Skill resource-root authority changed during execution");
+  }
+};
+
 const loadStaticSkill = async (
   ctx: Context,
   descriptor: StaticSkillDescriptor,
+  rootAuthority: StaticSkillRootAuthority,
   signal: AbortSignal,
 ): Promise<SkillDefinition> => {
   signal.throwIfAborted();
-  const [rootPathBefore, sourcePathBefore] = await Promise.all([
-    ctx.fs.lstat(descriptor.resourceRoot, undefined, signal),
-    ctx.fs.lstat(descriptor.sourcePath, undefined, signal),
-  ]);
-  if (rootPathBefore?.type !== "directory" || sourcePathBefore?.type !== "file") {
-    throw new TypeError("Skill source and resource root must be direct non-symbolic filesystem entries");
+  if (descriptor.resourceRoot !== rootAuthority.resourceRoot.displayPath) {
+    throw new TypeError("Skill descriptor differs from its operation-frozen root authority");
   }
-  const [root, source] = await Promise.all([
-    ctx.fs.resolve(descriptor.resourceRoot, { signal }),
-    ctx.fs.resolve(descriptor.sourcePath, { signal }),
-  ]);
-  exactTarget(root, descriptor.resourceRoot, "Skill resource root");
+  await revalidateSkillRoot(ctx, rootAuthority, signal);
+  const sourcePathBefore = await ctx.fs.lstat(descriptor.sourcePath, undefined, signal);
+  if (sourcePathBefore?.type !== "file") {
+    throw new TypeError("Skill source must be a direct non-symbolic filesystem entry");
+  }
+  const source = await ctx.fs.resolve(descriptor.sourcePath, { signal });
   exactTarget(source, descriptor.sourcePath, "Skill source");
-  if (!ctx.fs.contains(root, source) || root.targetKey === source.targetKey) {
+  if (!ctx.fs.contains(rootAuthority.resourceRoot, source)
+    || rootAuthority.resourceRoot.targetKey === source.targetKey) {
     throw new TypeError("Skill source is outside its approved resource root");
   }
-  const [rootBefore, sourceBefore] = await Promise.all([
-    ctx.fs.stat(root, signal),
-    ctx.fs.stat(source, signal),
-  ]);
-  if (rootBefore?.type !== "directory" || sourceBefore?.type !== "file"
+  const sourceBefore = await ctx.fs.stat(source, signal);
+  if (sourceBefore?.type !== "file"
     || (sourceBefore.size !== undefined && sourceBefore.size > MAX_SKILL_SOURCE_BYTES)) {
     throw new TypeError("Skill source authority is not a bounded regular file");
   }
-  const bytes = await ctx.fs.readBytes(source, signal, MAX_SKILL_SOURCE_BYTES);
-  const [rootPathAfter, sourcePathAfter, rootAfter, sourceAfter] = await Promise.all([
-    ctx.fs.lstat(descriptor.resourceRoot, undefined, signal),
+  if (!(ctx.fs instanceof LocalWorkspaceFileSystem)) {
+    throw new TypeError("Skill source requires the composition-selected local filesystem Provider");
+  }
+  const bytes = await ctx.fs.readUnsharedBytes(source, signal, MAX_SKILL_SOURCE_BYTES);
+  const [sourcePathAfter, sourceAfter] = await Promise.all([
     ctx.fs.lstat(descriptor.sourcePath, undefined, signal),
-    ctx.fs.stat(root, signal),
     ctx.fs.stat(source, signal),
   ]);
-  if (rootPathAfter === undefined || sourcePathAfter === undefined
-    || rootAfter === undefined || sourceAfter === undefined
-    || !matchingVersion(rootPathBefore, rootPathAfter)
+  if (sourcePathAfter === undefined || sourceAfter === undefined
     || !matchingVersion(sourcePathBefore, sourcePathAfter)
-    || !matchingVersion(rootBefore, rootAfter)
     || !matchingVersion(sourceBefore, sourceAfter)) {
     throw new TypeError("Skill source identity changed while it was read");
   }
+  await revalidateSkillRoot(ctx, rootAuthority, signal);
   if (sha256(bytes) !== descriptor.sourceSha256) {
     throw new TypeError("Skill source digest differs from its static descriptor");
   }
@@ -581,8 +728,10 @@ export class ProductSkillService extends Service {
 
   private readonly catalogValue: StaticSkillCatalog;
   private readonly candidatesValue: readonly SkillCandidate[];
+  private readonly descriptorsByDefinition = new WeakMap<object, StaticSkillDescriptor>();
   private readonly descriptorsByLocator = new WeakMap<object, StaticSkillDescriptor>();
   private readonly descriptorsBySource: ReadonlyMap<string, StaticSkillDescriptor>;
+  private readonly loadPermits = new WeakMap<AbortSignal, StaticSkillLoadPermit>();
 
   public constructor(ctx: Context, config: ProductSkillServiceConfig) {
     super(ctx, "productSkills");
@@ -644,7 +793,16 @@ export class ProductSkillService extends Service {
         if (locator === null || typeof locator !== "object") return undefined;
         const descriptor = this.descriptorsByLocator.get(locator);
         if (descriptor?.name !== candidate.name || descriptor.sourcePath !== candidate.path) return undefined;
-        return loadStaticSkill(ctx, descriptor, combinedSignal(options.signal, control.signal));
+        const permit = options.signal === undefined ? undefined : this.loadPermits.get(options.signal);
+        if (permit === undefined) throw new TypeError("static Skill load lacks operation-frozen authority");
+        const definition = await loadStaticSkill(
+          ctx,
+          descriptor,
+          permit.root,
+          combinedSignal(options.signal, control.signal),
+        );
+        this.descriptorsByDefinition.set(definition, descriptor);
+        return definition;
       },
     });
   }
@@ -665,12 +823,14 @@ export class ProductSkillService extends Service {
         const input = validateCanonicalToolInput("Skill", value) as Readonly<{ skill: string; args?: string }>;
         const product = ctx.productTools.resolve(exec);
         try {
-          const options = Object.freeze({
+          const view = Object.freeze({
             cwd: product.environment.workspace.canonicalRoot,
             scope: scopeOf(product.agent.ctx),
-            signal: product.signal,
           });
-          const observed = normalizeObservedSkillCatalog(await ctx.skills.snapshot(options));
+          const observed = normalizeObservedSkillCatalog(await ctx.skills.snapshot(Object.freeze({
+            ...view,
+            signal: product.signal,
+          })));
           product.signal.throwIfAborted();
           if (!observed.complete) {
             throw new ProductToolError("skill_invalid", "Skill catalog observation is incomplete");
@@ -682,22 +842,38 @@ export class ProductSkillService extends Service {
           if (!isModelInvocable(summary)) {
             throw new ProductToolError("skill_invocation_disabled", `Skill is not model-invocable: ${input.skill}`);
           }
-          const descriptor = this.catalogValue.skills.find((candidate) =>
+          const summaryAuthority = this.catalogValue.skills.find((candidate) =>
             candidate.name === input.skill && summaryMatches(summary, candidate));
-          if (descriptor === undefined) {
+          if (summaryAuthority === undefined) {
             throw new ProductToolError("skill_invalid", "Skill catalog winner lacks static product authority");
           }
+          const rootAuthority = await captureApprovedSkillRoot(
+            ctx,
+            product,
+            summaryAuthority.resourceRoot,
+          );
           await ctx.productTools.authorize(product, {
             permissionClass: contract.permissionClass,
             target: `skill:${input.skill}`,
             tool: "Skill",
           });
           ctx.productTools.assertCurrent(product, "Skill");
-          const definition = await ctx.skills.get(input.skill, options);
+          const loadSignal = AbortSignal.any([product.signal]);
+          this.loadPermits.set(loadSignal, Object.freeze({ root: rootAuthority }));
+          let definition: SkillDefinition | undefined;
+          try {
+            definition = await ctx.skills.get(input.skill, Object.freeze({ ...view, signal: loadSignal }));
+          } finally {
+            this.loadPermits.delete(loadSignal);
+          }
           product.signal.throwIfAborted();
           ctx.productTools.assertCurrent(product, "Skill");
           if (definition === undefined) {
             throw new ProductToolError("skill_invalid", "Skill disappeared after its authorized catalog snapshot");
+          }
+          const descriptor = this.descriptorsByDefinition.get(definition);
+          if (descriptor === undefined) {
+            throw new ProductToolError("skill_invalid", "loaded Skill lacks static provider ownership");
           }
           if (!definitionMatches(definition, summary, descriptor)) {
             throw new ProductToolError("skill_invalid", "loaded Skill differs from its authorized catalog winner");

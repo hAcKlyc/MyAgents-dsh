@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -37,8 +37,11 @@ interface SkillFixture {
   readonly id: string;
   readonly invocation?: Readonly<{ modelInvocable: boolean; userInvocable: boolean }>;
   readonly name: string;
+  readonly outsideWorkspace?: boolean;
   readonly rank?: number;
+  readonly resourceId?: string;
   readonly source?: string;
+  readonly sourceFile?: string;
   readonly whenToUse?: string;
 }
 
@@ -74,9 +77,12 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
   const descriptors: StaticSkillDescriptor[] = [];
   const sourcePaths = new Map<string, string>();
   for (const fixture of fixtures) {
-    const resourceRoot = join(workspace, fixture.id);
-    await mkdir(resourceRoot);
-    const sourcePath = join(resourceRoot, "SKILL.md");
+    const resourceRoot = join(
+      fixture.outsideWorkspace === true ? join(root, "outside") : workspace,
+      fixture.resourceId ?? fixture.id,
+    );
+    await mkdir(resourceRoot, { recursive: true });
+    const sourcePath = join(resourceRoot, fixture.sourceFile ?? "SKILL.md");
     const source = fixture.source ?? defaultSource
       .replace("name: fixture-audit", `name: ${fixture.name}`)
       .replace(`description: ${defaultDescription}`, `description: ${fixture.description ?? defaultDescription}`);
@@ -118,7 +124,12 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
         catalog: Object.freeze({ digest: "c".repeat(64), revision: "tool-catalog-v1" }),
         clientOperationId: "skill-operation",
         dshTurn: 1,
-        environment: Object.freeze({ workspace: Object.freeze({ canonicalRoot: workspace }) }),
+        environment: Object.freeze({
+          workspace: Object.freeze({
+            allowedReadRoots: Object.freeze([workspace]),
+            canonicalRoot: workspace,
+          }),
+        }),
         origin: "root" as const,
         productTurnId: "skill-product-turn",
         rootCallId: String(exec.callId),
@@ -225,8 +236,22 @@ describe("static declarative Skill tool", () => {
     const loser = defaultSource.replace("Inspect $ARGUMENTS; named=$focus; first=$0.", "loser $ARGUMENTS");
     const winner = defaultSource.replace("Inspect $ARGUMENTS; named=$focus; first=$0.", "winner $ARGUMENTS");
     const state = await mounted([
-      { id: "loser", name: "fixture-audit", rank: 700, source: loser },
-      { id: "winner", name: "fixture-audit", rank: 500, source: winner },
+      {
+        id: "loser",
+        name: "fixture-audit",
+        rank: 700,
+        resourceId: "shared",
+        source: loser,
+        sourceFile: "loser.md",
+      },
+      {
+        id: "winner",
+        name: "fixture-audit",
+        rank: 500,
+        resourceId: "shared",
+        source: winner,
+        sourceFile: "winner.md",
+      },
     ]);
     await expect(state.execute({ skill: "fixture-audit", args: "focus" })).resolves.toMatchObject({
       isError: false,
@@ -235,6 +260,40 @@ describe("static declarative Skill tool", () => {
         source: state.sourcePaths.get("winner"),
       },
     });
+  });
+
+  it("accepts the fixed YAML argument array and rejects roots outside operation authority", async () => {
+    const arraySource = defaultSource
+      .replace("arguments: focus", "arguments: [person, target]")
+      .replace(
+        "Inspect $ARGUMENTS; named=$focus; first=$0.",
+        "Hello $0 / $ARGUMENTS[1] / $person / $target / $ARGUMENTS.",
+      );
+    const compatible = await mounted([{
+      id: "winner",
+      name: "fixture-audit",
+      source: arraySource,
+    }]);
+    await expect(compatible.execute({
+      skill: "fixture-audit",
+      args: '"Hello World" Runtime',
+    })).resolves.toMatchObject({
+      isError: false,
+      value: {
+        content: "Hello Hello World / Runtime / Hello World / Runtime / \"Hello World\" Runtime.",
+      },
+    });
+
+    const outside = await mounted([{
+      id: "winner",
+      name: "fixture-audit",
+      outsideWorkspace: true,
+    }]);
+    await expect(outside.execute({ skill: "fixture-audit" })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "skill_invalid" } },
+    });
+    expect(outside.permissions).toHaveLength(0);
   });
 
   it("fails closed on source drift, symbolic sources, and executable frontmatter", async () => {
@@ -255,6 +314,18 @@ describe("static declarative Skill tool", () => {
     await rm(sourcePath);
     await symlink(target, sourcePath);
     await expect(symbolic.execute({ skill: "fixture-audit" })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "skill_invalid" } },
+    });
+
+    const shared = await mounted();
+    const sharedSource = shared.sourcePaths.get("winner");
+    if (sharedSource === undefined) throw new Error("hardlink fixture source is missing");
+    const sharedTarget = join(shared.workspace, "shared-skill.md");
+    await writeFile(sharedTarget, defaultSource, "utf8");
+    await rm(sharedSource);
+    await link(sharedTarget, sharedSource);
+    await expect(shared.execute({ skill: "fixture-audit" })).resolves.toMatchObject({
       isError: true,
       error: { info: { code: "skill_invalid" } },
     });
@@ -290,6 +361,28 @@ describe("static declarative Skill tool", () => {
       error: { info: { code: "skill_invalid" } },
     });
     stop();
+
+    const descriptor = state.descriptors[0];
+    if (descriptor === undefined) throw new Error("static Skill descriptor is missing");
+    const stopSpoof = state.context.skills.register({
+      name: descriptor.name,
+      description: descriptor.description,
+      invocation: descriptor.invocation,
+      source: "bundled",
+      provider: PRODUCT_STATIC_SKILL_PROVIDER,
+      resourceBase: { kind: "directory", path: descriptor.resourceRoot },
+      content: "forged runtime Skill body",
+      path: descriptor.sourcePath,
+      metadata: {
+        argumentNames: ["focus"],
+        sourceSha256: descriptor.sourceSha256,
+      },
+    } as never);
+    await expect(state.execute({ skill: "fixture-audit" })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "skill_invalid" } },
+    });
+    stopSpoof();
     state.setCurrent(false);
     await expect(state.execute({ skill: "fixture-audit" })).resolves.toMatchObject({ isError: true });
     const aborted = new AbortController();

@@ -303,7 +303,28 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     })();
   }
 
-  override async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
+  override readBytes(
+    target: FsTarget,
+    signal: AbortSignal | undefined,
+    maxBytes: number,
+  ): Promise<Uint8Array> {
+    return this.readBytesWithPolicy(target, signal, maxBytes, false);
+  }
+
+  async readUnsharedBytes(
+    target: FsTarget,
+    signal: AbortSignal | undefined,
+    maxBytes: number,
+  ): Promise<Uint8Array> {
+    return this.readBytesWithPolicy(target, signal, maxBytes, true);
+  }
+
+  private async readBytesWithPolicy(
+    target: FsTarget,
+    signal: AbortSignal | undefined,
+    maxBytes: number,
+    requireUnshared: boolean,
+  ): Promise<Uint8Array> {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 64 * 1_024 * 1_024) {
       throw new TypeError("filesystem byte bound is invalid");
     }
@@ -312,11 +333,16 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     await this.assertPlanTargetIdentity(path, signal);
     const before = await lstat(path).catch((error: unknown) => fsError(error, "filesystem read stat failed"));
     const retainedVersion = this.retainedOutputVersionsValue.get(String(target.targetKey));
+    const enforceUnshared = requireUnshared || retainedVersion !== undefined;
+    const beforeVersion = String(versionOf(before));
     if (!before.isFile() || before.isSymbolicLink()) {
       throw new FsError("filesystem target is not a regular file", "FS_NOT_REGULAR_FILE");
     }
-    if (retainedVersion !== undefined && (before.nlink !== 1
-      || before.size > MAX_RETAINED_OUTPUT_BYTES || String(versionOf(before)) !== retainedVersion)) {
+    if (enforceUnshared && before.nlink !== 1) {
+      throw new FsError("filesystem target is not an unshared regular file", "FS_STALE_VERSION");
+    }
+    if (retainedVersion !== undefined && (before.size > MAX_RETAINED_OUTPUT_BYTES
+      || beforeVersion !== retainedVersion)) {
       throw new FsError("retained output identity or byte bound changed", "FS_STALE_VERSION");
     }
     if (before.size > maxBytes) throw new FsError("filesystem target exceeds byte bound", "FS_TOO_LARGE");
@@ -327,8 +353,9 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     try {
       const opened = await handle.stat();
       if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino
-        || (retainedVersion !== undefined && (opened.nlink !== 1
-          || opened.size > MAX_RETAINED_OUTPUT_BYTES || String(versionOf(opened)) !== retainedVersion))) {
+        || (enforceUnshared && opened.nlink !== 1)
+        || (retainedVersion !== undefined && (opened.size > MAX_RETAINED_OUTPUT_BYTES
+          || String(versionOf(opened)) !== retainedVersion))) {
         throw new FsError("filesystem target identity changed before read", "FS_STALE_VERSION");
       }
       await this.assertPlanTargetIdentity(path, signal);
@@ -336,18 +363,24 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       abortError(signal);
       if (bytes.length > maxBytes) throw new FsError("filesystem target exceeds byte bound", "FS_TOO_LARGE");
       const settled = await handle.stat();
-      if (retainedVersion !== undefined && (settled.nlink !== 1
-        || settled.size > MAX_RETAINED_OUTPUT_BYTES || String(versionOf(settled)) !== retainedVersion)) {
-        throw new FsError("retained output identity changed during read", "FS_STALE_VERSION");
+      if (settled.dev !== before.dev || settled.ino !== before.ino
+        || (enforceUnshared && settled.nlink !== 1)
+        || (requireUnshared && String(versionOf(settled)) !== beforeVersion)
+        || (retainedVersion !== undefined && (settled.size > MAX_RETAINED_OUTPUT_BYTES
+          || String(versionOf(settled)) !== retainedVersion))) {
+        throw new FsError("filesystem target identity changed during read", "FS_STALE_VERSION");
       }
       result = new Uint8Array(bytes);
     } finally {
       await handle.close();
     }
-    if (retainedVersion !== undefined) {
-      const after = await lstat(path).catch((error: unknown) => fsError(error, "retained output final stat failed"));
-      if (after.nlink !== 1 || String(versionOf(after)) !== retainedVersion) {
-        throw new FsError("retained output path identity changed during read", "FS_STALE_VERSION");
+    if (enforceUnshared) {
+      const after = await lstat(path).catch((error: unknown) => fsError(error, "filesystem read final stat failed"));
+      if (!after.isFile() || after.isSymbolicLink() || after.nlink !== 1
+        || after.dev !== before.dev || after.ino !== before.ino
+        || (requireUnshared && String(versionOf(after)) !== beforeVersion)
+        || (retainedVersion !== undefined && String(versionOf(after)) !== retainedVersion)) {
+        throw new FsError("filesystem target path identity changed during read", "FS_STALE_VERSION");
       }
     }
     await this.assertPlanTargetIdentity(path, signal);

@@ -8,6 +8,7 @@
   "files": ["src/index.ts", "src/skill-runtime.ts"],
   "references": [
     { "path": "../tool-contracts" },
-    { "path": "../tool-runtime-product" }
+    { "path": "../tool-runtime-product" },
+    { "path": "../tools-fs" }
   ]
 }
