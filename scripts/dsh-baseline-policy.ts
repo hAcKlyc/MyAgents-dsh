@@ -59,7 +59,7 @@ export interface PublicSeamEvidence {
 
 export const publicSeams: PublicSeamEvidence[] = [
   { id: "cordis", package: "@deepseek-ai/cordis", importPath: "@deepseek-ai/cordis", classification: "direct", batchUse: ["B1-W1"], values: ["Context", "Service"], types: ["Plugin"] },
-  { id: "scope", package: "@deepseek-ai/dsh-scope", importPath: "@deepseek-ai/dsh-scope", classification: "direct", batchUse: ["B1-W1", "B1-W3"], values: ["createScope"], types: ["Scope", "ScopeKey", "Scoped"] },
+  { id: "scope", package: "@deepseek-ai/dsh-scope", importPath: "@deepseek-ai/dsh-scope", classification: "direct", batchUse: ["B1-W1", "B1-W2", "B1-W3"], values: ["createScope", "scopeOf"], types: ["Scope", "ScopeKey", "Scoped"] },
   { id: "session", package: "@deepseek-ai/dsh-session", importPath: "@deepseek-ai/dsh-session", classification: "direct", batchUse: ["B1-W1", "B1-W4"], values: ["Session", "SessionId", "SessionStore"], types: ["SessionEvent", "SessionHeader"] },
   { id: "agent", package: "@deepseek-ai/dsh-agent", importPath: "@deepseek-ai/dsh-agent", classification: "direct", batchUse: ["B1-W1"], values: ["AgentRegistry"], types: ["Agent", "AgentFactory", "AgentHandle", "CreateAgentOptions", "ResumeAgentOptions"] },
   { id: "agent-loop", package: "@deepseek-ai/dsh-agent-loop", importPath: "@deepseek-ai/dsh-agent-loop", classification: "direct", batchUse: ["B1-W1"], values: ["AgentLoop"], types: ["Config"] },
@@ -70,7 +70,7 @@ export const publicSeams: PublicSeamEvidence[] = [
   { id: "sqlite-persistence", package: "@deepseek-ai/dsh-session-persistence-sqlite", importPath: "@deepseek-ai/dsh-session-persistence-sqlite", classification: "helper", batchUse: ["B1-W1", "B1-W4"], values: ["SqliteSessionPersistence"], types: ["Config"] },
   { id: "compaction", package: "@deepseek-ai/dsh-compaction", importPath: "@deepseek-ai/dsh-compaction", classification: "provider", batchUse: ["B1-W4"], values: ["CompactionEngine", "CompactionId"], types: ["CompactionAgentContext", "CompactionResult"] },
   { id: "mcp", package: "@deepseek-ai/dsh-mcp-client", importPath: "@deepseek-ai/dsh-mcp-client", classification: "excluded-stock", batchUse: ["B1-W3"], values: ["apply"], types: ["Config", "McpResult"] },
-  { id: "skills", package: "@deepseek-ai/dsh-skill", importPath: "@deepseek-ai/dsh-skill", classification: "provider", batchUse: ["B1-W2", "B1-W3"], values: ["SkillRegistry"], types: ["SkillDefinition", "SkillProvider"] },
+  { id: "skills", package: "@deepseek-ai/dsh-skill", importPath: "@deepseek-ai/dsh-skill", classification: "provider", batchUse: ["B1-W2", "B1-W3"], values: ["SkillRegistry", "isModelInvocable", "isSkillName", "renderSkillContent"], types: ["SkillCandidate", "SkillDefinition", "SkillInvocationPolicy", "SkillLookupOptions", "SkillProvider", "SkillProviderControl", "SkillSummary"] },
   { id: "subagents", package: "@deepseek-ai/dsh-subagent", importPath: "@deepseek-ai/dsh-subagent", classification: "direct", batchUse: ["B1-W2"], values: ["SubagentRuntime"], types: ["SubagentProvider", "SubagentResult"] },
   { id: "jobs", package: "@deepseek-ai/dsh-jobs", importPath: "@deepseek-ai/dsh-jobs", classification: "provider", batchUse: ["B1-W2"], values: ["JobId", "JobRegistry"], types: ["JobSnapshot", "JobStart"] },
   { id: "jobs-local", package: "@deepseek-ai/dsh-jobs-local", importPath: "@deepseek-ai/dsh-jobs-local", classification: "provider", batchUse: ["B1-W2"], values: ["LocalJobRegistry"], types: ["Config"] },

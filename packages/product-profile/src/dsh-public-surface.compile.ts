@@ -24,7 +24,7 @@ import { PlanModeController, foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
 import type { PlanProjection } from "@deepseek-ai/dsh-plan-mode";
 import { Session, SessionId, SessionStore } from "@deepseek-ai/dsh-session";
 import type { SessionEvent, SessionHeader } from "@deepseek-ai/dsh-session";
-import { createScope } from "@deepseek-ai/dsh-scope";
+import { createScope, scopeOf } from "@deepseek-ai/dsh-scope";
 import type { Scope, ScopeKey, Scoped } from "@deepseek-ai/dsh-scope";
 import { PersistenceCoordinator, SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
 import type { PersistenceBackend, SessionInspection, SessionPersistenceSnapshot } from "@deepseek-ai/dsh-session-persistence";
@@ -32,8 +32,16 @@ import { SqliteSessionPersistence } from "@deepseek-ai/dsh-session-persistence-s
 import type { Config as SqlitePersistenceConfig } from "@deepseek-ai/dsh-session-persistence-sqlite";
 import { ShellExecutor, parseExitStatus } from "@deepseek-ai/dsh-shell";
 import type { ShellExecRequest, ShellRunResult } from "@deepseek-ai/dsh-shell";
-import { SkillRegistry } from "@deepseek-ai/dsh-skill";
-import type { SkillDefinition, SkillProvider } from "@deepseek-ai/dsh-skill";
+import { isModelInvocable, isSkillName, renderSkillContent, SkillRegistry } from "@deepseek-ai/dsh-skill";
+import type {
+  SkillCandidate,
+  SkillDefinition,
+  SkillInvocationPolicy,
+  SkillLookupOptions,
+  SkillProvider,
+  SkillProviderControl,
+  SkillSummary,
+} from "@deepseek-ai/dsh-skill";
 import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
 import type { SubagentProvider, SubagentResult } from "@deepseek-ai/dsh-subagent";
 import { SubprocessRuntime, scrubbedParentEnv } from "@deepseek-ai/dsh-subprocess";
@@ -108,6 +116,10 @@ export const dshPublicSurfaceValues = Object.freeze({
   parseSearchArgs,
   parseExitStatus,
   scrubbedParentEnv,
+  scopeOf,
+  isModelInvocable,
+  isSkillName,
+  renderSkillContent,
 });
 
 export interface DshPublicSurfaceTypes {
@@ -129,7 +141,15 @@ export interface DshPublicSurfaceTypes {
   session: [SessionEvent, SessionHeader];
   scope: [Scope, ScopeKey, Scoped<object>];
   shell: [ShellExecRequest, ShellRunResult];
-  skill: [SkillDefinition, SkillProvider];
+  skill: [
+    SkillCandidate,
+    SkillDefinition,
+    SkillInvocationPolicy,
+    SkillLookupOptions,
+    SkillProvider,
+    SkillProviderControl,
+    SkillSummary,
+  ];
   sqlitePersistence: [SqlitePersistenceConfig];
   subagent: [SubagentProvider, SubagentResult];
   subprocess: [SubprocessHandle, SubprocessSpawnSpec];
