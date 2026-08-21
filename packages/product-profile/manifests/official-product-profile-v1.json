@@ -258,7 +258,7 @@
     ]
   },
   "dsh": {
-    "baselineSha256": "849828e8e4ac77c3d04896462cbd9e67afbd0015b4f68387d39b9592aa191678",
+    "baselineSha256": "60ce15b6fd2b8c3f59eff38b57696e22f2ea8377f2563c724ffe3b210b40b6a6",
     "release": "0.1.0-rc.6"
   },
   "formatVersion": 1,
