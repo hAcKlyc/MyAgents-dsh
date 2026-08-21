@@ -74,8 +74,7 @@ assert.equal(toolContractMetaJson.canonicalToolCount, 20);
 const artifactEffectiveTools = Object.freeze([
   "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls", "WebFetch", "WebSearch",
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
-  "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
-  "Skill",
+  "Skill", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
 ] as const);
 const artifactEffectiveToolSet = new Set<string>(artifactEffectiveTools);
 const toolCatalogWithoutDigest = Object.freeze({
