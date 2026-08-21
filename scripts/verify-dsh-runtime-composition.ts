@@ -103,6 +103,8 @@ const runtimeCompositionSourcePaths = [
   "packages/tools-fs/src/canonical-file-tools.ts",
   "packages/tools-fs/src/index.ts",
   "packages/tools-fs/src/local-filesystem.ts",
+  "packages/tools-interaction/src/index.ts",
+  "packages/tools-interaction/src/runtime.ts",
   "packages/tools-process/src/index.ts",
   "packages/tools-process/src/runtime.ts",
   "packages/tools-process/src/windows-job-subprocess.ts",
@@ -124,6 +126,7 @@ const runtimePackageWorkspaces = [
   ["packages/tool-contracts", "@myagents-dsh/tool-contracts"],
   ["packages/tool-runtime-product", "@myagents-dsh/tool-runtime-product"],
   ["packages/tools-fs", "@myagents-dsh/tools-fs"],
+  ["packages/tools-interaction", "@myagents-dsh/tools-interaction"],
   ["packages/tools-process", "@myagents-dsh/tools-process"],
   ["packages/tools-web", "@myagents-dsh/tools-web"],
   ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
@@ -942,6 +945,12 @@ const main = (): void => {
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
+      "packages/tools-interaction",
+      "@myagents-dsh/tools-interaction",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
       "packages/tools-fs",
       "@myagents-dsh/tools-fs",
     );
@@ -998,6 +1007,7 @@ const main = (): void => {
       || evidence.canonicalProcessSearchToolsVerified !== true
       || evidence.canonicalWebToolsVerified !== true
       || evidence.canonicalPermissionInteractionVerified !== true
+      || evidence.canonicalInteractionPlanToolsVerified !== true
       || evidence.ambientWebSearchFallbackRejected !== true
       || evidence.operationCorrelationVerified !== true
       || evidence.operationInterruptVerified !== true
@@ -1006,8 +1016,9 @@ const main = (): void => {
       || evidence.sessionCloseVerified !== true
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
-        "success", "failure", "file_tools", "process_search_tools", "web_tools", "process_abort",
-        "interrupt", "queued_cancel", "session_close",
+        "success", "failure", "file_tools", "process_search_tools", "web_tools", "interaction",
+        "plan_workflow", "process_abort", "interrupt", "queued_cancel",
+        "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
     }
@@ -1015,10 +1026,10 @@ const main = (): void => {
       evidence.canonicalPermissionEvidence,
       "canonical permission and interaction evidence",
     );
-    if (permissionEvidence.asked !== 8
-      || permissionEvidence.decided !== 8
+    if (permissionEvidence.asked !== 11
+      || permissionEvidence.decided !== 11
       || permissionEvidence.durableRules !== 1
-      || permissionEvidence.providerRequests !== 8
+      || permissionEvidence.providerRequests !== 11
       || permissionEvidence.safeToolsAutoAllowed !== true) {
       throw new Error("canonical permission and interaction evidence differs from the exact policy contract");
     }
@@ -1152,16 +1163,25 @@ const main = (): void => {
       "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "message_event", "usage", "message_event", "usage", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message",
       "turn_admitted", "queued_message", "turn_terminal", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
     ];
-    if (JSON.stringify(projectedEvents.map(({ kind }) => kind)) !== JSON.stringify(expectedEventKinds)) {
+    const actualEventKinds = projectedEvents.map(({ kind }) => kind);
+    if (JSON.stringify(actualEventKinds) !== JSON.stringify(expectedEventKinds)) {
+      const firstDifference = Array.from(
+        { length: Math.max(actualEventKinds.length, expectedEventKinds.length) },
+        (_, index) => index,
+      ).find((index) => actualEventKinds[index] !== expectedEventKinds[index]);
       throw new Error(
-        `Runtime workstream event sequence differs from exact evidence: ${JSON.stringify(
-          projectedEvents.map(({ kind }) => kind),
-        )}`,
+        `Runtime workstream event sequence differs from exact evidence at ${String(firstDifference)}: `
+        + `expected=${JSON.stringify(expectedEventKinds)}, actual=${JSON.stringify(actualEventKinds)}`,
       );
     }
     const terminalOutcomes = projectedEvents
@@ -1172,11 +1192,11 @@ const main = (): void => {
       });
     if (JSON.stringify(terminalOutcomes) !== JSON.stringify([
       "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
-      "succeeded",
+      "succeeded", "succeeded", "succeeded",
       "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
     ])) {
       throw new Error(
-        `Runtime terminal projection differs from the eleven real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
+        `Runtime terminal projection differs from the thirteen real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
       );
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");

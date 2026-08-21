@@ -1,6 +1,6 @@
 {
   "artifactFormatVersion": 1,
-  "contractSha256": "7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b6e8",
+  "contractSha256": "64cb973113a855f35f883211aab170c836ca6d6d9cc079d33ebd1c88bf51335c",
   "decisions": [
     {
       "dshPublicReuse": [
@@ -227,11 +227,11 @@
     {
       "dshPublicReuse": [
         {
-          "classification": "direct",
-          "id": "plan-mode",
+          "classification": "helper",
+          "id": "plan-mode-fold",
           "importPath": "@deepseek-ai/dsh-plan-mode",
           "symbols": [
-            "PlanModeController"
+            "foldPlanMode"
           ]
         }
       ],
@@ -243,11 +243,11 @@
     {
       "dshPublicReuse": [
         {
-          "classification": "direct",
-          "id": "plan-mode",
+          "classification": "helper",
+          "id": "plan-mode-fold",
           "importPath": "@deepseek-ai/dsh-plan-mode",
           "symbols": [
-            "PlanModeController"
+            "foldPlanMode"
           ]
         },
         {

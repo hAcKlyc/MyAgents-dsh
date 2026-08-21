@@ -963,6 +963,8 @@ export class CanonicalFileTools extends Service {
     mode: "read" | "write",
   ): Promise<FsTarget> {
     product.signal.throwIfAborted();
+    const planTarget = await ctx.productTools.resolvePlanFileTarget(product, tool, path, mode);
+    if (planTarget !== undefined) return planTarget;
     const pathInfo = await ctx.fs.lstat(path, undefined, product.signal);
     if (pathInfo?.type === "symlink") throw new ProductToolError("path_denied", `${tool} rejects symbolic links`);
     const target = await ctx.fs.resolve(path, { cwd: product.environment.workspace.canonicalRoot, signal: product.signal });

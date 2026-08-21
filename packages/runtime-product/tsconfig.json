@@ -12,6 +12,7 @@
     { "path": "../protocol" },
     { "path": "../tool-runtime-product" },
     { "path": "../tools-fs" },
+    { "path": "../tools-interaction" },
     { "path": "../tools-process" },
     { "path": "../tools-web" }
   ]

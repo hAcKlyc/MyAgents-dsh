@@ -181,6 +181,10 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
       },
     }),
     environment: () => environment,
+    plan: Object.freeze({
+      assert: () => undefined,
+      resolveFileTarget: () => Promise.resolve(undefined),
+    }),
     requireAgent: () => agent,
     resolveOperation: () => Object.freeze({ dshTurn: 1, operation }),
   });

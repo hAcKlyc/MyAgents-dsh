@@ -40,9 +40,14 @@ import type {
   ProductProcessOutputFile,
   ProductProcessWorkspaceAuthority,
 } from "@myagents-dsh/tools-process";
+import type {
+  ProductPlanArtifactRead,
+  ProductPlanIoAuthority,
+} from "@myagents-dsh/tools-interaction";
 
 type BigStat = Awaited<ReturnType<typeof lstat>>;
 const MAX_RETAINED_OUTPUT_BYTES = 262_144;
+const MAX_PLAN_ARTIFACT_BYTES = 240_000;
 
 const pathApi = (target: PlatformTarget): PlatformPath => target === "win32-x64" ? win32 : posix;
 
@@ -55,8 +60,25 @@ const versionOf = (info: BigStat): ReturnType<typeof FsVersion> => FsVersion([
   info.ctimeMs,
 ].join(":"));
 
+const directoryIdentityOf = (info: BigStat): string => [info.dev, info.ino, info.mode].join(":");
+
+type PlanDirectoryIdentity = Readonly<{
+  directoryPath: string;
+  directoryIdentity: string;
+  runtimeHome: string;
+  runtimeHomeIdentity: string;
+}>;
+
 const abortError = (signal: AbortSignal | undefined): void => {
   if (signal?.aborted === true) throw new FsError("filesystem operation was aborted", "FS_ABORTED");
+};
+
+const hasControlCharacter = (value: string): boolean => {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
 };
 
 const errorCode = (error: unknown): unknown => {
@@ -95,6 +117,8 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   private readonly adapterValue;
   private readonly pathValue;
   private readonly retainedOutputVersionsValue = new Map<string, string>();
+  private readonly planDirectoryIdentitiesValue = new Map<string, PlanDirectoryIdentity>();
+  private readonly planTargetIdentitiesValue = new Map<string, PlanDirectoryIdentity>();
   private readonly targetsValue = new Map<string, string>();
 
   constructor(ctx: Context, config: LocalWorkspaceFileSystemConfig) {
@@ -285,6 +309,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     }
     abortError(signal);
     const path = this.targetPath(target);
+    await this.assertPlanTargetIdentity(path, signal);
     const before = await lstat(path).catch((error: unknown) => fsError(error, "filesystem read stat failed"));
     const retainedVersion = this.retainedOutputVersionsValue.get(String(target.targetKey));
     if (!before.isFile() || before.isSymbolicLink()) {
@@ -306,6 +331,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
           || opened.size > MAX_RETAINED_OUTPUT_BYTES || String(versionOf(opened)) !== retainedVersion))) {
         throw new FsError("filesystem target identity changed before read", "FS_STALE_VERSION");
       }
+      await this.assertPlanTargetIdentity(path, signal);
       const bytes = await handle.readFile();
       abortError(signal);
       if (bytes.length > maxBytes) throw new FsError("filesystem target exceeds byte bound", "FS_TOO_LARGE");
@@ -324,6 +350,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
         throw new FsError("retained output path identity changed during read", "FS_STALE_VERSION");
       }
     }
+    await this.assertPlanTargetIdentity(path, signal);
     return result;
   }
 
@@ -422,6 +449,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   ): Promise<FsWriteOutcome> {
     abortError(signal);
     const path = this.targetPath(target);
+    await this.assertPlanTargetIdentity(path, signal);
     const parent = this.pathValue.dirname(path);
     const parentBefore = await realpath(parent).catch((error: unknown) =>
       fsError(error, "filesystem mutation parent is unavailable"));
@@ -452,6 +480,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
           || (error.code !== "FS_NOT_TEXT" && error.code !== "FS_TOO_LARGE")) throw error;
       }
     }
+    await this.assertPlanTargetIdentity(path, signal);
     const temporary = this.pathValue.join(
       parent,
       `.${this.pathValue.basename(path)}.${randomBytes(12).toString("hex")}.tmp`,
@@ -467,6 +496,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     }
     try {
       abortError(signal);
+      await this.assertPlanTargetIdentity(path, signal);
       const parentAfter = await realpath(parent);
       if (!this.adapterValue.samePath(parentAfter, parentBefore)) {
         throw new FsError("filesystem mutation parent changed before publication", "FS_STALE_VERSION");
@@ -487,6 +517,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
+    await this.assertPlanTargetIdentity(path, signal);
     const afterInfo = await lstat(path);
     return Object.freeze({
       after: content,
@@ -570,6 +601,235 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       verifyExecutable: async (path: string, sha256: string, signal: AbortSignal) => {
         await this.verifyProcessExecutable(path, sha256, signal);
       },
+    });
+  }
+
+  createPlanIoAuthority(): ProductPlanIoAuthority {
+    return Object.freeze({
+      pathFor: (runtimeHome: string, sessionId: string) => this.planPathFor(runtimeHome, sessionId),
+      prepare: async (runtimeHome: string, sessionId: string, signal: AbortSignal) =>
+        await this.preparePlanArtifact(runtimeHome, sessionId, signal),
+      read: async (
+        runtimeHome: string,
+        sessionId: string,
+        path: string,
+        maxBytes: number,
+        signal: AbortSignal,
+      ) => await this.readPlanArtifact(runtimeHome, sessionId, path, maxBytes, signal),
+      resolve: async (
+        runtimeHome: string,
+        sessionId: string,
+        path: string,
+        allowMissingLeaf: boolean,
+        signal: AbortSignal,
+      ) => await this.resolvePlanArtifact(runtimeHome, sessionId, path, allowMissingLeaf, signal),
+    });
+  }
+
+  private planPathFor(runtimeHome: string, sessionId: string): string {
+    if (typeof runtimeHome !== "string" || runtimeHome.length === 0 || runtimeHome.length > 8_192
+      || runtimeHome.includes("\0") || this.adapterValue.normalizeAbsolutePath(runtimeHome) !== runtimeHome
+      || typeof sessionId !== "string" || sessionId.length === 0 || sessionId.length > 256
+      || hasControlCharacter(sessionId)) {
+      throw new FsError("managed plan identity is invalid", "FS_SANDBOX_DENIED");
+    }
+    const stem = createHash("sha256").update("myagents-plan-artifact-v1\0").update(sessionId).digest("hex");
+    return this.adapterValue.normalizeAbsolutePath(this.pathValue.join(runtimeHome, "plans", `${stem}.md`));
+  }
+
+  private async planDirectory(
+    runtimeHome: string,
+    signal: AbortSignal,
+    create: boolean,
+  ): Promise<Readonly<{ identity: PlanDirectoryIdentity; path: string; root: FsTarget; version: string }>> {
+    abortError(signal);
+    const remembered = this.planDirectoryIdentitiesValue.get(runtimeHome);
+    const rootBefore = await lstat(runtimeHome).catch((error: unknown) =>
+      fsError(error, "Runtime home inspection failed"));
+    if (!rootBefore.isDirectory() || rootBefore.isSymbolicLink()) {
+      throw new FsError("Runtime home is not an owned no-follow directory", "FS_SANDBOX_DENIED");
+    }
+    if (remembered !== undefined && remembered.runtimeHomeIdentity !== directoryIdentityOf(rootBefore)) {
+      throw new FsError("Runtime home identity changed", "FS_STALE_VERSION");
+    }
+    const root = await this.resolve(runtimeHome, { signal });
+    if (!this.adapterValue.samePath(root.displayPath, runtimeHome)) {
+      throw new FsError("Runtime home identity changed", "FS_SANDBOX_DENIED");
+    }
+    const rootInfo = await this.stat(root, signal);
+    if (rootInfo?.type !== "directory") throw new FsError("Runtime home is unavailable", "FS_NOT_FOUND");
+    const directory = this.pathValue.join(runtimeHome, "plans");
+    let before = await lstat(directory).catch((error: unknown) => {
+      if (errorCode(error) === "ENOENT") return undefined;
+      return fsError(error, "managed plan directory inspection failed");
+    });
+    abortError(signal);
+    if (before === undefined) {
+      if (!create) throw new FsError("managed plan directory is unavailable", "FS_NOT_FOUND");
+      await mkdir(directory, { mode: 0o700, recursive: false }).catch((error: unknown) => {
+        if (errorCode(error) !== "EEXIST") return fsError(error, "managed plan directory creation failed");
+        return undefined;
+      });
+      abortError(signal);
+      before = await lstat(directory).catch((error: unknown) =>
+        fsError(error, "managed plan directory inspection failed"));
+    }
+    if (remembered !== undefined && remembered.directoryIdentity !== directoryIdentityOf(before)) {
+      throw new FsError("managed plan directory identity changed", "FS_STALE_VERSION");
+    }
+    const canonical = await realpath(directory).catch((error: unknown) =>
+      fsError(error, "managed plan directory resolution failed"));
+    abortError(signal);
+    if (!before.isDirectory() || before.isSymbolicLink()
+      || !this.adapterValue.samePath(this.adapterValue.normalizeAbsolutePath(canonical), directory)) {
+      throw new FsError("managed plan directory is not an owned no-follow directory", "FS_SANDBOX_DENIED");
+    }
+    const rootAfter = await this.resolve(runtimeHome, { signal });
+    const rootAfterInfo = await lstat(runtimeHome).catch((error: unknown) =>
+      fsError(error, "Runtime home final inspection failed"));
+    const after = await lstat(directory).catch((error: unknown) =>
+      fsError(error, "managed plan directory final inspection failed"));
+    if (rootAfter.targetKey !== root.targetKey || rootAfter.displayPath !== root.displayPath
+      || !rootAfterInfo.isDirectory() || rootAfterInfo.isSymbolicLink()
+      || directoryIdentityOf(rootAfterInfo) !== directoryIdentityOf(rootBefore)
+      || !after.isDirectory() || after.isSymbolicLink()
+      || String(versionOf(after)) !== String(versionOf(before))) {
+      throw new FsError("managed plan directory identity changed", "FS_STALE_VERSION");
+    }
+    const identity = Object.freeze({
+      directoryPath: directory,
+      directoryIdentity: directoryIdentityOf(after),
+      runtimeHome,
+      runtimeHomeIdentity: directoryIdentityOf(rootAfterInfo),
+    });
+    if (remembered !== undefined && (remembered.directoryPath !== identity.directoryPath
+      || remembered.directoryIdentity !== identity.directoryIdentity
+      || remembered.runtimeHomeIdentity !== identity.runtimeHomeIdentity)) {
+      throw new FsError("managed plan directory authority changed", "FS_STALE_VERSION");
+    }
+    this.planDirectoryIdentitiesValue.set(runtimeHome, remembered ?? identity);
+    return Object.freeze({ identity: remembered ?? identity, path: directory, root, version: String(versionOf(after)) });
+  }
+
+  private async preparePlanArtifact(
+    runtimeHome: string,
+    sessionId: string,
+    signal: AbortSignal,
+  ): Promise<FsTarget> {
+    const path = this.planPathFor(runtimeHome, sessionId);
+    await this.planDirectory(runtimeHome, signal, true);
+    return await this.resolvePlanArtifact(runtimeHome, sessionId, path, true, signal);
+  }
+
+  private async resolvePlanArtifact(
+    runtimeHome: string,
+    sessionId: string,
+    path: string,
+    allowMissingLeaf: boolean,
+    signal: AbortSignal,
+  ): Promise<FsTarget> {
+    abortError(signal);
+    const expected = this.planPathFor(runtimeHome, sessionId);
+    if (path !== expected) throw new FsError("managed plan path differs from its authority", "FS_SANDBOX_DENIED");
+    const directory = await this.planDirectory(runtimeHome, signal, false);
+    const before = await lstat(path).catch((error: unknown) => {
+      if (errorCode(error) === "ENOENT") return undefined;
+      return fsError(error, "managed plan artifact inspection failed");
+    });
+    if (before === undefined && !allowMissingLeaf) {
+      throw new FsError("managed plan artifact is unavailable", "FS_NOT_FOUND");
+    }
+    if (before !== undefined) {
+      const canonical = await realpath(path).catch((error: unknown) =>
+        fsError(error, "managed plan artifact resolution failed"));
+      abortError(signal);
+      if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1
+        || !this.adapterValue.samePath(this.adapterValue.normalizeAbsolutePath(canonical), path)) {
+        throw new FsError("managed plan artifact is not a singly-linked regular file", "FS_NOT_REGULAR_FILE");
+      }
+    }
+    const target = await this.resolve(path, { signal });
+    if (target.displayPath !== path || this.pathValue.dirname(path) !== directory.path) {
+      throw new FsError("managed plan artifact escaped its owned directory", "FS_SANDBOX_DENIED");
+    }
+    const directoryAfter = await lstat(directory.path).catch((error: unknown) =>
+      fsError(error, "managed plan directory final inspection failed"));
+    if (String(versionOf(directoryAfter)) !== directory.version) {
+      throw new FsError("managed plan directory identity changed", "FS_STALE_VERSION");
+    }
+    if (before !== undefined) {
+      const after = await lstat(path).catch((error: unknown) =>
+        fsError(error, "managed plan artifact final inspection failed"));
+      if (after.nlink !== 1 || String(versionOf(after)) !== String(versionOf(before))) {
+        throw new FsError("managed plan artifact identity changed", "FS_STALE_VERSION");
+      }
+    }
+    this.planTargetIdentitiesValue.set(path, directory.identity);
+    return target;
+  }
+
+  private async assertPlanTargetIdentity(path: string, signal?: AbortSignal): Promise<void> {
+    const authority = this.planTargetIdentitiesValue.get(path);
+    if (authority === undefined) return;
+    abortError(signal);
+    const [root, directory] = await Promise.all([
+      lstat(authority.runtimeHome).catch((error: unknown) =>
+        fsError(error, "Runtime home identity inspection failed")),
+      lstat(authority.directoryPath).catch((error: unknown) =>
+        fsError(error, "managed plan directory identity inspection failed")),
+    ]);
+    if (!root.isDirectory() || root.isSymbolicLink()
+      || !directory.isDirectory() || directory.isSymbolicLink()
+      || directoryIdentityOf(root) !== authority.runtimeHomeIdentity
+      || directoryIdentityOf(directory) !== authority.directoryIdentity) {
+      throw new FsError("managed plan directory authority changed", "FS_STALE_VERSION");
+    }
+    const [canonicalRoot, canonicalDirectory] = await Promise.all([
+      realpath(authority.runtimeHome).catch((error: unknown) =>
+        fsError(error, "Runtime home identity resolution failed")),
+      realpath(authority.directoryPath).catch((error: unknown) =>
+        fsError(error, "managed plan directory identity resolution failed")),
+    ]);
+    abortError(signal);
+    if (!this.adapterValue.samePath(this.adapterValue.normalizeAbsolutePath(canonicalRoot), authority.runtimeHome)
+      || !this.adapterValue.samePath(
+        this.adapterValue.normalizeAbsolutePath(canonicalDirectory),
+        authority.directoryPath,
+      )) {
+      throw new FsError("managed plan directory contains symlink indirection", "FS_SANDBOX_DENIED");
+    }
+  }
+
+  private async readPlanArtifact(
+    runtimeHome: string,
+    sessionId: string,
+    path: string,
+    maxBytes: number,
+    signal: AbortSignal,
+  ): Promise<ProductPlanArtifactRead> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_PLAN_ARTIFACT_BYTES) {
+      throw new TypeError("managed plan read bound is invalid");
+    }
+    const target = await this.resolvePlanArtifact(runtimeHome, sessionId, path, false, signal);
+    const before = await lstat(path).catch((error: unknown) =>
+      fsError(error, "managed plan artifact stat failed"));
+    const bytes = await this.readBytes(target, signal, maxBytes);
+    const after = await lstat(path).catch((error: unknown) =>
+      fsError(error, "managed plan artifact final stat failed"));
+    if (after.nlink !== 1 || String(versionOf(after)) !== String(versionOf(before))) {
+      throw new FsError("managed plan artifact identity changed during read", "FS_STALE_VERSION");
+    }
+    let content: string;
+    try {
+      content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch (error) {
+      throw new FsError("managed plan artifact is not UTF-8 text", "FS_NOT_TEXT", { cause: error });
+    }
+    if (content.includes("\0")) throw new FsError("managed plan artifact is not UTF-8 text", "FS_NOT_TEXT");
+    return Object.freeze({
+      content,
+      revision: createHash("sha256").update(bytes).digest("hex"),
+      target,
     });
   }
 

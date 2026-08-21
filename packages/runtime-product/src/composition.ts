@@ -49,6 +49,11 @@ import {
   type CanonicalFileToolsConfig,
 } from "@myagents-dsh/tools-fs";
 import {
+  ProductPlanService,
+  validateProductPlanPlaneConfig,
+  type ProductPlanPlaneConfig,
+} from "@myagents-dsh/tools-interaction";
+import {
   CanonicalWebTools,
   validateCanonicalWebToolsConfig,
   type CanonicalWebToolsConfig,
@@ -350,6 +355,7 @@ export interface CanonicalToolPlaneConfig {
   readonly catalog: ProductToolRuntimeConfig["catalog"];
   readonly checkpoint: ProductToolRuntimeConfig["checkpoint"];
   readonly permission: ProductPermissionPlaneConfig;
+  readonly plan: ProductPlanPlaneConfig;
   readonly platformTarget: PlatformTarget;
   readonly process: ProductProcessRuntimeConfig;
   readonly temporaryRoot: string;
@@ -373,8 +379,8 @@ export const installCanonicalToolPlane = async (
   if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
     || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
     || Reflect.ownKeys(candidate).some((key) => typeof key !== "string"
-      || !["attachments", "catalog", "checkpoint", "permission", "platformTarget", "process", "temporaryRoot", "web"].includes(key))
-    || (Reflect.ownKeys(candidate).length !== 7 && Reflect.ownKeys(candidate).length !== 8)
+      || !["attachments", "catalog", "checkpoint", "permission", "plan", "platformTarget", "process", "temporaryRoot", "web"].includes(key))
+    || (Reflect.ownKeys(candidate).length !== 8 && Reflect.ownKeys(candidate).length !== 9)
     || Reflect.ownKeys(candidate).some((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
       return descriptor === undefined || !descriptor.enumerable || !("value" in descriptor);
@@ -384,6 +390,7 @@ export const installCanonicalToolPlane = async (
   const normalized = candidate as CanonicalToolPlaneConfig;
   const processConfig = validateProductProcessRuntimeConfig(normalized.process);
   const permissionConfig = validateProductPermissionPlaneConfig(normalized.permission);
+  const planConfig = validateProductPlanPlaneConfig(normalized.plan);
   const webConfig = normalized.web === undefined
     ? undefined
     : validateCanonicalWebToolsConfig(normalized.web);
@@ -419,7 +426,9 @@ export const installCanonicalToolPlane = async (
     }
     fibers.push(await root.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 10 }));
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
-    const processIo = requireLocalWorkspaceFileSystem(root.fs).createProcessIoAuthority();
+    const localFileSystem = requireLocalWorkspaceFileSystem(root.fs);
+    const processIo = localFileSystem.createProcessIoAuthority();
+    const planIo = localFileSystem.createPlanIoAuthority();
     fibers.push(await root.plugin(ToolCallTimeoutPolicy));
     fibers.push(await root.plugin(ApprovalService, { policy: "ask" }));
     fibers.push(await root.plugin(UserQuestionService));
@@ -434,12 +443,30 @@ export const installCanonicalToolPlane = async (
         ),
       }),
     }));
+    const planAuthority: ProductToolRuntimeConfig["plan"] = Object.freeze({
+      assert: (context, tool) => root.productPlan.assertTool(context, tool),
+      resolveFileTarget: (context, tool, path, mode) =>
+        root.productPlan.resolveFileTarget(context, tool, path, mode),
+    });
     fibers.push(await root.plugin(ProductToolRuntime, {
       catalog: normalized.catalog,
       checkpoint: normalized.checkpoint,
       environment: () => root.productSession.requireExecutionEnvironment(),
+      plan: planAuthority,
       requireAgent: () => root.productSession.requireAgent(),
       resolveOperation: (agent) => root.sdkOperations.resolveActiveToolOperation(agent),
+    }));
+    fibers.push(await root.plugin(ProductPlanService, {
+      ...planConfig,
+      durability: Object.freeze({
+        flush: (session: Session) => permissionDeadline.wait(
+          root.sessions.flush(session),
+          "product plan durability flush",
+        ),
+      }),
+      environment: () => root.productSession.requireExecutionEnvironment(),
+      io: planIo,
+      requireAgent: () => root.productSession.requireAgent(),
     }));
     fibers.push(await root.plugin(SealedBashExecutor, {
       authority: () => resolveProductProcessAuthority(

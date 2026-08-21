@@ -10,6 +10,7 @@ import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { Session, SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { resolveRgPath } from "@deepseek-ai/dsh-tool-fs-search";
+import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_CANDIDATE_PROFILE_SHA256,
@@ -68,6 +69,7 @@ assert.equal(toolContractMetaJson.contractSha256, CANONICAL_TOOL_CONTRACT_SHA256
 assert.equal(toolContractMetaJson.canonicalToolCount, 20);
 const artifactEffectiveTools = Object.freeze([
   "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls", "WebFetch", "WebSearch",
+  "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
 ] as const);
 const artifactEffectiveToolSet = new Set<string>(artifactEffectiveTools);
 const toolCatalogWithoutDigest = Object.freeze({
@@ -80,7 +82,7 @@ const toolCatalogWithoutDigest = Object.freeze({
     tool,
     ...(artifactEffectiveToolSet.has(tool)
       ? { available: true as const }
-      : { available: false as const, reasonCode: "not-installed-in-w2-a4" }),
+      : { available: false as const, reasonCode: "not-installed-in-w2-a6" }),
   })),
 });
 const validatedArtifactToolCatalog = validateEffectiveToolCatalog({
@@ -99,6 +101,11 @@ const fixtureRuntimeHome = join(fixtureRoot, "runtime-home");
 const fixtureAttachmentStaging = join(fixtureRoot, "attachments");
 const fixtureTemporaryRoot = join(fixtureRoot, "temporary");
 const fixtureFile = join(fixtureWorkspace, "governed.txt");
+const fixturePlanPath = join(
+  fixtureRuntimeHome,
+  "plans",
+  `${createHash("sha256").update("myagents-plan-artifact-v1\0").update("dsh-artifact-primary").digest("hex")}.md`,
+);
 await Promise.all([
   mkdir(fixtureWorkspace),
   mkdir(fixtureRuntimeHome),
@@ -250,10 +257,59 @@ adapter.enqueue({
   kind: "tool-calls",
 });
 adapter.enqueue({ kind: "complete", text: "bounded web tools completed" });
+adapter.enqueue({
+  calls: [{
+    id: "artifact-ask-user-call",
+    name: "AskUserQuestion",
+    arguments: JSON.stringify({
+      questions: [{
+        question: "Proceed with the governed plan workflow?",
+        header: "Plan",
+        options: [
+          { label: "Proceed", description: "Continue with plan-mode evidence." },
+          { label: "Stop", description: "Stop before plan-mode evidence." },
+        ],
+        multiSelect: false,
+      }],
+    }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "structured interaction completed" });
+adapter.enqueue({
+  calls: [{ id: "artifact-enter-plan-call", name: "EnterPlanMode", arguments: "{}" }],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [{
+    id: "artifact-plan-write-call",
+    name: "Write",
+    arguments: JSON.stringify({
+      file_path: fixturePlanPath,
+      content: "# Governed plan\n\n1. Keep DSH as the only AgentLoop.\n",
+    }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [
+    { id: "artifact-plan-read-call", name: "Read", arguments: JSON.stringify({ file_path: fixturePlanPath }) },
+    { id: "artifact-plan-bash-denied-call", name: "Bash", arguments: JSON.stringify({ command: "printf forbidden" }) },
+  ],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [{ id: "artifact-exit-plan-call", name: "ExitPlanMode", arguments: "{}" }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "approved plan mode exit completed" });
 
 const rpcDigest = "a".repeat(64);
 let capturePermissionRevision = (): string => {
   throw new Error("artifact permission authority is not installed");
+};
+let capturePlanRevision = (): string => {
+  throw new Error("artifact plan authority is not installed");
 };
 const composition = await composeDshRootServices({
   adapter,
@@ -269,7 +325,7 @@ const composition = await composeDshRootServices({
       executionEnvironmentDigest: value.executionEnvironmentDigest,
       permissionRevision: capturePermissionRevision(),
       interactionScenarioRevision: "artifact-interaction-v1",
-      planRevision: "artifact-plan-v1",
+      planRevision: capturePlanRevision(),
       originRevision: "artifact-origin-v1",
       limits: value.limits,
     }),
@@ -279,6 +335,7 @@ const composition = await composeDshRootServices({
   tools: { mode: "native" },
 });
 const fileToolEvidence: string[] = [];
+const interactionToolEvidence: string[] = [];
 const artifactRipgrepPath = await resolveRgPath();
 const executableSha256 = Object.freeze({
   bash: createHash("sha256").update(await readFile("/bin/bash")).digest("hex"),
@@ -369,12 +426,23 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
         settlement.resolve(Object.freeze({
           interactionId: request.interactionId,
           expectedPermissionRevision: request.expectedPermissionRevision,
-          decision: request.tool === "Write" ? "always_allow" as const : "allow_once" as const,
+          decision: request.tool === "Write" && request.target !== fixturePlanPath
+            ? "always_allow" as const
+            : "allow_once" as const,
         }));
         return () => undefined;
       },
-      answerQuestions: (_request: unknown, settlement: ProductLocalInteractionSettlement<unknown>) => {
-        settlement.reject(new Error("A6 question tools are not active"));
+      answerQuestions: (
+        request: AskUserQuestionRequest,
+        settlement: ProductLocalInteractionSettlement<unknown>,
+      ) => {
+        interactionToolEvidence.push(`question:${request.questions.map(({ id }) => id).join(",")}`);
+        settlement.resolve({
+          answers: request.questions.map((question) => ({
+            id: question.id,
+            selected: [question.intent?.kind === "plan-review" ? question.intent.approve : "Proceed"],
+          })),
+        });
         return () => undefined;
       },
     }),
@@ -383,6 +451,7 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
     mode: "default",
     ruleTtlMs: 60_000,
   }),
+  plan: Object.freeze({ revision: "artifact-plan-v1" }),
   platformTarget: "darwin-arm64",
   process: Object.freeze({
     allowedCommandRefs: Object.freeze(["bundled-bash", "bundled-node", "bundled-ripgrep"]),
@@ -483,6 +552,9 @@ await assert.rejects(
 );
 await canonicalToolPlaneInstallation;
 capturePermissionRevision = () => composition.context.productPermission.currentRevision(
+  composition.context.productSession.requireAgent(),
+);
+capturePlanRevision = () => composition.context.productPlan.currentRevision(
   composition.context.productSession.requireAgent(),
 );
 await assert.rejects(
@@ -1040,7 +1112,7 @@ const durableToolText = (callId: string): string => {
   assert.ok(event?.type === "tool/result");
   const resultBlock = event.data.message.content[0];
   assert.equal(resultBlock.type, "tool-result");
-  assert.equal(resultBlock.isError, false);
+  assert.equal(resultBlock.isError, false, `${callId} failed: ${JSON.stringify(resultBlock.content)}`);
   assert.equal(resultBlock.content.length, 1);
   const block = resultBlock.content[0];
   assert.ok(block?.type === "text");
@@ -1187,6 +1259,66 @@ assert.deepEqual(webToolEvidence.filter((entry) => entry.startsWith("search:")),
 assert.ok(fileToolEvidence.includes("permission:WebFetch:https://example.com"));
 assert.ok(fileToolEvidence.includes("permission:WebFetch:https://redirect.example.com"));
 assert.ok(fileToolEvidence.includes("permission:WebSearch:provider:artifact-approved-search"));
+
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-interaction-operation",
+  clientUserMessageId: "artifact-interaction-user-message",
+  input: { parts: [{ kind: "text", text: "Ask one governed structured question" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-interaction-operation")?.state === "terminal",
+  "structured interaction operation terminal",
+);
+assert.equal(composition.context.sdkOperations.lookup("artifact-interaction-operation")?.terminal?.kind, "succeeded");
+const askUserOutput = JSON.parse(durableToolText("artifact-ask-user-call")) as Record<string, unknown>;
+assert.equal(typeof askUserOutput.interactionId, "string");
+assert.deepEqual(askUserOutput.answers, [{ questionIndex: 0, selectedLabels: ["Proceed"] }]);
+assert.equal(askUserOutput.policyRevision, composition.context.productPermission.currentRevision(primaryAgent));
+
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-plan-workflow-operation",
+  clientUserMessageId: "artifact-plan-workflow-user-message",
+  input: { parts: [{ kind: "text", text: "Enter plan mode, write and verify the plan, then submit it" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-plan-workflow-operation")?.state === "terminal",
+  "same-operation plan workflow terminal",
+);
+assert.equal(composition.context.sdkOperations.lookup("artifact-plan-workflow-operation")?.terminal?.kind, "succeeded");
+const enterPlanOutput = JSON.parse(durableToolText("artifact-enter-plan-call")) as Record<string, unknown>;
+assert.equal(enterPlanOutput.mode, "plan");
+assert.equal(enterPlanOutput.planPath, fixturePlanPath);
+assert.equal(typeof enterPlanOutput.revision, "string");
+assert.equal(await readFile(fixturePlanPath, "utf8"), "# Governed plan\n\n1. Keep DSH as the only AgentLoop.\n");
+assert.equal(
+  durableToolText("artifact-plan-write-call"),
+  `${fixturePlanPath} (${createHash("sha256").update("# Governed plan\n\n1. Keep DSH as the only AgentLoop.\n").digest("hex")})`,
+);
+assert.equal(
+  durableToolText("artifact-plan-read-call"),
+  "1\t# Governed plan\n2\t\n3\t1. Keep DSH as the only AgentLoop.\n4\t",
+);
+const deniedPlanBash = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+  && String(event.data.message.source.callId) === "artifact-plan-bash-denied-call");
+assert.ok(deniedPlanBash?.type === "tool/result");
+assert.equal(deniedPlanBash.data.message.content[0].isError, true);
+assert.equal(composition.context.productProcesses.snapshot().liveProcesses, 0);
+assert.deepEqual(JSON.parse(durableToolText("artifact-exit-plan-call")), {
+  disposition: "approved",
+  mode: "normal",
+  plan: "# Governed plan\n\n1. Keep DSH as the only AgentLoop.\n",
+  revision: createHash("sha256").update("# Governed plan\n\n1. Keep DSH as the only AgentLoop.\n").digest("hex"),
+});
+assert.equal(composition.context.productPlan.snapshot(primaryAgent).mode, "normal");
+assert.deepEqual(
+  primaryAgent.session.events.flatMap((event) => event.type === "plan/mode" ? [event.data.active] : []),
+  [true, false],
+);
+assert.equal(interactionToolEvidence.length, 2);
 
 const unrelatedRuntimeFile = join(fixtureRuntimeHome, "must-not-read.txt");
 await writeFile(unrelatedRuntimeFile, "private runtime fixture");
@@ -1357,8 +1489,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 11,
-  "eleven projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 13,
+  "thirteen projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -1369,7 +1501,7 @@ assert.deepEqual(
       : "missing"),
   [
     "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
-    "succeeded",
+    "succeeded", "succeeded", "succeeded",
     "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
   ],
 );
@@ -1431,8 +1563,8 @@ assert.deepEqual(hostFatalErrors, []);
 const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
 const permissionDecidedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/decided");
 const permissionRuleEvents = primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule");
-assert.equal(permissionAskedEvents.length, 8);
-assert.equal(permissionDecidedEvents.length, 8);
+assert.equal(permissionAskedEvents.length, 11);
+assert.equal(permissionDecidedEvents.length, 11);
 assert.equal(permissionRuleEvents.length, 1);
 hostPeer.close();
 runtimeInput.destroy();
@@ -1466,6 +1598,7 @@ process.stdout.write(`${JSON.stringify({
   canonicalProcessSearchToolsVerified: true,
   canonicalWebToolsVerified: true,
   canonicalPermissionInteractionVerified: true,
+  canonicalInteractionPlanToolsVerified: true,
   ambientWebSearchFallbackRejected: true,
   canonicalPermissionEvidence: {
     asked: permissionAskedEvents.length,
@@ -1491,8 +1624,9 @@ process.stdout.write(`${JSON.stringify({
   publicationTransientVerified: primaryPublicationSnapshotVerified,
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: [
-    "success", "failure", "file_tools", "process_search_tools", "web_tools", "process_abort",
-    "interrupt", "queued_cancel", "session_close",
+    "success", "failure", "file_tools", "process_search_tools", "web_tools", "interaction",
+    "plan_workflow", "process_abort", "interrupt", "queued_cancel",
+    "session_close",
   ],
   toolContractRuntimeConsumerVerified: true,
 })}\n`);

@@ -65,6 +65,8 @@ describe("canonical twenty-tool contract authority", () => {
       expect(Object.isFrozen(contract)).toBe(true);
       expect(Object.isFrozen(contract.inputSchema)).toBe(true);
       expect(Object.isFrozen(contract.outputSchema)).toBe(true);
+      expect(Object.isFrozen(contract.originPolicy)).toBe(true);
+      expect(Object.isFrozen(contract.planPolicy)).toBe(true);
     }
     expect(CANONICAL_TOOL_CONTRACTS.Write.checkpoint).toBe("root_managed_file");
     expect(CANONICAL_TOOL_CONTRACTS.Edit.checkpoint).toBe("root_managed_file");
@@ -72,6 +74,19 @@ describe("canonical twenty-tool contract authority", () => {
       CANONICAL_TOOL_CONTRACTS[name].checkpoint === "root_managed_file")).toEqual(["Write", "Edit"]);
     expect(CANONICAL_TOOL_CONTRACTS.Agent.sideEffect).toBe("delegation");
     expect(CANONICAL_TOOL_CONTRACTS.SendMessage.sideEffect).toBe("delegation");
+    expect(CANONICAL_TOOL_NAMES.filter((name) =>
+      CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "managed-plan-file-only")).toEqual(["Write", "Edit"]);
+    expect(CANONICAL_TOOL_NAMES.filter((name) =>
+      CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "denied")).toEqual(["Bash", "TaskStop", "SendMessage"]);
+    expect(CANONICAL_TOOL_CONTRACTS.Agent.planPolicy).toMatchObject({
+      denialCode: "plan_safe_agent_unavailable",
+      mode: "plan-safe-child-only",
+    });
+    expect(CANONICAL_TOOL_NAMES.filter((name) =>
+      CANONICAL_TOOL_CONTRACTS[name].originPolicy.mode === "root-only")).toEqual(["EnterPlanMode", "Agent"]);
+    expect(CANONICAL_TOOL_NAMES.filter((name) =>
+      CANONICAL_TOOL_CONTRACTS[name].originPolicy.mode === "no-background-child"))
+      .toEqual(["AskUserQuestion", "ExitPlanMode"]);
   });
 
   it("validates minimum input/output fixtures and rejects unknown or over-bound values", () => {

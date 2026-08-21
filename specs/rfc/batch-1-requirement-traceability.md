@@ -75,7 +75,7 @@ No method family from the old implemented boundary is missing from the Batch 1 P
 | Host tools | B1-W3 generated DSH proxy definitions | single ToolRuntime path established |
 | attachments/images | B1-W3 Host-backed DSH AttachmentStore | public Provider seam matches ownership model |
 | child/background work | B1-W2 DSH subagents/jobs + WorkRegistry | substrate and product state/result design drafted; lifecycle evidence pending |
-| Plan state | B1-W2 DSH PlanModeController + compatibility tools | durable substrate mapped |
+| Plan state | B1-W2 ProductPlanService over public DSH `plan/mode` events + `foldPlanMode` | durable ownership/projection and global hard-policy guard mapped; stock controller deliberately not installed |
 | dependency-aware TaskGraph | B1-W2 product Session-event plugin | DSH todo explicitly rejected as non-equivalent |
 | compact | B1-W4 DSH compaction seam + product operation wrapper | candidate direct Provider; exact event/idempotency proof required |
 | managed file checkpoint | B1-W2/W4 product checkpoint plugin | exact Write/Edit-only coverage retained |
@@ -100,7 +100,7 @@ TaskCreate, TaskGet, TaskList, TaskUpdate
 | filesystem/read state | Read, Write, Edit, Glob, Grep, ls | compatibility definitions over fs/subprocess/attachment services | exact schemas, per-tool behavior vectors, ReadState/checkpoint algorithm |
 | process/work | Bash | compatibility definition over shell/jobs plus WorkRegistry | output/background/cancellation state machine |
 | network | WebFetch, WebSearch | compatibility definitions over `ctx.web` | provider, SSRF, redirect/rebinding, result limits |
-| interaction/plan | AskUserQuestion, EnterPlanMode, ExitPlanMode | compatibility definitions over Host questions/approval and plan controller | exact interaction/plan result and revision contracts |
+| interaction/plan | AskUserQuestion, EnterPlanMode, ExitPlanMode | compatibility definitions over Host questions/approval plus product-owned transitions cross-checked by DSH `foldPlanMode` | exact interaction/plan result, ownership, revision, and per-tool hard-policy contracts |
 | knowledge/delegation | Skill, Agent, TaskStop, SendMessage | compatibility definitions over Skills/subagents/jobs | descriptor, child inheritance, work retention/message authority |
 | task graph | TaskCreate, TaskGet, TaskList, TaskUpdate | product DSH plugin and Session events | event vocabulary, graph fold, transitions/cycles/resume |
 

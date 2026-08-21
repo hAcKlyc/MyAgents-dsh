@@ -631,7 +631,7 @@ const validateQuestionItems = (value: unknown): AskUserQuestionItem[] => {
     seenIds.add(id);
     const question = boundedText(item.question, 8_192, "local question text");
     const detail = Object.hasOwn(item, "detail")
-      ? boundedText(item.detail, 32_768, "local question detail")
+      ? boundedText(item.detail, 240_000, "local question detail")
       : undefined;
     const header = Object.hasOwn(item, "header")
       ? boundedText(item.header, 1_024, "local question header")
@@ -759,7 +759,7 @@ type PendingPermission = {
 };
 
 const safeAutoAllow = new Set<PermissionClass>([
-  "workspace.read", "workspace.search", "task_graph.read",
+  "workspace.read", "workspace.search", "task_graph.read", "session.plan.enter",
 ]);
 
 const pendingKey = (agent: Agent, callId: string): string => `${agent.id}\0${callId}`;

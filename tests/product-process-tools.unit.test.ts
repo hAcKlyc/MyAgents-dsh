@@ -303,6 +303,10 @@ const harness = async (options: Readonly<{
     catalog: () => catalog,
     checkpoint: Object.freeze({ prepare: () => Promise.reject(new Error("checkpoint not used")) }),
     environment: () => environment,
+    plan: Object.freeze({
+      assert: () => undefined,
+      resolveFileTarget: () => Promise.resolve(undefined),
+    }),
     requireAgent: () => agent,
     resolveOperation: () => Object.freeze({ dshTurn: 1, operation: currentOperation }),
   });

@@ -6524,7 +6524,7 @@
             "additionalProperties": false,
             "properties": {
               "contractSha256": {
-                "const": "7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b6e8",
+                "const": "64cb973113a855f35f883211aab170c836ca6d6d9cc079d33ebd1c88bf51335c",
                 "type": "string"
               },
               "diagnostics": {
@@ -8883,7 +8883,7 @@
             "additionalProperties": false,
             "properties": {
               "contractSha256": {
-                "const": "7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b6e8",
+                "const": "64cb973113a855f35f883211aab170c836ca6d6d9cc079d33ebd1c88bf51335c",
                 "type": "string"
               },
               "diagnostics": {

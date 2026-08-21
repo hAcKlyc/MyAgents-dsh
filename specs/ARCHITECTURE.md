@@ -316,6 +316,8 @@ resolve visible definition and immutable operation scope
 
 Current DSH does not expose an authoritative pre-dispatch argument-rewrite seam. Exact `PreToolUse.updatedInput` compatibility therefore requires either an accepted upstream DSH seam or a minimal pinned fork. Proxying every stock tool and logging different outer/inner arguments is not an accepted production solution.
 
+Plan-mode transition and policy ownership belongs to the single `ProductPlanService`. It records one product ownership fact adjacent to each public DSH `plan/mode` event and verifies the resulting state with `foldPlanMode`; it does not install the broader stock `PlanModeController`, whose stock tool, prompt, and pending-state ownership are not contract-equivalent. The service contributes one monotonic global `ctx.tools` guard derived from the canonical twenty-tool contract. Consequently definitions registered later through trusted Host/MCP composition are denied by default while plan mode is active unless they carry an exact current product-operation authority and declared plan policy. The operation that owns a durable transition may continue under the new revision, while older concurrent births fail closed.
+
 ## 11. Declarative component lifecycle
 
 Host extension input contains descriptors and content resources, never executable plugin code. `ProductComponentService` compiles a snapshot into a prepared component generation:

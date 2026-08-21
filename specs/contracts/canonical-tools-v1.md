@@ -2,7 +2,7 @@
 
 # Canonical tool contract and DSH reuse projection
 
-Contract SHA-256: `7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b6e8`
+Contract SHA-256: `64cb973113a855f35f883211aab170c836ca6d6d9cc079d33ebd1c88bf51335c`
 
 | Tool | Concurrency | Side effect | Permission | Checkpoint | Public DSH reuse | Product owner |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -16,8 +16,8 @@ Contract SHA-256: `7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b
 | `WebFetch` | `parallel` | `network` | `network.fetch` | `none` | `@deepseek-ai/dsh-web` (provider)<br>`@deepseek-ai/dsh-tool-web` (helper) | `@myagents-dsh/tools-web` |
 | `WebSearch` | `parallel` | `network` | `network.search` | `none` | `@deepseek-ai/dsh-web` (provider)<br>`@deepseek-ai/dsh-tool-web` (helper) | `@myagents-dsh/tools-web` |
 | `AskUserQuestion` | `session_serial` | `interaction` | `interaction.ask` | `none` | `@deepseek-ai/dsh-user-questions` (provider) | `@myagents-dsh/tools-interaction` |
-| `EnterPlanMode` | `session_serial` | `session_state` | `session.plan.enter` | `none` | `@deepseek-ai/dsh-plan-mode` (direct) | `@myagents-dsh/tools-interaction` |
-| `ExitPlanMode` | `session_serial` | `interaction` | `session.plan.exit` | `none` | `@deepseek-ai/dsh-plan-mode` (direct)<br>`@deepseek-ai/dsh-user-questions` (provider) | `@myagents-dsh/tools-interaction` |
+| `EnterPlanMode` | `session_serial` | `session_state` | `session.plan.enter` | `none` | `@deepseek-ai/dsh-plan-mode` (helper) | `@myagents-dsh/tools-interaction` |
+| `ExitPlanMode` | `session_serial` | `interaction` | `session.plan.exit` | `none` | `@deepseek-ai/dsh-plan-mode` (helper)<br>`@deepseek-ai/dsh-user-questions` (provider) | `@myagents-dsh/tools-interaction` |
 | `Skill` | `session_serial` | `read` | `skill.load` | `none` | `@deepseek-ai/dsh-skill` (provider) | `@myagents-dsh/tools-agent` |
 | `Agent` | `parallel` | `delegation` | `agent.spawn` | `none` | `@deepseek-ai/dsh-subagent` (direct)<br>`@deepseek-ai/dsh-jobs` (provider) | `@myagents-dsh/tools-agent` |
 | `TaskStop` | `session_serial` | `session_state` | `work.stop` | `none` | `@deepseek-ai/dsh-jobs` (provider)<br>`@deepseek-ai/dsh-subagent` (direct) | `@myagents-dsh/tools-agent` |

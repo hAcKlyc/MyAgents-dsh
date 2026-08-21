@@ -129,6 +129,10 @@
         "timeout": "bounded_executor"
       },
       "name": "Read",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxAttachmentBytes": 20971520,
         "maxInlineBytes": 262144,
@@ -271,6 +275,10 @@
         ]
       },
       "permissionClass": "workspace.read",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return bounded text with line metadata or one validated image/PDF attachment projection; notebook content is normalized text.",
       "sideEffect": "read",
       "timeoutMs": 30000
@@ -355,6 +363,10 @@
         "timeout": "bounded_executor"
       },
       "name": "Write",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 16384,
         "maxStructuredItems": 16
@@ -412,6 +424,11 @@
         "type": "object"
       },
       "permissionClass": "workspace.write",
+      "planPolicy": {
+        "denialCode": "plan_mode_side_effect_forbidden",
+        "mode": "managed-plan-file-only",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Atomically create or replace one managed file and return its committed identity and eligible checkpoint receipt.",
       "sideEffect": "workspace",
       "timeoutMs": 30000
@@ -512,6 +529,10 @@
         "timeout": "bounded_executor"
       },
       "name": "Edit",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 16384,
         "maxStructuredItems": 16
@@ -569,6 +590,11 @@
         "type": "object"
       },
       "permissionClass": "workspace.write",
+      "planPolicy": {
+        "denialCode": "plan_mode_side_effect_forbidden",
+        "mode": "managed-plan-file-only",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Commit exact non-fuzzy replacement and return count, new identity, retained-change notice, and eligible checkpoint receipt.",
       "sideEffect": "workspace",
       "timeoutMs": 30000
@@ -648,6 +674,10 @@
         "timeout": "bounded_executor"
       },
       "name": "Glob",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 65536,
         "maxStructuredItems": 100
@@ -689,6 +719,10 @@
         "type": "object"
       },
       "permissionClass": "workspace.search",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return at most 100 canonical paths ordered by modification time with explicit truncation.",
       "sideEffect": "read",
       "timeoutMs": 30000
@@ -905,6 +939,10 @@
         "timeout": "bounded_executor"
       },
       "name": "Grep",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 262144,
         "maxStructuredItems": 10000
@@ -1095,6 +1133,10 @@
         ]
       },
       "permissionClass": "workspace.search",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return bounded content, file-name, or count records with stable pagination and truncation metadata.",
       "sideEffect": "read",
       "timeoutMs": 30000
@@ -1191,6 +1233,10 @@
         "timeout": "work_registry"
       },
       "name": "Bash",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 262144,
         "maxRetainedOutputBytes": 262144,
@@ -1271,6 +1317,11 @@
         ]
       },
       "permissionClass": "process.execute",
+      "planPolicy": {
+        "denialCode": "plan_mode_side_effect_forbidden",
+        "mode": "denied",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Foreground returns bounded streams and process terminal; background returns one retained WorkRegistry identity and output path.",
       "sideEffect": "process",
       "timeoutMs": 600000
@@ -1338,6 +1389,10 @@
         "timeout": "bounded_executor"
       },
       "name": "ls",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 53248,
         "maxStructuredItems": 500
@@ -1347,6 +1402,10 @@
         "type": "string"
       },
       "permissionClass": "workspace.read",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return the retained lowercase ls textual result with alphabetical entries, directory suffixes, dotfiles, and exact truncation bounds.",
       "sideEffect": "read",
       "timeoutMs": 30000
@@ -1431,6 +1490,10 @@
         "timeout": "bounded_executor"
       },
       "name": "WebFetch",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxAttachmentBytes": 20971520,
         "maxInlineBytes": 262144,
@@ -1531,6 +1594,10 @@
         "type": "object"
       },
       "permissionClass": "network.fetch",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return a bounded utility-model answer with final URL, citations, converted-content provenance, and separately metered usage.",
       "sideEffect": "network",
       "timeoutMs": 120000
@@ -1638,6 +1705,10 @@
         "timeout": "bounded_executor"
       },
       "name": "WebSearch",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 262144,
         "maxStructuredItems": 256
@@ -1768,6 +1839,10 @@
         "type": "object"
       },
       "permissionClass": "network.search",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return Provider-native cited results and separately attributable usage; HTML scraping fallback is forbidden.",
       "sideEffect": "network",
       "timeoutMs": 120000
@@ -1945,6 +2020,11 @@
         "timeout": "host_policy"
       },
       "name": "AskUserQuestion",
+      "originPolicy": {
+        "denialCode": "background_interaction_forbidden",
+        "mode": "no-background-child",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 65536,
         "maxStructuredItems": 32
@@ -2007,6 +2087,10 @@
         "type": "object"
       },
       "permissionClass": "interaction.ask",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return the one registered answer set, including explicit free text when Other is selected.",
       "sideEffect": "interaction",
       "timeoutMs": 600000
@@ -2051,6 +2135,11 @@
         "timeout": "bounded_executor"
       },
       "name": "EnterPlanMode",
+      "originPolicy": {
+        "denialCode": "child_plan_entry_forbidden",
+        "mode": "root-only",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 16384,
         "maxStructuredItems": 16
@@ -2083,6 +2172,10 @@
         "type": "object"
       },
       "permissionClass": "session.plan.enter",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Persist plan mode and return the managed plan artifact identity and revision before the restricted catalog becomes visible.",
       "sideEffect": "session_state",
       "timeoutMs": 30000
@@ -2132,6 +2225,11 @@
         "timeout": "host_policy"
       },
       "name": "ExitPlanMode",
+      "originPolicy": {
+        "denialCode": "background_interaction_forbidden",
+        "mode": "no-background-child",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 262144,
         "maxStructuredItems": 16
@@ -2217,6 +2315,10 @@
         ]
       },
       "permissionClass": "session.plan.exit",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Approval returns the submitted plan and normal mode; rejection or cancellation returns feedback while plan mode remains active.",
       "sideEffect": "interaction",
       "timeoutMs": 600000
@@ -2294,6 +2396,10 @@
         "timeout": "bounded_executor"
       },
       "name": "Skill",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 262144,
         "maxStructuredItems": 16
@@ -2335,6 +2441,10 @@
         "type": "object"
       },
       "permissionClass": "skill.load",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return bounded frontmatter-stripped instructions from the exact operation-visible declarative Skill catalog.",
       "sideEffect": "read",
       "timeoutMs": 30000
@@ -2463,6 +2573,11 @@
         "timeout": "work_registry"
       },
       "name": "Agent",
+      "originPolicy": {
+        "denialCode": "child_agent_nesting_forbidden",
+        "mode": "root-only",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 262144,
         "maxRetainedOutputBytes": 8388608,
@@ -2608,6 +2723,11 @@
         ]
       },
       "permissionClass": "agent.spawn",
+      "planPolicy": {
+        "denialCode": "plan_safe_agent_unavailable",
+        "mode": "plan-safe-child-only",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Foreground returns the child terminal and usage; background returns one supervised WorkRegistry handle and output path.",
       "sideEffect": "delegation",
       "timeoutMs": 600000
@@ -2672,6 +2792,10 @@
         "timeout": "work_registry"
       },
       "name": "TaskStop",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 16384,
         "maxStructuredItems": 16
@@ -2726,6 +2850,11 @@
         "type": "object"
       },
       "permissionClass": "work.stop",
+      "planPolicy": {
+        "denialCode": "plan_mode_tool_forbidden",
+        "mode": "denied",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Wait for the addressed work item to reach its existing or newly stopped terminal and finalize owned resources.",
       "sideEffect": "session_state",
       "timeoutMs": 120000
@@ -2817,6 +2946,10 @@
         "timeout": "work_registry"
       },
       "name": "SendMessage",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 16384,
         "maxStructuredItems": 16
@@ -2863,6 +2996,11 @@
         "type": "object"
       },
       "permissionClass": "agent.message",
+      "planPolicy": {
+        "denialCode": "plan_mode_tool_forbidden",
+        "mode": "denied",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return an ordered delivery receipt after resolving one in-scope collaborator.",
       "sideEffect": "delegation",
       "timeoutMs": 120000
@@ -3055,6 +3193,10 @@
         "timeout": "bounded_executor"
       },
       "name": "TaskCreate",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 65536,
         "maxStructuredItems": 512
@@ -3211,6 +3353,10 @@
         "type": "object"
       },
       "permissionClass": "task_graph.mutate",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Append one task to the Session-local TaskGraph and return its immutable ID and committed revision.",
       "sideEffect": "session_state",
       "timeoutMs": 30000
@@ -3275,6 +3421,10 @@
         "timeout": "bounded_executor"
       },
       "name": "TaskGet",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 65536,
         "maxStructuredItems": 512
@@ -3431,6 +3581,10 @@
         "type": "object"
       },
       "permissionClass": "task_graph.read",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return one task and graph revision from the durable Session-local projection.",
       "sideEffect": "read",
       "timeoutMs": 30000
@@ -3475,6 +3629,10 @@
         "timeout": "bounded_executor"
       },
       "name": "TaskList",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 262144,
         "maxStructuredItems": 2000
@@ -3639,6 +3797,10 @@
         "type": "object"
       },
       "permissionClass": "task_graph.read",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Return a bounded stable task list and graph revision from the Session-local projection.",
       "sideEffect": "read",
       "timeoutMs": 30000
@@ -3947,6 +4109,10 @@
         "timeout": "bounded_executor"
       },
       "name": "TaskUpdate",
+      "originPolicy": {
+        "mode": "all",
+        "revision": "operation-birth"
+      },
       "outputLimits": {
         "maxInlineBytes": 65536,
         "maxStructuredItems": 512
@@ -4146,6 +4312,10 @@
         "type": "object"
       },
       "permissionClass": "task_graph.mutate",
+      "planPolicy": {
+        "mode": "allowed",
+        "revision": "operation-birth-and-durable-session"
+      },
       "resultSemantics": "Atomically update one task and dependency graph and return the committed task, graph revision, and changed fields.",
       "sideEffect": "session_state",
       "timeoutMs": 30000

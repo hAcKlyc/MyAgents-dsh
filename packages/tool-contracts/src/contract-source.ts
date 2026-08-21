@@ -77,6 +77,18 @@ export interface CanonicalToolLifecycle {
   readonly headless: "allowed" | "policy_required";
 }
 
+export interface CanonicalToolPlanPolicy {
+  readonly mode: "allowed" | "managed-plan-file-only" | "plan-safe-child-only" | "denied";
+  readonly denialCode?: "plan_mode_side_effect_forbidden" | "plan_mode_tool_forbidden" | "plan_safe_agent_unavailable";
+  readonly revision: "operation-birth-and-durable-session";
+}
+
+export interface CanonicalToolOriginPolicy {
+  readonly mode: "all" | "root-only" | "no-background-child";
+  readonly denialCode?: "background_interaction_forbidden" | "child_agent_nesting_forbidden" | "child_plan_entry_forbidden";
+  readonly revision: "operation-birth";
+}
+
 export interface CanonicalToolContract<
   Name extends CanonicalToolName = CanonicalToolName,
   InputSchema extends TSchema = TSchema,
@@ -92,6 +104,8 @@ export interface CanonicalToolContract<
   readonly timeoutMs?: number;
   readonly outputLimits: ToolOutputLimits;
   readonly permissionClass: PermissionClass;
+  readonly originPolicy: CanonicalToolOriginPolicy;
+  readonly planPolicy: CanonicalToolPlanPolicy;
   readonly checkpoint: ToolCheckpoint;
   readonly behaviorFixtureIds: readonly string[];
   readonly resultSemantics: string;
@@ -133,13 +147,47 @@ const lifecycle = (
 const errors = (...values: ReadonlyArray<readonly [string, boolean, string]>): readonly CanonicalToolError[] =>
   values.map(([code, retryable, when]) => ({ code, retryable, when }));
 
+const PLAN_POLICIES = Object.freeze({
+  Read: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  Write: { mode: "managed-plan-file-only", denialCode: "plan_mode_side_effect_forbidden", revision: "operation-birth-and-durable-session" },
+  Edit: { mode: "managed-plan-file-only", denialCode: "plan_mode_side_effect_forbidden", revision: "operation-birth-and-durable-session" },
+  Glob: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  Grep: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  Bash: { mode: "denied", denialCode: "plan_mode_side_effect_forbidden", revision: "operation-birth-and-durable-session" },
+  ls: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  WebFetch: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  WebSearch: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  AskUserQuestion: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  EnterPlanMode: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  ExitPlanMode: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  Skill: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  Agent: { mode: "plan-safe-child-only", denialCode: "plan_safe_agent_unavailable", revision: "operation-birth-and-durable-session" },
+  TaskStop: { mode: "denied", denialCode: "plan_mode_tool_forbidden", revision: "operation-birth-and-durable-session" },
+  SendMessage: { mode: "denied", denialCode: "plan_mode_tool_forbidden", revision: "operation-birth-and-durable-session" },
+  TaskCreate: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  TaskGet: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  TaskList: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  TaskUpdate: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+} as const satisfies Record<CanonicalToolName, CanonicalToolPlanPolicy>);
+
+const defaultOriginPolicy = Object.freeze({ mode: "all", revision: "operation-birth" } as const);
+const ORIGIN_POLICIES = Object.freeze({
+  ...Object.fromEntries(CANONICAL_TOOL_NAMES.map((name) => [name, defaultOriginPolicy])),
+  AskUserQuestion: { mode: "no-background-child", denialCode: "background_interaction_forbidden", revision: "operation-birth" },
+  EnterPlanMode: { mode: "root-only", denialCode: "child_plan_entry_forbidden", revision: "operation-birth" },
+  ExitPlanMode: { mode: "no-background-child", denialCode: "background_interaction_forbidden", revision: "operation-birth" },
+  Agent: { mode: "root-only", denialCode: "child_agent_nesting_forbidden", revision: "operation-birth" },
+} as const) as Readonly<Record<CanonicalToolName, CanonicalToolOriginPolicy>>;
+
 const contract = <Name extends CanonicalToolName, Input extends TSchema, Output extends TSchema>(
-  value: Omit<CanonicalToolContract<Name, Input, Output>, "executionInputSchema"> & {
+  value: Omit<CanonicalToolContract<Name, Input, Output>, "executionInputSchema" | "originPolicy" | "planPolicy"> & {
     readonly executionInputSchema?: TSchema;
   },
 ): CanonicalToolContract<Name, Input, Output> => ({
   ...value,
   executionInputSchema: value.executionInputSchema ?? value.inputSchema,
+  originPolicy: ORIGIN_POLICIES[value.name],
+  planPolicy: PLAN_POLICIES[value.name],
 });
 
 const citation = strictObject({
@@ -860,10 +908,10 @@ export const CANONICAL_TOOL_REUSE_MATRIX = deepFreeze({
     { id: "questions", importPath: "@deepseek-ai/dsh-user-questions", classification: "provider", symbols: ["UserQuestionService"] },
   ], productOwner: "@myagents-dsh/tools-interaction", stockModelDefinition: "excluded" },
   EnterPlanMode: { tool: "EnterPlanMode", modelDefinition: "compat-tool", dshPublicReuse: [
-    { id: "plan-mode", importPath: "@deepseek-ai/dsh-plan-mode", classification: "direct", symbols: ["PlanModeController"] },
+    { id: "plan-mode-fold", importPath: "@deepseek-ai/dsh-plan-mode", classification: "helper", symbols: ["foldPlanMode"] },
   ], productOwner: "@myagents-dsh/tools-interaction", stockModelDefinition: "excluded" },
   ExitPlanMode: { tool: "ExitPlanMode", modelDefinition: "compat-tool", dshPublicReuse: [
-    { id: "plan-mode", importPath: "@deepseek-ai/dsh-plan-mode", classification: "direct", symbols: ["PlanModeController"] },
+    { id: "plan-mode-fold", importPath: "@deepseek-ai/dsh-plan-mode", classification: "helper", symbols: ["foldPlanMode"] },
     { id: "questions", importPath: "@deepseek-ai/dsh-user-questions", classification: "provider", symbols: ["UserQuestionService"] },
   ], productOwner: "@myagents-dsh/tools-interaction", stockModelDefinition: "excluded" },
   Skill: { tool: "Skill", modelDefinition: "compat-tool", dshPublicReuse: [

@@ -25,12 +25,13 @@
       "@myagents-dsh/tool-contracts": "0.0.0",
       "@myagents-dsh/tool-runtime-product": "0.0.0",
       "@myagents-dsh/tools-fs": "0.0.0",
+      "@myagents-dsh/tools-interaction": "0.0.0",
       "@myagents-dsh/tools-process": "0.0.0",
       "@myagents-dsh/tools-web": "0.0.0"
     }
   },
   "dsh": {
-    "artifactManifestSha256": "f9b2d647a23ac056f9bf671bc08330e5ad3e8f0c47951d857ddff0405a3654de",
+    "artifactManifestSha256": "65a07dc5c7ece9de1da92d0d4885f710831550a4cdafe1c30d85c89981d0f3ef",
     "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",
@@ -63,13 +64,13 @@
       "rpc/cancel"
     ],
     "availableReverseMethods": [],
-    "schemaSha256": "c72e993e6992336add20453d029ba8c5cca6cbf211776c323ab54567b8814d46",
+    "schemaSha256": "8568631f38dc09540104c3b8e16e29b56f67537b82a33cab3ee687d9b1d679de",
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "workstream-evidence-only",
   "stage": "batch-1-w1-a10",
   "tools": {
     "contractProfile": "canonical-agent-experience-v1",
-    "contractSha256": "7b24fc9c9fd9de10b81b3b442b8ad96b341b0afa68fdfb4d171d6559f472b6e8"
+    "contractSha256": "64cb973113a855f35f883211aab170c836ca6d6d9cc079d33ebd1c88bf51335c"
   }
 }

@@ -40,6 +40,7 @@ const candidatePackagePaths = [
   "packages/tool-contracts",
   "packages/tool-runtime-product",
   "packages/tools-fs",
+  "packages/tools-interaction",
   "packages/tools-process",
   "packages/tools-web",
 ] as const;
@@ -70,13 +71,55 @@ const requiredString = (value: unknown, description: string): string => {
   return value;
 };
 
+const objectRecord = (value: unknown, description: string): JsonObject => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${description} must be an object`);
+  }
+  return value as JsonObject;
+};
+
+const assertCandidateRuntimeClosure = (packageLock: JsonObject): void => {
+  const packages = objectRecord(packageLock.packages, "root lock package registry");
+  const pathByName = new Map<string, string>();
+  for (const [path, raw] of Object.entries(packages)) {
+    if (path !== "apps/runtime-server" && !path.startsWith("packages/")) continue;
+    const manifest = objectRecord(raw, `root lock package ${path}`);
+    if (typeof manifest.name === "string") pathByName.set(manifest.name, path);
+  }
+  const requiredPaths = new Set<string>();
+  const pending = ["apps/runtime-server"];
+  while (pending.length > 0) {
+    const path = pending.pop();
+    if (path === undefined || requiredPaths.has(path)) continue;
+    requiredPaths.add(path);
+    const manifest = objectRecord(packages[path], `root lock package ${path}`);
+    const dependencies = manifest.dependencies === undefined
+      ? {}
+      : objectRecord(manifest.dependencies, `root lock package ${path} dependencies`);
+    for (const name of Object.keys(dependencies)) {
+      if (!name.startsWith("@myagents-dsh/")) continue;
+      const dependencyPath = pathByName.get(name);
+      if (dependencyPath === undefined) {
+        throw new Error(`candidate Runtime dependency ${name} has no workspace package authority`);
+      }
+      pending.push(dependencyPath);
+    }
+  }
+  const candidatePaths = new Set<string>(candidatePackagePaths);
+  const missing = [...requiredPaths].filter((path) => !candidatePaths.has(path));
+  if (missing.length > 0) {
+    throw new Error(`candidate package authority omits Runtime dependency closure: ${missing.join(", ")}`);
+  }
+};
+
 export type GeneratedProductProfileArtifacts = ReadonlyMap<string, string>;
 
 export const buildProductProfileArtifacts = async (
   repositoryRoot: string,
 ): Promise<GeneratedProductProfileArtifacts> => {
-  const [rootPackage, protocolMeta, acceptedArtifact, toolContractMeta, dshBaselineBytes] = await Promise.all([
+  const [rootPackage, rootLock, protocolMeta, acceptedArtifact, toolContractMeta, dshBaselineBytes] = await Promise.all([
     readJson(resolve(repositoryRoot, "package.json")),
+    readJson(resolve(repositoryRoot, "package-lock.json")),
     readJson(resolve(repositoryRoot, "packages/protocol/generated/protocol-meta.json")),
     readJson(resolve(
       repositoryRoot,
@@ -85,6 +128,7 @@ export const buildProductProfileArtifacts = async (
     readJson(resolve(repositoryRoot, "packages/tool-contracts/generated/tool-contract-meta.json")),
     readFile(resolve(repositoryRoot, "specs/dsh/dsh-baseline-v1.json"), "utf8"),
   ]);
+  assertCandidateRuntimeClosure(rootLock);
   const foundationPackages: Record<string, string> = {};
   for (const relativePath of workspacePackagePaths) {
     const manifest = await readJson(resolve(repositoryRoot, relativePath, "package.json"));

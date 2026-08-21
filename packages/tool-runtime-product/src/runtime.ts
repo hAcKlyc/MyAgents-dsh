@@ -1,7 +1,8 @@
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
+import type { FsTarget } from "@deepseek-ai/dsh-fs";
 import { HarnessError } from "@deepseek-ai/dsh-llm";
-import type { ToolExecution, ToolRunContext } from "@deepseek-ai/dsh-tools";
+import type { ToolExecution } from "@deepseek-ai/dsh-tools";
 import type { OperationBirthSnapshot, ProductOperationRecord } from "@myagents-dsh/operation-runtime";
 import {
   validateEffectiveToolCatalog,
@@ -99,6 +100,15 @@ export interface ProductToolRuntimeConfig {
     prepare(context: ProductToolContext, request: ProductToolCheckpointRequest): Promise<ProductToolCheckpointHandle>;
   }>;
   readonly environment: () => ProductToolExecutionEnvironment;
+  readonly plan: Readonly<{
+    assert(context: ProductToolContext, tool: CanonicalToolName): void;
+    resolveFileTarget(
+      context: ProductToolContext,
+      tool: "Read" | "Write" | "Edit",
+      path: string,
+      mode: "read" | "write",
+    ): Promise<FsTarget | undefined>;
+  }>;
   readonly requireAgent: () => Agent;
   readonly resolveOperation: (agent: Agent) => Readonly<{
     dshTurn: number;
@@ -120,6 +130,31 @@ export class ProductToolError extends HarnessError {
 }
 
 type JsonObject = Record<string, unknown>;
+
+const exactNativePromise = <T>(value: unknown, description: string): Promise<T> => {
+  if (value !== null && typeof value === "object" && utilTypes.isProxy(value)) {
+    throw new TypeError(`${description} must not return a Proxy thenable`);
+  }
+  if (!utilTypes.isPromise(value) || Object.getPrototypeOf(value) !== Promise.prototype
+    || Reflect.ownKeys(value).length !== 0) {
+    throw new TypeError(`${description} must return an exact native Promise`);
+  }
+  return value as Promise<T>;
+};
+
+const snapshotFsTarget = (value: unknown, description: string): FsTarget => {
+  const target = exactOwnDataObject(value, ["displayPath", "targetKey"], description);
+  if (typeof target.displayPath !== "string" || target.displayPath.length === 0
+    || target.displayPath.length > 8_192 || target.displayPath.includes("\0")
+    || typeof target.targetKey !== "string" || target.targetKey.length === 0
+    || target.targetKey.length > 8_192) {
+    throw new TypeError(`${description} fields are invalid`);
+  }
+  return Object.freeze({
+    displayPath: target.displayPath,
+    targetKey: target.targetKey,
+  }) as FsTarget;
+};
 
 const exactOwnDataObject = (
   value: unknown,
@@ -167,7 +202,7 @@ const exactConfig = (value: unknown): ProductToolRuntimeConfig => {
     throw new TypeError("ProductToolRuntime config must be a plain object");
   }
   const config = value as JsonObject;
-  const expected = ["catalog", "checkpoint", "environment", "requireAgent", "resolveOperation"];
+  const expected = ["catalog", "checkpoint", "environment", "plan", "requireAgent", "resolveOperation"];
   if (Reflect.ownKeys(config).some((key) => typeof key !== "string" || !expected.includes(key))
     || expected.some((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(config, key);
@@ -178,7 +213,7 @@ const exactConfig = (value: unknown): ProductToolRuntimeConfig => {
   const dataFunction = (owner: JsonObject, key: string, description: string): ((...args: never[]) => unknown) => {
     const descriptor = Object.getOwnPropertyDescriptor(owner, key);
     if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)
-      || typeof descriptor.value !== "function") {
+      || typeof descriptor.value !== "function" || utilTypes.isProxy(descriptor.value)) {
       throw new TypeError(`${description} must be an enumerable own data function`);
     }
     return descriptor.value as (...args: never[]) => unknown;
@@ -198,6 +233,19 @@ const exactConfig = (value: unknown): ProductToolRuntimeConfig => {
   const requireAgent = dataFunction(config, "requireAgent", "primary Agent authority");
   const resolveOperation = dataFunction(config, "resolveOperation", "operation authority");
   const [checkpointOwner, prepare] = capability(config.checkpoint, "prepare", "checkpoint authority");
+  if (config.plan === null || typeof config.plan !== "object" || Array.isArray(config.plan)
+    || utilTypes.isProxy(config.plan)
+    || (Object.getPrototypeOf(config.plan) !== Object.prototype && Object.getPrototypeOf(config.plan) !== null)
+    || Reflect.ownKeys(config.plan).length !== 2) {
+    throw new TypeError("plan authority must be an exact plain capability");
+  }
+  const planOwner = config.plan as JsonObject;
+  const assertPlan = dataFunction(planOwner, "assert", "plan hard-guard authority");
+  const resolvePlanFileTarget = dataFunction(
+    planOwner,
+    "resolveFileTarget",
+    "plan file-target authority",
+  );
   return Object.freeze({
     catalog: () => Reflect.apply(catalog, config, []) as unknown,
     checkpoint: Object.freeze({
@@ -205,6 +253,19 @@ const exactConfig = (value: unknown): ProductToolRuntimeConfig => {
         Reflect.apply(prepare, checkpointOwner, [context, request]) as Promise<ProductToolCheckpointHandle>,
     }),
     environment: () => Reflect.apply(environment, config, []) as ProductToolExecutionEnvironment,
+    plan: Object.freeze({
+      assert: (context: ProductToolContext, tool: CanonicalToolName) => {
+        Reflect.apply(assertPlan, planOwner, [context, tool]);
+      },
+      resolveFileTarget: (
+        context: ProductToolContext,
+        tool: "Read" | "Write" | "Edit",
+        path: string,
+        mode: "read" | "write",
+      ) => Reflect.apply(resolvePlanFileTarget, planOwner, [context, tool, path, mode]) as Promise<
+        FsTarget | undefined
+      >,
+    }),
     requireAgent: () => Reflect.apply(requireAgent, config, []) as Agent,
     resolveOperation: (agent: Agent) => Reflect.apply(resolveOperation, config, [agent]) as Readonly<{
       dshTurn: number;
@@ -267,7 +328,7 @@ export class ProductToolRuntime extends Service {
     });
   }
 
-  resolve(exec: ToolRunContext): ProductToolContext {
+  resolve(exec: Readonly<ToolExecution>): ProductToolContext {
     if (exec.agent === undefined || exec.agent !== this.configValue.requireAgent()) {
       throw new ProductToolError("tool_operation_denied", "tool call lacks official primary Agent ownership");
     }
@@ -289,7 +350,7 @@ export class ProductToolRuntime extends Service {
       || !catalog.effectiveTools.includes(exec.name as CanonicalToolName)) {
       throw new ProductToolError("tool_catalog_stale", "tool call is absent from its operation-frozen effective catalog");
     }
-    return Object.freeze({
+    const context = Object.freeze({
       agent: exec.agent,
       birth: operation.birth,
       callId: String(exec.callId),
@@ -302,6 +363,8 @@ export class ProductToolRuntime extends Service {
       rootCallId: String(exec.rootCallId),
       signal: exec.signal,
     });
+    this.configValue.plan.assert(context, exec.name as CanonicalToolName);
+    return context;
   }
 
   async authorize(
@@ -309,20 +372,18 @@ export class ProductToolRuntime extends Service {
     request: ProductToolPermissionRequest,
   ): Promise<void> {
     context.signal.throwIfAborted();
-    const pending: unknown = this.ctx.productPermission.authorize(context, Object.freeze({ ...request }));
-    if (pending !== null && typeof pending === "object" && utilTypes.isProxy(pending)) {
-      throw new TypeError("permission authority must not return a Proxy thenable");
-    }
-    if (!utilTypes.isPromise(pending)) throw new TypeError("permission authority must return a native Promise");
-    const decision: unknown = await pending;
+    const decision: unknown = await exactNativePromise(
+      this.ctx.productPermission.authorize(context, Object.freeze({ ...request })),
+      "permission authority",
+    );
     context.signal.throwIfAborted();
     if (decision !== "allow") {
       throw new ProductToolError("permission_denied", `${request.tool} permission was denied`);
     }
-    this.assertCurrentAuthority(context, request.tool);
+    this.assertCurrent(context, request.tool);
   }
 
-  private assertCurrentAuthority(context: ProductToolContext, tool: CanonicalToolName): void {
+  assertCurrent(context: ProductToolContext, tool: CanonicalToolName): void {
     if (this.configValue.requireAgent() !== context.agent) {
       throw new ProductToolError("tool_operation_denied", "primary Agent authority changed during permission review");
     }
@@ -346,6 +407,24 @@ export class ProductToolRuntime extends Service {
       || !catalog.effectiveTools.includes(tool)) {
       throw new ProductToolError("tool_catalog_stale", "tool catalog authority changed during permission review");
     }
+    this.configValue.plan.assert(context, tool);
+  }
+
+  async resolvePlanFileTarget(
+    context: ProductToolContext,
+    tool: "Read" | "Write" | "Edit",
+    path: string,
+    mode: "read" | "write",
+  ): Promise<FsTarget | undefined> {
+    context.signal.throwIfAborted();
+    const target: unknown = await exactNativePromise(
+      this.configValue.plan.resolveFileTarget(context, tool, path, mode),
+      "plan file-target authority",
+    );
+    context.signal.throwIfAborted();
+    this.assertCurrent(context, tool);
+    if (target === undefined) return undefined;
+    return snapshotFsTarget(target, "plan file-target authority result");
   }
 
   async prepareCheckpoint(
@@ -353,15 +432,11 @@ export class ProductToolRuntime extends Service {
     request: ProductToolCheckpointRequest,
   ): Promise<ProductToolCheckpointHandle> {
     context.signal.throwIfAborted();
-    const pending: unknown = this.configValue.checkpoint.prepare(context, Object.freeze({
+    const pending = exactNativePromise<unknown>(this.configValue.checkpoint.prepare(context, Object.freeze({
       ...request,
       afterBytes: Uint8Array.from(request.afterBytes),
       ...(request.beforeBytes === undefined ? {} : { beforeBytes: Uint8Array.from(request.beforeBytes) }),
-    }));
-    if (pending !== null && typeof pending === "object" && utilTypes.isProxy(pending)) {
-      throw new TypeError("checkpoint authority must not return a Proxy thenable");
-    }
-    if (!utilTypes.isPromise(pending)) throw new TypeError("checkpoint authority must return a native Promise");
+    })), "checkpoint authority");
     const candidate: unknown = await pending;
     let cleanup: (() => Promise<void>) | undefined;
     if (candidate !== null && typeof candidate === "object" && !Array.isArray(candidate)
@@ -372,11 +447,7 @@ export class ProductToolRuntime extends Service {
         const abort = abortDescriptor.value as () => unknown;
         cleanup = async () => {
           const outcome: unknown = Reflect.apply(abort, candidate, []);
-          if (outcome !== null && typeof outcome === "object" && utilTypes.isProxy(outcome)) {
-            throw new TypeError("checkpoint abort must not return a Proxy thenable");
-          }
-          if (!utilTypes.isPromise(outcome)) throw new TypeError("checkpoint abort must return a native Promise");
-          await outcome;
+          await exactNativePromise(outcome, "checkpoint abort");
         };
       }
     }
@@ -403,11 +474,7 @@ export class ProductToolRuntime extends Service {
         if (typeof value !== "function") throw new TypeError(`checkpoint ${key} must be a function`);
         return async () => {
           const outcome: unknown = Reflect.apply(value, candidate, []);
-          if (outcome !== null && typeof outcome === "object" && utilTypes.isProxy(outcome)) {
-            throw new TypeError(`checkpoint ${key} must not return a Proxy thenable`);
-          }
-          if (!utilTypes.isPromise(outcome)) throw new TypeError(`checkpoint ${key} must return a native Promise`);
-          await outcome;
+          await exactNativePromise(outcome, `checkpoint ${key}`);
         };
       };
       const checkpointId = boundedIdentifier(receipt.checkpointId, "checkpoint id");
