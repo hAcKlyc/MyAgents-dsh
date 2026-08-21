@@ -1264,7 +1264,7 @@ assert.deepEqual({
   records: [{ path: "governed.txt" }],
   truncated: false,
 });
-assert.equal(processSearchText("artifact-ls-call"), "governed.txt");
+assert.equal(processSearchText("artifact-ls-call"), "governed.txt\nskills/");
 const foregroundBash = JSON.parse(processSearchText("artifact-bash-call")) as unknown;
 assert.ok(foregroundBash !== null && typeof foregroundBash === "object" && !Array.isArray(foregroundBash));
 assert.deepEqual({
