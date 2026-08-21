@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/protocol" },
     { "path": "./packages/tool-contracts" },
+    { "path": "./packages/task-graph" },
     { "path": "./packages/tool-runtime-product" },
     { "path": "./packages/tools-fs" },
     { "path": "./packages/tools-interaction" },

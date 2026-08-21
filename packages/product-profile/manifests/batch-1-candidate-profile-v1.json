@@ -21,6 +21,7 @@
       "@myagents-dsh/rpc-server": "0.0.0",
       "@myagents-dsh/runtime-product": "0.0.0",
       "@myagents-dsh/runtime-server": "0.0.0",
+      "@myagents-dsh/task-graph": "0.0.0",
       "@myagents-dsh/testkit": "0.0.0",
       "@myagents-dsh/tool-contracts": "0.0.0",
       "@myagents-dsh/tool-runtime-product": "0.0.0",
@@ -31,7 +32,7 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "65a07dc5c7ece9de1da92d0d4885f710831550a4cdafe1c30d85c89981d0f3ef",
+    "artifactManifestSha256": "06b3a9d337653a3fe3e67d9de0518ac882fd1a687b214e1b6a910c93202a00a9",
     "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",

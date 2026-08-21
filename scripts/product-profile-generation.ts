@@ -36,6 +36,7 @@ const candidatePackagePaths = [
   "packages/protocol",
   "packages/rpc-server",
   "packages/runtime-product",
+  "packages/task-graph",
   "packages/testkit",
   "packages/tool-contracts",
   "packages/tool-runtime-product",

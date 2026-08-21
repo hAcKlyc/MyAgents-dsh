@@ -46,6 +46,15 @@ declare module "@deepseek-ai/dsh-session" {
   }
 }
 
+export const PRODUCT_PLAN_EVENT_TYPES = Object.freeze([
+  "myagents/plan/transition",
+] as const);
+
+export type ProductPlanEventType = typeof PRODUCT_PLAN_EVENT_TYPES[number];
+
+export const isProductPlanEventType = (value: string): value is ProductPlanEventType =>
+  (PRODUCT_PLAN_EVENT_TYPES as readonly string[]).includes(value);
+
 type JsonObject = Record<string, unknown>;
 
 export interface ProductPlanArtifactRead {

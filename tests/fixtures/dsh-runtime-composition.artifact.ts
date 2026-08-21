@@ -70,6 +70,7 @@ assert.equal(toolContractMetaJson.canonicalToolCount, 20);
 const artifactEffectiveTools = Object.freeze([
   "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls", "WebFetch", "WebSearch",
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
+  "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
 ] as const);
 const artifactEffectiveToolSet = new Set<string>(artifactEffectiveTools);
 const toolCatalogWithoutDigest = Object.freeze({
@@ -303,6 +304,77 @@ adapter.enqueue({
   kind: "tool-calls",
 });
 adapter.enqueue({ kind: "complete", text: "approved plan mode exit completed" });
+adapter.enqueue({
+  calls: [{
+    id: "artifact-tg-create-prerequisite-call",
+    name: "TaskCreate",
+    arguments: JSON.stringify({
+      subject: "Verify durable TaskGraph",
+      description: "Prove the Session-local prerequisite first",
+      metadata: { scope: "artifact" },
+    }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [{
+    id: "artifact-tg-create-dependent-call",
+    name: "TaskCreate",
+    arguments: JSON.stringify({
+      subject: "Publish TaskGraph result",
+      description: "Wait for the durable prerequisite",
+    }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [{
+    id: "artifact-tg-link-call",
+    name: "TaskUpdate",
+    arguments: JSON.stringify({ taskId: "task-2", addBlockedBy: ["task-1"], owner: "root" }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [{
+    id: "artifact-tg-cycle-call",
+    name: "TaskUpdate",
+    arguments: JSON.stringify({ taskId: "task-1", addBlockedBy: ["task-2"] }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [{
+    id: "artifact-tg-complete-prerequisite-call",
+    name: "TaskUpdate",
+    arguments: JSON.stringify({ taskId: "task-1", owner: "root", status: "completed" }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [{
+    id: "artifact-tg-start-dependent-call",
+    name: "TaskUpdate",
+    arguments: JSON.stringify({ taskId: "task-2", status: "in_progress" }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [
+    { id: "artifact-tg-get-call", name: "TaskGet", arguments: JSON.stringify({ taskId: "task-2" }) },
+    { id: "artifact-tg-list-call", name: "TaskList", arguments: "{}" },
+  ],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [{
+    id: "artifact-tg-complete-dependent-call",
+    name: "TaskUpdate",
+    arguments: JSON.stringify({ taskId: "task-2", status: "completed" }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "durable TaskGraph workflow completed" });
 
 const rpcDigest = "a".repeat(64);
 let capturePermissionRevision = (): string => {
@@ -1320,6 +1392,86 @@ assert.deepEqual(
 );
 assert.equal(interactionToolEvidence.length, 2);
 
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-task-graph-operation",
+  clientUserMessageId: "artifact-task-graph-user-message",
+  input: { parts: [{ kind: "text", text: "Build and complete a durable dependency-aware TaskGraph" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-task-graph-operation")?.state === "terminal",
+  "durable TaskGraph operation terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-task-graph-operation")?.terminal?.kind,
+  "succeeded",
+);
+const taskCreatePrerequisite = JSON.parse(durableToolText("artifact-tg-create-prerequisite-call")) as Record<string, unknown>;
+const taskCreateDependent = JSON.parse(durableToolText("artifact-tg-create-dependent-call")) as Record<string, unknown>;
+assert.deepEqual(taskCreatePrerequisite.task, {
+  id: "task-1",
+  subject: "Verify durable TaskGraph",
+  description: "Prove the Session-local prerequisite first",
+  status: "pending",
+  blockedBy: [],
+  metadata: { scope: "artifact" },
+  createdSequence: 1,
+  updatedSequence: 1,
+});
+assert.deepEqual(taskCreateDependent.task, {
+  id: "task-2",
+  subject: "Publish TaskGraph result",
+  description: "Wait for the durable prerequisite",
+  status: "pending",
+  blockedBy: [],
+  createdSequence: 2,
+  updatedSequence: 2,
+});
+const cycleResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+  && String(event.data.message.source.callId) === "artifact-tg-cycle-call");
+assert.ok(cycleResult?.type === "tool/result");
+assert.equal(cycleResult.data.message.content[0].isError, true);
+const taskGet = JSON.parse(durableToolText("artifact-tg-get-call")) as Record<string, unknown>;
+const taskList = JSON.parse(durableToolText("artifact-tg-list-call")) as Record<string, unknown>;
+assert.deepEqual(taskGet.task, {
+  id: "task-2",
+  subject: "Publish TaskGraph result",
+  description: "Wait for the durable prerequisite",
+  status: "in_progress",
+  owner: "root",
+  blockedBy: ["task-1"],
+  createdSequence: 2,
+  updatedSequence: 5,
+});
+assert.deepEqual((taskList.tasks as Array<Record<string, unknown>>).map((task) => ({
+  id: task.id,
+  status: task.status,
+  blockedBy: task.blockedBy,
+})), [
+  { id: "task-2", status: "in_progress", blockedBy: ["task-1"] },
+  { id: "task-1", status: "completed", blockedBy: [] },
+]);
+const finalTaskGraph = composition.context.productTaskGraph.snapshot(primaryAgent);
+assert.equal(finalTaskGraph.sequence, 6);
+assert.deepEqual(finalTaskGraph.tasks.map(({ id, status, blockedBy }) => ({ id, status, blockedBy })), [
+  { id: "task-1", status: "completed", blockedBy: [] },
+  { id: "task-2", status: "completed", blockedBy: ["task-1"] },
+]);
+assert.equal(
+  primaryAgent.session.events.filter(({ type }) => type === "myagents/task/created").length,
+  2,
+);
+assert.equal(
+  primaryAgent.session.events.filter(({ type }) => type === "myagents/task/updated").length,
+  4,
+);
+assert.deepEqual(
+  finalTaskGraph,
+  composition.context.productTaskGraph.snapshot(primaryAgent),
+  "TaskGraph must reconstruct from the immutable DSH Session history",
+);
+
 const unrelatedRuntimeFile = join(fixtureRuntimeHome, "must-not-read.txt");
 await writeFile(unrelatedRuntimeFile, "private runtime fixture");
 adapter.enqueue({
@@ -1489,8 +1641,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 13,
-  "thirteen projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 14,
+  "fourteen projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -1501,7 +1653,7 @@ assert.deepEqual(
       : "missing"),
   [
     "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
-    "succeeded", "succeeded", "succeeded",
+    "succeeded", "succeeded", "succeeded", "succeeded",
     "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
   ],
 );
@@ -1563,8 +1715,8 @@ assert.deepEqual(hostFatalErrors, []);
 const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
 const permissionDecidedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/decided");
 const permissionRuleEvents = primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule");
-assert.equal(permissionAskedEvents.length, 11);
-assert.equal(permissionDecidedEvents.length, 11);
+assert.equal(permissionAskedEvents.length, 18);
+assert.equal(permissionDecidedEvents.length, 18);
 assert.equal(permissionRuleEvents.length, 1);
 hostPeer.close();
 runtimeInput.destroy();
@@ -1599,13 +1751,14 @@ process.stdout.write(`${JSON.stringify({
   canonicalWebToolsVerified: true,
   canonicalPermissionInteractionVerified: true,
   canonicalInteractionPlanToolsVerified: true,
+  canonicalTaskGraphVerified: true,
   ambientWebSearchFallbackRejected: true,
   canonicalPermissionEvidence: {
     asked: permissionAskedEvents.length,
     decided: permissionDecidedEvents.length,
     durableRules: permissionRuleEvents.length,
     providerRequests: fileToolEvidence.filter((entry) => entry.startsWith("permission:")).length,
-    safeToolsAutoAllowed: ["Read", "Glob", "Grep", "ls"].every((tool) =>
+    safeToolsAutoAllowed: ["Read", "Glob", "Grep", "ls", "TaskGet", "TaskList"].every((tool) =>
       !fileToolEvidence.some((entry) => entry.startsWith(`permission:${tool}:`))),
   },
   canonicalWebEvidence: {
@@ -1625,7 +1778,7 @@ process.stdout.write(`${JSON.stringify({
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: [
     "success", "failure", "file_tools", "process_search_tools", "web_tools", "interaction",
-    "plan_workflow", "process_abort", "interrupt", "queued_cancel",
+    "plan_workflow", "task_graph", "process_abort", "interrupt", "queued_cancel",
     "session_close",
   ],
   toolContractRuntimeConsumerVerified: true,

@@ -10,6 +10,7 @@
     { "path": "../operation-runtime" },
     { "path": "../product-profile" },
     { "path": "../protocol" },
+    { "path": "../task-graph" },
     { "path": "../tool-runtime-product" },
     { "path": "../tools-fs" },
     { "path": "../tools-interaction" },

@@ -34,6 +34,7 @@ import {
   type ProductPermissionPlaneConfig,
   type ProductToolRuntimeConfig,
 } from "@myagents-dsh/tool-runtime-product";
+import { ProductTaskGraphService } from "@myagents-dsh/task-graph";
 import {
   ProductProcessRuntime,
   SealedBashExecutor,
@@ -466,6 +467,15 @@ export const installCanonicalToolPlane = async (
       }),
       environment: () => root.productSession.requireExecutionEnvironment(),
       io: planIo,
+      requireAgent: () => root.productSession.requireAgent(),
+    }));
+    fibers.push(await root.plugin(ProductTaskGraphService, {
+      durability: Object.freeze({
+        flush: (session: Session) => permissionDeadline.wait(
+          root.sessions.flush(session),
+          "product TaskGraph durability flush",
+        ),
+      }),
       requireAgent: () => root.productSession.requireAgent(),
     }));
     fibers.push(await root.plugin(SealedBashExecutor, {

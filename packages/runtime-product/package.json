@@ -12,6 +12,7 @@
     "@myagents-dsh/operation-runtime": "0.0.0",
     "@myagents-dsh/product-profile": "0.0.0",
     "@myagents-dsh/protocol": "0.0.0",
+    "@myagents-dsh/task-graph": "0.0.0",
     "@myagents-dsh/tool-runtime-product": "0.0.0",
     "@myagents-dsh/tools-fs": "0.0.0",
     "@myagents-dsh/tools-interaction": "0.0.0",
