@@ -24,6 +24,8 @@ import { LocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 import type { ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { readAtMostFromHandle } from "../packages/tools-fs/src/local-filesystem.js";
+
 const contexts: Context[] = [];
 const temporaryRoots: string[] = [];
 
@@ -176,6 +178,28 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
 };
 
 describe("static declarative Skill tool", () => {
+  it("bounds a source that grows while its open handle is read", async () => {
+    const payload = new TextEncoder().encode("123456789");
+    const requestedLengths: number[] = [];
+    const growingHandle = Object.freeze({
+      read: (
+        buffer: Uint8Array,
+        offset: number,
+        length: number,
+        position: number,
+      ): Promise<Readonly<{ bytesRead: number }>> => {
+        requestedLengths.push(length);
+        const bytesRead = Math.min(length, payload.length - position);
+        buffer.set(payload.subarray(position, position + bytesRead), offset);
+        return Promise.resolve(Object.freeze({ bytesRead }));
+      },
+    });
+    await expect(readAtMostFromHandle(growingHandle, 4, undefined)).rejects.toMatchObject({
+      code: "FS_TOO_LARGE",
+    });
+    expect(requestedLengths).toEqual([5]);
+  });
+
   it("loads the visible winner, strips frontmatter, expands arguments, and uses DSH rendering", async () => {
     const state = await mounted();
     const result = await state.execute({ skill: "fixture-audit", args: "src/runtime.ts" });

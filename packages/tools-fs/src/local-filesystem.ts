@@ -73,6 +73,40 @@ const abortError = (signal: AbortSignal | undefined): void => {
   if (signal?.aborted === true) throw new FsError("filesystem operation was aborted", "FS_ABORTED");
 };
 
+interface BoundedReadableFileHandle {
+  read(
+    buffer: Uint8Array,
+    offset: number,
+    length: number,
+    position: number,
+  ): Promise<Readonly<{ bytesRead: number }>>;
+}
+
+export const readAtMostFromHandle = async (
+  handle: BoundedReadableFileHandle,
+  maxBytes: number,
+  signal: AbortSignal | undefined,
+): Promise<Uint8Array> => {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (total <= maxBytes) {
+    abortError(signal);
+    const chunk = new Uint8Array(Math.min(64 * 1_024, maxBytes + 1 - total));
+    const { bytesRead } = await handle.read(chunk, 0, chunk.length, total);
+    if (bytesRead === 0) break;
+    chunks.push(chunk.subarray(0, bytesRead));
+    total += bytesRead;
+  }
+  if (total > maxBytes) throw new FsError("filesystem target exceeds byte bound", "FS_TOO_LARGE");
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+};
+
 const hasControlCharacter = (value: string): boolean => {
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
@@ -354,17 +388,19 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       const opened = await handle.stat();
       if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino
         || (enforceUnshared && opened.nlink !== 1)
+        || opened.size > maxBytes
+        || (requireUnshared && String(versionOf(opened)) !== beforeVersion)
         || (retainedVersion !== undefined && (opened.size > MAX_RETAINED_OUTPUT_BYTES
           || String(versionOf(opened)) !== retainedVersion))) {
         throw new FsError("filesystem target identity changed before read", "FS_STALE_VERSION");
       }
       await this.assertPlanTargetIdentity(path, signal);
-      const bytes = await handle.readFile();
+      const bytes = await readAtMostFromHandle(handle, maxBytes, signal);
       abortError(signal);
-      if (bytes.length > maxBytes) throw new FsError("filesystem target exceeds byte bound", "FS_TOO_LARGE");
       const settled = await handle.stat();
       if (settled.dev !== before.dev || settled.ino !== before.ino
         || (enforceUnshared && settled.nlink !== 1)
+        || settled.size > maxBytes
         || (requireUnshared && String(versionOf(settled)) !== beforeVersion)
         || (retainedVersion !== undefined && (settled.size > MAX_RETAINED_OUTPUT_BYTES
           || String(versionOf(settled)) !== retainedVersion))) {
