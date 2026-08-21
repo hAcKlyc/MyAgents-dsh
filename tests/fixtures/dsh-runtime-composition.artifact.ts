@@ -9,7 +9,9 @@ import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import {
+  freezeMessage,
   LlmAdapter,
+  type AssistantMessage,
   type GenerateOptions,
   type LlmModelInfo,
   type LlmProviderInfo,
@@ -104,6 +106,28 @@ const validatedArtifactToolCatalog = validateEffectiveToolCatalog({
   ...toolCatalogWithoutDigest,
   digest: effectiveToolCatalogDigest(toolCatalogWithoutDigest),
 });
+
+interface ArtifactPreparedAssistantToolCall {
+  readonly callId: string;
+  readonly name: string;
+  readonly rawArguments: string;
+  readonly parsedArguments: unknown;
+}
+
+interface ArtifactPreparedAssistantCommit {
+  readonly message: AssistantMessage;
+  readonly toolCalls: readonly ArtifactPreparedAssistantToolCall[];
+}
+
+interface ArtifactPatchedAgentEventContext {
+  on(
+    name: "agent/pre-assistant-commit",
+    listener: (
+      payload: Readonly<{ commit: ArtifactPreparedAssistantCommit }>,
+      next: () => Promise<ArtifactPreparedAssistantCommit>,
+    ) => Promise<ArtifactPreparedAssistantCommit>,
+  ): () => void;
+}
 assert.deepEqual(validatedArtifactToolCatalog.implementationCatalog, CANONICAL_TOOL_NAMES);
 assert.throws(() => validateEffectiveToolCatalog({
   ...validatedArtifactToolCatalog,
@@ -116,6 +140,9 @@ const fixtureRuntimeHome = join(fixtureRoot, "runtime-home");
 const fixtureAttachmentStaging = join(fixtureRoot, "attachments");
 const fixtureTemporaryRoot = join(fixtureRoot, "temporary");
 const fixtureFile = join(fixtureWorkspace, "governed.txt");
+const untransformedWriteContent = "untransformed input must never persist\n";
+const transformedWriteContent = "after governed Write\n";
+const editedFileContent = "after governed Edit\n";
 const fixtureSkillRoot = join(fixtureWorkspace, "skills", "fixture-audit");
 const fixtureSkillSourcePath = join(fixtureSkillRoot, "SKILL.md");
 const fixtureSkillSource = [
@@ -282,11 +309,35 @@ adapter.enqueue({
   calls: [{
     id: "artifact-write-call",
     name: "Write",
-    arguments: JSON.stringify({ file_path: fixtureFile, content: "after governed Write\n" }),
+    arguments: JSON.stringify({ file_path: fixtureFile, content: untransformedWriteContent }),
   }],
   kind: "tool-calls",
 });
-adapter.enqueue({ kind: "complete", text: "governed file tools completed" });
+adapter.enqueue({
+  kind: "complete",
+  text: "governed file tools completed",
+});
+adapter.enqueue({
+  calls: [{
+    id: "artifact-edit-read-call",
+    name: "Read",
+    arguments: JSON.stringify({ file_path: fixtureFile }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({
+  calls: [{
+    id: "artifact-edit-call",
+    name: "Edit",
+    arguments: JSON.stringify({
+      file_path: fixtureFile,
+      old_string: transformedWriteContent,
+      new_string: editedFileContent,
+    }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "governed Edit completed" });
 adapter.enqueue({
   calls: [
     { id: "artifact-glob-call", name: "Glob", arguments: JSON.stringify({ pattern: "**/*.txt" }) },
@@ -486,6 +537,45 @@ const composition = await composeDshRootServices({
   systemPrompt: { persona: "Composition-owned persona, not the desired Session revision." },
   tools: { mode: "native" },
 });
+const transformedWriteArguments = JSON.stringify({
+  file_path: fixtureFile,
+  content: transformedWriteContent,
+});
+let preAssistantCommitTransformHits = 0;
+const stopPreAssistantCommitTransform = (composition.context as unknown as ArtifactPatchedAgentEventContext).on(
+  "agent/pre-assistant-commit",
+  async (_payload, next) => {
+    const inherited = await next();
+    if (!inherited.toolCalls.some(({ callId }) => callId === "artifact-write-call")) {
+      return inherited;
+    }
+    preAssistantCommitTransformHits += 1;
+    const message = freezeMessage({
+      id: inherited.message.id,
+      role: "assistant",
+      source: inherited.message.source,
+      content: inherited.message.content.map((block) => block.type === "tool-call"
+        && String(block.id) === "artifact-write-call"
+        ? { ...block, arguments: transformedWriteArguments }
+        : block),
+    });
+    return Object.freeze({
+      message,
+      toolCalls: Object.freeze(inherited.toolCalls.map((call) =>
+        call.callId === "artifact-write-call"
+          ? Object.freeze({
+              callId: call.callId,
+              name: call.name,
+              rawArguments: transformedWriteArguments,
+              parsedArguments: Object.freeze({
+                file_path: fixtureFile,
+                content: transformedWriteContent,
+              }),
+            })
+          : call)),
+    });
+  },
+);
 await composition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
@@ -1019,6 +1109,12 @@ assert.equal(rpcStatus.desiredConfigRevision, "artifact-config-v1");
 assert.equal(Object.hasOwn(rpcStatus, "effectiveConfigRevision"), false);
 
 const primaryAgent = composition.context.productSession.requireAgent();
+for (const name of CANONICAL_TOOL_NAMES) {
+  assert.ok(composition.context.tools.get(name, primaryAgent), `missing canonical tool ${name}`);
+}
+for (const stockName of ["read_file", "write_file", "edit_file", "bash", "glob", "grep", "todo_write"]) {
+  assert.equal(composition.context.tools.get(stockName, primaryAgent), undefined, `stock tool ${stockName} must be absent`);
+}
 assert.equal(
   typeof (primaryAgent as unknown as { wakePending?: unknown }).wakePending,
   "function",
@@ -1166,6 +1262,12 @@ assert.deepEqual(adapter.requests[1]?.messages.map(({ role, content }) => ({ rol
   { role: "assistant", content: [{ type: "text", text: "first completion" }] },
   { role: "user", content: [{ type: "text", text: "second prompt" }] },
 ]);
+assert.deepEqual(adapter.requests[0].toolNames, CANONICAL_TOOL_NAMES.toSorted());
+assert.equal(
+  adapter.requests.every(({ toolNames }) => toolNames.every((name) => artifactEffectiveToolSet.has(name))),
+  true,
+  "every primary AgentLoop request must expose only canonical tool names",
+);
 const firstAssistant = primaryAgent.session.events.find(({ type }) => type === "assistant/message");
 assert.ok(firstAssistant?.type === "assistant/message");
 assert.deepEqual(
@@ -1202,7 +1304,15 @@ await waitUntil(
   "governed file-tool operation terminal",
 );
 assert.equal(composition.context.sdkOperations.lookup("artifact-file-operation")?.terminal?.kind, "succeeded");
-assert.equal(await readFile(fixtureFile, "utf8"), "after governed Write\n");
+stopPreAssistantCommitTransform();
+assert.equal(preAssistantCommitTransformHits, 1);
+const governedToolResults = primaryAgent.session.events.filter((event) =>
+  event.type === "tool/result" && ["artifact-read-call", "artifact-write-call"]
+    .includes(String(event.data.message.source.callId)));
+assert.equal(governedToolResults.length, 2, JSON.stringify(governedToolResults));
+assert.equal(governedToolResults.every((event) => event.type === "tool/result"
+  && event.data.message.content[0].isError !== true), true, JSON.stringify(governedToolResults));
+assert.equal(await readFile(fixtureFile, "utf8"), transformedWriteContent);
 assert.deepEqual(fileToolEvidence, [
   `permission:Write:${fixtureFile}`,
   `prepare:Write:${fixtureFile}`,
@@ -1212,12 +1322,53 @@ assert.equal(
   primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule").length,
   1,
 );
-const governedToolResults = primaryAgent.session.events.filter((event) =>
-  event.type === "tool/result" && ["artifact-read-call", "artifact-write-call"]
-    .includes(String(event.data.message.source.callId)));
-assert.equal(governedToolResults.length, 2);
-assert.equal(governedToolResults.every((event) => event.type === "tool/result"
-  && event.data.message.content[0].isError !== true), true);
+const transformedWriteCall = primaryAgent.session.events.findLast((event) => event.type === "tool/call"
+  && String(event.data.callId) === "artifact-write-call");
+assert.ok(transformedWriteCall?.type === "tool/call");
+assert.equal(transformedWriteCall.data.arguments, transformedWriteArguments);
+const transformedWriteAssistant = primaryAgent.session.events.findLast((event) =>
+  event.type === "assistant/message" && event.data.message.content.some((block) =>
+    block.type === "tool-call" && String(block.id) === "artifact-write-call"));
+assert.ok(transformedWriteAssistant?.type === "assistant/message");
+const transformedWriteBlock = transformedWriteAssistant.data.message.content.find((block) =>
+  block.type === "tool-call" && String(block.id) === "artifact-write-call");
+assert.ok(transformedWriteBlock?.type === "tool-call");
+assert.equal(transformedWriteBlock.arguments, transformedWriteArguments);
+const replayedWriteBlock = primaryAgent.session.deriveMessages().flatMap(({ content }) => content)
+  .find((block) => block.type === "tool-call" && String(block.id) === "artifact-write-call");
+assert.ok(replayedWriteBlock?.type === "tool-call");
+assert.equal(replayedWriteBlock.arguments, transformedWriteArguments);
+assert.equal(JSON.stringify(primaryAgent.session.events).includes(untransformedWriteContent), false);
+
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-edit-operation",
+  clientUserMessageId: "artifact-edit-user-message",
+  input: { parts: [{ kind: "text", text: "Edit the governed fixture through the persisted file policy" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-edit-operation")?.state === "terminal",
+  "governed Edit operation terminal",
+);
+assert.equal(composition.context.sdkOperations.lookup("artifact-edit-operation")?.terminal?.kind, "succeeded");
+const governedEditResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+  && String(event.data.message.source.callId) === "artifact-edit-call");
+const governedEditReadResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+  && String(event.data.message.source.callId) === "artifact-edit-read-call");
+assert.ok(governedEditReadResult?.type === "tool/result");
+assert.equal(governedEditReadResult.data.message.content[0].isError, false, JSON.stringify(governedEditReadResult));
+assert.ok(governedEditResult?.type === "tool/result");
+assert.equal(governedEditResult.data.message.content[0].isError, false, JSON.stringify(governedEditResult));
+assert.equal(await readFile(fixtureFile, "utf8"), editedFileContent);
+assert.deepEqual(fileToolEvidence, [
+  `permission:Write:${fixtureFile}`,
+  `prepare:Write:${fixtureFile}`,
+  "commit",
+  `permission:Edit:${fixtureFile}`,
+  `prepare:Edit:${fixtureFile}`,
+  "commit",
+]);
 
 await composition.context.sdkOperations.start({
   ...turnStartParams,
@@ -1834,6 +1985,22 @@ assert.match(JSON.stringify(retainedOutputRead.data.message.content[0].content),
 assert.ok(unrelatedRuntimeRead?.type === "tool/result");
 assert.equal(unrelatedRuntimeRead.data.message.content[0].isError, true);
 
+const canonicalToolCalls = primaryAgent.session.events.filter((event) =>
+  event.type === "tool/call" && artifactEffectiveToolSet.has(event.data.name));
+const canonicalToolResultIds = new Set(primaryAgent.session.events.flatMap((event) =>
+  event.type === "tool/result" ? [String(event.data.message.source.callId)] : []));
+assert.deepEqual(
+  CANONICAL_TOOL_NAMES.filter((name) => canonicalToolCalls.some((event) =>
+    event.type === "tool/call" && event.data.name === name)),
+  CANONICAL_TOOL_NAMES,
+);
+for (const name of CANONICAL_TOOL_NAMES) {
+  const calls = canonicalToolCalls.filter((event) => event.type === "tool/call" && event.data.name === name);
+  assert.ok(calls.length > 0, `canonical tool ${name} was not called through DSH`);
+  assert.ok(calls.some((event) => event.type === "tool/call"
+    && canonicalToolResultIds.has(String(event.data.callId))), `${name} lacks a durable correlated result`);
+}
+
 adapter.enqueue({
   calls: [{
     id: "artifact-aborted-bash-call",
@@ -1958,8 +2125,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 19,
-  "nineteen projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 20,
+  "twenty projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -1970,7 +2137,7 @@ assert.deepEqual(
       : "missing"),
   [
     "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
-    "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
+    "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
     "succeeded", "succeeded", "succeeded", "succeeded",
     "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
   ],
@@ -2033,8 +2200,8 @@ assert.deepEqual(hostFatalErrors, []);
 const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
 const permissionDecidedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/decided");
 const permissionRuleEvents = primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule");
-assert.equal(permissionAskedEvents.length, 22);
-assert.equal(permissionDecidedEvents.length, 22);
+assert.equal(permissionAskedEvents.length, 23);
+assert.equal(permissionDecidedEvents.length, 23);
 assert.equal(permissionRuleEvents.length, 1);
 hostPeer.close();
 runtimeInput.destroy();
@@ -2072,6 +2239,15 @@ process.stdout.write(`${JSON.stringify({
   canonicalTaskGraphVerified: true,
   canonicalStaticSkillVerified: true,
   canonicalProductWorkVerified: true,
+  canonicalTwentyToolPipeline: {
+    callCount: canonicalToolCalls.length,
+    names: CANONICAL_TOOL_NAMES,
+    observedRootToolNames: adapter.requests[0].toolNames,
+    onlyCanonicalToolNames: adapter.requests.every(({ toolNames }) =>
+      toolNames.every((name) => artifactEffectiveToolSet.has(name))),
+    preAssistantCommitTransformHits,
+    transformedCallId: "artifact-write-call",
+  },
   ambientWebSearchFallbackRejected: true,
   canonicalPermissionEvidence: {
     asked: permissionAskedEvents.length,
@@ -2097,7 +2273,7 @@ process.stdout.write(`${JSON.stringify({
   publicationTransientVerified: primaryPublicationSnapshotVerified,
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: [
-    "success", "failure", "file_tools", "process_search_tools", "web_tools", "interaction",
+    "success", "failure", "file_tools", "edit", "process_search_tools", "web_tools", "interaction",
     "plan_workflow", "task_graph", "static_skill", "product_work", "process_abort", "interrupt", "queued_cancel",
     "session_close",
   ],

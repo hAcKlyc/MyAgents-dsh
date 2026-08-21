@@ -23,6 +23,7 @@ import {
   BATCH1_CANDIDATE_PROFILE_SHA256,
 } from "@myagents-dsh/product-profile";
 import protocolMetaJson from "@myagents-dsh/protocol/protocol-meta.json" with { type: "json" };
+import { CANONICAL_TOOL_NAMES } from "@myagents-dsh/tool-contracts";
 
 import {
   createRuntimeArtifactManifest,
@@ -1038,7 +1039,7 @@ const main = (): void => {
       || evidence.sessionCloseVerified !== true
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
-        "success", "failure", "file_tools", "process_search_tools", "web_tools", "interaction",
+        "success", "failure", "file_tools", "edit", "process_search_tools", "web_tools", "interaction",
         "plan_workflow", "task_graph", "static_skill", "product_work", "process_abort", "interrupt", "queued_cancel",
         "session_close",
       ])) {
@@ -1048,12 +1049,24 @@ const main = (): void => {
       evidence.canonicalPermissionEvidence,
       "canonical permission and interaction evidence",
     );
-    if (permissionEvidence.asked !== 22
-      || permissionEvidence.decided !== 22
+    if (permissionEvidence.asked !== 23
+      || permissionEvidence.decided !== 23
       || permissionEvidence.durableRules !== 1
-      || permissionEvidence.providerRequests !== 22
+      || permissionEvidence.providerRequests !== 23
       || permissionEvidence.safeToolsAutoAllowed !== true) {
       throw new Error("canonical permission and interaction evidence differs from the exact policy contract");
+    }
+    const canonicalToolPipeline = exactObject(
+      evidence.canonicalTwentyToolPipeline,
+      "canonical twenty-tool pipeline evidence",
+    );
+    if (canonicalToolPipeline.callCount !== 34
+      || JSON.stringify(canonicalToolPipeline.names) !== JSON.stringify(CANONICAL_TOOL_NAMES)
+      || JSON.stringify(canonicalToolPipeline.observedRootToolNames) !== JSON.stringify(CANONICAL_TOOL_NAMES.toSorted())
+      || canonicalToolPipeline.onlyCanonicalToolNames !== true
+      || canonicalToolPipeline.preAssistantCommitTransformHits !== 1
+      || canonicalToolPipeline.transformedCallId !== "artifact-write-call") {
+      throw new Error("canonical twenty-tool pipeline evidence differs from the exact accumulated contract");
     }
     const webEvidence = exactObject(evidence.canonicalWebEvidence, "canonical Web tool evidence");
     const webFetch = exactObject(webEvidence.fetch, "canonical WebFetch output evidence");
@@ -1182,6 +1195,8 @@ const main = (): void => {
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "message_event", "usage", "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "message_event", "usage", "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
@@ -1234,12 +1249,12 @@ const main = (): void => {
       });
     if (JSON.stringify(terminalOutcomes) !== JSON.stringify([
       "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
-      "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
+      "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
       "succeeded", "succeeded", "succeeded", "succeeded",
       "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
     ])) {
       throw new Error(
-        `Runtime terminal projection differs from the nineteen real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
+        `Runtime terminal projection differs from the twenty real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
       );
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");
