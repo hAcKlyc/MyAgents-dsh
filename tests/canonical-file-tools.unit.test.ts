@@ -99,6 +99,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
       ripgrepRef: "ripgrep-v1",
     }),
     platformTarget: `${process.platform}-${process.arch}` as "darwin-arm64" | "win32-x64" | "linux-x64",
+    network: Object.freeze({ mode: "deny" as const }),
     process: Object.freeze({ backgroundRetention: "allow" as const, killTreeOnAbort: true as const, maxChildren: 4 }),
     revision: "environment-v1",
     runtimeHome,

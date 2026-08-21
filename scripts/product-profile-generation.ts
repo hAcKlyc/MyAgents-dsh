@@ -41,6 +41,7 @@ const candidatePackagePaths = [
   "packages/tool-runtime-product",
   "packages/tools-fs",
   "packages/tools-process",
+  "packages/tools-web",
 ] as const;
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");

@@ -105,6 +105,9 @@ const runtimeCompositionSourcePaths = [
   "packages/tools-process/src/index.ts",
   "packages/tools-process/src/runtime.ts",
   "packages/tools-process/src/windows-job-subprocess.ts",
+  "packages/tools-web/src/index.ts",
+  "packages/tools-web/src/runtime.ts",
+  "packages/tools-web/src/safe-http.ts",
   "tests/fixtures/dsh-runtime-composition.artifact.ts",
   "tests/fixtures/runtime-process-conformance.artifact.ts",
   "tests/fixtures/runtime-server-process.artifact.ts",
@@ -121,6 +124,7 @@ const runtimePackageWorkspaces = [
   ["packages/tool-runtime-product", "@myagents-dsh/tool-runtime-product"],
   ["packages/tools-fs", "@myagents-dsh/tools-fs"],
   ["packages/tools-process", "@myagents-dsh/tools-process"],
+  ["packages/tools-web", "@myagents-dsh/tools-web"],
   ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
 ] as const;
@@ -940,6 +944,12 @@ const main = (): void => {
       "packages/tools-fs",
       "@myagents-dsh/tools-fs",
     );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/tools-web",
+      "@myagents-dsh/tools-web",
+    );
     stageBuiltPackage(consumerRoot, buildRoot, "packages/rpc-server", "@myagents-dsh/rpc-server");
     stageBuiltPackage(
       consumerRoot,
@@ -985,6 +995,8 @@ const main = (): void => {
       || evidence.nativeRpcStopped !== true
       || evidence.canonicalFileToolsVerified !== true
       || evidence.canonicalProcessSearchToolsVerified !== true
+      || evidence.canonicalWebToolsVerified !== true
+      || evidence.ambientWebSearchFallbackRejected !== true
       || evidence.operationCorrelationVerified !== true
       || evidence.operationInterruptVerified !== true
       || evidence.queuedCancellationVerified !== true
@@ -992,10 +1004,53 @@ const main = (): void => {
       || evidence.sessionCloseVerified !== true
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
-        "success", "failure", "file_tools", "process_search_tools", "process_abort",
+        "success", "failure", "file_tools", "process_search_tools", "web_tools", "process_abort",
         "interrupt", "queued_cancel", "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
+    }
+    const webEvidence = exactObject(evidence.canonicalWebEvidence, "canonical Web tool evidence");
+    const webFetch = exactObject(webEvidence.fetch, "canonical WebFetch output evidence");
+    const webFetchUsage = exactObject(webFetch.usage, "canonical WebFetch usage evidence");
+    const webSearch = exactObject(webEvidence.search, "canonical WebSearch output evidence");
+    const webSearchUsage = exactObject(webSearch.usage, "canonical WebSearch usage evidence");
+    if (webFetch.url !== "https://example.com/document.pdf"
+      || webFetch.finalUrl !== "https://redirect.example.com/document.pdf"
+      || webFetch.answer !== "Summarize the governed document: converted governed PDF fixture"
+      || webFetch.truncated !== false
+      || webFetchUsage.totalTokens !== 6
+      || webSearch.query !== "governed web fixture"
+      || webSearch.searchCount !== 1
+      || webSearch.durationMs !== 7
+      || webSearch.truncated !== false
+      || webSearchUsage.totalTokens !== 4
+      || !Array.isArray(webEvidence.permissions)
+      || JSON.stringify(webEvidence.permissions.filter((entry) => typeof entry === "string"
+        && entry.startsWith("permission:WebFetch:"))) !== JSON.stringify([
+        "permission:WebFetch:https://example.com",
+        "permission:WebFetch:https://redirect.example.com",
+      ])
+      || JSON.stringify(webEvidence.permissions.filter((entry) => typeof entry === "string"
+        && entry.startsWith("permission:WebSearch:"))) !== JSON.stringify([
+        "permission:WebSearch:provider:artifact-approved-search",
+      ])
+      || !Array.isArray(webEvidence.transport)
+      || JSON.stringify(webEvidence.transport.filter((entry) => typeof entry === "string"
+        && !entry.startsWith("search:"))) !== JSON.stringify([
+        "dns:example.com",
+        "transport:example.com/document.pdf:93.184.216.34",
+        "dns:redirect.example.com",
+        "transport:redirect.example.com/document.pdf:93.184.216.35",
+        "content:https://redirect.example.com/document.pdf",
+        "utility:https://redirect.example.com/document.pdf",
+      ])
+      || JSON.stringify(webEvidence.transport.filter((entry) => typeof entry === "string"
+        && entry.startsWith("search:"))) !== JSON.stringify([
+        "search:artifact-approved-search:governed web fixture",
+      ])) {
+      throw new Error(
+        `canonical Web tool evidence differs from the exact fake-network contract: ${JSON.stringify(webEvidence)}`,
+      );
     }
     if (!Array.isArray(evidence.nativeRpcFrames) || evidence.nativeRpcFrames.length < 3) {
       throw new Error("runtime composition must expose the observed Host-response frames");
@@ -1082,6 +1137,8 @@ const main = (): void => {
       "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message",
       "turn_admitted", "queued_message", "turn_terminal", "turn_terminal",
@@ -1102,9 +1159,12 @@ const main = (): void => {
       });
     if (JSON.stringify(terminalOutcomes) !== JSON.stringify([
       "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
+      "succeeded",
       "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
     ])) {
-      throw new Error("Runtime terminal projection differs from the ten real DSH operation outcomes");
+      throw new Error(
+        `Runtime terminal projection differs from the eleven real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
+      );
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");
     const usage = exactObject(usageEvent?.usage, "observed Runtime usage");

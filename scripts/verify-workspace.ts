@@ -23,6 +23,7 @@ const workspacePackages = new Map([
   ["packages/tool-runtime-product", "@myagents-dsh/tool-runtime-product"],
   ["packages/tools-fs", "@myagents-dsh/tools-fs"],
   ["packages/tools-process", "@myagents-dsh/tools-process"],
+  ["packages/tools-web", "@myagents-dsh/tools-web"],
 ]);
 
 const expectedScripts = new Map([
@@ -135,6 +136,7 @@ const expectedWorkspaceFiles = new Map([
     "src/runtime.ts",
     "src/windows-job-subprocess.ts",
   ]],
+  ["packages/tools-web", ["src/index.ts", "src/runtime.ts", "src/safe-http.ts"]],
 ]);
 
 const readJson = async (path: string): Promise<JsonObject> => {

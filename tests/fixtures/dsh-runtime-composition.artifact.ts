@@ -47,6 +47,16 @@ import {
   validateEffectiveToolCatalog,
 } from "@myagents-dsh/tool-contracts";
 import type { AttachmentPublicationRequest } from "@myagents-dsh/tools-fs";
+import {
+  ProductSafeHttpClient,
+  type ProductDnsAnswer,
+  type ProductHttpResponse,
+  type ProductHttpTransport,
+  type ProductNetworkPolicy,
+  type ProductWebContentRequest,
+  type ProductWebSearchRequest,
+  type ProductWebUtilityRequest,
+} from "@myagents-dsh/tools-web";
 import toolContractMetaJson from "@myagents-dsh/tool-contracts/tool-contract-meta.json" with {
   type: "json",
 };
@@ -55,17 +65,21 @@ assert.equal(Object.isFrozen(CANONICAL_TOOL_NAMES), true);
 assert.equal(CANONICAL_TOOL_NAMES.length, 20);
 assert.equal(toolContractMetaJson.contractSha256, CANONICAL_TOOL_CONTRACT_SHA256);
 assert.equal(toolContractMetaJson.canonicalToolCount, 20);
+const artifactEffectiveTools = Object.freeze([
+  "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls", "WebFetch", "WebSearch",
+] as const);
+const artifactEffectiveToolSet = new Set<string>(artifactEffectiveTools);
 const toolCatalogWithoutDigest = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
   implementationCatalog: CANONICAL_TOOL_NAMES,
-  effectiveTools: Object.freeze(["Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls"] as const),
+  effectiveTools: artifactEffectiveTools,
   revision: "artifact-tools-v1",
   diagnostics: CANONICAL_TOOL_NAMES.map((tool) => Object.freeze({
     tool,
-    ...(["Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls"].includes(tool)
+    ...(artifactEffectiveToolSet.has(tool)
       ? { available: true as const }
-      : { available: false as const, reasonCode: "not-installed-in-w2-a3" }),
+      : { available: false as const, reasonCode: "not-installed-in-w2-a4" }),
   })),
 });
 const validatedArtifactToolCatalog = validateEffectiveToolCatalog({
@@ -216,6 +230,25 @@ adapter.enqueue({
   kind: "tool-calls",
 });
 adapter.enqueue({ kind: "complete", text: "bounded process and search tools completed" });
+adapter.enqueue({
+  calls: [
+    {
+      id: "artifact-web-fetch-call",
+      name: "WebFetch",
+      arguments: JSON.stringify({
+        url: "https://example.com/document.pdf?synthetic_request=artifact",
+        prompt: "Summarize the governed document",
+      }),
+    },
+    {
+      id: "artifact-web-search-call",
+      name: "WebSearch",
+      arguments: JSON.stringify({ query: "governed web fixture", allowed_domains: ["example.com"] }),
+    },
+  ],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "bounded web tools completed" });
 
 const rpcDigest = "a".repeat(64);
 const composition = await composeDshRootServices({
@@ -247,6 +280,52 @@ const executableSha256 = Object.freeze({
   bash: createHash("sha256").update(await readFile("/bin/bash")).digest("hex"),
   bundledNode: createHash("sha256").update(await readFile(process.execPath)).digest("hex"),
   ripgrep: createHash("sha256").update(await readFile(artifactRipgrepPath)).digest("hex"),
+});
+const webToolEvidence: string[] = [];
+const artifactNetworkPolicy = Object.freeze({
+  allowedHosts: Object.freeze(["example.com", "redirect.example.com"]),
+  allowedPorts: Object.freeze([80, 443]),
+  deniedHosts: Object.freeze(["metadata.google.internal"]),
+  maxCompressedBytes: 1_024 * 1_024,
+  maxCompressionRatio: 20,
+  maxConcurrent: 2,
+  maxDecompressedBytes: 2 * 1_024 * 1_024,
+  maxQueued: 2,
+  maxRedirects: 3,
+  policyRef: "artifact-network-policy-v1",
+  timeoutMs: 5_000,
+}) satisfies ProductNetworkPolicy;
+const artifactHttpResponse = (
+  statusCode: number,
+  headers: Readonly<Record<string, string>>,
+  chunks: readonly string[],
+): ProductHttpResponse => Object.freeze({
+  body: (async function* () {
+    await Promise.resolve();
+    for (const chunk of chunks) yield Buffer.from(chunk);
+  })(),
+  dispose: () => Promise.resolve(),
+  headers,
+  statusCode,
+});
+const artifactHttpTransport: ProductHttpTransport = Object.freeze({
+  dispatch: (url: URL, address: ProductDnsAnswer, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    webToolEvidence.push(`transport:${url.hostname}${url.pathname}:${address.address}`);
+    return Promise.resolve(url.hostname === "example.com"
+      ? artifactHttpResponse(302, {
+          location: "https://redirect.example.com/document.pdf?synthetic_signed=artifact",
+        }, [])
+      : artifactHttpResponse(200, { "content-type": "application/pdf" }, ["%PDF-artifact-fixture"]));
+  },
+});
+const artifactWebClient = new ProductSafeHttpClient(artifactNetworkPolicy, {
+  lookup: (hostname, signal) => {
+    signal.throwIfAborted();
+    webToolEvidence.push(`dns:${hostname}`);
+    return Promise.resolve([{ address: hostname === "example.com" ? "93.184.216.34" : "93.184.216.35", family: 4 }]);
+  },
+  transport: artifactHttpTransport,
 });
 const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
   attachments: Object.freeze({
@@ -297,6 +376,74 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
     }),
   }),
   temporaryRoot: fixtureTemporaryRoot,
+  web: Object.freeze({
+    fetch: Object.freeze({
+      client: artifactWebClient,
+      content: Object.freeze({
+        convert: (request: ProductWebContentRequest) => {
+          assert.equal(request.contentType, "application/pdf");
+          assert.equal(request.finalUrl, "https://redirect.example.com/document.pdf");
+          assert.equal(Buffer.from(request.bytes).toString("utf8"), "%PDF-artifact-fixture");
+          webToolEvidence.push(`content:${request.finalUrl}`);
+          return Promise.resolve(Object.freeze({
+            content: "converted governed PDF fixture",
+            kind: "text" as const,
+            truncated: false,
+          }));
+        },
+      }),
+      utility: Object.freeze({
+        run: (request: ProductWebUtilityRequest) => {
+          assert.equal(request.finalUrl, "https://redirect.example.com/document.pdf");
+          assert.equal(request.source, "converted governed PDF fixture");
+          webToolEvidence.push(`utility:${request.finalUrl}`);
+          return Promise.resolve(Object.freeze({
+            answer: `${request.prompt}: ${request.source}`,
+            citations: Object.freeze([{ title: "Governed document", url: request.finalUrl }]),
+            truncated: false,
+            usage: Object.freeze({
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              inputTokens: 4,
+              outputTokens: 2,
+              totalTokens: 6,
+            }),
+          }));
+        },
+      }),
+    }),
+    search: Object.freeze({
+      available: () => true,
+      credentialRef: "artifact-search-credential-ref",
+      policyRef: artifactNetworkPolicy.policyRef,
+      providerId: "artifact-approved-search",
+      run: (request: ProductWebSearchRequest) => {
+        assert.equal(request.credentialRef, "artifact-search-credential-ref");
+        assert.equal(request.providerId, "artifact-approved-search");
+        assert.deepEqual(request.allowedDomains, ["example.com"]);
+        assert.equal(Object.hasOwn(request, "blockedDomains"), false);
+        webToolEvidence.push(`search:${request.providerId}:${request.query}`);
+        return Promise.resolve(Object.freeze({
+          citations: Object.freeze([{ title: "Governed result", url: "https://example.com/result" }]),
+          durationMs: 7,
+          results: Object.freeze([{
+            snippet: "governed result snippet",
+            title: "Governed result",
+            url: "https://example.com/result",
+          }]),
+          searchCount: 1,
+          truncated: false,
+          usage: Object.freeze({
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            inputTokens: 3,
+            outputTokens: 1,
+            totalTokens: 4,
+          }),
+        }));
+      },
+    }),
+  }),
 });
 await assert.rejects(
   installCanonicalToolPlane(
@@ -315,6 +462,34 @@ await assert.rejects(
   installCanonicalToolPlane(composition, canonicalToolPlaneConfig),
   /exact unclaimed root composition authority/u,
 );
+const noSearchWebConfig = canonicalToolPlaneConfig.web;
+assert.ok(noSearchWebConfig !== undefined);
+const noSearchComposition = await composeDshRootServices({
+  adapter: new ScriptedFakeLlmAdapter(),
+  providers: ["fixture"],
+});
+const previousAmbientSearchProvider = process.env.DSH_WEB_SEARCH_PROVIDER;
+process.env.DSH_WEB_SEARCH_PROVIDER = "ambient-forbidden-search";
+try {
+  await installCanonicalToolPlane(noSearchComposition, Object.freeze({
+    ...canonicalToolPlaneConfig,
+    web: Object.freeze({ fetch: noSearchWebConfig.fetch }),
+  }));
+} finally {
+  if (previousAmbientSearchProvider === undefined) delete process.env.DSH_WEB_SEARCH_PROVIDER;
+  else process.env.DSH_WEB_SEARCH_PROVIDER = previousAmbientSearchProvider;
+}
+const stopAmbientProvider = noSearchComposition.context.web.registerSearchProvider({
+  available: () => true,
+  id: "ambient-forbidden-search",
+  search: () => Promise.resolve({ sources: [], truncated: false }),
+});
+await assert.rejects(
+  noSearchComposition.context.web.search({ query: "must remain unavailable" }),
+  /myagents-web-search-disabled/u,
+);
+stopAmbientProvider();
+await noSearchComposition.dispose();
 const mismatchedPlatformComposition = await composeDshRootServices({
   adapter: new ScriptedFakeLlmAdapter(),
   providers: ["fixture"],
@@ -446,8 +621,8 @@ const initializeRequest: InitializeParams = {
       pathPolicy: "sealed",
     },
     environment: { allowedKeys: [], inheritedKeys: [], secretValues: "reverse-port-only" },
-    network: { mode: "deny" },
-    process: { backgroundRetention: "allow", maxChildren: 4, killTreeOnAbort: true },
+    network: { mode: "host-policy", policyRef: artifactNetworkPolicy.policyRef },
+    process: { backgroundRetention: "allow", maxChildren: 8, killTreeOnAbort: true },
     checkpoint: {
       mode: "managed-file-tools",
       version: 1,
@@ -464,7 +639,7 @@ const initializeRequest: InitializeParams = {
     attachments: "generation-leases-v1",
     productProjection: "transactional-postconditions-v1",
     credentialAuthority: "revisioned-reverse-port-v1",
-    webSearchAdapters: [],
+    webSearchAdapters: ["artifact-approved-search"],
   },
   limits: REFERENCE_PROTOCOL_LIMITS,
 };
@@ -819,6 +994,18 @@ const processSearchText = (callId: string): string => {
   assert.ok(block?.type === "text");
   return block.text;
 };
+const durableToolText = (callId: string): string => {
+  const event = primaryAgent.session.events.findLast((candidate) => candidate.type === "tool/result"
+    && String(candidate.data.message.source.callId) === callId);
+  assert.ok(event?.type === "tool/result");
+  const resultBlock = event.data.message.content[0];
+  assert.equal(resultBlock.type, "tool-result");
+  assert.equal(resultBlock.isError, false);
+  assert.equal(resultBlock.content.length, 1);
+  const block = resultBlock.content[0];
+  assert.ok(block?.type === "text");
+  return block.text;
+};
 const globOutput = JSON.parse(processSearchText("artifact-glob-call")) as unknown;
 assert.ok(globOutput !== null && typeof globOutput === "object" && !Array.isArray(globOutput));
 assert.ok(Number.isSafeInteger((globOutput as Record<string, unknown>).durationMs));
@@ -894,6 +1081,71 @@ assert.match(retainedFlood, /^\[myagents: stdout truncated; 80004 earlier bytes 
 assert.equal(retainedFlood.endsWith("x".repeat(120_000)), true);
 assert.equal(Buffer.byteLength(retainedFlood, "utf8") <= 262_144, true);
 assert.equal(composition.context.productProcesses.snapshot().liveProcesses, 0);
+
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-web-operation",
+  clientUserMessageId: "artifact-web-user-message",
+  input: { parts: [{ kind: "text", text: "Exercise governed WebFetch and WebSearch" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-web-operation")?.state === "terminal",
+  "bounded WebFetch/WebSearch operation terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-web-operation")?.terminal?.kind,
+  "succeeded",
+);
+const webFetchOutput = JSON.parse(durableToolText("artifact-web-fetch-call")) as Record<string, unknown>;
+assert.deepEqual(webFetchOutput, {
+  answer: "Summarize the governed document: converted governed PDF fixture",
+  citations: [{ title: "Governed document", url: "https://redirect.example.com/document.pdf" }],
+  finalUrl: "https://redirect.example.com/document.pdf",
+  truncated: false,
+  url: "https://example.com/document.pdf",
+  usage: {
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    inputTokens: 4,
+    outputTokens: 2,
+    totalTokens: 6,
+  },
+});
+const webSearchOutput = JSON.parse(durableToolText("artifact-web-search-call")) as Record<string, unknown>;
+assert.deepEqual(webSearchOutput, {
+  citations: [{ title: "Governed result", url: "https://example.com/result" }],
+  durationMs: 7,
+  query: "governed web fixture",
+  results: [{
+    snippet: "governed result snippet",
+    title: "Governed result",
+    url: "https://example.com/result",
+  }],
+  searchCount: 1,
+  truncated: false,
+  usage: {
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    inputTokens: 3,
+    outputTokens: 1,
+    totalTokens: 4,
+  },
+});
+assert.deepEqual(webToolEvidence.filter((entry) => !entry.startsWith("search:")), [
+  "dns:example.com",
+  "transport:example.com/document.pdf:93.184.216.34",
+  "dns:redirect.example.com",
+  "transport:redirect.example.com/document.pdf:93.184.216.35",
+  "content:https://redirect.example.com/document.pdf",
+  "utility:https://redirect.example.com/document.pdf",
+]);
+assert.deepEqual(webToolEvidence.filter((entry) => entry.startsWith("search:")), [
+  "search:artifact-approved-search:governed web fixture",
+]);
+assert.ok(fileToolEvidence.includes("permission:WebFetch:https://example.com"));
+assert.ok(fileToolEvidence.includes("permission:WebFetch:https://redirect.example.com"));
+assert.ok(fileToolEvidence.includes("permission:WebSearch:provider:artifact-approved-search"));
 
 const unrelatedRuntimeFile = join(fixtureRuntimeHome, "must-not-read.txt");
 await writeFile(unrelatedRuntimeFile, "private runtime fixture");
@@ -1064,8 +1316,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 10,
-  "ten projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 11,
+  "eleven projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -1076,6 +1328,7 @@ assert.deepEqual(
       : "missing"),
   [
     "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
+    "succeeded",
     "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
   ],
 );
@@ -1164,6 +1417,14 @@ process.stdout.write(`${JSON.stringify({
   operationInterruptVerified: true,
   canonicalFileToolsVerified: true,
   canonicalProcessSearchToolsVerified: true,
+  canonicalWebToolsVerified: true,
+  ambientWebSearchFallbackRejected: true,
+  canonicalWebEvidence: {
+    fetch: webFetchOutput,
+    permissions: fileToolEvidence.filter((entry) => entry.startsWith("permission:Web")),
+    search: webSearchOutput,
+    transport: webToolEvidence,
+  },
   queuedCancellationVerified: true,
   runtimeEventProjectionVerified: true,
   sessionCloseVerified: true,
@@ -1174,7 +1435,7 @@ process.stdout.write(`${JSON.stringify({
   publicationTransientVerified: primaryPublicationSnapshotVerified,
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: [
-    "success", "failure", "file_tools", "process_search_tools", "process_abort",
+    "success", "failure", "file_tools", "process_search_tools", "web_tools", "process_abort",
     "interrupt", "queued_cancel", "session_close",
   ],
   toolContractRuntimeConsumerVerified: true,

@@ -15,7 +15,9 @@ import {
 } from "../packages/artifact-verifier/src/index.js";
 import {
   ARTIFACT_LAUNCHER_PATH,
+  PRODUCT_NETWORK_TRANSPORT_PATH,
   isExactArtifactLauncherChildProcessSource,
+  isExactProductNetworkTransportSource,
 } from "../scripts/repository-security-policy.js";
 
 describe("repository and packed-artifact forbidden-content policy", () => {
@@ -48,6 +50,30 @@ describe("repository and packed-artifact forbidden-content policy", () => {
       "packages/runtime-product/src/escape.ts",
       "node:child_process",
       exact,
+    )).toBe(false);
+  });
+
+  it("recognizes only the exact product-owned network transport module set", () => {
+    const exact = [
+      'import { lookup } from "node:dns/promises";',
+      'import { request } from "node:http";',
+      'import { request as secureRequest } from "node:https";',
+      'import { BlockList } from "node:net";',
+    ].join("\n");
+    expect(isExactProductNetworkTransportSource(
+      PRODUCT_NETWORK_TRANSPORT_PATH,
+      "node:http",
+      exact,
+    )).toBe(true);
+    expect(isExactProductNetworkTransportSource(
+      "packages/runtime-product/src/escape.ts",
+      "node:http",
+      exact,
+    )).toBe(false);
+    expect(isExactProductNetworkTransportSource(
+      PRODUCT_NETWORK_TRANSPORT_PATH,
+      "node:child_process",
+      `${exact}\nimport { spawn } from "node:child_process";`,
     )).toBe(false);
   });
 

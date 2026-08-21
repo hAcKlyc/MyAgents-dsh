@@ -18,6 +18,7 @@ import { analyzeModuleLoads } from "./dsh-baseline-policy.js";
 import {
   ARTIFACT_LAUNCHER_PATH,
   isExactArtifactLauncherChildProcessSource,
+  isExactProductNetworkTransportSource,
 } from "./repository-security-policy.js";
 
 type PackResult = {
@@ -132,7 +133,8 @@ for (const relativePath of repositoryPaths) {
     const source = bytes.toString("utf8");
     for (const specifier of analyzeModuleLoads(source, relativePath).specifiers) {
       if (isNetworkCapableModule(specifier)
-        && !isExactArtifactLauncherChildProcessSource(relativePath, specifier, source)) {
+        && !isExactArtifactLauncherChildProcessSource(relativePath, specifier, source)
+        && !isExactProductNetworkTransportSource(relativePath, specifier, source)) {
         failures.push(`${relativePath} imports network-capable module ${specifier} outside the isolation/composition owner`);
       }
     }

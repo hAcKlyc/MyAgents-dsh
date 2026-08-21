@@ -3,6 +3,24 @@ import ts from "typescript";
 import { analyzeModuleLoads } from "./dsh-baseline-policy.js";
 
 export const ARTIFACT_LAUNCHER_PATH = "packages/test-host/src/artifact-launcher.ts" as const;
+export const PRODUCT_NETWORK_TRANSPORT_PATH = "packages/tools-web/src/safe-http.ts" as const;
+
+export const isExactProductNetworkTransportSource = (
+  relativePath: string,
+  specifier: string,
+  source: string,
+): boolean => {
+  if (relativePath !== PRODUCT_NETWORK_TRANSPORT_PATH) return false;
+  const allowed = new Set(["node:dns/promises", "node:http", "node:https", "node:net"]);
+  if (!allowed.has(specifier)) return false;
+  const observed = analyzeModuleLoads(source, relativePath).specifiers
+    .filter((value) => {
+      const canonical = value.startsWith("node:") ? value.slice(5) : value;
+      return ["dns", "http", "https", "net"].includes(canonical.split("/")[0] ?? canonical);
+    })
+    .sort();
+  return JSON.stringify(observed) === JSON.stringify([...allowed].sort());
+};
 
 export const isExactArtifactLauncherChildProcessSource = (
   relativePath: string,

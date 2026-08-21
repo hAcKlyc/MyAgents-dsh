@@ -54,6 +54,10 @@ export interface ProductExecutionEnvironment {
     readonly windowsUtf8PreludeRef?: string;
   }>;
   readonly platformTarget: PlatformTarget;
+  readonly network: Readonly<
+    | { readonly mode: "deny" }
+    | { readonly mode: "host-policy"; readonly policyRef: string }
+  >;
   readonly process: Readonly<{
     readonly backgroundRetention: "allow" | "deny";
     readonly killTreeOnAbort: true;
@@ -329,6 +333,7 @@ export const validateProductExecutionEnvironment = (
       "digest",
       "environment",
       "executables",
+      "network",
       "platformTarget",
       "process",
       "revision",
@@ -404,6 +409,23 @@ export const validateProductExecutionEnvironment = (
     || (processAuthority.maxChildren as number) < 1 || (processAuthority.maxChildren as number) > 128) {
     throw new TypeError("execution environment process authority is invalid");
   }
+  const networkCandidate = exactOwnDataObject(
+    environment.network,
+    ["mode"],
+    ["policyRef"],
+    "execution environment network authority",
+  );
+  let network: ProductExecutionEnvironment["network"];
+  if (networkCandidate.mode === "deny" && !Object.hasOwn(networkCandidate, "policyRef")) {
+    network = Object.freeze({ mode: "deny" as const });
+  } else if (networkCandidate.mode === "host-policy" && Object.hasOwn(networkCandidate, "policyRef")) {
+    network = Object.freeze({
+      mode: "host-policy" as const,
+      policyRef: boundedIdentifier(networkCandidate.policyRef, "network policy reference"),
+    });
+  } else {
+    throw new TypeError("execution environment network authority is invalid");
+  }
   const canonicalRoot = typeof workspace.canonicalRoot === "string"
     ? normalize(workspace.canonicalRoot)
     : "";
@@ -463,6 +485,7 @@ export const validateProductExecutionEnvironment = (
       ...(windowsPowerShellRef === undefined ? {} : { windowsPowerShellRef }),
     }),
     platformTarget,
+    network,
     process: Object.freeze({
       backgroundRetention: processAuthority.backgroundRetention,
       killTreeOnAbort: true as const,

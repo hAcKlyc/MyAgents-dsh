@@ -38,6 +38,10 @@ export interface ProductToolExecutionEnvironment {
     readonly windowsUtf8PreludeRef?: string;
   }>;
   readonly platformTarget: "darwin-arm64" | "win32-x64" | "linux-x64";
+  readonly network: Readonly<
+    | { readonly mode: "deny" }
+    | { readonly mode: "host-policy"; readonly policyRef: string }
+  >;
   readonly process: Readonly<{
     readonly backgroundRetention: "allow" | "deny";
     readonly killTreeOnAbort: true;

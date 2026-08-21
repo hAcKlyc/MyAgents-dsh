@@ -162,6 +162,11 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/windows-job-subprocess.ts",
     ],
   },
+  {
+    packageName: "@myagents-dsh/tools-web",
+    relativeDirectory: "packages/tools-web",
+    allowedFiles: ["package.json", "src/index.ts", "src/runtime.ts", "src/safe-http.ts"],
+  },
 ]);
 
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;

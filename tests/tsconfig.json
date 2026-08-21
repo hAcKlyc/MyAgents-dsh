@@ -14,6 +14,7 @@
     { "path": "../packages/tool-runtime-product" },
     { "path": "../packages/tools-fs" },
     { "path": "../packages/tools-process" },
+    { "path": "../packages/tools-web" },
     { "path": "../packages/compatibility" },
     { "path": "../packages/operation-runtime" },
     { "path": "../packages/product-profile" },

@@ -11,6 +11,7 @@ import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
+import { WebRuntime } from "@deepseek-ai/dsh-web";
 import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
 import { isProxy } from "node:util/types";
 import {
@@ -39,6 +40,11 @@ import {
   requireLocalWorkspaceFileSystem,
   type CanonicalFileToolsConfig,
 } from "@myagents-dsh/tools-fs";
+import {
+  CanonicalWebTools,
+  validateCanonicalWebToolsConfig,
+  type CanonicalWebToolsConfig,
+} from "@myagents-dsh/tools-web";
 import { ProductSessionService, type PrimarySessionState } from "./primary-session.js";
 
 export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
@@ -339,7 +345,10 @@ export interface CanonicalToolPlaneConfig {
   readonly platformTarget: PlatformTarget;
   readonly process: ProductProcessRuntimeConfig;
   readonly temporaryRoot: string;
+  readonly web?: CanonicalWebToolsConfig;
 }
+
+const DISABLED_WEB_SEARCH_PROVIDER_ID = "myagents-web-search-disabled";
 
 export const installCanonicalToolPlane = async (
   composition: DshRootComposition,
@@ -356,8 +365,8 @@ export const installCanonicalToolPlane = async (
   if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
     || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
     || Reflect.ownKeys(candidate).some((key) => typeof key !== "string"
-      || !["attachments", "catalog", "checkpoint", "permission", "platformTarget", "process", "temporaryRoot"].includes(key))
-    || Reflect.ownKeys(candidate).length !== 7
+      || !["attachments", "catalog", "checkpoint", "permission", "platformTarget", "process", "temporaryRoot", "web"].includes(key))
+    || (Reflect.ownKeys(candidate).length !== 7 && Reflect.ownKeys(candidate).length !== 8)
     || Reflect.ownKeys(candidate).some((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
       return descriptor === undefined || !descriptor.enumerable || !("value" in descriptor);
@@ -366,6 +375,9 @@ export const installCanonicalToolPlane = async (
   }
   const normalized = candidate as CanonicalToolPlaneConfig;
   const processConfig = validateProductProcessRuntimeConfig(normalized.process);
+  const webConfig = normalized.web === undefined
+    ? undefined
+    : validateCanonicalWebToolsConfig(normalized.web);
   const fibers: Array<{ dispose(): Promise<void> }> = [];
   authority.canonicalToolPlane = "installing";
   authority.canonicalToolPlaneTarget = normalized.platformTarget;
@@ -417,6 +429,13 @@ export const installCanonicalToolPlane = async (
     }));
     fibers.push(await root.plugin(ProductProcessRuntime, { io: processIo, process: processConfig }));
     fibers.push(await root.plugin(CanonicalFileTools, { attachments: normalized.attachments }));
+    if (webConfig !== undefined) {
+      fibers.push(await root.plugin(WebRuntime, {
+        fetchProvider: "myagents-safe-fetch",
+        searchProvider: webConfig.search?.providerId ?? DISABLED_WEB_SEARCH_PROVIDER_ID,
+      }));
+      fibers.push(await root.plugin(CanonicalWebTools, webConfig));
+    }
     authority.canonicalToolPlane = "installed";
   } catch (error) {
     authority.canonicalToolPlane = "failed";

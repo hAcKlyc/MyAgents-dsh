@@ -37,6 +37,7 @@ const processEnvironmentFields = (windows = false) => ({
       windowsUtf8PreludeRef: "utf8-prelude-v1",
     } : {}),
   },
+  network: { mode: "deny" as const },
   process: { backgroundRetention: "allow" as const, killTreeOnAbort: true as const, maxChildren: 4 },
 });
 
@@ -590,6 +591,39 @@ describe("one-primary-session admission", () => {
     });
     expect(() => validateProductExecutionEnvironment(environmentProxy)).toThrow("must not be a Proxy");
     expect(proxyTraps).toBe(0);
+    const posixEnvironment = {
+      ...processEnvironmentFields(),
+      attachmentStagingRoot: "/fixture/attachments",
+      digest,
+      platformTarget: "darwin-arm64" as const,
+      revision: "environment-v1",
+      runtimeHome: "/fixture/runtime",
+      workspace: {
+        allowedReadRoots: ["/fixture/workspace"],
+        allowedWriteRoots: ["/fixture/workspace"],
+        canonicalRoot: "/fixture/workspace",
+        identity: "fixture-workspace",
+      },
+    };
+    expect(validateProductExecutionEnvironment({
+      ...posixEnvironment,
+      network: { mode: "host-policy", policyRef: "network-policy-v1" },
+    }).network).toEqual({ mode: "host-policy", policyRef: "network-policy-v1" });
+    expect(() => validateProductExecutionEnvironment({
+      ...posixEnvironment,
+      network: { mode: "deny", policyRef: "must-not-exist" },
+    })).toThrow("network authority is invalid");
+    let networkGetterHits = 0;
+    const accessorNetwork: Record<string, unknown> = { mode: "host-policy" };
+    Object.defineProperty(accessorNetwork, "policyRef", {
+      enumerable: true,
+      get: () => { networkGetterHits += 1; return "must-not-run"; },
+    });
+    expect(() => validateProductExecutionEnvironment({
+      ...posixEnvironment,
+      network: accessorNetwork,
+    })).toThrow("enumerable own data properties");
+    expect(networkGetterHits).toBe(0);
     expect(() => validateProductExecutionEnvironment({
       ...processEnvironmentFields(true),
       attachmentStagingRoot: "C:\\fixture\\attachments",

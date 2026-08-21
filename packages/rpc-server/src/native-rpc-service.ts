@@ -465,6 +465,7 @@ export class NativeRpcServer extends Service {
       digest: params.executionEnvironment.digest,
       environment: params.executionEnvironment.environment,
       executables: params.executionEnvironment.executables,
+      network: params.executionEnvironment.network,
       platformTarget: this.configValue.platformTarget,
       process: params.executionEnvironment.process,
       revision: params.executionEnvironment.revision,

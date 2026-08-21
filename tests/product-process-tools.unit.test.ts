@@ -240,6 +240,7 @@ const harness = async (options: Readonly<{
       ripgrepRef: "ripgrep-v1",
     }),
     platformTarget: "darwin-arm64" as const,
+    network: Object.freeze({ mode: "deny" as const }),
     process: Object.freeze({
       backgroundRetention: options.backgroundRetention ?? "allow",
       killTreeOnAbort: true as const,
