@@ -1,11 +1,13 @@
 import { Context } from "@deepseek-ai/cordis";
 import type { Plugin } from "@deepseek-ai/cordis";
-import { AgentRegistry } from "@deepseek-ai/dsh-agent";
+import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
 import { LlmAdapter, LlmRuntime } from "@deepseek-ai/dsh-llm";
 import { SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
+import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
+import * as SubagentSpawnInProcess from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
 import { SkillRegistry } from "@deepseek-ai/dsh-skill";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
@@ -33,11 +35,13 @@ import {
   ProductToolRuntime,
   validateProductPermissionPlaneConfig,
   type ProductPermissionPlaneConfig,
+  type ProductToolContext,
   type ProductToolRuntimeConfig,
 } from "@myagents-dsh/tool-runtime-product";
 import { ProductTaskGraphService } from "@myagents-dsh/task-graph";
 import {
   ProductSkillService,
+  ProductWorkService,
   validateStaticSkillCatalog,
   type StaticSkillCatalog,
 } from "@myagents-dsh/tools-agent";
@@ -247,6 +251,7 @@ export interface NativeRpcLifecycleAuthority {
 }
 
 type CompositionAuthorityState = {
+  readonly childPublicationAuthority: object;
   readonly composition: DshRootComposition;
   readonly context: Context;
   readonly dispose: () => Promise<void>;
@@ -437,8 +442,11 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
     const localFileSystem = requireLocalWorkspaceFileSystem(root.fs);
     const processIo = localFileSystem.createProcessIoAuthority();
+    const agentOutput = localFileSystem.createAgentOutputAuthority();
     const planIo = localFileSystem.createPlanIoAuthority();
     fibers.push(await root.plugin(ToolCallTimeoutPolicy));
+    fibers.push(await root.plugin(SubagentRuntime));
+    fibers.push(await root.plugin(SubagentSpawnInProcess, { providerName: "myagents-spawn" }));
     fibers.push(await root.plugin(SkillRegistry));
     fibers.push(await root.plugin(ApprovalService, { policy: "ask" }));
     fibers.push(await root.plugin(UserQuestionService));
@@ -496,7 +504,36 @@ export const installCanonicalToolPlane = async (
       io: processIo,
     }));
     fibers.push(await root.plugin(ProductProcessRuntime, { io: processIo, process: processConfig }));
-    fibers.push(await root.plugin(CanonicalFileTools, { attachments: normalized.attachments }));
+    fibers.push(await root.plugin(ProductWorkService, {
+      durability: Object.freeze({
+        flush: async (session: Session) => {
+          await permissionDeadline.wait(root.sessions.flush(session), "product work durability flush");
+          return true as const;
+        },
+      }),
+      output: agentOutput,
+      publication: Object.freeze({
+        prepare: (child: Agent, parent: Agent) => root.productSession.prepareChildPublication(
+          authority.childPublicationAuthority,
+          child,
+          parent,
+        ),
+      }),
+      provider: "myagents-spawn",
+      requireAgent: () => root.productSession.requireAgent(),
+      runtimeHome: () => root.productSession.requireExecutionEnvironment().runtimeHome,
+    }));
+    fibers.push(await root.plugin(CanonicalFileTools, {
+      attachments: normalized.attachments,
+      retainedOutput: Object.freeze({
+        resolve: async (context: ProductToolContext, path: string) => {
+          await root.productWork.initialize();
+          return root.productWork.hasRetainedOutput(context.agent, path)
+            ? await root.productWork.resolveRetainedOutput(context, path)
+            : await root.productProcesses.resolveRetainedOutput(context, path);
+        },
+      }),
+    }));
     if (webConfig !== undefined) {
       fibers.push(await root.plugin(WebRuntime, {
         fetchProvider: "myagents-safe-fetch",
@@ -533,6 +570,7 @@ export const composeDshRootServices = async (
   const normalized = validateDshRootCompositionOptions(options);
   const { adapter, agentLoop, operationBirthAuthority, providers, systemPrompt, tools } = normalized;
   const root = new Context();
+  const childPublicationAuthority = Object.freeze({});
   try {
     await root.plugin(SessionStore);
     await root.plugin(AgentRegistry);
@@ -544,9 +582,14 @@ export const composeDshRootServices = async (
       ...agentLoop,
       agents: [],
     });
-    await root.plugin(ProductSessionService);
+    await root.plugin(ProductSessionService, { childPublicationAuthority });
     await root.plugin(SdkOperationService, {
       birthAuthority: operationBirthAuthority,
+      drainOwnedWork: async (agent) => {
+        await root.get("productWork")?.preparePrimaryRetirement(agent);
+      },
+      ownsRootContextMessage: (agent, source, messageId) =>
+        root.get("productWork")?.ownsRootContextMessage(agent, source, messageId) ?? false,
       registerRetirementGuard: (guard) => root.productSession.registerRetirementGuard(guard),
       requireAgent: () => root.productSession.requireAgent(),
       retirePrimary: (cause) => root.productSession.retire(cause),
@@ -555,6 +598,7 @@ export const composeDshRootServices = async (
     const composition = new DshRootComposition(root, providers);
     composition.snapshot();
     compositionAuthorities.set(root, {
+      childPublicationAuthority,
       claimed: false,
       composition,
       context: root,

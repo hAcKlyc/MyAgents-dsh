@@ -127,6 +127,8 @@ const mountService = async (
   let retirementGuard: RetirementGuard | undefined;
   const fiber = await context.plugin(SdkOperationService, {
     birthAuthority,
+    drainOwnedWork: () => Promise.resolve(),
+    ownsRootContextMessage: () => false,
     registerRetirementGuard: (guard) => { retirementGuard = guard; },
     requireAgent: () => agent,
     retirePrimary: () => {
@@ -617,6 +619,8 @@ describe("SdkOperationService admission and idempotency", () => {
       birthAuthority: Object.freeze({ capture: () => {
         throw new Error("exact retry must use the recorded birth snapshot");
       } }),
+      drainOwnedWork: () => Promise.resolve(),
+      ownsRootContextMessage: () => false,
       registerRetirementGuard: () => undefined,
       requireAgent: () => fixture.agent,
       retirePrimary: () => Promise.resolve(),
@@ -659,6 +663,8 @@ describe("SdkOperationService admission and idempotency", () => {
     } as unknown as Agent;
     await context.plugin(SdkOperationService, {
       birthAuthority: Object.freeze({ capture: () => birth() }),
+      drainOwnedWork: () => Promise.resolve(),
+      ownsRootContextMessage: () => false,
       registerRetirementGuard: () => undefined,
       requireAgent: () => agent,
       retirePrimary: () => Promise.resolve(),

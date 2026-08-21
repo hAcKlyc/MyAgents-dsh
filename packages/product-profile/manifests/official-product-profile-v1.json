@@ -161,6 +161,16 @@
         "version": "0.1.0-rc.6"
       },
       {
+        "name": "@deepseek-ai/dsh-subagent-in-process-driver",
+        "role": "dsh-library",
+        "version": "0.1.0-rc.6"
+      },
+      {
+        "name": "@deepseek-ai/dsh-subagent-spawn-in-process",
+        "role": "dsh-library",
+        "version": "0.1.0-rc.6"
+      },
+      {
         "name": "@deepseek-ai/dsh-subprocess",
         "role": "dsh-library",
         "version": "0.1.0-rc.6"
@@ -258,7 +268,7 @@
     ]
   },
   "dsh": {
-    "baselineSha256": "60ce15b6fd2b8c3f59eff38b57696e22f2ea8377f2563c724ffe3b210b40b6a6",
+    "baselineSha256": "2c2ee0bab495ab2a0d5577ca0276761a3cd8fc8ed5e936ed309cd75cf9307450",
     "release": "0.1.0-rc.6"
   },
   "formatVersion": 1,
@@ -272,7 +282,7 @@
   },
   "profileId": "myagents-dsh-official-v1",
   "protocol": {
-    "schemaSha256": "8568631f38dc09540104c3b8e16e29b56f67537b82a33cab3ee687d9b1d679de",
+    "schemaSha256": "1ede8582e8f9c9798b3ce6f20e61339e9bb5c2332bdd5ae70c7e726d97883353",
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "forbidden-until-patched-dsh-and-batch-1-gate",

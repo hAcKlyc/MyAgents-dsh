@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
+  DSH_SEAM_PATCHES,
   serializeDshSeamDecisions,
   verifyDshSeamSource,
 } from "./dsh-seam-decisions.js";
@@ -23,8 +24,8 @@ if (sourceIndex >= 0) {
 
 console.log(
   sourceIndex < 0
-    ? "DSH seam decisions OK: 5 accepted decisions, 4 pinned patches"
+    ? `DSH seam decisions OK: accepted registry, ${String(DSH_SEAM_PATCHES.length)} pinned patches`
     : process.argv.includes("--compile-test")
-      ? "DSH seam decisions/source OK: 5 accepted decisions, patched source typecheck and regression matrix pass"
-      : "DSH seam decisions/source OK: 5 accepted decisions, 4 patches apply in order",
+      ? "DSH seam decisions/source OK: accepted registry, patched source typecheck and regression matrix pass"
+      : `DSH seam decisions/source OK: accepted registry, ${String(DSH_SEAM_PATCHES.length)} patches apply in order`,
 );

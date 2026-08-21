@@ -8,6 +8,11 @@ import type {
 import type { MessageId } from "@deepseek-ai/dsh-llm";
 import type { SessionPublicationGuard } from "@deepseek-ai/dsh-session";
 import type { PersistenceCoordinatorOptions } from "@deepseek-ai/dsh-session-persistence";
+import type {
+  ContinuableSetupContribution,
+  ContinuableStartSpec,
+  SubagentRunEndInfo,
+} from "@deepseek-ai/dsh-subagent";
 
 export interface PatchedDshSeamTypes {
   readonly commit: PreparedAssistantCommit;
@@ -28,6 +33,17 @@ export const compilePatchedDshSeams = (
   disposeAgentGuard();
   const woke: boolean | undefined = agent.wakePending?.(messageId);
   void woke;
+  const setup: ContinuableSetupContribution = () => () => undefined;
+  const disposeSetup = ctx.subagents.registerContinuableSetup(setup);
+  disposeSetup();
+  const settlementDelivery: ContinuableStartSpec["settlementDelivery"] = "external";
+  const infrastructureFailure: SubagentRunEndInfo["infrastructureFailure"] = true;
+  const retireContinuable = ctx.subagents.retireContinuable;
+  const resumeContinuable = ctx.subagents.resumeContinuable;
+  void settlementDelivery;
+  void infrastructureFailure;
+  void retireContinuable;
+  void resumeContinuable;
   ctx.on("agent/pre-assistant-commit", async ({ commit, signal }, next) => {
     const prepared: Readonly<PreparedAssistantCommit> = commit;
     signal.throwIfAborted();

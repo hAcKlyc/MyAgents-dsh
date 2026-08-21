@@ -84,7 +84,7 @@ describe("patched DSH artifact authority", () => {
       /^0\.1\.0-rc\.5\.myagents\.47f943859bef\.[a-f0-9]{12}$/u,
     );
     expect(first.patchSeriesSha256).toMatch(/^[a-f0-9]{64}$/u);
-    expect(first.patches).toHaveLength(4);
+    expect(first.patches).toHaveLength(5);
     expect(first.toolchain).toEqual({
       node: "24.13.1",
       npm: "11.8.0",
@@ -95,9 +95,9 @@ describe("patched DSH artifact authority", () => {
     expect(first.externalDependencyAuthority.packageLockSha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(PATCHED_DSH_ACCEPTED_EXTERNAL_PACKAGES).toContain("@deepseek-ai/cordis");
     expect(PATCHED_DSH_COMPILE_FIXTURES).toHaveLength(2);
-    expect(plan.rootPackages).toHaveLength(41);
+    expect(plan.rootPackages).toHaveLength(43);
     expect(plan.packages).toHaveLength(PATCHED_DSH_ARTIFACT_PACKAGE_COUNT);
-    expect(plan.packages.filter(({ direct }) => direct)).toHaveLength(41);
+    expect(plan.packages.filter(({ direct }) => direct)).toHaveLength(43);
   });
 
   it("rejects wrong artifact-specific Node, npm, and pnpm identities", () => {

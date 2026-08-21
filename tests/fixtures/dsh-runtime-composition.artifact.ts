@@ -8,7 +8,16 @@ import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers
 
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
+import {
+  LlmAdapter,
+  type GenerateOptions,
+  type LlmModelInfo,
+  type LlmProviderInfo,
+  type LlmResolvedModelInfo,
+  type StreamChunk,
+} from "@deepseek-ai/dsh-llm";
 import { Session, SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
+import SqliteSessionPersistence from "@deepseek-ai/dsh-session-persistence-sqlite";
 import { resolveRgPath } from "@deepseek-ai/dsh-tool-fs-search";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import {
@@ -39,6 +48,7 @@ import { ScriptedFakeLlmAdapter } from "@myagents-dsh/testkit";
 import {
   staticSkillCatalogDigest,
   validateStaticSkillCatalog,
+  type ProductWorkEpochEventData,
 } from "@myagents-dsh/tools-agent";
 import type {
   ProductLocalInteractionSettlement,
@@ -73,8 +83,8 @@ assert.equal(toolContractMetaJson.contractSha256, CANONICAL_TOOL_CONTRACT_SHA256
 assert.equal(toolContractMetaJson.canonicalToolCount, 20);
 const artifactEffectiveTools = Object.freeze([
   "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls", "WebFetch", "WebSearch",
-  "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
-  "Skill", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
+  "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "Skill", "Agent", "TaskStop", "SendMessage",
+  "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
 ] as const);
 const artifactEffectiveToolSet = new Set<string>(artifactEffectiveTools);
 const toolCatalogWithoutDigest = Object.freeze({
@@ -166,6 +176,30 @@ const adapter = new ScriptedFakeLlmAdapter({
   model: "fixture-model",
   contextWindow: 8_192,
 });
+const childAdapter = new ScriptedFakeLlmAdapter({
+  provider: "fixture",
+  model: "fixture-model",
+  contextWindow: 8_192,
+});
+class ArtifactRoutingLlmAdapter extends LlmAdapter {
+  override providerInfo(provider: string): LlmProviderInfo {
+    return adapter.providerInfo(provider);
+  }
+
+  override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    return adapter.listModels(provider);
+  }
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return adapter.resolveModel(provider, model);
+  }
+
+  override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const selected = options.sessionId === "dsh-artifact-primary" ? adapter : childAdapter;
+    yield* selected.stream(options);
+  }
+}
+const routedAdapter = new ArtifactRoutingLlmAdapter();
 
 const startupFailureComposition = await composeDshRootServices({
   adapter: new ScriptedFakeLlmAdapter(),
@@ -430,7 +464,7 @@ let capturePlanRevision = (): string => {
   throw new Error("artifact plan authority is not installed");
 };
 const composition = await composeDshRootServices({
-  adapter,
+  adapter: routedAdapter,
   operationBirthAuthority: Object.freeze({
     capture: (value: MethodParams<"turn/start">) => Object.freeze({
       configRevision: value.configRevision,
@@ -452,6 +486,7 @@ const composition = await composeDshRootServices({
   systemPrompt: { persona: "Composition-owned persona, not the desired Session revision." },
   tools: { mode: "native" },
 });
+await composition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
 const artifactRipgrepPath = await resolveRgPath();
@@ -686,6 +721,7 @@ const noSearchComposition = await composeDshRootServices({
   adapter: new ScriptedFakeLlmAdapter(),
   providers: ["fixture"],
 });
+await noSearchComposition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 const previousAmbientSearchProvider = process.env.DSH_WEB_SEARCH_PROVIDER;
 process.env.DSH_WEB_SEARCH_PROVIDER = "ambient-forbidden-search";
 try {
@@ -712,6 +748,7 @@ const mismatchedPlatformComposition = await composeDshRootServices({
   adapter: new ScriptedFakeLlmAdapter(),
   providers: ["fixture"],
 });
+await mismatchedPlatformComposition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 await installCanonicalToolPlane(mismatchedPlatformComposition, canonicalToolPlaneConfig);
 const mismatchedPlatformInput = new PassThrough();
 const mismatchedPlatformOutput = new PassThrough();
@@ -1231,7 +1268,21 @@ const durableToolText = (callId: string): string => {
   assert.ok(event?.type === "tool/result");
   const resultBlock = event.data.message.content[0];
   assert.equal(resultBlock.type, "tool-result");
-  assert.equal(resultBlock.isError, false, `${callId} failed: ${JSON.stringify(resultBlock.content)}`);
+  let productWorkDiagnostic: unknown;
+  if (resultBlock.isError === true) {
+    try {
+      productWorkDiagnostic = composition.context.productWork.snapshot();
+    } catch (error) {
+      productWorkDiagnostic = error instanceof Error
+        ? { cause: String(error.cause), message: error.message }
+        : { error: String(error) };
+    }
+  }
+  assert.equal(resultBlock.isError, false, `${callId} failed: ${JSON.stringify({
+    content: resultBlock.content,
+    productWork: productWorkDiagnostic,
+    workEvents: primaryAgent.session.events.filter(({ type }) => type.startsWith("myagents/work/")),
+  })}`);
   assert.equal(resultBlock.content.length, 1);
   const block = resultBlock.content[0];
   assert.ok(block?.type === "text");
@@ -1561,6 +1612,181 @@ assert.deepEqual(await composition.context.skills.snapshot({
   }],
 });
 
+adapter.enqueue({
+  calls: [{
+    id: "artifact-background-agent-call",
+    name: "Agent",
+    arguments: JSON.stringify({
+      description: "Audit retained worker output",
+      prompt: "Wait for an explicit parent message, then remain supervised until TaskStop retires this work item.",
+      run_in_background: true,
+      subagent_type: "general",
+    }),
+  }],
+  kind: "tool-calls",
+});
+childAdapter.enqueue({ kind: "await-abort" });
+adapter.enqueue({ kind: "complete", text: "background Agent admitted" });
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-background-agent-operation",
+  clientUserMessageId: "artifact-background-agent-user-message",
+  input: { parts: [{ kind: "text", text: "Start one supervised background Agent" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-background-agent-operation")?.state === "terminal",
+  "background Agent admission terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-background-agent-operation")?.terminal?.kind,
+  "succeeded",
+);
+const backgroundAgentAdmission = JSON.parse(
+  durableToolText("artifact-background-agent-call"),
+) as Record<string, unknown>;
+assert.equal(backgroundAgentAdmission.state, "background");
+assert.equal(typeof backgroundAgentAdmission.taskId, "string");
+assert.equal(typeof backgroundAgentAdmission.agentId, "string");
+assert.equal(typeof backgroundAgentAdmission.outputPath, "string");
+const backgroundAgentTaskId = backgroundAgentAdmission.taskId as string;
+const backgroundAgentId = backgroundAgentAdmission.agentId as string;
+const backgroundAgentOutputPath = backgroundAgentAdmission.outputPath as string;
+assert.deepEqual(composition.context.productWork.snapshot(), [{
+  agentId: backgroundAgentId,
+  mode: "continuable",
+  model: "fixture-model",
+  outputPath: backgroundAgentOutputPath,
+  state: "background",
+  taskId: backgroundAgentTaskId,
+}]);
+const childRequest = childAdapter.requests.find(({ sessionId }) => sessionId === backgroundAgentId);
+assert.ok(composition.context.agents.get(SessionId(backgroundAgentId)));
+assert.equal(composition.context.agents.get(SessionId(backgroundAgentId))?.status, "running");
+assert.deepEqual(childRequest?.toolNames, ["SendMessage", "TaskStop"]);
+
+adapter.enqueue({
+  calls: [{
+    id: "artifact-send-message-call",
+    name: "SendMessage",
+    arguments: JSON.stringify({
+      to: backgroundAgentId,
+      summary: "Continue bounded audit",
+      message: "Record this exact parent-to-child delivery before retirement.",
+    }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "background Agent message queued" });
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-send-message-operation",
+  clientUserMessageId: "artifact-send-message-user-message",
+  input: { parts: [{ kind: "text", text: "Send one durable child message" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-send-message-operation")?.state === "terminal",
+  "SendMessage operation terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-send-message-operation")?.terminal?.kind,
+  "succeeded",
+);
+const messageReceipt = JSON.parse(durableToolText("artifact-send-message-call")) as Record<string, unknown>;
+assert.equal(messageReceipt.recipient, backgroundAgentId);
+assert.equal(messageReceipt.state, "queued");
+assert.equal(messageReceipt.sequence, 1);
+assert.equal(typeof messageReceipt.messageId, "string");
+
+adapter.enqueue({
+  calls: [{
+    id: "artifact-task-stop-agent-call",
+    name: "TaskStop",
+    arguments: JSON.stringify({ task_id: backgroundAgentTaskId }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "background Agent retired" });
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-agent-stop-operation",
+  clientUserMessageId: "artifact-agent-stop-user-message",
+  input: { parts: [{ kind: "text", text: "Retire the exact supervised child" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-agent-stop-operation")?.state === "terminal",
+  "TaskStop Agent operation terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-agent-stop-operation")?.terminal?.kind,
+  "succeeded",
+);
+assert.deepEqual(JSON.parse(durableToolText("artifact-task-stop-agent-call")), {
+  taskId: backgroundAgentTaskId,
+  kind: "agent",
+  terminal: "aborted",
+  alreadyTerminal: false,
+});
+assert.equal(composition.context.agents.get(SessionId(backgroundAgentId)), undefined);
+assert.deepEqual(composition.context.productWork.snapshot(), [{
+  agentId: backgroundAgentId,
+  mode: "continuable",
+  model: "fixture-model",
+  outputPath: backgroundAgentOutputPath,
+  state: "aborted",
+  taskId: backgroundAgentTaskId,
+}]);
+
+adapter.enqueue({
+  calls: [{
+    id: "artifact-agent-output-read-call",
+    name: "Read",
+    arguments: JSON.stringify({ file_path: backgroundAgentOutputPath }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "Agent retained output checked" });
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-agent-output-read-operation",
+  clientUserMessageId: "artifact-agent-output-read-user-message",
+  input: { parts: [{ kind: "text", text: "Read the exact stopped Agent output" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-agent-output-read-operation")?.state === "terminal",
+  "Agent retained output Read terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-agent-output-read-operation")?.terminal?.kind,
+  "succeeded",
+);
+assert.match(
+  durableToolText("artifact-agent-output-read-call"),
+  new RegExp(`subagent ${backgroundAgentId} settled without a closing message \\(aborted\\)`, "u"),
+);
+const workEvents = primaryAgent.session.events.filter(({ type }) => type.startsWith("myagents/work/"));
+assert.deepEqual(workEvents.map(({ type }) => type), [
+  "myagents/work/created",
+  "myagents/work/message-intent",
+  "myagents/work/message",
+  "myagents/work/stopping",
+  "myagents/work/epoch",
+  "myagents/work/settled",
+]);
+const workEpoch = workEvents.find(({ type }) => type === "myagents/work/epoch");
+assert.ok(workEpoch);
+const workEpochData = workEpoch.data as ProductWorkEpochEventData;
+assert.equal(workEpochData.ordinal, 1);
+assert.equal(workEpochData.stopReason, "aborted");
+assert.equal(workEpochData.agentId, backgroundAgentId);
+assert.equal(workEpochData.taskId, backgroundAgentTaskId);
+assert.ok(workEpochData.childEndSeq > workEpochData.childStartSeq);
+assert.equal(primaryAgent.session.events.some((event) => event.type === "agent/inbox/spliced"
+  && event.data.inserted.some((message) => message.source.kind === "subagent-settled")), false);
+
 const unrelatedRuntimeFile = join(fixtureRuntimeHome, "must-not-read.txt");
 await writeFile(unrelatedRuntimeFile, "private runtime fixture");
 adapter.enqueue({
@@ -1690,6 +1916,8 @@ await waitUntil(
 );
 assert.equal(primaryAgent.status, "idle");
 assert.equal(adapter.activeStreamCount, 0);
+assert.equal(childAdapter.activeStreamCount, 0);
+assert.equal(childAdapter.pendingScriptCount, 0);
 assert.ok(primaryAgent.session.events.some(({ type }) => type === "turn/end"));
 assert.deepEqual(composition.context.sdkOperations.lookup("artifact-operation-4")?.terminal, {
   kind: "aborted",
@@ -1730,8 +1958,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 15,
-  "fifteen projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 19,
+  "nineteen projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -1743,6 +1971,7 @@ assert.deepEqual(
   [
     "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
     "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
+    "succeeded", "succeeded", "succeeded", "succeeded",
     "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
   ],
 );
@@ -1804,8 +2033,8 @@ assert.deepEqual(hostFatalErrors, []);
 const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
 const permissionDecidedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/decided");
 const permissionRuleEvents = primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule");
-assert.equal(permissionAskedEvents.length, 19);
-assert.equal(permissionDecidedEvents.length, 19);
+assert.equal(permissionAskedEvents.length, 22);
+assert.equal(permissionDecidedEvents.length, 22);
 assert.equal(permissionRuleEvents.length, 1);
 hostPeer.close();
 runtimeInput.destroy();
@@ -1842,6 +2071,7 @@ process.stdout.write(`${JSON.stringify({
   canonicalInteractionPlanToolsVerified: true,
   canonicalTaskGraphVerified: true,
   canonicalStaticSkillVerified: true,
+  canonicalProductWorkVerified: true,
   ambientWebSearchFallbackRejected: true,
   canonicalPermissionEvidence: {
     asked: permissionAskedEvents.length,
@@ -1868,7 +2098,7 @@ process.stdout.write(`${JSON.stringify({
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: [
     "success", "failure", "file_tools", "process_search_tools", "web_tools", "interaction",
-    "plan_workflow", "task_graph", "static_skill", "process_abort", "interrupt", "queued_cancel",
+    "plan_workflow", "task_graph", "static_skill", "product_work", "process_abort", "interrupt", "queued_cancel",
     "session_close",
   ],
   toolContractRuntimeConsumerVerified: true,

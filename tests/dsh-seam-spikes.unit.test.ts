@@ -603,6 +603,12 @@ describe("product persistence and mutation spike", () => {
     expect(Object.keys(PRODUCT_REQUIRED_EVENT_SCHEMAS)).toEqual([
       "myagents/task/created",
       "myagents/task/updated",
+      "myagents/work/created",
+      "myagents/work/epoch",
+      "myagents/work/message-intent",
+      "myagents/work/message",
+      "myagents/work/stopping",
+      "myagents/work/settled",
     ]);
     expect(productKnownRequiredEventSchema("myagents/task/created"))
       .toBe(PRODUCT_REQUIRED_EVENT_SCHEMAS["myagents/task/created"]);
@@ -850,8 +856,9 @@ describe("accepted DSH seam decision registry", () => {
       "required_upstream_patch_accepted",
       "public_provider_composition_accepted",
       "required_upstream_patch_accepted",
+      "required_upstream_patch_accepted",
     ]);
-    expect(evidence.patchSeries).toHaveLength(4);
+    expect(evidence.patchSeries).toHaveLength(5);
     for (const patch of evidence.patchSeries) {
       const digest = createHash("sha256")
         .update(readFileSync(resolve(repositoryRoot, patch.path)))
@@ -875,7 +882,7 @@ describe("accepted DSH seam decision registry", () => {
     expect(evidence.authority.commit).toBe("47f943859bef60e4160492346772ded9b24f765a");
     expect(evidence.authority.declaredRelease).toBe("0.1.0-rc.5");
     expect(evidence.authority.executablePackageAssociation).toBe("unproven");
-    expect(evidence.authority.files).toHaveLength(9);
+    expect(evidence.authority.files).toHaveLength(21);
     expect(evidence.authority.files.every(({ blob, sha256 }) =>
       /^[0-9a-f]{40}$/u.test(blob) && /^[0-9a-f]{64}$/u.test(sha256))).toBe(true);
   });

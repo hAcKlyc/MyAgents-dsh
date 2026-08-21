@@ -1,24 +1,29 @@
 {
   "formatVersion": 1,
-  "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
-  "manifestSha256": "04d3a48962d762c7aacdfe1767690545e58e4428172d2a5f286c3644a83da2f2",
-  "sha256SumsSha256": "896a8ebbe3206b96601d1b22bb14a5910452248cfa24b88c694a5126a584aad7",
-  "consumerLockSha256": "93dcd085c9f77921f82d8af49139768ce9135ab7b03760d18e066eade84565d1",
-  "packageCount": 49,
+  "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
+  "manifestSha256": "00e415a38986f5a6bf116745b8780f6519e60fa941b16504a20bb200b4f5c193",
+  "sha256SumsSha256": "49af07886ce81abbbf5cfef565c7393ee71a1b98ab985bbed37daff1fba3bce4",
+  "consumerLockSha256": "764aa71280c9253f99dc7a4c842707e4b7d15efe6fc8a1763cd8a29a35b8618c",
+  "packageCount": 51,
   "runtimePackages": {
     "@deepseek-ai/cordis": "4.0.1",
-    "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
-    "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
-    "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
-    "@deepseek-ai/dsh-session": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
-    "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
-    "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.822013237935"
+    "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
+    "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
+    "@deepseek-ai/dsh-session": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
+    "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6"
   },
   "requiredPatchedSeams": [
     "agent.wakePending",
     "agent/pre-assistant-commit",
     "session-persistence.isKnownEventType",
     "agents.setPublicationGuard",
-    "sessions.setPublicationGuard"
+    "sessions.setPublicationGuard",
+    "subagents.continuableSetup",
+    "subagents.externalSettlementDelivery",
+    "subagents.strictExternalSettlementDurability",
+    "subagents.retireContinuable",
+    "subagents.resumeContinuable"
   ]
 }

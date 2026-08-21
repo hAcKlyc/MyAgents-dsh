@@ -5685,7 +5685,7 @@
                 "type": "string"
               },
               "version": {
-                "const": "0.1.0-rc.5.myagents.47f943859bef.822013237935",
+                "const": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
                 "type": "string"
               }
             },

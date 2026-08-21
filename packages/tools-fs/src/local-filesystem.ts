@@ -26,6 +26,7 @@ import {
   stat,
   unlink,
 } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { posix, win32, type PlatformPath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isProxy } from "node:util/types";
@@ -41,6 +42,10 @@ import type {
   ProductProcessWorkspaceAuthority,
 } from "@myagents-dsh/tools-process";
 import type {
+  ProductRetainedOutputAuthority,
+  ProductRetainedOutputFile,
+} from "@myagents-dsh/tool-runtime-product";
+import type {
   ProductPlanArtifactRead,
   ProductPlanIoAuthority,
 } from "@myagents-dsh/tools-interaction";
@@ -48,6 +53,7 @@ import type {
 type BigStat = Awaited<ReturnType<typeof lstat>>;
 const MAX_RETAINED_OUTPUT_BYTES = 262_144;
 const MAX_PLAN_ARTIFACT_BYTES = 240_000;
+const MAX_WORK_ITEMS_FOR_OUTPUT_RECOVERY = 256;
 
 const pathApi = (target: PlatformTarget): PlatformPath => target === "win32-x64" ? win32 : posix;
 
@@ -657,11 +663,11 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       captureWorkspace: async (path: string, signal: AbortSignal) =>
         await this.captureWorkspace(path, signal),
       createOutputFile: async (runtimeHome: string, operationId: string, signal: AbortSignal) =>
-        await this.createOutputFile(runtimeHome, operationId, signal),
+        await this.createOutputFile(runtimeHome, operationId, "bash", signal),
       normalizeAbsolutePath: (path: string) => this.adapterValue.normalizeAbsolutePath(path),
       processPath: (target: FsTarget) => this.processPath(target),
       resolveRetainedOutput: async (path: string, runtimeHome: string, signal: AbortSignal) =>
-        await this.resolveRetainedOutput(path, runtimeHome, signal),
+        await this.resolveRetainedOutput(path, runtimeHome, "bash", MAX_RETAINED_OUTPUT_BYTES, signal),
       revalidateWorkspace: async (
         authority: ProductProcessWorkspaceAuthority,
         path: string,
@@ -670,6 +676,19 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       verifyExecutable: async (path: string, sha256: string, signal: AbortSignal) => {
         await this.verifyProcessExecutable(path, sha256, signal);
       },
+    });
+  }
+
+  createAgentOutputAuthority(): ProductRetainedOutputAuthority {
+    return Object.freeze({
+      create: async (runtimeHome: string, ownerId: string, signal: AbortSignal) =>
+        await this.createOutputFile(runtimeHome, ownerId, "agent", signal),
+      recover: async (runtimeHome: string, ownerId: string, signal: AbortSignal) =>
+        await this.recoverAgentOutputFiles(runtimeHome, ownerId, signal),
+      resume: async (path: string, runtimeHome: string, signal: AbortSignal) =>
+        await this.resumeAgentOutputFile(path, runtimeHome, signal),
+      resolve: async (path: string, runtimeHome: string, signal: AbortSignal) =>
+        await this.resolveRetainedOutput(path, runtimeHome, "agent", 8 * 1_024 * 1_024, signal),
     });
   }
 
@@ -905,11 +924,15 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   private async resolveRetainedOutput(
     path: string,
     runtimeHome: string,
+    namespace: "agent" | "bash",
+    maxBytes: number,
     signal: AbortSignal,
   ): Promise<FsTarget> {
     abortError(signal);
     const canonicalHome = this.adapterValue.normalizeAbsolutePath(runtimeHome);
-    const outputRootPath = this.adapterValue.normalizeAbsolutePath(this.pathValue.join(canonicalHome, "work", "bash"));
+    const outputRootPath = this.adapterValue.normalizeAbsolutePath(
+      this.pathValue.join(canonicalHome, "work", namespace),
+    );
     if (this.adapterValue.normalizeAbsolutePath(path) !== path
       || this.pathValue.dirname(path) !== outputRootPath) {
       throw new FsError("retained output path is outside the owned output directory", "FS_SANDBOX_DENIED");
@@ -925,7 +948,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     const before = await lstat(path).catch((error: unknown) =>
       fsError(error, "retained output stat failed"));
     if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1
-      || before.size > MAX_RETAINED_OUTPUT_BYTES) {
+      || before.size > maxBytes) {
       throw new FsError("retained output is not a bounded singly-linked file", "FS_NOT_REGULAR_FILE");
     }
     const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
@@ -933,7 +956,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       fsError(error, "retained output open failed"));
     try {
       const opened = await handle.stat();
-      if (!opened.isFile() || opened.nlink !== 1 || opened.size > MAX_RETAINED_OUTPUT_BYTES
+      if (!opened.isFile() || opened.nlink !== 1 || opened.size > maxBytes
         || String(versionOf(opened)) !== String(versionOf(before))) {
         throw new FsError("retained output identity changed before authorization", "FS_STALE_VERSION");
       }
@@ -1028,8 +1051,9 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   private async createOutputFile(
     runtimeHome: string,
     operationId: string,
+    namespace: "agent" | "bash",
     signal: AbortSignal,
-  ): Promise<ProductProcessOutputFile> {
+  ): Promise<ProductProcessOutputFile & ProductRetainedOutputFile> {
     abortError(signal);
     const root = await this.resolve(runtimeHome, { signal });
     if (!this.adapterValue.samePath(root.displayPath, runtimeHome)) {
@@ -1065,7 +1089,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       return directory;
     };
     const workDirectory = await ensureOwnedDirectory(rootPath, "work");
-    const directory = await ensureOwnedDirectory(workDirectory, "bash");
+    const directory = await ensureOwnedDirectory(workDirectory, namespace);
     const directoryReal = await realpath(directory).catch((error: unknown) =>
       fsError(error, "Runtime output directory resolution failed"));
     abortError(signal);
@@ -1106,6 +1130,195 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       if (error instanceof FsError) throw error;
       return fsError(error, "Runtime output file permission sealing failed");
     }
+    const retainedSignal = namespace === "agent" ? new AbortController().signal : signal;
+    return this.retainedOutputFile(path, directory, handle, opened, retainedSignal);
+  }
+
+  private async resumeAgentOutputFile(
+    path: string,
+    runtimeHome: string,
+    signal: AbortSignal,
+  ): Promise<ProductRetainedOutputFile> {
+    await this.resolveRetainedOutput(path, runtimeHome, "agent", 8 * 1_024 * 1_024, signal);
+    abortError(signal);
+    const directory = this.pathValue.dirname(path);
+    const before = await lstat(path).catch((error: unknown) =>
+      fsError(error, "Agent output resume stat failed"));
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) {
+      throw new FsError("Agent output resume target is not singly linked", "FS_NOT_REGULAR_FILE");
+    }
+    const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+    const readHandle = await open(path, constants.O_RDONLY | noFollow).catch((error: unknown) =>
+      fsError(error, "Agent output resume open failed"));
+    let writeEnabled = false;
+    try {
+      const opened = await readHandle.stat();
+      abortError(signal);
+      if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== before.dev || opened.ino !== before.ino) {
+        throw new FsError("Agent output identity changed before resume", "FS_STALE_VERSION");
+      }
+      await readHandle.chmod(0o600);
+      writeEnabled = true;
+      abortError(signal);
+    } catch (error) {
+      const cleanupErrors: unknown[] = [];
+      if (writeEnabled) {
+        await readHandle.chmod(0o400).catch((cleanupError: unknown) => { cleanupErrors.push(cleanupError); });
+      }
+      await readHandle.close().catch((cleanupError: unknown) => { cleanupErrors.push(cleanupError); });
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError([error, ...cleanupErrors], "Agent output resume preflight cleanup failed", {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+    await readHandle.close();
+    const handle = await open(path, constants.O_RDWR | noFollow).catch(async (error: unknown) => {
+      const cleanupErrors: unknown[] = [];
+      const restore = await open(path, constants.O_RDONLY | noFollow).catch((cleanupError: unknown) => {
+        cleanupErrors.push(cleanupError);
+        return undefined;
+      });
+      if (restore !== undefined) {
+        await restore.chmod(0o400).catch((cleanupError: unknown) => { cleanupErrors.push(cleanupError); });
+        await restore.close().catch((cleanupError: unknown) => { cleanupErrors.push(cleanupError); });
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError([error, ...cleanupErrors], "Agent output resume open cleanup failed", {
+          cause: error,
+        });
+      }
+      return fsError(error, "Agent output resume write-open failed");
+    });
+    let opened: BigStat;
+    try {
+      opened = await handle.stat();
+      abortError(signal);
+      const parent = await realpath(directory);
+      if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== before.dev || opened.ino !== before.ino
+        || !this.adapterValue.samePath(parent, directory)) {
+        throw new FsError("Agent output identity changed during resume", "FS_STALE_VERSION");
+      }
+      await handle.chmod(0o400);
+      abortError(signal);
+    } catch (error) {
+      const cleanupErrors: unknown[] = [];
+      await handle.chmod(0o400).catch((cleanupError: unknown) => { cleanupErrors.push(cleanupError); });
+      await handle.close().catch((cleanupError: unknown) => { cleanupErrors.push(cleanupError); });
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError([error, ...cleanupErrors], "Agent output resume cleanup failed", { cause: error });
+      }
+      throw error;
+    }
+    return this.retainedOutputFile(path, directory, handle, opened, new AbortController().signal);
+  }
+
+  private async recoverAgentOutputFiles(
+    runtimeHome: string,
+    ownerId: string,
+    signal: AbortSignal,
+  ): Promise<readonly ProductRetainedOutputFile[]> {
+    abortError(signal);
+    if (!/^[A-Za-z0-9._-]{1,64}$/u.test(ownerId)) {
+      throw new FsError("Agent output recovery owner identity is invalid", "FS_SANDBOX_DENIED");
+    }
+    const root = await this.resolve(runtimeHome, { signal });
+    if (!this.adapterValue.samePath(root.displayPath, runtimeHome)) {
+      throw new FsError("Runtime home identity changed", "FS_SANDBOX_DENIED");
+    }
+    const rootPath = this.targetPath(root);
+    const rootBefore = await lstat(rootPath).catch((error: unknown) =>
+      fsError(error, "Runtime home recovery inspection failed"));
+    if (!rootBefore.isDirectory() || rootBefore.isSymbolicLink()) {
+      throw new FsError("Runtime home is not an owned directory", "FS_SANDBOX_DENIED");
+    }
+    const workDirectory = this.pathValue.join(rootPath, "work");
+    const directory = this.pathValue.join(workDirectory, "agent");
+    const inspectDirectory = async (path: string): Promise<BigStat | undefined> => await lstat(path).catch((error: unknown) => {
+      if (errorCode(error) === "ENOENT") return undefined;
+      return fsError(error, "Agent output recovery directory inspection failed");
+    });
+    const workBefore = await inspectDirectory(workDirectory);
+    const directoryBefore = await inspectDirectory(directory);
+    abortError(signal);
+    if (directoryBefore === undefined) {
+      if (workBefore !== undefined && (!workBefore.isDirectory() || workBefore.isSymbolicLink())) {
+        throw new FsError("Agent output recovery parent directory is not owned", "FS_SANDBOX_DENIED");
+      }
+      const rootAfter = await lstat(rootPath).catch((error: unknown) =>
+        fsError(error, "Runtime home recovery final inspection failed"));
+      const workAfter = await inspectDirectory(workDirectory);
+      const directoryAfter = await inspectDirectory(directory);
+      abortError(signal);
+      const workStable = workBefore === undefined
+        ? workAfter === undefined
+        : workAfter !== undefined && workAfter.isDirectory() && !workAfter.isSymbolicLink()
+          && String(versionOf(workAfter)) === String(versionOf(workBefore));
+      if (!rootAfter.isDirectory() || rootAfter.isSymbolicLink()
+        || String(versionOf(rootAfter)) !== String(versionOf(rootBefore))
+        || !workStable || directoryAfter !== undefined) {
+        throw new FsError("Agent output recovery directory identity changed", "FS_STALE_VERSION");
+      }
+      return Object.freeze([]);
+    }
+    if (workBefore === undefined || !workBefore.isDirectory() || workBefore.isSymbolicLink()
+      || !directoryBefore.isDirectory() || directoryBefore.isSymbolicLink()) {
+      throw new FsError("Agent output recovery directory is not owned", "FS_SANDBOX_DENIED");
+    }
+    const [workCanonical, directoryCanonical] = await Promise.all([realpath(workDirectory), realpath(directory)]);
+    abortError(signal);
+    if (!this.adapterValue.samePath(workCanonical, workDirectory)
+      || !this.adapterValue.samePath(directoryCanonical, directory)) {
+      throw new FsError("Agent output recovery directory escaped Runtime home", "FS_SANDBOX_DENIED");
+    }
+    const expected = new RegExp(`^${ownerId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}-[a-f0-9]{24}\\.log$`, "u");
+    const paths: string[] = [];
+    let scanned = 0;
+    const directoryHandle = await opendir(directory).catch((error: unknown) =>
+      fsError(error, "Agent output recovery directory open failed"));
+    for await (const entry of directoryHandle) {
+      abortError(signal);
+      scanned += 1;
+      if (scanned > 4_096) {
+        throw new FsError("Agent output recovery directory exceeds its traversal bound", "FS_TOO_LARGE");
+      }
+      if (expected.test(entry.name)) paths.push(this.pathValue.join(directory, entry.name));
+    }
+    paths.sort();
+    if (paths.length > MAX_WORK_ITEMS_FOR_OUTPUT_RECOVERY) {
+      throw new FsError("Agent output recovery owner exceeds its file bound", "FS_TOO_LARGE");
+    }
+    const settled = await Promise.allSettled(paths.map(async (path) =>
+      await this.resumeAgentOutputFile(path, runtimeHome, signal)));
+    const files = settled.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+    const errors = settled.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+    const rootAfter = await lstat(rootPath).catch((error: unknown) =>
+      fsError(error, "Runtime home recovery final inspection failed"));
+    const workAfter = await lstat(workDirectory).catch((error: unknown) =>
+      fsError(error, "Agent output recovery work directory final inspection failed"));
+    const directoryAfter = await lstat(directory).catch((error: unknown) =>
+      fsError(error, "Agent output recovery directory final inspection failed"));
+    if (String(versionOf(rootAfter)) !== String(versionOf(rootBefore))
+      || String(versionOf(workAfter)) !== String(versionOf(workBefore))
+      || String(versionOf(directoryAfter)) !== String(versionOf(directoryBefore))) {
+      errors.push(new FsError("Agent output recovery directory identity changed", "FS_STALE_VERSION"));
+    }
+    if (errors.length > 0) {
+      const cleanup = await Promise.allSettled(files.map(async (file) => { await file.discard(); }));
+      errors.push(...cleanup.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []));
+      throw new AggregateError(errors, "Agent output recovery failed");
+    }
+    return Object.freeze(files);
+  }
+
+  private retainedOutputFile(
+    path: string,
+    directory: string,
+    handle: FileHandle,
+    opened: BigStat,
+    signal: AbortSignal,
+  ): ProductRetainedOutputFile {
     let state: "discard_failed" | "discarded" | "finalized" | "open" = "open";
     let handleClosed = false;
     let fileRemoved = false;
@@ -1122,8 +1335,19 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       }
       if (!fileRemoved) {
         try {
-          await unlink(path);
-          fileRemoved = true;
+          const current = await lstat(path).catch((error: unknown) => {
+            if (errorCode(error) === "ENOENT") return undefined;
+            throw error;
+          });
+          if (current === undefined) {
+            fileRemoved = true;
+          } else if (!current.isFile() || current.isSymbolicLink() || current.nlink !== 1
+            || current.dev !== opened.dev || current.ino !== opened.ino) {
+            throw new FsError("Runtime output file identity changed before discard", "FS_STALE_VERSION");
+          } else {
+            await unlink(path);
+            fileRemoved = true;
+          }
         } catch (error) {
           if (errorCode(error) === "ENOENT") fileRemoved = true;
           else errors.push(error);
@@ -1132,7 +1356,11 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       state = handleClosed && fileRemoved ? "discarded" : "discard_failed";
       if (errors.length > 0) throw new AggregateError(errors, "Runtime output file discard failed");
     };
-    const finalize = async (text: string, maxBytes: number): Promise<Readonly<{ truncated: boolean }>> => {
+    const write = async (
+      text: string,
+      maxBytes: number,
+      settle: boolean,
+    ): Promise<Readonly<{ truncated: boolean }>> => {
       if (state !== "open") throw new FsError("Runtime output file is already settled", "FS_STALE_VERSION");
       if (typeof text !== "string" || !Number.isSafeInteger(maxBytes) || maxBytes < 1
         || maxBytes > 8 * 1_024 * 1_024) {
@@ -1155,9 +1383,11 @@ export class LocalWorkspaceFileSystem extends FileSystem {
         await handle.writeFile(retained);
         await handle.sync();
         await handle.chmod(0o400);
-        await handle.close();
-        handleClosed = true;
-        state = "finalized";
+        if (settle) {
+          await handle.close();
+          handleClosed = true;
+          state = "finalized";
+        }
         return Object.freeze({ truncated: retained.length < bytes.length });
       } catch (error) {
         try {
@@ -1170,7 +1400,12 @@ export class LocalWorkspaceFileSystem extends FileSystem {
         throw error;
       }
     };
-    return Object.freeze({ discard, finalize, path });
+    return Object.freeze({
+      discard,
+      finalize: async (text: string, maxBytes: number) => await write(text, maxBytes, true),
+      path,
+      publish: async (text: string, maxBytes: number) => await write(text, maxBytes, false),
+    });
   }
 
 }

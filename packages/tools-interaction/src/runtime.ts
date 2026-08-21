@@ -570,7 +570,7 @@ export class ProductPlanService extends Service {
         name: "product:plan-policy",
         order: 50,
         text: (prompt) => {
-          if (prompt.agent === undefined) return "";
+          if (prompt.agent === undefined || prompt.agent !== this.configValue.requireAgent()) return "";
           const snapshot = this.snapshot(prompt.agent);
           if (snapshot.mode !== "plan") return "";
           return `Hard plan mode is active. Explore and edit only the managed plan artifact ${snapshot.planPath}. `

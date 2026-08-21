@@ -58,6 +58,32 @@ export interface ProductToolExecutionEnvironment {
   }>;
 }
 
+export interface ProductRetainedOutputFile {
+  readonly path: string;
+  discard(): Promise<void>;
+  publish(text: string, maxBytes: number): Promise<Readonly<{ truncated: boolean }>>;
+  finalize(text: string, maxBytes: number): Promise<Readonly<{ truncated: boolean }>>;
+}
+
+export interface ProductRetainedOutputAuthority {
+  create(
+    runtimeHome: string,
+    ownerId: string,
+    signal: AbortSignal,
+  ): Promise<ProductRetainedOutputFile>;
+  resume(
+    path: string,
+    runtimeHome: string,
+    signal: AbortSignal,
+  ): Promise<ProductRetainedOutputFile>;
+  recover(
+    runtimeHome: string,
+    ownerId: string,
+    signal: AbortSignal,
+  ): Promise<readonly ProductRetainedOutputFile[]>;
+  resolve(path: string, runtimeHome: string, signal: AbortSignal): Promise<FsTarget>;
+}
+
 export interface ProductToolContext {
   readonly agent: Agent;
   readonly birth: OperationBirthSnapshot;

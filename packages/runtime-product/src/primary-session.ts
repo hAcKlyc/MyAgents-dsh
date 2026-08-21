@@ -663,10 +663,20 @@ const validateBackendResult = (
 class PrimaryRootPublicationFence {
   #permit: Readonly<{ agent: Agent; session: Session }> | undefined;
   #owned: Agent | undefined;
+  readonly #childPermits = new Map<Session, Readonly<{ agent: Agent; parent: Agent }>>();
+  readonly #ownedChildren = new Map<Session, Agent>();
 
   constructor(private readonly context: Context) {
     context.on("agent/created", ({ agent }) => {
-      if (!context.agents.roots().includes(agent)) return;
+      const permit = this.#childPermits.get(agent.session);
+      if (permit?.agent === agent) {
+        if (context.agents.get(permit.parent.id) !== permit.parent) {
+          throw new Error("child Agent publication lost its exact primary lineage");
+        }
+        this.#childPermits.delete(agent.session);
+        this.#ownedChildren.set(agent.session, agent);
+        return;
+      }
       if (this.#permit?.agent !== agent || this.#owned !== undefined) {
         throw new Error("root Agent publication lacks the primary Session admission authority");
       }
@@ -675,6 +685,8 @@ class PrimaryRootPublicationFence {
     });
     context.on("session/disposed", (session) => {
       if (this.#owned?.session === session) this.#owned = undefined;
+      this.#childPermits.delete(session);
+      this.#ownedChildren.delete(session);
     });
   }
 
@@ -692,13 +704,21 @@ class PrimaryRootPublicationFence {
       throw new Error("accepted DSH root-publication guard seams are unavailable");
     }
     const disposeSessionGuard = sessions.setPublicationGuard((session) => {
-      if (this.#permit?.session !== session) {
+      if (this.#permit?.session !== session && !this.#childPermits.has(session)) {
         throw new Error("Session publication lacks the primary Session admission authority");
       }
     });
     try {
       const disposeAgentGuard = agents.setPublicationGuard((agent, owner) => {
-        if (owner !== undefined || this.#permit?.agent !== agent || this.#permit.session !== agent.session) {
+        const rootPermitted = owner === undefined
+          && this.#permit?.agent === agent
+          && this.#permit.session === agent.session;
+        const childPermit = this.#childPermits.get(agent.session);
+        // The accepted DSH continuation manager owns child lifecycles through
+        // one agentless activation fiber. Durable parentage is instead the
+        // exact, already-validated Session header captured by this permit.
+        const childPermitted = owner === undefined && childPermit?.agent === agent;
+        if (!rootPermitted && !childPermitted) {
           throw new Error("root Agent publication lacks the primary Session admission authority");
         }
       });
@@ -735,25 +755,55 @@ class PrimaryRootPublicationFence {
     });
   }
 
+  prepareChild(agent: Agent, parent: Agent): () => void {
+    if (this.#owned !== parent || this.context.agents.get(parent.id) !== parent
+      || agent.session.header.origin !== "subagent"
+      || agent.session.header.parentSession !== parent.id
+      || agent.id === parent.id || this.#childPermits.has(agent.session)
+      || this.#ownedChildren.has(agent.session)) {
+      throw new Error("child publication request lacks exact primary Session lineage");
+    }
+    const permit = Object.freeze({ agent, parent });
+    this.#childPermits.set(agent.session, permit);
+    return () => {
+      if (this.#childPermits.get(agent.session) === permit) this.#childPermits.delete(agent.session);
+    };
+  }
+
   assertAuthority(state: PrimarySessionState): number {
     const roots = this.context.agents.roots();
     const sessions = this.context.sessions.list();
     const permitted = this.#permit;
     const authorized = this.#owned ?? permitted?.agent;
     const authorizedSession = this.#owned?.session ?? permitted?.session;
+    const permittedChildren = new Map<Agent, Session>([...this.#childPermits]
+      .map(([session, permit]) => [permit.agent, session]));
+    const ownedChildren = new Map<Agent, Session>([...this.#ownedChildren]
+      .map(([session, agent]) => [agent, session]));
+    const unauthorizedRoots = roots.filter((agent) => agent !== authorized
+      && !permittedChildren.has(agent) && !ownedChildren.has(agent));
+    const allowedSessions = new Set<Session>([
+      ...this.#childPermits.keys(),
+      ...this.#ownedChildren.keys(),
+      ...(authorizedSession === undefined ? [] : [authorizedSession]),
+    ]);
     if (authorized === undefined || authorizedSession === undefined) {
       if (roots.length !== 0 || sessions.length !== 0) {
         throw new Error("DSH registries bypassed primary Session admission");
       }
-    } else if (roots.length > 1 || sessions.length > 1
-      || (roots.length === 1 && roots[0] !== authorized)
-      || (sessions.length === 1 && sessions[0] !== authorizedSession)) {
+    } else if (unauthorizedRoots.length !== 0 || !roots.includes(authorized)
+      || sessions.some((session) => !allowedSessions.has(session))
+      || !sessions.includes(authorizedSession)
+      || [...this.#ownedChildren].some(([session, agent]) =>
+        !sessions.includes(session) || this.context.agents.get(agent.id) !== agent)) {
       throw new Error("DSH root registry differs from primary Session ownership");
     }
-    if (state === "ready" && (roots[0] !== this.#owned || sessions[0] !== this.#owned?.session)) {
+    const owned = this.#owned;
+    if (state === "ready" && (owned === undefined || !roots.includes(owned)
+      || !sessions.includes(owned.session))) {
       throw new Error("ready primary Session is not fully published in the DSH registries");
     }
-    return roots.length;
+    return authorized === undefined ? 0 : 1;
   }
 }
 
@@ -1084,12 +1134,14 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
 
 export interface ProductSessionServiceConfig {
   readonly backend?: PrimarySessionBackend;
+  readonly childPublicationAuthority?: object;
   readonly quiescenceGraceMs?: number;
 }
 
 export class ProductSessionService extends Service {
   static inject = ["agents", "sessions"];
   private readonly backendValue: PrimarySessionBackend;
+  private readonly childPublicationAuthorityValue: object | undefined;
   private readonly publicationFenceValue: PrimaryRootPublicationFence;
   private executionEnvironmentValue: ProductExecutionEnvironment | undefined;
   private workspaceValue: PrimarySessionWorkspace | undefined;
@@ -1105,9 +1157,12 @@ export class ProductSessionService extends Service {
     const normalized = exactOwnDataObject(
       config,
       [],
-      ["backend", "quiescenceGraceMs"],
+      ["backend", "childPublicationAuthority", "quiescenceGraceMs"],
       "ProductSessionService config",
     );
+    this.childPublicationAuthorityValue = Object.hasOwn(normalized, "childPublicationAuthority")
+      ? normalized.childPublicationAuthority as object
+      : undefined;
     this.publicationFenceValue = new PrimaryRootPublicationFence(ctx);
     this.backendValue = Object.hasOwn(normalized, "backend")
       ? normalized.backend as PrimarySessionBackend
@@ -1208,6 +1263,14 @@ export class ProductSessionService extends Service {
       throw new ProtocolError("protocol_environment_mismatch", "primary Session workspace is not initialized");
     }
     return this.admissionValue.bindResume(value, signal);
+  }
+
+  prepareChildPublication(authority: object, child: Agent, parent: Agent): () => void {
+    if (this.childPublicationAuthorityValue === undefined
+      || authority !== this.childPublicationAuthorityValue) {
+      throw new Error("child publication requires the composition-owned authority");
+    }
+    return this.publicationFenceValue.prepareChild(child, parent);
   }
 
   close(value: unknown): Promise<MethodResult<"session/close">> {

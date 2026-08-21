@@ -42,8 +42,12 @@ import type {
   SkillProviderControl,
   SkillSummary,
 } from "@deepseek-ai/dsh-skill";
-import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
-import type { SubagentProvider, SubagentResult } from "@deepseek-ai/dsh-subagent";
+import { finalAssistantOutput, SubagentRuntime } from "@deepseek-ai/dsh-subagent";
+import type { SubagentInterruptAuthority, SubagentProvider, SubagentResult } from "@deepseek-ai/dsh-subagent";
+import { startInProcessRun } from "@deepseek-ai/dsh-subagent-in-process-driver";
+import type { InProcessRunOptions } from "@deepseek-ai/dsh-subagent-in-process-driver";
+import { apply as applySubagentSpawnInProcess } from "@deepseek-ai/dsh-subagent-spawn-in-process";
+import type { Config as SubagentSpawnInProcessConfig } from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import { SubprocessRuntime, scrubbedParentEnv } from "@deepseek-ai/dsh-subprocess";
 import type { SubprocessHandle, SubprocessSpawnSpec } from "@deepseek-ai/dsh-subprocess";
 import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
@@ -93,6 +97,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   SkillRegistry,
   SqliteSessionPersistence,
   SubagentRuntime,
+  finalAssistantOutput,
   SubprocessRuntime,
   LocalSubprocessRuntime,
   SystemPrompt,
@@ -101,6 +106,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   UserQuestionService,
   WebRuntime,
   applyMcpClient,
+  applySubagentSpawnInProcess,
   applyToolCallTimeoutPolicy,
   buildGlobCommand,
   buildGrepCommand,
@@ -120,6 +126,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   isModelInvocable,
   isSkillName,
   renderSkillContent,
+  startInProcessRun,
 });
 
 export interface DshPublicSurfaceTypes {
@@ -151,7 +158,9 @@ export interface DshPublicSurfaceTypes {
     SkillSummary,
   ];
   sqlitePersistence: [SqlitePersistenceConfig];
-  subagent: [SubagentProvider, SubagentResult];
+  subagent: [SubagentInterruptAuthority, SubagentProvider, SubagentResult];
+  subagentInProcess: [InProcessRunOptions];
+  subagentSpawnInProcess: [SubagentSpawnInProcessConfig];
   subprocess: [SubprocessHandle, SubprocessSpawnSpec];
   systemPrompt: [PromptAssembly, PromptContext, PromptSection];
   tools: [ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext];

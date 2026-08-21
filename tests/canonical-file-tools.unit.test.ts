@@ -297,6 +297,38 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
 };
 
 describe("canonical filesystem tools", () => {
+  it("treats a stable Runtime work directory without an Agent subdirectory as empty recovery", async () => {
+    const state = await harness();
+    await mkdir(join(state.environment.runtimeHome, "work"));
+    const authority = (state.context.fs as LocalWorkspaceFileSystem).createAgentOutputAuthority();
+
+    await expect(authority.recover(
+      state.environment.runtimeHome,
+      "agent-work-empty",
+      new AbortController().signal,
+    )).resolves.toEqual([]);
+  });
+
+  it("publishes and safely reopens one retained Agent output across recovery", async () => {
+    const state = await harness();
+    const filesystem = state.context.fs as LocalWorkspaceFileSystem;
+    const authority = filesystem.createAgentOutputAuthority();
+    const admission = new AbortController();
+    const output = await authority.create(state.environment.runtimeHome, "agent-work-1", admission.signal);
+    admission.abort(new Error("parent operation settled after background handoff"));
+    await output.publish("first residency epoch", 8 * 1_024 * 1_024);
+    expect(await readFile(output.path, "utf8")).toBe("first residency epoch");
+    await output.finalize("first residency epoch", 8 * 1_024 * 1_024);
+
+    const recovery = new AbortController();
+    const resumed = await authority.resume(output.path, state.environment.runtimeHome, recovery.signal);
+    recovery.abort(new Error("recovery admission settled after Session ownership"));
+    expect(resumed.path).toBe(output.path);
+    await resumed.publish("cold-resumed epoch", 8 * 1_024 * 1_024);
+    expect(await readFile(output.path, "utf8")).toBe("cold-resumed epoch");
+    await resumed.finalize("cold-resumed epoch", 8 * 1_024 * 1_024);
+  });
+
   it("executes exact Read then checkpointed atomic Write through the one DSH ToolRuntime", async () => {
     const state = await harness();
     const path = join(state.workspace, "notes.txt");

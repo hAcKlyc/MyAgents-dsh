@@ -52,6 +52,66 @@
         "path": "packages/session/session-persistence/tests/persistence.spec.ts",
         "blob": "50ad798e04239d46f85da909d51653dff5d321f1",
         "sha256": "5b16d2f9d5a4d41125b9da76727d823c000fef778c53886f85492a94edbe589e"
+      },
+      {
+        "path": "packages/subagent/subagent/src/continuation.ts",
+        "blob": "d826efbfdb4695913fb536e90cbb58500bb25c61",
+        "sha256": "20b5ba6b820b514e7e5f74e6f23decf9cd81184a64bcaa17bc0e3f4c0706e619"
+      },
+      {
+        "path": "packages/subagent/subagent/src/types.ts",
+        "blob": "2c5209765f0b79fb83c30ce3e1e708cfecab855d",
+        "sha256": "9740ca09ce19bdd62e5abb989099b5a3735845a79a110e9e6405df7ff4d22640"
+      },
+      {
+        "path": "packages/subagent/subagent/src/descriptor.ts",
+        "blob": "6d9dedee75b70fcbb2eec44a897645c7b8a21e39",
+        "sha256": "ab5886a1dc3bdc97fdb0372f5d7b64ff90c2205079621d5af11c1960babfceb1"
+      },
+      {
+        "path": "packages/subagent/subagent/src/index.ts",
+        "blob": "fe270f1b4c0b2e2afe38aba805fed449a116ca10",
+        "sha256": "24c595fcb2e15f2092fc0fe333fcf74ea22ba8a248d942295654a40cf795c65c"
+      },
+      {
+        "path": "packages/subagent/subagent/tests/continuation.spec.ts",
+        "blob": "07f497628d9adc12c7ec862d90786125b349fdf5",
+        "sha256": "1a35e1f2159e3414a0e5004fba7910c9b77d375f75484b0bb948138ab9031777"
+      },
+      {
+        "path": "packages/subagent/subagent/tests/service.spec.ts",
+        "blob": "e387a758e89b7842d52f15916c95f71bf3dbf63b",
+        "sha256": "f5f8bfe1f90b32f574ab47b2bb676870e4bf1e2cb2c8e8010ceb28a947d97200"
+      },
+      {
+        "path": "packages/subagent/subagent-in-process-driver/src/index.ts",
+        "blob": "fd1ebff2be381f451752a292abb166834a6e1bdf",
+        "sha256": "2aadb343b2d189e9ccf17e365669a82c0dd85724465b056ab18d3425b66d9f99"
+      },
+      {
+        "path": "packages/subagent/subagent-in-process-driver/tests/subagent-in-process-driver.spec.ts",
+        "blob": "823890d9348a4ad53ce9e261d30744e716d81c7a",
+        "sha256": "1d78132f1700dabb905e61ec6c98abb12d59285b7c03a1ab6bdb684f59d8d185"
+      },
+      {
+        "path": "packages/subagent/subagent-spawn-in-process/src/index.ts",
+        "blob": "dcd036e4ad1390ad7b9b54e56ae1cdd100d6feb0",
+        "sha256": "164934735d7bbd6e2c6cdeffec511dfa89c20b3b67e5bfef55c1870731033de9"
+      },
+      {
+        "path": "packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts",
+        "blob": "74aefb4ebda78301e08882217687426979afa5bc",
+        "sha256": "2329f4e94cfca6653699d03e11d89822fc6796caa6678a73b88944f2472fd703"
+      },
+      {
+        "path": "packages/subagent/subagent-fork-in-process/src/index.ts",
+        "blob": "1f8e48b8c8b5fd0d15c9df47217cc005ab927c66",
+        "sha256": "37524d70eb24e101f9e5ba93b7745ca28499eba795ae55b8b397ba4a078642f0"
+      },
+      {
+        "path": "packages/subagent/subagent-fork-in-process/tests/subagent-fork-in-process.spec.ts",
+        "blob": "6d763b7c0aa1b36ed8b1a588539e49ce49d4090b",
+        "sha256": "66b560e14358f51c77df18171d1c54f1a1f90feb0303e7195733884ca9d43d76"
       }
     ]
   },
@@ -76,6 +136,11 @@
       "order": 4,
       "path": "specs/dsh/patches/0004-publication-guards.patch",
       "sha256": "39b743ea5446f9aa5c2ef1b4be65ff5c549cf98fea4b435d89541a5f060c6541"
+    },
+    {
+      "order": 5,
+      "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
+      "sha256": "5dfcf339fd8eff0aa4ee67b8dc858f364141bd810c9c5dbde473ec3f717c5f55"
     }
   ],
   "decisions": [
@@ -177,6 +242,33 @@
         "direct Session and advanced Agent publication bypasses fail before visibility"
       ],
       "removalCondition": "an installed DSH release exposes equivalent synchronous pre-publication guards"
+    },
+    {
+      "id": "DSH-SEAM-006",
+      "seam": "product-owned-continuable-subagent-lifecycle",
+      "status": "required_upstream_patch_accepted",
+      "adr": "specs/adr/0006-product-owned-continuable-lifecycle.md",
+      "rejected": "allow-stock-parent-notice-or-interrupt-only-teardown-to-escape-product-work-ownership",
+      "selectedPublicApi": "SubagentRuntime.registerContinuableSetup, ContinuableStartSpec.settlementDelivery, SubagentRunEndInfo.infrastructureFailure, and SubagentRuntime.retireContinuable/resumeContinuable",
+      "patch": {
+        "order": 5,
+        "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
+        "sha256": "5dfcf339fd8eff0aa4ee67b8dc858f364141bd810c9c5dbde473ec3f717c5f55"
+      },
+      "executableEvidence": [
+        "stock callers retain parent settlement delivery by default",
+        "trusted composition setup installs only into unpublished continuable child scopes and revokes with the existing Activation lifecycle",
+        "external ownership suppresses the automatic parent notice",
+        "the delivery owner survives durable descriptor load and cold resume",
+        "external ownership makes the existing final child-Session flush strict before handle release",
+        "a strict durability failure rejects retirement and marks the terminal edge without relabeling child model errors",
+        "exact target retirement cancels top-down and releases descendant handles child-first",
+        "foreign authority is rejected before the disposal transaction opens",
+        "retirement is idempotent after the live Activation is absent",
+        "cold recovery wakes one exact already-durable Inbox identity without reinsertion",
+        "all reconstructed pending FIFO identities retain Activation ownership until claimed or discarded"
+      ],
+      "removalCondition": "an installed DSH release exposes equivalent unpublished continuable setup, durable settlement ownership, strict external final durability, exact quiescent retirement, and no-reinsert pending wake"
     }
   ],
   "evidenceOwners": {
@@ -187,7 +279,12 @@
       "packages/core/agent-loop/tests/cancel.spec.ts",
       "packages/core/agent-loop/tests/pre-assistant-commit.spec.ts",
       "packages/core/scope/tests/invariant.spec.ts",
-      "packages/session/session-persistence/tests/persistence.spec.ts"
+      "packages/session/session-persistence/tests/persistence.spec.ts",
+      "packages/subagent/subagent/tests/continuation.spec.ts",
+      "packages/subagent/subagent/tests/service.spec.ts",
+      "packages/subagent/subagent-in-process-driver/tests/subagent-in-process-driver.spec.ts",
+      "packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts",
+      "packages/subagent/subagent-fork-in-process/tests/subagent-fork-in-process.spec.ts"
     ]
   }
 }

@@ -43,6 +43,9 @@ export interface CanonicalFileToolsConfig {
       sizeBytes: number;
     }>>;
   }>;
+  readonly retainedOutput?: Readonly<{
+    resolve(context: ProductToolContext, path: string): Promise<FsTarget>;
+  }>;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -272,12 +275,14 @@ const searchReportsInvalidPattern = (value: string): boolean =>
 export class CanonicalFileTools extends Service {
   static inject = ["fs", "tools", "productProcesses", "productTools"];
   readonly #attachments: CanonicalFileToolsConfig["attachments"];
+  readonly #retainedOutput: CanonicalFileToolsConfig["retainedOutput"];
 
   constructor(ctx: Context, config: CanonicalFileToolsConfig) {
     super(ctx, "canonicalFileTools");
     const candidate: unknown = config;
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
-      || Reflect.ownKeys(candidate).length !== 1) {
+      || Reflect.ownKeys(candidate).length < 1 || Reflect.ownKeys(candidate).length > 2
+      || Reflect.ownKeys(candidate).some((key) => key !== "attachments" && key !== "retainedOutput")) {
       throw new TypeError("CanonicalFileTools requires one attachment publication authority");
     }
     const attachmentsDescriptor = Object.getOwnPropertyDescriptor(candidate, "attachments");
@@ -300,6 +305,29 @@ export class CanonicalFileTools extends Service {
     this.#attachments = Object.freeze({
       publish: (request: AttachmentPublicationRequest) => publishAuthority.call(owner, request),
     });
+    const retainedDescriptor = Object.getOwnPropertyDescriptor(candidate, "retainedOutput");
+    const retained: unknown = retainedDescriptor !== undefined && "value" in retainedDescriptor
+      ? retainedDescriptor.value as unknown
+      : undefined;
+    if (retained !== undefined) {
+      if (retained === null || typeof retained !== "object" || Array.isArray(retained)
+        || isProxy(retained) || Reflect.ownKeys(retained).length !== 1) {
+        throw new TypeError("CanonicalFileTools retained-output authority is invalid");
+      }
+      const resolveDescriptor = Object.getOwnPropertyDescriptor(retained, "resolve");
+      const resolve: unknown = resolveDescriptor !== undefined && "value" in resolveDescriptor
+        ? resolveDescriptor.value as unknown
+        : undefined;
+      if (typeof resolve !== "function" || isProxy(resolve)) {
+        throw new TypeError("CanonicalFileTools retained-output authority is invalid");
+      }
+      const retainedOwner = retained;
+      const resolveAuthority = resolve as NonNullable<CanonicalFileToolsConfig["retainedOutput"]>["resolve"];
+      this.#retainedOutput = Object.freeze({
+        resolve: (context: ProductToolContext, path: string) =>
+          resolveAuthority.call(retainedOwner, context, path),
+      });
+    }
     ctx.effect(() => {
       const disposers = [
         ctx.tools.register(this.#readDefinition(ctx)),
@@ -982,6 +1010,9 @@ export class CanonicalFileTools extends Service {
     }
     if (!contained) {
       if (tool === "Read" && mode === "read") {
+        if (this.#retainedOutput !== undefined) {
+          return await this.#retainedOutput.resolve(product, path);
+        }
         return await ctx.productProcesses.resolveRetainedOutput(product, path);
       }
       throw new ProductToolError("path_denied", `${tool} target is outside its operation-frozen roots`);

@@ -104,6 +104,7 @@ const runtimeCompositionSourcePaths = [
   "packages/tool-runtime-product/src/runtime.ts",
   "packages/tools-agent/src/index.ts",
   "packages/tools-agent/src/skill-runtime.ts",
+  "packages/tools-agent/src/work-runtime.ts",
   "packages/tools-fs/src/canonical-file-tools.ts",
   "packages/tools-fs/src/index.ts",
   "packages/tools-fs/src/local-filesystem.ts",
@@ -776,7 +777,7 @@ const assertRuntimeProcessEvidence = (
     || typeof selfCheckDsh.sourceCommit !== "string"
     || typeof selfCheckDsh.patchSeriesSha256 !== "string"
     || !Array.isArray(selfCheckDsh.patches)
-    || selfCheckDsh.patches.length !== 4
+    || selfCheckDsh.patches.length !== 5
     || selfCheckDsh.packageCount !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
@@ -1028,6 +1029,7 @@ const main = (): void => {
       || evidence.canonicalInteractionPlanToolsVerified !== true
       || evidence.canonicalTaskGraphVerified !== true
       || evidence.canonicalStaticSkillVerified !== true
+      || evidence.canonicalProductWorkVerified !== true
       || evidence.ambientWebSearchFallbackRejected !== true
       || evidence.operationCorrelationVerified !== true
       || evidence.operationInterruptVerified !== true
@@ -1037,7 +1039,7 @@ const main = (): void => {
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
         "success", "failure", "file_tools", "process_search_tools", "web_tools", "interaction",
-        "plan_workflow", "task_graph", "static_skill", "process_abort", "interrupt", "queued_cancel",
+        "plan_workflow", "task_graph", "static_skill", "product_work", "process_abort", "interrupt", "queued_cancel",
         "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
@@ -1046,10 +1048,10 @@ const main = (): void => {
       evidence.canonicalPermissionEvidence,
       "canonical permission and interaction evidence",
     );
-    if (permissionEvidence.asked !== 19
-      || permissionEvidence.decided !== 19
+    if (permissionEvidence.asked !== 22
+      || permissionEvidence.decided !== 22
       || permissionEvidence.durableRules !== 1
-      || permissionEvidence.providerRequests !== 19
+      || permissionEvidence.providerRequests !== 22
       || permissionEvidence.safeToolsAutoAllowed !== true) {
       throw new Error("canonical permission and interaction evidence differs from the exact policy contract");
     }
@@ -1170,19 +1172,22 @@ const main = (): void => {
     const projectedEvents = eventEnvelopes.map(({ event }, index) =>
       exactObject(event, `observed Runtime event payload ${String(index)}`));
     const expectedEventKinds = [
+      // Nominal success, follow-up success, and provider failure.
       "turn_admitted", "turn_started", "queued_message", "context",
       "assistant_delta", "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "assistant_delta",
       "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
+      // Canonical file, process-search, and Web tool operations.
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "message_event", "usage", "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
+      // Interaction, plan workflow, and Task graph operations.
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "usage", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "message_event", "usage", "message_event", "usage", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
@@ -1191,10 +1196,20 @@ const main = (): void => {
       "message_event", "usage", "message_event", "usage", "message_event", "usage",
       "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
+      // Static Skill, four ProductWork operations, and retained process output.
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
+      // Process abort, running/queued cancellation, and Session close.
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message",
       "turn_admitted", "queued_message", "turn_terminal", "turn_terminal",
@@ -1220,10 +1235,11 @@ const main = (): void => {
     if (JSON.stringify(terminalOutcomes) !== JSON.stringify([
       "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
       "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
+      "succeeded", "succeeded", "succeeded", "succeeded",
       "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
     ])) {
       throw new Error(
-        `Runtime terminal projection differs from the fifteen real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
+        `Runtime terminal projection differs from the nineteen real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
       );
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");

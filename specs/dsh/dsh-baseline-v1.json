@@ -17,8 +17,8 @@
     "registry": "https://registry.npmjs.org",
     "dshRelease": "0.1.0-rc.6",
     "sourceAssociation": "unproven",
-    "directPackageCount": 42,
-    "productionPackageCount": 170
+    "directPackageCount": 44,
+    "productionPackageCount": 172
   },
   "publicCompileFixture": "packages/product-profile/src/dsh-public-surface.compile.ts",
   "publicSeams": [
@@ -270,11 +270,43 @@
         "B1-W2"
       ],
       "values": [
-        "SubagentRuntime"
+        "SubagentRuntime",
+        "finalAssistantOutput"
       ],
       "types": [
+        "SubagentInterruptAuthority",
         "SubagentProvider",
         "SubagentResult"
+      ]
+    },
+    {
+      "id": "subagent-in-process-driver",
+      "package": "@deepseek-ai/dsh-subagent-in-process-driver",
+      "importPath": "@deepseek-ai/dsh-subagent-in-process-driver",
+      "classification": "helper",
+      "batchUse": [
+        "B1-W2"
+      ],
+      "values": [
+        "startInProcessRun"
+      ],
+      "types": [
+        "InProcessRunOptions"
+      ]
+    },
+    {
+      "id": "subagent-spawn-in-process",
+      "package": "@deepseek-ai/dsh-subagent-spawn-in-process",
+      "importPath": "@deepseek-ai/dsh-subagent-spawn-in-process",
+      "classification": "provider",
+      "batchUse": [
+        "B1-W2"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [
+        "Config"
       ]
     },
     {
@@ -577,7 +609,7 @@
     },
     {
       "license": "MIT",
-      "count": 158
+      "count": 160
     },
     {
       "license": "Python-2.0",
@@ -1013,6 +1045,26 @@
       "version": "0.1.0-rc.6",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-subagent/-/dsh-subagent-0.1.0-rc.6.tgz",
       "integrity": "sha512-vROmBDAlaFAzzSlTBOlvg/7fO55zxhUztnLtB3lKmN5RevrNQBjTsbeIMDQ8ow5ZplxEOnLU+sikFoA5JaoH8A==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-subagent-in-process-driver",
+      "name": "@deepseek-ai/dsh-subagent-in-process-driver",
+      "version": "0.1.0-rc.6",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-subagent-in-process-driver/-/dsh-subagent-in-process-driver-0.1.0-rc.6.tgz",
+      "integrity": "sha512-KK8Ep4PeSyrM3YQdcZhetXsiBd+bliKu6NWWKyTh60LobKtVNREfPBlqRfzc0mU0ZIKD4VEC7RfuJaqvz4UlPw==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-subagent-spawn-in-process",
+      "name": "@deepseek-ai/dsh-subagent-spawn-in-process",
+      "version": "0.1.0-rc.6",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-subagent-spawn-in-process/-/dsh-subagent-spawn-in-process-0.1.0-rc.6.tgz",
+      "integrity": "sha512-62mtUEr5megxVy6CwQCdZVq5MCSt+kMw74ns5m7PK0PlZTWcxQVBQHNdfkE9sX4Cageu7YTvciUJuH8amm6bsQ==",
       "license": "MIT",
       "direct": true,
       "optional": false

@@ -1,6 +1,12 @@
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import { freezeMessage, MessageId, type ContentBlock, type UserMessage } from "@deepseek-ai/dsh-llm";
+import {
+  freezeMessage,
+  MessageId,
+  type ContentBlock,
+  type MessageSource,
+  type UserMessage,
+} from "@deepseek-ai/dsh-llm";
 import {
   ProtocolError,
   validateMethodParams,
@@ -39,6 +45,12 @@ export interface SettlementDeadlineAuthority {
 
 export interface SdkOperationServiceConfig {
   readonly birthAuthority: OperationBirthAuthority;
+  readonly drainOwnedWork: (agent: Agent) => Promise<void>;
+  readonly ownsRootContextMessage: (
+    agent: Agent,
+    source: MessageSource | undefined,
+    messageId: string,
+  ) => boolean;
   readonly registerRetirementGuard: (guard: (agent: Agent) => Promise<void>) => void;
   readonly requireAgent: () => Agent;
   readonly retirePrimary: (cause?: unknown) => Promise<void>;
@@ -126,6 +138,8 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
     value,
     [
       "birthAuthority",
+      "drainOwnedWork",
+      "ownsRootContextMessage",
       "registerRetirementGuard",
       "requireAgent",
       "retirePrimary",
@@ -147,6 +161,7 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
     "operation settlement deadline authority",
   );
   if (typeof authority.capture !== "function" || typeof config.requireAgent !== "function"
+    || typeof config.drainOwnedWork !== "function" || typeof config.ownsRootContextMessage !== "function"
     || typeof config.registerRetirementGuard !== "function"
     || typeof config.retirePrimary !== "function"
     || typeof deadlineAuthority.wait !== "function"
@@ -157,6 +172,8 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
   const operationBirthReceiver = config.birthAuthority;
   const registerRetirementGuard = config.registerRetirementGuard as
     (guard: (agent: Agent) => Promise<void>) => void;
+  const drainOwnedWork = config.drainOwnedWork as (agent: Agent) => Promise<void>;
+  const ownsRootContextMessage = config.ownsRootContextMessage as SdkOperationServiceConfig["ownsRootContextMessage"];
   const retirePrimary = config.retirePrimary as (cause?: unknown) => Promise<void>;
   const settlementWait = deadlineAuthority.wait as SettlementDeadlineAuthority["wait"];
   const settlementDeadlineReceiver = config.settlementDeadlineAuthority;
@@ -165,6 +182,9 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
       capture: (params: MethodParams<"turn/start">) =>
         Reflect.apply(captureOperationBirth, operationBirthReceiver, [params]),
     }),
+    drainOwnedWork: (agent: Agent) => Reflect.apply(drainOwnedWork, config, [agent]),
+    ownsRootContextMessage: (agent: Agent, source: MessageSource | undefined, messageId: string) =>
+      Reflect.apply(ownsRootContextMessage, config, [agent, source, messageId]),
     registerRetirementGuard: (guard: (agent: Agent) => Promise<void>) =>
       Reflect.apply(registerRetirementGuard, config, [guard]),
     requireAgent: config.requireAgent as () => Agent,
@@ -269,6 +289,7 @@ export class SdkOperationService extends Service {
           }
           this.assertHealthy();
           if (source === undefined) {
+            if (this.configValue.ownsRootContextMessage(agent, message.source, message.id)) return;
             throw new Error("official root Agent claimed unowned product-operation work");
           }
           const fold = foldProductOperationsForLiveClaim(agent.session.events, {
@@ -325,6 +346,7 @@ export class SdkOperationService extends Service {
           }
           this.assertHealthy();
           if (source === undefined) {
+            if (this.configValue.ownsRootContextMessage(agent, message.source, message.id)) return;
             throw new Error("official root Agent discarded unowned product-operation work");
           }
           const fold = foldProductOperationsForLiveDiscard(agent.session.events, {
@@ -914,6 +936,11 @@ export class SdkOperationService extends Service {
     await this.configValue.settlementDeadlineAuthority.wait(
       this.correlationDrainValue,
       "primary retirement correlation durability",
+    );
+    this.assertHealthy();
+    await this.configValue.settlementDeadlineAuthority.wait(
+      this.configValue.drainOwnedWork(agent),
+      "primary retirement product work drain",
     );
     this.assertHealthy();
     await this.configValue.settlementDeadlineAuthority.wait(

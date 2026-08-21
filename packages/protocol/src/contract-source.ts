@@ -12,7 +12,7 @@ export type { CanonicalToolName } from "../generated/canonical-tools.generated.j
 
 export const PROTOCOL_VERSION = "2.0.0-draft.1" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
-export const DSH_ENGINE_VERSION = "0.1.0-rc.5.myagents.47f943859bef.822013237935" as const;
+export const DSH_ENGINE_VERSION = "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
 export const MAX_FRAME_BYTES = 1_048_576;
 export const MIN_FRAME_BYTES = 4_096;
