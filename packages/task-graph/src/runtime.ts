@@ -6,11 +6,16 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 import {
   CANONICAL_TOOL_CONTRACTS,
+  boundedJsonMetadata,
   canonicalInputSchemaForDsh,
   canonicalOutputSchemaForDsh,
+  deepFreeze,
   normalizeCanonicalJson,
+  strictObject,
   validateCanonicalToolInput,
   validateCanonicalToolOutput,
 } from "@myagents-dsh/tool-contracts";
@@ -18,41 +23,6 @@ import {
   ProductToolError,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
-
-declare module "@deepseek-ai/cordis" {
-  interface Context {
-    productTaskGraph: ProductTaskGraphService;
-  }
-}
-
-declare module "@deepseek-ai/dsh-session" {
-  interface SessionEventMap {
-    "myagents/task/created": {
-      activeForm?: string;
-      authority: TaskMutationAuthority;
-      description: string;
-      eventSeq: number;
-      metadata?: Record<string, unknown>;
-      priorRevision: string;
-      revision: string;
-      sessionId: string;
-      subject: string;
-      taskId: string;
-      taskSequence: number;
-    };
-    "myagents/task/updated": {
-      authority: TaskMutationAuthority;
-      changedFields: string[];
-      eventSeq: number;
-      patch: Record<string, unknown>;
-      priorRevision: string;
-      revision: string;
-      sessionId: string;
-      taskId: string;
-      taskSequence: number;
-    };
-  }
-}
 
 type JsonObject = Record<string, unknown>;
 export type ProductTaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
@@ -85,22 +55,103 @@ export interface ProductTaskGraphServiceConfig {
   readonly requireAgent: () => Agent;
 }
 
-export interface TaskMutationAuthority {
-  readonly callId: string;
-  readonly clientOperationId: string;
-  readonly dshTurn: number;
-  readonly origin: "root";
-  readonly productTurnId: string;
-  readonly toolCatalogDigest: string;
-  readonly toolCatalogRevision: string;
-}
-
 export const PRODUCT_TASK_EVENT_TYPES = Object.freeze([
   "myagents/task/created",
   "myagents/task/updated",
 ] as const);
 
 export type ProductTaskEventType = typeof PRODUCT_TASK_EVENT_TYPES[number];
+
+const eventIdentifierSchema = Type.String({
+  minLength: 1,
+  maxLength: 256,
+  pattern: "^[^\\u0000-\\u001F\\u007F]+$",
+});
+const eventSha256Schema = Type.String({ pattern: "^[a-f0-9]{64}$" });
+const eventSequenceSchema = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
+const taskSequenceSchema = Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER });
+const taskMutationAuthoritySchema = strictObject({
+  callId: eventIdentifierSchema,
+  clientOperationId: eventIdentifierSchema,
+  dshTurn: taskSequenceSchema,
+  origin: Type.Literal("root"),
+  productTurnId: eventIdentifierSchema,
+  toolCatalogDigest: eventSha256Schema,
+  toolCatalogRevision: eventIdentifierSchema,
+});
+const taskUpdateFieldSchema = Type.Union([
+  Type.Literal("status"),
+  Type.Literal("subject"),
+  Type.Literal("description"),
+  Type.Literal("activeForm"),
+  Type.Literal("owner"),
+  Type.Literal("addBlocks"),
+  Type.Literal("addBlockedBy"),
+  Type.Literal("metadata"),
+]);
+const taskUpdatePatchSchema = Type.Object({
+  status: Type.Optional(Type.Union([
+    Type.Literal("pending"),
+    Type.Literal("in_progress"),
+    Type.Literal("completed"),
+    Type.Literal("cancelled"),
+  ])),
+  subject: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
+  description: Type.Optional(Type.String({ minLength: 1, maxLength: 65_536 })),
+  activeForm: Type.Optional(Type.String({ maxLength: 512 })),
+  owner: Type.Optional(eventIdentifierSchema),
+  addBlocks: Type.Optional(Type.Array(eventIdentifierSchema, { maxItems: 256, uniqueItems: true })),
+  addBlockedBy: Type.Optional(Type.Array(eventIdentifierSchema, { maxItems: 256, uniqueItems: true })),
+  metadata: Type.Optional(boundedJsonMetadata),
+}, { additionalProperties: false, minProperties: 1 });
+
+export const PRODUCT_TASK_EVENT_SCHEMAS = deepFreeze({
+  "myagents/task/created": strictObject({
+    activeForm: Type.Optional(Type.String({ maxLength: 512 })),
+    authority: taskMutationAuthoritySchema,
+    description: Type.String({ minLength: 1, maxLength: 65_536 }),
+    eventSeq: eventSequenceSchema,
+    metadata: Type.Optional(boundedJsonMetadata),
+    priorRevision: eventSha256Schema,
+    revision: eventSha256Schema,
+    sessionId: eventIdentifierSchema,
+    subject: Type.String({ minLength: 1, maxLength: 512 }),
+    taskId: eventIdentifierSchema,
+    taskSequence: taskSequenceSchema,
+  }),
+  "myagents/task/updated": strictObject({
+    authority: taskMutationAuthoritySchema,
+    changedFields: Type.Array(taskUpdateFieldSchema, { minItems: 1, maxItems: 8, uniqueItems: true }),
+    eventSeq: eventSequenceSchema,
+    patch: taskUpdatePatchSchema,
+    priorRevision: eventSha256Schema,
+    revision: eventSha256Schema,
+    sessionId: eventIdentifierSchema,
+    taskId: eventIdentifierSchema,
+    taskSequence: taskSequenceSchema,
+  }),
+} as const);
+
+export type TaskMutationAuthority = Readonly<Static<typeof taskMutationAuthoritySchema>>;
+export type ProductTaskCreatedEventData = Readonly<
+  Static<(typeof PRODUCT_TASK_EVENT_SCHEMAS)["myagents/task/created"]>
+>;
+export type ProductTaskUpdatedEventData = Readonly<
+  Static<(typeof PRODUCT_TASK_EVENT_SCHEMAS)["myagents/task/updated"]>
+>;
+
+declare module "@deepseek-ai/cordis" {
+  interface Context {
+    productTaskGraph: ProductTaskGraphService;
+  }
+}
+
+declare module "@deepseek-ai/dsh-session" {
+  interface SessionEventMap {
+    "myagents/task/created": ProductTaskCreatedEventData;
+    "myagents/task/updated": ProductTaskUpdatedEventData;
+  }
+}
 
 export const isProductTaskEventType = (value: string): value is ProductTaskEventType =>
   (PRODUCT_TASK_EVENT_TYPES as readonly string[]).includes(value);
@@ -278,7 +329,27 @@ const normalizedMetadata = (value: unknown, description: string): Readonly<Recor
   if (Buffer.byteLength(canonicalJson(record), "utf8") > MAX_METADATA_BYTES) {
     throw new ProductTaskGraphFoldError(`${description} exceeds its byte budget`);
   }
-  return Object.freeze(record);
+  return deepFreeze(record);
+};
+
+export const validateProductTaskEventData = <Type extends ProductTaskEventType>(
+  type: Type,
+  value: unknown,
+): Readonly<Static<(typeof PRODUCT_TASK_EVENT_SCHEMAS)[Type]>> => {
+  let normalized: unknown;
+  try {
+    normalized = normalizeCanonicalJson(value, `${type} durable event`);
+  } catch (error) {
+    throw new ProductTaskGraphFoldError(`${type} durable event is not canonical JSON`, { cause: error });
+  }
+  const schema = PRODUCT_TASK_EVENT_SCHEMAS[type];
+  if (!Value.Check(schema, normalized)) {
+    const first = Value.Errors(schema, normalized)[0];
+    throw new ProductTaskGraphFoldError(
+      `${type} durable event does not satisfy its exact schema: ${first?.message ?? "invalid value"}`,
+    );
+  }
+  return deepFreeze(normalized as Static<(typeof PRODUCT_TASK_EVENT_SCHEMAS)[Type]>);
 };
 
 const parseMutationAuthority = (value: unknown, description: string): TaskMutationAuthority => {
@@ -324,7 +395,7 @@ const freezeTask = (task: InternalTaskNode): InternalTaskNode => Object.freeze({
   ...(task.owner === undefined ? {} : { owner: task.owner }),
   blocks: Object.freeze([...task.blocks]),
   blockedBy: Object.freeze([...task.blockedBy]),
-  ...(task.metadata === undefined ? {} : { metadata: Object.freeze(structuredClone(task.metadata)) }),
+  ...(task.metadata === undefined ? {} : { metadata: deepFreeze(structuredClone(task.metadata)) }),
   createdSequence: task.createdSequence,
   updatedSequence: task.updatedSequence,
 });
@@ -339,7 +410,7 @@ const projectTask = (task: InternalTaskNode): ProductTaskNode => Object.freeze({
   blockedBy: Object.freeze([...task.blockedBy]),
   ...(task.metadata === undefined || Object.keys(task.metadata).length === 0
     ? {}
-    : { metadata: Object.freeze(structuredClone(task.metadata)) }),
+    : { metadata: deepFreeze(structuredClone(task.metadata)) }),
   createdSequence: task.createdSequence,
   updatedSequence: task.updatedSequence,
 });
@@ -501,7 +572,7 @@ const parseCreateEvent = (value: unknown): Readonly<{
   taskSequence: number;
 }> => {
   const data = exactDataObject(
-    value,
+    validateProductTaskEventData("myagents/task/created", value),
     ["authority", "description", "eventSeq", "priorRevision", "revision", "sessionId", "subject", "taskId", "taskSequence"],
     ["activeForm", "metadata"],
     "durable TaskCreate event",
@@ -540,7 +611,7 @@ const parseUpdateEvent = (value: unknown): Readonly<{
   taskSequence: number;
 }> => {
   const data = exactDataObject(
-    value,
+    validateProductTaskEventData("myagents/task/updated", value),
     ["authority", "changedFields", "eventSeq", "patch", "priorRevision", "revision", "sessionId", "taskId", "taskSequence"],
     [],
     "durable TaskUpdate event",
@@ -982,6 +1053,7 @@ export class ProductTaskGraphService extends Service {
       let plan: TPlan;
       try {
         plan = prepare(before);
+        validateProductTaskEventData(type, plan.data);
         const synthetic: SessionEvent = Object.freeze({
           data: plan.data,
           seq: context.agent.session.seq,

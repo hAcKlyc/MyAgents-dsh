@@ -24,7 +24,10 @@ import {
   type StoredPrefix,
 } from "@deepseek-ai/dsh-session-persistence";
 import { PRODUCT_OPERATION_EVENT_TYPES } from "@myagents-dsh/operation-runtime";
-import { PRODUCT_TASK_EVENT_TYPES } from "@myagents-dsh/task-graph";
+import {
+  PRODUCT_TASK_EVENT_SCHEMAS,
+  PRODUCT_TASK_EVENT_TYPES,
+} from "@myagents-dsh/task-graph";
 import { PRODUCT_PERMISSION_EVENT_TYPES } from "@myagents-dsh/tool-runtime-product";
 import { PRODUCT_PLAN_EVENT_TYPES } from "@myagents-dsh/tools-interaction";
 
@@ -624,6 +627,16 @@ export const PRODUCT_REQUIRED_EVENT_TYPES = Object.freeze([
   ...PRODUCT_PLAN_EVENT_TYPES,
   ...PRODUCT_TASK_EVENT_TYPES,
 ] as const);
+
+export const PRODUCT_REQUIRED_EVENT_SCHEMAS = Object.freeze({
+  ...PRODUCT_TASK_EVENT_SCHEMAS,
+});
+
+export function productKnownRequiredEventSchema(type: string): unknown {
+  return Object.hasOwn(PRODUCT_REQUIRED_EVENT_SCHEMAS, type)
+    ? PRODUCT_REQUIRED_EVENT_SCHEMAS[type as keyof typeof PRODUCT_REQUIRED_EVENT_SCHEMAS]
+    : undefined;
+}
 
 export function productKnownEventType(type: string): boolean {
   return KNOWN_SESSION_EVENT_TYPES.has(type) ||

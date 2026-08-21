@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   PRODUCT_REQUIRED_EVENT_TYPES,
+  PRODUCT_REQUIRED_EVENT_SCHEMAS,
   SharedGenerationMutationHarness,
   SharedSessionMutationHarness,
   commitPreparedAssistant,
@@ -30,6 +31,7 @@ import {
   makeSpikeUserMessage,
   prepareAssistantCommit,
   productKnownEventType,
+  productKnownRequiredEventSchema,
   recoverPendingOperation,
   recoverTerminalEnvelope,
   removeAndReinsertCandidate,
@@ -598,6 +600,13 @@ describe("product persistence and mutation spike", () => {
     ]);
     expect(unsupportedRequiredEvents(session.events, productKnownEventType)).toEqual([]);
     expect(PRODUCT_REQUIRED_EVENT_TYPES.every(productKnownEventType)).toBe(true);
+    expect(Object.keys(PRODUCT_REQUIRED_EVENT_SCHEMAS)).toEqual([
+      "myagents/task/created",
+      "myagents/task/updated",
+    ]);
+    expect(productKnownRequiredEventSchema("myagents/task/created"))
+      .toBe(PRODUCT_REQUIRED_EVENT_SCHEMAS["myagents/task/created"]);
+    expect(productKnownRequiredEventSchema("myagents/unregistered/required")).toBeUndefined();
     expect(productKnownEventType("myagents/unregistered/required")).toBe(false);
   });
 

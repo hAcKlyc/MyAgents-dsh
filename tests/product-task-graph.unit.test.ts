@@ -6,9 +6,12 @@ import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import {
+  PRODUCT_TASK_EVENT_SCHEMAS,
+  PRODUCT_TASK_EVENT_TYPES,
   ProductTaskGraphFoldError,
   ProductTaskGraphService,
   foldProductTaskGraph,
+  validateProductTaskEventData,
 } from "@myagents-dsh/task-graph";
 import type { ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { setImmediate as yieldImmediate } from "node:timers/promises";
@@ -119,7 +122,7 @@ describe("durable Session-local product TaskGraph", () => {
       subject: "Inspect durable fold",
       description: "Read the Session event history",
       activeForm: "Inspecting",
-      metadata: { priority: 1 },
+      metadata: { priority: 1, nested: { x: 1 }, list: [1] },
     });
     const second = await successful(state, "TaskCreate", {
       subject: "Publish result",
@@ -132,7 +135,7 @@ describe("durable Session-local product TaskGraph", () => {
       blockedBy: [],
       createdSequence: 1,
       updatedSequence: 1,
-      metadata: { priority: 1 },
+      metadata: { priority: 1, nested: { x: 1 }, list: [1] },
     });
     expect(second.task).toMatchObject({ id: "task-2", createdSequence: 2, updatedSequence: 2 });
     const firstTaskEvent = state.session.events.find(({ type }) => type === "myagents/task/created");
@@ -151,6 +154,35 @@ describe("durable Session-local product TaskGraph", () => {
     expect(resumed).toEqual(state.context.productTaskGraph.snapshot(state.agent));
     expect(resumed.sequence).toBe(2);
     expect(resumed.revision).toBe(second.revision);
+
+    const projected = resumed.tasks[0]?.metadata as {
+      readonly list: readonly number[];
+      readonly nested: Readonly<{ x: number }>;
+    };
+    expect(Object.isFrozen(projected)).toBe(true);
+    expect(Object.isFrozen(projected.nested)).toBe(true);
+    expect(Object.isFrozen(projected.list)).toBe(true);
+    expect(() => { (projected.nested as { x: number }).x = 2; }).toThrow(TypeError);
+    expect(() => { (projected.list as number[]).push(2); }).toThrow(TypeError);
+    expect((state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.metadata as {
+      nested: { x: number };
+    }).nested.x).toBe(1);
+  });
+
+  it("exports exact immutable schemas used by durable event parsing", async () => {
+    const state = await mounted();
+    await successful(state, "TaskCreate", { subject: "Schema", description: "Schema authority" });
+    const created = state.session.events.find(({ type }) => type === "myagents/task/created");
+    expect(PRODUCT_TASK_EVENT_TYPES).toEqual(Object.keys(PRODUCT_TASK_EVENT_SCHEMAS));
+    expect(Object.isFrozen(PRODUCT_TASK_EVENT_SCHEMAS)).toBe(true);
+    expect(Object.isFrozen(PRODUCT_TASK_EVENT_SCHEMAS["myagents/task/created"])).toBe(true);
+    expect(created?.type).toBe("myagents/task/created");
+    if (created?.type !== "myagents/task/created") throw new Error("created event missing");
+    expect(validateProductTaskEventData(created.type, created.data)).toEqual(created.data);
+    expect(() => validateProductTaskEventData(created.type, {
+      ...created.data,
+      unexpected: true,
+    })).toThrow(ProductTaskGraphFoldError);
   });
 
   it("enforces dependency cycles, ownership, blockers, and monotonic terminal state", async () => {
