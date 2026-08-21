@@ -99,9 +99,6 @@ export interface ProductToolRuntimeConfig {
     prepare(context: ProductToolContext, request: ProductToolCheckpointRequest): Promise<ProductToolCheckpointHandle>;
   }>;
   readonly environment: () => ProductToolExecutionEnvironment;
-  readonly permission: Readonly<{
-    authorize(context: ProductToolContext, request: ProductToolPermissionRequest): Promise<"allow" | "deny">;
-  }>;
   readonly requireAgent: () => Agent;
   readonly resolveOperation: (agent: Agent) => Readonly<{
     dshTurn: number;
@@ -170,7 +167,7 @@ const exactConfig = (value: unknown): ProductToolRuntimeConfig => {
     throw new TypeError("ProductToolRuntime config must be a plain object");
   }
   const config = value as JsonObject;
-  const expected = ["catalog", "checkpoint", "environment", "permission", "requireAgent", "resolveOperation"];
+  const expected = ["catalog", "checkpoint", "environment", "requireAgent", "resolveOperation"];
   if (Reflect.ownKeys(config).some((key) => typeof key !== "string" || !expected.includes(key))
     || expected.some((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(config, key);
@@ -200,7 +197,6 @@ const exactConfig = (value: unknown): ProductToolRuntimeConfig => {
   const environment = dataFunction(config, "environment", "environment authority");
   const requireAgent = dataFunction(config, "requireAgent", "primary Agent authority");
   const resolveOperation = dataFunction(config, "resolveOperation", "operation authority");
-  const [permissionOwner, authorize] = capability(config.permission, "authorize", "permission authority");
   const [checkpointOwner, prepare] = capability(config.checkpoint, "prepare", "checkpoint authority");
   return Object.freeze({
     catalog: () => Reflect.apply(catalog, config, []) as unknown,
@@ -209,10 +205,6 @@ const exactConfig = (value: unknown): ProductToolRuntimeConfig => {
         Reflect.apply(prepare, checkpointOwner, [context, request]) as Promise<ProductToolCheckpointHandle>,
     }),
     environment: () => Reflect.apply(environment, config, []) as ProductToolExecutionEnvironment,
-    permission: Object.freeze({
-      authorize: (context: ProductToolContext, request: ProductToolPermissionRequest) =>
-        Reflect.apply(authorize, permissionOwner, [context, request]) as Promise<"allow" | "deny">,
-    }),
     requireAgent: () => Reflect.apply(requireAgent, config, []) as Agent,
     resolveOperation: (agent: Agent) => Reflect.apply(resolveOperation, config, [agent]) as Readonly<{
       dshTurn: number;
@@ -234,7 +226,7 @@ type PendingReadState = Readonly<{
 }>;
 
 export class ProductToolRuntime extends Service {
-  static inject = ["tools"];
+  static inject = ["productPermission", "tools"];
   readonly locks = new ProductKeyedLocks();
   private readonly configValue: ProductToolRuntimeConfig;
   private readonly pendingReadStatesValue = new Map<string, PendingReadState>();
@@ -317,7 +309,7 @@ export class ProductToolRuntime extends Service {
     request: ProductToolPermissionRequest,
   ): Promise<void> {
     context.signal.throwIfAborted();
-    const pending: unknown = this.configValue.permission.authorize(context, Object.freeze({ ...request }));
+    const pending: unknown = this.ctx.productPermission.authorize(context, Object.freeze({ ...request }));
     if (pending !== null && typeof pending === "object" && utilTypes.isProxy(pending)) {
       throw new TypeError("permission authority must not return a Proxy thenable");
     }

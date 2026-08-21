@@ -296,11 +296,13 @@ const harness = async (options: Readonly<{
   let permissionDecision: "allow" | "deny" = "allow";
   let permissionPromise: Promise<"allow" | "deny"> | undefined;
   let currentOperation: ProductOperationRecord = operation;
+  context.provide("productPermission", {
+    authorize: () => permissionPromise ?? Promise.resolve(permissionDecision),
+  } as never);
   await context.plugin(ProductToolRuntime, {
     catalog: () => catalog,
     checkpoint: Object.freeze({ prepare: () => Promise.reject(new Error("checkpoint not used")) }),
     environment: () => environment,
-    permission: Object.freeze({ authorize: () => permissionPromise ?? Promise.resolve(permissionDecision) }),
     requireAgent: () => agent,
     resolveOperation: () => Object.freeze({ dshTurn: 1, operation: currentOperation }),
   });

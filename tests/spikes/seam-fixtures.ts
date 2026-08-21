@@ -24,6 +24,7 @@ import {
   type StoredPrefix,
 } from "@deepseek-ai/dsh-session-persistence";
 import { PRODUCT_OPERATION_EVENT_TYPES } from "@myagents-dsh/operation-runtime";
+import { PRODUCT_PERMISSION_EVENT_TYPES } from "@myagents-dsh/tool-runtime-product";
 
 export type OperationSpikeEvent =
   | {
@@ -617,6 +618,7 @@ export function commitPreparedAssistant(
 
 export const PRODUCT_REQUIRED_EVENT_TYPES = Object.freeze([
   ...PRODUCT_OPERATION_EVENT_TYPES,
+  ...PRODUCT_PERMISSION_EVENT_TYPES,
   "myagents/task/created",
   "myagents/task/updated",
 ] as const);

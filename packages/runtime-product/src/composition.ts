@@ -4,13 +4,15 @@ import { AgentRegistry } from "@deepseek-ai/dsh-agent";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
 import { LlmAdapter, LlmRuntime } from "@deepseek-ai/dsh-llm";
-import { SessionStore } from "@deepseek-ai/dsh-session";
+import { SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
+import { ApprovalService } from "@deepseek-ai/dsh-user-approval";
+import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
 import { WebRuntime } from "@deepseek-ai/dsh-web";
 import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
 import { isProxy } from "node:util/types";
@@ -25,7 +27,13 @@ import {
   selectPlatformAdapter,
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
-import { ProductToolRuntime, type ProductToolRuntimeConfig } from "@myagents-dsh/tool-runtime-product";
+import {
+  ProductPermissionService,
+  ProductToolRuntime,
+  validateProductPermissionPlaneConfig,
+  type ProductPermissionPlaneConfig,
+  type ProductToolRuntimeConfig,
+} from "@myagents-dsh/tool-runtime-product";
 import {
   ProductProcessRuntime,
   SealedBashExecutor,
@@ -341,7 +349,7 @@ export interface CanonicalToolPlaneConfig {
   readonly attachments: CanonicalFileToolsConfig["attachments"];
   readonly catalog: ProductToolRuntimeConfig["catalog"];
   readonly checkpoint: ProductToolRuntimeConfig["checkpoint"];
-  readonly permission: ProductToolRuntimeConfig["permission"];
+  readonly permission: ProductPermissionPlaneConfig;
   readonly platformTarget: PlatformTarget;
   readonly process: ProductProcessRuntimeConfig;
   readonly temporaryRoot: string;
@@ -375,6 +383,7 @@ export const installCanonicalToolPlane = async (
   }
   const normalized = candidate as CanonicalToolPlaneConfig;
   const processConfig = validateProductProcessRuntimeConfig(normalized.process);
+  const permissionConfig = validateProductPermissionPlaneConfig(normalized.permission);
   const webConfig = normalized.web === undefined
     ? undefined
     : validateCanonicalWebToolsConfig(normalized.web);
@@ -412,11 +421,23 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
     const processIo = requireLocalWorkspaceFileSystem(root.fs).createProcessIoAuthority();
     fibers.push(await root.plugin(ToolCallTimeoutPolicy));
+    fibers.push(await root.plugin(ApprovalService, { policy: "ask" }));
+    fibers.push(await root.plugin(UserQuestionService));
+    const permissionDeadline = root.productSession.settlementDeadlineAuthority();
+    fibers.push(await root.plugin(ProductPermissionService, {
+      ...permissionConfig,
+      clock: Date.now,
+      durability: Object.freeze({
+        flush: (session: Session) => permissionDeadline.wait(
+          root.sessions.flush(session),
+          "product permission durability flush",
+        ),
+      }),
+    }));
     fibers.push(await root.plugin(ProductToolRuntime, {
       catalog: normalized.catalog,
       checkpoint: normalized.checkpoint,
       environment: () => root.productSession.requireExecutionEnvironment(),
-      permission: normalized.permission,
       requireAgent: () => root.productSession.requireAgent(),
       resolveOperation: (agent) => root.sdkOperations.resolveActiveToolOperation(agent),
     }));

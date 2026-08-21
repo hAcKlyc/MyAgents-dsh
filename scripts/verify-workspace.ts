@@ -129,7 +129,7 @@ const expectedWorkspaceFiles = new Map([
     "src/schema.ts",
     "src/validation.ts",
   ]],
-  ["packages/tool-runtime-product", ["src/index.ts", "src/keyed-locks.ts", "src/runtime.ts"]],
+  ["packages/tool-runtime-product", ["src/index.ts", "src/keyed-locks.ts", "src/permission.ts", "src/runtime.ts"]],
   ["packages/tools-fs", ["src/canonical-file-tools.ts", "src/index.ts", "src/local-filesystem.ts"]],
   ["packages/tools-process", [
     "src/index.ts",

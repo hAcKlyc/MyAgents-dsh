@@ -36,9 +36,10 @@ import {
 } from "@myagents-dsh/runtime-product";
 import { ScriptedFakeLlmAdapter } from "@myagents-dsh/testkit";
 import type {
+  ProductLocalInteractionSettlement,
+  ProductPermissionInteractionRequest,
   ProductToolCheckpointRequest,
   ProductToolContext,
-  ProductToolPermissionRequest,
 } from "@myagents-dsh/tool-runtime-product";
 import {
   CANONICAL_TOOL_CONTRACT_SHA256,
@@ -251,6 +252,9 @@ adapter.enqueue({
 adapter.enqueue({ kind: "complete", text: "bounded web tools completed" });
 
 const rpcDigest = "a".repeat(64);
+let capturePermissionRevision = (): string => {
+  throw new Error("artifact permission authority is not installed");
+};
 const composition = await composeDshRootServices({
   adapter,
   operationBirthAuthority: Object.freeze({
@@ -263,7 +267,7 @@ const composition = await composeDshRootServices({
       toolCatalogDigest: validatedArtifactToolCatalog.digest,
       executionEnvironmentRevision: value.executionEnvironmentRevision,
       executionEnvironmentDigest: value.executionEnvironmentDigest,
-      permissionRevision: "artifact-permission-v1",
+      permissionRevision: capturePermissionRevision(),
       interactionScenarioRevision: "artifact-interaction-v1",
       planRevision: "artifact-plan-v1",
       originRevision: "artifact-origin-v1",
@@ -354,10 +358,30 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
     },
   }),
   permission: Object.freeze({
-    authorize: (_context: ProductToolContext, request: ProductToolPermissionRequest) => {
-      fileToolEvidence.push(`permission:${request.tool}:${request.target}`);
-      return Promise.resolve("allow" as const);
-    },
+    autoAllowTools: Object.freeze([]),
+    interaction: Object.freeze({
+      revision: "artifact-interaction-v1",
+      decidePermission: (
+        request: ProductPermissionInteractionRequest,
+        settlement: ProductLocalInteractionSettlement<unknown>,
+      ) => {
+        fileToolEvidence.push(`permission:${request.tool}:${request.target}`);
+        settlement.resolve(Object.freeze({
+          interactionId: request.interactionId,
+          expectedPermissionRevision: request.expectedPermissionRevision,
+          decision: request.tool === "Write" ? "always_allow" as const : "allow_once" as const,
+        }));
+        return () => undefined;
+      },
+      answerQuestions: (_request: unknown, settlement: ProductLocalInteractionSettlement<unknown>) => {
+        settlement.reject(new Error("A6 question tools are not active"));
+        return () => undefined;
+      },
+    }),
+    interactionTimeoutMs: 5_000,
+    maxRules: 16,
+    mode: "default",
+    ruleTtlMs: 60_000,
   }),
   platformTarget: "darwin-arm64",
   process: Object.freeze({
@@ -458,6 +482,9 @@ await assert.rejects(
   /exact unclaimed root composition authority/u,
 );
 await canonicalToolPlaneInstallation;
+capturePermissionRevision = () => composition.context.productPermission.currentRevision(
+  composition.context.productSession.requireAgent(),
+);
 await assert.rejects(
   installCanonicalToolPlane(composition, canonicalToolPlaneConfig),
   /exact unclaimed root composition authority/u,
@@ -887,17 +914,27 @@ await waitUntil(
   })})`,
 );
 
+const approvalRuntimeContext = "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n"
+  + "Approval policy: ask. Operations that require approval may ask through the configured answerers; "
+  + "without an available answerer, the request fails closed.";
+const approvalContextMessage = {
+  role: "user" as const,
+  content: [{ type: "text" as const, text: approvalRuntimeContext }],
+};
 assert.deepEqual(primaryAgent.session.deriveMessages().map(({ role, content }) => ({ role, content })), [
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
+  approvalContextMessage,
   { role: "assistant", content: [{ type: "text", text: "first completion" }] },
   { role: "user", content: [{ type: "text", text: "second prompt" }] },
   { role: "assistant", content: [{ type: "text", text: "second completion" }] },
 ]);
 assert.deepEqual(adapter.requests[0]?.messages.map(({ role, content }) => ({ role, content })), [
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
+  approvalContextMessage,
 ]);
 assert.deepEqual(adapter.requests[1]?.messages.map(({ role, content }) => ({ role, content })), [
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
+  approvalContextMessage,
   { role: "assistant", content: [{ type: "text", text: "first completion" }] },
   { role: "user", content: [{ type: "text", text: "second prompt" }] },
 ]);
@@ -939,11 +976,14 @@ await waitUntil(
 assert.equal(composition.context.sdkOperations.lookup("artifact-file-operation")?.terminal?.kind, "succeeded");
 assert.equal(await readFile(fixtureFile, "utf8"), "after governed Write\n");
 assert.deepEqual(fileToolEvidence, [
-  `permission:Read:${fixtureFile}`,
   `permission:Write:${fixtureFile}`,
   `prepare:Write:${fixtureFile}`,
   "commit",
 ]);
+assert.equal(
+  primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule").length,
+  1,
+);
 const governedToolResults = primaryAgent.session.events.filter((event) =>
   event.type === "tool/result" && ["artifact-read-call", "artifact-write-call"]
     .includes(String(event.data.message.source.callId)));
@@ -1063,8 +1103,9 @@ const backgroundFloodRecord = backgroundFlood as Record<string, unknown>;
 assert.equal(backgroundFloodRecord.background, true);
 assert.equal(typeof backgroundFloodRecord.outputPath, "string");
 assert.equal(typeof backgroundFloodRecord.taskId, "string");
-for (const permission of ["Glob", "Grep", "ls", "Bash"]) {
-  assert.ok(fileToolEvidence.some((entry) => entry.startsWith(`permission:${permission}:`)));
+assert.ok(fileToolEvidence.some((entry) => entry.startsWith("permission:Bash:")));
+for (const safeTool of ["Read", "Glob", "Grep", "ls"]) {
+  assert.equal(fileToolEvidence.some((entry) => entry.startsWith(`permission:${safeTool}:`)), false);
 }
 const backgroundJobs = composition.context.jobs.list(primaryAgent);
 assert.equal(backgroundJobs.length, 2);
@@ -1387,6 +1428,12 @@ assert.equal(adapter.activeStreamCount, 0);
 assert.equal(nativeRpc.phase, "disposed");
 assert.throws(() => composition.snapshot(), /disposing or disposed/u);
 assert.deepEqual(hostFatalErrors, []);
+const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
+const permissionDecidedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/decided");
+const permissionRuleEvents = primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule");
+assert.equal(permissionAskedEvents.length, 8);
+assert.equal(permissionDecidedEvents.length, 8);
+assert.equal(permissionRuleEvents.length, 1);
 hostPeer.close();
 runtimeInput.destroy();
 runtimeOutput.destroy();
@@ -1418,7 +1465,16 @@ process.stdout.write(`${JSON.stringify({
   canonicalFileToolsVerified: true,
   canonicalProcessSearchToolsVerified: true,
   canonicalWebToolsVerified: true,
+  canonicalPermissionInteractionVerified: true,
   ambientWebSearchFallbackRejected: true,
+  canonicalPermissionEvidence: {
+    asked: permissionAskedEvents.length,
+    decided: permissionDecidedEvents.length,
+    durableRules: permissionRuleEvents.length,
+    providerRequests: fileToolEvidence.filter((entry) => entry.startsWith("permission:")).length,
+    safeToolsAutoAllowed: ["Read", "Glob", "Grep", "ls"].every((tool) =>
+      !fileToolEvidence.some((entry) => entry.startsWith(`permission:${tool}:`))),
+  },
   canonicalWebEvidence: {
     fetch: webFetchOutput,
     permissions: fileToolEvidence.filter((entry) => entry.startsWith("permission:Web")),

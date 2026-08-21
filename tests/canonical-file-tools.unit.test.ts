@@ -155,6 +155,12 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
   await context.plugin(LocalWorkspaceFileSystem, {
     platform: selectPlatformAdapter(environment.platformTarget),
   });
+  context.provide("productPermission", {
+    authorize: (_product: ProductToolContext, request: ProductToolPermissionRequest) => {
+      permissions.push(`${request.tool}:${request.target}`);
+      return Promise.resolve(permissionDecision);
+    },
+  } as never);
   await context.plugin(ProductToolRuntime, {
     catalog: () => catalog,
     checkpoint: Object.freeze({
@@ -175,12 +181,6 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
       },
     }),
     environment: () => environment,
-    permission: Object.freeze({
-      authorize: (_product: ProductToolContext, request: ProductToolPermissionRequest) => {
-        permissions.push(`${request.tool}:${request.target}`);
-        return Promise.resolve(permissionDecision);
-      },
-    }),
     requireAgent: () => agent,
     resolveOperation: () => Object.freeze({ dshTurn: 1, operation }),
   });

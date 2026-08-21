@@ -5,7 +5,7 @@
     "outDir": "../../dist/packages/tool-runtime-product",
     "tsBuildInfoFile": "../../dist/packages/tool-runtime-product/.tsbuildinfo"
   },
-  "files": ["src/index.ts", "src/keyed-locks.ts", "src/runtime.ts"],
+  "files": ["src/index.ts", "src/keyed-locks.ts", "src/permission.ts", "src/runtime.ts"],
   "references": [
     { "path": "../operation-runtime" },
     { "path": "../tool-contracts" }

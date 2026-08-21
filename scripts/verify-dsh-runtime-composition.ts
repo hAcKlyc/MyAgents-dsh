@@ -98,6 +98,7 @@ const runtimeCompositionSourcePaths = [
   "packages/tool-contracts/src/validation.ts",
   "packages/tool-runtime-product/src/index.ts",
   "packages/tool-runtime-product/src/keyed-locks.ts",
+  "packages/tool-runtime-product/src/permission.ts",
   "packages/tool-runtime-product/src/runtime.ts",
   "packages/tools-fs/src/canonical-file-tools.ts",
   "packages/tools-fs/src/index.ts",
@@ -996,6 +997,7 @@ const main = (): void => {
       || evidence.canonicalFileToolsVerified !== true
       || evidence.canonicalProcessSearchToolsVerified !== true
       || evidence.canonicalWebToolsVerified !== true
+      || evidence.canonicalPermissionInteractionVerified !== true
       || evidence.ambientWebSearchFallbackRejected !== true
       || evidence.operationCorrelationVerified !== true
       || evidence.operationInterruptVerified !== true
@@ -1008,6 +1010,17 @@ const main = (): void => {
         "interrupt", "queued_cancel", "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
+    }
+    const permissionEvidence = exactObject(
+      evidence.canonicalPermissionEvidence,
+      "canonical permission and interaction evidence",
+    );
+    if (permissionEvidence.asked !== 8
+      || permissionEvidence.decided !== 8
+      || permissionEvidence.durableRules !== 1
+      || permissionEvidence.providerRequests !== 8
+      || permissionEvidence.safeToolsAutoAllowed !== true) {
+      throw new Error("canonical permission and interaction evidence differs from the exact policy contract");
     }
     const webEvidence = exactObject(evidence.canonicalWebEvidence, "canonical Web tool evidence");
     const webFetch = exactObject(webEvidence.fetch, "canonical WebFetch output evidence");

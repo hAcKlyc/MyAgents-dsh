@@ -144,7 +144,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/tool-runtime-product",
     relativeDirectory: "packages/tool-runtime-product",
-    allowedFiles: ["package.json", "src/index.ts", "src/keyed-locks.ts", "src/runtime.ts"],
+    allowedFiles: ["package.json", "src/index.ts", "src/keyed-locks.ts", "src/permission.ts", "src/runtime.ts"],
   },
   {
     packageName: "@myagents-dsh/tools-fs",
