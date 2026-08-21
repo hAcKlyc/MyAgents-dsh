@@ -102,6 +102,8 @@ const runtimeCompositionSourcePaths = [
   "packages/tool-runtime-product/src/keyed-locks.ts",
   "packages/tool-runtime-product/src/permission.ts",
   "packages/tool-runtime-product/src/runtime.ts",
+  "packages/tools-agent/src/index.ts",
+  "packages/tools-agent/src/skill-runtime.ts",
   "packages/tools-fs/src/canonical-file-tools.ts",
   "packages/tools-fs/src/index.ts",
   "packages/tools-fs/src/local-filesystem.ts",
@@ -128,6 +130,7 @@ const runtimePackageWorkspaces = [
   ["packages/testkit", "@myagents-dsh/testkit"],
   ["packages/tool-contracts", "@myagents-dsh/tool-contracts"],
   ["packages/tool-runtime-product", "@myagents-dsh/tool-runtime-product"],
+  ["packages/tools-agent", "@myagents-dsh/tools-agent"],
   ["packages/tools-fs", "@myagents-dsh/tools-fs"],
   ["packages/tools-interaction", "@myagents-dsh/tools-interaction"],
   ["packages/tools-process", "@myagents-dsh/tools-process"],
@@ -942,6 +945,12 @@ const main = (): void => {
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
+      "packages/tools-agent",
+      "@myagents-dsh/tools-agent",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
       "packages/task-graph",
       "@myagents-dsh/task-graph",
     );
@@ -1018,6 +1027,7 @@ const main = (): void => {
       || evidence.canonicalPermissionInteractionVerified !== true
       || evidence.canonicalInteractionPlanToolsVerified !== true
       || evidence.canonicalTaskGraphVerified !== true
+      || evidence.canonicalStaticSkillVerified !== true
       || evidence.ambientWebSearchFallbackRejected !== true
       || evidence.operationCorrelationVerified !== true
       || evidence.operationInterruptVerified !== true
@@ -1027,7 +1037,7 @@ const main = (): void => {
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
         "success", "failure", "file_tools", "process_search_tools", "web_tools", "interaction",
-        "plan_workflow", "task_graph", "process_abort", "interrupt", "queued_cancel",
+        "plan_workflow", "task_graph", "static_skill", "process_abort", "interrupt", "queued_cancel",
         "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
@@ -1036,10 +1046,10 @@ const main = (): void => {
       evidence.canonicalPermissionEvidence,
       "canonical permission and interaction evidence",
     );
-    if (permissionEvidence.asked !== 18
-      || permissionEvidence.decided !== 18
+    if (permissionEvidence.asked !== 19
+      || permissionEvidence.decided !== 19
       || permissionEvidence.durableRules !== 1
-      || permissionEvidence.providerRequests !== 18
+      || permissionEvidence.providerRequests !== 19
       || permissionEvidence.safeToolsAutoAllowed !== true) {
       throw new Error("canonical permission and interaction evidence differs from the exact policy contract");
     }
@@ -1207,11 +1217,11 @@ const main = (): void => {
       });
     if (JSON.stringify(terminalOutcomes) !== JSON.stringify([
       "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
-      "succeeded", "succeeded", "succeeded", "succeeded",
+      "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
       "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
     ])) {
       throw new Error(
-        `Runtime terminal projection differs from the fourteen real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
+        `Runtime terminal projection differs from the fifteen real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
       );
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");

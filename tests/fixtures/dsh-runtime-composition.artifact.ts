@@ -36,6 +36,10 @@ import {
   type ProductSessionService,
 } from "@myagents-dsh/runtime-product";
 import { ScriptedFakeLlmAdapter } from "@myagents-dsh/testkit";
+import {
+  staticSkillCatalogDigest,
+  validateStaticSkillCatalog,
+} from "@myagents-dsh/tools-agent";
 import type {
   ProductLocalInteractionSettlement,
   ProductPermissionInteractionRequest,
@@ -71,6 +75,7 @@ const artifactEffectiveTools = Object.freeze([
   "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls", "WebFetch", "WebSearch",
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
   "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
+  "Skill",
 ] as const);
 const artifactEffectiveToolSet = new Set<string>(artifactEffectiveTools);
 const toolCatalogWithoutDigest = Object.freeze({
@@ -102,6 +107,18 @@ const fixtureRuntimeHome = join(fixtureRoot, "runtime-home");
 const fixtureAttachmentStaging = join(fixtureRoot, "attachments");
 const fixtureTemporaryRoot = join(fixtureRoot, "temporary");
 const fixtureFile = join(fixtureWorkspace, "governed.txt");
+const fixtureSkillRoot = join(fixtureWorkspace, "skills", "fixture-audit");
+const fixtureSkillSourcePath = join(fixtureSkillRoot, "SKILL.md");
+const fixtureSkillSource = [
+  "---",
+  "name: fixture-audit",
+  "description: Audits the synthetic Runtime artifact and returns bounded evidence.",
+  "argument-hint: \"[focus]\"",
+  "arguments: focus",
+  "---",
+  "",
+  "Inspect $ARGUMENTS through the accepted static Skill catalog; focus=$focus.",
+].join("\n");
 const fixturePlanPath = join(
   fixtureRuntimeHome,
   "plans",
@@ -112,8 +129,29 @@ await Promise.all([
   mkdir(fixtureRuntimeHome),
   mkdir(fixtureTemporaryRoot),
   mkdir(fixtureAttachmentStaging),
+  mkdir(fixtureSkillRoot, { recursive: true }),
 ]);
-await writeFile(fixtureFile, "before\n", "utf8");
+await Promise.all([
+  writeFile(fixtureFile, "before\n", "utf8"),
+  writeFile(fixtureSkillSourcePath, fixtureSkillSource, "utf8"),
+]);
+const staticSkillCatalogAuthority = Object.freeze({
+  formatVersion: 1 as const,
+  revision: "artifact-static-skills-v1",
+  skills: Object.freeze([Object.freeze({
+    name: "fixture-audit",
+    description: "Audits the synthetic Runtime artifact and returns bounded evidence.",
+    invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
+    rank: 600,
+    resourceRoot: fixtureSkillRoot,
+    sourcePath: fixtureSkillSourcePath,
+    sourceSha256: createHash("sha256").update(fixtureSkillSource).digest("hex"),
+  })]),
+});
+const staticSkillCatalog = validateStaticSkillCatalog(Object.freeze({
+  ...staticSkillCatalogAuthority,
+  digest: staticSkillCatalogDigest(staticSkillCatalogAuthority),
+}));
 
 const waitUntil = async (predicate: () => boolean, description: string): Promise<void> => {
   const deadline = Date.now() + 10_000;
@@ -375,6 +413,15 @@ adapter.enqueue({
   kind: "tool-calls",
 });
 adapter.enqueue({ kind: "complete", text: "durable TaskGraph workflow completed" });
+adapter.enqueue({
+  calls: [{
+    id: "artifact-skill-call",
+    name: "Skill",
+    arguments: JSON.stringify({ skill: "fixture-audit", args: "packages/tools-agent" }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "static declarative Skill loaded" });
 
 const rpcDigest = "a".repeat(64);
 let capturePermissionRevision = (): string => {
@@ -540,6 +587,7 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
       ripgrep: "bundled-ripgrep",
     }),
   }),
+  skills: staticSkillCatalog,
   temporaryRoot: fixtureTemporaryRoot,
   web: Object.freeze({
     fetch: Object.freeze({
@@ -1472,6 +1520,48 @@ assert.deepEqual(
   "TaskGraph must reconstruct from the immutable DSH Session history",
 );
 
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-static-skill-operation",
+  clientUserMessageId: "artifact-static-skill-user-message",
+  input: { parts: [{ kind: "text", text: "Load the exact static fixture-audit Skill" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-static-skill-operation")?.state === "terminal",
+  "static Skill operation terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-static-skill-operation")?.terminal?.kind,
+  "succeeded",
+);
+assert.equal(durableToolText("artifact-skill-call"), [
+  '<skill_content name="fixture-audit">',
+  "<skill_resources>",
+  `Base directory for this skill: ${fixtureSkillRoot}`,
+  "Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.",
+  "</skill_resources>",
+  "",
+  "<skill_instructions>",
+  "Inspect packages/tools-agent through the accepted static Skill catalog; focus=packages/tools-agent.",
+  "</skill_instructions>",
+  "</skill_content>",
+].join("\n"));
+assert.deepEqual(await composition.context.skills.snapshot({
+  cwd: fixtureWorkspace,
+  scope: primaryAgent,
+}), {
+  complete: true,
+  skills: [{
+    name: "fixture-audit",
+    description: "Audits the synthetic Runtime artifact and returns bounded evidence.",
+    invocation: { modelInvocable: true, userInvocable: true },
+    source: "bundled",
+    provider: "myagents-static-skills",
+    resourceBase: { kind: "directory", path: fixtureSkillRoot },
+  }],
+});
+
 const unrelatedRuntimeFile = join(fixtureRuntimeHome, "must-not-read.txt");
 await writeFile(unrelatedRuntimeFile, "private runtime fixture");
 adapter.enqueue({
@@ -1641,8 +1731,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 14,
-  "fourteen projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 15,
+  "fifteen projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -1653,7 +1743,7 @@ assert.deepEqual(
       : "missing"),
   [
     "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
-    "succeeded", "succeeded", "succeeded", "succeeded",
+    "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
     "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
   ],
 );
@@ -1752,6 +1842,7 @@ process.stdout.write(`${JSON.stringify({
   canonicalPermissionInteractionVerified: true,
   canonicalInteractionPlanToolsVerified: true,
   canonicalTaskGraphVerified: true,
+  canonicalStaticSkillVerified: true,
   ambientWebSearchFallbackRejected: true,
   canonicalPermissionEvidence: {
     asked: permissionAskedEvents.length,
@@ -1778,7 +1869,7 @@ process.stdout.write(`${JSON.stringify({
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: [
     "success", "failure", "file_tools", "process_search_tools", "web_tools", "interaction",
-    "plan_workflow", "task_graph", "process_abort", "interrupt", "queued_cancel",
+    "plan_workflow", "task_graph", "static_skill", "process_abort", "interrupt", "queued_cancel",
     "session_close",
   ],
   toolContractRuntimeConsumerVerified: true,

@@ -40,6 +40,7 @@ const candidatePackagePaths = [
   "packages/testkit",
   "packages/tool-contracts",
   "packages/tool-runtime-product",
+  "packages/tools-agent",
   "packages/tools-fs",
   "packages/tools-interaction",
   "packages/tools-process",

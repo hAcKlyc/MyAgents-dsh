@@ -25,6 +25,7 @@
       "@myagents-dsh/testkit": "0.0.0",
       "@myagents-dsh/tool-contracts": "0.0.0",
       "@myagents-dsh/tool-runtime-product": "0.0.0",
+      "@myagents-dsh/tools-agent": "0.0.0",
       "@myagents-dsh/tools-fs": "0.0.0",
       "@myagents-dsh/tools-interaction": "0.0.0",
       "@myagents-dsh/tools-process": "0.0.0",

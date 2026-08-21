@@ -7,6 +7,7 @@ import { LlmAdapter, LlmRuntime } from "@deepseek-ai/dsh-llm";
 import { SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
+import { SkillRegistry } from "@deepseek-ai/dsh-skill";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
@@ -35,6 +36,11 @@ import {
   type ProductToolRuntimeConfig,
 } from "@myagents-dsh/tool-runtime-product";
 import { ProductTaskGraphService } from "@myagents-dsh/task-graph";
+import {
+  ProductSkillService,
+  validateStaticSkillCatalog,
+  type StaticSkillCatalog,
+} from "@myagents-dsh/tools-agent";
 import {
   ProductProcessRuntime,
   SealedBashExecutor,
@@ -359,6 +365,7 @@ export interface CanonicalToolPlaneConfig {
   readonly plan: ProductPlanPlaneConfig;
   readonly platformTarget: PlatformTarget;
   readonly process: ProductProcessRuntimeConfig;
+  readonly skills: StaticSkillCatalog;
   readonly temporaryRoot: string;
   readonly web?: CanonicalWebToolsConfig;
 }
@@ -380,8 +387,8 @@ export const installCanonicalToolPlane = async (
   if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
     || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
     || Reflect.ownKeys(candidate).some((key) => typeof key !== "string"
-      || !["attachments", "catalog", "checkpoint", "permission", "plan", "platformTarget", "process", "temporaryRoot", "web"].includes(key))
-    || (Reflect.ownKeys(candidate).length !== 8 && Reflect.ownKeys(candidate).length !== 9)
+      || !["attachments", "catalog", "checkpoint", "permission", "plan", "platformTarget", "process", "skills", "temporaryRoot", "web"].includes(key))
+    || (Reflect.ownKeys(candidate).length !== 9 && Reflect.ownKeys(candidate).length !== 10)
     || Reflect.ownKeys(candidate).some((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
       return descriptor === undefined || !descriptor.enumerable || !("value" in descriptor);
@@ -392,6 +399,7 @@ export const installCanonicalToolPlane = async (
   const processConfig = validateProductProcessRuntimeConfig(normalized.process);
   const permissionConfig = validateProductPermissionPlaneConfig(normalized.permission);
   const planConfig = validateProductPlanPlaneConfig(normalized.plan);
+  const skillCatalog = validateStaticSkillCatalog(normalized.skills);
   const webConfig = normalized.web === undefined
     ? undefined
     : validateCanonicalWebToolsConfig(normalized.web);
@@ -431,6 +439,7 @@ export const installCanonicalToolPlane = async (
     const processIo = localFileSystem.createProcessIoAuthority();
     const planIo = localFileSystem.createPlanIoAuthority();
     fibers.push(await root.plugin(ToolCallTimeoutPolicy));
+    fibers.push(await root.plugin(SkillRegistry));
     fibers.push(await root.plugin(ApprovalService, { policy: "ask" }));
     fibers.push(await root.plugin(UserQuestionService));
     const permissionDeadline = root.productSession.settlementDeadlineAuthority();
@@ -478,6 +487,7 @@ export const installCanonicalToolPlane = async (
       }),
       requireAgent: () => root.productSession.requireAgent(),
     }));
+    fibers.push(await root.plugin(ProductSkillService, { catalog: skillCatalog }));
     fibers.push(await root.plugin(SealedBashExecutor, {
       authority: () => resolveProductProcessAuthority(
         root.productSession.requireExecutionEnvironment(),

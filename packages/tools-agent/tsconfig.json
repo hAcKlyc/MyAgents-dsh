@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/tools-agent",
+    "tsBuildInfoFile": "../../dist/packages/tools-agent/.tsbuildinfo"
+  },
+  "files": ["src/index.ts", "src/skill-runtime.ts"],
+  "references": [
+    { "path": "../tool-contracts" },
+    { "path": "../tool-runtime-product" }
+  ]
+}

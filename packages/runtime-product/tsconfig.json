@@ -12,6 +12,7 @@
     { "path": "../protocol" },
     { "path": "../task-graph" },
     { "path": "../tool-runtime-product" },
+    { "path": "../tools-agent" },
     { "path": "../tools-fs" },
     { "path": "../tools-interaction" },
     { "path": "../tools-process" },

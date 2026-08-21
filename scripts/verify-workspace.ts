@@ -22,6 +22,7 @@ const workspacePackages = new Map([
   ["packages/testkit", "@myagents-dsh/testkit"],
   ["packages/tool-contracts", "@myagents-dsh/tool-contracts"],
   ["packages/tool-runtime-product", "@myagents-dsh/tool-runtime-product"],
+  ["packages/tools-agent", "@myagents-dsh/tools-agent"],
   ["packages/tools-fs", "@myagents-dsh/tools-fs"],
   ["packages/tools-interaction", "@myagents-dsh/tools-interaction"],
   ["packages/tools-process", "@myagents-dsh/tools-process"],
@@ -133,6 +134,7 @@ const expectedWorkspaceFiles = new Map([
     "src/validation.ts",
   ]],
   ["packages/tool-runtime-product", ["src/index.ts", "src/keyed-locks.ts", "src/permission.ts", "src/runtime.ts"]],
+  ["packages/tools-agent", ["src/index.ts", "src/skill-runtime.ts"]],
   ["packages/tools-fs", ["src/canonical-file-tools.ts", "src/index.ts", "src/local-filesystem.ts"]],
   ["packages/tools-interaction", ["src/index.ts", "src/runtime.ts"]],
   ["packages/tools-process", [

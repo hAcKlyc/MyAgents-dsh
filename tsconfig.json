@@ -5,6 +5,7 @@
     { "path": "./packages/tool-contracts" },
     { "path": "./packages/task-graph" },
     { "path": "./packages/tool-runtime-product" },
+    { "path": "./packages/tools-agent" },
     { "path": "./packages/tools-fs" },
     { "path": "./packages/tools-interaction" },
     { "path": "./packages/tools-process" },
