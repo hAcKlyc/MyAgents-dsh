@@ -117,6 +117,20 @@ const COMPONENT_KIND_RANK: Readonly<Record<ExtensionComponent["kind"], number>> 
 const compareCodePoints = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
+const disposePlansInReverse = async (
+  plans: readonly PreparedComponentPlan[],
+): Promise<readonly unknown[]> => {
+  const errors: unknown[] = [];
+  for (const { dispose } of [...plans].reverse()) {
+    try {
+      await dispose();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  return errors;
+};
+
 const exactObject = (
   value: unknown,
   required: readonly string[],
@@ -645,10 +659,9 @@ export class ProductComponentService extends Service {
       this.#phase = "prepared";
       return await this.#promote(signal);
     } catch (error) {
-      const cleanup = preparedGenerationCreated && this.#candidate === undefined
+      const cleanupErrors = preparedGenerationCreated && this.#candidate === undefined
         ? []
-        : await Promise.allSettled([...plans].reverse().map(({ dispose }) => dispose()));
-      const cleanupErrors = cleanup.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+        : await disposePlansInReverse(plans);
       if (this.#recoveryRequired) throw error;
       const knownStatuses = new Map(statuses.map((status) => [status.key, status]));
       this.#candidate = undefined;
@@ -789,8 +802,7 @@ export class ProductComponentService extends Service {
   }
 
   async #disposePrepared(generation: PreparedGeneration): Promise<void> {
-    const settled = await Promise.allSettled([...generation.plans].reverse().map(({ dispose }) => dispose()));
-    const errors = settled.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+    const errors = await disposePlansInReverse(generation.plans);
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) throw new AggregateError(errors, "prepared component generation cleanup failed");
   }

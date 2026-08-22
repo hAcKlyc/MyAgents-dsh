@@ -253,6 +253,42 @@ describe("transactional product component generations", () => {
       .toThrow(/closed/u);
   });
 
+  it("completes prepared component disposal serially in reverse ownership order", async () => {
+    const effects: string[] = [];
+    let releaseSecond!: () => void;
+    const secondCanFinish = new Promise<void>((resolve) => { releaseSecond = resolve; });
+    const compiler: ComponentCompiler = Object.freeze({
+      kind: "agent",
+      prepare: (component: ExtensionComponent) => Promise.resolve(Object.freeze({
+        status: "ready" as const,
+        contributions: Object.freeze([]),
+        dispose: async () => {
+          effects.push(`dispose-start:${component.id}`);
+          if (component.id === "second") await secondCanFinish;
+          effects.push(`dispose-end:${component.id}`);
+        },
+      })),
+    });
+    const harness = await mount({ compilers: [compiler] });
+    await harness.controller.replace(snapshot(
+      "extension-reverse-disposal-v1",
+      [agentComponent("first"), agentComponent("second")],
+    ));
+
+    const closing = harness.controller.close();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(effects).toEqual(["dispose-start:second"]);
+
+    releaseSecond();
+    await closing;
+    expect(effects).toEqual([
+      "dispose-start:second",
+      "dispose-end:second",
+      "dispose-start:first",
+      "dispose-end:first",
+    ]);
+  });
+
   it("rejects revision reuse and leaves the prior effective generation intact on prepare failure", async () => {
     const compiler: ComponentCompiler = Object.freeze({
       kind: "agent",
