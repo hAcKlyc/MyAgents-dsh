@@ -34,7 +34,7 @@ These patches target the fixed rc.2 source/design authority. They are not claime
 
 ## Batch 1 upstream rebaseline
 
-`B1-DSH-R1` is the release-blocking refresh of this authority. On 2026-08-23 the official checkout was fetched through lightweight tag `dsh-v0.1.1-rc.2`, exact commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`, 854 commits beyond the prior rc.5 source baseline. The source, lock, reduced patch series, public compile fixtures and 52-package candidate bundle are now rebased; the action remains `in_progress` until the accumulated Runtime and repository gates accept them.
+`B1-DSH-R1` is the accepted release-blocking refresh of this authority. On 2026-08-23 the official checkout was fetched through lightweight tag `dsh-v0.1.1-rc.2`, exact commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`, 854 commits beyond the prior rc.5 source baseline. The source, lock, reduced patch series, public compile fixtures, 52-package bundle, clean consumer, real AgentLoop, and commit-bound Runtime artifact were accepted at implementation commit `336899ee0a4d4cf7614031cfaddb358a7400c529`; the candidate profile remains `workstream-evidence-only`.
 
 The versioned review matrix is [upstream-rebaseline-0.1.1-rc.2.md](./upstream-rebaseline-0.1.1-rc.2.md).
 

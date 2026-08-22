@@ -1,11 +1,13 @@
 # DSH upstream rebaseline: `0.1.1-rc.2`
 
-Status: implementation rebased; accumulated Runtime/repository acceptance remains `in_progress` under Batch 1 action `B1-DSH-R1`.
+Status: accepted under Batch 1 action `B1-DSH-R1` at implementation commit
+`336899ee0a4d4cf7614031cfaddb358a7400c529`.
 
 This record compares the current MyAgents source/design baseline with the newest
-reviewed official DSH release. It is an implementation input, not release
-acceptance: every provisional classification below still has to pass the source,
-packed-consumer, Runtime, and accumulated Batch 1 gates.
+reviewed official DSH release. It is the accepted source, patch, package, and
+Runtime evidence authority for the rest of Batch 1. The candidate profile remains
+internal `workstream-evidence-only`; this checkpoint does not activate a public
+Host surface or complete Workstream 3.
 
 ## Immutable upstream identity
 
@@ -72,18 +74,39 @@ hashes, new tests, an upstream-ready isolated diff, and a removal condition.
 6. Rebuild the content-addressed patched DSH bundle, clean offline consumer,
    candidate profile/protocol projections, and commit-bound Runtime artifact.
 
-## Acceptance evidence still required
+## Acceptance evidence
 
-- exact upstream source build and the rebased patch tests, forced to one Vitest worker;
-- public-surface compile and private-import refusal against the new packed graph;
-- clean offline `npm install`, removal, `npm ci`, `npm ls --all`, and TypeScript compile;
-- one unique custom DSH family with no rc.5/rc.6/other-release residue;
-- real patched AgentLoop success, failure, cancel, interrupted-prefix, Hook-transform,
-  child retirement/recovery, image input, MCP image, and shutdown cleanup flows;
-- accumulated W3 failed/successful reconnect and reverse-port race matrix;
-- root `typecheck`, `lint`, single-worker `test`, and `build`;
-- refreshed manifest/SHA/builder/lock/profile/protocol identities and final ledger
-  review before `B1-DSH-R1` or W3-A10 may become complete.
+- exact upstream source build and the reduced rebased patch tests pass with one
+  Vitest worker;
+- public-surface compile and private-import refusal pass against the new packed graph;
+- clean offline `npm install`, removal, `npm ci`, `npm ls --all`, and TypeScript
+  compile pass with one unique custom DSH family and no rc.5/rc.6 residue;
+- the repository-external real patched AgentLoop passes success, failure, cancel,
+  durable interrupted-prefix, Hook-transform, child retirement/recovery, normalized
+  image input, Host attachment/image, and shutdown-cleanup flows;
+- root `typecheck`, `lint`, forced-single-worker `test` (38 files / 402 tests), and
+  `build` pass with security coverage of 296 cached-or-untracked files and 26
+  actual packed archives;
+- the commit-bound Runtime artifact at
+  `/private/tmp/myagents-dsh-b1-rebaseline-runtime-artifact-v3` independently
+  verifies with manifest
+  `bb77dc7d957a1fb5cb119995e90a75dc97169faf8a178c392ef961eaa4d9d038`,
+  7183 canonical entries, repository head
+  `336899ee0a4d4cf7614031cfaddb358a7400c529`, builder authority
+  `23bf52b5d3987260583ed6575572eef70e55d90120b1d3b08720f7c8dfb48afa`,
+  and root lock
+  `5be2c741dedad0b32a9846fbf910d4b9223d94bd8abf1bbf74ec288620156d91`;
+- the clean consumer observes 35 canonical tool calls, 211 contiguous Runtime
+  events, 24 operation terminals, exact durable interrupted assistant-prefix
+  ordering, normalized image/Host-tool references, and the installed Runtime
+  process lifecycle matrix;
+- candidate profile file SHA-256 is
+  `61ac171de1890728cd8b74c8cb2e4d05caccbef30c0571dfeb2a9f34802548ed`,
+  capability-profile digest is
+  `80d3f130738d75c57caa6ad6d233b6f2cfc57a7ad3a786985d985445c7177d02`,
+  protocol schema SHA-256 is
+  `16519d3b23ccc98475ed517bf14cd1711f7dfcc0afd207b5fb3faf2541365412`,
+  and activation remains `workstream-evidence-only`.
 
 ## Current rebased evidence
 
@@ -96,4 +119,6 @@ The source and package rebaseline now has the following accepted-candidate evide
 - candidate profile and protocol projections bind that manifest; protocol schema SHA-256 is `16519d3b23ccc98475ed517bf14cd1711f7dfcc0afd207b5fb3faf2541365412`, while activation remains `workstream-evidence-only`;
 - focused MyAgents attachment/model/work/declarative/baseline regression passes 5 files / 63 tests.
 
-This closes source/API/patch/package migration, but not the action itself. The remaining acceptance work is the accumulated single-worker root suite, build, repository-external real-AgentLoop/Runtime process gate, new interrupted-prefix and image-path evidence, and commit-bound Runtime artifact refresh.
+This closes `B1-DSH-R1`. Workstream 3 action A10 remains the next development
+and acceptance action; Workstream 4 starts only after that accumulated lifecycle,
+reconnect, cleanup, and security gate is accepted.
