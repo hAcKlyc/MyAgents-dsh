@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 describe("DSH root service composition boundary", () => {
   it("refuses the repository's unpatched development graph before creating Cordis services", async () => {
     const adapter = new ScriptedFakeLlmAdapter();
-    expect(assertAcceptedDshRuntimeGraph).toThrow("resolved to 0.1.0-rc.6");
+    expect(assertAcceptedDshRuntimeGraph).toThrow("resolved to 0.1.1-rc.2");
     await expect(composeDshRootServices({ adapter, providers: ["fixture"] }))
       .rejects.toThrow("accepted patched runtime requires");
     expect(adapter.activeStreamCount).toBe(0);

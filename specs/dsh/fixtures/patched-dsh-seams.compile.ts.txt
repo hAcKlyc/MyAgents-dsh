@@ -38,11 +38,11 @@ export const compilePatchedDshSeams = (
   disposeSetup();
   const settlementDelivery: ContinuableStartSpec["settlementDelivery"] = "external";
   const infrastructureFailure: SubagentRunEndInfo["infrastructureFailure"] = true;
-  const retireContinuable = ctx.subagents.retireContinuable;
+  const drainContinuableChildren = ctx.subagents.drainContinuableChildren;
   const resumeContinuable = ctx.subagents.resumeContinuable;
   void settlementDelivery;
   void infrastructureFailure;
-  void retireContinuable;
+  void drainContinuableChildren;
   void resumeContinuable;
   ctx.on("agent/pre-assistant-commit", async ({ commit, signal }, next) => {
     const prepared: Readonly<PreparedAssistantCommit> = commit;

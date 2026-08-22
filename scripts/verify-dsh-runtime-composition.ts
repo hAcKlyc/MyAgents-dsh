@@ -1137,6 +1137,7 @@ const main = (): void => {
         "host/attachment/release",
       ])
       || evidence.operationInterruptVerified !== true
+      || evidence.interruptedAssistantPrefixVerified !== true
       || evidence.queuedCancellationVerified !== true
       || evidence.runtimeEventProjectionVerified !== true
       || evidence.sessionCloseVerified !== true
@@ -1154,14 +1155,19 @@ const main = (): void => {
     );
     if (typeof hostAttachmentEvidence.imageAttachmentId !== "string"
       || !/^sha256:[a-f0-9]{64}$/u.test(hostAttachmentEvidence.imageAttachmentId)
+      || typeof hostAttachmentEvidence.sourceImageAttachmentId !== "string"
+      || !/^sha256:[a-f0-9]{64}$/u.test(hostAttachmentEvidence.sourceImageAttachmentId)
+      || hostAttachmentEvidence.sourceImageAttachmentId === hostAttachmentEvidence.imageAttachmentId
       || hostAttachmentEvidence.imageRequestContainsReference !== true
       || hostAttachmentEvidence.hostToolImageReference !== true
       || JSON.stringify(hostAttachmentEvidence.stagingEntriesAfterUse) !== "[]"
       || JSON.stringify(hostAttachmentEvidence.events) !== JSON.stringify([
-        `acquire:${hostAttachmentEvidence.imageAttachmentId}:artifact-runtime-lease-1`,
-        "release:artifact-runtime-lease-1",
+        `acquire:${hostAttachmentEvidence.sourceImageAttachmentId}:artifact-runtime-lease-1`,
         `put:${hostAttachmentEvidence.imageAttachmentId}:pixel.png`,
-        `acquire:${hostAttachmentEvidence.imageAttachmentId}:artifact-runtime-lease-2`,
+        "release:artifact-runtime-lease-1",
+        `put:${hostAttachmentEvidence.sourceImageAttachmentId}:pixel.png`,
+        `acquire:${hostAttachmentEvidence.sourceImageAttachmentId}:artifact-runtime-lease-2`,
+        `put:${hostAttachmentEvidence.imageAttachmentId}:host-tool-pixel.png`,
         "release:artifact-runtime-lease-2",
       ])) {
       throw new Error("Host attachment Store evidence differs from exact acquire/release/publication semantics");
@@ -1427,8 +1433,8 @@ const main = (): void => {
       // Host-interaction cancellation, process abort, running/queued cancellation, and Session close.
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message",
-      "turn_admitted", "queued_message", "turn_terminal", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "assistant_delta",
+      "turn_admitted", "queued_message", "message_event", "turn_terminal", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
     ];
     const actualEventKinds = projectedEvents.map(({ kind }) => kind);

@@ -18,222 +18,222 @@
       {
         "name": "@deepseek-ai/dsh-agent",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-agent-loop",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-agent-presets",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-attachment",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-attachment-local",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-commands",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-compaction",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-credentials",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-fs",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-invariants",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-jobs",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-jobs-local",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-llm",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-llm-deepseek",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-mcp-client",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-plan-mode",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-sandbox",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-sandbox-policy",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-scope",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-session",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-session-persistence",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-session-persistence-sqlite",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-session-projection",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-session-projection-cache",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-settings",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-shell",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-skill",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-storage",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-storage-domain",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-subagent",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-subagent-in-process-driver",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-subagent-spawn-in-process",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-subprocess",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-subprocess-local",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-system-prompt",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-timeout",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-tool-call-timeout-policy",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-tool-fs-search",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-tool-web",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-tools",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-typert-protocol",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-user-approval",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-user-questions",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@deepseek-ai/dsh-web",
         "role": "dsh-library",
-        "version": "0.1.0-rc.6"
+        "version": "0.1.1-rc.2"
       },
       {
         "name": "@myagents-dsh/artifact-verifier",
@@ -273,8 +273,8 @@
     ]
   },
   "dsh": {
-    "baselineSha256": "a7de2877e4368630ae7b992e92421238b0107531926a9b8f8420556e037c7744",
-    "release": "0.1.0-rc.6"
+    "baselineSha256": "3c05e2aa705b0702250c234b1a009572eed5c5cc99945fff2fa0e67103c6c9bd",
+    "release": "0.1.1-rc.2"
   },
   "formatVersion": 1,
   "platform": {
@@ -287,7 +287,7 @@
   },
   "profileId": "myagents-dsh-official-v1",
   "protocol": {
-    "schemaSha256": "124b994808ef991bc1518b516d744f7ae790744748f850bdbb53d46b8bffd99d",
+    "schemaSha256": "16519d3b23ccc98475ed517bf14cd1711f7dfcc0afd207b5fb3faf2541365412",
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "forbidden-until-patched-dsh-and-batch-1-gate",

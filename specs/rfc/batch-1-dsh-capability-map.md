@@ -19,7 +19,7 @@ This document answers the implementation split that is easy to blur when describ
 - which model-visible tools require exact compatibility definitions;
 - which semantics currently require an upstream/fork decision.
 
-All classifications are against the pinned evidence baseline `deepseek-harness@0.1.0-rc.5`, repository commit `47f943859bef`. They must be re-audited when the pin changes.
+All classifications are re-audited against `deepseek-harness@0.1.1-rc.2`, repository commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, under Batch action `B1-DSH-R1`. The exact delta and patch dispositions are recorded in [`../dsh/upstream-rebaseline-0.1.1-rc.2.md`](../dsh/upstream-rebaseline-0.1.1-rc.2.md); a later pin change must repeat that gate.
 
 ## 2. Classification vocabulary
 

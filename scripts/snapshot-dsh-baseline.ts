@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildDshBaseline, serializeDshBaseline } from "./dsh-baseline-policy.js";
+import { DSH_SEAM_SOURCE } from "./dsh-seam-decisions.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -13,7 +14,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = resolve(repositoryRoot, "specs/dsh/dsh-baseline-v1.json");
 const readJson = async (path: string): Promise<JsonObject> => JSON.parse(await readFile(path, "utf8")) as JsonObject;
 const execFileAsync = promisify(execFile);
-const sourceCommit = "47f943859bef60e4160492346772ded9b24f765a";
+const sourceCommit = DSH_SEAM_SOURCE.commit;
 
 const checkSourceCheckout = async (path: string): Promise<void> => {
   const sourceRoot = resolve(repositoryRoot, path);
@@ -28,12 +29,12 @@ const checkSourceCheckout = async (path: string): Promise<void> => {
   const sourcePackage = JSON.parse(packageBytes) as JsonObject;
   const licenseDigest = createHash("sha256").update(licenseBytes).digest("hex");
   if (commit !== sourceCommit) throw new Error(`DSH source commit mismatch: ${commit}`);
-  if (tree !== "f904efab9ef435201d6ba4da88a34d6366568272") throw new Error(`DSH source tree mismatch: ${tree}`);
-  if (sourcePackage.version !== "0.1.0-rc.5") throw new Error(`DSH source declared release mismatch: ${String(sourcePackage.version)}`);
+  if (tree !== DSH_SEAM_SOURCE.tree) throw new Error(`DSH source tree mismatch: ${tree}`);
+  if (sourcePackage.version !== DSH_SEAM_SOURCE.declaredRelease) throw new Error(`DSH source declared release mismatch: ${String(sourcePackage.version)}`);
   if (licenseDigest !== "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be") {
     throw new Error(`DSH source license digest mismatch: ${licenseDigest}`);
   }
-  console.log(`DSH source evidence OK: commit=${commit}, tree=${tree}, declared=0.1.0-rc.5, license=${licenseDigest}`);
+  console.log(`DSH source evidence OK: commit=${commit}, tree=${tree}, declared=${DSH_SEAM_SOURCE.declaredRelease}, license=${licenseDigest}`);
 };
 
 const sourceIndex = process.argv.indexOf("--check-source");

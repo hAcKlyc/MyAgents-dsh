@@ -1,8 +1,8 @@
 diff --git a/packages/subagent/subagent/src/continuation.ts b/packages/subagent/subagent/src/continuation.ts
-index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b8806da0a 100644
+index 652a3ba6c8..35ecac6e3a 100644
 --- a/packages/subagent/subagent/src/continuation.ts
 +++ b/packages/subagent/subagent/src/continuation.ts
-@@ -119,6 +119,8 @@ export interface ContinuableStartSpec {
+@@ -125,6 +125,8 @@ export interface ContinuableStartSpec {
     * the durable descriptor, and composes the child itself.
     */
    readonly request: Omit<SubagentStartRequest, 'label' | 'signal' | 'outputSchema'>
@@ -11,7 +11,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
    /** Caller cancellation, owning the operation only until inbox acceptance. */
    readonly signal: AbortSignal
  }
-@@ -148,6 +150,12 @@ export interface SubagentFollowupOptions {
+@@ -154,6 +156,12 @@ export interface SubagentFollowupOptions {
    readonly signal: AbortSignal
  }
  
@@ -24,7 +24,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
  /**
   * The residency state of one continuable child, derived from Agent quiescence
   * and the owned-child set rather than a second state machine:
-@@ -200,6 +208,8 @@ interface Activation {
+@@ -206,6 +214,8 @@ interface Activation {
    readonly parentSession: SessionId
    /** The provider name recorded in the durable descriptor. */
    readonly provider: string
@@ -33,7 +33,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
    /** The retained live Agent handle, disposed exactly once at settlement. */
    readonly handle: AgentHandle
    /**
-@@ -243,6 +253,7 @@ interface Activation {
+@@ -249,6 +259,7 @@ interface Activation {
  interface MaterializeInputs {
    childId: SessionId
    provider: string
@@ -41,18 +41,18 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
    parent: Agent
    /**
     * Creation inputs; absent for a cold resume, which loads the persisted
-@@ -403,6 +414,10 @@ export class SubagentContinuationManager {
+@@ -409,6 +420,10 @@ export class SubagentContinuationManager {
    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart> {
      const request = spec.request
      const parent = request.parent
 +    const settlementDelivery = spec.settlementDelivery ?? 'parent'
 +    if (settlementDelivery !== 'parent' && settlementDelivery !== 'external') {
-+      throw new TypeError('continuable subagent settlementDelivery must be "parent" or "external"')
++      throw new TypeError('settlementDelivery must be "parent" or "external"')
 +    }
      this.assertAdmitting(parent)
-     this.requirePersistence()
+     const persistence = this.requirePersistence()
      assertSubagentMaxDepth(request.maxDepth)
-@@ -420,6 +435,7 @@ export class SubagentContinuationManager {
+@@ -427,6 +442,7 @@ export class SubagentContinuationManager {
        ...agentModel !== undefined ? { agentModel } : {},
        ...request.persona !== undefined ? { persona: request.persona } : {},
        ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
@@ -60,7 +60,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
      })
      // Capture before the first await: a later parent switch belongs to the
      // parent's future, not to this child.
-@@ -439,6 +455,7 @@ export class SubagentContinuationManager {
+@@ -458,6 +474,7 @@ export class SubagentContinuationManager {
        const activation = await this.materialize({
          childId,
          provider: spec.provider,
@@ -68,7 +68,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
          parent,
          create: { seed, meta: childSessionMeta(parent, childDepth, lineageSeedLength), delegatedPolicies },
          agentOptions: resolveChildAgentOptions(parent, request.agentOptions, childDepth),
-@@ -504,6 +521,54 @@ export class SubagentContinuationManager {
+@@ -530,6 +547,54 @@ export class SubagentContinuationManager {
      }
    }
  
@@ -123,88 +123,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
    /**
     * Interrupt one live continuable child's current turn. Admission is
     * synchronous and the effect is asynchronous: this authorizes the caller,
-@@ -526,6 +591,49 @@ export class SubagentContinuationManager {
-    *   an ancestor outside the target's recorded live lineage.
-    */
-   interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void {
-+    this.assertAuthorityCaller(targetSessionId, authority)
-+    const activation = this.activations.get(targetSessionId)
-+    if (activation === undefined) return
-+    this.assertActivationAuthority(targetSessionId, activation, authority)
-+    // Disposal already stopped the target with a whole-Activation teardown;
-+    // a second cancel would be a redundant signal on a closing handle.
-+    if (activation.disposal !== undefined) return
-+    activation.handle.agent.cancel(
-+      authority.kind === 'user' ? { kind: 'user' } : { kind: 'parent' },
-+      { keepInbox: true },
-+    )
-+  }
-+
-+  /**
-+   * Retire one live continuable Activation and its retained descendants. The
-+   * exact child lock linearizes the cutoff with follow-up admission; disposal
-+   * then cancels top-down, releases child-first, and resolves only after every
-+   * owned AgentHandle has settled. An absent or already-retired target is an
-+   * idempotent no-op after caller authorization.
-+   *
-+   * Unlike {@link interrupt}, this is the terminal resource-release primitive
-+   * for a product work owner. It does not delete the durable child Session;
-+   * whether a later cold resume is allowed remains the caller's policy.
-+   * @param targetSessionId - durable child whose live Activation is retired.
-+   * @param authority - exact live ancestor or durable direct-parent address.
-+   */
-+  async retire(targetSessionId: SessionId, authority: SubagentInterruptAuthority): Promise<void> {
-+    this.assertAuthorityCaller(targetSessionId, authority)
-+    await this.locks.run(targetSessionId, async () => {
-+      // An ancestor can become stale while waiting behind an admitted follow-up.
-+      this.assertAuthorityCaller(targetSessionId, authority)
-+      const activation = this.activations.get(targetSessionId)
-+      if (activation === undefined) return
-+      this.assertActivationAuthority(targetSessionId, activation, authority)
-+      await this.dispose(activation)
-+    })
-+  }
-+
-+  /** Validate authority facts that do not require a resident target. */
-+  private assertAuthorityCaller(
-+    targetSessionId: SessionId,
-+    authority: SubagentInterruptAuthority,
-+  ): void {
-     if (authority.kind === 'ancestor') {
-       const caller = authority.agent
-       // A stale caller is rejected even when the target is absent, so a
-@@ -543,8 +651,14 @@ export class SubagentContinuationManager {
-         )
-       }
-     }
--    const activation = this.activations.get(targetSessionId)
--    if (activation === undefined) return
-+  }
-+
-+  /** Validate the authority against one exact resident Activation. */
-+  private assertActivationAuthority(
-+    targetSessionId: SessionId,
-+    activation: Activation,
-+    authority: SubagentInterruptAuthority,
-+  ): void {
-     if (authority.kind === 'user') {
-       if (activation.handle.agent.session.header.parentSession !== authority.parentSessionId) {
-         throw new SubagentError(
-@@ -558,13 +672,6 @@ export class SubagentContinuationManager {
-         'UNAUTHORIZED',
-       )
-     }
--    // Disposal already stopped the target with a whole-Activation teardown;
--    // a second cancel would be a redundant signal on a closing handle.
--    if (activation.disposal !== undefined) return
--    activation.handle.agent.cancel(
--      authority.kind === 'user' ? { kind: 'user' } : { kind: 'parent' },
--      { keepInbox: true },
--    )
-   }
- 
-   /**
-@@ -868,6 +975,7 @@ export class SubagentContinuationManager {
+@@ -930,6 +995,7 @@ export class SubagentContinuationManager {
     * holds the ids this manager admitted but has not yet seen drained.
     */
    private stateOf(activation: Activation): ActivationState {
@@ -212,7 +131,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
      if (activation.handle.agent.status === 'running' || activation.accepted.size > 0) return 'running'
      if (activation.ownedChildren.size > 0) return 'waiting'
      return 'settled'
-@@ -886,15 +994,25 @@ export class SubagentContinuationManager {
+@@ -948,15 +1014,25 @@ export class SubagentContinuationManager {
      content: ContentBlock[],
      options: SubagentFollowupOptions,
    ): Promise<MessageId> {
@@ -241,7 +160,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
      this.assertAdmitting(parent)
      // Authorize the persisted header before folding: only the durable child's
      // exact live direct parent may continue it.
-@@ -915,20 +1033,21 @@ export class SubagentContinuationManager {
+@@ -977,20 +1053,21 @@ export class SubagentContinuationManager {
        activation = await this.materialize({
          childId,
          provider: descriptor.provider,
@@ -266,7 +185,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
    }
  
    /**
-@@ -987,7 +1106,7 @@ export class SubagentContinuationManager {
+@@ -1049,7 +1126,7 @@ export class SubagentContinuationManager {
      inputs: MaterializeInputs,
      parentLineage: readonly Agent[],
    ): Promise<Activation> {
@@ -275,7 +194,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
      // No id pre-check here: the child lock serializes each durable child, both
      // callers reach this only after confirming no Activation exists, and
      // `AgentRegistry.enter()` is the authoritative collision boundary for an id
-@@ -1029,12 +1148,20 @@ export class SubagentContinuationManager {
+@@ -1091,12 +1168,20 @@ export class SubagentContinuationManager {
        // the persisted header before materializing.
        parentSession: parent.id,
        provider,
@@ -297,7 +216,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
        announced: false,
        poke: Promise.withResolvers<void>(),
      }
-@@ -1203,6 +1330,45 @@ export class SubagentContinuationManager {
+@@ -1265,6 +1350,45 @@ export class SubagentContinuationManager {
      return this.submit(activation, content, source, parent)
    }
  
@@ -343,7 +262,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
    /**
     * Authorize one operation against the durable direct-parent lineage. Other
     * agents, ancestors, teams, workflows, and hosts remain rejected until an
-@@ -1398,7 +1564,7 @@ export class SubagentContinuationManager {
+@@ -1460,7 +1584,7 @@ export class SubagentContinuationManager {
     * @param terminal - how this epoch ended, as the terminal edge will report it.
     */
    private notifySettlement(activation: Activation, terminal: ActivationTerminal): void {
@@ -352,7 +271,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
      try {
        const parent = this.ctx.agents.get(activation.parentSession)
        if (parent === undefined) return
-@@ -1449,9 +1615,11 @@ export class SubagentContinuationManager {
+@@ -1511,9 +1635,11 @@ export class SubagentContinuationManager {
    }
  
    /**
@@ -367,7 +286,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
     * @param activation - the Activation whose final events should be flushed.
     */
    private async flushFinalState(activation: Activation): Promise<void> {
-@@ -1459,6 +1627,13 @@ export class SubagentContinuationManager {
+@@ -1521,6 +1647,13 @@ export class SubagentContinuationManager {
      try {
        await child.ctx.sessions.flush(child.session)
      } catch (error: unknown) {
@@ -382,7 +301,7 @@ index d826efbfdb4695913fb536e90cbb58500bb25c61..8aec3da3a29a08f91e193e73a06a804b
          `subagent "${activation.childId}" best-effort final session flush failed; `
          + `the persisted state may be unavailable or stale on resume: ${errorChain(error)}`,
 diff --git a/packages/subagent/subagent/src/descriptor.ts b/packages/subagent/subagent/src/descriptor.ts
-index 6d9dedee75b70fcbb2eec44a897645c7b8a21e39..c01f1ad1a14875823c98a3690da46e47660ba940 100644
+index 6d9dedee75..c01f1ad1a1 100644
 --- a/packages/subagent/subagent/src/descriptor.ts
 +++ b/packages/subagent/subagent/src/descriptor.ts
 @@ -44,7 +44,7 @@ declare module '@deepseek-ai/dsh-session/types' {
@@ -448,7 +367,7 @@ index 6d9dedee75b70fcbb2eec44a897645c7b8a21e39..c01f1ad1a14875823c98a3690da46e47
    const snapshot = snapshotJsonValue(candidate)
    if (snapshot === undefined) {
 diff --git a/packages/subagent/subagent/src/index.ts b/packages/subagent/subagent/src/index.ts
-index fe270f1b4c0b2e2afe38aba805fed449a116ca10..5eaa3e431019e0cf4d3c0bcc685eca90827d0750 100644
+index 45b96a2311..41fb93bd5b 100644
 --- a/packages/subagent/subagent/src/index.ts
 +++ b/packages/subagent/subagent/src/index.ts
 @@ -60,6 +60,7 @@ import type {
@@ -484,23 +403,8 @@ index fe270f1b4c0b2e2afe38aba805fed449a116ca10..5eaa3e431019e0cf4d3c0bcc685eca90
    /**
     * Interrupt one live continuable child's current turn under a human parent
     * address or an exact live ancestor Agent. Fire-and-return: the cancel
-@@ -256,6 +268,14 @@ export class SubagentRuntime extends Service {
-     this.continuations?.interrupt(targetSessionId, authority)
-   }
- 
-+  /** Retire one live continuable Activation and every descendant it owns. */
-+  async retireContinuable(
-+    targetSessionId: SessionId,
-+    authority: SubagentInterruptAuthority,
-+  ): Promise<void> {
-+    await this.continuations?.retire(targetSessionId, authority)
-+  }
-+
-   /**
-    * Deliver selected content from one live continuable child to its durable
-    * direct parent. The child is the authority credential; callers cannot name a
 diff --git a/packages/subagent/subagent/src/lifecycle.ts b/packages/subagent/subagent/src/lifecycle.ts
-index 2e1d513d5ad4086f0a060108082367db530f6a6f..37651bdcb746bacb5930af9c7b20b42e089622db 100644
+index 2e1d513d5a..37651bdcb7 100644
 --- a/packages/subagent/subagent/src/lifecycle.ts
 +++ b/packages/subagent/subagent/src/lifecycle.ts
 @@ -154,7 +154,7 @@ export function observeRun(
@@ -521,7 +425,7 @@ index 2e1d513d5ad4086f0a060108082367db530f6a6f..37651bdcb746bacb5930af9c7b20b42e
        }, parent)
      },
 diff --git a/packages/subagent/subagent/src/types.ts b/packages/subagent/subagent/src/types.ts
-index 2c5209765f0b79fb83c30ce3e1e708cfecab855d..f38c5eca12521da1303e30cfecdb2fdc51f5c635 100644
+index 17978550ab..b01c1ca984 100644
 --- a/packages/subagent/subagent/src/types.ts
 +++ b/packages/subagent/subagent/src/types.ts
 @@ -64,6 +64,12 @@ export interface SubagentRunEndInfo {
@@ -538,7 +442,7 @@ index 2c5209765f0b79fb83c30ce3e1e708cfecab855d..f38c5eca12521da1303e30cfecdb2fdc
     * The child's final assistant output, selected by the same rule as
     * {@link SubagentResult.output}; absent on infrastructure rejection or when
 diff --git a/packages/subagent/subagent/tests/continuation.spec.ts b/packages/subagent/subagent/tests/continuation.spec.ts
-index 07f497628d9adc12c7ec862d90786125b349fdf5..eb71d100d90339a87946b416a4b4d6c389d69571 100644
+index 6cf1aea5a8..c79fbbc925 100644
 --- a/packages/subagent/subagent/tests/continuation.spec.ts
 +++ b/packages/subagent/subagent/tests/continuation.spec.ts
 @@ -3,10 +3,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
@@ -554,7 +458,7 @@ index 07f497628d9adc12c7ec862d90786125b349fdf5..eb71d100d90339a87946b416a4b4d6c3
  import type { SessionEvent } from '@deepseek-ai/dsh-session'
  import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
  import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
-@@ -228,6 +228,7 @@ describe('SubagentRuntime.startContinuable', () => {
+@@ -272,6 +272,7 @@ describe('SubagentRuntime.startContinuable', () => {
        version: SUBAGENT_DESCRIPTOR_VERSION,
        mode: 'continuable',
        provider: 'spawn',
@@ -562,7 +466,7 @@ index 07f497628d9adc12c7ec862d90786125b349fdf5..eb71d100d90339a87946b416a4b4d6c3
        label: 'child task',
        agentProvider: 'mock',
        agentModel: 'mock',
-@@ -324,6 +325,7 @@ describe('SubagentRuntime.startContinuable', () => {
+@@ -368,6 +369,7 @@ describe('SubagentRuntime.startContinuable', () => {
        version: SUBAGENT_DESCRIPTOR_VERSION,
        mode: 'continuable',
        provider: 'spawn',
@@ -570,7 +474,7 @@ index 07f497628d9adc12c7ec862d90786125b349fdf5..eb71d100d90339a87946b416a4b4d6c3
        label: 'child task',
      })
      await drainManager(ctx)
-@@ -358,6 +360,7 @@ describe('SubagentRuntime.startContinuable', () => {
+@@ -402,6 +404,7 @@ describe('SubagentRuntime.startContinuable', () => {
          version: SUBAGENT_DESCRIPTOR_VERSION,
          mode: 'continuable',
          provider: 'spawn',
@@ -578,7 +482,7 @@ index 07f497628d9adc12c7ec862d90786125b349fdf5..eb71d100d90339a87946b416a4b4d6c3
          label: 'child task',
          toolFilter: { deny: ['noop'] },
        })
-@@ -478,6 +481,61 @@ describe('SubagentRuntime.followup residency routing', () => {
+@@ -525,6 +528,61 @@ describe('SubagentRuntime.followup residency routing', () => {
      expect(loaded.events.filter(event => event.type === 'subagent/descriptor')).toHaveLength(1)
    })
  
@@ -640,7 +544,7 @@ index 07f497628d9adc12c7ec862d90786125b349fdf5..eb71d100d90339a87946b416a4b4d6c3
    it('cold-resumes after the initial provider unregisters', async () => {
      const { ctx, parent } = await setup([textResponse('first'), textResponse('after resume')])
      await ctx.plugin(InvariantRegistry)
-@@ -684,6 +742,32 @@ describe('continuable child ownership', () => {
+@@ -731,6 +789,32 @@ describe('continuable child ownership', () => {
  })
  
  describe('continuable durability and teardown', () => {
@@ -673,7 +577,7 @@ index 07f497628d9adc12c7ec862d90786125b349fdf5..eb71d100d90339a87946b416a4b4d6c3
    it('settles when the best-effort final flush has no listeners', async () => {
      const releaseResponse = Promise.withResolvers<undefined>()
      const adapter = new GatedAdapter([
-@@ -724,6 +808,46 @@ describe('continuable durability and teardown', () => {
+@@ -771,6 +855,43 @@ describe('continuable durability and teardown', () => {
      expect(ends.at(-1)?.stopReason).toBe('completed')
    })
  
@@ -696,10 +600,7 @@ index 07f497628d9adc12c7ec862d90786125b349fdf5..eb71d100d90339a87946b416a4b4d6c3
 +      settlementDelivery: 'external',
 +    })
 +    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-+    const retiredOutcome = ctx.subagents.retireContinuable(started.childId, {
-+      kind: 'user',
-+      parentSessionId: parent.id,
-+    }).then(
++    const retiredOutcome = ctx.subagents.drainContinuableChildren(parent, [started.childId]).then(
 +      () => undefined,
 +      (error: unknown) => error,
 +    )
@@ -720,8 +621,8 @@ index 07f497628d9adc12c7ec862d90786125b349fdf5..eb71d100d90339a87946b416a4b4d6c3
    it('logs a teardown failure reached through normal settlement', async () => {
      const hold = Promise.withResolvers<undefined>()
      const adapter = new GatedAdapter([{ chunks: textResponse('answer'), gate: hold.promise }])
-@@ -1525,6 +1649,27 @@ function settlementNotices(agent: Agent): { sender: string; text: string; summar
- }
+@@ -1688,6 +1809,27 @@ describe('continuable report delivery', () => {
+ })
  
  describe('continuable settlement delivery', () => {
 +  it('persists external settlement ownership across a cold resume without notifying the parent', async () => {
@@ -748,71 +649,3 @@ index 07f497628d9adc12c7ec862d90786125b349fdf5..eb71d100d90339a87946b416a4b4d6c3
    it('tells the parent what the child finished with, without being asked', async () => {
      const { ctx, parent } = await setup([textResponse('the answer'), textResponse('parent ack')])
      const started = await ctx.subagents.startContinuable(startSpec(parent))
-@@ -2521,3 +2666,67 @@ describe('SubagentRuntime.interrupt', () => {
-     await drained
-   })
- })
-+
-+describe('SubagentRuntime.retireContinuable', () => {
-+  it('retires exactly one live target forest and waits for child-first handle release', async () => {
-+    const releaseChild = Promise.withResolvers<undefined>()
-+    const releaseGrandchild = Promise.withResolvers<undefined>()
-+    const adapter = new GatedAdapter([
-+      { chunks: textResponse('child'), gate: releaseChild.promise },
-+      { chunks: textResponse('grandchild'), gate: releaseGrandchild.promise },
-+    ])
-+    const { ctx, parent } = await setupWith(adapter)
-+    const started = await ctx.subagents.startContinuable(startSpec(parent))
-+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-+    const child = ctx.agents.get(started.childId)!
-+    const grandchild = await ctx.subagents.startContinuable(startSpec(child))
-+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
-+    const grandchildAgent = ctx.agents.get(grandchild.childId)!
-+    const childCancel = vi.spyOn(child, 'cancel')
-+    const grandchildCancel = vi.spyOn(grandchildAgent, 'cancel')
-+
-+    const retired = ctx.subagents.retireContinuable(started.childId, {
-+      kind: 'user',
-+      parentSessionId: parent.id,
-+    })
-+    await vi.waitFor(() => {
-+      expect(childCancel).toHaveBeenCalledWith({ kind: 'parent' })
-+      expect(grandchildCancel).toHaveBeenCalledWith({ kind: 'parent' })
-+    })
-+
-+    releaseChild.resolve(undefined)
-+    releaseGrandchild.resolve(undefined)
-+    await retired
-+    expect(ctx.agents.get(grandchild.childId)).toBeUndefined()
-+    expect(ctx.agents.get(started.childId)).toBeUndefined()
-+
-+    // Terminal callers can safely converge on the same absent resource.
-+    await ctx.subagents.retireContinuable(started.childId, {
-+      kind: 'user',
-+      parentSessionId: parent.id,
-+    })
-+  })
-+
-+  it('rejects a foreign parent without opening the disposal transaction', async () => {
-+    const hold = Promise.withResolvers<undefined>()
-+    const adapter = new GatedAdapter([{ chunks: textResponse('working'), gate: hold.promise }])
-+    const { ctx, parent } = await setupWith(adapter)
-+    const started = await ctx.subagents.startContinuable(startSpec(parent))
-+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-+    const child = ctx.agents.get(started.childId)!
-+    const cancelSpy = vi.spyOn(child, 'cancel')
-+
-+    await expect(ctx.subagents.retireContinuable(started.childId, {
-+      kind: 'user',
-+      parentSessionId: SessionId('foreign-parent'),
-+    })).rejects.toThrow(/belongs to another parent session/)
-+    expect(cancelSpy).not.toHaveBeenCalled()
-+
-+    const cleanup = ctx.subagents.retireContinuable(started.childId, {
-+      kind: 'user',
-+      parentSessionId: parent.id,
-+    })
-+    hold.resolve(undefined)
-+    await cleanup
-+  })
-+})

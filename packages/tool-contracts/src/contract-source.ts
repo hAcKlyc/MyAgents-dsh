@@ -902,7 +902,7 @@ export const CANONICAL_TOOL_REUSE_MATRIX = deepFreeze({
   ], productOwner: "@myagents-dsh/tools-web", stockModelDefinition: "excluded" },
   WebSearch: { tool: "WebSearch", modelDefinition: "compat-tool", dshPublicReuse: [
     { id: "web", importPath: "@deepseek-ai/dsh-web", classification: "provider", symbols: ["WebRuntime"] },
-    { id: "web-helpers", importPath: "@deepseek-ai/dsh-tool-web", classification: "helper", symbols: ["formatSearchOutput", "parseSearchArgs"] },
+    { id: "web-helpers", importPath: "@deepseek-ai/dsh-tool-web", classification: "helper", symbols: ["formatSearchOutput", "searchMetaFromValue"] },
   ], productOwner: "@myagents-dsh/tools-web", stockModelDefinition: "excluded" },
   AskUserQuestion: { tool: "AskUserQuestion", modelDefinition: "compat-tool", dshPublicReuse: [
     { id: "questions", importPath: "@deepseek-ai/dsh-user-questions", classification: "provider", symbols: ["UserQuestionService"] },

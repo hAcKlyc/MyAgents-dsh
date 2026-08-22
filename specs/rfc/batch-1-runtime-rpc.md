@@ -20,7 +20,7 @@ It does not redefine the wire inventory in `runtime-rpc-v2.md`, the canonical tw
 
 ## 2. Evidence baseline
 
-The design is verified against DSH commit `47f943859bef60e4160492346772ded9b24f765a`, package baseline `0.1.0-rc.5`.
+The original design was verified against DSH commit `47f943859bef60e4160492346772ded9b24f765a`, package baseline `0.1.0-rc.5`. Batch action `B1-DSH-R1` re-verified this ownership model against `dsh-v0.1.1-rc.2` / `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`; the versioned delta and reduced patch decision are normative in `../dsh/upstream-rebaseline-0.1.1-rc.2.md`.
 
 | DSH fact | Source-level consequence |
 | --- | --- |

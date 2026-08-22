@@ -8,9 +8,9 @@ const repositoryRoot = resolve(import.meta.dirname, "..");
 
 export const DSH_SEAM_SOURCE = Object.freeze({
   repository: "https://github.com/deepseek-ai/deepseek-harness.git",
-  commit: "47f943859bef60e4160492346772ded9b24f765a",
-  tree: "f904efab9ef435201d6ba4da88a34d6366568272",
-  declaredRelease: "0.1.0-rc.5",
+  commit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+  tree: "53915efe4e2126cc7779b73dfc8a3bcec5318c44",
+  declaredRelease: "0.1.1-rc.2",
   executablePackageAssociation: "unproven",
   files: Object.freeze([
     Object.freeze({
@@ -25,13 +25,13 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/core/agent-loop/src/agent.ts",
-      blob: "668ef6582657ed0e1e4420777696ee50251371ad",
-      sha256: "e775e59f3761240ee571a9b997d0d29deb97a283b6c2fc3a071091b2743d22b4",
+      blob: "3ef1ec7aa462ee561485a7472f4347d31bbd88bb",
+      sha256: "8288214410df9e8f611df17768f667eeee67351bfcaf8c5bf92a38f6a5f9117f",
     }),
     Object.freeze({
       path: "packages/session/session-persistence/src/coordinator.ts",
-      blob: "eb5f9714c4838e492500b8452e28012c53b58bf5",
-      sha256: "e7bbc321bdb09ea8870027bd5a3e285472dddc8e4346f95f85addacf6eb784d1",
+      blob: "63def62528dcb7dc0d728365a19949dd531d20fb",
+      sha256: "80f044b43da1224e0e97208d27d0451f29f8acb579a43389af398eb36f98c096",
     }),
     Object.freeze({
       path: "packages/core/session/src/index.ts",
@@ -40,8 +40,8 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/core/agent-loop/tests/cancel.spec.ts",
-      blob: "28423bb4303f3e688ecbfbbfc235b5d92a766d0c",
-      sha256: "21d0071e9139cf96700c003c0ecb507677b9d8f36db96a83ee0de95231e2fb54",
+      blob: "992f4b62843e0e8d180d8cc3e8ab4ee1ec303686",
+      sha256: "2b887b61be648f46d53940b73c503d7327e093bef70597e5f749bcf25cc841a3",
     }),
     Object.freeze({
       path: "packages/core/scope/src/scoped-events.generated.ts",
@@ -55,18 +55,18 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/session/session-persistence/tests/persistence.spec.ts",
-      blob: "50ad798e04239d46f85da909d51653dff5d321f1",
-      sha256: "5b16d2f9d5a4d41125b9da76727d823c000fef778c53886f85492a94edbe589e",
+      blob: "6c63d72b9f3da1c8b8af5bc245c45db4d47a5aa3",
+      sha256: "a52b9436b5254f5c9728cc9b953c6afdbbe2aa3e527f96c444531f9dcedbd8d3",
     }),
     Object.freeze({
       path: "packages/subagent/subagent/src/continuation.ts",
-      blob: "d826efbfdb4695913fb536e90cbb58500bb25c61",
-      sha256: "20b5ba6b820b514e7e5f74e6f23decf9cd81184a64bcaa17bc0e3f4c0706e619",
+      blob: "652a3ba6c8919a1a96e1e716403d5d8a27f37df5",
+      sha256: "fbcbd65ada6dc1e7262e512269e4b7728fcc093f1eecab97fd77179478b3ca94",
     }),
     Object.freeze({
       path: "packages/subagent/subagent/src/types.ts",
-      blob: "2c5209765f0b79fb83c30ce3e1e708cfecab855d",
-      sha256: "9740ca09ce19bdd62e5abb989099b5a3735845a79a110e9e6405df7ff4d22640",
+      blob: "17978550abd1e12c96fba3186cdf2e0bb06c5176",
+      sha256: "c21829a95caf7fe95e817d6a13d92cf3b58038cee3f7c2a426d8cc67e8b91b59",
     }),
     Object.freeze({
       path: "packages/subagent/subagent/src/descriptor.ts",
@@ -75,18 +75,18 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/subagent/subagent/src/index.ts",
-      blob: "fe270f1b4c0b2e2afe38aba805fed449a116ca10",
-      sha256: "24c595fcb2e15f2092fc0fe333fcf74ea22ba8a248d942295654a40cf795c65c",
+      blob: "45b96a2311599da455af146313888460d1548ea1",
+      sha256: "14e7c3b7079214a978548b64028f5c4d16d3f2f81a8ccf99e089dcd370e63b6c",
     }),
     Object.freeze({
       path: "packages/subagent/subagent/tests/continuation.spec.ts",
-      blob: "07f497628d9adc12c7ec862d90786125b349fdf5",
-      sha256: "1a35e1f2159e3414a0e5004fba7910c9b77d375f75484b0bb948138ab9031777",
+      blob: "6cf1aea5a896d207964b154999b6ed2b5756bfff",
+      sha256: "012c144242922439987490e5ae223f90f68cba200c1c4fd3aba4b27453da4f3a",
     }),
     Object.freeze({
       path: "packages/subagent/subagent/tests/service.spec.ts",
-      blob: "e387a758e89b7842d52f15916c95f71bf3dbf63b",
-      sha256: "f5f8bfe1f90b32f574ab47b2bb676870e4bf1e2cb2c8e8010ceb28a947d97200",
+      blob: "05e9785611e1436fd2ffe8a9a22a680b417d7fc0",
+      sha256: "340c4715db61a9d4a647643b1f1eccf412770df5803c7f067d8807719ed6f268",
     }),
     Object.freeze({
       path: "packages/subagent/subagent-in-process-driver/src/index.ts",
@@ -194,7 +194,7 @@ export function buildDshSeamDecisions(): object {
 
   return {
     schemaVersion: 1,
-    recordedAt: "2026-08-16",
+    recordedAt: "2026-08-23",
     authority: DSH_SEAM_SOURCE,
     productProfileActivation: "forbidden-until-patched-DSH-artifact-and-batch-1-gate",
     patchSeries: DSH_SEAM_PATCHES.map((path, index) => patchEvidence(path, index + 1)),
@@ -288,7 +288,7 @@ export function buildDshSeamDecisions(): object {
         status: "required_upstream_patch_accepted",
         adr: "specs/adr/0006-product-owned-continuable-lifecycle.md",
         rejected: "allow-stock-parent-notice-or-interrupt-only-teardown-to-escape-product-work-ownership",
-        selectedPublicApi: "SubagentRuntime.registerContinuableSetup, ContinuableStartSpec.settlementDelivery, SubagentRunEndInfo.infrastructureFailure, and SubagentRuntime.retireContinuable/resumeContinuable",
+        selectedPublicApi: "stock SubagentRuntime.registerContinuableSetup/drainContinuableChildren plus patched ContinuableStartSpec.settlementDelivery, SubagentRunEndInfo.infrastructureFailure, and SubagentRuntime.resumeContinuable",
         patch: patch(PRODUCT_CONTINUABLE_LIFECYCLE_PATCH),
         executableEvidence: [
           "stock callers retain parent settlement delivery by default",
@@ -296,14 +296,12 @@ export function buildDshSeamDecisions(): object {
           "external ownership suppresses the automatic parent notice",
           "the delivery owner survives durable descriptor load and cold resume",
           "external ownership makes the existing final child-Session flush strict before handle release",
-          "a strict durability failure rejects retirement and marks the terminal edge without relabeling child model errors",
-          "exact target retirement cancels top-down and releases descendant handles child-first",
-          "foreign authority is rejected before the disposal transaction opens",
-          "retirement is idempotent after the live Activation is absent",
+          "a strict durability failure rejects the upstream selected-child drain and marks the terminal edge without relabeling child model errors",
+          "upstream selected-child drain cancels top-down and releases descendant handles child-first",
           "cold recovery wakes one exact already-durable Inbox identity without reinsertion",
           "all reconstructed pending FIFO identities retain Activation ownership until claimed or discarded",
         ],
-        removalCondition: "an installed DSH release exposes equivalent unpublished continuable setup, durable settlement ownership, strict external final durability, exact quiescent retirement, and no-reinsert pending wake",
+        removalCondition: "an installed DSH release exposes equivalent durable settlement ownership, strict external final durability, and no-reinsert pending wake; setup and selected-child drain are already stock",
       },
     ],
     evidenceOwners: {
@@ -388,8 +386,26 @@ export function verifyDshSeamSource(
       "--frozen-lockfile",
       "--ignore-scripts",
       "--reporter=silent",
+      "--filter", "@deepseek-ai/dsh-agent-loop...",
+      "--filter", "@deepseek-ai/dsh-session-persistence...",
+      "--filter", "@deepseek-ai/dsh-subagent...",
+      "--filter", "@deepseek-ai/dsh-subagent-in-process-driver...",
+      "--filter", "@deepseek-ai/dsh-subagent-spawn-in-process...",
+      "--filter", "@deepseek-ai/dsh-subagent-fork-in-process...",
     ], worktree);
-    run("corepack", ["pnpm", "exec", "tsc", "-b", "tsconfig.host.json", "--pretty", "false"], worktree);
+    run("corepack", [
+      "pnpm", "exec", "tsc", "-b",
+      "packages/core/agent/tsconfig.json",
+      "packages/core/agent-loop/tsconfig.json",
+      "packages/core/session/tsconfig.json",
+      "packages/core/scope/tsconfig.json",
+      "packages/session/session-persistence/tsconfig.json",
+      "packages/subagent/subagent/tsconfig.json",
+      "packages/subagent/subagent-in-process-driver/tsconfig.json",
+      "packages/subagent/subagent-spawn-in-process/tsconfig.json",
+      "packages/subagent/subagent-fork-in-process/tsconfig.json",
+      "--pretty", "false",
+    ], worktree);
     run("corepack", [
       "pnpm",
       "exec",

@@ -11,7 +11,7 @@ import {
   DEFAULT_MAX_IMAGE_PIXELS,
   DEFAULT_MAX_IMAGES_PER_MESSAGE,
   DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
-  detectImage,
+  prepareImageFile,
 } from "@deepseek-ai/dsh-attachment-local";
 import { CredentialProvider, credentialRef } from "@deepseek-ai/dsh-credentials";
 import type { CredentialInfo, ResolvedCredential } from "@deepseek-ai/dsh-credentials";
@@ -86,7 +86,7 @@ import { ToolRuntime, defineTool } from "@deepseek-ai/dsh-tools";
 import type { ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { buildGlobCommand, buildGrepCommand, parseGlobArgs, parseGrepArgs } from "@deepseek-ai/dsh-tool-fs-search";
 import type { GlobInput, GrepInput, RipgrepRun } from "@deepseek-ai/dsh-tool-fs-search";
-import { formatFetchOutput, formatSearchOutput, parseFetchArgs, parseSearchArgs } from "@deepseek-ai/dsh-tool-web";
+import { formatFetchOutput, formatSearchOutput, parseFetchArgs, searchMetaFromValue } from "@deepseek-ai/dsh-tool-web";
 import type { WebFetchMeta, WebSearchMeta } from "@deepseek-ai/dsh-tool-web";
 import { ApprovalRequestId, ApprovalService } from "@deepseek-ai/dsh-user-approval";
 import type { ApprovalOutcome, ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
@@ -152,14 +152,14 @@ export const dshPublicSurfaceValues = Object.freeze({
   credentialRef,
   createScope,
   defineTool,
-  detectImage,
+  prepareImageFile,
   foldPlanMode,
   formatFetchOutput,
   formatSearchOutput,
   parseFetchArgs,
   parseGlobArgs,
   parseGrepArgs,
-  parseSearchArgs,
+  searchMetaFromValue,
   parseExitStatus,
   parseCommand,
   scrubbedParentEnv,

@@ -2,6 +2,10 @@ import {
   CredentialProvider,
   credentialRef,
   type CredentialInfo,
+  type CredentialKey,
+  type CredentialRecord,
+  type CredentialRecordEntry,
+  type CredentialRecordInfo,
   type CredentialRef,
   type ResolvedCredential,
 } from "@deepseek-ai/dsh-credentials";
@@ -710,6 +714,40 @@ export class HostCredentialProvider extends CredentialProvider {
     return Promise.reject(fixedCredentialError(
       "credential_read_only",
       "Host-owned credentials cannot be removed by the Runtime",
+    ));
+  }
+
+  readRecord(key: CredentialKey): Promise<CredentialRecord | undefined> {
+    void key;
+    return Promise.resolve(undefined);
+  }
+
+  describeRecord(key: CredentialKey): Promise<CredentialRecordInfo> {
+    void key;
+    return Promise.resolve(Object.freeze({ configured: false, writable: false }));
+  }
+
+  listRecords(): Promise<readonly CredentialRecordEntry[]> {
+    return Promise.resolve(Object.freeze([]));
+  }
+
+  modifyRecord(
+    key: CredentialKey,
+    mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>,
+  ): Promise<CredentialRecord | undefined> {
+    void key;
+    void mutate;
+    return Promise.reject(fixedCredentialError(
+      "credential_read_only",
+      "Host-owned credentials do not expose Runtime-persistent records",
+    ));
+  }
+
+  deleteRecord(key: CredentialKey): Promise<void> {
+    void key;
+    return Promise.reject(fixedCredentialError(
+      "credential_read_only",
+      "Host-owned credentials do not expose Runtime-persistent records",
     ));
   }
 

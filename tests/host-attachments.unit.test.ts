@@ -22,6 +22,13 @@ const PNG = Uint8Array.from(Buffer.from(
 ));
 const PNG_SHA256 = createHash("sha256").update(PNG).digest("hex");
 
+const stageImage = (data: Uint8Array) => Promise.resolve(Object.freeze({
+  discard: () => Promise.resolve(),
+  path: "/fixture/staging/normalized-image",
+  sha256: createHash("sha256").update(data).digest("hex"),
+  sizeBytes: data.byteLength,
+}));
+
 const deferred = <Value>() => {
   let resolve!: (value: Value) => void;
   let reject!: (error: unknown) => void;
@@ -71,7 +78,15 @@ const createHarness = async (
   hostPorts.bindTransport(pair.runtime, "runtime-generation-1");
   hostPorts.bindProductSession("product-session-1");
   hostPorts.activate();
-  const host = new StandardTestHost(new GeneratedHostClient(pair.host), overrides);
+  const host = new StandardTestHost(new GeneratedHostClient(pair.host), {
+    "host/attachment/put": (params) => ({
+      attachmentId: `sha256:${params.sha256}`,
+      mimeType: params.mimeType,
+      sizeBytes: params.sizeBytes,
+      sha256: params.sha256,
+    }),
+    ...overrides,
+  });
   const harness = Object.freeze({
     attachments,
     close: async () => {
@@ -100,29 +115,39 @@ describe("HostAttachmentStore", () => {
   it("validates before publication and releases every verified read lease", async () => {
     let discarded = 0;
     let reads = 0;
+    let publishedBytes: Uint8Array | undefined;
     const releases: string[] = [];
     const harness = await createHarness(Object.freeze({
-      readLease: () => { reads += 1; return Promise.resolve(Uint8Array.from(PNG)); },
-      stage: (_root: string, data: Uint8Array) => Promise.resolve(Object.freeze({
-        discard: () => { discarded += 1; return Promise.resolve(); },
-        path: "/fixture/staging/put-1",
-        sha256: createHash("sha256").update(data).digest("hex"),
-        sizeBytes: data.byteLength,
-      })),
+      readLease: () => {
+        reads += 1;
+        if (publishedBytes === undefined) throw new Error("normalized image was not staged");
+        return Promise.resolve(Uint8Array.from(publishedBytes));
+      },
+      stage: (_root: string, data: Uint8Array) => {
+        publishedBytes = Uint8Array.from(data);
+        return Promise.resolve(Object.freeze({
+          discard: () => { discarded += 1; return Promise.resolve(); },
+          path: "/fixture/staging/put-1",
+          sha256: createHash("sha256").update(data).digest("hex"),
+          sizeBytes: data.byteLength,
+        }));
+      },
     }), {
       "host/attachment/put": (params) => {
+        const normalizedBytes = publishedBytes;
+        if (normalizedBytes === undefined) throw new Error("normalized image bytes were not staged");
         expect(params).toMatchObject({
           mimeType: "image/png",
           name: "pixel.png",
-          sizeBytes: PNG.byteLength,
-          sha256: PNG_SHA256,
           stagingPath: "/fixture/staging/put-1",
         });
+        expect(params.sha256).toBe(createHash("sha256").update(normalizedBytes).digest("hex"));
+        expect(params.sizeBytes).toBe(normalizedBytes.byteLength);
         return {
-          attachmentId: `sha256:${PNG_SHA256}`,
+          attachmentId: `sha256:${params.sha256}`,
           mimeType: "image/png",
-          sizeBytes: PNG.byteLength,
-          sha256: PNG_SHA256,
+          sizeBytes: params.sizeBytes,
+          sha256: params.sha256,
         };
       },
       "host/attachment/acquire": (params) => ({
@@ -145,18 +170,20 @@ describe("HostAttachmentStore", () => {
         mediaType: "image/png",
         name: "/private/local/pixel.png",
       }));
-    expect(ref).toEqual({
-      attachmentId: `sha256:${PNG_SHA256}`,
+    expect(ref).toMatchObject({
       mediaType: "image/png",
-      bytes: PNG.byteLength,
       width: 1,
       height: 1,
       name: "pixel.png",
     });
+    const normalizedBytes = publishedBytes;
+    if (normalizedBytes === undefined) throw new Error("normalized image bytes were not published");
+    expect(ref.attachmentId).toBe(`sha256:${createHash("sha256").update(normalizedBytes).digest("hex")}`);
+    expect(ref.bytes).toBe(normalizedBytes.byteLength);
     const stored = await harness.attachments.runWithRequestScope(scope, () =>
       harness.root.attachments.readImage(ref));
     expect(stored.ref).toEqual(ref);
-    expect(stored.data).toEqual(PNG);
+    expect(stored.data).toEqual(publishedBytes);
     expect({ discarded, reads, releases }).toEqual({ discarded: 1, reads: 1, releases: ["lease-1"] });
   });
 
@@ -164,7 +191,7 @@ describe("HostAttachmentStore", () => {
     const releases: string[] = [];
     const harness = await createHarness(Object.freeze({
       readLease: () => Promise.resolve(Uint8Array.from(PNG)),
-      stage: () => Promise.reject(new Error("unused")),
+      stage: (_root: string, data: Uint8Array) => stageImage(data),
     }), {
       "host/attachment/acquire": (params) => ({
         leaseId: "lease-sanitized-name",
@@ -231,7 +258,7 @@ describe("HostAttachmentStore", () => {
         corrupted.set([(corrupted.at(-1) ?? 0) ^ 1], corrupted.length - 1);
         return Promise.resolve(corrupted);
       },
-      stage: () => Promise.reject(new Error("unused")),
+      stage: (_root: string, data: Uint8Array) => stageImage(data),
     }), {
       "host/attachment/acquire": () => {
         acquireHits += 1;
@@ -281,7 +308,7 @@ describe("HostAttachmentStore", () => {
         if (readHits === 2) bothReads.resolve(undefined);
         return pending.promise;
       },
-      stage: () => Promise.reject(new Error("unused")),
+      stage: (_root: string, data: Uint8Array) => stageImage(data),
     }), {
       "host/attachment/acquire": (params) => {
         acquireHits += 1;
@@ -391,7 +418,7 @@ describe("HostAttachmentStore", () => {
     let releaseHits = 0;
     const harness = await createHarness(Object.freeze({
       readLease: () => Promise.resolve(Uint8Array.from(PNG)),
-      stage: () => Promise.reject(new Error("unused")),
+      stage: (_root: string, data: Uint8Array) => stageImage(data),
     }), {
       "host/attachment/acquire": (params) => ({
         leaseId: "lease-retry",

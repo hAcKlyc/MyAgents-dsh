@@ -31,13 +31,15 @@ All Batch 1 behavior still lives inside DSH/Cordis composition. “MyAgents-owne
 
 ## 2. Evidence baseline
 
-This design was checked against:
+This design was initially checked against:
 
 - `deepseek-harness` commit `47f943859bef`, package baseline `0.1.0-rc.5`;
 - DSH public package sources and READMEs for AgentLoop, Session, Tools, LLM, persistence, credentials, attachments, presets, filesystem, shell, web, interactions, Skills, subagents, jobs, plan mode, and todo;
 - current `myagents-runtime` protocol authority `packages/protocol/src/contract-source.ts` and generated protocol metadata;
 - current `myagents-runtime` canonical tool authorities `packages/runtime-core/src/tools/{contracts,golden-contracts,profile}.ts` and generated profile;
 - the implemented old Runtime Core/RPC RFC, 20-tool RFC, and dynamic Agent acceptance PRD.
+
+Batch action `B1-DSH-R1` subsequently re-audited the same owner split against `dsh-v0.1.1-rc.2` / `b150a551b8d4`; `../dsh/upstream-rebaseline-0.1.1-rc.2.md` owns the current public-capability and fork-delta evidence.
 
 The migration inputs from `myagents-runtime` include behavior contracts, synthetic fixtures, tests, and reusable engine-neutral source modules. Pi controllers and Pi entry/tree assumptions are not implementation dependencies; copied tool/infrastructure code must replace Pi registration, context, event, and lifecycle glue with DSH-native ownership.
 

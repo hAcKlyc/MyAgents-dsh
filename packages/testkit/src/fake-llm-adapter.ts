@@ -34,6 +34,9 @@ export type FakeLlmScript = Readonly<{
   message: string;
 }> | Readonly<{
   kind: "await-abort";
+}> | Readonly<{
+  kind: "partial-await-abort";
+  text: string;
 }>;
 
 export interface FakeLlmRequestObservation {
@@ -286,6 +289,15 @@ export class ScriptedFakeLlmAdapter extends LlmAdapter {
       this.#scripts.push(Object.freeze({ kind: "await-abort" }));
       return;
     }
+    if (candidate.kind === "partial-await-abort") {
+      exactPlainDataRecord(script, ["kind", "text"], "fake LLM partial-await-abort script");
+      if (typeof candidate.text !== "string" || candidate.text.length === 0
+        || candidate.text.length > MAX_COMPLETION_TEXT_LENGTH) {
+        throw new TypeError("fake LLM partial-await-abort text must be bounded non-empty text");
+      }
+      this.#scripts.push(frozenClone({ kind: "partial-await-abort", text: candidate.text }));
+      return;
+    }
     throw new TypeError("fake LLM script kind is unsupported");
   }
 
@@ -335,9 +347,16 @@ export class ScriptedFakeLlmAdapter extends LlmAdapter {
       };
       throwIfAborted();
       if (script.kind === "error") throw new Error(script.message);
-      if (script.kind === "await-abort") {
+      if (script.kind === "await-abort" || script.kind === "partial-await-abort") {
         const signal = options.signal;
         if (signal === undefined) throw new Error("fake LLM await-abort script requires a request signal");
+        if (script.kind === "partial-await-abort") {
+          throwIfAborted();
+          yield { type: "block-start", index: 0, blockType: "text" };
+          throwIfAborted();
+          yield { type: "text-delta", index: 0, text: script.text };
+          throwIfAborted();
+        }
         await new Promise<void>((_resolve, reject) => {
           const onAbort = () => reject(abortReason(signal));
           signal.addEventListener("abort", onAbort, { once: true });

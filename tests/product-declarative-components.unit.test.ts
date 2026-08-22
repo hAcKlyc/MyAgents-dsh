@@ -261,6 +261,7 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
       const execution = await root.commands.execute(
         agent,
         "/rr 'main branch' feature",
+        [],
         new AbortController().signal,
       );
       expect(execution?.result).toMatchObject({ kind: "success" });

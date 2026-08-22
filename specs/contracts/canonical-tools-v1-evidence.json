@@ -24,9 +24,9 @@
     "canonical-tools-v1.md": "f64a3a9d66183f4e7c076b1bb68c5ff6ce215e96bb22d6da99d2deefc95e50da",
     "canonical-tools.generated.ts": "090af32270e2440c53c084eeb6e84f38cc0f2ab7aa8688413464797058d63c0b",
     "catalog-fixtures-v1.json": "e2bc1c6c2785d16ee0e2ba1acb62bfa328f15cfa3b5f11af953d2e27629305b2",
-    "dsh-reuse-matrix-v1.json": "75e46540080f0c4b41eb46ebabd1103eba7c98fbefb09dd12da40836ac47bf97",
+    "dsh-reuse-matrix-v1.json": "7580c577617127cd6c0cc732cc521ed6cb74f08049981b4f2edd2725a4d236eb",
     "tool-catalog.schema.json": "a0f4219ea5e05f437fc607d24d48cb2dd0c2994c2279b8694c6da57f1aa8f309",
-    "tool-contract-meta.json": "4ac700c24a09d8fa3fb2bfdecd56115d83a56fd080e9387af9b9b7e9fb9c7927"
+    "tool-contract-meta.json": "7e1ba0ee9ee1156b86a66474e3192b7829b3d5cdc85fa37e0d83969b059ac7ce"
   },
   "profile": "canonical-agent-experience-v1",
   "source": {

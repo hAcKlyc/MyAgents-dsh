@@ -21,7 +21,6 @@ import {
   type ContinuableSetupContribution,
   type ContinuableStart,
   type ContinuableStartSpec,
-  type SubagentInterruptAuthority,
   type SubagentRuntime,
 } from "@deepseek-ai/dsh-subagent";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
@@ -187,10 +186,10 @@ class FakeContinuableSubagents extends Service {
     }
   }
 
-  async retireContinuable(childId: SessionId, authority: SubagentInterruptAuthority): Promise<void> {
+  private async retireContinuable(childId: SessionId, parent: Agent): Promise<void> {
     const child = this.children.get(childId);
     if (child === undefined) return;
-    if (authority.kind !== "user" || authority.parentSessionId !== child.agent.session.header.parentSession) {
+    if (parent.id !== child.agent.session.header.parentSession) {
       throw new Error("foreign parent cannot retire the child");
     }
     this.retired.push(childId);
@@ -199,6 +198,10 @@ class FakeContinuableSubagents extends Service {
     child.detachSession();
     this.children.delete(childId);
     this.runs.delete(childId);
+  }
+
+  async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void> {
+    for (const childId of childIds) await this.retireContinuable(childId, parent);
   }
 
   resumeContinuable(parent: Agent, childId: SessionId, messageId: MessageId): Promise<boolean> {
@@ -215,7 +218,8 @@ class FakeContinuableSubagents extends Service {
     for (const child of [...this.children.values()]) {
       const parentSessionId = child.agent.session.header.parentSession;
       if (parentSessionId !== undefined && parents.some((parent) => parent.id === parentSessionId)) {
-        await this.retireContinuable(child.agent.id, { kind: "user", parentSessionId });
+        const parent = parents.find((candidate) => candidate.id === parentSessionId);
+        if (parent !== undefined) await this.retireContinuable(child.agent.id, parent);
       }
     }
   }

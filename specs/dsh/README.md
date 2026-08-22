@@ -6,10 +6,11 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 ## Two authorities, deliberately not conflated
 
-- Source/design evidence is `deepseek-harness@47f943859bef60e4160492346772ded9b24f765a` (tree `f904efab9ef435201d6ba4da88a34d6366568272`), whose manifests declare `0.1.0-rc.5`.
-- Executable evidence is the public npm `0.1.0-rc.6` package set plus `@deepseek-ai/cordis@4.0.1`, pinned by exact versions, tarball URLs, and SHA-512 integrities in `package-lock.json`.
+- Source/design evidence is `deepseek-harness@b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` (tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`), whose manifests declare `0.1.1-rc.2`.
+- Development dependency evidence is the public npm `0.1.1-rc.2` package set plus `@deepseek-ai/cordis@4.0.1`, pinned by exact versions, tarball URLs, and SHA-512 integrities in `package-lock.json`.
+- Candidate executable evidence is the source-built, five-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49`, content-addressed by manifest SHA-256 `b937254ae7bdd756988c4e253dc215cbed252b6ea2f9bdc444e5a51ee812c4ae`.
 
-The registry does not publish the selected `rc.5` packages and the `rc.6` package manifests contain no `gitHead`. The evidence therefore records their source association as `unproven`; the project does not claim that the fixed source commit produced the executable tarballs.
+The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 
 ## Public seam policy
 
@@ -27,9 +28,17 @@ The manifest records executable consequences and follow-up decisions for the unp
 
 ## Accepted seam decisions
 
-`seam-decisions-v1.json` is the generated registry for the six evidence-backed Foundation and Batch 1 decisions. `npm run check:dsh-seams` verifies its patch digests. `npm run check:dsh-seams-source` additionally verifies every touched fixed-source blob, applies the five patches to a detached temporary worktree, installs only from the primed exact pnpm store, compiles the complete upstream host TypeScript graph, and runs 360 real patched-source regression tests across Agent cancellation/wake, pre-assistant commit (including strict canonical reconstruction and non-tool/max-token bypass), generated scope routing, persistence, pre-mutation Agent/Session publication guards, trusted unpublished continuable setup, durable external ownership and strict final persistence of continuable-subagent settlement, and exact quiescent child retirement. CI repeats that gate from separately SHA-pinned checkouts. The numbered ADRs record why each choice was accepted.
+`seam-decisions-v1.json` is the generated registry for the six evidence-backed Foundation and Batch 1 decisions. `npm run check:dsh-seams` verifies its patch digests. `npm run check:dsh-seams-source` additionally verifies every touched fixed-source blob, applies the five patches to a detached temporary worktree, installs only from the primed exact pnpm store, compiles the selected upstream package graph, and runs 371 real patched-source regression tests across Agent cancellation/wake, pre-assistant commit (including strict canonical reconstruction and non-tool/max-token bypass), generated scope routing, persistence, pre-mutation Agent/Session publication guards, trusted unpublished continuable setup, durable external ownership and strict final persistence of continuable-subagent settlement, and exact selected-child drain. CI repeats that gate from separately SHA-pinned checkouts. The numbered ADRs record why each choice was accepted.
 
-These patches target the fixed rc.5 source/design authority. They are not claimed to be the source of the installed rc.6 npm packages, are not applied to `node_modules`, and do not activate the foundation product profile. Batch 1 must first build and content-address the approved patched DSH artifact, compile its public API fixtures, and pass the accumulated Runtime gates.
+These patches target the fixed rc.2 source/design authority. They are not claimed to be the source of the installed registry packages, are not applied to `node_modules`, and do not activate the official product profile. Batch 1 must still pass the accumulated Runtime gates before this candidate may become production authority.
+
+## Batch 1 upstream rebaseline
+
+`B1-DSH-R1` is the release-blocking refresh of this authority. On 2026-08-23 the official checkout was fetched through lightweight tag `dsh-v0.1.1-rc.2`, exact commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`, 854 commits beyond the prior rc.5 source baseline. The source, lock, reduced patch series, public compile fixtures and 52-package candidate bundle are now rebased; the action remains `in_progress` until the accumulated Runtime and repository gates accept them.
+
+The versioned review matrix is [upstream-rebaseline-0.1.1-rc.2.md](./upstream-rebaseline-0.1.1-rc.2.md).
+
+The refresh compares public APIs and behavior, not only package versions. Patches 0001–0004 remain required and were rebased with new source/blob evidence. Patch 0005 was reduced: ProductWork now uses upstream caller-reserved identity and `drainContinuableChildren`, while the patch retains only exact external settlement delivery, strict final durability, resume/no-reinsert recovery, and infrastructure-failure attribution that rc.2 still lacks.
 
 ## Patched Batch 1 artifact
 

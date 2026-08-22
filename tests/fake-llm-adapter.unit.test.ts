@@ -83,6 +83,24 @@ describe("ScriptedFakeLlmAdapter", () => {
     expect(adapter.pendingScriptCount).toBe(0);
   });
 
+  it("holds one delivered assistant prefix until exact cancellation", async () => {
+    const adapter = new ScriptedFakeLlmAdapter();
+    const controller = new AbortController();
+    adapter.enqueue({ kind: "partial-await-abort", text: "durable partial prefix" });
+    const iterator = adapter.stream(request({ signal: controller.signal }))[Symbol.asyncIterator]();
+    expect((await iterator.next()).value).toEqual({ type: "block-start", index: 0, blockType: "text" });
+    expect((await iterator.next()).value).toEqual({
+      type: "text-delta",
+      index: 0,
+      text: "durable partial prefix",
+    });
+    const settlement = iterator.next();
+    controller.abort(new Error("partial stream cancelled"));
+    await expect(settlement).rejects.toThrow("partial stream cancelled");
+    expect(adapter.activeStreamCount).toBe(0);
+    expect(adapter.pendingScriptCount).toBe(0);
+  });
+
   it("emits deterministic model tool-call blocks through the real stream vocabulary", async () => {
     const adapter = new ScriptedFakeLlmAdapter();
     adapter.enqueue({
@@ -172,6 +190,8 @@ describe("ScriptedFakeLlmAdapter", () => {
     } as never)).toThrow("non-negative safe integer");
     expect(() => adapter.enqueue({ kind: "error", message: 1 } as never))
       .toThrow("bounded primitive text");
+    expect(() => adapter.enqueue({ kind: "partial-await-abort", text: "" }))
+      .toThrow("bounded non-empty text");
     expect(() => adapter.enqueue({ kind: "tool-calls", calls: [] })).toThrow("bounded dense call array");
     expect(() => adapter.enqueue({
       kind: "tool-calls",

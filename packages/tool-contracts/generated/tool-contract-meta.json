@@ -14,7 +14,7 @@
     "packages/protocol/src/tool-catalog-schema.ts"
   ],
   "profile": "canonical-agent-experience-v1",
-  "reuseMatrixSha256": "75e46540080f0c4b41eb46ebabd1103eba7c98fbefb09dd12da40836ac47bf97",
+  "reuseMatrixSha256": "7580c577617127cd6c0cc732cc521ed6cb74f08049981b4f2edd2725a4d236eb",
   "toolDigests": {
     "Agent": "2bdbd42c94d43e964988300e866baaefccd82c03aea0383d7fbe703d4b74633c",
     "AskUserQuestion": "ef1c3e6f36371bb1c5c530be2280994b2b8fc2908a0cf586ada00784e1ca3c24",

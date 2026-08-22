@@ -44,18 +44,18 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "ac1ff5ee1c9d12cb29321dedef87a4cb19f2a206784e9d344f68efe7157d0810",
-    "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
+    "artifactManifestSha256": "b937254ae7bdd756988c4e253dc215cbed252b6ea2f9bdc444e5a51ee812c4ae",
+    "artifactVersion": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",
-      "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
-      "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
-      "@deepseek-ai/dsh-attachment": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
-      "@deepseek-ai/dsh-attachment-local": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
-      "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
-      "@deepseek-ai/dsh-session": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
-      "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
-      "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6"
+      "@deepseek-ai/dsh-agent": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",
+      "@deepseek-ai/dsh-agent-loop": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",
+      "@deepseek-ai/dsh-attachment": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",
+      "@deepseek-ai/dsh-attachment-local": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",
+      "@deepseek-ai/dsh-llm": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",
+      "@deepseek-ai/dsh-session": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",
+      "@deepseek-ai/dsh-system-prompt": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",
+      "@deepseek-ai/dsh-tools": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49"
     }
   },
   "formatVersion": 1,
@@ -88,7 +88,7 @@
       "host/attachment/acquire",
       "host/attachment/release"
     ],
-    "schemaSha256": "124b994808ef991bc1518b516d744f7ae790744748f850bdbb53d46b8bffd99d",
+    "schemaSha256": "16519d3b23ccc98475ed517bf14cd1711f7dfcc0afd207b5fb3faf2541365412",
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "workstream-evidence-only",

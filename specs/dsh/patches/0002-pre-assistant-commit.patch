@@ -1,5 +1,5 @@
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index 56f08c9681..de6e69ae01 100644
+index 2064c52f32..ab384d46e6 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
 @@ -12,23 +12,26 @@ import type {
@@ -159,7 +159,7 @@ index 56f08c9681..de6e69ae01 100644
  /** Remove adapter-derived values before plugins propose the next request config. */
  function requestProposal(header: EpochHeader): LlmCallConfig {
    if (header.adapterDefaults === undefined) return header.config
-@@ -378,7 +467,7 @@ export class ReactLoopAgent implements Agent {
+@@ -397,7 +521,7 @@ export class ReactLoopAgent implements Agent {
          continue
        }
  
@@ -168,7 +168,7 @@ index 56f08c9681..de6e69ae01 100644
          content: assembler.blocks(),
          source: {
            provider: request.provider,
-@@ -386,6 +475,18 @@ export class ReactLoopAgent implements Agent {
+@@ -405,6 +529,18 @@ export class ReactLoopAgent implements Agent {
            ...assembler.replayState !== undefined ? { replayState: assembler.replayState } : {},
          },
        })
@@ -187,7 +187,7 @@ index 56f08c9681..de6e69ae01 100644
        this.session.append(
          'assistant/message',
          {
-@@ -398,10 +499,16 @@ export class ReactLoopAgent implements Agent {
+@@ -417,10 +553,16 @@ export class ReactLoopAgent implements Agent {
        )
        if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
  
@@ -208,7 +208,7 @@ index 56f08c9681..de6e69ae01 100644
        return concluded ? { kind: 'completed' } : null
 diff --git a/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
 new file mode 100644
-index 0000000000..892e8808e0
+index 0000000000..164582be29
 --- /dev/null
 +++ b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
 @@ -0,0 +1,280 @@
@@ -544,7 +544,7 @@ index 7fd4e706d1..e162396148 100644
       * Handle one failed model-request attempt before the loop retries or closes
       * its step. A listener returns `{ kind: 'retry' }` without calling `next()`
 diff --git a/packages/core/scope/src/scoped-events.generated.ts b/packages/core/scope/src/scoped-events.generated.ts
-index 672914c5c3..4a5b8e070a 100644
+index 672914c5c3..ecda3e174a 100644
 --- a/packages/core/scope/src/scoped-events.generated.ts
 +++ b/packages/core/scope/src/scoped-events.generated.ts
 @@ -14,6 +14,7 @@ const scopedSubjectResolvers: Readonly<Record<string, ScopedSubjectResolver | nu

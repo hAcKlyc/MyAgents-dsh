@@ -8,11 +8,24 @@ import {
   resolveRetryPolicy,
   type GenerateOptions,
   type LlmModelInfo,
+  type ModelModality,
   type LlmProviderInfo,
   type LlmResolvedModelInfo,
   type StreamChunk,
 } from "@deepseek-ai/dsh-llm";
 import {
+  DEFAULT_FILE_EXPIRY_SECONDS,
+  DEFAULT_FILE_QUOTA_CLEANUP_BATCH,
+  DEFAULT_FILE_REFRESH_MARGIN_SECONDS,
+  DEFAULT_FILES_API_TIMEOUT_MS,
+  DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM,
+  DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM,
+  DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM,
+  DEFAULT_MAX_IMAGES_PER_REQUEST,
+  DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES,
+  DEFAULT_MAX_REQUEST_FILES_BYTES,
+  DEFAULT_REQUEST_IMAGE_MAX_BYTES,
+  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   DeepSeekAdapter,
   PUBLIC_BASE_URL,
@@ -183,8 +196,23 @@ const connectionFor = (profile: ProviderProfile): DeepSeekConnectionOptions => O
   models: Object.freeze([Object.freeze({
     contextWindow: profile.contextWindow,
     id: profile.modelId,
+    imageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
+    imagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+    inputModalities: Object.freeze(["text", "image"] as const) as unknown as ModelModality[],
     maxTokens: profile.maxTokens,
   })]),
+  maxRequestFilesBytes: DEFAULT_MAX_REQUEST_FILES_BYTES,
+  maxInlineRequestImageBytes: DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES,
+  maxImagesPerRequest: DEFAULT_MAX_IMAGES_PER_REQUEST,
+  imageOffloadByteQuantum: DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM,
+  inlineImageOffloadByteQuantum: DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM,
+  imageOffloadCountQuantum: DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM,
+  filesApiTimeoutMs: DEFAULT_FILES_API_TIMEOUT_MS,
+  filePolicy: Object.freeze({
+    expiresAfterSeconds: DEFAULT_FILE_EXPIRY_SECONDS,
+    refreshMarginSeconds: DEFAULT_FILE_REFRESH_MARGIN_SECONDS,
+    quotaCleanupBatch: DEFAULT_FILE_QUOTA_CLEANUP_BATCH,
+  }),
   retryPolicy: HOST_DEEPSEEK_RETRY_POLICY,
   streamIdleTimeoutMs: DEFAULT_STREAM_IDLE_TIMEOUT_MS,
 });
@@ -369,6 +397,10 @@ export class HostDeepSeekModelAuthority {
     return userId as DeepSeekUserId;
   }
 
+  resolveAttachments() {
+    return this.#context.get("attachments");
+  }
+
   private requireBinding(): HostProviderCredentialBinding {
     if (this.#failed || this.#binding === undefined) {
       throw new ProtocolError(
@@ -411,6 +443,7 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
           throw new LlmError("Host Provider credential resolution failed", "AUTH");
         }
       },
+      resolveAttachments: () => authority.resolveAttachments(),
       resolveUserId: () => authority.resolveUserId(),
     });
   }

@@ -22,7 +22,7 @@ The initial design review used these exact, clean authority baselines on 2026-08
 | `myagents-runtime` | `b7bbcadb172254defc0ea86229dd5de043fbb5f3` | Current implemented behavior, protocol 1.1, and Agent SDK compatibility source |
 | `deepseek-harness` | `47f943859bef60e4160492346772ded9b24f765a` (`0.1.0-rc.5`) | DSH architecture and public seam design reference |
 
-These are design evidence, not the future package lock. The Pre-Batch Foundation must select and pin the exact DSH dependency used by implementation.
+These rows record the initial design evidence, not the current package lock. Batch action `B1-DSH-R1` has since re-audited the implementation against `dsh-v0.1.1-rc.2`, commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`; the current executable candidate and patch dispositions are owned by `specs/dsh/upstream-rebaseline-0.1.1-rc.2.md` and the content-addressed accepted-artifact manifest.
 
 ## 2. Product boundaries
 

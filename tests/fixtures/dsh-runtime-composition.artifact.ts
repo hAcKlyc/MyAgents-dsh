@@ -2230,22 +2230,32 @@ assert.equal(
 );
 const imageInputMessage = adapter.requests[2]?.messages.at(-1);
 assert.ok(imageInputMessage);
+const imageInputAttachmentEvidence = hostAttachmentEvidence.slice(imageAttachmentEvidenceStart);
+const normalizedPutEvidence = imageInputAttachmentEvidence.find((entry) => entry.startsWith("put:")) ?? "";
+if (!normalizedPutEvidence.endsWith(":pixel.png")) {
+  throw new Error("normalized Host image publication evidence is missing");
+}
+const normalizedImageAttachmentId = normalizedPutEvidence.slice(4, -":pixel.png".length);
+assert.notEqual(normalizedImageAttachmentId, fixtureImageAttachmentId);
+const normalizedImageAttachment = hostAttachments.get(normalizedImageAttachmentId);
+assert.ok(normalizedImageAttachment);
 assert.deepEqual(imageInputMessage.content, [
   { type: "text", text: "Inspect the verified Host image" },
   {
     type: "image",
     attachment: {
-      attachmentId: fixtureImageAttachmentId,
+      attachmentId: normalizedImageAttachmentId,
       mediaType: "image/png",
-      bytes: fixtureImageBytes.byteLength,
+      bytes: normalizedImageAttachment.bytes.byteLength,
       width: 1,
       height: 1,
       name: "pixel.png",
     },
   },
 ]);
-assert.deepEqual(hostAttachmentEvidence.slice(imageAttachmentEvidenceStart), [
+assert.deepEqual(imageInputAttachmentEvidence, [
   `acquire:${fixtureImageAttachmentId}:artifact-runtime-lease-1`,
+  `put:${normalizedImageAttachmentId}:pixel.png`,
   "release:artifact-runtime-lease-1",
 ]);
 assert.equal(hostAttachmentLeases.size, 0);
@@ -2738,6 +2748,7 @@ assert.deepEqual(
 const declarativeCommandExecution = await composition.context.commands.execute(
   primaryAgent,
   "/rr accepted-runtime",
+  [],
   new AbortController().signal,
 );
 if (declarativeCommandExecution === undefined) {
@@ -2818,11 +2829,18 @@ assert.equal(durableToolText("artifact-host-tool-call", 3), "Host release check 
 const hostToolResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-host-tool-call");
 assert.ok(hostToolResult?.type === "tool/result");
+const hostToolAttachmentEvidence = hostAttachmentEvidence.slice(hostToolAttachmentEvidenceStart);
+const hostToolPutEvidence = hostToolAttachmentEvidence.find((entry) => entry.startsWith("put:")) ?? "";
+if (!hostToolPutEvidence.endsWith(":host-tool-pixel.png")) {
+  throw new Error("normalized Host tool image publication evidence is missing");
+}
+const normalizedHostToolAttachmentId = hostToolPutEvidence.slice(4, -":host-tool-pixel.png".length);
 assert.ok(hostToolResult.data.message.content.some((block) =>
   block.content.some((content) => content.type === "image"
-    && String(content.attachment.attachmentId) === fixtureImageAttachmentId)));
-assert.deepEqual(hostAttachmentEvidence.slice(hostToolAttachmentEvidenceStart), [
+    && String(content.attachment.attachmentId) === normalizedHostToolAttachmentId)));
+assert.deepEqual(hostToolAttachmentEvidence, [
   `acquire:${fixtureImageAttachmentId}:artifact-runtime-lease-2`,
+  `put:${normalizedHostToolAttachmentId}:host-tool-pixel.png`,
   "release:artifact-runtime-lease-2",
 ]);
 assert.equal(hostAttachmentLeases.size, 0);
@@ -3167,7 +3185,7 @@ adapter.enqueue({
   }],
   kind: "tool-calls",
 });
-adapter.enqueue({ kind: "await-abort" });
+adapter.enqueue({ kind: "partial-await-abort", text: "durable interrupted assistant prefix" });
 adapter.enqueue({ kind: "await-abort" });
 await composition.context.sdkOperations.start({
   ...turnStartParams,
@@ -3248,6 +3266,24 @@ assert.deepEqual(composition.context.sdkOperations.lookup("artifact-operation-4"
   kind: "aborted",
   reason: "user",
 });
+const interruptedOperationTurn = composition.context.sdkOperations
+  .lookup("artifact-operation-4")?.dshTurns[0];
+assert.ok(interruptedOperationTurn !== undefined);
+const interruptedAssistantPrefix = primaryAgent.session.events.findLast((event) =>
+  event.type === "assistant/message" && event.data.interrupted === true
+    && event.data.message.content.some((block) => block.type === "text"
+      && block.text === "durable interrupted assistant prefix"));
+assert.ok(interruptedAssistantPrefix?.type === "assistant/message", JSON.stringify({
+  operation: composition.context.sdkOperations.lookup("artifact-operation-4"),
+  recentAssistantEvents: primaryAgent.session.events.filter((event) =>
+    event.type === "assistant/message").slice(-4),
+}));
+assert.equal(interruptedAssistantPrefix.data.turn, interruptedOperationTurn);
+assert.equal(interruptedAssistantPrefix.data.interrupted, true);
+assert.deepEqual(interruptedAssistantPrefix.data.message.content, [{
+  type: "text",
+  text: "durable interrupted assistant prefix",
+}]);
 assert.deepEqual(composition.context.sdkOperations.lookup("artifact-operation-5")?.terminal, {
   kind: "aborted",
   reason: "user",
@@ -3430,10 +3466,13 @@ process.stdout.write(`${JSON.stringify({
   hostAttachmentStoreVerified: true,
   hostAttachmentEvidence: {
     events: hostAttachmentEvidence,
-    imageAttachmentId: fixtureImageAttachmentId,
+    imageAttachmentId: normalizedImageAttachmentId,
+    sourceImageAttachmentId: fixtureImageAttachmentId,
     imageRequestContainsReference: adapter.requests[2]?.messages.at(-1)?.content.some((block) =>
-      block.type === "image" && String(block.attachment.attachmentId) === fixtureImageAttachmentId),
-    hostToolImageReference: true,
+      block.type === "image" && String(block.attachment.attachmentId) === normalizedImageAttachmentId),
+    hostToolImageReference: hostToolResult.data.message.content.some((block) =>
+      block.content.some((content) => content.type === "image"
+        && String(content.attachment.attachmentId) === normalizedHostToolAttachmentId)),
     stagingEntriesAfterUse: hostAttachmentStagingEntriesAfterUse,
   },
   hostCredentialModelVerified,
@@ -3477,6 +3516,7 @@ process.stdout.write(`${JSON.stringify({
     secretNonProjectionVerified: hostModelSecretProjectionRejected,
   },
   operationInterruptVerified: true,
+  interruptedAssistantPrefixVerified: true,
   canonicalFileToolsVerified: true,
   canonicalProcessSearchToolsVerified: true,
   canonicalWebToolsVerified: true,

@@ -42,10 +42,10 @@ describe("DSH dependency authority", () => {
     expect(generated).toBe(baselineBytes);
     expect(baseline.executableBaseline).toEqual({
       registry: "https://registry.npmjs.org",
-      dshRelease: "0.1.0-rc.6",
+      dshRelease: "0.1.1-rc.2",
       sourceAssociation: "unproven",
       directPackageCount: 45,
-      productionPackageCount: 205,
+      productionPackageCount: 221,
     });
     expect(baseline.productionPackages.filter(({ name }) => name.startsWith("@deepseek-ai/"))).toHaveLength(57);
     expect(baseline.productionPackages.every(({ integrity, license }) => integrity.startsWith("sha512-") && license.length > 0)).toBe(true);
@@ -54,7 +54,7 @@ describe("DSH dependency authority", () => {
   it("rejects any direct-package version drift", () => {
     const drifted = structuredClone(rootPackage);
     const dependencies = drifted.dependencies as JsonObject;
-    dependencies["@deepseek-ai/dsh-agent"] = "0.1.0-rc.7";
+    dependencies["@deepseek-ai/dsh-agent"] = "0.1.1-rc.3";
 
     expect(() => buildDshBaseline(drifted, lockfile)).toThrow(
       "root DSH dependency set or exact versions differ from the accepted baseline",

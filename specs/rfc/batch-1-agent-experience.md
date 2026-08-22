@@ -20,7 +20,7 @@ The product contract, engine-neutral tool implementation, and synthetic fixtures
 
 ## 2. Source evidence
 
-The design was checked against DSH `47f943859bef` / `0.1.0-rc.5`:
+The design was initially checked against DSH `47f943859bef` / `0.1.0-rc.5` and re-audited by `B1-DSH-R1` against `b150a551b8d4` / `0.1.1-rc.2`; the current capability delta and patch dispositions are recorded in `../dsh/upstream-rebaseline-0.1.1-rc.2.md`:
 
 - `@deepseek-ai/dsh-tools` exposes the single scoped `ToolRuntime`, `ToolDefinition`, restrictions, monotonic guards, pre/around/post waterfalls, final content, presentation, timeout metadata, and a boolean parallel/exclusive classifier;
 - AgentLoop appends `assistant/message` before scheduling its tool calls, then appends each `tool/call` immediately before `ToolRuntime.prepare()`;

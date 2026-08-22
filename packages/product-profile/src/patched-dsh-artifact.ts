@@ -36,7 +36,7 @@ export interface AcceptedPatchedDshArtifactAuthority {
     "subagents.continuableSetup",
     "subagents.externalSettlementDelivery",
     "subagents.strictExternalSettlementDurability",
-    "subagents.retireContinuable",
+    "subagents.drainContinuableChildren",
     "subagents.resumeContinuable",
   ];
 }
@@ -73,7 +73,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
   ], "accepted patched DSH artifact authority");
   if (authority.formatVersion !== 1 || authority.packageCount !== 52
     || typeof authority.artifactVersion !== "string"
-    || !/^0\.1\.0-rc\.5\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
+    || !/^0\.1\.1-rc\.2\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
     throw new TypeError("accepted patched DSH artifact identity is invalid");
   }
   const runtimeValue = authority.runtimePackages;
@@ -98,7 +98,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "subagents.continuableSetup",
     "subagents.externalSettlementDelivery",
     "subagents.strictExternalSettlementDurability",
-    "subagents.retireContinuable",
+    "subagents.drainContinuableChildren",
     "subagents.resumeContinuable",
   ];
   if (!Array.isArray(requiredPatchedSeams)

@@ -11,7 +11,6 @@ import {
   foldSubagentDescriptor,
   type ContinuableSubagentDescriptorData,
   type ContinuableStart,
-  type SubagentInterruptAuthority,
   type SubagentRunEndInfo,
   type SubagentRunInfo,
   type SubagentStopReason,
@@ -228,7 +227,6 @@ declare module "@deepseek-ai/dsh-subagent" {
   }
 
   interface SubagentRuntime {
-    retireContinuable(targetSessionId: SessionId, authority: SubagentInterruptAuthority): Promise<void>;
     resumeContinuable(
       parent: Agent,
       childId: SessionId,
@@ -1495,10 +1493,10 @@ export class ProductWorkService extends Service {
       await this.recoverClosedEpoch(entry, candidate.events);
       entry.latestOutput = accumulatedEpochOutput(candidate.events, entry);
       if (entry.stopRequested) {
-        await exactNativePromise(this.ctx.subagents.retireContinuable(SessionId(entry.agentId), {
-          kind: "user",
-          parentSessionId: root.id,
-        }), "recovering ProductWork retirement");
+        await exactNativePromise(
+          this.ctx.subagents.drainContinuableChildren(root, [SessionId(entry.agentId)]),
+          "recovering ProductWork retirement",
+        );
         const output = entry.latestOutput.length === 0
           ? "child Agent stopped before producing output"
           : entry.latestOutput;
@@ -2487,10 +2485,10 @@ export class ProductWorkService extends Service {
       if (continuableChildId !== undefined) {
         if (admittedEntry !== undefined) admittedEntry.stopRequested = true;
         try {
-          await exactNativePromise(this.ctx.subagents.retireContinuable(SessionId(continuableChildId), {
-            kind: "user",
-            parentSessionId: product.agent.id,
-          }), "failed Agent admission retirement");
+          await exactNativePromise(
+            this.ctx.subagents.drainContinuableChildren(product.agent, [SessionId(continuableChildId)]),
+            "failed Agent admission retirement",
+          );
         } catch (cleanupError) {
           cleanupErrors.push(cleanupError);
         } finally {
@@ -2698,10 +2696,10 @@ export class ProductWorkService extends Service {
     }
     const live = this.ctx.agents.get(SessionId(entry.agentId));
     try {
-      await exactNativePromise(this.ctx.subagents.retireContinuable(SessionId(entry.agentId), {
-        kind: "user",
-        parentSessionId: entry.parent.id,
-      }), "continuable subagent retirement");
+      await exactNativePromise(
+        this.ctx.subagents.drainContinuableChildren(entry.parent, [SessionId(entry.agentId)]),
+        "continuable subagent retirement",
+      );
     } catch (error) {
       preRetirementErrors.push(error);
     }

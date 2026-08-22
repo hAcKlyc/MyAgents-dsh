@@ -1,19 +1,26 @@
 import {
   AttachmentError,
-  AttachmentId,
   AttachmentStore,
+  type AttachmentErrorCode,
   type ImageAttachmentLimits,
   type ImageAttachmentRef,
+  type ImageRequestPolicy,
   type ImageMediaType,
+  type RequestImageAttachment,
   type SaveImageAttachment,
   type StoredImageAttachment,
 } from "@deepseek-ai/dsh-attachment";
 import {
   DEFAULT_MAX_IMAGE_BYTES,
+  DEFAULT_MAX_IMAGE_DIMENSION,
   DEFAULT_MAX_IMAGE_PIXELS,
   DEFAULT_MAX_IMAGES_PER_MESSAGE,
   DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
-  detectImage,
+  DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
+  DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
+  prepareImageFile,
+  readRequestImageFile,
+  type PreparedImageFile,
 } from "@deepseek-ai/dsh-attachment-local";
 import { symbols, type Context } from "@deepseek-ai/cordis";
 import { createHash } from "node:crypto";
@@ -35,6 +42,10 @@ const IMAGE_MEDIA_TYPES = Object.freeze([
   "image/gif",
 ] as const);
 const CONTENT_ADDRESS_PATTERN = /^sha256:([a-f0-9]{64})$/u;
+const NORMALIZATION_POLICY = Object.freeze({
+  maxBytes: DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
+  maxDimension: DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
+});
 
 export interface HostAttachmentStagingFile {
   readonly path: string;
@@ -348,7 +359,7 @@ const normalizeReference = (value: ImageAttachmentRef): Readonly<{
     value,
     ["attachmentId", "mediaType", "bytes", "width", "height"],
     "image attachment reference",
-    ["name"],
+    ["name", "originalDimensions"],
   );
   const match = typeof ref.attachmentId === "string" ? CONTENT_ADDRESS_PATTERN.exec(ref.attachmentId) : null;
   if (match?.[1] === undefined || !IMAGE_MEDIA_TYPES.includes(ref.mediaType as ImageMediaType)
@@ -359,6 +370,19 @@ const normalizeReference = (value: ImageAttachmentRef): Readonly<{
     || (ref.width as number) * (ref.height as number) > DEFAULT_MAX_IMAGE_PIXELS
     || (Object.hasOwn(ref, "name") && safeAttachmentName(ref.name) !== ref.name)) {
     throw new AttachmentError("Attachment reference is invalid.", "INVALID_ATTACHMENT_REF");
+  }
+  if (Object.hasOwn(ref, "originalDimensions")) {
+    const dimensions = exactOwnDataObject(
+      ref.originalDimensions,
+      ["width", "height"],
+      "original image dimensions",
+    );
+    if (!Number.isSafeInteger(dimensions.width) || (dimensions.width as number) < 1
+      || !Number.isSafeInteger(dimensions.height) || (dimensions.height as number) < 1
+      || (dimensions.width as number) > DEFAULT_MAX_IMAGE_DIMENSION
+      || (dimensions.height as number) > DEFAULT_MAX_IMAGE_DIMENSION) {
+      throw new AttachmentError("Attachment reference is invalid.", "INVALID_ATTACHMENT_REF");
+    }
   }
   return Object.freeze({ ref: Object.freeze({ ...ref }) as unknown as ImageAttachmentRef, sha256: match[1] });
 };
@@ -416,8 +440,34 @@ const normalizePublication = (value: HostAttachmentPublication): HostAttachmentP
   });
 };
 
-const fixedAttachmentFailure = (message: string, code: string, cause?: unknown): AttachmentError =>
-  new AttachmentError(message, code, cause === undefined ? undefined : { cause });
+const HOST_ATTACHMENT_ERROR_CODES = new Set([
+  "ATTACHMENT_STORE_STOPPING",
+  "ATTACHMENT_SCOPE_INVALID",
+  "ATTACHMENT_STORE_NOT_READY",
+  "ATTACHMENT_LEASE_LIMIT",
+]);
+
+class HostAttachmentError extends Error {
+  readonly code: string;
+
+  constructor(message: string, code: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = "HostAttachmentError";
+    this.code = code;
+  }
+}
+
+const fixedAttachmentFailure = (
+  message: string,
+  code: string,
+  cause?: unknown,
+): AttachmentError | HostAttachmentError => HOST_ATTACHMENT_ERROR_CODES.has(code)
+  ? new HostAttachmentError(message, code, cause)
+  : new AttachmentError(
+      message,
+      code as AttachmentErrorCode,
+      cause === undefined ? undefined : { cause },
+    );
 
 const runWithCleanup = async <T>(
   action: () => Promise<T>,
@@ -463,6 +513,7 @@ export class HostAttachmentStore extends AttachmentStore {
     maxImagesPerMessage: DEFAULT_MAX_IMAGES_PER_MESSAGE,
     maxMessageImageBytes: DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
     maxImagePixels: DEFAULT_MAX_IMAGE_PIXELS,
+    maxImageDimension: DEFAULT_MAX_IMAGE_DIMENSION,
     mediaTypes: IMAGE_MEDIA_TYPES,
   });
 
@@ -516,6 +567,16 @@ export class HostAttachmentStore extends AttachmentStore {
     const store = originalHostAttachmentStore(this);
     if (signal !== undefined) nativeSignal(signal);
     return store.#track(store.#readImage(normalizeReference(value), signal));
+  }
+
+  override readImageRequest(
+    value: ImageAttachmentRef,
+    policy: ImageRequestPolicy,
+    signal?: AbortSignal,
+  ): Promise<RequestImageAttachment> {
+    const store = originalHostAttachmentStore(this);
+    if (signal !== undefined) nativeSignal(signal);
+    return store.#track(store.#readImageRequest(normalizeReference(value), policy, signal));
   }
 
   #bindLeaseLimit(value: number): void {
@@ -607,35 +668,26 @@ export class HostAttachmentStore extends AttachmentStore {
     return Object.freeze({ scope, signal: fused });
   }
 
-  async #inspect(input: ReturnType<typeof imageInput>): Promise<Readonly<{
-    height: number;
-    width: number;
-  }>> {
+  async #inspect(input: ReturnType<typeof imageInput>): Promise<PreparedImageFile> {
     if (input.data.byteLength === 0 || input.data.byteLength > this.imageLimits.maxImageBytes) {
       throw fixedAttachmentFailure("Image exceeds the configured byte limit.", "IMAGE_TOO_LARGE");
     }
-    const detected = await detectImage(input.data, this.imageLimits.maxImagePixels);
-    if (detected.mediaType !== input.mediaType) {
-      throw fixedAttachmentFailure("Declared image type does not match its bytes.", "IMAGE_TYPE_MISMATCH");
-    }
-    return Object.freeze({ height: detected.height, width: detected.width });
+    return prepareImageFile(input, this.imageLimits, NORMALIZATION_POLICY);
   }
 
   async #saveImage(input: ReturnType<typeof imageInput>): Promise<ImageAttachmentRef> {
-    const metadata = await this.#inspect(input);
+    const prepared = await this.#inspect(input);
     const published = await this.#publishBytes(Object.freeze({
-      bytes: input.data,
-      mediaType: input.mediaType,
+      bytes: prepared.data,
+      mediaType: prepared.ref.mediaType,
       name: input.name ?? "image",
     }));
-    return Object.freeze({
-      attachmentId: AttachmentId(published.attachmentId),
-      mediaType: input.mediaType,
-      bytes: published.sizeBytes,
-      width: metadata.width,
-      height: metadata.height,
-      ...(input.name === undefined ? {} : { name: input.name }),
-    });
+    if (published.attachmentId !== prepared.ref.attachmentId
+      || published.sizeBytes !== prepared.ref.bytes
+      || published.mediaType !== prepared.ref.mediaType) {
+      throw fixedAttachmentFailure("Host returned a mismatched normalized image reference.", "ATTACHMENT_WRITE_FAILED");
+    }
+    return prepared.ref;
   }
 
   async #publishBytes(input: HostAttachmentPublication): Promise<HostAttachmentReference> {
@@ -774,11 +826,18 @@ export class HostAttachmentStore extends AttachmentStore {
         || createHash("sha256").update(data).digest("hex") !== normalized.sha256) {
         throw fixedAttachmentFailure("Attachment lease bytes failed integrity verification.", "ATTACHMENT_CORRUPT");
       }
-      const detected = await detectImage(data, this.imageLimits.maxImagePixels);
+      const prepared = await this.#inspect(Object.freeze({
+        data,
+        mediaType: normalized.ref.mediaType,
+        ...(normalized.ref.name === undefined ? {} : { name: normalized.ref.name }),
+      }));
       scope.assertCurrent();
       signal.throwIfAborted();
-      if (detected.mediaType !== normalized.ref.mediaType
-        || detected.width !== normalized.ref.width || detected.height !== normalized.ref.height) {
+      if (prepared.ref.attachmentId !== normalized.ref.attachmentId
+        || prepared.ref.mediaType !== normalized.ref.mediaType
+        || prepared.ref.bytes !== normalized.ref.bytes
+        || prepared.ref.width !== normalized.ref.width
+        || prepared.ref.height !== normalized.ref.height) {
         throw fixedAttachmentFailure("Attachment lease metadata differs from its durable reference.", "ATTACHMENT_CORRUPT");
       }
       return Object.freeze({ ref: normalized.ref, data: Uint8Array.from(data) });
@@ -788,15 +847,22 @@ export class HostAttachmentStore extends AttachmentStore {
     }, "Attachment read and lease cleanup failed", (cause) => cause);
   }
 
+  async #readImageRequest(
+    normalized: ReturnType<typeof normalizeReference>,
+    policy: ImageRequestPolicy,
+    callerSignal?: AbortSignal,
+  ): Promise<RequestImageAttachment> {
+    const { scope, signal } = this.#requireScope(callerSignal);
+    const stored = await this.#readImage(normalized, signal);
+    scope.assertCurrent();
+    signal.throwIfAborted();
+    const projected = await readRequestImageFile(scope.stagingRoot, stored, policy, signal);
+    scope.assertCurrent();
+    signal.throwIfAborted();
+    return projected;
+  }
+
   async #readHostImage(input: ReturnType<typeof normalizeHostReference>): Promise<ImageAttachmentRef> {
-    const provisional = Object.freeze({
-      attachmentId: AttachmentId(input.attachmentId),
-      mediaType: input.mediaType,
-      bytes: input.sizeBytes,
-      width: 1,
-      height: 1,
-      name: input.name,
-    });
     const { scope, signal } = this.#requireScope();
     const limit = this.#maxAttachmentLeases;
     if (limit === undefined) {
@@ -850,17 +916,26 @@ export class HostAttachmentStore extends AttachmentStore {
         || createHash("sha256").update(data).digest("hex") !== input.sha256) {
         throw fixedAttachmentFailure("Attachment lease bytes failed integrity verification.", "ATTACHMENT_CORRUPT");
       }
-      const detected = await detectImage(data, this.imageLimits.maxImagePixels);
+      const prepared = await this.#inspect(Object.freeze({
+        data,
+        mediaType: input.mediaType,
+        name: input.name,
+      }));
       scope.assertCurrent();
       signal.throwIfAborted();
-      if (detected.mediaType !== input.mediaType) {
+      const published = await this.#publishBytes(Object.freeze({
+        bytes: prepared.data,
+        mediaType: prepared.ref.mediaType,
+        name: input.name,
+      }));
+      scope.assertCurrent();
+      signal.throwIfAborted();
+      if (published.attachmentId !== prepared.ref.attachmentId
+        || published.sizeBytes !== prepared.ref.bytes
+        || published.mediaType !== prepared.ref.mediaType) {
         throw fixedAttachmentFailure("Attachment lease media type differs from its reference.", "ATTACHMENT_CORRUPT");
       }
-      return Object.freeze({
-        ...provisional,
-        width: detected.width,
-        height: detected.height,
-      });
+      return prepared.ref;
     }, async () => {
       if (reservationHeld) this.#leaseReservations -= 1;
       if (lease !== undefined) await this.#releaseLease(lease);

@@ -199,7 +199,7 @@
           "importPath": "@deepseek-ai/dsh-tool-web",
           "symbols": [
             "formatSearchOutput",
-            "parseSearchArgs"
+            "searchMetaFromValue"
           ]
         }
       ],
