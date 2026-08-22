@@ -440,12 +440,11 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
             closed = true;
             const retirementReason = new Error("MCP component generation was retired");
             lifetime.abort(retirementReason);
-            const settledCalls = await Promise.allSettled([...calls]);
+            await Promise.allSettled([...calls]);
             const close = await Promise.allSettled([exactPromise(connection.close(), "MCP connection close")]);
-            const errors = [...settledCalls, ...close].flatMap((result) =>
-              result.status === "rejected" && result.reason !== retirementReason
-                ? [result.reason as unknown]
-                : []);
+            const errors = close.flatMap((result) => result.status === "rejected"
+              ? [result.reason as unknown]
+              : []);
             if (errors.length === 1) throw errors[0];
             if (errors.length > 1) throw new AggregateError(errors, "MCP calls and connection cleanup failed");
           },

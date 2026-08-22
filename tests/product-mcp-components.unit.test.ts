@@ -335,7 +335,7 @@ describe("generation-owned MCP component compiler", () => {
       ) => new Promise((_resolve, reject) => {
         signal.addEventListener("abort", () => {
           callAborted = true;
-          reject(signal.reason instanceof Error ? signal.reason : new Error("MCP call aborted"));
+          reject(new Error("MCP client wrapped the generation cancellation"));
         }, { once: true });
       }),
       close: () => { closeHits += 1; return Promise.resolve(); },
