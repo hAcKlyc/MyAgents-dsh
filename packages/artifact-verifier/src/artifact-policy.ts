@@ -86,7 +86,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/host-ports",
     relativeDirectory: "packages/host-ports",
-    allowedFiles: ["package.json", "src/credential-provider.ts", "src/index.ts", "src/service.ts"],
+    allowedFiles: ["package.json", "src/attachment-store.ts", "src/credential-provider.ts", "src/index.ts", "src/service.ts"],
   },
   {
     packageName: "@myagents-dsh/operation-runtime",

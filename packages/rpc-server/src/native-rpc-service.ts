@@ -331,17 +331,26 @@ const emptyActiveCounts = () => ({
   utilityRuns: 0,
 });
 
-const nativeRpcHostPortLifecycles = new WeakMap<object, HostPortTransportLifecycle>();
+type NativeRpcCompositionCapabilities = Readonly<{
+  bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
+  hostPorts: HostPortTransportLifecycle;
+}>;
 
-const hostPortLifecycleOf = (service: NativeRpcServer): HostPortTransportLifecycle => {
+const nativeRpcCompositionCapabilities = new WeakMap<object, NativeRpcCompositionCapabilities>();
+
+const compositionCapabilitiesOf = (service: NativeRpcServer): NativeRpcCompositionCapabilities => {
   const original = (service as unknown as Record<PropertyKey, unknown>)[symbols.original];
-  const lifecycle = nativeRpcHostPortLifecycles.get(
+  const capabilities = nativeRpcCompositionCapabilities.get(
     original !== null && typeof original === "object" ? original : service,
   );
-  if (lifecycle === undefined) {
-    throw new Error("Native RPC lost its composition-owned Host port lifecycle authority");
+  if (capabilities === undefined) {
+    throw new Error("Native RPC lost its composition-owned lifecycle capabilities");
   }
-  return lifecycle;
+  return capabilities;
+};
+
+const hostPortLifecycleOf = (service: NativeRpcServer): HostPortTransportLifecycle => {
+  return compositionCapabilitiesOf(service).hostPorts;
 };
 
 export class NativeRpcServer extends Service {
@@ -379,7 +388,10 @@ export class NativeRpcServer extends Service {
         !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256) {
       throw new Error("native RPC composition authority differs from the accepted DSH root graph");
     }
-    nativeRpcHostPortLifecycles.set(this, compositionAuthority.hostPorts);
+    nativeRpcCompositionCapabilities.set(this, Object.freeze({
+      bindAttachmentLeaseLimit: compositionAuthority.bindAttachmentLeaseLimit,
+      hostPorts: compositionAuthority.hostPorts,
+    }));
     this.terminationCommittedPromise = new Promise((resolve) => {
       this.resolveTermination = resolve;
     });
@@ -496,6 +508,7 @@ export class NativeRpcServer extends Service {
     });
     hostPortLifecycleOf(this).bindProductSession(params.productSessionId);
     const limits = minimumLimits(params.limits, this.configValue.limits);
+    compositionCapabilitiesOf(this).bindAttachmentLeaseLimit(limits.maxAttachmentLeases);
     context.commit();
     this.peerValue.updateLimits(limits);
     this.phaseValue = "initialize_response_pending";

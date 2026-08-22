@@ -24,6 +24,19 @@
     "apps/*",
     "packages/*"
   ],
+  "overrides": {
+    "@deepseek-ai/dsh-anonymous-user-id": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-atomic-write": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-brand": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-code-runtime": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-home-paths": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-launch-environment": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-output-retention": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-spill": "0.1.0-rc.6"
+  },
+  "optionalDependencies": {
+    "@img/sharp-wasm32": "0.35.3"
+  },
   "scripts": {
     "preinstall": "node scripts/verify-toolchain.mjs",
     "clean": "node scripts/clean.mjs",
@@ -69,6 +82,7 @@
     "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.6",
     "@deepseek-ai/dsh-agent-presets": "0.1.0-rc.6",
     "@deepseek-ai/dsh-attachment": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-attachment-local": "0.1.0-rc.6",
     "@deepseek-ai/dsh-commands": "0.1.0-rc.6",
     "@deepseek-ai/dsh-compaction": "0.1.0-rc.6",
     "@deepseek-ai/dsh-credentials": "0.1.0-rc.6",

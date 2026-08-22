@@ -66,6 +66,14 @@ export interface McpComponentCompilerConfig {
   readonly connectionFactory: McpConnectionFactory;
   readonly context: Context;
   readonly credentials?: HostCredentialProviderController;
+  readonly publishImage?: (input: Readonly<{
+    assertCurrent: () => void;
+    bytes: Uint8Array;
+    execution: ToolRunContext;
+    mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+    name: string;
+    toolName: string;
+  }>) => Promise<Extract<ContentBlock, { type: "image" }>>;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -157,14 +165,64 @@ const redact = (value: string, redactions: readonly string[]): string => {
   return result;
 };
 
+type NormalizedMcpAttachment = Readonly<{
+  attachmentId: string;
+  bytes: number;
+  contentIndex: number;
+  height: number;
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  name?: string;
+  width: number;
+}>;
+
+type NormalizedMcpResult = Readonly<{
+  attachments: readonly NormalizedMcpAttachment[];
+  content: readonly string[];
+  isError: boolean;
+  truncated: boolean;
+}>;
+
+const renderedMcpContent = new WeakMap<object, readonly ContentBlock[]>();
+
 const renderMcpResult = (_args: unknown, value: unknown): ContentBlock[] => {
-  const result = value as Readonly<{ content: readonly string[] }>;
-  return result.content.map((text) => ({ type: "text", text }));
+  const result = value as NormalizedMcpResult;
+  const persisted = result.content.flatMap((text, index): ContentBlock[] => {
+    const attachment = result.attachments.find((candidate) => candidate.contentIndex === index);
+    return [{ type: "text" as const, text }, ...(attachment === undefined ? [] : [{
+        type: "image" as const,
+        attachment: {
+          attachmentId: attachment.attachmentId as never,
+          mediaType: attachment.mediaType,
+          bytes: attachment.bytes,
+          width: attachment.width,
+          height: attachment.height,
+          ...(attachment.name === undefined ? {} : { name: attachment.name }),
+        },
+      }])];
+  });
+  return [...(renderedMcpContent.get(value as object) ?? persisted)];
 };
 
 const MCP_OUTPUT_SCHEMA = Object.freeze({
   additionalProperties: false,
   properties: Object.freeze({
+    attachments: Object.freeze({
+      items: Object.freeze({
+        additionalProperties: false,
+        properties: Object.freeze({
+          attachmentId: Object.freeze({ type: "string" }),
+          bytes: Object.freeze({ type: "integer" }),
+          contentIndex: Object.freeze({ type: "integer" }),
+          height: Object.freeze({ type: "integer" }),
+          mediaType: Object.freeze({ type: "string" }),
+          name: Object.freeze({ type: "string" }),
+          width: Object.freeze({ type: "integer" }),
+        }),
+        required: Object.freeze(["attachmentId", "bytes", "contentIndex", "height", "mediaType", "width"]),
+        type: "object",
+      }),
+      type: "array",
+    }),
     content: Object.freeze({
       items: Object.freeze({ type: "string" }),
       type: "array",
@@ -172,17 +230,21 @@ const MCP_OUTPUT_SCHEMA = Object.freeze({
     isError: Object.freeze({ type: "boolean" }),
     truncated: Object.freeze({ type: "boolean" }),
   }),
-  required: Object.freeze(["content", "isError", "truncated"]),
+  required: Object.freeze(["attachments", "content", "isError", "truncated"]),
   type: "object",
 }) as unknown as ToolDefinition["output"]["schema"];
 
-const normalizeResult = (value: unknown, redactions: readonly string[]): Readonly<{
-  content: readonly string[];
-  isError: boolean;
-  truncated: boolean;
-}> => {
+const normalizeResult = async (
+  value: unknown,
+  redactions: readonly string[],
+  publishImage: McpComponentCompilerConfig["publishImage"],
+  publishImageReceiver: object,
+  execution: ToolRunContext,
+  toolName: string,
+  assertCurrent: () => void,
+): Promise<NormalizedMcpResult> => {
   const normalized = exactKeys(
-    normalizeCanonicalJson(value, "MCP tool result"),
+    value,
     ["content"],
     ["isError"],
     "MCP tool result",
@@ -191,22 +253,92 @@ const normalizeResult = (value: unknown, redactions: readonly string[]): Readonl
     throw new TypeError("MCP tool result isError must be boolean when present");
   }
   const contentValue = normalized.content;
-  if (!Array.isArray(contentValue) || contentValue.length > 1_024 || isProxy(contentValue)) {
+  if (!Array.isArray(contentValue) || contentValue.length > 1_024 || isProxy(contentValue)
+    || Reflect.ownKeys(contentValue).some((key) => key !== "length"
+      && (typeof key !== "string" || !/^(?:0|[1-9][0-9]*)$/u.test(key)))) {
     throw new TypeError("MCP tool result content must be one bounded array");
   }
   const content: string[] = [];
+  const attachments: NormalizedMcpAttachment[] = [];
+  const rendered: ContentBlock[] = [];
   let remaining = MCP_COMPONENT_LIMITS.resultTextBytes;
   let truncated = false;
   for (const entry of contentValue) {
-    const part = exactKeys(entry, ["text", "type"], [], "MCP tool result content");
-    if (part.type !== "text" || typeof part.text !== "string") {
-      throw new TypeError("MCP binary and attachment result content is unavailable before Workstream 3 A9");
+    const part = exactObject(entry, "MCP tool result content");
+    if (part.type === "text") {
+      const textPart = exactKeys(part, ["text", "type"], [], "MCP text result content");
+      if (typeof textPart.text !== "string") throw new TypeError("MCP text result content is invalid");
+      const projected = boundedText(redact(textPart.text, redactions), remaining);
+      content.push(projected.text);
+      rendered.push(Object.freeze({ type: "text" as const, text: projected.text }));
+      remaining -= Buffer.byteLength(projected.text, "utf8");
+      truncated ||= projected.truncated;
+      if (remaining === 0) break;
+      continue;
     }
-    const projected = boundedText(redact(part.text, redactions), remaining);
-    content.push(projected.text);
-    remaining -= Buffer.byteLength(projected.text, "utf8");
-    truncated ||= projected.truncated;
-    if (remaining === 0) break;
+    const imagePart = exactKeys(part, ["data", "mimeType", "type"], [], "MCP image result content");
+    if (imagePart.type !== "image" || typeof imagePart.data !== "string"
+      || (imagePart.mimeType !== "image/png" && imagePart.mimeType !== "image/jpeg"
+        && imagePart.mimeType !== "image/webp" && imagePart.mimeType !== "image/gif")
+      || imagePart.data.length > Math.ceil((5 * 1_024 * 1_024) / 3) * 4
+      || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(imagePart.data)) {
+      throw new TypeError("MCP image result content is invalid");
+    }
+    if (normalized.isError === true) {
+      const omitted = "MCP image content omitted from failed result.";
+      content.push(omitted);
+      rendered.push(Object.freeze({ type: "text" as const, text: omitted }));
+      continue;
+    }
+    if (publishImage === undefined) {
+      throw new TypeError("MCP image result publication authority is unavailable");
+    }
+    const bytes = Uint8Array.from(Buffer.from(imagePart.data, "base64"));
+    if (Buffer.from(bytes).toString("base64") !== imagePart.data || bytes.byteLength > 5 * 1_024 * 1_024) {
+      throw new TypeError("MCP image result content is invalid");
+    }
+    const name = `${toolName}-image-${attachments.length + 1}`;
+    const blockValue: unknown = await exactPromise(
+      Reflect.apply(publishImage, publishImageReceiver, [Object.freeze({
+        assertCurrent,
+        bytes,
+        execution,
+        mediaType: imagePart.mimeType,
+        name,
+        toolName,
+      })]),
+      "MCP image publisher",
+    );
+    execution.signal.throwIfAborted();
+    assertCurrent();
+    if (blockValue === null || typeof blockValue !== "object" || isProxy(blockValue)
+      || (blockValue as ContentBlock).type !== "image") {
+      throw new TypeError("MCP image publisher returned an invalid content block");
+    }
+    const block = blockValue as Extract<ContentBlock, { type: "image" }>;
+    const attachment = block.attachment;
+    const attachmentId = String(attachment.attachmentId);
+    if (!/^sha256:[a-f0-9]{64}$/u.test(attachmentId)
+      || !Number.isSafeInteger(attachment.bytes) || attachment.bytes < 0
+      || !Number.isSafeInteger(attachment.width) || attachment.width < 1
+      || !Number.isSafeInteger(attachment.height) || attachment.height < 1
+      || (attachment.name !== undefined && Buffer.byteLength(attachment.name, "utf8") > 512)) {
+      throw new TypeError("MCP image publisher returned invalid attachment metadata");
+    }
+    const contentIndex = content.length;
+    const projected = Object.freeze({
+      attachmentId,
+      bytes: attachment.bytes,
+      contentIndex,
+      height: attachment.height,
+      mediaType: attachment.mediaType,
+      ...(attachment.name === undefined ? {} : { name: attachment.name }),
+      width: attachment.width,
+    });
+    attachments.push(projected);
+    const placeholder = `[MCP image attachment ${projected.attachmentId}]`;
+    content.push(placeholder);
+    rendered.push(Object.freeze({ type: "text" as const, text: placeholder }), block);
   }
   truncated ||= content.length < contentValue.length;
   if (content.length === 0) {
@@ -214,11 +346,16 @@ const normalizeResult = (value: unknown, redactions: readonly string[]): Readonl
       ? "MCP tool failed without text content."
       : "MCP tool completed without text content.");
   }
-  return Object.freeze({
+  const result = Object.freeze({
+    attachments: Object.freeze(attachments),
     content: Object.freeze(content),
     isError: normalized.isError === true,
     truncated,
   });
+  renderedMcpContent.set(result, Object.freeze(rendered.length === 0
+    ? result.content.map((text) => Object.freeze({ type: "text" as const, text }))
+    : rendered));
+  return result;
 };
 
 const publicToolName = (serverId: string, remoteName: string): string => {
@@ -314,12 +451,16 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
   const normalizedConfig = exactKeys(
     config,
     ["connectionFactory", "context"],
-    ["credentials"],
+    ["credentials", "publishImage"],
     "MCP component compiler config",
   );
   const context = normalizedConfig.context as Context;
   const factory = normalizedConfig.connectionFactory as McpConnectionFactory;
   const credentials = normalizedConfig.credentials as HostCredentialProviderController | undefined;
+  const publishImage = normalizedConfig.publishImage as McpComponentCompilerConfig["publishImage"];
+  if (publishImage !== undefined && (typeof publishImage !== "function" || isProxy(publishImage))) {
+    throw new TypeError("MCP image publisher must be a non-proxy function");
+  }
   if (context !== context.root || isProxy(factory)
     || typeof factory.connect !== "function" || isProxy(factory.connect)) {
     throw new TypeError("MCP component compiler requires trusted non-proxy composition capabilities");
@@ -394,6 +535,7 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
               await authority.authorizeToolExecution(name, tool.name, execution);
               authority.assertToolExecution(name, execution);
               const callSignal = AbortSignal.any([execution.signal, lifetime.signal]);
+              const assertCurrent = () => authority.assertToolExecution(name, execution);
               const pending = exactPromise(
                 connection.callTool(tool.name, Object.freeze(input), callSignal),
                 "MCP tool call",
@@ -403,7 +545,15 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
                 const result = await pending;
                 execution.signal.throwIfAborted();
                 authority.assertToolExecution(name, execution);
-                const normalized = normalizeResult(result, redactions);
+                const normalized = await normalizeResult(
+                  result,
+                  redactions,
+                  publishImage,
+                  normalizedConfig,
+                  execution,
+                  name,
+                  assertCurrent,
+                );
                 if (normalized.isError) {
                   throw new Error(normalized.content.join("\n"));
                 }

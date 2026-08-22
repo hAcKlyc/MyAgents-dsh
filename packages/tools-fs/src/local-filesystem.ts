@@ -153,10 +153,32 @@ export interface LocalDirectoryAuthority {
   readonly version: string;
 }
 
+export interface LocalAttachmentStagingFile {
+  readonly path: string;
+  readonly sha256: string;
+  readonly sizeBytes: number;
+  readonly discard: () => Promise<void>;
+}
+
+export interface LocalAttachmentIoAuthority {
+  readonly readLease: (
+    stagingRoot: string,
+    readOnlyPath: string,
+    maxBytes: number,
+    signal: AbortSignal,
+  ) => Promise<Uint8Array>;
+  readonly stage: (
+    stagingRoot: string,
+    data: Uint8Array,
+    signal: AbortSignal,
+  ) => Promise<LocalAttachmentStagingFile>;
+}
+
 export class LocalWorkspaceFileSystem extends FileSystem {
   private readonly adapterValue;
   private readonly pathValue;
   private readonly retainedOutputVersionsValue = new Map<string, string>();
+  private readonly attachmentRootIdentitiesValue = new Map<string, string>();
   private readonly planDirectoryIdentitiesValue = new Map<string, PlanDirectoryIdentity>();
   private readonly planTargetIdentitiesValue = new Map<string, PlanDirectoryIdentity>();
   private readonly targetsValue = new Map<string, string>();
@@ -658,6 +680,232 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     return path;
   }
 
+  private async attachmentRoot(path: string, signal: AbortSignal): Promise<Readonly<{
+    identity: string;
+    path: string;
+  }>> {
+    abortError(signal);
+    const canonical = this.lexicalPath(path);
+    if (canonical !== path) {
+      throw new FsError("attachment staging root must be canonical", "FS_SANDBOX_DENIED");
+    }
+    const before = await lstat(canonical).catch((error: unknown) =>
+      fsError(error, "attachment staging root is unavailable"));
+    if (before.isSymbolicLink() || !before.isDirectory()) {
+      throw new FsError("attachment staging root is not a directory", "FS_SANDBOX_DENIED");
+    }
+    const resolved = await realpath(canonical).catch((error: unknown) =>
+      fsError(error, "attachment staging root cannot be resolved"));
+    abortError(signal);
+    if (!this.adapterValue.samePath(this.adapterValue.normalizeAbsolutePath(resolved), canonical)) {
+      throw new FsError("attachment staging root contains symlink indirection", "FS_SANDBOX_DENIED");
+    }
+    const identity = directoryIdentityOf(before);
+    const recorded = this.attachmentRootIdentitiesValue.get(canonical);
+    if (recorded !== undefined && recorded !== identity) {
+      throw new FsError("attachment staging root identity changed", "FS_STALE_VERSION");
+    }
+    this.attachmentRootIdentitiesValue.set(canonical, identity);
+    return Object.freeze({ identity, path: canonical });
+  }
+
+  private async revalidateAttachmentRoot(
+    root: Readonly<{ identity: string; path: string }>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    abortError(signal);
+    const current = await lstat(root.path).catch((error: unknown) =>
+      fsError(error, "attachment staging root is unavailable"));
+    if (current.isSymbolicLink() || !current.isDirectory()
+      || directoryIdentityOf(current) !== root.identity) {
+      throw new FsError("attachment staging root identity changed", "FS_STALE_VERSION");
+    }
+    const resolved = await realpath(root.path).catch((error: unknown) =>
+      fsError(error, "attachment staging root cannot be resolved"));
+    abortError(signal);
+    if (!this.adapterValue.samePath(this.adapterValue.normalizeAbsolutePath(resolved), root.path)) {
+      throw new FsError("attachment staging root contains symlink indirection", "FS_SANDBOX_DENIED");
+    }
+  }
+
+  private async stageAttachment(
+    stagingRoot: string,
+    data: Uint8Array,
+    signal: AbortSignal,
+  ): Promise<LocalAttachmentStagingFile> {
+    if (isProxy(data) || !(data instanceof Uint8Array)
+      || data.byteLength < 1 || data.byteLength > 64 * 1_024 * 1_024) {
+      throw new TypeError("attachment staging bytes are invalid");
+    }
+    abortError(signal);
+    const root = await this.attachmentRoot(stagingRoot, signal);
+    const path = this.pathValue.join(root.path, `.myagents-put-${randomBytes(18).toString("hex")}`);
+    const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+    let handle: FileHandle | undefined;
+    let created = false;
+    try {
+      await this.revalidateAttachmentRoot(root, signal);
+      handle = await open(
+        path,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | noFollow,
+        0o600,
+      ).catch((error: unknown) => fsError(error, "attachment staging file creation failed"));
+      created = true;
+      await handle.writeFile(data);
+      abortError(signal);
+      await handle.sync();
+      const info = await handle.stat();
+      if (!info.isFile() || info.nlink !== 1 || info.size !== data.byteLength) {
+        throw new FsError("attachment staging file identity is invalid", "FS_STALE_VERSION");
+      }
+      const identity = Object.freeze({
+        dev: info.dev,
+        ino: info.ino,
+        mode: info.mode,
+        size: info.size,
+        mtimeMs: info.mtimeMs,
+        ctimeMs: info.ctimeMs,
+      });
+      await handle.close();
+      handle = undefined;
+      await this.revalidateAttachmentRoot(root, signal);
+      abortError(signal);
+      let discarded = false;
+      const discard = async (): Promise<void> => {
+        if (discarded) return;
+        const current = await lstat(path).catch((error: unknown) =>
+          fsError(error, "attachment staging cleanup stat failed"));
+        if (!current.isFile() || current.isSymbolicLink() || current.nlink !== 1
+          || current.dev !== identity.dev || current.ino !== identity.ino
+          || current.mode !== identity.mode || current.size !== identity.size
+          || current.mtimeMs !== identity.mtimeMs || current.ctimeMs !== identity.ctimeMs) {
+          throw new FsError("attachment staging file identity changed", "FS_STALE_VERSION");
+        }
+        await this.revalidateAttachmentRoot(root, new AbortController().signal);
+        await unlink(path).catch((error: unknown) =>
+          fsError(error, "attachment staging cleanup failed"));
+        discarded = true;
+      };
+      return Object.freeze({
+        discard,
+        path,
+        sha256: createHash("sha256").update(data).digest("hex"),
+        sizeBytes: data.byteLength,
+      });
+    } catch (error) {
+      const cleanupErrors: unknown[] = [];
+      if (handle !== undefined) {
+        await handle.close().catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
+      }
+      if (created) {
+        await unlink(path).catch((cleanupError: unknown) => {
+          if (errorCode(cleanupError) !== "ENOENT") cleanupErrors.push(cleanupError);
+        });
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [error, ...cleanupErrors],
+          "attachment staging and cleanup failed",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async readAttachmentLease(
+    stagingRoot: string,
+    readOnlyPath: string,
+    maxBytes: number,
+    signal: AbortSignal,
+  ): Promise<Uint8Array> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 64 * 1_024 * 1_024) {
+      throw new TypeError("attachment lease byte bound is invalid");
+    }
+    const root = await this.attachmentRoot(stagingRoot, signal);
+    const path = this.lexicalPath(readOnlyPath);
+    const relative = this.pathValue.relative(root.path, path);
+    if (path !== readOnlyPath || relative === "" || relative === ".."
+      || relative.startsWith(`..${this.pathValue.sep}`) || this.pathValue.isAbsolute(relative)) {
+      throw new FsError("attachment lease path is outside its staging root", "FS_SANDBOX_DENIED");
+    }
+    await this.revalidateAttachmentRoot(root, signal);
+    const before = await lstat(path).catch((error: unknown) =>
+      fsError(error, "attachment lease file is unavailable"));
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) {
+      throw new FsError("attachment lease is not an unshared regular file", "FS_NOT_REGULAR_FILE");
+    }
+    if (before.size < 1 || before.size > maxBytes) {
+      throw new FsError("attachment lease exceeds its byte bound", "FS_TOO_LARGE");
+    }
+    if (this.adapterValue.pathFlavor !== "win32" && (before.mode & 0o222) !== 0) {
+      throw new FsError("attachment lease is not read-only", "FS_PERMISSION_DENIED");
+    }
+    const resolved = await realpath(path).catch((error: unknown) =>
+      fsError(error, "attachment lease path cannot be resolved"));
+    if (!this.adapterValue.samePath(this.adapterValue.normalizeAbsolutePath(resolved), path)) {
+      throw new FsError("attachment lease contains symlink indirection", "FS_SANDBOX_DENIED");
+    }
+    const beforeVersion = String(versionOf(before));
+    const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+    const handle = await open(path, constants.O_RDONLY | noFollow).catch((error: unknown) =>
+      fsError(error, "attachment lease open failed"));
+    let result: Uint8Array | undefined;
+    let readFailed = false;
+    let readFailure: unknown;
+    try {
+      const opened = await handle.stat();
+      if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== before.dev || opened.ino !== before.ino
+        || opened.size < 1 || opened.size > maxBytes || String(versionOf(opened)) !== beforeVersion) {
+        throw new FsError("attachment lease identity changed before read", "FS_STALE_VERSION");
+      }
+      const data = await readAtMostFromHandle(handle, maxBytes, signal);
+      const settled = await handle.stat();
+      if (settled.nlink !== 1 || settled.dev !== before.dev || settled.ino !== before.ino
+        || String(versionOf(settled)) !== beforeVersion) {
+        throw new FsError("attachment lease identity changed during read", "FS_STALE_VERSION");
+      }
+      await this.revalidateAttachmentRoot(root, signal);
+      result = Uint8Array.from(data);
+    } catch (error) {
+      readFailed = true;
+      readFailure = error;
+    }
+    const cleanupErrors: unknown[] = [];
+    await handle.close().catch((error: unknown) => cleanupErrors.push(error));
+    try {
+      const after = await lstat(path).catch((error: unknown) =>
+        fsError(error, "attachment lease final identity is unavailable"));
+      if (!after.isFile() || after.isSymbolicLink() || after.nlink !== 1
+        || String(versionOf(after)) !== beforeVersion) {
+        throw new FsError("attachment lease path identity changed during read", "FS_STALE_VERSION");
+      }
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    try {
+      await this.revalidateAttachmentRoot(root, new AbortController().signal);
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    if (readFailed) {
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [readFailure, ...cleanupErrors],
+          "attachment lease read and cleanup failed",
+          { cause: readFailure },
+        );
+      }
+      throw readFailure;
+    }
+    if (cleanupErrors.length === 1) throw cleanupErrors[0];
+    if (cleanupErrors.length > 1) {
+      throw new AggregateError(cleanupErrors, "attachment lease cleanup failed");
+    }
+    if (result === undefined) throw new Error("attachment lease read did not produce bytes");
+    return result;
+  }
+
   createProcessIoAuthority(): ProductProcessIoAuthority {
     return Object.freeze({
       captureWorkspace: async (path: string, signal: AbortSignal) =>
@@ -676,6 +924,19 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       verifyExecutable: async (path: string, sha256: string, signal: AbortSignal) => {
         await this.verifyProcessExecutable(path, sha256, signal);
       },
+    });
+  }
+
+  createAttachmentIoAuthority(): LocalAttachmentIoAuthority {
+    return Object.freeze({
+      readLease: async (
+        stagingRoot: string,
+        readOnlyPath: string,
+        maxBytes: number,
+        signal: AbortSignal,
+      ) => await this.readAttachmentLease(stagingRoot, readOnlyPath, maxBytes, signal),
+      stage: async (stagingRoot: string, data: Uint8Array, signal: AbortSignal) =>
+        await this.stageAttachment(stagingRoot, data, signal),
     });
   }
 

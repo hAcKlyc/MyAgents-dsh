@@ -6,6 +6,13 @@ import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
 import { AttachmentId, AttachmentStore } from "@deepseek-ai/dsh-attachment";
 import type { ImageAttachmentRef, StoredImageAttachment } from "@deepseek-ai/dsh-attachment";
+import {
+  DEFAULT_MAX_IMAGE_BYTES,
+  DEFAULT_MAX_IMAGE_PIXELS,
+  DEFAULT_MAX_IMAGES_PER_MESSAGE,
+  DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
+  detectImage,
+} from "@deepseek-ai/dsh-attachment-local";
 import { CredentialProvider, credentialRef } from "@deepseek-ai/dsh-credentials";
 import type { CredentialInfo, ResolvedCredential } from "@deepseek-ai/dsh-credentials";
 import { CompactionEngine, CompactionId } from "@deepseek-ai/dsh-compaction";
@@ -95,6 +102,10 @@ export const dshPublicSurfaceValues = Object.freeze({
   ApprovalService,
   AttachmentId,
   AttachmentStore,
+  DEFAULT_MAX_IMAGE_BYTES,
+  DEFAULT_MAX_IMAGE_PIXELS,
+  DEFAULT_MAX_IMAGES_PER_MESSAGE,
+  DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
   CompactionEngine,
   CompactionId,
   CommandId,
@@ -141,6 +152,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   credentialRef,
   createScope,
   defineTool,
+  detectImage,
   foldPlanMode,
   formatFetchOutput,
   formatSearchOutput,

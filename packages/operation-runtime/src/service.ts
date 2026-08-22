@@ -39,6 +39,14 @@ export interface OperationBirthAuthority {
   capture(params: MethodParams<"turn/start">): OperationBirthSnapshot | Promise<OperationBirthSnapshot>;
 }
 
+export interface OperationInputAuthority {
+  readonly prepare: (
+    params: MethodParams<"turn/start">,
+    birth: OperationBirthSnapshot,
+    signal: AbortSignal,
+  ) => Promise<readonly ContentBlock[]>;
+}
+
 export interface SettlementDeadlineAuthority {
   readonly wait: <T>(operation: PromiseLike<T>, description: string) => Promise<T>;
 }
@@ -64,6 +72,7 @@ export interface SdkOperationServiceConfig {
   readonly settlementDeadlineAuthority: SettlementDeadlineAuthority;
   readonly clock?: () => number;
   readonly modelProfileBirthGuard?: (revision: string) => void;
+  readonly inputAuthority?: OperationInputAuthority;
   readonly registerLifecycleController?: (controller: OperationLifecycleController) => void;
 }
 
@@ -164,7 +173,7 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
       "retirePrimary",
       "settlementDeadlineAuthority",
     ],
-    ["clock", "modelProfileBirthGuard", "registerLifecycleController"],
+    ["clock", "inputAuthority", "modelProfileBirthGuard", "registerLifecycleController"],
     "SdkOperationService config",
   );
   const authority = exactOwnDataObject(
@@ -179,11 +188,16 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
     [],
     "operation settlement deadline authority",
   );
+  const inputAuthority = Object.hasOwn(config, "inputAuthority")
+    ? exactOwnDataObject(config.inputAuthority, ["prepare"], [], "operation input authority")
+    : undefined;
   if (typeof authority.capture !== "function" || typeof config.requireAgent !== "function"
     || typeof config.drainOwnedWork !== "function" || typeof config.ownsRootContextMessage !== "function"
     || typeof config.registerRetirementGuard !== "function"
     || typeof config.retirePrimary !== "function"
     || typeof deadlineAuthority.wait !== "function"
+    || (inputAuthority !== undefined && (typeof inputAuthority.prepare !== "function"
+      || utilTypes.isProxy(inputAuthority.prepare)))
     || (Object.hasOwn(config, "clock") && typeof config.clock !== "function")
     || (Object.hasOwn(config, "modelProfileBirthGuard")
       && (typeof config.modelProfileBirthGuard !== "function"
@@ -202,6 +216,8 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
   const retirePrimary = config.retirePrimary as (cause?: unknown) => Promise<void>;
   const settlementWait = deadlineAuthority.wait as SettlementDeadlineAuthority["wait"];
   const settlementDeadlineReceiver = config.settlementDeadlineAuthority;
+  const prepareInput = inputAuthority?.prepare as OperationInputAuthority["prepare"] | undefined;
+  const inputAuthorityReceiver = config.inputAuthority;
   return Object.freeze({
     birthAuthority: Object.freeze({
       capture: (params: MethodParams<"turn/start">) =>
@@ -219,6 +235,12 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
         Reflect.apply(settlementWait, settlementDeadlineReceiver, [operation, description]),
     }),
     clock: (config.clock ?? Date.now) as () => number,
+    inputAuthority: Object.freeze({
+      prepare: prepareInput === undefined
+        ? (params: MethodParams<"turn/start">) => Promise.resolve(textContent(params))
+        : (params: MethodParams<"turn/start">, birth: OperationBirthSnapshot, signal: AbortSignal) =>
+          Reflect.apply(prepareInput, inputAuthorityReceiver, [params, birth, signal]),
+    }),
     modelProfileBirthGuard: Object.hasOwn(config, "modelProfileBirthGuard")
       ? config.modelProfileBirthGuard as (revision: string) => void
       : () => undefined,
@@ -258,10 +280,11 @@ const textContent = (params: MethodParams<"turn/start">): readonly ContentBlock[
 const rootMessage = (
   params: MethodParams<"turn/start">,
   messageId: string,
+  content: readonly ContentBlock[],
 ): UserMessage => freezeMessage({
   id: MessageId(messageId),
   role: "user",
-  content: [...textContent(params)],
+  content: [...content],
   source: Object.freeze({
     kind: "myagents-operation",
     clientOperationId: params.clientOperationId,
@@ -668,9 +691,14 @@ export class SdkOperationService extends Service {
         );
       }
       if (existing.state === "accepted_undelivered") {
+        const content = await this.configValue.inputAuthority.prepare(
+          params,
+          existing.birth,
+          control?.signal ?? new AbortController().signal,
+        );
         this.assertAdmissionNotCancelled(control);
         control?.commit();
-        await this.recoverUndelivered(agent, params, existing);
+        await this.recoverUndelivered(agent, params, existing, content);
         const recovered = findProductOperation(this.foldValue(agent), params.clientOperationId);
         if (recovered === undefined || recovered.state === "accepted_undelivered") {
           throw this.fence(new Error("exact retry did not durably reconstruct the accepted root message"));
@@ -691,6 +719,16 @@ export class SdkOperationService extends Service {
     const birth = validateOperationBirthSnapshot(captured);
     this.configValue.modelProfileBirthGuard(birth.modelProfileRevision);
     validateBirthAgainstParams(birth, params);
+    const content = await this.configValue.inputAuthority.prepare(
+      params,
+      birth,
+      control?.signal ?? new AbortController().signal,
+    );
+    this.assertOpen();
+    this.assertAdmissionNotCancelled(control);
+    if (agent !== this.configValue.requireAgent()) {
+      throw new ProtocolError("primary_session_replaced", "primary Session changed during input admission");
+    }
     const fingerprint = operationFingerprint(params, birth);
     const productTurnId = deterministicId(
       "turn",
@@ -719,7 +757,7 @@ export class SdkOperationService extends Service {
         acceptedAt,
       });
       control?.commit();
-      agent.followup(rootMessage(params, rootMessageId));
+      agent.followup(rootMessage(params, rootMessageId, content));
       await this.flush(agent);
       this.assertOpen();
     } catch (error) {
@@ -854,6 +892,7 @@ export class SdkOperationService extends Service {
     agent: Agent,
     params: MethodParams<"turn/start">,
     operation: ProductOperationRecord,
+    content: readonly ContentBlock[],
   ): Promise<void> {
     const root = operation.messages[0];
     if (root?.kind !== "root" || root.delivered
@@ -862,7 +901,7 @@ export class SdkOperationService extends Service {
       throw this.fence(new Error("accepted-undelivered operation cannot prove exact root reconstruction"));
     }
     try {
-      agent.followup(rootMessage(params, root.messageId));
+      agent.followup(rootMessage(params, root.messageId, content));
       await this.flush(agent);
       this.assertOpen();
     } catch (error) {

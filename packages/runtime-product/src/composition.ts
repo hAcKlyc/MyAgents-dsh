@@ -4,7 +4,7 @@ import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
 import { CommandRuntime } from "@deepseek-ai/dsh-commands";
-import { LlmAdapter, LlmRuntime } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter, LlmRuntime, type ContentBlock } from "@deepseek-ai/dsh-llm";
 import { SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
@@ -23,6 +23,7 @@ import { isProxy } from "node:util/types";
 import {
   SdkOperationService,
   type OperationBirthAuthority,
+  type OperationBirthSnapshot,
   type OperationLifecycleController,
 } from "@myagents-dsh/operation-runtime";
 import {
@@ -59,10 +60,16 @@ import {
 } from "@myagents-dsh/components-hooks";
 import { createSkillComponentCompiler } from "@myagents-dsh/components-skills";
 import {
+  HostAttachmentStore,
   HostCredentialProvider,
   HostPortService,
+  type HostInputImageReference,
+  type HostAttachmentRequestScope,
+  type HostAttachmentStoreController,
   type HostCredentialProviderController,
   type HostPortServiceController,
+  type HostPortRequestAuthority,
+  type HostPortRequestAuthorityInput,
   type HostPortTransportLifecycle,
 } from "@myagents-dsh/host-ports";
 import {
@@ -102,7 +109,7 @@ import {
   CanonicalFileTools,
   LocalWorkspaceFileSystem,
   requireLocalWorkspaceFileSystem,
-  type CanonicalFileToolsConfig,
+  type AttachmentPublicationRequest,
 } from "@myagents-dsh/tools-fs";
 import {
   ProductPlanService,
@@ -307,6 +314,7 @@ export interface DshRootCompositionAuthority {
   readonly artifactVersion: string;
   readonly context: Context;
   readonly dispose: () => Promise<void>;
+  readonly bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   readonly hostPorts: HostPortTransportLifecycle;
   readonly respondInteraction: (
     params: MethodParams<"interaction/respond">,
@@ -326,6 +334,7 @@ type CompositionAuthorityState = {
   readonly context: Context;
   readonly dispose: () => Promise<void>;
   readonly hostPorts: HostPortServiceController;
+  hostAttachments: HostAttachmentStoreController | undefined;
   hostCredentials: HostCredentialProviderController | undefined;
   readonly installHostModelGuards: (authority: HostDeepSeekModelAuthority) => void;
   readonly snapshot: () => DshRootCompositionSnapshot;
@@ -347,6 +356,7 @@ type CompositionAuthorityState = {
 };
 
 type NativeRpcLifecycleAuthorityState = {
+  readonly bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   readonly context: Context;
   readonly dispose: () => Promise<void>;
   readonly hostPorts: HostPortTransportLifecycle;
@@ -389,6 +399,8 @@ export const claimNativeRpcLifecycleAuthority = (
   const hostPorts = transportOnlyHostPortLifecycle(state.hostPorts);
   const authority = Object.freeze({}) as NativeRpcLifecycleAuthority;
   nativeRpcLifecycleAuthorities.set(authority, {
+    bindAttachmentLeaseLimit: (maxAttachmentLeases) =>
+      state.hostAttachments?.bindLeaseLimit(maxAttachmentLeases),
     consumed: false,
     context: state.context,
     dispose: state.dispose,
@@ -422,6 +434,7 @@ export const consumeNativeRpcLifecycleAuthority = (
   return Object.freeze({
     artifactManifestSha256: snapshot.artifactManifestSha256,
     artifactVersion: snapshot.artifactVersion,
+    bindAttachmentLeaseLimit: state.bindAttachmentLeaseLimit,
     context: installationContext,
     dispose: state.dispose,
     hostPorts: state.hostPorts,
@@ -586,7 +599,6 @@ export class DshRootComposition {
 }
 
 export interface CanonicalToolPlaneConfig {
-  readonly attachments: CanonicalFileToolsConfig["attachments"];
   readonly catalog: ProductToolRuntimeConfig["catalog"];
   readonly checkpoint: ProductToolRuntimeConfig["checkpoint"];
   readonly permission: ProductPermissionPlaneConfig;
@@ -615,8 +627,8 @@ export const installCanonicalToolPlane = async (
   if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
     || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
     || Reflect.ownKeys(candidate).some((key) => typeof key !== "string"
-      || !["attachments", "catalog", "checkpoint", "permission", "plan", "platformTarget", "process", "skills", "temporaryRoot", "web"].includes(key))
-    || (Reflect.ownKeys(candidate).length !== 9 && Reflect.ownKeys(candidate).length !== 10)
+      || !["catalog", "checkpoint", "permission", "plan", "platformTarget", "process", "skills", "temporaryRoot", "web"].includes(key))
+    || (Reflect.ownKeys(candidate).length !== 8 && Reflect.ownKeys(candidate).length !== 9)
     || Reflect.ownKeys(candidate).some((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
       return descriptor === undefined || !descriptor.enumerable || !("value" in descriptor);
@@ -672,9 +684,30 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 10 }));
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
     const localFileSystem = requireLocalWorkspaceFileSystem(root.fs);
+    const attachmentIo = localFileSystem.createAttachmentIoAuthority();
     const processIo = localFileSystem.createProcessIoAuthority();
     const agentOutput = localFileSystem.createAgentOutputAuthority();
     const planIo = localFileSystem.createPlanIoAuthority();
+    let attachmentController: HostAttachmentStoreController | undefined;
+    fibers.push(await root.plugin(HostAttachmentStore, {
+      hostPorts: Object.freeze({
+        cleanupAttachmentLease: (requestAuthority: HostPortRequestAuthority, leaseId: string) =>
+          authority.hostPorts.cleanupAttachmentLease(requestAuthority, leaseId),
+        createRequestAuthority: (input: HostPortRequestAuthorityInput) =>
+          authority.hostPorts.createRequestAuthority(input),
+      }),
+      io: attachmentIo,
+      registerController: (controller) => {
+        if (attachmentController !== undefined) {
+          throw new Error("Host attachment controller may register exactly once");
+        }
+        attachmentController = controller;
+      },
+    }));
+    if (!(root.attachments instanceof HostAttachmentStore) || attachmentController === undefined) {
+      throw new Error("Host attachment Store did not install through the public DSH service seam");
+    }
+    const installedAttachmentController = attachmentController;
     fibers.push(await root.plugin(ToolCallTimeoutPolicy));
     fibers.push(await root.plugin(SubagentRuntime));
     fibers.push(await root.plugin(SubagentSpawnInProcess, { providerName: "myagents-spawn" }));
@@ -717,6 +750,43 @@ export const installCanonicalToolPlane = async (
       registerController: (controller) => {
         if (hookController !== undefined) throw new Error("Host Hook controller may register exactly once");
         hookController = controller;
+      },
+      resolveImage: async ({ operation, reference, signal }) => {
+        if (reference.mimeType !== "image/png" && reference.mimeType !== "image/jpeg"
+          && reference.mimeType !== "image/webp" && reference.mimeType !== "image/gif") {
+          throw new ProtocolError("attachment_invalid", "Host Hook image MIME type is unsupported");
+        }
+        operation.assertCurrent();
+        const environment = root.productSession.requireExecutionEnvironment();
+        if (environment.revision !== operation.birth.executionEnvironmentRevision
+          || environment.digest !== operation.birth.executionEnvironmentDigest) {
+          throw new ProtocolError("hook_authority_stale", "Hook image environment authority is stale", true);
+        }
+        const scope = installedAttachmentController.createRequestScope(Object.freeze({
+          assertCurrent: operation.assertCurrent,
+          deadlineMs: 120_000,
+          runtimeSessionId: String(operation.agent.id),
+          signal,
+          stagingRoot: environment.attachmentStagingRoot,
+        }));
+        const attachment = await installedAttachmentController.resolveInputImage(scope, Object.freeze({
+          attachmentId: reference.attachmentId,
+          mediaType: reference.mimeType,
+          name: reference.label === undefined || reference.label.length === 0
+            ? reference.attachmentId
+            : reference.label,
+          sha256: reference.sha256,
+          sizeBytes: reference.sizeBytes,
+        }) satisfies HostInputImageReference);
+        signal.throwIfAborted();
+        operation.assertCurrent();
+        const currentEnvironment = root.productSession.requireExecutionEnvironment();
+        if (currentEnvironment.revision !== environment.revision
+          || currentEnvironment.digest !== environment.digest
+          || compositionAuthorities.get(root)?.hostAttachments !== installedAttachmentController) {
+          throw new ProtocolError("hook_authority_stale", "Hook image authority changed", true);
+        }
+        return Object.freeze({ type: "image" as const, attachment });
       },
       resolveOperation: (agent: Agent) => {
         const initial = root.sdkOperations.resolveActiveToolOperation(agent);
@@ -852,7 +922,41 @@ export const installCanonicalToolPlane = async (
       runtimeHome: () => root.productSession.requireExecutionEnvironment().runtimeHome,
     }));
     fibers.push(await root.plugin(CanonicalFileTools, {
-      attachments: normalized.attachments,
+      attachments: Object.freeze({
+        publish: async (request: AttachmentPublicationRequest) => {
+          const session = root.productSession.snapshot();
+          if (session.state !== "ready" || session.runtimeSessionId === undefined) {
+            throw new ProtocolError("primary_session_not_ready", "attachment publication requires a ready primary Session");
+          }
+          const assertCurrent = () => {
+            root.productTools.assertCurrent(request.context, "Read");
+            const current = root.productSession.snapshot();
+            if (current.state !== "ready" || current.runtimeSessionId !== session.runtimeSessionId) {
+              throw new ProtocolError("primary_session_replaced", "attachment publication Session authority is stale");
+            }
+          };
+          const scope = installedAttachmentController.createRequestScope(Object.freeze({
+            assertCurrent,
+            deadlineMs: 120_000,
+            runtimeSessionId: session.runtimeSessionId,
+            signal: request.context.signal,
+            stagingRoot: request.context.environment.attachmentStagingRoot,
+          }));
+          assertCurrent();
+          const published = await installedAttachmentController.publish(scope, Object.freeze({
+            bytes: request.bytes,
+            mediaType: request.mimeType as "application/pdf" | "image/gif" | "image/jpeg" | "image/png" | "image/webp",
+            name: request.name,
+          }));
+          return Object.freeze({
+            attachmentId: published.attachmentId,
+            mimeType: published.mediaType,
+            name: published.name,
+            sha256: published.sha256,
+            sizeBytes: published.sizeBytes,
+          });
+        },
+      }),
       retainedOutput: Object.freeze({
         resolve: async (context: ProductToolContext, path: string) => {
           await root.productWork.initialize();
@@ -877,6 +981,7 @@ export const installCanonicalToolPlane = async (
       })}`);
     }
     authority.canonicalToolPlane = "installed";
+    authority.hostAttachments = installedAttachmentController;
     authority.dynamicSkills = dynamicSkills;
     authority.dynamicAgents = dynamicAgents;
     authority.dynamicCommands = dynamicCommands;
@@ -905,7 +1010,8 @@ export const installProductComponentPlane = async (
   const root = composition.context;
   const authority = compositionAuthorities.get(root);
   if (root !== root.root || authority?.composition !== composition || authority.claimed
-    || authority.componentPlane !== "absent") {
+    || authority.componentPlane !== "absent" || authority.canonicalToolPlane !== "installed"
+    || authority.hostAttachments === undefined) {
     throw new Error("component plane requires the exact unclaimed root composition authority");
   }
   composition.snapshot();
@@ -931,8 +1037,10 @@ export const createProductMcpComponentCompiler = (
 ): ComponentCompiler => {
   const root = composition.context;
   const authority = compositionAuthorities.get(root);
+  const attachmentController = authority?.hostAttachments;
   if (root !== root.root || authority?.composition !== composition || authority.claimed
-    || authority.componentPlane !== "absent") {
+    || authority.componentPlane !== "absent" || authority.canonicalToolPlane !== "installed"
+    || attachmentController === undefined) {
     throw new Error(
       "MCP compiler requires the exact unclaimed root composition before component configuration",
     );
@@ -942,6 +1050,29 @@ export const createProductMcpComponentCompiler = (
     connectionFactory,
     context: root,
     ...(authority.hostCredentials === undefined ? {} : { credentials: authority.hostCredentials }),
+    publishImage: async ({ assertCurrent, bytes, execution, mediaType, name, toolName }) => {
+      assertCurrent();
+      const context = root.productTools.resolveExternal(execution, toolName);
+      const scope = attachmentController.createRequestScope(Object.freeze({
+        assertCurrent,
+        deadlineMs: 120_000,
+        runtimeSessionId: String(context.agent.id),
+        signal: context.signal,
+        stagingRoot: context.environment.attachmentStagingRoot,
+      }));
+      const attachment = await attachmentController.publishImage(scope, Object.freeze({
+        data: bytes,
+        mediaType,
+        name,
+      }));
+      context.signal.throwIfAborted();
+      assertCurrent();
+      root.productTools.resolveExternal(execution, toolName);
+      if (compositionAuthorities.get(root)?.hostAttachments !== attachmentController) {
+        throw new ProtocolError("attachment_unavailable", "MCP image publication authority changed");
+      }
+      return Object.freeze({ type: "image" as const, attachment });
+    },
   });
 };
 
@@ -951,12 +1082,14 @@ export const createProductHostToolComponentCompiler = (
   const root = composition.context;
   const authority = compositionAuthorities.get(root);
   if (root !== root.root || authority?.composition !== composition || authority.claimed
-    || authority.canonicalToolPlane !== "installed" || authority.componentPlane !== "absent") {
+    || authority.canonicalToolPlane !== "installed" || authority.componentPlane !== "absent"
+    || authority.hostAttachments === undefined) {
     throw new Error(
       "Host tool compiler requires the exact unclaimed root composition before component configuration",
     );
   }
   composition.snapshot();
+  const attachmentController = authority.hostAttachments;
   const requestAuthorities: HostToolRequestAuthorityFactory = Object.freeze({
     createRequestAuthority: (input: HostToolRequestAuthorityInput) => authority.hostPorts.createRequestAuthority({
       signal: input.signal,
@@ -976,6 +1109,35 @@ export const createProductHostToolComponentCompiler = (
   return createHostToolComponentCompiler({
     context: root,
     requestAuthorities,
+    resolveImage: async ({ assertCurrent, context, reference, signal }) => {
+      if (reference.mimeType !== "image/png" && reference.mimeType !== "image/jpeg"
+        && reference.mimeType !== "image/webp" && reference.mimeType !== "image/gif") {
+        throw new ProtocolError("attachment_invalid", "Host tool image MIME type is unsupported");
+      }
+      assertCurrent();
+      const scope = attachmentController.createRequestScope(Object.freeze({
+        assertCurrent,
+        deadlineMs: 120_000,
+        runtimeSessionId: String(context.agent.id),
+        signal,
+        stagingRoot: context.environment.attachmentStagingRoot,
+      }));
+      const attachment = await attachmentController.resolveInputImage(scope, Object.freeze({
+        attachmentId: reference.attachmentId,
+        mediaType: reference.mimeType,
+        name: reference.label === undefined || reference.label.length === 0
+          ? reference.attachmentId
+          : reference.label,
+        sha256: reference.sha256,
+        sizeBytes: reference.sizeBytes,
+      }) satisfies HostInputImageReference);
+      signal.throwIfAborted();
+      assertCurrent();
+      if (compositionAuthorities.get(root)?.hostAttachments !== attachmentController) {
+        throw new ProtocolError("attachment_unavailable", "Host attachment Store authority changed");
+      }
+      return Object.freeze({ type: "image" as const, attachment });
+    },
     resolveExecution: (execution, toolName) => root.productTools.resolveExternal(execution, toolName),
   });
 };
@@ -1172,6 +1334,89 @@ export const composeDshRootServices = async (
       drainOwnedWork: async (agent) => {
         await root.get("productWork")?.preparePrimaryRetirement(agent);
       },
+      inputAuthority: Object.freeze({
+        prepare: async (
+          params: MethodParams<"turn/start">,
+          birth: OperationBirthSnapshot,
+          signal: AbortSignal,
+        ): Promise<readonly ContentBlock[]> => {
+          const images = params.input.parts.filter((part) => part.kind === "image_ref");
+          const totalImageBytes = images.reduce((total, image) => total + image.sizeBytes, 0);
+          if (images.length > 20 || !Number.isSafeInteger(totalImageBytes)
+            || totalImageBytes > 100 * 1_024 * 1_024
+            || images.some((image) => image.sizeBytes > 5 * 1_024 * 1_024)) {
+            throw new ProtocolError("attachment_limit_exceeded", "turn image input exceeds the canonical attachment limits");
+          }
+          const attachmentController = compositionAuthorities.get(root)?.hostAttachments;
+          if (images.length > 0 && attachmentController === undefined) {
+            throw new ProtocolError("attachment_unavailable", "Host attachment Store is not installed");
+          }
+          const session = root.productSession.snapshot();
+          const environment = root.productSession.requireExecutionEnvironment();
+          const agent = root.productSession.requireAgent();
+          const componentStatus = root.productComponents.status();
+          if (session.state !== "ready" || session.runtimeSessionId === undefined
+            || birth.configRevision !== root.productSession.requireOperationConfigRevision()
+            || birth.executionEnvironmentRevision !== environment.revision
+            || birth.executionEnvironmentDigest !== environment.digest
+            || birth.componentRevision !== componentStatus.effectiveRevision) {
+            throw new ProtocolError("operation_birth_stale", "attachment input differs from current Session authority");
+          }
+          const assertCurrent = () => {
+            signal.throwIfAborted();
+            const current = root.productSession.snapshot();
+            if (current.state !== "ready" || current.runtimeSessionId !== session.runtimeSessionId
+              || root.productSession.requireAgent() !== agent
+              || root.productSession.requireOperationConfigRevision() !== birth.configRevision) {
+              throw new ProtocolError("primary_session_replaced", "attachment input Session authority is stale");
+            }
+            const currentEnvironment = root.productSession.requireExecutionEnvironment();
+            if (currentEnvironment.revision !== birth.executionEnvironmentRevision
+              || currentEnvironment.digest !== birth.executionEnvironmentDigest) {
+              throw new ProtocolError("operation_birth_stale", "attachment input environment authority is stale");
+            }
+            root.productComponents.assertSessionExtension(params.extensionDigest);
+            if (root.productComponents.status().effectiveRevision !== birth.componentRevision) {
+              throw new ProtocolError("operation_birth_stale", "attachment input component authority is stale");
+            }
+            if (images.length > 0
+              && compositionAuthorities.get(root)?.hostAttachments !== attachmentController) {
+              throw new ProtocolError("attachment_unavailable", "Host attachment Store authority changed");
+            }
+          };
+          assertCurrent();
+          let scope: HostAttachmentRequestScope | undefined;
+          if (attachmentController !== undefined && images.length > 0) {
+            scope = attachmentController.createRequestScope(Object.freeze({
+              assertCurrent,
+              deadlineMs: Math.min(birth.limits.maxDurationMs ?? 600_000, 600_000),
+              runtimeSessionId: session.runtimeSessionId,
+              signal,
+              stagingRoot: environment.attachmentStagingRoot,
+            }));
+          }
+          const content: ContentBlock[] = [];
+          for (const part of params.input.parts) {
+            if (part.kind === "text") {
+              content.push(Object.freeze({ type: "text" as const, text: part.text }));
+              continue;
+            }
+            if (attachmentController === undefined || scope === undefined) {
+              throw new ProtocolError("attachment_unavailable", "Host attachment Store is not installed");
+            }
+            const attachment = await attachmentController.resolveInputImage(scope, Object.freeze({
+              attachmentId: part.attachmentId,
+              mediaType: part.mimeType,
+              name: part.name,
+              sha256: part.sha256,
+              sizeBytes: part.sizeBytes,
+            }));
+            assertCurrent();
+            content.push(Object.freeze({ type: "image" as const, attachment }));
+          }
+          return Object.freeze(content);
+        },
+      }),
       ownsRootContextMessage: (agent, source, messageId) =>
         root.get("productWork")?.ownsRootContextMessage(agent, source, messageId) ?? false,
       registerRetirementGuard: (guard) => root.productSession.registerRetirementGuard(guard),
@@ -1244,6 +1489,7 @@ export const composeDshRootServices = async (
       context: root,
       dispose: composition.dispose.bind(composition),
       hostPorts: hostPortController,
+      hostAttachments: undefined,
       hostCredentials: undefined,
       hostModelPlane: "absent",
       hostModelProviderRoute: undefined,

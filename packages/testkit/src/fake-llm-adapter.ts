@@ -12,6 +12,7 @@ import { types as utilTypes } from "node:util";
 
 export interface FakeLlmAdapterOptions {
   readonly contextWindow?: number;
+  readonly inputModalities?: readonly ("image" | "text")[];
   readonly model?: string;
   readonly provider?: string;
 }
@@ -105,6 +106,31 @@ const exactContextWindow = (value: unknown): number => {
   return value;
 };
 
+const exactInputModalities = (value: unknown): readonly ("image" | "text")[] => {
+  if (value === undefined) return Object.freeze(["text"] as const);
+  if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype
+    || value.length < 1 || value.length > 2 || Reflect.ownKeys(value).length !== value.length + 1) {
+    throw new TypeError("fake LLM input modalities must be a bounded dense array");
+  }
+  const result: ("image" | "text")[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    const modality: unknown = descriptor !== undefined && "value" in descriptor
+      ? descriptor.value
+      : undefined;
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)
+      || (modality !== "text" && modality !== "image")
+      || result.includes(modality)) {
+      throw new TypeError("fake LLM input modalities must contain unique text/image values");
+    }
+    result.push(modality);
+  }
+  if (!result.includes("text")) {
+    throw new TypeError("fake LLM input modalities must include text");
+  }
+  return Object.freeze(result);
+};
+
 const exactUsage = (value: Readonly<TokenUsage> | undefined): Readonly<TokenUsage> => {
   const usage = value === undefined
     ? { inputTokens: 1, outputTokens: 1 }
@@ -138,6 +164,7 @@ const abortReason = (signal: AbortSignal): Error => {
 
 export class ScriptedFakeLlmAdapter extends LlmAdapter {
   readonly #contextWindow: number;
+  readonly #inputModalities: readonly ("image" | "text")[];
   readonly #model: string;
   readonly #provider: string;
   readonly #requests: FakeLlmRequestObservation[] = [];
@@ -148,7 +175,7 @@ export class ScriptedFakeLlmAdapter extends LlmAdapter {
     super();
     const candidate = exactPlainDataRecord(
       options,
-      ["contextWindow", "model", "provider"],
+      ["contextWindow", "inputModalities", "model", "provider"],
       "fake LLM adapter options",
     );
     this.#provider = boundedIdentifier(
@@ -161,6 +188,9 @@ export class ScriptedFakeLlmAdapter extends LlmAdapter {
     );
     this.#contextWindow = exactContextWindow(
       Object.hasOwn(candidate, "contextWindow") ? candidate.contextWindow : 4_096,
+    );
+    this.#inputModalities = exactInputModalities(
+      Object.hasOwn(candidate, "inputModalities") ? candidate.inputModalities : undefined,
     );
   }
 
@@ -270,7 +300,7 @@ export class ScriptedFakeLlmAdapter extends LlmAdapter {
       provider,
       id: this.#model,
       name: "MyAgents deterministic fixture model",
-      inputModalities: Object.freeze(["text"] as const),
+      inputModalities: this.#inputModalities,
     })]));
   }
 
@@ -280,7 +310,7 @@ export class ScriptedFakeLlmAdapter extends LlmAdapter {
       provider,
       id: model,
       name: "MyAgents deterministic fixture model",
-      inputModalities: Object.freeze(["text"] as const),
+      inputModalities: this.#inputModalities,
       context: Object.freeze({ contextWindow: this.#contextWindow }),
     }));
   }

@@ -26,7 +26,7 @@ import {
   type EffectiveToolCatalogSnapshot,
   type MethodParams,
 } from "@myagents-dsh/protocol";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const contexts: Context[] = [];
 
@@ -132,7 +132,10 @@ describe("generation-owned MCP component compiler", () => {
           callTool: (_name: string, input: Readonly<Record<string, unknown>>) => {
             effects.push(`call:${generation}:${String(input.value)}`);
             return Promise.resolve(Object.freeze({
-              content: Object.freeze([{ type: "text", text: `result ${generation}` }]),
+              content: Object.freeze([
+                { type: "text", text: `result ${generation}` },
+                { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+              ]),
               isError: false,
             }));
           },
@@ -165,9 +168,20 @@ describe("generation-owned MCP component compiler", () => {
       whenGenerationUnused: () => Promise.resolve(),
     });
     if (controller === undefined) throw new Error("missing component controller");
+    const publishImage = vi.fn(() => Promise.resolve(Object.freeze({
+      type: "image" as const,
+      attachment: Object.freeze({
+        attachmentId: `sha256:${"d".repeat(64)}` as never,
+        mediaType: "image/png" as const,
+        bytes: 8,
+        width: 1,
+        height: 1,
+        name: "mcp__fixture__echo-image-1",
+      }),
+    })));
     const configured = await controller.configure({
       catalog: catalog(),
-      compilers: [createMcpComponentCompiler({ connectionFactory: factory, context: root })],
+      compilers: [createMcpComponentCompiler({ connectionFactory: factory, context: root, publishImage })],
       initialSnapshot: snapshot("mcp-v1"),
     });
     expect(configured).toMatchObject({ state: "applied" });
@@ -182,10 +196,21 @@ describe("generation-owned MCP component compiler", () => {
     });
     expect(outcome).toMatchObject({
       isError: false,
-      value: { content: ["result 1"], isError: false, truncated: false },
+      value: {
+        attachments: [{ attachmentId: `sha256:${"d".repeat(64)}`, mediaType: "image/png" }],
+        content: ["result 1", `[MCP image attachment sha256:${"d".repeat(64)}]`],
+        isError: false,
+        truncated: false,
+      },
     });
+    if (outcome.value === undefined) throw new Error("MCP image outcome is missing its value");
+    expect(definition?.output.render({}, outcome.value)).toMatchObject([
+      { type: "text", text: "result 1" },
+      { type: "text", text: `[MCP image attachment sha256:${"d".repeat(64)}]` },
+      { type: "image", attachment: { attachmentId: `sha256:${"d".repeat(64)}` } },
+    ]);
     expect(permissionHits).toBe(1);
-    expect(executionGuards).toBe(3);
+    expect(executionGuards).toBe(4);
     await controller.replace(snapshot("mcp-v2"));
     expect(root.tools.get("mcp__fixture__echo")).toBeDefined();
     const replacement = await root.tools.execute({
@@ -196,8 +221,13 @@ describe("generation-owned MCP component compiler", () => {
     });
     expect(replacement).toMatchObject({
       isError: false,
-      value: { content: ["result 2"], isError: false, truncated: false },
+      value: {
+        content: ["result 2", `[MCP image attachment sha256:${"d".repeat(64)}]`],
+        isError: false,
+        truncated: false,
+      },
     });
+    expect(publishImage).toHaveBeenCalledTimes(2);
     expect(connectHits).toBe(2);
     await controller.close();
     expect(closeHits).toBe(2);

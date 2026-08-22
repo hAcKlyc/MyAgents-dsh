@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -83,7 +83,6 @@ import {
   effectiveToolCatalogDigest,
   validateEffectiveToolCatalog,
 } from "@myagents-dsh/tool-contracts";
-import type { AttachmentPublicationRequest } from "@myagents-dsh/tools-fs";
 import {
   ProductSafeHttpClient,
   type ProductDnsAnswer,
@@ -302,6 +301,13 @@ const fixtureRuntimeHome = join(fixtureRoot, "runtime-home");
 const fixtureAttachmentStaging = join(fixtureRoot, "attachments");
 const fixtureTemporaryRoot = join(fixtureRoot, "temporary");
 const fixtureFile = join(fixtureWorkspace, "governed.txt");
+const fixtureImageFile = join(fixtureWorkspace, "pixel.png");
+const fixtureImageBytes = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
+const fixtureImageSha256 = createHash("sha256").update(fixtureImageBytes).digest("hex");
+const fixtureImageAttachmentId = `sha256:${fixtureImageSha256}`;
 const untransformedWriteContent = "untransformed input must never persist\n";
 const transformedWriteContent = "after governed Write\n";
 const transformedWriteArguments = JSON.stringify({
@@ -335,6 +341,7 @@ await Promise.all([
 ]);
 await Promise.all([
   writeFile(fixtureFile, "before\n", "utf8"),
+  writeFile(fixtureImageFile, fixtureImageBytes),
   writeFile(fixtureSkillSourcePath, fixtureSkillSource, "utf8"),
 ]);
 const staticSkillCatalogAuthority = Object.freeze({
@@ -368,6 +375,7 @@ const adapter = new ScriptedFakeLlmAdapter({
   provider: "fixture",
   model: "fixture-model",
   contextWindow: 8_192,
+  inputModalities: ["text", "image"],
 });
 const childAdapter = new ScriptedFakeLlmAdapter({
   provider: "fixture",
@@ -466,6 +474,11 @@ adapter.enqueue({
   text: "second completion",
   usage: { inputTokens: 4, outputTokens: 1 },
 });
+adapter.enqueue({
+  kind: "complete",
+  text: "image input verified",
+  usage: { inputTokens: 5, outputTokens: 1 },
+});
 adapter.enqueue({ kind: "error", message: "synthetic provider failure" });
 adapter.enqueue({
   calls: [{ id: "artifact-read-call", name: "Read", arguments: JSON.stringify({ file_path: fixtureFile }) }],
@@ -483,6 +496,11 @@ adapter.enqueue({
   kind: "complete",
   text: "governed file tools completed",
 });
+adapter.enqueue({
+  calls: [{ id: "artifact-binary-read-call", name: "Read", arguments: JSON.stringify({ file_path: fixtureImageFile }) }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "binary attachment publication completed" });
 adapter.enqueue({
   calls: [{
     id: "artifact-edit-read-call",
@@ -777,15 +795,6 @@ const artifactWebClient = new ProductSafeHttpClient(artifactNetworkPolicy, {
   transport: artifactHttpTransport,
 });
 const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
-  attachments: Object.freeze({
-    publish: (request: AttachmentPublicationRequest) => Promise.resolve(Object.freeze({
-      attachmentId: "artifact-attachment",
-      mimeType: request.mimeType,
-      name: request.name,
-      sha256: createHash("sha256").update(request.bytes).digest("hex"),
-      sizeBytes: request.bytes.byteLength,
-    })),
-  }),
   catalog: () => validatedArtifactToolCatalog,
   checkpoint: Object.freeze({
     prepare: (_context: ProductToolContext, request: ProductToolCheckpointRequest) => {
@@ -1109,7 +1118,72 @@ const hostInteractionResponses: Array<MethodResult<"interaction/respond">> = [];
 const hostInteractionCancellations: Array<{ interactionId: string; reason: string }> = [];
 const hostToolCalls: MethodParams<"host/tool/execute">[] = [];
 const hostHookCalls: MethodParams<"host/hook/execute">[] = [];
+const hostAttachmentEvidence: string[] = [];
+const hostAttachments = new Map<string, Readonly<{
+  bytes: Uint8Array;
+  mimeType: string;
+  name: string;
+  sha256: string;
+}>>([
+  [fixtureImageAttachmentId, Object.freeze({
+    bytes: Uint8Array.from(fixtureImageBytes),
+    mimeType: "image/png",
+    name: "pixel.png",
+    sha256: fixtureImageSha256,
+  })],
+]);
+const hostAttachmentLeases = new Map<string, string>();
+let hostAttachmentLeaseSequence = 0;
 let hostInteractionOrderingProbed = false;
+hostPeer.registerRequestHandler("host/attachment/put", async (params) => {
+  assert.ok(params.stagingPath.startsWith(`${fixtureAttachmentStaging}/`));
+  const bytes = await readFile(params.stagingPath);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  assert.equal(bytes.byteLength, params.sizeBytes);
+  assert.equal(sha256, params.sha256);
+  const attachmentId = `sha256:${sha256}`;
+  hostAttachments.set(attachmentId, Object.freeze({
+    bytes: Uint8Array.from(bytes),
+    mimeType: params.mimeType,
+    name: params.name,
+    sha256,
+  }));
+  hostAttachmentEvidence.push(`put:${attachmentId}:${params.name}`);
+  return {
+    attachmentId,
+    mimeType: params.mimeType,
+    sizeBytes: bytes.byteLength,
+    sha256,
+  };
+});
+hostPeer.registerRequestHandler("host/attachment/acquire", async (params) => {
+  const stored = hostAttachments.get(params.attachmentId);
+  assert.ok(stored, `missing Host attachment ${params.attachmentId}`);
+  assert.equal(stored.mimeType, params.expectedMimeType);
+  assert.equal(stored.bytes.byteLength, params.expectedSizeBytes);
+  assert.equal(stored.sha256, params.expectedSha256);
+  const leaseId = `artifact-runtime-lease-${++hostAttachmentLeaseSequence}`;
+  const readOnlyPath = join(fixtureAttachmentStaging, leaseId);
+  await writeFile(readOnlyPath, stored.bytes, { flag: "wx", mode: 0o400 });
+  await chmod(readOnlyPath, 0o400);
+  hostAttachmentLeases.set(leaseId, readOnlyPath);
+  hostAttachmentEvidence.push(`acquire:${params.attachmentId}:${leaseId}`);
+  return {
+    leaseId,
+    readOnlyPath,
+    mimeType: stored.mimeType,
+    sizeBytes: stored.bytes.byteLength,
+    sha256: stored.sha256,
+  };
+});
+hostPeer.registerRequestHandler("host/attachment/release", async (params) => {
+  const path = hostAttachmentLeases.get(params.leaseId);
+  assert.ok(path, `missing Host attachment lease ${params.leaseId}`);
+  await unlink(path);
+  hostAttachmentLeases.delete(params.leaseId);
+  hostAttachmentEvidence.push(`release:${params.leaseId}`);
+  return { ok: true };
+});
 hostPeer.registerNotificationHandler("host/interaction/cancel", (params) => {
   hostInteractionCancellations.push(structuredClone(params));
 });
@@ -1205,7 +1279,19 @@ hostPeer.registerRequestHandler("host/tool/execute", (params) => {
   assert.deepEqual(params.input, { focus: "accepted-runtime" });
   return {
     state: "succeeded" as const,
-    content: [{ type: "text" as const, text: "Host release check accepted" }],
+    content: [
+      { type: "text" as const, text: "Host release check accepted" },
+      {
+        type: "attachment_ref" as const,
+        attachment: {
+          attachmentId: fixtureImageAttachmentId,
+          mimeType: "image/png",
+          sizeBytes: fixtureImageBytes.byteLength,
+          sha256: fixtureImageSha256,
+        },
+        label: "host-tool-pixel.png",
+      },
+    ],
     structured: { accepted: true, source: "repository-external-host" },
   };
 });
@@ -1382,7 +1468,10 @@ const hostModelMcpFactory: McpConnectionFactory = createSdkMcpConnectionFactory(
                   name: "echo",
                 }],
               }
-            : { content: [{ type: "text", text: "artifact MCP result" }], isError: false };
+            : {
+                content: [{ type: "text", text: "artifact MCP result" }],
+                isError: false,
+              };
         queueMicrotask(() => transport.onmessage?.({
           id: message.id,
           jsonrpc: "2.0",
@@ -1443,6 +1532,27 @@ hostModelPeer.registerRequestHandler("host/credential/resolve", (params) => {
         kind: "material" as const,
         material: { [hostModelCredentialValueField]: hostModelSecret },
       };
+});
+hostModelPeer.registerRequestHandler("host/attachment/put", async (params) => {
+  assert.ok(params.stagingPath.startsWith(`${fixtureAttachmentStaging}/`));
+  const bytes = await readFile(params.stagingPath);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  assert.equal(bytes.byteLength, params.sizeBytes);
+  assert.equal(sha256, params.sha256);
+  const attachmentId = `sha256:${sha256}`;
+  hostAttachments.set(attachmentId, Object.freeze({
+    bytes: Uint8Array.from(bytes),
+    mimeType: params.mimeType,
+    name: params.name,
+    sha256,
+  }));
+  hostAttachmentEvidence.push(`put:${attachmentId}:${params.name}`);
+  return {
+    attachmentId,
+    mimeType: params.mimeType,
+    sizeBytes: bytes.byteLength,
+    sha256,
+  };
 });
 await hostModelComposition.context.plugin(NativeRpcServer, {
   compositionAuthority: claimNativeRpcLifecycleAuthority(hostModelComposition),
@@ -1565,10 +1675,9 @@ try {
       === "terminal",
     "Host model operation terminal",
   );
-  assert.equal(
-    hostModelComposition.context.sdkOperations.lookup("artifact-host-model-operation")?.terminal?.kind,
-    "succeeded",
-  );
+  const hostModelTerminal = hostModelComposition.context.sdkOperations
+    .lookup("artifact-host-model-operation")?.terminal;
+  assert.equal(hostModelTerminal?.kind, "succeeded");
 } finally {
   globalThis.fetch = previousFetch;
 }
@@ -1650,10 +1759,7 @@ const hostModelMcpResult = hostModelComposition.context.productSession.requireAg
 );
 assert.ok(hostModelMcpResult?.type === "tool/result");
 assert.deepEqual(hostModelMcpResult.data.message.content, [{
-  content: [{
-    type: "text",
-    text: "artifact MCP result",
-  }],
+  content: [{ type: "text", text: "artifact MCP result" }],
   isError: false,
   toolCallId: "artifact-host-model-mcp-call",
   type: "tool-result",
@@ -2094,6 +2200,56 @@ assert.deepEqual(
   { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3 },
 );
 
+const imageAttachmentEvidenceStart = hostAttachmentEvidence.length;
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-image-input-operation",
+  clientUserMessageId: "artifact-image-input-user-message",
+  input: {
+    parts: [
+      { kind: "text", text: "Inspect the verified Host image" },
+      {
+        kind: "image_ref",
+        attachmentId: fixtureImageAttachmentId,
+        mimeType: "image/png",
+        name: "pixel.png",
+        sha256: fixtureImageSha256,
+        sizeBytes: fixtureImageBytes.byteLength,
+      },
+    ],
+  },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-image-input-operation")?.state === "terminal",
+  "Host image-input operation terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-image-input-operation")?.terminal?.kind,
+  "succeeded",
+);
+const imageInputMessage = adapter.requests[2]?.messages.at(-1);
+assert.ok(imageInputMessage);
+assert.deepEqual(imageInputMessage.content, [
+  { type: "text", text: "Inspect the verified Host image" },
+  {
+    type: "image",
+    attachment: {
+      attachmentId: fixtureImageAttachmentId,
+      mediaType: "image/png",
+      bytes: fixtureImageBytes.byteLength,
+      width: 1,
+      height: 1,
+      name: "pixel.png",
+    },
+  },
+]);
+assert.deepEqual(hostAttachmentEvidence.slice(imageAttachmentEvidenceStart), [
+  `acquire:${fixtureImageAttachmentId}:artifact-runtime-lease-1`,
+  "release:artifact-runtime-lease-1",
+]);
+assert.equal(hostAttachmentLeases.size, 0);
+
 await composition.context.sdkOperations.start({
   ...turnStartParams,
   clientOperationId: "artifact-operation-3",
@@ -2160,6 +2316,39 @@ const replayedWriteBlock = primaryAgent.session.deriveMessages().flatMap(({ cont
 assert.ok(replayedWriteBlock?.type === "tool-call");
 assert.equal(replayedWriteBlock.arguments, transformedWriteArguments);
 assert.equal(JSON.stringify(primaryAgent.session.events).includes(untransformedWriteContent), false);
+
+const binaryAttachmentEvidenceStart = hostAttachmentEvidence.length;
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-binary-read-operation",
+  clientUserMessageId: "artifact-binary-read-user-message",
+  input: { parts: [{ kind: "text", text: "Read the governed binary image through the Host attachment Store" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-binary-read-operation")?.state === "terminal",
+  "binary Read attachment operation terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-binary-read-operation")?.terminal?.kind,
+  "succeeded",
+);
+const binaryReadResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+  && String(event.data.message.source.callId) === "artifact-binary-read-call");
+assert.ok(binaryReadResult?.type === "tool/result");
+const binaryReadValue = binaryReadResult.data.message.content[0] as unknown as Readonly<{
+  content: readonly Readonly<{ text: string; type: string }>[];
+  isError: boolean;
+}>;
+assert.equal(binaryReadValue.isError, false);
+assert.deepEqual(binaryReadValue.content, [{
+  type: "text",
+  text: `Published image attachment for ${fixtureImageFile}.`,
+}]);
+assert.deepEqual(hostAttachmentEvidence.slice(binaryAttachmentEvidenceStart), [
+  `put:${fixtureImageAttachmentId}:pixel.png`,
+]);
+assert.deepEqual(await readdir(fixtureAttachmentStaging), []);
 
 await composition.context.sdkOperations.start({
   ...turnStartParams,
@@ -2234,7 +2423,7 @@ const processSearchText = (callId: string): string => {
   assert.ok(block?.type === "text");
   return block.text;
 };
-const durableToolText = (callId: string): string => {
+const durableToolText = (callId: string, expectedContentLength = 1): string => {
   const event = primaryAgent.session.events.findLast((candidate) => candidate.type === "tool/result"
     && String(candidate.data.message.source.callId) === callId);
   assert.ok(event?.type === "tool/result");
@@ -2255,7 +2444,7 @@ const durableToolText = (callId: string): string => {
     productWork: productWorkDiagnostic,
     workEvents: primaryAgent.session.events.filter(({ type }) => type.startsWith("myagents/work/")),
   })}`);
-  assert.equal(resultBlock.content.length, 1);
+  assert.equal(resultBlock.content.length, expectedContentLength);
   const block = resultBlock.content[0];
   assert.ok(block?.type === "text");
   return block.text;
@@ -2287,7 +2476,7 @@ assert.deepEqual({
   records: [{ path: "governed.txt" }],
   truncated: false,
 });
-assert.equal(processSearchText("artifact-ls-call"), "governed.txt\nskills/");
+assert.equal(processSearchText("artifact-ls-call"), "governed.txt\npixel.png\nskills/");
 const foregroundBash = JSON.parse(processSearchText("artifact-bash-call")) as unknown;
 assert.ok(foregroundBash !== null && typeof foregroundBash === "object" && !Array.isArray(foregroundBash));
 assert.deepEqual({
@@ -2609,6 +2798,7 @@ assert.deepEqual(await composition.context.skills.snapshot({
   }],
 });
 
+const hostToolAttachmentEvidenceStart = hostAttachmentEvidence.length;
 await composition.context.sdkOperations.start({
   ...turnStartParams,
   clientOperationId: "artifact-host-tool-operation",
@@ -2624,7 +2814,18 @@ assert.equal(
   composition.context.sdkOperations.lookup("artifact-host-tool-operation")?.terminal?.kind,
   "succeeded",
 );
-assert.equal(durableToolText("artifact-host-tool-call"), "Host release check accepted");
+assert.equal(durableToolText("artifact-host-tool-call", 3), "Host release check accepted");
+const hostToolResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+  && String(event.data.message.source.callId) === "artifact-host-tool-call");
+assert.ok(hostToolResult?.type === "tool/result");
+assert.ok(hostToolResult.data.message.content.some((block) =>
+  block.content.some((content) => content.type === "image"
+    && String(content.attachment.attachmentId) === fixtureImageAttachmentId)));
+assert.deepEqual(hostAttachmentEvidence.slice(hostToolAttachmentEvidenceStart), [
+  `acquire:${fixtureImageAttachmentId}:artifact-runtime-lease-2`,
+  "release:artifact-runtime-lease-2",
+]);
+assert.equal(hostAttachmentLeases.size, 0);
 assert.equal(hostToolCalls.length, 1);
 const hostToolAuthority = hostToolCalls[0]?.authority;
 assert.ok(hostToolAuthority !== undefined);
@@ -3082,8 +3283,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 22,
-  "twenty-two projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 24,
+  "twenty-four projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -3093,7 +3294,7 @@ assert.deepEqual(
         : event.terminal.kind
       : "missing"),
   [
-    "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
+    "succeeded", "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded", "succeeded",
     "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
     "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
     "aborted:user", "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
@@ -3170,6 +3371,9 @@ assert.equal(processBoundaryUnsubscribeHits, 1);
 assert.equal(processSignalListener, undefined);
 assert.equal(adapter.activeStreamCount, 0);
 assert.equal(nativeRpc.phase, "disposed");
+assert.equal(hostAttachmentLeases.size, 0);
+const hostAttachmentStagingEntriesAfterUse = await readdir(fixtureAttachmentStaging);
+assert.deepEqual(hostAttachmentStagingEntriesAfterUse, []);
 assert.throws(() => composition.snapshot(), /disposing or disposed/u);
 const componentGenerationVerified = componentPublicationVerified;
 assert.equal(componentGenerationVerified, true);
@@ -3223,6 +3427,15 @@ process.stdout.write(`${JSON.stringify({
   },
   operationCorrelationVerified: true,
   hostPortServiceVerified: reverseMethodOrder.length === 7,
+  hostAttachmentStoreVerified: true,
+  hostAttachmentEvidence: {
+    events: hostAttachmentEvidence,
+    imageAttachmentId: fixtureImageAttachmentId,
+    imageRequestContainsReference: adapter.requests[2]?.messages.at(-1)?.content.some((block) =>
+      block.type === "image" && String(block.attachment.attachmentId) === fixtureImageAttachmentId),
+    hostToolImageReference: true,
+    stagingEntriesAfterUse: hostAttachmentStagingEntriesAfterUse,
+  },
   hostCredentialModelVerified,
   componentGenerationVerified,
   declarativeComponentsVerified: true,
@@ -3314,7 +3527,7 @@ process.stdout.write(`${JSON.stringify({
   publicationTransientVerified: primaryPublicationSnapshotVerified,
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: [
-    "success", "failure", "file_tools", "edit", "process_search_tools", "web_tools", "interaction",
+    "success", "image_input", "failure", "file_tools", "binary_attachment", "edit", "process_search_tools", "web_tools", "interaction",
     "plan_workflow", "task_graph", "declarative_components", "host_tool", "product_work", "host_interaction_cancel", "process_abort", "interrupt", "queued_cancel",
     "session_close",
   ],

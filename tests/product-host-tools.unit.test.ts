@@ -8,6 +8,7 @@ import {
 } from "@myagents-dsh/component-runtime";
 import {
   createHostToolComponentCompiler,
+  type HostToolComponentCompilerConfig,
   type HostToolRequestAuthorityInput,
 } from "@myagents-dsh/components-host-tools";
 import {
@@ -157,6 +158,8 @@ const compiler = (
   root: Context,
   controller: HostPortServiceController,
   resolveExecution: (execution: ToolRunContext, toolName: string) => ProductToolContext,
+  resolveImage: HostToolComponentCompilerConfig["resolveImage"] = () =>
+    Promise.reject(new Error("Host tool image resolver is unused in this fixture")),
 ) => createHostToolComponentCompiler({
   context: root,
   requestAuthorities: Object.freeze({
@@ -175,6 +178,7 @@ const compiler = (
       expectedConfigRevision: input.context.birth.configRevision,
     }),
   }),
+  resolveImage,
   resolveExecution,
 });
 
@@ -268,6 +272,63 @@ describe("generation-owned Host tool component compiler", () => {
     await expect(execute("call-failed")).resolves.toMatchObject({ isError: true });
     state = "aborted";
     await expect(execute("call-aborted")).resolves.toMatchObject({ isError: true });
+  });
+
+  it("materializes Host image references through the attachment authority", async () => {
+    const digest = "d".repeat(64);
+    const harness = await mount({
+      "host/tool/execute": () => ({
+        state: "succeeded",
+        content: [{
+          type: "attachment_ref",
+          attachment: {
+            attachmentId: `sha256:${digest}`,
+            mimeType: "image/png",
+            sizeBytes: 68,
+            sha256: digest,
+          },
+          label: "pixel.png",
+        }],
+      }),
+    });
+    const resolveImage = vi.fn<HostToolComponentCompilerConfig["resolveImage"]>(() => Promise.resolve(Object.freeze({
+      type: "image" as const,
+      attachment: Object.freeze({
+        attachmentId: `sha256:${digest}` as never,
+        mediaType: "image/png" as const,
+        bytes: 68,
+        width: 1,
+        height: 1,
+        name: "pixel.png",
+      }),
+    })));
+    await harness.componentController.configure({
+      catalog: catalog(),
+      compilers: [compiler(
+        harness.root,
+        harness.hostPortController,
+        (execution) => toolContext(execution.signal),
+        resolveImage,
+      )],
+      initialSnapshot: snapshot("extension-image-v1"),
+    });
+    const definition = harness.root.tools.get("mcp__fixture__echo");
+    const outcome = await harness.root.tools.execute({
+      arguments: Object.freeze({ value: "image" }),
+      callId: CallId("call-image"),
+      name: "mcp__fixture__echo",
+      signal: new AbortController().signal,
+    });
+    expect(outcome).toMatchObject({
+      isError: false,
+      value: { attachments: [{ attachmentId: `sha256:${digest}`, mimeType: "image/png" }] },
+    });
+    if (outcome.value === undefined) throw new Error("Host tool image outcome is missing its value");
+    expect(definition?.output.render({}, outcome.value)).toMatchObject([
+      { type: "text", text: `[Host tool attachment sha256:${digest}: pixel.png]` },
+      { type: "image", attachment: { attachmentId: `sha256:${digest}` } },
+    ]);
+    expect(resolveImage).toHaveBeenCalledTimes(1);
   });
 
   it("rejects identity drift, unsafe schemas, stale replies, and generation cancellation", async () => {

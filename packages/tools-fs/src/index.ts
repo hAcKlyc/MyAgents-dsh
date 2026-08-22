@@ -4,6 +4,8 @@ export {
   requireLocalWorkspaceFileSystem,
 } from "./local-filesystem.js";
 export type {
+  LocalAttachmentIoAuthority,
+  LocalAttachmentStagingFile,
   LocalDirectoryAuthority,
   LocalDirectoryEntry,
   LocalWorkspaceFileSystemConfig,

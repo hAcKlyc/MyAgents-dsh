@@ -95,7 +95,7 @@ const expectedWorkspaceFiles = new Map([
   ["packages/components-hooks", ["src/index.ts", "src/runtime.ts"]],
   ["packages/components-mcp", ["src/compiler.ts", "src/index.ts", "src/sdk-connection.ts"]],
   ["packages/components-skills", ["src/index.ts"]],
-  ["packages/host-ports", ["src/credential-provider.ts", "src/index.ts", "src/service.ts"]],
+  ["packages/host-ports", ["src/attachment-store.ts", "src/credential-provider.ts", "src/index.ts", "src/service.ts"]],
   ["packages/operation-runtime", [
     "src/events.ts",
     "src/fold.ts",

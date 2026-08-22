@@ -34,6 +34,7 @@ import {
 import {
   PATCHED_DSH_COMPILE_FIXTURES,
   PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
+  PATCHED_DSH_EXTERNAL_ROOT_COMPATIBILITY_PACKAGES,
   PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
   PATCHED_DSH_ARTIFACT_PACKAGE_COUNT,
   PATCHED_DSH_ARTIFACT_SCHEMA_VERSION,
@@ -819,7 +820,7 @@ export const verifyExistingBundle = (
     rmSync(tarAuditRoot, { recursive: true, force: true });
   }
   const reachable = new Set<string>();
-  const externalRootNames = new Set<string>();
+  const externalRootNames = new Set<string>(PATCHED_DSH_EXTERNAL_ROOT_COMPATIBILITY_PACKAGES);
   const pending = [...manifest.rootPackages];
   while (pending.length > 0) {
     const name = pending.pop();

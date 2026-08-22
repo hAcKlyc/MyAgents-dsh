@@ -30,10 +30,13 @@ import type * as RuntimeProductExports from "@myagents-dsh/runtime-product";
 import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 
-type HostPortLifecycle = HostPortTransportLifecycle;
+type HostPortLifecycle = HostPortTransportLifecycle & Readonly<{
+  bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
+}>;
 const hostPortLifecycleState = vi.hoisted<{ current: HostPortLifecycle }>(() => ({
   current: {
     activate: () => undefined,
+    bindAttachmentLeaseLimit: () => undefined,
     bindProductSession: () => undefined,
     bindTransport: () => undefined,
     close: () => Promise.resolve(),
@@ -65,6 +68,7 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
       artifactVersion: profile.ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion,
       context: context.root,
       dispose: () => Promise.resolve(),
+      bindAttachmentLeaseLimit: hostPortLifecycleState.current.bindAttachmentLeaseLimit,
       hostPorts: hostPortLifecycleState.current,
       respondInteraction: (params: MethodParams<"interaction/respond">) =>
         interactionResponseState.current(params) as MethodResult<"interaction/respond">,
@@ -77,6 +81,7 @@ const digest = "a".repeat(64);
 const compositionAuthority = Object.freeze({}) as NativeRpcLifecycleAuthority;
 const createHostPortLifecycle = (): HostPortLifecycle => ({
   activate: () => undefined,
+  bindAttachmentLeaseLimit: () => undefined,
   bindProductSession: () => undefined,
   bindTransport: () => undefined,
   close: () => Promise.resolve(),
@@ -294,6 +299,7 @@ describe("native RPC Cordis service", () => {
     const events: string[] = [];
     const hostPorts: HostPortLifecycle = {
       activate: () => { events.push("activate"); },
+      bindAttachmentLeaseLimit: (limit) => { events.push(`attachment-leases:${String(limit)}`); },
       bindProductSession: (productSessionId) => { events.push(`session:${productSessionId}`); },
       bindTransport: (peer, runtimeGeneration) => {
         expect(peer.role).toBe("runtime");
@@ -328,6 +334,7 @@ describe("native RPC Cordis service", () => {
     expect(events).toEqual([
       "transport:synthetic-generation",
       "session:synthetic-product-session",
+      `attachment-leases:${String(REFERENCE_PROTOCOL_LIMITS.maxAttachmentLeases)}`,
     ]);
     await vi.waitFor(() => expect(root.nativeRpc.phase).toBe("await_initialized"));
     runtimeInput.write(`${JSON.stringify({ jsonrpc: "2.0", method: "initialized", params: {} })}\n`);

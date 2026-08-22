@@ -267,7 +267,7 @@ export const CanonicalUserInputSchema = strictObject({
       attachmentId: identifier,
       name: Type.String({ minLength: 1, maxLength: 512 }),
       mimeType: Type.Union([Type.Literal("image/jpeg"), Type.Literal("image/png"), Type.Literal("image/gif"), Type.Literal("image/webp")]),
-      sizeBytes: Type.Integer({ minimum: 1 }),
+      sizeBytes: Type.Integer({ minimum: 1, maximum: 5 * 1_024 * 1_024 }),
       sha256,
     }),
   ]), { minItems: 1, maxItems: 64 }),

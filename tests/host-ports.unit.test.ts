@@ -443,7 +443,7 @@ describe("HostPortService", () => {
     const harness = await createHarness();
     const publicService = harness.service as unknown as Record<string, unknown>;
     const hiddenStateKeys = [
-      "active", "cleanupFailures", "closePromise", "nextRequestId", "peerValue", "productSessionIdValue",
+      "active", "attachmentCleanupFailures", "cleanupFailures", "closePromise", "nextRequestId", "peerValue", "productSessionIdValue",
       "requestAuthorities", "runtimeGenerationValue", "stateValue", "stopController",
     ];
     expect(Reflect.ownKeys(publicService)).not.toEqual(expect.arrayContaining(hiddenStateKeys));

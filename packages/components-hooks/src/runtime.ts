@@ -72,6 +72,17 @@ export interface ProductHookInvocation {
 
 export interface ProductHookRuntimeConfig {
   readonly registerController: (controller: ProductHookRuntimeController) => void;
+  readonly resolveImage: (input: Readonly<{
+    operation: ProductHookOperationAuthority;
+    reference: Readonly<{
+      attachmentId: string;
+      label?: string;
+      mimeType: string;
+      sha256: string;
+      sizeBytes: number;
+    }>;
+    signal: AbortSignal;
+  }>) => Promise<Extract<ContentBlock, { type: "image" }>>;
   readonly resolveOperation: (agent: Agent) => ProductHookOperationAuthority;
 }
 
@@ -200,10 +211,43 @@ const compareHooks = (left: HookRegistration, right: HookRegistration): number =
 const matches = (hook: HookRegistration, tool: string): boolean =>
   hook.matcher === "*" || hook.matcher === tool;
 
-const textBlocks = (result: ToolExecutionResult): readonly Readonly<{ type: "text"; text: string }>[] =>
-  result.content.map((block) => block.type === "text"
-    ? Object.freeze({ type: "text" as const, text: boundedText(block.text, 131_072, "Hook result text") })
-    : Object.freeze({ type: "text" as const, text: `[${block.type} content omitted]` }));
+type HookWireContent = NonNullable<NonNullable<HostHookExecuteRequest["result"]>["content"]>[number];
+
+const imageAttachmentProjection = (
+  block: Extract<ContentBlock, { type: "image" }>,
+): HookWireContent => {
+  const attachment = block.attachment;
+  const attachmentId = boundedIdentifier(String(attachment.attachmentId), "Hook image attachment id");
+  const digest = /^sha256:([a-f0-9]{64})$/u.exec(attachmentId)?.[1];
+  if (digest === undefined || !Number.isSafeInteger(attachment.bytes)
+    || attachment.bytes < 0) {
+    throw new ProtocolError("hook_output_invalid", "PostToolUse image reference is invalid");
+  }
+  const name = attachment.name;
+  if (name !== undefined) boundedText(name, 512, "Hook image attachment label");
+  return Object.freeze({
+    type: "attachment_ref" as const,
+    attachment: Object.freeze({
+      attachmentId,
+      mimeType: attachment.mediaType,
+      sha256: digest,
+      sizeBytes: attachment.bytes,
+    }),
+    ...(name === undefined ? {} : { label: name }),
+  });
+};
+
+const hookContentProjection = (result: ToolExecutionResult): readonly HookWireContent[] =>
+  result.content.map((block): HookWireContent => {
+    if (block.type === "text") {
+      return Object.freeze({
+        type: "text" as const,
+        text: boundedText(block.text, 131_072, "Hook result text"),
+      });
+    }
+    if (block.type === "image") return imageAttachmentProjection(block);
+    return Object.freeze({ type: "text" as const, text: `[${block.type} content omitted]` });
+  });
 
 const boundedResultProjection = <T extends NonNullable<HostHookExecuteRequest["result"]>>(
   projection: T,
@@ -218,7 +262,7 @@ const hookResultProjection = (
   result: Readonly<ToolExecutionResult>,
 ): NonNullable<HostHookExecuteRequest["result"]> => boundedResultProjection(Object.freeze({
   state: result.isError ? "failed" as const : "succeeded" as const,
-  content: [...textBlocks(result)],
+  content: [...hookContentProjection(result)],
   ...(result.isError
     ? { code: boundedIdentifier(result.error.info?.code ?? "tool_failed", "tool failure code") }
     : {}),
@@ -253,12 +297,20 @@ const abortHookOperation = (operation: ProductHookOperationAuthority): void => {
 };
 
 const exactConfig = (value: ProductHookRuntimeConfig): ProductHookRuntimeConfig => {
-  const config = exactObject(value, ["registerController", "resolveOperation"], "Host Hook runtime config");
+  const config = exactObject(
+    value,
+    ["registerController", "resolveImage", "resolveOperation"],
+    "Host Hook runtime config",
+  );
   return Object.freeze({
     registerController: callable(
       config.registerController,
       "Host Hook controller registrar",
     ) as ProductHookRuntimeConfig["registerController"],
+    resolveImage: callable(
+      config.resolveImage,
+      "Host Hook image resolver",
+    ) as ProductHookRuntimeConfig["resolveImage"],
     resolveOperation: callable(
       config.resolveOperation,
       "Host Hook operation resolver",
@@ -326,6 +378,51 @@ export class ProductHookRuntime extends Service {
       .filter((hook) => hook.event === event && matches(hook, tool)
         && hook.originScope.includes(operation.origin) && hookGenerationMatches(hook, operation))
       .sort(compareHooks);
+  }
+
+  async #materializeHookContent(
+    content: NonNullable<NonNullable<HostHookExecuteRequest["result"]>["content"]>,
+    operation: ProductHookOperationAuthority,
+    signal: AbortSignal,
+  ): Promise<ContentBlock[]> {
+    const result: ContentBlock[] = [];
+    for (const item of content) {
+      if (item.type === "text") {
+        result.push(Object.freeze({
+          type: "text" as const,
+          text: boundedText(item.text, 131_072, "Hook result text"),
+        }));
+        continue;
+      }
+      const label = item.label;
+      result.push(Object.freeze({
+        type: "text" as const,
+        text: label === undefined
+          ? `[Host Hook attachment ${item.attachment.attachmentId}]`
+          : `[Host Hook attachment ${item.attachment.attachmentId}: ${label}]`,
+      }));
+      if (!item.attachment.mimeType.startsWith("image/")) continue;
+      const pending = Reflect.apply(this.#config.resolveImage, this.#config, [Object.freeze({
+        operation,
+        reference: Object.freeze({
+          attachmentId: item.attachment.attachmentId,
+          ...(label === undefined ? {} : { label }),
+          mimeType: item.attachment.mimeType,
+          sha256: item.attachment.sha256,
+          sizeBytes: item.attachment.sizeBytes,
+        }),
+        signal,
+      })]);
+      const resolved = await exactPromise(pending, "Host Hook image resolver");
+      signal.throwIfAborted();
+      operation.assertCurrent();
+      if (resolved === null || typeof resolved !== "object" || isProxy(resolved)
+        || (resolved as ContentBlock).type !== "image") {
+        throw new ProtocolError("hook_output_invalid", "Host Hook image resolver returned an invalid block");
+      }
+      result.push(resolved as Extract<ContentBlock, { type: "image" }>);
+    }
+    return result;
   }
 
   #hasCandidate(event: HostHookEvent, tool: string): boolean {
@@ -443,10 +540,9 @@ export class ProductHookRuntime extends Service {
       if (result.isError || hookResult.updatedResult.state !== "succeeded") {
         return Object.freeze({
           kind: "block" as const,
-          feedback: hookResult.updatedResult.content?.map((item) => ({
-            type: "text" as const,
-            text: item.type === "text" ? item.text : `[Host Hook attachment ${item.attachment.attachmentId}]`,
-          })) ?? [{ type: "text" as const, text: "Host Hook blocked the tool result." }],
+          feedback: hookResult.updatedResult.content === undefined
+            ? [{ type: "text" as const, text: "Host Hook blocked the tool result." }]
+            : await this.#materializeHookContent(hookResult.updatedResult.content, operation, exec.signal),
         });
       }
       if (hookResult.updatedResult.structured !== undefined) {
@@ -463,10 +559,11 @@ export class ProductHookRuntime extends Service {
       } else if (hookResult.updatedResult.content !== undefined) {
         decision = Object.freeze({
           kind: "accept" as const,
-          content: hookResult.updatedResult.content.map((item) => ({
-            type: "text" as const,
-            text: item.type === "text" ? item.text : `[Host Hook attachment ${item.attachment.attachmentId}]`,
-          })),
+          content: await this.#materializeHookContent(
+            hookResult.updatedResult.content,
+            operation,
+            exec.signal,
+          ),
           ...(decision.additionalContexts === undefined ? {} : { additionalContexts: decision.additionalContexts }),
         });
       }

@@ -11292,6 +11292,7 @@
                           "type": "string"
                         },
                         "sizeBytes": {
+                          "maximum": 5242880,
                           "minimum": 1,
                           "type": "integer"
                         }
@@ -12472,6 +12473,7 @@
                           "type": "string"
                         },
                         "sizeBytes": {
+                          "maximum": 5242880,
                           "minimum": 1,
                           "type": "integer"
                         }
@@ -13532,6 +13534,7 @@
                           "type": "string"
                         },
                         "sizeBytes": {
+                          "maximum": 5242880,
                           "minimum": 1,
                           "type": "integer"
                         }

@@ -78,6 +78,10 @@ export interface HostPortRequestAuthorityFactory {
 
 export interface HostPortServiceController
   extends HostPortTransportLifecycle, HostPortRequestAuthorityFactory {
+  readonly cleanupAttachmentLease: (
+    authority: HostPortRequestAuthority,
+    leaseId: string,
+  ) => Promise<void>;
   readonly notifyInteractionCancelled: (
     params: NotificationParams<"host/interaction/cancel">,
   ) => void;
@@ -261,6 +265,7 @@ export class HostPortService extends Service {
   readonly #stopController = new AbortController();
   readonly #active = new Map<string, ActiveRequest>();
   readonly #cleanupFailures: Error[] = [];
+  readonly #attachmentCleanupFailures = new Map<string, Error>();
   readonly #controlWrites = new Set<Promise<void>>();
   readonly #requestAuthorities = new WeakMap<object, NormalizedAuthority>();
 
@@ -275,6 +280,8 @@ export class HostPortService extends Service {
       bindProductSession: (productSessionId: string) => this.#bindProductSession(productSessionId),
       bindTransport: (peer: JsonRpcPeer, runtimeGeneration: string) =>
         this.#bindTransport(peer, runtimeGeneration),
+      cleanupAttachmentLease: (authority: HostPortRequestAuthority, leaseId: string) =>
+        this.#cleanupAttachmentLease(authority, leaseId),
       close: () => this.#close(),
       createRequestAuthority: (input: HostPortRequestAuthorityInput) =>
         this.#createRequestAuthority(input),
@@ -341,13 +348,17 @@ export class HostPortService extends Service {
       this.#runtimeGenerationValue = undefined;
       this.#productSessionIdValue = undefined;
       this.#stateValue = "closed";
-      const [cleanupFailure] = this.#cleanupFailures;
-      if (this.#cleanupFailures.length === 1 && cleanupFailure !== undefined) {
+      const cleanupFailures = [
+        ...this.#cleanupFailures,
+        ...this.#attachmentCleanupFailures.values(),
+      ];
+      const [cleanupFailure] = cleanupFailures;
+      if (cleanupFailures.length === 1 && cleanupFailure !== undefined) {
         throw cleanupFailure;
       }
-      if (this.#cleanupFailures.length > 1) {
+      if (cleanupFailures.length > 1) {
         throw new AggregateError(
-          [...this.#cleanupFailures],
+          cleanupFailures,
           "Host attachment lease cleanup failed during Host port shutdown",
         );
       }
@@ -381,6 +392,45 @@ export class HostPortService extends Service {
       },
     ).finally(() => this.#controlWrites.delete(completion));
     this.#controlWrites.add(completion);
+  }
+
+  #cleanupAttachmentLease(
+    authority: HostPortRequestAuthority,
+    leaseId: string,
+  ): Promise<void> {
+    const candidate: unknown = authority;
+    const owner = candidate !== null && typeof candidate === "object"
+      ? this.#requestAuthorities.get(candidate)
+      : undefined;
+    const peer = this.#peerValue;
+    const runtimeGeneration = this.#runtimeGenerationValue;
+    const productSessionId = this.#productSessionIdValue;
+    if (owner === undefined || peer === undefined || runtimeGeneration === undefined
+      || productSessionId === undefined || owner.runtimeSessionId === undefined
+      || this.#stateValue === "unbound" || this.#stateValue === "closed") {
+      return Promise.reject(serviceError(
+        "host_attachment_release_failed",
+        "Host attachment lease cleanup authority is incomplete",
+      ));
+    }
+    const wireAuthority: HostRequestAuthority = Object.freeze({
+      requestId: `host-port:${this.#nextRequestId++}`,
+      runtimeGeneration,
+      productSessionId,
+      runtimeSessionId: owner.runtimeSessionId,
+      deadlineMs: attachmentCleanupDeadlineMs,
+    });
+    const cleanup = this.#releaseStaleAttachment(
+      peer,
+      wireAuthority,
+      boundedIdentifier(leaseId, "Host attachment lease id"),
+    );
+    const completion = cleanup.then(
+      () => undefined,
+      () => undefined,
+    ).finally(() => this.#controlWrites.delete(completion));
+    this.#controlWrites.add(completion);
+    return cleanup;
   }
 
   snapshot(): HostPortServiceSnapshot {
@@ -618,7 +668,7 @@ export class HostPortService extends Service {
         "host_attachment_release_failed",
         "Host attachment lease cleanup authority is incomplete",
       );
-      this.#cleanupFailures.push(failure);
+      this.#attachmentCleanupFailures.set(leaseId, failure);
       throw failure;
     }
     const controller = new AbortController();
@@ -638,12 +688,13 @@ export class HostPortService extends Service {
         authority: releaseAuthority,
         leaseId,
       }, { signal: controller.signal });
+      this.#attachmentCleanupFailures.delete(leaseId);
     } catch {
       const failure = serviceError(
         "host_attachment_release_failed",
         "Host attachment lease cleanup failed",
       );
-      this.#cleanupFailures.push(failure);
+      this.#attachmentCleanupFailures.set(leaseId, failure);
       throw failure;
     } finally {
       clearTimeout(timer);

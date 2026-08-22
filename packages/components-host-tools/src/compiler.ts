@@ -49,6 +49,18 @@ export interface HostToolRequestAuthorityFactory {
 export interface HostToolComponentCompilerConfig {
   readonly context: Context;
   readonly requestAuthorities: HostToolRequestAuthorityFactory;
+  readonly resolveImage: (input: Readonly<{
+    assertCurrent: () => void;
+    context: ProductToolContext;
+    reference: Readonly<{
+      attachmentId: string;
+      label?: string;
+      mimeType: string;
+      sha256: string;
+      sizeBytes: number;
+    }>;
+    signal: AbortSignal;
+  }>) => Promise<Extract<ContentBlock, { type: "image" }>>;
   readonly resolveExecution: (
     execution: ToolRunContext,
     toolName: string,
@@ -146,9 +158,25 @@ type NormalizedHostToolResult = Readonly<{
     sizeBytes: number;
   }>[];
   content: readonly string[];
+  images: readonly Readonly<{
+    attachmentId: string;
+    bytes: number;
+    contentIndex: number;
+    height: number;
+    mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+    name?: string;
+    width: number;
+  }>[];
   state: "succeeded" | "failed" | "aborted";
   structured?: Readonly<Record<string, unknown>>;
 }>;
+
+type HostToolRenderPart = Readonly<
+  | { type: "text"; text: string }
+  | { type: "attachment"; reference: NormalizedHostToolResult["attachments"][number] }
+>;
+
+const hostToolRenderParts = new WeakMap<object, readonly HostToolRenderPart[]>();
 
 const normalizeResult = (value: unknown): NormalizedHostToolResult => {
   const normalized = exactKeys(
@@ -169,6 +197,7 @@ const normalizeResult = (value: unknown): NormalizedHostToolResult => {
     throw new TypeError("Host tool result content exceeds its item bound");
   }
   const content: string[] = [];
+  const renderParts: HostToolRenderPart[] = [];
   const attachments: Array<NormalizedHostToolResult["attachments"][number]> = [];
   for (const item of contentValue) {
     const entry = exactObject(item, "Host tool result content item");
@@ -176,6 +205,7 @@ const normalizeResult = (value: unknown): NormalizedHostToolResult => {
       const text = exactKeys(entry, ["text", "type"], [], "Host tool text content").text;
       if (typeof text !== "string") throw new TypeError("Host tool text content is invalid");
       content.push(text);
+      renderParts.push(Object.freeze({ type: "text" as const, text }));
       continue;
     }
     if (entry.type !== "attachment_ref") {
@@ -212,6 +242,7 @@ const normalizeResult = (value: unknown): NormalizedHostToolResult => {
       ...(normalizedLabel === undefined ? {} : { label: normalizedLabel }),
     }) as NormalizedHostToolResult["attachments"][number];
     attachments.push(projected);
+    renderParts.push(Object.freeze({ type: "attachment" as const, reference: projected }));
     content.push(normalizedLabel === undefined
       ? `[Host tool attachment ${projected.attachmentId}]`
       : `[Host tool attachment ${projected.attachmentId}: ${normalizedLabel}]`);
@@ -225,6 +256,7 @@ const normalizeResult = (value: unknown): NormalizedHostToolResult => {
     state: normalized.state,
     content,
     attachments,
+    images: [],
     ...(normalized.structured === undefined
       ? {}
       : { structured: exactObject(normalized.structured, "Host tool structured result") }),
@@ -232,7 +264,9 @@ const normalizeResult = (value: unknown): NormalizedHostToolResult => {
   if (Buffer.byteLength(JSON.stringify(result), "utf8") > HOST_TOOL_COMPONENT_LIMITS.resultBytes) {
     throw new TypeError("Host tool result exceeds its canonical byte bound");
   }
-  return deepFreeze(result) as NormalizedHostToolResult;
+  const frozen = deepFreeze(result) as NormalizedHostToolResult;
+  hostToolRenderParts.set(frozen, Object.freeze(renderParts));
+  return frozen;
 };
 
 const HOST_TOOL_OUTPUT_SCHEMA = deepFreeze({
@@ -254,24 +288,64 @@ const HOST_TOOL_OUTPUT_SCHEMA = deepFreeze({
       type: "array",
     },
     content: { items: { type: "string" }, type: "array" },
+    images: {
+      items: {
+        additionalProperties: false,
+        properties: {
+          attachmentId: { type: "string" },
+          bytes: { type: "integer" },
+          contentIndex: { type: "integer" },
+          height: { type: "integer" },
+          mediaType: { type: "string" },
+          name: { type: "string" },
+          width: { type: "integer" },
+        },
+        required: ["attachmentId", "bytes", "contentIndex", "height", "mediaType", "width"],
+        type: "object",
+      },
+      type: "array",
+    },
     state: { const: "succeeded", type: "string" },
     structured: { additionalProperties: true, type: "object" },
   },
-  required: ["attachments", "content", "state"],
+  required: ["attachments", "content", "images", "state"],
   type: "object",
 }) as unknown as ToolDefinition["output"]["schema"];
 
-const renderResult = (_args: unknown, value: unknown): ContentBlock[] =>
-  (value as NormalizedHostToolResult).content.map((text) => ({ type: "text", text }));
+const renderResult = (_args: unknown, value: unknown): ContentBlock[] => {
+  const result = value as NormalizedHostToolResult;
+  const images = new Map(result.images.map((image) => [image.contentIndex, image]));
+  return result.content.flatMap((text, index): ContentBlock[] => {
+    const image = images.get(index);
+    return [{ type: "text" as const, text }, ...(image === undefined ? [] : [{
+      type: "image" as const,
+      attachment: {
+        attachmentId: image.attachmentId as never,
+        mediaType: image.mediaType,
+        bytes: image.bytes,
+        width: image.width,
+        height: image.height,
+        ...(image.name === undefined ? {} : { name: image.name }),
+      },
+    }])];
+  });
+};
 
 const normalizeConfig = (value: HostToolComponentCompilerConfig): Readonly<{
   context: Context;
   createRequestAuthority: HostToolRequestAuthorityFactory["createRequestAuthority"];
   requestAuthorityReceiver: object;
+  resolveImage: HostToolComponentCompilerConfig["resolveImage"];
+  resolveImageReceiver: object;
   resolveExecution: HostToolComponentCompilerConfig["resolveExecution"];
   resolveExecutionReceiver: object;
 }> => {
-  const config = exactKeys(value, ["context", "requestAuthorities", "resolveExecution"], [], "Host tool compiler config");
+  const config = exactKeys(
+    value,
+    ["context", "requestAuthorities", "resolveExecution", "resolveImage"],
+    [],
+    "Host tool compiler config",
+  );
   const requestAuthorities = exactKeys(
     config.requestAuthorities,
     ["createRequestAuthority"],
@@ -285,6 +359,11 @@ const normalizeConfig = (value: HostToolComponentCompilerConfig): Readonly<{
       "Host tool request authority factory",
     ) as HostToolRequestAuthorityFactory["createRequestAuthority"],
     requestAuthorityReceiver: requestAuthorities,
+    resolveImage: callable(
+      config.resolveImage,
+      "Host tool image resolver",
+    ) as HostToolComponentCompilerConfig["resolveImage"],
+    resolveImageReceiver: config,
     resolveExecution: callable(
       config.resolveExecution,
       "Host tool execution resolver",
@@ -409,7 +488,48 @@ export const createHostToolComponentCompiler = (
             if (result.state !== "succeeded") {
               throw new Error(result.content.join("\n"));
             }
-            return result;
+            const images: NormalizedHostToolResult["images"][number][] = [];
+            for (const [contentIndex, part] of (hostToolRenderParts.get(result) ?? []).entries()) {
+              if (part.type === "text") {
+                continue;
+              }
+              if (!part.reference.mimeType.startsWith("image/")) continue;
+              const resolved = await exactPromise(
+                Reflect.apply(config.resolveImage, config.resolveImageReceiver, [Object.freeze({
+                  assertCurrent,
+                  context,
+                  reference: part.reference,
+                  signal: callSignal,
+                })]),
+                "Host tool image resolver",
+              );
+              callSignal.throwIfAborted();
+              assertCurrent();
+              if (resolved === null || typeof resolved !== "object" || isProxy(resolved)
+                || (resolved as ContentBlock).type !== "image") {
+                throw new TypeError("Host tool image resolver returned an invalid content block");
+              }
+              const image = resolved as Extract<ContentBlock, { type: "image" }>;
+              const attachment = image.attachment;
+              if (!/^sha256:[a-f0-9]{64}$/u.test(String(attachment.attachmentId))
+                || !Number.isSafeInteger(attachment.bytes) || attachment.bytes < 0
+                || !Number.isSafeInteger(attachment.width) || attachment.width < 1
+                || !Number.isSafeInteger(attachment.height) || attachment.height < 1
+                || (attachment.name !== undefined
+                  && Buffer.byteLength(attachment.name, "utf8") > 512)) {
+                throw new TypeError("Host tool image resolver returned invalid attachment metadata");
+              }
+              images.push(Object.freeze({
+                attachmentId: String(attachment.attachmentId),
+                bytes: attachment.bytes,
+                contentIndex,
+                height: attachment.height,
+                mediaType: attachment.mediaType,
+                ...(attachment.name === undefined ? {} : { name: attachment.name }),
+                width: attachment.width,
+              }));
+            }
+            return deepFreeze({ ...result, images });
           } finally {
             calls.delete(pending);
           }

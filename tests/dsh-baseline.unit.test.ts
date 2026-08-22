@@ -44,10 +44,10 @@ describe("DSH dependency authority", () => {
       registry: "https://registry.npmjs.org",
       dshRelease: "0.1.0-rc.6",
       sourceAssociation: "unproven",
-      directPackageCount: 44,
-      productionPackageCount: 172,
+      directPackageCount: 45,
+      productionPackageCount: 205,
     });
-    expect(baseline.productionPackages.filter(({ name }) => name.startsWith("@deepseek-ai/"))).toHaveLength(56);
+    expect(baseline.productionPackages.filter(({ name }) => name.startsWith("@deepseek-ai/"))).toHaveLength(57);
     expect(baseline.productionPackages.every(({ integrity, license }) => integrity.startsWith("sha512-") && license.length > 0)).toBe(true);
   });
 
@@ -94,7 +94,7 @@ describe("DSH dependency authority", () => {
     const agentEntry = drifted.packages["node_modules/@deepseek-ai/dsh-agent"];
     expect(agentEntry).toBeDefined();
     if (agentEntry === undefined) return;
-    agentEntry.license = "Apache-2.0";
+    agentEntry.license = "GPL-3.0-only";
 
     expect(() => buildDshBaseline(rootPackage, drifted)).toThrow(
       "license obligations must exactly cover the production closure",

@@ -72,6 +72,7 @@ const runtimeCompositionSourcePaths = [
   "packages/components-mcp/src/sdk-connection.ts",
   "packages/components-skills/src/index.ts",
   "packages/host-ports/src/index.ts",
+  "packages/host-ports/src/attachment-store.ts",
   "packages/host-ports/src/credential-provider.ts",
   "packages/host-ports/src/service.ts",
   "packages/operation-runtime/src/events.ts",
@@ -1120,6 +1121,7 @@ const main = (): void => {
       || evidence.ambientWebSearchFallbackRejected !== true
       || evidence.operationCorrelationVerified !== true
       || evidence.hostPortServiceVerified !== true
+      || evidence.hostAttachmentStoreVerified !== true
       || evidence.hostCredentialModelVerified !== true
       || evidence.componentGenerationVerified !== true
       || evidence.declarativeComponentsVerified !== true
@@ -1140,11 +1142,29 @@ const main = (): void => {
       || evidence.sessionCloseVerified !== true
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
-        "success", "failure", "file_tools", "edit", "process_search_tools", "web_tools", "interaction",
+        "success", "image_input", "failure", "file_tools", "binary_attachment", "edit", "process_search_tools", "web_tools", "interaction",
         "plan_workflow", "task_graph", "declarative_components", "host_tool", "product_work", "host_interaction_cancel", "process_abort", "interrupt", "queued_cancel",
         "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
+    }
+    const hostAttachmentEvidence = exactObject(
+      evidence.hostAttachmentEvidence,
+      "Host attachment Store evidence",
+    );
+    if (typeof hostAttachmentEvidence.imageAttachmentId !== "string"
+      || !/^sha256:[a-f0-9]{64}$/u.test(hostAttachmentEvidence.imageAttachmentId)
+      || hostAttachmentEvidence.imageRequestContainsReference !== true
+      || hostAttachmentEvidence.hostToolImageReference !== true
+      || JSON.stringify(hostAttachmentEvidence.stagingEntriesAfterUse) !== "[]"
+      || JSON.stringify(hostAttachmentEvidence.events) !== JSON.stringify([
+        `acquire:${hostAttachmentEvidence.imageAttachmentId}:artifact-runtime-lease-1`,
+        "release:artifact-runtime-lease-1",
+        `put:${hostAttachmentEvidence.imageAttachmentId}:pixel.png`,
+        `acquire:${hostAttachmentEvidence.imageAttachmentId}:artifact-runtime-lease-2`,
+        "release:artifact-runtime-lease-2",
+      ])) {
+      throw new Error("Host attachment Store evidence differs from exact acquire/release/publication semantics");
     }
     const hostInteractionEvidence = exactObject(
       evidence.hostInteractionEvidence,
@@ -1210,7 +1230,7 @@ const main = (): void => {
       "canonical twenty-tool pipeline evidence",
     );
     const expectedModelTools = [...CANONICAL_TOOL_NAMES, "mcp__artifact_host__release_check"].toSorted();
-    if (canonicalToolPipeline.callCount !== 34
+    if (canonicalToolPipeline.callCount !== 35
       || JSON.stringify(canonicalToolPipeline.names) !== JSON.stringify(CANONICAL_TOOL_NAMES)
       || JSON.stringify(canonicalToolPipeline.observedRootToolNames) !== JSON.stringify(expectedModelTools)
       || canonicalToolPipeline.onlyExpectedToolNames !== true
@@ -1364,10 +1384,14 @@ const main = (): void => {
       "assistant_delta", "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "assistant_delta",
       "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "assistant_delta",
+      "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
-      // Canonical file, process-search, and Web tool operations.
+      // Canonical text/binary file, process-search, and Web tool operations.
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "message_event", "usage", "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "message_event", "usage", "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
@@ -1429,13 +1453,13 @@ const main = (): void => {
         return value.kind === "aborted" ? `${value.kind}:${String(value.reason)}` : value.kind;
       });
     if (JSON.stringify(terminalOutcomes) !== JSON.stringify([
-      "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
+      "succeeded", "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded", "succeeded",
       "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
       "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
       "aborted:user", "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
     ])) {
       throw new Error(
-        `Runtime terminal projection differs from the twenty-two real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
+        `Runtime terminal projection differs from the twenty-four real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
       );
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");

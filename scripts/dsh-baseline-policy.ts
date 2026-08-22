@@ -8,6 +8,7 @@ export const expectedDshDependencies = new Map([
   ["@deepseek-ai/dsh-agent-loop", "0.1.0-rc.6"],
   ["@deepseek-ai/dsh-agent-presets", "0.1.0-rc.6"],
   ["@deepseek-ai/dsh-attachment", "0.1.0-rc.6"],
+  ["@deepseek-ai/dsh-attachment-local", "0.1.0-rc.6"],
   ["@deepseek-ai/dsh-commands", "0.1.0-rc.6"],
   ["@deepseek-ai/dsh-compaction", "0.1.0-rc.6"],
   ["@deepseek-ai/dsh-credentials", "0.1.0-rc.6"],
@@ -83,6 +84,7 @@ export const publicSeams: PublicSeamEvidence[] = [
   { id: "questions", package: "@deepseek-ai/dsh-user-questions", importPath: "@deepseek-ai/dsh-user-questions", classification: "provider", batchUse: ["B1-W2", "B1-W3"], values: ["UserQuestionService"], types: ["AskUserQuestionRequest", "UserQuestionProvider"] },
   { id: "credentials", package: "@deepseek-ai/dsh-credentials", importPath: "@deepseek-ai/dsh-credentials", classification: "provider", batchUse: ["B1-W3"], values: ["CredentialProvider", "credentialRef"], types: ["CredentialInfo", "ResolvedCredential"] },
   { id: "attachments", package: "@deepseek-ai/dsh-attachment", importPath: "@deepseek-ai/dsh-attachment", classification: "provider", batchUse: ["B1-W2", "B1-W3"], values: ["AttachmentId", "AttachmentStore"], types: ["ImageAttachmentRef", "StoredImageAttachment"] },
+  { id: "attachments-local", package: "@deepseek-ai/dsh-attachment-local", importPath: "@deepseek-ai/dsh-attachment-local", classification: "helper", batchUse: ["B1-W3"], values: ["DEFAULT_MAX_IMAGE_BYTES", "DEFAULT_MAX_IMAGE_PIXELS", "DEFAULT_MAX_IMAGES_PER_MESSAGE", "DEFAULT_MAX_MESSAGE_IMAGE_BYTES", "detectImage"], types: [] },
   { id: "commands", package: "@deepseek-ai/dsh-commands", importPath: "@deepseek-ai/dsh-commands", classification: "direct", batchUse: ["B1-W3"], values: ["CommandId", "CommandRuntime", "parseCommand"], types: ["CommandDefinition", "CommandExecution", "CommandInputDescriptor", "CommandInvocation", "CommandResult", "ParsedCommand"] },
   { id: "filesystem", package: "@deepseek-ai/dsh-fs", importPath: "@deepseek-ai/dsh-fs", classification: "provider", batchUse: ["B1-W2"], values: ["FileSystem", "FsTargetKey", "FsVersion"], types: ["FsEditRequest", "FsWriteIntent"] },
   { id: "subprocess", package: "@deepseek-ai/dsh-subprocess", importPath: "@deepseek-ai/dsh-subprocess", classification: "provider", batchUse: ["B1-W2"], values: ["SubprocessRuntime", "scrubbedParentEnv"], types: ["SubprocessHandle", "SubprocessSpawnSpec"] },
@@ -131,10 +133,15 @@ export const knownLimitations = [
 ] as const;
 
 export const licenseObligations = [
+  { license: "0BSD", obligation: "Retain any copyright and license notice shipped with redistributed copies." },
   { license: "BSD-2-Clause", obligation: "Retain the copyright notice, license conditions, and disclaimer in redistributed source or binary materials." },
   { license: "BSD-3-Clause", obligation: "Retain the copyright notice, license conditions, disclaimer, and non-endorsement condition." },
   { license: "ISC", obligation: "Retain the copyright and permission notice with redistributed copies." },
   { license: "MIT", obligation: "Retain the copyright and permission notice in substantial copies or distributions." },
+  { license: "Apache-2.0", obligation: "Retain the license, required notices, and modification notices; make corresponding source and LGPL notices available when a bundled native dependency also carries LGPL terms." },
+  { license: "LGPL-3.0-or-later", obligation: "Retain the license and notices and provide the relinking/source materials required for any redistributed linked native library." },
+  { license: "Apache-2.0 AND LGPL-3.0-or-later", obligation: "Satisfy both the Apache-2.0 notice terms and the LGPL-3.0-or-later source/relinking terms for the redistributed native package." },
+  { license: "Apache-2.0 AND LGPL-3.0-or-later AND MIT", obligation: "Satisfy the Apache-2.0, LGPL-3.0-or-later, and MIT notice/source/relinking terms for the redistributed native package." },
   { license: "Python-2.0", obligation: "Reproduce the Python license and applicable notices; re-audit the exact packaged text before any public binary release." },
 ] as const;
 

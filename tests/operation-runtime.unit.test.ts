@@ -8,6 +8,7 @@ import {
   findProductOperation,
   foldProductOperations,
   normalizeDshTokenUsage,
+  type OperationInputAuthority,
   type OperationBirthSnapshot,
   type OperationBirthAuthority,
   type SettlementDeadlineAuthority,
@@ -81,6 +82,7 @@ const mountService = async (
   reserveTerminal: (clientOperationId: string) => void = () => undefined,
   settlementDeadlineAuthority: SettlementDeadlineAuthority = immediateSettlementDeadline,
   bindTerminalReservation = true,
+  inputAuthority?: OperationInputAuthority,
 ): Promise<MountedService> => {
   const context = new Context();
   mounted.push(context);
@@ -128,6 +130,7 @@ const mountService = async (
   const fiber = await context.plugin(SdkOperationService, {
     birthAuthority,
     drainOwnedWork: () => Promise.resolve(),
+    ...(inputAuthority === undefined ? {} : { inputAuthority }),
     ownsRootContextMessage: () => false,
     registerRetirementGuard: (guard) => { retirementGuard = guard; },
     requireAgent: () => agent,
@@ -367,6 +370,71 @@ describe("durable product-operation fold", () => {
 });
 
 describe("SdkOperationService admission and idempotency", () => {
+  it("prepares the complete input before durable acceptance and rejects cancellation without publication", async () => {
+    const pending = Promise.withResolvers<readonly [{ readonly type: "text"; readonly text: string }]>();
+    const prepareCalls: string[] = [];
+    const fixture = await mountService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      Object.freeze({
+        prepare: async (input: MethodParams<"turn/start">, inputBirth: OperationBirthSnapshot) => {
+          prepareCalls.push(`${input.clientOperationId}:${inputBirth.componentRevision}`);
+          return await pending.promise;
+        },
+      }),
+    );
+    const controller = new AbortController();
+    const admission = fixture.service.start(params(), {
+      commit: () => undefined,
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(prepareCalls).toEqual(["operation-1:component-1"]));
+    controller.abort();
+    pending.resolve(Object.freeze([Object.freeze({ type: "text" as const, text: "prepared input" })]));
+    await expect(admission).rejects.toMatchObject({ code: "protocol_cancelled" });
+    expect(fixture.agent.session.events).toEqual([]);
+    expect(fixture.inbox.nextTurn).toEqual([]);
+
+    const accepted = await mountService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      Object.freeze({
+        prepare: () => Promise.resolve(Object.freeze([
+          Object.freeze({ type: "text" as const, text: "prepared input" }),
+        ])),
+      }),
+    );
+    await expect(accepted.service.start(params())).resolves.toMatchObject({ state: "accepted" });
+    expect(accepted.inbox.nextTurn[0]?.content).toEqual([{ type: "text", text: "prepared input" }]);
+  });
+
+  it("does not append acceptance when input preparation fails", async () => {
+    const fixture = await mountService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      Object.freeze({
+        prepare: () => Promise.reject(
+          new ProtocolError("attachment_corrupt", "synthetic corrupt image"),
+        ),
+      }),
+    );
+    await expect(fixture.service.start(params())).rejects.toMatchObject({ code: "attachment_corrupt" });
+    expect(fixture.agent.session.events).toEqual([]);
+    expect(fixture.inbox.nextTurn).toEqual([]);
+  });
+
   it("rejects before durable acceptance when no terminal reservation is available", async () => {
     const fixture = await mountService(
       undefined,

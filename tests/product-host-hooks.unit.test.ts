@@ -1,6 +1,6 @@
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import { CallId, MessageId, freezeMessage } from "@deepseek-ai/dsh-llm";
+import { CallId, MessageId, freezeMessage, type ContentBlock } from "@deepseek-ai/dsh-llm";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import {
@@ -8,6 +8,7 @@ import {
   createHookComponentCompiler,
   type ProductHookInvocation,
   type ProductHookOperationAuthority,
+  type ProductHookRuntimeConfig,
   type ProductHookRuntimeController,
 } from "@myagents-dsh/components-hooks";
 import type {
@@ -70,6 +71,9 @@ const operationBirth = (revision: string, digest: string) => Object.freeze({
 const mount = async (
   components: readonly ExtensionComponent[],
   execute: (invocation: ProductHookInvocation, request: HostHookExecuteRequest) => Promise<HookResult>,
+  resolveImage: ProductHookRuntimeConfig["resolveImage"] = () =>
+    Promise.reject(new Error("Host Hook image resolver is unused in this fixture")),
+  renderFixture: () => ContentBlock[] = () => [{ type: "text" as const, text: "fixture result" }],
 ) => {
   const root = new Context();
   contexts.push(root);
@@ -97,6 +101,7 @@ const mount = async (
   let hookController: ProductHookRuntimeController | undefined;
   await root.plugin(ProductHookRuntime, {
     registerController: (controller) => { hookController = controller; },
+    resolveImage,
     resolveOperation: (candidate) => {
       if (candidate !== agent) throw new Error("not the primary Hook Agent");
       return operation;
@@ -137,7 +142,7 @@ const mount = async (
     isConcurrencySafe: () => true,
     name: "Fixture",
     output: Object.freeze({
-      render: (_args: unknown, value: unknown) => [{ type: "text" as const, text: JSON.stringify(value) }],
+      render: renderFixture,
       schema: Object.freeze({
         additionalProperties: false,
         properties: Object.freeze({ value: Object.freeze({ type: "string" as const }) }),
@@ -264,6 +269,85 @@ describe("generation-owned Host Hook components", () => {
       target: "/workspace/file",
       tool: "Fixture",
     })).resolves.toBe("allow_once");
+  });
+
+  it("projects existing images and materializes Host-updated image references", async () => {
+    const digest = "d".repeat(64);
+    let projected: HostHookExecuteRequest["result"] | undefined;
+    let resolutionHits = 0;
+    const imageBlock = Object.freeze({
+      type: "image" as const,
+      attachment: Object.freeze({
+        attachmentId: `sha256:${digest}` as never,
+        mediaType: "image/png" as const,
+        bytes: 68,
+        width: 1,
+        height: 1,
+        name: "original.png",
+      }),
+    });
+    const state = await mount([component("post-image", "PostToolUse")], (_invocation, request) => {
+      projected = request.result;
+      return Promise.resolve({
+        state: "continue",
+        updatedResult: {
+          state: "succeeded",
+          content: [{
+            type: "attachment_ref",
+            attachment: {
+              attachmentId: `sha256:${digest}`,
+              mimeType: "image/png",
+              sha256: digest,
+              sizeBytes: 68,
+            },
+            label: "hook.png",
+          }],
+        },
+      });
+    }, () => {
+      resolutionHits += 1;
+      return Promise.resolve(Object.freeze({
+        type: "image" as const,
+        attachment: Object.freeze({
+          attachmentId: `sha256:${digest}` as never,
+          mediaType: "image/png" as const,
+          bytes: 68,
+          width: 1,
+          height: 1,
+          name: "hook.png",
+        }),
+      }));
+    }, () => [imageBlock]);
+    const callId = CallId("post-image-call");
+    const result = await state.root.tools.execute({
+      agent: state.agent,
+      arguments: Object.freeze({ value: "before" }),
+      callId,
+      name: "Fixture",
+      rootCallId: callId,
+      signal: new AbortController().signal,
+    });
+    expect(projected).toMatchObject({
+      state: "succeeded",
+      content: [{
+        type: "attachment_ref",
+        attachment: {
+          attachmentId: `sha256:${digest}`,
+          mimeType: "image/png",
+          sha256: digest,
+          sizeBytes: 68,
+        },
+        label: "original.png",
+      }],
+    });
+    expect(result).toMatchObject({
+      isError: false,
+      content: [
+        { type: "text", text: `[Host Hook attachment sha256:${digest}: hook.png]` },
+        { type: "image", attachment: { attachmentId: `sha256:${digest}` } },
+      ],
+    });
+    expect(resolutionHits).toBe(1);
   });
 
   it("preserves unmatched commits byte-for-byte and filters by frozen origin scope", async () => {

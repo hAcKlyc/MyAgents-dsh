@@ -44,8 +44,11 @@ const runtimeDependencySections = Object.freeze([
 ] as const);
 
 export const PATCHED_DSH_ARTIFACT_SCHEMA_VERSION = 1;
-export const PATCHED_DSH_ARTIFACT_PACKAGE_COUNT = 51;
+export const PATCHED_DSH_ARTIFACT_PACKAGE_COUNT = 52;
 const patchedDshPnpmVersion = "11.7.0";
+export const PATCHED_DSH_EXTERNAL_ROOT_COMPATIBILITY_PACKAGES = Object.freeze([
+  "@img/sharp-wasm32",
+] as const);
 export const PATCHED_DSH_COMPILE_FIXTURES = Object.freeze([
   Object.freeze({
     sourcePath: "packages/product-profile/src/dsh-public-surface.compile.ts",
@@ -426,7 +429,11 @@ export const buildPatchedDshArtifactPlan = (
     if (pkg === undefined) throw new Error(`internal closure lost ${name}`);
     return Object.freeze({ direct: rootSet.has(name), name, path: pkg.path });
   });
-  const externalNames = new Set<string>();
+  // npm 11.8 installs sharp's platform-neutral wasm dependency when its
+  // platform-specific optional parents are omitted, but otherwise reports the
+  // resulting subtree as extraneous. Make that exact package an explicit
+  // consumer root so install/ci/ls describe one reproducible dependency tree.
+  const externalNames = new Set<string>(PATCHED_DSH_EXTERNAL_ROOT_COMPATIBILITY_PACKAGES);
   for (const name of closure) {
     const pkg = byName.get(name);
     if (pkg === undefined) throw new Error(`internal closure lost ${name}`);

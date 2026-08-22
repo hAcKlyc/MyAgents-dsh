@@ -125,6 +125,10 @@ describe("ScriptedFakeLlmAdapter", () => {
     expect(() => new ScriptedFakeLlmAdapter({ contextWindow: null } as never))
       .toThrow("bounded positive integer");
     expect(() => new ScriptedFakeLlmAdapter({ extra: true } as never)).toThrow("unsupported field");
+    expect(() => new ScriptedFakeLlmAdapter({ inputModalities: ["image"] })).toThrow("include text");
+    expect(() => new ScriptedFakeLlmAdapter({ inputModalities: ["text", "text"] })).toThrow("unique");
+    expect(() => new ScriptedFakeLlmAdapter({ inputModalities: new Proxy(["text"], {}) as never }))
+      .toThrow("bounded dense array");
     let optionGetterHits = 0;
     const accessorOptions = {} as Record<string, unknown>;
     Object.defineProperty(accessorOptions, "provider", {
@@ -201,5 +205,15 @@ describe("ScriptedFakeLlmAdapter", () => {
       .toThrow("own data properties");
     expect(getterHits).toBe(0);
     expect(adapter.pendingScriptCount).toBe(0);
+  });
+
+  it("projects one exact frozen image-capable model identity", async () => {
+    const adapter = new ScriptedFakeLlmAdapter({ inputModalities: ["text", "image"] });
+    const models = await adapter.listModels("fixture");
+    const resolved = await adapter.resolveModel("fixture", "fixture-model");
+    expect(models[0]?.inputModalities).toEqual(["text", "image"]);
+    expect(resolved.inputModalities).toEqual(["text", "image"]);
+    expect(Object.isFrozen(models[0]?.inputModalities)).toBe(true);
+    expect(Object.isFrozen(resolved.inputModalities)).toBe(true);
   });
 });
