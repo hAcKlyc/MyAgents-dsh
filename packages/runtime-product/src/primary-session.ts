@@ -97,6 +97,10 @@ export interface PrimarySessionBackend {
   resume(request: PrimarySessionBackendRequest): Promise<PrimarySessionBackendResult>;
 }
 
+export type PrimarySessionProviderAdmissionGuard = (
+  request: PrimarySessionBackendRequest,
+) => Promise<void>;
+
 export interface PrimarySessionAdmissionSnapshot {
   readonly state: PrimarySessionState;
   readonly mode?: PrimarySessionMode;
@@ -569,6 +573,10 @@ const abortReason = (signal: AbortSignal): Error => signal.reason instanceof Err
   ? signal.reason
   : new Error("primary Session admission aborted", { cause: signal.reason });
 
+const assertAdmissionNotAborted = (signal: AbortSignal): void => {
+  if (signal.aborted) throw abortReason(signal);
+};
+
 const linkAbortSignal = (
   target: AbortController,
   source: AbortSignal | undefined,
@@ -824,6 +832,7 @@ export class PrimarySessionAdmission {
     private readonly backend: PrimarySessionBackend,
     workspace: PrimarySessionWorkspace,
     settlementDeadline: SettlementDeadlineAuthority = createRuntimeSettlementDeadlineAuthority(),
+    private readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard,
   ) {
     const candidate: unknown = backend;
     if (candidate === null || typeof candidate !== "object" || utilTypes.isProxy(candidate)
@@ -846,6 +855,10 @@ export class PrimarySessionAdmission {
         Reflect.apply(wait, settlementDeadline, [operation, description]),
     });
     this.#workspace = validatePrimarySessionWorkspace(workspace);
+    if (providerAdmissionGuard !== undefined
+      && (typeof providerAdmissionGuard !== "function" || utilTypes.isProxy(providerAdmissionGuard))) {
+      throw new TypeError("primary Session Provider admission guard must be a non-proxy function");
+    }
   }
 
   snapshot(): Readonly<PrimarySessionAdmissionSnapshot> {
@@ -939,15 +952,18 @@ export class PrimarySessionAdmission {
     this.#controller = controller;
     this.#state = mode === "create" ? "creating" : "resuming";
     const promise = Promise.resolve()
-      .then(() => {
-        if (controller.signal.aborted) throw abortReason(controller.signal);
-        return this.backend[mode]({
+      .then(async () => {
+        assertAdmissionNotAborted(controller.signal);
+        const request = Object.freeze({
           mode,
           params,
           runtimeSessionId,
           signal: controller.signal,
           workspace: this.#workspace,
         });
+        await this.providerAdmissionGuard?.(request);
+        assertAdmissionNotAborted(controller.signal);
+        return this.backend[mode](request);
       })
       .then(async (candidate) => {
         const cleanup = extractCandidateDisposer(candidate);
@@ -1135,6 +1151,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
 export interface ProductSessionServiceConfig {
   readonly backend?: PrimarySessionBackend;
   readonly childPublicationAuthority?: object;
+  readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard;
   readonly quiescenceGraceMs?: number;
 }
 
@@ -1142,6 +1159,7 @@ export class ProductSessionService extends Service {
   static inject = ["agents", "sessions"];
   private readonly backendValue: PrimarySessionBackend;
   private readonly childPublicationAuthorityValue: object | undefined;
+  private readonly providerAdmissionGuardValue: PrimarySessionProviderAdmissionGuard | undefined;
   private readonly publicationFenceValue: PrimaryRootPublicationFence;
   private executionEnvironmentValue: ProductExecutionEnvironment | undefined;
   private workspaceValue: PrimarySessionWorkspace | undefined;
@@ -1157,7 +1175,7 @@ export class ProductSessionService extends Service {
     const normalized = exactOwnDataObject(
       config,
       [],
-      ["backend", "childPublicationAuthority", "quiescenceGraceMs"],
+      ["backend", "childPublicationAuthority", "providerAdmissionGuard", "quiescenceGraceMs"],
       "ProductSessionService config",
     );
     this.childPublicationAuthorityValue = Object.hasOwn(normalized, "childPublicationAuthority")
@@ -1167,6 +1185,14 @@ export class ProductSessionService extends Service {
     this.backendValue = Object.hasOwn(normalized, "backend")
       ? normalized.backend as PrimarySessionBackend
       : new DshPrimarySessionBackend(ctx, this.publicationFenceValue);
+    const providerAdmissionGuard = Object.hasOwn(normalized, "providerAdmissionGuard")
+      ? normalized.providerAdmissionGuard as PrimarySessionProviderAdmissionGuard
+      : undefined;
+    if (providerAdmissionGuard !== undefined
+      && (typeof providerAdmissionGuard !== "function" || utilTypes.isProxy(providerAdmissionGuard))) {
+      throw new TypeError("ProductSession Provider admission guard must be a non-proxy function");
+    }
+    this.providerAdmissionGuardValue = providerAdmissionGuard;
     this.settlementDeadlineValue = createRuntimeSettlementDeadlineAuthority(
       Object.hasOwn(normalized, "quiescenceGraceMs")
         ? normalized.quiescenceGraceMs as number
@@ -1202,10 +1228,14 @@ export class ProductSessionService extends Service {
       return this.workspaceValue;
     }
     this.workspaceValue = workspace;
+    const providerAdmissionGuard = this.providerAdmissionGuardValue;
     this.admissionValue = new PrimarySessionAdmission(
       this.backendValue,
       workspace,
       this.settlementDeadlineValue,
+      providerAdmissionGuard === undefined
+        ? undefined
+        : (request) => Reflect.apply(providerAdmissionGuard, undefined, [request]),
     );
     return workspace;
   }

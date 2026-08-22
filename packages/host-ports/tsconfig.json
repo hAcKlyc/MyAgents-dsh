@@ -5,7 +5,7 @@
     "outDir": "../../dist/packages/host-ports",
     "tsBuildInfoFile": "../../dist/packages/host-ports/.tsbuildinfo"
   },
-  "files": ["src/index.ts", "src/service.ts"],
+  "files": ["src/credential-provider.ts", "src/index.ts", "src/service.ts"],
   "references": [
     { "path": "../protocol" }
   ]

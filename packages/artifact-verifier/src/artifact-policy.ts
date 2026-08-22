@@ -51,7 +51,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/host-ports",
     relativeDirectory: "packages/host-ports",
-    allowedFiles: ["package.json", "src/index.ts", "src/service.ts"],
+    allowedFiles: ["package.json", "src/credential-provider.ts", "src/index.ts", "src/service.ts"],
   },
   {
     packageName: "@myagents-dsh/operation-runtime",
@@ -111,7 +111,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/runtime-product",
     relativeDirectory: "packages/runtime-product",
-    allowedFiles: ["package.json", "src/composition.ts", "src/index.ts", "src/primary-session.ts"],
+    allowedFiles: ["package.json", "src/composition.ts", "src/host-model.ts", "src/index.ts", "src/primary-session.ts"],
   },
   {
     packageName: "@myagents-dsh/task-graph",

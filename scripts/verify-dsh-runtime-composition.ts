@@ -59,6 +59,7 @@ const runtimeCompositionSourcePaths = [
   "packages/artifact-verifier/src/runtime-artifact.ts",
   "packages/artifact-verifier/src/self-check.ts",
   "packages/host-ports/src/index.ts",
+  "packages/host-ports/src/credential-provider.ts",
   "packages/host-ports/src/service.ts",
   "packages/operation-runtime/src/events.ts",
   "packages/operation-runtime/src/fold.ts",
@@ -86,6 +87,7 @@ const runtimeCompositionSourcePaths = [
   "packages/rpc-server/src/event-projector.ts",
   "packages/rpc-server/src/native-rpc-service.ts",
   "packages/runtime-product/src/composition.ts",
+  "packages/runtime-product/src/host-model.ts",
   "packages/runtime-product/src/index.ts",
   "packages/runtime-product/src/primary-session.ts",
   "packages/task-graph/src/index.ts",
@@ -787,7 +789,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w3-a1"
+    || selfCheckProfile.stage !== "batch-1-w3-a2"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -1039,6 +1041,7 @@ const main = (): void => {
       || evidence.ambientWebSearchFallbackRejected !== true
       || evidence.operationCorrelationVerified !== true
       || evidence.hostPortServiceVerified !== true
+      || evidence.hostCredentialModelVerified !== true
       || evidence.hostPortLifecycleAuthorityVerified !== true
       || JSON.stringify(evidence.hostPortMethodOrder) !== JSON.stringify([
         "host/credential/resolve",
@@ -1060,6 +1063,26 @@ const main = (): void => {
         "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
+    }
+    const hostCredentialModelEvidence = exactObject(
+      evidence.hostCredentialModelEvidence,
+      "Host credential model evidence",
+    );
+    if (hostCredentialModelEvidence.adapterAuthorityHidden !== true
+      || JSON.stringify(hostCredentialModelEvidence.credentialPurposes)
+        !== JSON.stringify([
+          "availability",
+          "model_request",
+          "model_request",
+          "model_request",
+        ])
+      || hostCredentialModelEvidence.childModelRequestBound !== true
+      || hostCredentialModelEvidence.publicControllerHidden !== true
+      || hostCredentialModelEvidence.providerRouteId !== "deepseek-official"
+      || hostCredentialModelEvidence.profileRevision !== "artifact-host-model-v1"
+      || hostCredentialModelEvidence.requestAuthorityBound !== true
+      || hostCredentialModelEvidence.secretNonProjectionVerified !== true) {
+      throw new Error("Host credential model evidence differs from the accepted scoped route contract");
     }
     const permissionEvidence = exactObject(
       evidence.canonicalPermissionEvidence,

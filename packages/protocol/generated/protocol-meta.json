@@ -26,7 +26,7 @@
   "capabilityProfileDigest": "80d3f130738d75c57caa6ad6d233b6f2cfc57a7ad3a786985d985445c7177d02",
   "contractSourceSha256": "62110e08d6129d206ce333e43bf4bec195f6ab6080dd0caaeba75ae42107af9c",
   "developmentDshVersion": "0.1.0-rc.6",
-  "dshArtifactManifestSha256": "758be07dec2d1ddb26a7111b9dee971bae70704a1d65c9a71a7740c5a3646238",
+  "dshArtifactManifestSha256": "f9ee825dc5dbb256fd7f8935477babc1d6b5eceeca7a51423995f17754614c10",
   "dshEngineVersion": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
   "fixturesSha256": "8596de4609d1175102648e18493fdc384f0f238897621637d6e02072ff793cff",
   "hostMethods": [

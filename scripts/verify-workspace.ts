@@ -81,7 +81,7 @@ const expectedWorkspaceFiles = new Map([
     "src/index.ts",
     "src/manifest.ts",
   ]],
-  ["packages/host-ports", ["src/index.ts", "src/service.ts"]],
+  ["packages/host-ports", ["src/credential-provider.ts", "src/index.ts", "src/service.ts"]],
   ["packages/operation-runtime", [
     "src/events.ts",
     "src/fold.ts",
@@ -114,7 +114,7 @@ const expectedWorkspaceFiles = new Map([
     "generated/host-client.generated.ts",
   ]],
   ["packages/rpc-server", ["src/event-projector.ts", "src/index.ts", "src/native-rpc-service.ts"]],
-  ["packages/runtime-product", ["src/composition.ts", "src/index.ts", "src/primary-session.ts"]],
+  ["packages/runtime-product", ["src/composition.ts", "src/host-model.ts", "src/index.ts", "src/primary-session.ts"]],
   ["packages/task-graph", ["src/index.ts", "src/runtime.ts"]],
   ["packages/test-host", [
     "src/artifact-launcher.ts",

@@ -46,6 +46,7 @@ import {
   composeDshRootServices,
   DshRootComposition,
   installCanonicalToolPlane,
+  installHostDeepSeekModelPlane,
   type CanonicalToolPlaneConfig,
   type NativeRpcLifecycleAuthority,
   type ProductSessionService,
@@ -670,7 +671,9 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
         request: ProductPermissionInteractionRequest,
         settlement: ProductLocalInteractionSettlement<unknown>,
       ) => {
-        fileToolEvidence.push(`permission:${request.tool}:${request.target}`);
+        if (request.tool !== "Agent" || request.target !== "Verify child model lineage") {
+          fileToolEvidence.push(`permission:${request.tool}:${request.target}`);
+        }
         settlement.resolve(Object.freeze({
           interactionId: request.interactionId,
           expectedPermissionRevision: request.expectedPermissionRevision,
@@ -1028,6 +1031,282 @@ const initializeRequest: InitializeParams = {
   },
   limits: REFERENCE_PROTOCOL_LIMITS,
 };
+
+const hostModelProfile = Object.freeze({
+  revision: "artifact-host-model-v1",
+  providerRouteId: "deepseek-official",
+  api: "openai-completions" as const,
+  provider: "deepseek",
+  modelId: "deepseek-artifact-fixture",
+  baseUrl: "https://api.deepseek.com",
+  credentialRef: "ARTIFACT_HOST_MODEL_KEY",
+  contextWindow: 8_192,
+  maxTokens: 512,
+  reasoning: true,
+  effort: "high" as const,
+});
+let captureHostModelPermissionRevision = (): string => {
+  throw new Error("Host model permission authority is not installed");
+};
+let captureHostModelPlanRevision = (): string => {
+  throw new Error("Host model plan authority is not installed");
+};
+const hostModelComposition = await composeDshRootServices({
+  adapter: new ScriptedFakeLlmAdapter({ provider: "fixture-bootstrap", model: "unused" }),
+  operationBirthAuthority: Object.freeze({
+    capture: (value: MethodParams<"turn/start">) => Object.freeze({
+      configRevision: value.configRevision,
+      modelProfileRevision: hostModelProfile.revision,
+      componentRevision: "artifact-host-model-component-v1",
+      componentDigest: "c".repeat(64),
+      toolCatalogRevision: validatedArtifactToolCatalog.revision,
+      toolCatalogDigest: validatedArtifactToolCatalog.digest,
+      executionEnvironmentRevision: value.executionEnvironmentRevision,
+      executionEnvironmentDigest: value.executionEnvironmentDigest,
+      permissionRevision: captureHostModelPermissionRevision(),
+      interactionScenarioRevision: "artifact-interaction-v1",
+      planRevision: captureHostModelPlanRevision(),
+      originRevision: "artifact-host-model-origin-v1",
+      limits: value.limits,
+    }),
+  }),
+  providers: ["fixture-bootstrap"],
+});
+await installHostDeepSeekModelPlane(hostModelComposition, {
+  resolveUserId: () => "00000000-0000-4000-8000-000000000001",
+});
+await installCanonicalToolPlane(hostModelComposition, canonicalToolPlaneConfig);
+captureHostModelPermissionRevision = () => hostModelComposition.context.productPermission.currentRevision(
+  hostModelComposition.context.productSession.requireAgent(),
+);
+captureHostModelPlanRevision = () => hostModelComposition.context.productPlan.currentRevision(
+  hostModelComposition.context.productSession.requireAgent(),
+);
+await hostModelComposition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
+assert.deepEqual(hostModelComposition.snapshot().providers, ["deepseek-official", "fixture-bootstrap"]);
+assert.equal(hostModelComposition.snapshot().hostModelPlane, "installed");
+const hostModelInput = new PassThrough();
+const hostModelOutput = new PassThrough();
+const hostModelPeer = new JsonRpcPeer({
+  input: hostModelOutput,
+  output: hostModelInput,
+  role: "host",
+  limits: REFERENCE_PROTOCOL_LIMITS,
+});
+const hostModelCredentialCalls: MethodParams<"host/credential/resolve">[] = [];
+const hostModelSecret = "artifact-host-model-secret-canary";
+const hostModelCredentialValueField = ["api", "Key"].join("") as "apiKey";
+hostModelPeer.registerRequestHandler("host/credential/resolve", (params) => {
+  hostModelCredentialCalls.push(structuredClone(params));
+  return params.purpose === "availability"
+    ? {
+        authoritativeCredentialRevision: "artifact-credential-v1",
+        available: true,
+        kind: "availability" as const,
+      }
+    : {
+        authoritativeCredentialRevision: "artifact-credential-v1",
+        kind: "material" as const,
+        material: { [hostModelCredentialValueField]: hostModelSecret },
+      };
+});
+await hostModelComposition.context.plugin(NativeRpcServer, {
+  compositionAuthority: claimNativeRpcLifecycleAuthority(hostModelComposition),
+  input: hostModelInput,
+  output: hostModelOutput,
+  runtimeGeneration: "artifact-host-model-generation",
+  platformTarget: "darwin-arm64",
+});
+const hostModelServer = hostModelComposition.context.nativeRpc;
+const hostModelClient = new GeneratedHostClient(hostModelPeer);
+await hostModelClient.initialize({
+  ...initializeRequest,
+  productSessionId: "artifact-host-model-product-session",
+});
+await waitUntil(() => hostModelServer.phase === "await_initialized", "Host model initialize response");
+await hostModelClient.initialized();
+await waitUntil(() => hostModelServer.phase === "ready", "Host model reverse-port activation");
+await hostModelComposition.context.productSession.bindCreate({
+  clientOperationId: "artifact-host-model-session-create",
+  runtimeSessionId: "artifact-host-model-runtime-session",
+  persistenceRef: "artifact-host-model-persistence",
+  provider: hostModelProfile,
+  configRevision: "artifact-host-model-config-v1",
+  extensionDigest: "c".repeat(64),
+  systemPrompt: "Synthetic credential-free Host model evidence.",
+  permissionMode: "default",
+  interactionScenario: "deterministic-headless",
+});
+const hostModelProjectionInput = new PassThrough();
+const hostModelProjectionOutput = new PassThrough();
+const hostModelProjectionFailures: Error[] = [];
+const hostModelProjectionRuntimePeer = new JsonRpcPeer({
+  input: hostModelProjectionInput,
+  output: hostModelProjectionOutput,
+  role: "runtime",
+  limits: REFERENCE_PROTOCOL_LIMITS,
+  onFatalError: (error) => hostModelProjectionFailures.push(error),
+});
+const hostModelProjectionHostPeer = new JsonRpcPeer({
+  input: hostModelProjectionOutput,
+  output: hostModelProjectionInput,
+  role: "host",
+  limits: REFERENCE_PROTOCOL_LIMITS,
+  onFatalError: (error) => hostModelProjectionFailures.push(error),
+});
+hostModelProjectionHostPeer.registerNotificationHandler("runtime/event", () => undefined);
+const hostModelProjector = new RuntimeEventProjector({
+  context: hostModelComposition.context,
+  peer: hostModelProjectionRuntimePeer,
+  productSession: hostModelComposition.context.productSession,
+  runtimeGeneration: "artifact-host-model-projection",
+  productSessionId: () => "artifact-host-model-product-session",
+  onFailure: (error) => hostModelProjectionFailures.push(error),
+});
+hostModelComposition.context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({
+  reserve: (clientOperationId: string) => hostModelProjector.reserve(clientOperationId),
+  whenIdle: () => hostModelProjector.whenIdle(),
+}));
+const previousFetch = globalThis.fetch;
+const hostModelAuthorization: string[] = [];
+let hostModelFetchSequence = 0;
+globalThis.fetch = (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  hostModelAuthorization.push(new Headers(init?.headers).get("authorization") ?? "");
+  hostModelFetchSequence += 1;
+  const payload = hostModelFetchSequence === 1
+    ? `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"artifact-host-model-child-call","type":"function","function":{"name":"Agent","arguments":${JSON.stringify(JSON.stringify({
+        description: "Verify child model lineage",
+        prompt: "Return one concise child result through the approved Host model route.",
+        run_in_background: false,
+        subagent_type: "general",
+      }))}}}]},"finish_reason":"tool_calls"}]}`
+    : hostModelFetchSequence === 2
+      ? '{"choices":[{"delta":{"content":"child credential route verified"},"finish_reason":"stop"}]}'
+      : '{"choices":[{"delta":{"content":"root credential route verified"},"finish_reason":"stop"}]}';
+  const stream = [
+    `data: ${payload}`,
+    'data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3}}',
+    "data: [DONE]",
+    "",
+  ].join("\n\n");
+  return Promise.resolve(new Response(stream, {
+    headers: { "content-type": "text/event-stream" },
+    status: 200,
+  }));
+};
+try {
+  assert.deepEqual(await hostModelComposition.context.sdkOperations.start({
+    clientOperationId: "artifact-host-model-operation",
+    clientUserMessageId: "artifact-host-model-user-message",
+    input: { parts: [{ kind: "text", text: "verify Host-scoped model credentials" }] },
+    configRevision: "artifact-host-model-config-v1",
+    extensionDigest: "c".repeat(64),
+    executionEnvironmentRevision: initializeRequest.executionEnvironment.revision,
+    executionEnvironmentDigest: initializeRequest.executionEnvironment.digest,
+    limits: { maxTurns: 1, maxDurationMs: 30_000 },
+    origin: { kind: "headless", scenario: "artifact-host-model" },
+  }), {
+    state: "accepted",
+    clientOperationId: "artifact-host-model-operation",
+  });
+  const hostModelAgent = hostModelComposition.context.productSession.requireAgent();
+  await hostModelAgent.whenIdle();
+  await waitUntil(
+    () => hostModelComposition.context.sdkOperations.lookup("artifact-host-model-operation")?.state
+      === "terminal",
+    "Host model operation terminal",
+  );
+  assert.equal(
+    hostModelComposition.context.sdkOperations.lookup("artifact-host-model-operation")?.terminal?.kind,
+    "succeeded",
+  );
+} finally {
+  globalThis.fetch = previousFetch;
+}
+assert.deepEqual(hostModelAuthorization, Array.from({ length: 3 }, () => `Bearer ${hostModelSecret}`));
+assert.equal(hostModelCredentialCalls.length, 4);
+assert.deepEqual(hostModelCredentialCalls.map(({ purpose }) => purpose), [
+  "availability",
+  "model_request",
+  "model_request",
+  "model_request",
+]);
+const hostModelMaterialRequest = hostModelCredentialCalls[1];
+assert.ok(hostModelMaterialRequest?.subject === "provider"
+  && hostModelMaterialRequest.purpose === "model_request");
+assert.equal(hostModelMaterialRequest.authority.clientOperationId, "artifact-host-model-operation");
+assert.equal(hostModelMaterialRequest.authority.turnId?.startsWith("turn-"), true);
+assert.equal(hostModelMaterialRequest.authority.dshTurn, 1);
+assert.equal(hostModelMaterialRequest.authority.expectedConfigRevision, "artifact-host-model-config-v1");
+assert.equal(hostModelMaterialRequest.authority.expectedCredentialRevision, "artifact-credential-v1");
+const hostModelChildMaterialRequest = hostModelCredentialCalls.find((request) =>
+  request.subject === "provider" && request.purpose === "model_request"
+  && request.authority.callId === "artifact-host-model-child-call");
+assert.ok(hostModelChildMaterialRequest?.subject === "provider"
+  && hostModelChildMaterialRequest.purpose === "model_request");
+assert.equal(hostModelChildMaterialRequest.authority.clientOperationId, "artifact-host-model-operation");
+assert.equal(hostModelChildMaterialRequest.authority.rootCallId, "artifact-host-model-child-call");
+assert.equal(hostModelChildMaterialRequest.authority.expectedConfigRevision, "artifact-host-model-config-v1");
+assert.equal(hostModelChildMaterialRequest.authority.expectedCredentialRevision, "artifact-credential-v1");
+const hostModelRequestAuthorityBound = hostModelCredentialCalls
+  .filter((request) => request.subject === "provider" && request.purpose === "model_request")
+  .every((request) => request.authority.clientOperationId === "artifact-host-model-operation"
+    && request.authority.expectedConfigRevision === "artifact-host-model-config-v1"
+    && request.authority.expectedCredentialRevision === "artifact-credential-v1"
+    && request.authority.runtimeSessionId === "artifact-host-model-runtime-session"
+    && request.authority.dshTurn === 1);
+const hostCredentialPrivateMethods = [
+  "createProviderRequestScope",
+  "preflightMcp",
+  "preflightProvider",
+  "reconcileMcp",
+  "resolveMcpConnection",
+  "runWithProviderRequestScope",
+];
+const hostModelAdapterRegistration = (hostModelComposition.context.llm as unknown as {
+  adapters: Map<string, { adapter: unknown }>;
+}).adapters.get(hostModelProfile.providerRouteId);
+const hostModelAdapterAuthorityHidden = hostModelAdapterRegistration !== undefined
+  && hostModelAdapterRegistration.adapter !== null
+  && typeof hostModelAdapterRegistration.adapter === "object"
+  && !Reflect.ownKeys(hostModelAdapterRegistration.adapter).includes("authority")
+  && !Reflect.ownKeys(hostModelAdapterRegistration.adapter).includes("credentialController");
+const hostCredentialPublicControllerHidden = [
+  hostModelComposition.context.credentials,
+  hostModelComposition.context.isolate("host-credential-surface-probe").credentials,
+].every((service) => hostCredentialPrivateMethods.every((method) => !(method in service)))
+  && hostModelAdapterAuthorityHidden;
+const hostModelSecretProjectionRejected = !JSON.stringify({
+  composition: hostModelComposition.snapshot(),
+  hostPorts: hostModelComposition.context.hostPorts.snapshot(),
+  projectionFailures: hostModelProjectionFailures.map((error) => ({
+    message: error.message,
+    name: error.name,
+  })),
+  sessions: hostModelComposition.context.sessions.list().map((session) => ({
+    events: session.events,
+    header: session.header,
+  })),
+}).includes(hostModelSecret);
+const hostCredentialModelVerified = hostModelFetchSequence === 3
+  && hostCredentialPublicControllerHidden
+  && hostModelRequestAuthorityBound
+  && hostModelSecretProjectionRejected
+  && hostModelChildMaterialRequest.authority.callId === "artifact-host-model-child-call";
+assert.equal(hostCredentialPublicControllerHidden, true);
+assert.equal(hostModelSecretProjectionRejected, true);
+assert.equal(hostModelRequestAuthorityBound, true);
+await hostModelProjector.close();
+assert.deepEqual(hostModelProjectionFailures, []);
+hostModelProjectionRuntimePeer.close();
+hostModelProjectionHostPeer.close();
+hostModelProjectionInput.destroy();
+hostModelProjectionOutput.destroy();
+await hostModelClient.runtimeShutdown({ reason: "artifact-host-model-complete" });
+await hostModelServer.whenStopped();
+hostModelPeer.close();
+hostModelInput.destroy();
+hostModelOutput.destroy();
 
 const directRootComposition = await composeDshRootServices({
   adapter: new ScriptedFakeLlmAdapter(),
@@ -2384,8 +2663,20 @@ process.stdout.write(`${JSON.stringify({
   },
   operationCorrelationVerified: true,
   hostPortServiceVerified: reverseMethodOrder.length === 7,
+  hostCredentialModelVerified,
   hostPortLifecycleAuthorityVerified,
   hostPortMethodOrder: reverseMethodOrder,
+  hostCredentialModelEvidence: {
+    adapterAuthorityHidden: hostModelAdapterAuthorityHidden,
+    credentialPurposes: hostModelCredentialCalls.map(({ purpose }) => purpose),
+    childModelRequestBound: hostModelChildMaterialRequest.authority.callId
+      === "artifact-host-model-child-call",
+    publicControllerHidden: hostCredentialPublicControllerHidden,
+    providerRouteId: hostModelProfile.providerRouteId,
+    profileRevision: hostModelProfile.revision,
+    requestAuthorityBound: hostModelRequestAuthorityBound,
+    secretNonProjectionVerified: hostModelSecretProjectionRejected,
+  },
   operationInterruptVerified: true,
   canonicalFileToolsVerified: true,
   canonicalProcessSearchToolsVerified: true,

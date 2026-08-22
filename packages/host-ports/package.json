@@ -12,6 +12,7 @@
     "@myagents-dsh/protocol": "0.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.1"
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-credentials": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6"
   }
 }

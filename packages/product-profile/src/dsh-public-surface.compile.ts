@@ -16,8 +16,20 @@ import { JobId, JobRegistry } from "@deepseek-ai/dsh-jobs";
 import type { JobSnapshot, JobStart } from "@deepseek-ai/dsh-jobs";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import type { Config as LocalJobRegistryConfig } from "@deepseek-ai/dsh-jobs-local";
-import { LlmAdapter, LlmRuntime } from "@deepseek-ai/dsh-llm";
-import type { GenerateOptions, StreamChunk } from "@deepseek-ai/dsh-llm";
+import { LlmAdapter, LlmError, LlmRuntime, assertUsableApiKey, resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
+import type {
+  GenerateOptions,
+  LlmModelInfo,
+  LlmProviderInfo,
+  LlmResolvedModelInfo,
+  StreamChunk,
+} from "@deepseek-ai/dsh-llm";
+import {
+  DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+  DeepSeekAdapter,
+  PUBLIC_BASE_URL,
+} from "@deepseek-ai/dsh-llm-deepseek";
+import type { DeepSeekConnectionOptions, RequestDefaults } from "@deepseek-ai/dsh-llm-deepseek";
 import { apply as applyMcpClient } from "@deepseek-ai/dsh-mcp-client";
 import type { Config as McpConfig, McpResult } from "@deepseek-ai/dsh-mcp-client";
 import { PlanModeController, foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
@@ -85,7 +97,11 @@ export const dshPublicSurfaceValues = Object.freeze({
   JobRegistry,
   LocalJobRegistry,
   LlmAdapter,
+  LlmError,
   LlmRuntime,
+  DeepSeekAdapter,
+  DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+  PUBLIC_BASE_URL,
   PersistenceCoordinator,
   PlanModeController,
   Service,
@@ -108,6 +124,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   applyMcpClient,
   applySubagentSpawnInProcess,
   applyToolCallTimeoutPolicy,
+  assertUsableApiKey,
   buildGlobCommand,
   buildGrepCommand,
   credentialRef,
@@ -126,6 +143,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   isModelInvocable,
   isSkillName,
   renderSkillContent,
+  resolveRetryPolicy,
   startInProcessRun,
 });
 
@@ -141,7 +159,8 @@ export interface DshPublicSurfaceTypes {
   fsSearchHelpers: [GlobInput, GrepInput, RipgrepRun];
   jobs: [JobSnapshot, JobStart];
   jobsLocal: [LocalJobRegistryConfig];
-  llm: [GenerateOptions, StreamChunk];
+  llm: [GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk];
+  llmDeepSeek: [DeepSeekConnectionOptions, RequestDefaults];
   mcp: [McpConfig, McpResult];
   persistence: [PersistenceBackend, SessionInspection, SessionPersistenceSnapshot];
   planMode: [PlanProjection];

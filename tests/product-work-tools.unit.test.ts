@@ -786,6 +786,52 @@ const seedSettledForegroundWork = (
 };
 
 describe("canonical Agent Work projection", () => {
+  it("derives child model requests from exact ProductWork and parent-operation lineage", async () => {
+    const state = await harness();
+    const args = {
+      description: "Review child model lineage",
+      prompt: "Keep one exact child turn open while its model authority is checked.",
+    };
+    seedAgentOperationCall(state.agent.session, {
+      args,
+      callId: "child-model-agent-call",
+      clientOperationId: "operation-v1",
+      productTurnId: "product-turn-v1",
+      turn: 1,
+    });
+    const started = await state.execute("Agent", args, "child-model-agent-call");
+    const childId = (started as { value: { agentId: string } }).value.agentId;
+    const child = state.subagents.childAgent(childId);
+    if (child === undefined) throw new Error("fixture child was not published");
+    child.session.append("turn/start", { turn: 1 });
+    new Inbox(child.session, {
+      claimed: () => undefined,
+      discarded: () => undefined,
+      inserted: () => undefined,
+    }).claim("next-turn", 1);
+
+    const authority = state.context.productWork.createChildModelRequestAuthority(
+      child,
+      "config-v1",
+      "model-profile-v1",
+    );
+    expect(authority).toMatchObject({
+      callId: "child-model-agent-call",
+      clientOperationId: "operation-v1",
+      dshTurn: 1,
+      rootCallId: "child-model-agent-call",
+      turnId: "product-turn-v1",
+    });
+    expect(() => authority.assertCurrent()).not.toThrow();
+    expect(() => state.context.productWork.createChildModelRequestAuthority(
+      child,
+      "stale-config",
+      "model-profile-v1",
+    )).toThrow("durable parent operation");
+    child.session.append("turn/end", { turn: 1, reason: { kind: "interrupted" } });
+    expect(() => authority.assertCurrent()).toThrow("active DSH execution boundary");
+  });
+
   it("uses one durable Work identity and exact quiescent TaskStop retirement", async () => {
     const state = await harness();
     const started = await state.execute("Agent", {

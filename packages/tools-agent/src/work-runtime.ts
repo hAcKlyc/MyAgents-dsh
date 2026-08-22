@@ -24,6 +24,7 @@ import { Value } from "typebox/value";
 import {
   foldProductOperations,
   normalizeDshTokenUsage,
+  type ModelRequestOperationAuthority,
   type OperationBirthSnapshot,
 } from "@myagents-dsh/operation-runtime";
 import {
@@ -286,6 +287,15 @@ type WorkCreationAuthority = Readonly<{
   clientOperationId: string;
   dshTurn: number;
   productTurnId: string;
+}>;
+
+type ChildCreationPermit = Readonly<{
+  agentProvider: string;
+  authority: WorkCreationAuthority;
+  model: string;
+  parent: Agent;
+  ready: NativeDeferred<WorkEntry>;
+  taskId: string;
 }>;
 
 type RecoverableAgentCall = Readonly<{
@@ -834,19 +844,15 @@ export class ProductWorkService extends Service {
   private readonly latestEnds = new Map<string, ActivationEndObservation>();
   private readonly messages = new Map<string, WorkMessageEntry>();
   private readonly usageByAgent = new Map<string, UsageAccumulator>();
-  private readonly continuablePermits = new Map<string, Readonly<{
-    agentProvider: string;
-    model: string;
-    parent: Agent;
-    ready: NativeDeferred<WorkEntry>;
-    taskId: string;
-  }>>();
+  private readonly continuablePermits = new Map<string, ChildCreationPermit>();
+  private readonly pendingChildAuthorities = new Map<string, ChildCreationPermit>();
   private accepting = true;
   private epochCount = 0;
   private failure: ProductToolError | undefined;
   private initialization: Promise<void> | undefined;
   private messageBytes = 0;
   private messageSequence = 0;
+  private nextModelRequest = 1;
   private primary: Agent | undefined;
   private serial: Promise<void> = Promise.resolve();
   private workReservations = 0;
@@ -927,6 +933,7 @@ export class ProductWorkService extends Service {
             throw new Error("continuable child lacks one ProductWork creation permit");
           }
           this.continuablePermits.delete(descriptor.label);
+          this.pendingChildAuthorities.set(child.id, permit);
           ready = permit.ready.promise;
         } else if (entry.taskId !== descriptor.label || entry.parent.id !== child.session.header.parentSession
           || entry.settlement !== undefined || entry.stopRequested) {
@@ -951,12 +958,18 @@ export class ProductWorkService extends Service {
           const disposeStop = childCtx.tools.register(this.taskStopDefinition(child, ready));
           const disposeSend = childCtx.tools.register(this.sendMessageDefinition(child, ready));
           return () => {
+            if (permit !== undefined && this.pendingChildAuthorities.get(child.id) === permit) {
+              this.pendingChildAuthorities.delete(child.id);
+            }
             cancelPublication();
             disposeSend();
             disposeStop();
             stopUsage();
           };
         } catch (error) {
+          if (permit !== undefined && this.pendingChildAuthorities.get(child.id) === permit) {
+            this.pendingChildAuthorities.delete(child.id);
+          }
           cancelPublication();
           throw error;
         }
@@ -1001,6 +1014,45 @@ export class ProductWorkService extends Service {
     })));
   }
 
+  createChildModelRequestAuthority(
+    agent: Agent,
+    configRevision: string,
+    modelProfileRevision: string,
+  ): ModelRequestOperationAuthority {
+    const initial = this.childModelLineage(agent, configRevision, modelProfileRevision);
+    const sequence = this.nextModelRequest++;
+    const modelRequestId = `child-model-${sha256(
+      "myagents-product-work-model-request-v1",
+      initial.taskId,
+      initial.agentId,
+      String(initial.dshTurn),
+      String(sequence),
+    ).slice(0, 48)}`;
+    const assertCurrent = (): void => {
+      const current = this.childModelLineage(agent, configRevision, modelProfileRevision);
+      if (current.agentId !== initial.agentId
+        || current.taskId !== initial.taskId
+        || current.clientOperationId !== initial.clientOperationId
+        || current.productTurnId !== initial.productTurnId
+        || current.dshTurn !== initial.dshTurn
+        || current.callId !== initial.callId) {
+        throw new ProductToolError(
+          "child_failed",
+          "child model request lineage is no longer current",
+        );
+      }
+    };
+    return Object.freeze({
+      assertCurrent,
+      callId: initial.callId,
+      clientOperationId: initial.clientOperationId,
+      dshTurn: initial.dshTurn,
+      modelRequestId,
+      rootCallId: initial.callId,
+      turnId: initial.productTurnId,
+    });
+  }
+
   initialize(primary?: Agent): Promise<void> {
     const root = primary ?? this.config.requireAgent();
     if (this.primary !== undefined && this.primary !== root) {
@@ -1013,6 +1065,101 @@ export class ProductWorkService extends Service {
     });
     this.initialization = initialization;
     return initialization;
+  }
+
+  private childModelLineage(
+    agent: Agent,
+    configRevision: string,
+    modelProfileRevision: string,
+  ): Readonly<{
+    agentId: string;
+    callId: string;
+    clientOperationId: string;
+    dshTurn: number;
+    productTurnId: string;
+    taskId: string;
+  }> {
+    this.assertHealthy();
+    const primary = this.safePrimary();
+    const pending = this.pendingChildAuthorities.get(agent.id);
+    const entry = this.byAgent.get(agent.id);
+    if (primary === undefined || this.ctx.agents.get(agent.id) !== agent
+      || agent.session.header.origin !== "subagent"
+      || agent.session.header.parentSession !== primary.id
+      || (entry === undefined && pending === undefined)
+      || entry?.settlement !== undefined || entry?.stopRequested === true) {
+      throw new ProductToolError(
+        "child_failed",
+        "model request lacks one exact live ProductWork child owner",
+      );
+    }
+    const authority: WorkCreationAuthority = pending?.authority ?? Object.freeze({
+      agent: entry?.parent ?? primary,
+      birth: Object.freeze({
+        componentDigest: entry?.created.birth.componentDigest ?? "",
+        componentRevision: entry?.created.birth.componentRevision ?? "",
+      }),
+      callId: entry?.created.authority.callId ?? "",
+      catalog: Object.freeze({
+        digest: entry?.created.authority.toolCatalogDigest ?? "",
+        revision: entry?.created.authority.toolCatalogRevision ?? "",
+      }),
+      clientOperationId: entry?.created.authority.clientOperationId ?? "",
+      dshTurn: entry?.created.authority.dshTurn ?? 0,
+      productTurnId: entry?.created.authority.productTurnId ?? "",
+    });
+    const taskId = pending?.taskId ?? entry?.taskId;
+    const expectedModel = pending?.model ?? entry?.created.model;
+    const expectedProvider = pending?.agentProvider ?? entry?.created.birth.provider;
+    if (taskId === undefined || authority.agent !== primary
+      || agent.options.model !== expectedModel || agent.options.provider !== expectedProvider) {
+      throw new ProductToolError(
+        "child_failed",
+        "child model route differs from its ProductWork birth authority",
+      );
+    }
+    const operationMatches = foldProductOperations(primary.session.events, primary.id).operations
+      .filter(({ clientOperationId }) => clientOperationId === authority.clientOperationId);
+    const operation = operationMatches[0];
+    if (operationMatches.length !== 1 || operation?.productTurnId !== authority.productTurnId
+      || operation.birth.componentDigest !== authority.birth.componentDigest
+      || operation.birth.componentRevision !== authority.birth.componentRevision
+      || operation.birth.toolCatalogDigest !== authority.catalog.digest
+      || operation.birth.toolCatalogRevision !== authority.catalog.revision
+      || operation.birth.configRevision !== configRevision
+      || operation.birth.modelProfileRevision !== modelProfileRevision
+      || !operation.dshTurns.includes(authority.dshTurn)) {
+      throw new ProductToolError(
+        "child_failed",
+        "child model request differs from its durable parent operation",
+      );
+    }
+    const epoch = this.activeEpochs.get(agent.id);
+    const dshTurn = this.openDshTurn(agent);
+    const creationRequestInFlight = pending !== undefined && entry === undefined;
+    if ((!creationRequestInFlight && epoch?.session !== agent.session) || dshTurn === undefined) {
+      throw new ProductToolError(
+        "child_failed",
+        "child model request lacks one active DSH execution boundary",
+      );
+    }
+    return Object.freeze({
+      agentId: agent.id,
+      callId: authority.callId,
+      clientOperationId: authority.clientOperationId,
+      dshTurn,
+      productTurnId: authority.productTurnId,
+      taskId,
+    });
+  }
+
+  private openDshTurn(agent: Agent): number | undefined {
+    let open: number | undefined;
+    for (const event of agent.session.events) {
+      if (event.type === "turn/start") open = event.data.turn;
+      else if (event.type === "turn/end" && event.data.turn === open) open = undefined;
+    }
+    return open;
   }
 
   private async reconcilePersistedChildren(root: Agent): Promise<void> {
@@ -1282,17 +1429,12 @@ export class ProductWorkService extends Service {
     );
     let inspection = candidate.inspection;
     let initial = findInitialInboxMessage(inspection.events, expectedContentSha256);
-    let permit: Readonly<{
-      agentProvider: string;
-      model: string;
-      parent: Agent;
-      ready: NativeDeferred<WorkEntry>;
-      taskId: string;
-    }> | undefined;
+    let permit: ChildCreationPermit | undefined;
     try {
       if (initial === undefined) {
         permit = Object.freeze({
           agentProvider,
+          authority: call.authority,
           model,
           parent: root,
           ready: this.entryDeferred(),
@@ -2046,6 +2188,7 @@ export class ProductWorkService extends Service {
       }
       const permit = Object.freeze({
         agentProvider: parentProvider,
+        authority,
         model: parentModel,
         parent: product.agent,
         ready: this.entryDeferred(),
@@ -2101,6 +2244,9 @@ export class ProductWorkService extends Service {
       this.publishEntry(entry);
       await this.appendCreated(entry);
       durableCreated = true;
+      if (this.pendingChildAuthorities.get(entry.agentId) === permit) {
+        this.pendingChildAuthorities.delete(entry.agentId);
+      }
       entry.published.resolve();
       permit.ready.resolve(entry);
       const ended = this.latestEnds.get(entry.agentId);

@@ -9,6 +9,7 @@
       "@myagents-dsh/runtime-product:adapterRegistration",
       "@deepseek-ai/dsh-agent-loop:AgentLoop",
       "@myagents-dsh/host-ports:HostPortService",
+      "@myagents-dsh/host-ports:HostCredentialProvider",
       "@myagents-dsh/runtime-product:ProductSessionService",
       "@myagents-dsh/operation-runtime:SdkOperationService",
       "@myagents-dsh/rpc-server:NativeRpcServer"
@@ -35,7 +36,7 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "758be07dec2d1ddb26a7111b9dee971bae70704a1d65c9a71a7740c5a3646238",
+    "artifactManifestSha256": "f9ee825dc5dbb256fd7f8935477babc1d6b5eceeca7a51423995f17754614c10",
     "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",
@@ -80,7 +81,7 @@
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "workstream-evidence-only",
-  "stage": "batch-1-w3-a1",
+  "stage": "batch-1-w3-a2",
   "tools": {
     "contractProfile": "canonical-agent-experience-v1",
     "contractSha256": "64cb973113a855f35f883211aab170c836ca6d6d9cc079d33ebd1c88bf51335c"

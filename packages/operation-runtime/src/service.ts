@@ -56,6 +56,7 @@ export interface SdkOperationServiceConfig {
   readonly retirePrimary: (cause?: unknown) => Promise<void>;
   readonly settlementDeadlineAuthority: SettlementDeadlineAuthority;
   readonly clock?: () => number;
+  readonly modelProfileBirthGuard?: (revision: string) => void;
 }
 
 export interface OperationAdmissionControl {
@@ -66,6 +67,16 @@ export interface OperationAdmissionControl {
 export interface OperationTerminalReservationAuthority {
   readonly reserve: (clientOperationId: string) => void;
   readonly whenIdle: () => Promise<void>;
+}
+
+export interface ModelRequestOperationAuthority {
+  readonly assertCurrent: () => void;
+  readonly callId?: string;
+  readonly clientOperationId: string;
+  readonly dshTurn: number;
+  readonly modelRequestId: string;
+  readonly rootCallId: string;
+  readonly turnId: string;
 }
 
 export interface SdkOperationSnapshot {
@@ -145,7 +156,7 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
       "retirePrimary",
       "settlementDeadlineAuthority",
     ],
-    ["clock"],
+    ["clock", "modelProfileBirthGuard"],
     "SdkOperationService config",
   );
   const authority = exactOwnDataObject(
@@ -165,7 +176,10 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
     || typeof config.registerRetirementGuard !== "function"
     || typeof config.retirePrimary !== "function"
     || typeof deadlineAuthority.wait !== "function"
-    || (Object.hasOwn(config, "clock") && typeof config.clock !== "function")) {
+    || (Object.hasOwn(config, "clock") && typeof config.clock !== "function")
+    || (Object.hasOwn(config, "modelProfileBirthGuard")
+      && (typeof config.modelProfileBirthGuard !== "function"
+        || utilTypes.isProxy(config.modelProfileBirthGuard)))) {
     throw new TypeError("SdkOperationService capabilities must be functions");
   }
   const captureOperationBirth = authority.capture as OperationBirthAuthority["capture"];
@@ -194,6 +208,9 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
         Reflect.apply(settlementWait, settlementDeadlineReceiver, [operation, description]),
     }),
     clock: (config.clock ?? Date.now) as () => number,
+    modelProfileBirthGuard: Object.hasOwn(config, "modelProfileBirthGuard")
+      ? config.modelProfileBirthGuard as (revision: string) => void
+      : () => undefined,
   });
 };
 
@@ -267,6 +284,7 @@ export class SdkOperationService extends Service {
   private correlationDrainValue: Promise<void> = Promise.resolve();
   private failureValue: ProtocolError | undefined;
   private primaryAgentValue: Agent | undefined;
+  private nextModelRequestValue = 1;
   private readonly pendingRequestContextSeqs = new Set<number>();
   private serialValue: Promise<void> = Promise.resolve();
   private retirementEscalationValue: Promise<void> | undefined;
@@ -506,6 +524,49 @@ export class SdkOperationService extends Service {
     return Object.freeze({ dshTurn, operation: owners[0] });
   }
 
+  createModelRequestAuthority(
+    agent: Agent,
+    configRevision: string,
+    modelProfileRevision: string,
+  ): ModelRequestOperationAuthority {
+    const initial = this.resolveActiveToolOperation(agent);
+    if (initial.operation.birth.configRevision !== configRevision
+      || initial.operation.birth.modelProfileRevision !== modelProfileRevision) {
+      throw new ProtocolError(
+        "provider_profile_stale",
+        "model request differs from the operation-frozen Provider profile",
+      );
+    }
+    const sequence = this.nextModelRequestValue++;
+    const modelRequestId = `model-${createHash("sha256").update(JSON.stringify([
+      initial.operation.clientOperationId,
+      initial.operation.productTurnId,
+      initial.dshTurn,
+      sequence,
+    ])).digest("hex").slice(0, 48)}`;
+    const assertCurrent = (): void => {
+      const current = this.resolveActiveToolOperation(agent);
+      if (current.dshTurn !== initial.dshTurn
+        || current.operation.clientOperationId !== initial.operation.clientOperationId
+        || current.operation.productTurnId !== initial.operation.productTurnId
+        || current.operation.birth.configRevision !== configRevision
+        || current.operation.birth.modelProfileRevision !== modelProfileRevision) {
+        throw new ProtocolError(
+          "provider_request_stale",
+          "model request operation authority is no longer current",
+        );
+      }
+    };
+    return Object.freeze({
+      assertCurrent,
+      clientOperationId: initial.operation.clientOperationId,
+      dshTurn: initial.dshTurn,
+      modelRequestId,
+      rootCallId: modelRequestId,
+      turnId: initial.operation.productTurnId,
+    });
+  }
+
   start(
     value: unknown,
     control?: OperationAdmissionControl,
@@ -574,6 +635,7 @@ export class SdkOperationService extends Service {
       throw new ProtocolError("primary_session_replaced", "primary Session changed during operation admission");
     }
     const birth = validateOperationBirthSnapshot(captured);
+    this.configValue.modelProfileBirthGuard(birth.modelProfileRevision);
     validateBirthAgainstParams(birth, params);
     const fingerprint = operationFingerprint(params, birth);
     const productTurnId = deterministicId(

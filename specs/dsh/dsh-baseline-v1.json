@@ -143,11 +143,35 @@
       ],
       "values": [
         "LlmAdapter",
-        "LlmRuntime"
+        "LlmError",
+        "LlmRuntime",
+        "assertUsableApiKey",
+        "resolveRetryPolicy"
       ],
       "types": [
         "GenerateOptions",
+        "LlmModelInfo",
+        "LlmProviderInfo",
+        "LlmResolvedModelInfo",
         "StreamChunk"
+      ]
+    },
+    {
+      "id": "llm-deepseek",
+      "package": "@deepseek-ai/dsh-llm-deepseek",
+      "importPath": "@deepseek-ai/dsh-llm-deepseek",
+      "classification": "provider",
+      "batchUse": [
+        "B1-W3"
+      ],
+      "values": [
+        "DEFAULT_STREAM_IDLE_TIMEOUT_MS",
+        "DeepSeekAdapter",
+        "PUBLIC_BASE_URL"
+      ],
+      "types": [
+        "DeepSeekConnectionOptions",
+        "RequestDefaults"
       ]
     },
     {

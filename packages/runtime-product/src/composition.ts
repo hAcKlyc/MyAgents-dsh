@@ -24,7 +24,9 @@ import {
   type OperationBirthAuthority,
 } from "@myagents-dsh/operation-runtime";
 import {
+  HostCredentialProvider,
   HostPortService,
+  type HostCredentialProviderController,
   type HostPortServiceController,
   type HostPortTransportLifecycle,
 } from "@myagents-dsh/host-ports";
@@ -75,6 +77,13 @@ import {
   type CanonicalWebToolsConfig,
 } from "@myagents-dsh/tools-web";
 import { ProductSessionService, type PrimarySessionState } from "./primary-session.js";
+import {
+  HOST_DEEPSEEK_PROVIDER_ROUTE,
+  HostDeepSeekLlmAdapter,
+  HostDeepSeekModelAuthority,
+  type HostDeepSeekModelPlaneConfig,
+} from "./host-model.js";
+import type { PrimarySessionBackendRequest } from "./primary-session.js";
 
 export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "session-store",
@@ -102,6 +111,7 @@ export interface DshRootCompositionSnapshot {
   readonly artifactManifestSha256: string;
   readonly artifactVersion: string;
   readonly liveRootAgents: number;
+  readonly hostModelPlane: "absent" | "installed";
   readonly providers: readonly string[];
   readonly primarySessionState: PrimarySessionState;
   readonly runtimeSessionId?: string;
@@ -263,10 +273,14 @@ type CompositionAuthorityState = {
   readonly context: Context;
   readonly dispose: () => Promise<void>;
   readonly hostPorts: HostPortServiceController;
+  hostCredentials: HostCredentialProviderController | undefined;
+  readonly installHostModelGuards: (authority: HostDeepSeekModelAuthority) => void;
   readonly snapshot: () => DshRootCompositionSnapshot;
   claimed: boolean;
   canonicalToolPlane: "absent" | "installing" | "installed" | "failed";
   canonicalToolPlaneTarget: PlatformTarget | undefined;
+  hostModelPlane: "absent" | "installing" | "installed" | "failed";
+  hostModelProviderRoute: string | undefined;
 };
 
 type NativeRpcLifecycleAuthorityState = {
@@ -299,7 +313,8 @@ export const claimNativeRpcLifecycleAuthority = (
   const context = composition.context;
   const state = compositionAuthorities.get(context);
   if (context !== context.root || state?.composition !== composition || state.claimed
-    || state.canonicalToolPlane === "installing" || state.canonicalToolPlane === "failed") {
+    || state.canonicalToolPlane === "installing" || state.canonicalToolPlane === "failed"
+    || state.hostModelPlane === "installing" || state.hostModelPlane === "failed") {
     throw new Error("native RPC requires one unconsumed composeDshRootServices Context authority");
   }
   state.snapshot();
@@ -360,7 +375,11 @@ export class DshRootComposition {
     const registeredProviders = this.context.llm.listProviders()
       .map(({ id }) => id)
       .sort(compareCodePoints);
-    const expectedProviders = [...this.providers].sort(compareCodePoints);
+    const hostModelProviderRoute = compositionAuthorities.get(this.context)?.hostModelProviderRoute;
+    const expectedProviders = [
+      ...this.providers,
+      ...(hostModelProviderRoute === undefined ? [] : [hostModelProviderRoute]),
+    ].sort(compareCodePoints);
     if (JSON.stringify(registeredProviders) !== JSON.stringify(expectedProviders)) {
       throw new Error("DSH root composition provider registry differs from its authority");
     }
@@ -368,6 +387,7 @@ export class DshRootComposition {
     return Object.freeze({
       artifactManifestSha256: ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256,
       artifactVersion: ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion,
+      hostModelPlane: hostModelProviderRoute === undefined ? "absent" : "installed",
       liveRootAgents: primarySession.liveRootAgents,
       primarySessionState: primarySession.state,
       providers: Object.freeze(registeredProviders),
@@ -585,6 +605,56 @@ export const installCanonicalToolPlane = async (
   }
 };
 
+export const installHostDeepSeekModelPlane = async (
+  composition: DshRootComposition,
+  config: HostDeepSeekModelPlaneConfig,
+): Promise<void> => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.hostModelPlane !== "absent"
+    || composition.providers.includes(HOST_DEEPSEEK_PROVIDER_ROUTE)) {
+    throw new Error("Host model plane requires the exact unclaimed root composition authority");
+  }
+  composition.snapshot();
+  authority.hostModelPlane = "installing";
+  try {
+    let credentialController: HostCredentialProviderController | undefined;
+    await root.plugin(HostCredentialProvider, {
+      authorityFactory: Object.freeze({
+        createRequestAuthority: (
+          input: Parameters<HostPortServiceController["createRequestAuthority"]>[0],
+        ) => authority.hostPorts.createRequestAuthority(input),
+      }),
+      registerController: (controller) => {
+        if (credentialController !== undefined) {
+          throw new Error("Host credential controller may register exactly once");
+        }
+        credentialController = controller;
+      },
+    });
+    if (!(root.credentials instanceof HostCredentialProvider)) {
+      throw new Error("Host credential Provider did not install through the public DSH service seam");
+    }
+    if (credentialController === undefined) {
+      throw new Error("Host credential Provider did not register its private composition controller");
+    }
+    const modelAuthority = new HostDeepSeekModelAuthority(root, credentialController, config);
+    authority.installHostModelGuards(modelAuthority);
+    await root.plugin(adapterPlugin(
+      [HOST_DEEPSEEK_PROVIDER_ROUTE],
+      new HostDeepSeekLlmAdapter(modelAuthority, root.credentials, credentialController),
+    ));
+    authority.hostCredentials = credentialController;
+    authority.hostModelProviderRoute = HOST_DEEPSEEK_PROVIDER_ROUTE;
+    authority.hostModelPlane = "installed";
+    composition.snapshot();
+  } catch (error) {
+    authority.hostModelPlane = "failed";
+    throw error;
+  }
+};
+
 Object.freeze(DshRootComposition.prototype);
 Object.freeze(DshRootComposition);
 
@@ -596,6 +666,8 @@ export const composeDshRootServices = async (
   const { adapter, agentLoop, operationBirthAuthority, providers, systemPrompt, tools } = normalized;
   const root = new Context();
   const childPublicationAuthority = Object.freeze({});
+  let providerAdmissionGuard: ((request: PrimarySessionBackendRequest) => Promise<void>) | undefined;
+  let modelProfileBirthGuard: ((revision: string) => void) | undefined;
   let hostPortController: HostPortServiceController | undefined;
   try {
     await root.plugin(SessionStore);
@@ -616,7 +688,10 @@ export const composeDshRootServices = async (
         hostPortController = controller;
       },
     });
-    await root.plugin(ProductSessionService, { childPublicationAuthority });
+    await root.plugin(ProductSessionService, {
+      childPublicationAuthority,
+      providerAdmissionGuard: (request) => providerAdmissionGuard?.(request) ?? Promise.resolve(),
+    });
     await root.plugin(SdkOperationService, {
       birthAuthority: operationBirthAuthority,
       drainOwnedWork: async (agent) => {
@@ -627,6 +702,7 @@ export const composeDshRootServices = async (
       registerRetirementGuard: (guard) => root.productSession.registerRetirementGuard(guard),
       requireAgent: () => root.productSession.requireAgent(),
       retirePrimary: (cause) => root.productSession.retire(cause),
+      modelProfileBirthGuard: (revision) => modelProfileBirthGuard?.(revision),
       settlementDeadlineAuthority: root.productSession.settlementDeadlineAuthority(),
     });
     const composition = new DshRootComposition(root, providers);
@@ -641,6 +717,16 @@ export const composeDshRootServices = async (
       context: root,
       dispose: composition.dispose.bind(composition),
       hostPorts: hostPortController,
+      hostCredentials: undefined,
+      hostModelPlane: "absent",
+      hostModelProviderRoute: undefined,
+      installHostModelGuards: (authority) => {
+        if (providerAdmissionGuard !== undefined || modelProfileBirthGuard !== undefined) {
+          throw new Error("Host model plane guards may install exactly once");
+        }
+        providerAdmissionGuard = (request) => authority.preflight(request);
+        modelProfileBirthGuard = (revision) => authority.assertBirth(revision);
+      },
       canonicalToolPlane: "absent",
       canonicalToolPlaneTarget: undefined,
       snapshot: composition.snapshot.bind(composition),
