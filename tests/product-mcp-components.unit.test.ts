@@ -96,7 +96,8 @@ describe("generation-owned MCP component compiler", () => {
     const factory = createSdkMcpConnectionFactory(Object.freeze({
       createTransport: () => Promise.resolve(transport),
     }));
-    const signal = new AbortController().signal;
+    const requestController = new AbortController();
+    const signal = requestController.signal;
     const connection = await factory.connect({
       descriptor: { transport: "http", url: "https://mcp.example.test/rpc" },
       material: Object.freeze({}),
@@ -107,6 +108,8 @@ describe("generation-owned MCP component compiler", () => {
     await expect(connection.callTool("echo", Object.freeze({}), signal)).resolves.toMatchObject({
       content: [{ text: "sdk result", type: "text" }],
     });
+    requestController.abort(new Error("settled request owner retired"));
+    await new Promise<void>((resolve) => { queueMicrotask(resolve); });
     await connection.close();
     expect(methods).toEqual(["initialize", "notifications/initialized", "tools/list", "tools/call"]);
     expect(closeHits).toBe(1);

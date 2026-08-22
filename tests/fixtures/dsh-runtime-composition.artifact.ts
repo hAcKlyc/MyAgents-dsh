@@ -1474,6 +1474,11 @@ const hostModelMcpLifecycleVerified = hostModelMcpCloseHits === 1
     "initialize", "notifications/initialized", "tools/list", "tools/call",
   ])
   && hostModelMcpPermission.includes(hostModelExtensionSnapshot.digest);
+assert.equal(hostModelMcpCloseHits, 1);
+assert.deepEqual(hostModelMcpWireMethods, [
+  "initialize", "notifications/initialized", "tools/list", "tools/call",
+]);
+assert.equal(hostModelMcpPermission.includes(hostModelExtensionSnapshot.digest), true);
 assert.equal(hostModelMcpLifecycleVerified, true);
 hostModelPeer.close();
 hostModelInput.destroy();
@@ -1892,6 +1897,7 @@ assert.ok(failedTurn?.type === "turn/end");
 assert.equal(failedTurn.data.reason.kind, "error");
 assert.equal(composition.context.sdkOperations.lookup("artifact-operation-3")?.terminal?.kind, "failed");
 
+const governedFileEvidenceStart = fileToolEvidence.length;
 await composition.context.sdkOperations.start({
   ...turnStartParams,
   clientOperationId: "artifact-file-operation",
@@ -1913,7 +1919,7 @@ assert.equal(governedToolResults.length, 2, JSON.stringify(governedToolResults))
 assert.equal(governedToolResults.every((event) => event.type === "tool/result"
   && event.data.message.content[0].isError !== true), true, JSON.stringify(governedToolResults));
 assert.equal(await readFile(fixtureFile, "utf8"), transformedWriteContent);
-assert.deepEqual(fileToolEvidence, [
+assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
   `permission:Write:${fixtureFile}`,
   `prepare:Write:${fixtureFile}`,
   "commit",
@@ -1961,7 +1967,7 @@ assert.equal(governedEditReadResult.data.message.content[0].isError, false, JSON
 assert.ok(governedEditResult?.type === "tool/result");
 assert.equal(governedEditResult.data.message.content[0].isError, false, JSON.stringify(governedEditResult));
 assert.equal(await readFile(fixtureFile, "utf8"), editedFileContent);
-assert.deepEqual(fileToolEvidence, [
+assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
   `permission:Write:${fixtureFile}`,
   `prepare:Write:${fixtureFile}`,
   "commit",

@@ -15,6 +15,21 @@ export interface SdkMcpTransportFactory {
 
 const options = (signal: AbortSignal): RequestOptions => Object.freeze({ signal });
 
+const withRequestSignal = async <Result>(
+  source: AbortSignal,
+  request: (signal: AbortSignal) => Promise<Result>,
+): Promise<Result> => {
+  source.throwIfAborted();
+  const controller = new AbortController();
+  const abort = (): void => { controller.abort(source.reason); };
+  source.addEventListener("abort", abort, { once: true });
+  try {
+    return await request(controller.signal);
+  } finally {
+    source.removeEventListener("abort", abort);
+  }
+};
+
 export const createSdkMcpConnectionFactory = (
   transportFactory: SdkMcpTransportFactory,
 ): McpConnectionFactory => {
@@ -26,11 +41,11 @@ export const createSdkMcpConnectionFactory = (
   return Object.freeze({
     connect: async (input: McpConnectionFactoryInput): Promise<McpConnection> => {
       input.signal.throwIfAborted();
-      const transport = await Reflect.apply(createTransport, transportFactory, [input]) as Transport;
+      const transport = await Reflect.apply(createTransport, transportFactory, [input]);
       input.signal.throwIfAborted();
       const client = new Client({ name: "myagents-dsh-runtime", version: "1.0.0" }, { capabilities: {} });
       try {
-        await client.connect(transport, options(input.signal));
+        await withRequestSignal(input.signal, (signal) => client.connect(transport, options(signal)));
         input.signal.throwIfAborted();
       } catch (error) {
         try {
@@ -45,18 +60,25 @@ export const createSdkMcpConnectionFactory = (
         throw error;
       }
       const connection: McpConnection = Object.freeze({
-        callTool: (name: string, args: Readonly<Record<string, unknown>>, signal: AbortSignal) => client.callTool(
-          Object.freeze({ arguments: args, name }),
-          undefined,
-          options(signal),
-        ),
+        callTool: (
+          name: string,
+          args: Readonly<Record<string, unknown>>,
+          signal: AbortSignal,
+        ) => withRequestSignal(signal, (requestSignal) => client.callTool(
+            Object.freeze({ arguments: args, name }),
+            undefined,
+            options(requestSignal),
+          )),
         close: () => client.close(),
         listTools: async (signal: AbortSignal): Promise<readonly McpListedTool[]> =>
-          (await client.listTools(undefined, options(signal))).tools.map((tool) => Object.freeze({
-            ...(tool.description === undefined ? {} : { description: tool.description }),
-            inputSchema: tool.inputSchema,
-            name: tool.name,
-          })) as readonly McpListedTool[],
+          (await withRequestSignal(
+            signal,
+            (requestSignal) => client.listTools(undefined, options(requestSignal)),
+          )).tools.map((tool) => Object.freeze({
+              ...(tool.description === undefined ? {} : { description: tool.description }),
+              inputSchema: tool.inputSchema,
+              name: tool.name,
+            })) as readonly McpListedTool[],
       });
       return connection;
     },

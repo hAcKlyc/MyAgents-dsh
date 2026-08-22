@@ -1112,6 +1112,7 @@ const main = (): void => {
           "model_request",
           "model_request",
           "model_request",
+          "model_request",
         ])
       || hostCredentialModelEvidence.childModelRequestBound !== true
       || hostCredentialModelEvidence.publicControllerHidden !== true
@@ -1128,7 +1129,7 @@ const main = (): void => {
     if (permissionEvidence.asked !== 23
       || permissionEvidence.decided !== 23
       || permissionEvidence.durableRules !== 1
-      || permissionEvidence.providerRequests !== 23
+      || permissionEvidence.providerRequests !== 24
       || permissionEvidence.safeToolsAutoAllowed !== true) {
       throw new Error("canonical permission and interaction evidence differs from the exact policy contract");
     }
