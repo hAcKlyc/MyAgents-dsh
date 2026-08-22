@@ -845,6 +845,7 @@ export class ProductWorkService extends Service {
   private readonly messages = new Map<string, WorkMessageEntry>();
   private readonly usageByAgent = new Map<string, UsageAccumulator>();
   private readonly continuablePermits = new Map<string, ChildCreationPermit>();
+  private readonly componentGenerationWaiters = new Map<string, Set<() => void>>();
   private readonly pendingChildAuthorities = new Map<string, ChildCreationPermit>();
   private accepting = true;
   private epochCount = 0;
@@ -1012,6 +1013,22 @@ export class ProductWorkService extends Service {
       state: entry.settlement?.terminal ?? "background",
       taskId: entry.taskId,
     })));
+  }
+
+  whenComponentGenerationIdle(revision: string, digest: string): Promise<void> {
+    this.assertHealthy();
+    const key = this.componentGenerationKey(revision, digest);
+    if (!this.hasLiveComponentGeneration(revision, digest)) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const waiters = this.componentGenerationWaiters.get(key) ?? new Set<() => void>();
+      waiters.add(resolve);
+      this.componentGenerationWaiters.set(key, waiters);
+      if (!this.hasLiveComponentGeneration(revision, digest)) {
+        waiters.delete(resolve);
+        if (waiters.size === 0) this.componentGenerationWaiters.delete(key);
+        resolve();
+      }
+    });
   }
 
   createChildModelRequestAuthority(
@@ -1771,6 +1788,7 @@ export class ProductWorkService extends Service {
       entry.outputFinalized = entry.created.outputPath !== undefined;
       entry.outputReady.resolve();
       entry.terminalReady.resolve(settled);
+      this.releaseComponentGenerationWaiters(entry);
     }
     this.messageSequence = messageSequence;
   }
@@ -2804,6 +2822,7 @@ export class ProductWorkService extends Service {
       entry.terminalReady.resolve(event);
       this.latestEnds.delete(entry.agentId);
       this.usageByAgent.delete(entry.agentId);
+      this.releaseComponentGenerationWaiters(entry);
       return event;
     });
   }
@@ -2903,6 +2922,38 @@ export class ProductWorkService extends Service {
   private assertAccepting(): void {
     this.assertHealthy();
     if (!this.accepting) throw new ProductToolError("agent_unavailable", "product work admission is closing");
+  }
+
+  private componentGenerationKey(revision: string, digest: string): string {
+    let revisionHasControl = false;
+    if (typeof revision === "string") {
+      for (let index = 0; index < revision.length; index += 1) {
+        const code = revision.charCodeAt(index);
+        if (code <= 0x1f || code === 0x7f) revisionHasControl = true;
+      }
+    }
+    if (typeof revision !== "string" || revision.length === 0 || revision.length > 256
+      || revisionHasControl
+      || typeof digest !== "string" || !/^[a-f0-9]{64}$/u.test(digest)) {
+      throw new TypeError("component generation identity is invalid");
+    }
+    return `${revision}\0${digest}`;
+  }
+
+  private hasLiveComponentGeneration(revision: string, digest: string): boolean {
+    return [...this.byTask.values()].some((entry) => entry.settlement === undefined
+      && entry.created.birth.componentRevision === revision
+      && entry.created.birth.componentDigest === digest);
+  }
+
+  private releaseComponentGenerationWaiters(entry: WorkEntry): void {
+    const { componentDigest, componentRevision } = entry.created.birth;
+    if (this.hasLiveComponentGeneration(componentRevision, componentDigest)) return;
+    const key = this.componentGenerationKey(componentRevision, componentDigest);
+    const waiters = this.componentGenerationWaiters.get(key);
+    if (waiters === undefined) return;
+    this.componentGenerationWaiters.delete(key);
+    for (const resolve of waiters) resolve();
   }
 
   private assertHealthy(): void {

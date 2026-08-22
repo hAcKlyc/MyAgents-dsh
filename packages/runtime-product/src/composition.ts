@@ -22,7 +22,13 @@ import { isProxy } from "node:util/types";
 import {
   SdkOperationService,
   type OperationBirthAuthority,
+  type OperationLifecycleController,
 } from "@myagents-dsh/operation-runtime";
+import {
+  ProductComponentService,
+  type ProductComponentPlaneConfig,
+  type ProductComponentServiceController,
+} from "@myagents-dsh/component-runtime";
 import {
   HostCredentialProvider,
   HostPortService,
@@ -96,6 +102,7 @@ export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "host-port-service",
   "product-session",
   "sdk-operation",
+  "product-component",
 ] as const);
 
 export interface DshRootCompositionOptions {
@@ -110,6 +117,10 @@ export interface DshRootCompositionOptions {
 export interface DshRootCompositionSnapshot {
   readonly artifactManifestSha256: string;
   readonly artifactVersion: string;
+  readonly componentPlane: "absent" | "installed";
+  readonly componentDesiredRevision?: string;
+  readonly componentEffectiveRevision?: string;
+  readonly componentState?: "applied" | "queued" | "restart_when_idle" | "failed";
   readonly liveRootAgents: number;
   readonly hostModelPlane: "absent" | "installed";
   readonly providers: readonly string[];
@@ -279,6 +290,8 @@ type CompositionAuthorityState = {
   claimed: boolean;
   canonicalToolPlane: "absent" | "installing" | "installed" | "failed";
   canonicalToolPlaneTarget: PlatformTarget | undefined;
+  readonly components: ProductComponentServiceController;
+  componentPlane: "absent" | "installing" | "installed" | "failed";
   hostModelPlane: "absent" | "installing" | "installed" | "failed";
   hostModelProviderRoute: string | undefined;
 };
@@ -314,6 +327,7 @@ export const claimNativeRpcLifecycleAuthority = (
   const state = compositionAuthorities.get(context);
   if (context !== context.root || state?.composition !== composition || state.claimed
     || state.canonicalToolPlane === "installing" || state.canonicalToolPlane === "failed"
+    || state.componentPlane === "installing" || state.componentPlane === "failed"
     || state.hostModelPlane === "installing" || state.hostModelPlane === "failed") {
     throw new Error("native RPC requires one unconsumed composeDshRootServices Context authority");
   }
@@ -384,9 +398,19 @@ export class DshRootComposition {
       throw new Error("DSH root composition provider registry differs from its authority");
     }
     const primarySession = this.context.productSession.snapshot();
+    const componentAuthority = compositionAuthorities.get(this.context);
+    const componentStatus = componentAuthority?.componentPlane === "installed"
+      ? this.context.productComponents.status()
+      : undefined;
     return Object.freeze({
       artifactManifestSha256: ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256,
       artifactVersion: ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion,
+      componentPlane: componentStatus === undefined ? "absent" : "installed",
+      ...(componentStatus === undefined ? {} : {
+        componentDesiredRevision: componentStatus.desiredRevision,
+        componentEffectiveRevision: componentStatus.effectiveRevision,
+        componentState: componentStatus.state,
+      }),
       hostModelPlane: hostModelProviderRoute === undefined ? "absent" : "installed",
       liveRootAgents: primarySession.liveRootAgents,
       primarySessionState: primarySession.state,
@@ -605,6 +629,31 @@ export const installCanonicalToolPlane = async (
   }
 };
 
+export const installProductComponentPlane = async (
+  composition: DshRootComposition,
+  config: ProductComponentPlaneConfig,
+): Promise<void> => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.componentPlane !== "absent") {
+    throw new Error("component plane requires the exact unclaimed root composition authority");
+  }
+  composition.snapshot();
+  authority.componentPlane = "installing";
+  try {
+    const result = await authority.components.configure(config);
+    if (result.state !== "applied") {
+      throw new Error("initial component generation did not become effective");
+    }
+    authority.componentPlane = "installed";
+    composition.snapshot();
+  } catch (error) {
+    authority.componentPlane = "failed";
+    throw error;
+  }
+};
+
 export const installHostDeepSeekModelPlane = async (
   composition: DshRootComposition,
   config: HostDeepSeekModelPlaneConfig,
@@ -669,6 +718,8 @@ export const composeDshRootServices = async (
   let providerAdmissionGuard: ((request: PrimarySessionBackendRequest) => Promise<void>) | undefined;
   let modelProfileBirthGuard: ((revision: string) => void) | undefined;
   let hostPortController: HostPortServiceController | undefined;
+  let componentController: ProductComponentServiceController | undefined;
+  let operationLifecycleController: OperationLifecycleController | undefined;
   try {
     await root.plugin(SessionStore);
     await root.plugin(AgentRegistry);
@@ -690,10 +741,18 @@ export const composeDshRootServices = async (
     });
     await root.plugin(ProductSessionService, {
       childPublicationAuthority,
-      providerAdmissionGuard: (request) => providerAdmissionGuard?.(request) ?? Promise.resolve(),
+      providerAdmissionGuard: async (request) => {
+        root.productComponents.assertSessionExtension(request.params.extensionDigest);
+        await providerAdmissionGuard?.(request);
+      },
     });
     await root.plugin(SdkOperationService, {
-      birthAuthority: operationBirthAuthority,
+      birthAuthority: Object.freeze({
+        capture: async (params: Parameters<OperationBirthAuthority["capture"]>[0]) => {
+          const birth = await operationBirthAuthority.capture(params);
+          return root.productComponents.captureOperationBirth(params, birth);
+        },
+      }),
       drainOwnedWork: async (agent) => {
         await root.get("productWork")?.preparePrimaryRetirement(agent);
       },
@@ -703,12 +762,34 @@ export const composeDshRootServices = async (
       requireAgent: () => root.productSession.requireAgent(),
       retirePrimary: (cause) => root.productSession.retire(cause),
       modelProfileBirthGuard: (revision) => modelProfileBirthGuard?.(revision),
+      registerLifecycleController: (controller) => {
+        if (operationLifecycleController !== undefined) {
+          throw new Error("operation lifecycle controller may register exactly once");
+        }
+        operationLifecycleController = controller;
+      },
       settlementDeadlineAuthority: root.productSession.settlementDeadlineAuthority(),
+    });
+    const operationLifecycle = operationLifecycleController;
+    if (operationLifecycle === undefined) {
+      throw new Error("root composition did not capture its operation lifecycle controller");
+    }
+    await root.plugin(ProductComponentService, {
+      registerController: (controller) => {
+        if (componentController !== undefined) {
+          throw new Error("component controller may register exactly once");
+        }
+        componentController = controller;
+      },
+      runAtCommitBoundary: (signal, commit) =>
+        operationLifecycle.runAtQuiescentBoundary(signal, commit),
+      whenGenerationUnused: (identity) => root.get("productWork")
+        ?.whenComponentGenerationIdle(identity.revision, identity.digest) ?? Promise.resolve(),
     });
     const composition = new DshRootComposition(root, providers);
     composition.snapshot();
-    if (hostPortController === undefined) {
-      throw new Error("root composition did not capture its Host port controller");
+    if (hostPortController === undefined || componentController === undefined) {
+      throw new Error("root composition did not capture its private service controllers");
     }
     compositionAuthorities.set(root, {
       childPublicationAuthority,
@@ -729,6 +810,8 @@ export const composeDshRootServices = async (
       },
       canonicalToolPlane: "absent",
       canonicalToolPlaneTarget: undefined,
+      components: componentController,
+      componentPlane: "absent",
       snapshot: composition.snapshot.bind(composition),
     });
     return composition;

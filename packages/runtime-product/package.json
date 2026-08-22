@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@myagents-dsh/component-runtime": "0.0.0",
     "@myagents-dsh/host-ports": "0.0.0",
     "@myagents-dsh/operation-runtime": "0.0.0",
     "@myagents-dsh/product-profile": "0.0.0",

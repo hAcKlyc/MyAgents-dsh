@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/component-runtime",
+    "tsBuildInfoFile": "../../dist/packages/component-runtime/.tsbuildinfo"
+  },
+  "files": ["src/descriptors.ts", "src/index.ts", "src/service.ts"],
+  "references": [
+    { "path": "../operation-runtime" },
+    { "path": "../protocol" }
+  ]
+}

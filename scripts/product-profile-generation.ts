@@ -31,6 +31,7 @@ const workspacePackagePaths = [
 const candidatePackagePaths = [
   "apps/runtime-server",
   "packages/artifact-verifier",
+  "packages/component-runtime",
   "packages/host-ports",
   "packages/operation-runtime",
   "packages/product-profile",

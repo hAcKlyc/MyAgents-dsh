@@ -7,6 +7,7 @@ import { PassThrough } from "node:stream";
 import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers/promises";
 
 import { Context } from "@deepseek-ai/cordis";
+import type { ComponentCompiler, ExtensionComponent } from "@myagents-dsh/component-runtime";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import {
   freezeMessage,
@@ -34,6 +35,7 @@ import {
   JsonRpcPeer,
   PROTOCOL_VERSION,
   REFERENCE_PROTOCOL_LIMITS,
+  extensionSnapshotDigest,
   type InitializeParams,
   type MethodParams,
   type RuntimeEventEnvelope,
@@ -47,6 +49,7 @@ import {
   DshRootComposition,
   installCanonicalToolPlane,
   installHostDeepSeekModelPlane,
+  installProductComponentPlane,
   type CanonicalToolPlaneConfig,
   type NativeRpcLifecycleAuthority,
   type ProductSessionService,
@@ -111,6 +114,51 @@ const toolCatalogWithoutDigest = Object.freeze({
 const validatedArtifactToolCatalog = validateEffectiveToolCatalog({
   ...toolCatalogWithoutDigest,
   digest: effectiveToolCatalogDigest(toolCatalogWithoutDigest),
+});
+const artifactExtensionAuthority: Omit<MethodParams<"extension/replace">, "digest"> = {
+  formatVersion: 1 as const,
+  revision: "artifact-component-v1",
+  components: [Object.freeze({
+    id: "artifact-declarative-agent",
+    enabled: true,
+    kind: "agent" as const,
+    descriptor: Object.freeze({
+      description: "Artifact declarative Agent contribution",
+      prompt: "Exercise the unpublished component preparation and atomic catalog commit path.",
+    }),
+  })],
+  resources: [],
+  skillSourcePolicy: {
+    revision: "artifact-skill-policy-v1",
+    roots: [],
+  },
+};
+const artifactExtensionSnapshot = Object.freeze({
+  ...artifactExtensionAuthority,
+  digest: extensionSnapshotDigest(artifactExtensionAuthority),
+});
+const createArtifactComponentCompiler = (effects: string[]): ComponentCompiler => Object.freeze({
+  kind: "agent",
+  prepare: (component: ExtensionComponent) => {
+    effects.push(`prepare:${component.id}`);
+    return Promise.resolve(Object.freeze({
+      status: "ready" as const,
+      contributions: Object.freeze([Object.freeze({
+        componentId: component.id,
+        kind: component.kind,
+        name: component.id,
+        catalog: Object.freeze({ kind: "agent" as const, name: component.id }),
+        install: () => {
+          effects.push(`install:${component.id}`);
+          return () => { effects.push(`uninstall:${component.id}`); };
+        },
+      })]),
+      dispose: () => {
+        effects.push(`dispose:${component.id}`);
+        return Promise.resolve();
+      },
+    }));
+  },
 });
 
 interface ArtifactPreparedAssistantToolCall {
@@ -526,8 +574,8 @@ const composition = await composeDshRootServices({
     capture: (value: MethodParams<"turn/start">) => Object.freeze({
       configRevision: value.configRevision,
       modelProfileRevision: "artifact-provider-v1",
-      componentRevision: "artifact-component-v1",
-      componentDigest: "b".repeat(64),
+      componentRevision: artifactExtensionSnapshot.revision,
+      componentDigest: artifactExtensionSnapshot.digest,
       toolCatalogRevision: validatedArtifactToolCatalog.revision,
       toolCatalogDigest: validatedArtifactToolCatalog.digest,
       executionEnvironmentRevision: value.executionEnvironmentRevision,
@@ -803,6 +851,18 @@ await assert.rejects(
   /exact unclaimed root composition authority/u,
 );
 await canonicalToolPlaneInstallation;
+const artifactComponentEffects: string[] = [];
+await installProductComponentPlane(composition, Object.freeze({
+  catalog: validatedArtifactToolCatalog,
+  compilers: Object.freeze([createArtifactComponentCompiler(artifactComponentEffects)]),
+  initialSnapshot: artifactExtensionSnapshot,
+}));
+assert.deepEqual(composition.context.productComponents.status(), {
+  desiredRevision: artifactExtensionSnapshot.revision,
+  effectiveRevision: artifactExtensionSnapshot.revision,
+  state: "applied",
+  components: [{ key: "agent:artifact-declarative-agent", state: "ready" }],
+});
 capturePermissionRevision = () => composition.context.productPermission.currentRevision(
   composition.context.productSession.requireAgent(),
 );
@@ -1057,8 +1117,8 @@ const hostModelComposition = await composeDshRootServices({
     capture: (value: MethodParams<"turn/start">) => Object.freeze({
       configRevision: value.configRevision,
       modelProfileRevision: hostModelProfile.revision,
-      componentRevision: "artifact-host-model-component-v1",
-      componentDigest: "c".repeat(64),
+      componentRevision: artifactExtensionSnapshot.revision,
+      componentDigest: artifactExtensionSnapshot.digest,
       toolCatalogRevision: validatedArtifactToolCatalog.revision,
       toolCatalogDigest: validatedArtifactToolCatalog.digest,
       executionEnvironmentRevision: value.executionEnvironmentRevision,
@@ -1072,10 +1132,16 @@ const hostModelComposition = await composeDshRootServices({
   }),
   providers: ["fixture-bootstrap"],
 });
+const hostModelComponentEffects: string[] = [];
 await installHostDeepSeekModelPlane(hostModelComposition, {
   resolveUserId: () => "00000000-0000-4000-8000-000000000001",
 });
 await installCanonicalToolPlane(hostModelComposition, canonicalToolPlaneConfig);
+await installProductComponentPlane(hostModelComposition, Object.freeze({
+  catalog: validatedArtifactToolCatalog,
+  compilers: Object.freeze([createArtifactComponentCompiler(hostModelComponentEffects)]),
+  initialSnapshot: artifactExtensionSnapshot,
+}));
 captureHostModelPermissionRevision = () => hostModelComposition.context.productPermission.currentRevision(
   hostModelComposition.context.productSession.requireAgent(),
 );
@@ -1132,7 +1198,7 @@ await hostModelComposition.context.productSession.bindCreate({
   persistenceRef: "artifact-host-model-persistence",
   provider: hostModelProfile,
   configRevision: "artifact-host-model-config-v1",
-  extensionDigest: "c".repeat(64),
+  extensionDigest: artifactExtensionSnapshot.digest,
   systemPrompt: "Synthetic credential-free Host model evidence.",
   permissionMode: "default",
   interactionScenario: "deterministic-headless",
@@ -1200,7 +1266,7 @@ try {
     clientUserMessageId: "artifact-host-model-user-message",
     input: { parts: [{ kind: "text", text: "verify Host-scoped model credentials" }] },
     configRevision: "artifact-host-model-config-v1",
-    extensionDigest: "c".repeat(64),
+    extensionDigest: artifactExtensionSnapshot.digest,
     executionEnvironmentRevision: initializeRequest.executionEnvironment.revision,
     executionEnvironmentDigest: initializeRequest.executionEnvironment.digest,
     limits: { maxTurns: 1, maxDurationMs: 30_000 },
@@ -1304,6 +1370,12 @@ hostModelProjectionInput.destroy();
 hostModelProjectionOutput.destroy();
 await hostModelClient.runtimeShutdown({ reason: "artifact-host-model-complete" });
 await hostModelServer.whenStopped();
+assert.deepEqual(hostModelComponentEffects, [
+  "prepare:artifact-declarative-agent",
+  "install:artifact-declarative-agent",
+  "uninstall:artifact-declarative-agent",
+  "dispose:artifact-declarative-agent",
+]);
 hostModelPeer.close();
 hostModelInput.destroy();
 hostModelOutput.destroy();
@@ -1478,7 +1550,7 @@ const primarySessionParams = {
     maxTokens: 1_024,
   },
   configRevision: "artifact-config-v1",
-  extensionDigest: rpcDigest,
+  extensionDigest: artifactExtensionSnapshot.digest,
   systemPrompt: "Desired Session persona, not yet reconciled by A3.",
   permissionMode: "default",
   interactionScenario: "deterministic-headless",
@@ -1590,7 +1662,7 @@ const turnStartParams = {
   clientUserMessageId: "artifact-user-message-1",
   input: { parts: [{ kind: "text", text: "first prompt" }] },
   configRevision: "artifact-config-v1",
-  extensionDigest: rpcDigest,
+  extensionDigest: artifactExtensionSnapshot.digest,
   executionEnvironmentRevision: "environment-v1",
   executionEnvironmentDigest: rpcDigest,
   limits: { maxTurns: 4, maxCostUsd: 1, maxDurationMs: 60_000 },
@@ -2591,6 +2663,15 @@ projectionInput.destroy();
 projectionOutput.destroy();
 
 const snapshot = composition.snapshot();
+const componentCatalog = composition.context.productComponents.catalog();
+const componentPublicationVerified = snapshot.componentPlane === "installed"
+  && snapshot.componentEffectiveRevision === artifactExtensionSnapshot.revision
+  && componentCatalog.revision === artifactExtensionSnapshot.revision
+  && JSON.stringify(componentCatalog.agents) === JSON.stringify(["artifact-declarative-agent"])
+  && JSON.stringify(artifactComponentEffects) === JSON.stringify([
+    "prepare:artifact-declarative-agent",
+    "install:artifact-declarative-agent",
+  ]);
 assert.equal(snapshot.liveRootAgents, 0);
 assert.equal(snapshot.primarySessionState, "retired");
 assert.equal(snapshot.runtimeSessionId, "dsh-artifact-primary");
@@ -2625,6 +2706,14 @@ assert.equal(processSignalListener, undefined);
 assert.equal(adapter.activeStreamCount, 0);
 assert.equal(nativeRpc.phase, "disposed");
 assert.throws(() => composition.snapshot(), /disposing or disposed/u);
+const componentGenerationVerified = componentPublicationVerified
+  && JSON.stringify(artifactComponentEffects) === JSON.stringify([
+    "prepare:artifact-declarative-agent",
+    "install:artifact-declarative-agent",
+    "uninstall:artifact-declarative-agent",
+    "dispose:artifact-declarative-agent",
+  ]);
+assert.equal(componentGenerationVerified, true);
 assert.deepEqual(hostFatalErrors, []);
 const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
 const permissionDecidedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/decided");
@@ -2664,6 +2753,7 @@ process.stdout.write(`${JSON.stringify({
   operationCorrelationVerified: true,
   hostPortServiceVerified: reverseMethodOrder.length === 7,
   hostCredentialModelVerified,
+  componentGenerationVerified,
   hostPortLifecycleAuthorityVerified,
   hostPortMethodOrder: reverseMethodOrder,
   hostCredentialModelEvidence: {

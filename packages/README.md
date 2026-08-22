@@ -9,4 +9,5 @@ The Pre-Batch workspace freezes package ownership before behavior is implemented
 | `product-profile` | Locked official DSH/plugin composition and digest |
 | `runtime-product` | Product coordination services over DSH public seams |
 | `compatibility` | Versioned sanitized compatibility declarations |
+| `component-runtime` | Declarative component preparation, atomic promotion, catalog, and generation retirement |
 | `artifact-verifier` | Artifact identity, provenance, and forbidden-content audits |

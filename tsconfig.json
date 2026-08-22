@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/protocol" },
+    { "path": "./packages/component-runtime" },
     { "path": "./packages/host-ports" },
     { "path": "./packages/tool-contracts" },
     { "path": "./packages/task-graph" },

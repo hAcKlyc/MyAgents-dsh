@@ -37,13 +37,14 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
   "@myagents-dsh/host-ports:HostCredentialProvider",
   "@myagents-dsh/runtime-product:ProductSessionService",
   "@myagents-dsh/operation-runtime:SdkOperationService",
+  "@myagents-dsh/component-runtime:ProductComponentService",
   "@myagents-dsh/rpc-server:NativeRpcServer",
 ] as const);
 
 export interface Batch1CandidateProfileManifest {
   readonly formatVersion: 1;
   readonly profileId: typeof BATCH1_CANDIDATE_PROFILE_ID;
-  readonly stage: "batch-1-w3-a2";
+  readonly stage: "batch-1-w3-a3";
   readonly runtimeActivation: "workstream-evidence-only";
   readonly protocol: Readonly<{
     version: string;
@@ -125,7 +126,7 @@ export const buildBatch1CandidateProfile = (
 ): Batch1CandidateProfileManifest => Object.freeze({
   formatVersion: 1,
   profileId: BATCH1_CANDIDATE_PROFILE_ID,
-  stage: "batch-1-w3-a2",
+  stage: "batch-1-w3-a3",
   runtimeActivation: "workstream-evidence-only",
   protocol: Object.freeze({
     version: exactIdentifier(input.protocolVersion, "candidate protocol version"),

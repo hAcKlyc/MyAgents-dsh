@@ -58,6 +58,9 @@ const runtimeCompositionSourcePaths = [
   "packages/artifact-verifier/src/repository-entry.ts",
   "packages/artifact-verifier/src/runtime-artifact.ts",
   "packages/artifact-verifier/src/self-check.ts",
+  "packages/component-runtime/src/descriptors.ts",
+  "packages/component-runtime/src/index.ts",
+  "packages/component-runtime/src/service.ts",
   "packages/host-ports/src/index.ts",
   "packages/host-ports/src/credential-provider.ts",
   "packages/host-ports/src/service.ts",
@@ -76,6 +79,7 @@ const runtimeCompositionSourcePaths = [
   "packages/product-profile/src/profile.ts",
   "packages/protocol/generated/host-client.generated.ts",
   "packages/protocol/generated/canonical-tools.generated.ts",
+  "packages/protocol/src/canonical-digests.ts",
   "packages/protocol/src/contract-source.ts",
   "packages/protocol/src/errors.ts",
   "packages/protocol/src/index.ts",
@@ -128,6 +132,7 @@ const runtimeCompositionSourcePaths = [
 
 const runtimePackageWorkspaces = [
   ["packages/product-profile", "@myagents-dsh/product-profile"],
+  ["packages/component-runtime", "@myagents-dsh/component-runtime"],
   ["packages/protocol", "@myagents-dsh/protocol"],
   ["packages/host-ports", "@myagents-dsh/host-ports"],
   ["packages/operation-runtime", "@myagents-dsh/operation-runtime"],
@@ -789,7 +794,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w3-a2"
+    || selfCheckProfile.stage !== "batch-1-w3-a3"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -948,6 +953,12 @@ const main = (): void => {
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
+      "packages/component-runtime",
+      "@myagents-dsh/component-runtime",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
       "packages/tool-runtime-product",
       "@myagents-dsh/tool-runtime-product",
     );
@@ -1042,6 +1053,7 @@ const main = (): void => {
       || evidence.operationCorrelationVerified !== true
       || evidence.hostPortServiceVerified !== true
       || evidence.hostCredentialModelVerified !== true
+      || evidence.componentGenerationVerified !== true
       || evidence.hostPortLifecycleAuthorityVerified !== true
       || JSON.stringify(evidence.hostPortMethodOrder) !== JSON.stringify([
         "host/credential/resolve",

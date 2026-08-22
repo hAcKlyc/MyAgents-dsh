@@ -49,6 +49,11 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     ],
   },
   {
+    packageName: "@myagents-dsh/component-runtime",
+    relativeDirectory: "packages/component-runtime",
+    allowedFiles: ["package.json", "src/descriptors.ts", "src/index.ts", "src/service.ts"],
+  },
+  {
     packageName: "@myagents-dsh/host-ports",
     relativeDirectory: "packages/host-ports",
     allowedFiles: ["package.json", "src/credential-provider.ts", "src/index.ts", "src/service.ts"],
@@ -94,6 +99,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "generated/protocol-meta.json",
       "generated/protocol.schema.json",
       "package.json",
+      "src/canonical-digests.ts",
       "src/contract-source.ts",
       "src/errors.ts",
       "src/index.ts",

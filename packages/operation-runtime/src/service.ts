@@ -43,6 +43,13 @@ export interface SettlementDeadlineAuthority {
   readonly wait: <T>(operation: PromiseLike<T>, description: string) => Promise<T>;
 }
 
+export interface OperationLifecycleController {
+  readonly runAtQuiescentBoundary: (
+    signal: AbortSignal,
+    commit: () => void,
+  ) => Promise<boolean>;
+}
+
 export interface SdkOperationServiceConfig {
   readonly birthAuthority: OperationBirthAuthority;
   readonly drainOwnedWork: (agent: Agent) => Promise<void>;
@@ -57,6 +64,7 @@ export interface SdkOperationServiceConfig {
   readonly settlementDeadlineAuthority: SettlementDeadlineAuthority;
   readonly clock?: () => number;
   readonly modelProfileBirthGuard?: (revision: string) => void;
+  readonly registerLifecycleController?: (controller: OperationLifecycleController) => void;
 }
 
 export interface OperationAdmissionControl {
@@ -156,7 +164,7 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
       "retirePrimary",
       "settlementDeadlineAuthority",
     ],
-    ["clock", "modelProfileBirthGuard"],
+    ["clock", "modelProfileBirthGuard", "registerLifecycleController"],
     "SdkOperationService config",
   );
   const authority = exactOwnDataObject(
@@ -179,7 +187,10 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
     || (Object.hasOwn(config, "clock") && typeof config.clock !== "function")
     || (Object.hasOwn(config, "modelProfileBirthGuard")
       && (typeof config.modelProfileBirthGuard !== "function"
-        || utilTypes.isProxy(config.modelProfileBirthGuard)))) {
+        || utilTypes.isProxy(config.modelProfileBirthGuard)))
+    || (Object.hasOwn(config, "registerLifecycleController")
+      && (typeof config.registerLifecycleController !== "function"
+        || utilTypes.isProxy(config.registerLifecycleController)))) {
     throw new TypeError("SdkOperationService capabilities must be functions");
   }
   const captureOperationBirth = authority.capture as OperationBirthAuthority["capture"];
@@ -210,6 +221,9 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
     clock: (config.clock ?? Date.now) as () => number,
     modelProfileBirthGuard: Object.hasOwn(config, "modelProfileBirthGuard")
       ? config.modelProfileBirthGuard as (revision: string) => void
+      : () => undefined,
+    registerLifecycleController: Object.hasOwn(config, "registerLifecycleController")
+      ? config.registerLifecycleController as (controller: OperationLifecycleController) => void
       : () => undefined,
   });
 };
@@ -294,6 +308,10 @@ export class SdkOperationService extends Service {
     super(ctx, "sdkOperations");
     this.configValue = validateServiceConfig(config);
     this.configValue.registerRetirementGuard((agent) => this.preparePrimaryRetirement(agent));
+    this.configValue.registerLifecycleController(Object.freeze({
+      runAtQuiescentBoundary: (signal: AbortSignal, commit: () => void) =>
+        this.runAtQuiescentBoundary(signal, commit),
+    }));
     ctx.effect(function* (this: SdkOperationService) {
       const stopClaimed = ctx.on("agent/inbox/claimed", ({ agent, message, turn }) => {
         try {
@@ -592,6 +610,42 @@ export class SdkOperationService extends Service {
     const result = this.serialValue.then(task);
     this.serialValue = result.then(() => undefined, () => undefined);
     return result;
+  }
+
+  private runAtQuiescentBoundary(
+    signal: AbortSignal,
+    commit: () => void,
+  ): Promise<boolean> {
+    if (!(signal instanceof AbortSignal) || utilTypes.isProxy(signal)
+      || typeof commit !== "function" || utilTypes.isProxy(commit)) {
+      return Promise.reject(new TypeError(
+        "operation lifecycle boundary requires a native AbortSignal and non-proxy commit",
+      ));
+    }
+    return this.serialize(async () => {
+      this.assertOpen();
+      this.assertHealthy();
+      signal.throwIfAborted();
+      let agent: Agent;
+      try {
+        agent = this.primaryAgent();
+      } catch (error) {
+        if (error instanceof ProtocolError && error.code === "primary_session_not_ready") {
+          commit();
+          return true;
+        }
+        throw error;
+      }
+      await this.reconcileAgent(agent);
+      signal.throwIfAborted();
+      const fold = this.foldValue(agent);
+      if (!agentIsIdle(agent)
+        || fold.operations.some(({ state }) => state !== "terminal")) {
+        return false;
+      }
+      commit();
+      return true;
+    });
   }
 
   private async startValue(
