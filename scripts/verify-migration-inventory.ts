@@ -73,6 +73,7 @@ const allowedTargetPackages = new Set([
   "@myagents-dsh/checkpoint",
   "@myagents-dsh/compatibility",
   "@myagents-dsh/component-runtime",
+  "@myagents-dsh/components-mcp",
   "@myagents-dsh/dynamic-e2e",
   "@myagents-dsh/event-projector",
   "@myagents-dsh/host-ports",

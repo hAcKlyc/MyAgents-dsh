@@ -205,6 +205,34 @@ describe("product permission policy and local interaction provider", () => {
     expect(state.flushes).toEqual([]);
   });
 
+  it("binds one MCP permission and durable rule to the exact namespaced tool target", async () => {
+    let calls = 0;
+    const local = provider("scenario-mcp", (pending, settlement) => {
+      calls += 1;
+      response(pending, "always_allow", settlement);
+    });
+    const state = await mounted(local.provider);
+    const requestValue = Object.freeze({
+      permissionClass: "mcp.call" as const,
+      target: `mcp:${"d".repeat(64)}:fixture:echo`,
+      tool: "mcp__fixture__echo",
+    });
+    const original = state.product();
+
+    await expect(state.context.productPermission.authorizeExternal(original, requestValue))
+      .resolves.toBe("allow");
+    expect(local.permissionRequests[0]).toMatchObject(requestValue);
+    const latest = state.context.productPermission.currentRevision(state.agent);
+    expect(latest).not.toBe(original.birth.permissionRevision);
+    await expect(state.context.productPermission.authorizeExternal(state.product(latest), requestValue))
+      .resolves.toBe("allow");
+    expect(calls).toBe(1);
+    await expect(state.context.productPermission.authorizeExternal(state.product(latest), {
+      ...requestValue,
+      tool: "forged-tool",
+    })).rejects.toThrow("dynamic permission class must match one namespaced MCP tool");
+  });
+
   it("runs a synchronous provider disposer before publishing its one-shot response", async () => {
     const order: string[] = [];
     const local = provider("scenario-sync", (pending, settlement) => {

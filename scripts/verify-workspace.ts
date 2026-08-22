@@ -13,6 +13,7 @@ const workspacePackages = new Map([
   ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
   ["packages/compatibility", "@myagents-dsh/compatibility"],
   ["packages/component-runtime", "@myagents-dsh/component-runtime"],
+  ["packages/components-mcp", "@myagents-dsh/components-mcp"],
   ["packages/host-ports", "@myagents-dsh/host-ports"],
   ["packages/operation-runtime", "@myagents-dsh/operation-runtime"],
   ["packages/product-profile", "@myagents-dsh/product-profile"],
@@ -83,6 +84,7 @@ const expectedWorkspaceFiles = new Map([
     "src/manifest.ts",
   ]],
   ["packages/component-runtime", ["src/descriptors.ts", "src/index.ts", "src/service.ts"]],
+  ["packages/components-mcp", ["src/compiler.ts", "src/index.ts", "src/sdk-connection.ts"]],
   ["packages/host-ports", ["src/credential-provider.ts", "src/index.ts", "src/service.ts"]],
   ["packages/operation-runtime", [
     "src/events.ts",

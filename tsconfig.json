@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/protocol" },
     { "path": "./packages/component-runtime" },
+    { "path": "./packages/components-mcp" },
     { "path": "./packages/host-ports" },
     { "path": "./packages/tool-contracts" },
     { "path": "./packages/task-graph" },

@@ -61,6 +61,9 @@ const runtimeCompositionSourcePaths = [
   "packages/component-runtime/src/descriptors.ts",
   "packages/component-runtime/src/index.ts",
   "packages/component-runtime/src/service.ts",
+  "packages/components-mcp/src/compiler.ts",
+  "packages/components-mcp/src/index.ts",
+  "packages/components-mcp/src/sdk-connection.ts",
   "packages/host-ports/src/index.ts",
   "packages/host-ports/src/credential-provider.ts",
   "packages/host-ports/src/service.ts",
@@ -133,6 +136,7 @@ const runtimeCompositionSourcePaths = [
 const runtimePackageWorkspaces = [
   ["packages/product-profile", "@myagents-dsh/product-profile"],
   ["packages/component-runtime", "@myagents-dsh/component-runtime"],
+  ["packages/components-mcp", "@myagents-dsh/components-mcp"],
   ["packages/protocol", "@myagents-dsh/protocol"],
   ["packages/host-ports", "@myagents-dsh/host-ports"],
   ["packages/operation-runtime", "@myagents-dsh/operation-runtime"],
@@ -959,6 +963,12 @@ const main = (): void => {
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
+      "packages/components-mcp",
+      "@myagents-dsh/components-mcp",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
       "packages/tool-runtime-product",
       "@myagents-dsh/tool-runtime-product",
     );
@@ -1054,6 +1064,7 @@ const main = (): void => {
       || evidence.hostPortServiceVerified !== true
       || evidence.hostCredentialModelVerified !== true
       || evidence.componentGenerationVerified !== true
+      || evidence.mcpLifecycleVerified !== true
       || evidence.hostPortLifecycleAuthorityVerified !== true
       || JSON.stringify(evidence.hostPortMethodOrder) !== JSON.stringify([
         "host/credential/resolve",

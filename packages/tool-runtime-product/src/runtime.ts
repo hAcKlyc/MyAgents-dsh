@@ -104,6 +104,12 @@ export interface ProductToolPermissionRequest {
   readonly tool: CanonicalToolName;
 }
 
+export interface ProductExternalToolPermissionRequest {
+  readonly permissionClass: "mcp.call";
+  readonly target: string;
+  readonly tool: string;
+}
+
 export interface ProductToolCheckpointHandle {
   readonly receipt: Readonly<{ checkpointId: string; policyRevision: string }>;
   abort(): Promise<void>;
@@ -393,6 +399,43 @@ export class ProductToolRuntime extends Service {
     return context;
   }
 
+  resolveExternal(exec: Readonly<ToolExecution>, expectedTool: string): ProductToolContext {
+    const tool = boundedIdentifier(expectedTool, "external tool name");
+    if (exec.name !== tool || exec.agent === undefined || exec.agent !== this.configValue.requireAgent()) {
+      throw new ProductToolError("tool_operation_denied", "external tool lacks official primary Agent ownership");
+    }
+    if (exec.parent !== undefined || String(exec.callId) !== String(exec.rootCallId)) {
+      throw new ProductToolError(
+        "tool_operation_denied",
+        "root external tools reject nested or relayed tool execution authority",
+      );
+    }
+    const { dshTurn, operation } = this.configValue.resolveOperation(exec.agent);
+    const environment = this.configValue.environment();
+    if (operation.birth.executionEnvironmentRevision !== environment.revision
+      || operation.birth.executionEnvironmentDigest !== environment.digest) {
+      throw new ProductToolError("tool_environment_stale", "tool call execution environment differs from operation birth");
+    }
+    const catalog = validateEffectiveToolCatalog(this.configValue.catalog());
+    if (operation.birth.toolCatalogRevision !== catalog.revision
+      || operation.birth.toolCatalogDigest !== catalog.digest) {
+      throw new ProductToolError("tool_catalog_stale", "base tool catalog differs from operation birth");
+    }
+    return Object.freeze({
+      agent: exec.agent,
+      birth: operation.birth,
+      callId: String(exec.callId),
+      catalog,
+      clientOperationId: operation.clientOperationId,
+      dshTurn,
+      environment,
+      origin: "root" as const,
+      productTurnId: operation.productTurnId,
+      rootCallId: String(exec.rootCallId),
+      signal: exec.signal,
+    });
+  }
+
   async authorize(
     context: ProductToolContext,
     request: ProductToolPermissionRequest,
@@ -407,6 +450,48 @@ export class ProductToolRuntime extends Service {
       throw new ProductToolError("permission_denied", `${request.tool} permission was denied`);
     }
     this.assertCurrent(context, request.tool);
+  }
+
+  async authorizeExternal(
+    context: ProductToolContext,
+    request: ProductExternalToolPermissionRequest,
+  ): Promise<void> {
+    context.signal.throwIfAborted();
+    const decision: unknown = await exactNativePromise(
+      this.ctx.productPermission.authorizeExternal(context, Object.freeze({ ...request })),
+      "external permission authority",
+    );
+    context.signal.throwIfAborted();
+    if (decision !== "allow") {
+      throw new ProductToolError("permission_denied", `${request.tool} permission was denied`);
+    }
+    this.assertExternalCurrent(context, request.tool);
+  }
+
+  assertExternalCurrent(context: ProductToolContext, toolName: string): void {
+    boundedIdentifier(toolName, "external tool name");
+    if (this.configValue.requireAgent() !== context.agent) {
+      throw new ProductToolError("tool_operation_denied", "primary Agent authority changed during permission review");
+    }
+    const { dshTurn, operation } = this.configValue.resolveOperation(context.agent);
+    if (dshTurn !== context.dshTurn || operation.state !== "active"
+      || operation.clientOperationId !== context.clientOperationId
+      || operation.productTurnId !== context.productTurnId
+      || !isDeepStrictEqual(operation.birth, context.birth)) {
+      throw new ProductToolError("tool_operation_denied", "external tool operation changed during permission review");
+    }
+    const environment = this.configValue.environment();
+    if (!isDeepStrictEqual(environment, context.environment)
+      || operation.birth.executionEnvironmentRevision !== environment.revision
+      || operation.birth.executionEnvironmentDigest !== environment.digest) {
+      throw new ProductToolError("tool_environment_stale", "tool execution environment changed during permission review");
+    }
+    const catalog = validateEffectiveToolCatalog(this.configValue.catalog());
+    if (!isDeepStrictEqual(catalog, context.catalog)
+      || operation.birth.toolCatalogRevision !== catalog.revision
+      || operation.birth.toolCatalogDigest !== catalog.digest) {
+      throw new ProductToolError("tool_catalog_stale", "base tool catalog changed during permission review");
+    }
   }
 
   assertCurrent(context: ProductToolContext, tool: CanonicalToolName): void {

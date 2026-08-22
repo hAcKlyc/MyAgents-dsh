@@ -638,6 +638,22 @@ export class ProductPlanService extends Service {
     );
   }
 
+  assertExternalTool(context: ProductToolContext, toolName: string): void {
+    this.assertHealthy();
+    const snapshot = this.snapshot(context.agent);
+    if (context.birth.planRevision !== snapshot.revision
+      && (snapshot.transitionOwner?.clientOperationId !== context.clientOperationId
+        || snapshot.transitionOwner.productTurnId !== context.productTurnId)) {
+      throw new ProductToolError("plan_revision_stale", "tool call plan state differs from operation birth");
+    }
+    if (snapshot.mode === "plan") {
+      throw new ProductToolError(
+        "plan_mode_tool_forbidden",
+        `${toolName} is forbidden by hard plan-mode policy`,
+      );
+    }
+  }
+
   private guardExecution(execution: Readonly<ToolExecution>): string | undefined {
     let primary: Agent;
     try {

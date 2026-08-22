@@ -24,11 +24,17 @@ import {
   type OperationBirthAuthority,
   type OperationLifecycleController,
 } from "@myagents-dsh/operation-runtime";
+import { ProtocolError } from "@myagents-dsh/protocol";
 import {
   ProductComponentService,
+  type ComponentCompiler,
   type ProductComponentPlaneConfig,
   type ProductComponentServiceController,
 } from "@myagents-dsh/component-runtime";
+import {
+  createMcpComponentCompiler,
+  type McpConnectionFactory,
+} from "@myagents-dsh/components-mcp";
 import {
   HostCredentialProvider,
   HostPortService,
@@ -654,6 +660,26 @@ export const installProductComponentPlane = async (
   }
 };
 
+export const createProductMcpComponentCompiler = (
+  composition: DshRootComposition,
+  connectionFactory: McpConnectionFactory,
+): ComponentCompiler => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.componentPlane !== "absent") {
+    throw new Error(
+      "MCP compiler requires the exact unclaimed root composition before component configuration",
+    );
+  }
+  composition.snapshot();
+  return createMcpComponentCompiler({
+    connectionFactory,
+    context: root,
+    ...(authority.hostCredentials === undefined ? {} : { credentials: authority.hostCredentials }),
+  });
+};
+
 export const installHostDeepSeekModelPlane = async (
   composition: DshRootComposition,
   config: HostDeepSeekModelPlaneConfig,
@@ -775,6 +801,32 @@ export const composeDshRootServices = async (
       throw new Error("root composition did not capture its operation lifecycle controller");
     }
     await root.plugin(ProductComponentService, {
+      authorizeToolExecution: async (identity, componentId, toolName, target, execution) => {
+        const context = root.productTools.resolveExternal(execution, toolName);
+        const { dshTurn, operation } = root.sdkOperations.resolveActiveToolOperation(context.agent);
+        if (operation.birth.componentRevision !== identity.revision
+          || operation.birth.componentDigest !== identity.digest
+          || !operation.dshTurns.includes(dshTurn)) {
+          throw new ProtocolError("extension_tool_stale", "component tool differs from operation birth authority", true);
+        }
+        root.productPlan.assertExternalTool(context, toolName);
+        await root.productTools.authorizeExternal(context, Object.freeze({
+          permissionClass: "mcp.call",
+          target: `mcp:${identity.digest}:${componentId}:${target}`,
+          tool: toolName,
+        }));
+        root.productPlan.assertExternalTool(context, toolName);
+      },
+      assertToolExecution: (identity, _componentId, toolName, execution) => {
+        const context = root.productTools.resolveExternal(execution, toolName);
+        const { dshTurn, operation } = root.sdkOperations.resolveActiveToolOperation(context.agent);
+        if (operation.birth.componentRevision !== identity.revision
+          || operation.birth.componentDigest !== identity.digest
+          || !operation.dshTurns.includes(dshTurn)) {
+          throw new ProtocolError("extension_tool_stale", "component tool differs from operation birth authority", true);
+        }
+        root.productPlan.assertExternalTool(context, toolName);
+      },
       registerController: (controller) => {
         if (componentController !== undefined) {
           throw new Error("component controller may register exactly once");

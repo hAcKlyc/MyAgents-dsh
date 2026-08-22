@@ -80,6 +80,8 @@ const mount = async (options: Readonly<{
   contexts.push(root);
   let controller: ProductComponentServiceController | undefined;
   await root.plugin(ProductComponentService, {
+    authorizeToolExecution: () => Promise.resolve(),
+    assertToolExecution: () => undefined,
     registerController: (value) => { controller = value; },
     runAtCommitBoundary: options.boundary ?? ((_signal, commit) => {
       commit();
@@ -200,7 +202,7 @@ describe("transactional product component generations", () => {
     expect(harness.service.catalog().agents).toEqual(["agent-one"]);
   });
 
-  it("keeps old generations installed until their exact ProductWork owners drain", async () => {
+  it("switches registrations atomically while retaining old generation resources until owners drain", async () => {
     const effects: string[] = [];
     let releaseOld!: () => void;
     const oldUnused = new Promise<void>((resolve) => { releaseOld = resolve; });
@@ -231,17 +233,17 @@ describe("transactional product component generations", () => {
     await harness.controller.replace(snapshot("extension-old-v1", [agentComponent("old")]));
     const newSnapshot = snapshot("extension-new-v1", [agentComponent("new")]);
     await harness.controller.replace(newSnapshot);
-    expect(effects).toEqual(["install:old", "install:new"]);
+    expect(effects).toEqual(["install:old", "uninstall:old", "install:new"]);
     expect(harness.service.catalog().agents).toEqual(["new"]);
     releaseOld();
     await oldUnused;
     await new Promise((resolve) => setImmediate(resolve));
-    expect(effects).toEqual(["install:old", "install:new", "uninstall:old", "dispose:old"]);
+    expect(effects).toEqual(["install:old", "uninstall:old", "install:new", "dispose:old"]);
     await harness.controller.close();
     expect(effects).toEqual([
       "install:old",
-      "install:new",
       "uninstall:old",
+      "install:new",
       "dispose:old",
       "uninstall:new",
       "dispose:new",

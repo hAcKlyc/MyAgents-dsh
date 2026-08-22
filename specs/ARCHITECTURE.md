@@ -186,6 +186,7 @@ Shared conformance suites run against every platform adapter. A target that has 
 | Tool registry and execution | DSH `ctx.tools` | Scope disposal unregisters capabilities |
 | Exact canonical tool compatibility | MyAgents tool plugins | Registered into `ctx.tools` |
 | Desired/effective extensions | `ProductComponentService` | Prepared contribution generations, atomic promotion, disposal |
+| MCP connection and discovered definitions | `@myagents-dsh/components-mcp` within one component generation | MCP SDK transport supplied by trusted composition; DSH tool registrations switch atomically and the retired connection drains in reverse-order cleanup |
 | Permission policy | MyAgents permission plugin | DSH guards/approval plus durable policy events |
 | User questions and approval UI | Host provider behind DSH seams | Pending requests cancelled on turn/session teardown |
 | Plan and TaskGraph | MyAgents plan/task plugins | Durable DSH session events |
@@ -335,6 +336,8 @@ desired snapshot
 ```
 
 Staging must not register a tool, prompt section, or listener into the live Agent scope: DSH registry effects are visible immediately. Commit runs behind a gate that admits no model request, tool execution, catalog read, or new reverse request until the effect group is installed or rolled back. Failure leaves the previous effective snapshot active. Per-component states are `ready`, `degraded`, `failed`, `needs_auth`, `disabled`, or `unsupported` and are observable over RPC.
+
+`@myagents-dsh/components-mcp` is the MCP compiler owned by that lifecycle. Trusted composition supplies an approved MCP SDK transport factory; preparation binds any Host credential to the exact component generation, connects and discovers a bounded catalog without registering it, and returns only contribution plans. Commit swaps the namespaced definitions synchronously through the sole `ctx.tools` registry. Each call revalidates the operation-frozen component identity, hard plan policy, and the shared ProductPermission authority before dispatch. A replacement generation owns a fresh connection and catalog, never mutates live definitions in place, and the prior connection remains only until its frozen operation owners drain. Disposal aborts active calls, waits for quiescence, closes the SDK client/transport, and then releases the remaining generation resources.
 
 DSH Agent Presets are not used for this lifecycle. Presets are filesystem compositions that may load modules, and their public recompose contract is valid only while the Session has produced nothing.
 

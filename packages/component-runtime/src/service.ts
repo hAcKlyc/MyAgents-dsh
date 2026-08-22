@@ -1,4 +1,5 @@
 import { Service, symbols, type Context } from "@deepseek-ai/cordis";
+import type { ToolRunContext } from "@deepseek-ai/dsh-tools";
 import type { OperationBirthSnapshot } from "@myagents-dsh/operation-runtime";
 import {
   ProtocolError,
@@ -14,6 +15,7 @@ import {
   buildExtensionCatalog,
   validateExtensionSnapshot,
   type ComponentCompiler,
+  type ComponentPrepareAuthority,
   type ComponentStatus,
   type ExtensionCatalog,
   type ExtensionComponent,
@@ -55,12 +57,27 @@ export interface ProductComponentServiceController {
 }
 
 export interface ProductComponentServiceConfig {
+  readonly authorizeToolExecution: (
+    identity: ComponentGenerationIdentity,
+    componentId: string,
+    toolName: string,
+    target: string,
+    execution: ToolRunContext,
+  ) => Promise<void>;
+  readonly assertToolExecution: (
+    identity: ComponentGenerationIdentity,
+    componentId: string,
+    toolName: string,
+    execution: ToolRunContext,
+  ) => void;
   readonly registerController: (controller: ProductComponentServiceController) => void;
   readonly runAtCommitBoundary: ComponentCommitBoundary;
   readonly whenGenerationUnused: (identity: ComponentGenerationIdentity) => Promise<void>;
 }
 
 type NormalizedServiceConfig = Readonly<{
+  authorizeToolExecution: ProductComponentServiceConfig["authorizeToolExecution"];
+  assertToolExecution: ProductComponentServiceConfig["assertToolExecution"];
   registerController: (controller: ProductComponentServiceController) => void;
   runAtCommitBoundary: ComponentCommitBoundary;
   whenGenerationUnused: (identity: ComponentGenerationIdentity) => Promise<void>;
@@ -82,7 +99,7 @@ type PreparedGeneration = {
 };
 
 type CommittedGeneration = PreparedGeneration & {
-  readonly installedDisposers: readonly (() => void)[];
+  installedDisposers: readonly (() => void)[];
   disposePromise?: Promise<void>;
 };
 
@@ -243,14 +260,33 @@ const normalizeCatalogContribution = (value: unknown): PreparedContribution["cat
 const normalizeServiceConfig = (value: ProductComponentServiceConfig): NormalizedServiceConfig => {
   const config = exactObject(
     value,
-    ["registerController", "runAtCommitBoundary", "whenGenerationUnused"],
+    ["assertToolExecution", "authorizeToolExecution", "registerController", "runAtCommitBoundary", "whenGenerationUnused"],
     [],
     "ProductComponentService config",
   );
+  const assertToolExecution = callable(config.assertToolExecution, "component tool execution authority");
+  const authorizeToolExecution = callable(config.authorizeToolExecution, "component tool permission authority");
   const registerController = callable(config.registerController, "component controller registrar");
   const runAtCommitBoundary = callable(config.runAtCommitBoundary, "component commit boundary");
   const whenGenerationUnused = callable(config.whenGenerationUnused, "component generation drain authority");
   return Object.freeze({
+    authorizeToolExecution: (
+      identity: ComponentGenerationIdentity,
+      componentId: string,
+      toolName: string,
+      target: string,
+      execution: ToolRunContext,
+    ) => Reflect.apply(authorizeToolExecution, value, [
+      identity, componentId, toolName, target, execution,
+    ]) as Promise<void>,
+    assertToolExecution: (
+      identity: ComponentGenerationIdentity,
+      componentId: string,
+      toolName: string,
+      execution: ToolRunContext,
+    ) => {
+      Reflect.apply(assertToolExecution, value, [identity, componentId, toolName, execution]);
+    },
     registerController: (controller: ProductComponentServiceController) => {
       Reflect.apply(registerController, value, [controller]);
     },
@@ -280,8 +316,9 @@ const normalizePlaneConfig = (value: ProductComponentPlaneConfig): NormalizedPla
         component: ExtensionComponent,
         snapshot: ExtensionSnapshot,
         signal: AbortSignal,
+        authority: ComponentPrepareAuthority,
       ) =>
-        Reflect.apply(prepare, compilerValue, [component, snapshot, signal]) as Promise<PreparedComponentPlan>,
+        Reflect.apply(prepare, compilerValue, [component, snapshot, signal, authority]) as Promise<PreparedComponentPlan>,
     }));
   }
   return Object.freeze({
@@ -361,6 +398,64 @@ export class ProductComponentService extends Service {
   readonly #retirements = new Set<Promise<void>>();
   readonly #retirementFailures: unknown[] = [];
   readonly #config: NormalizedServiceConfig;
+
+  #prepareAuthority(
+    component: ExtensionComponent,
+    snapshot: ExtensionSnapshot,
+    signal: AbortSignal,
+  ): ComponentPrepareAuthority {
+    const identity = Object.freeze({ digest: snapshot.digest, revision: snapshot.revision });
+    const componentGenerationId = `${snapshot.revision}:${snapshot.digest}`;
+    const assertCurrent = (): void => {
+      if (this.#phase === "closed" || this.#recoveryRequired) {
+        throw new ProtocolError("extension_snapshot_stale", "component generation authority is closed or fenced", true);
+      }
+      const preparing = this.#desired === snapshot
+        && (this.#phase === "preparing" || this.#phase === "prepared" || this.#phase === "committing")
+        && (this.#candidate === undefined || this.#candidate.snapshot === snapshot);
+      const committed = this.#effective?.snapshot === snapshot
+        || [...this.#retired].some((generation) => generation.snapshot === snapshot);
+      if (!preparing && !committed) {
+        throw new ProtocolError("extension_snapshot_stale", "component generation authority is no longer current", true);
+      }
+    };
+    return Object.freeze({
+      assertCurrent,
+      assertToolExecution: (toolName: string, execution: ToolRunContext) => {
+        assertCurrent();
+        const generation = this.#effective?.snapshot === snapshot
+          ? this.#effective
+          : [...this.#retired].find((candidate) => candidate.snapshot === snapshot);
+        if (!generation?.contributions.some((contribution) =>
+          contribution.componentId === component.id
+          && contribution.kind === component.kind
+          && contribution.catalog?.kind === "tool"
+          && contribution.catalog.name === toolName)) {
+          throw new ProtocolError("extension_tool_stale", "component tool is absent from its committed generation", true);
+        }
+        this.#config.assertToolExecution(identity, component.id, toolName, execution);
+        assertCurrent();
+      },
+      authorizeToolExecution: async (
+        toolName: string,
+        target: string,
+        execution: ToolRunContext,
+      ) => {
+        assertCurrent();
+        await this.#config.authorizeToolExecution(
+          identity,
+          component.id,
+          toolName,
+          target,
+          execution,
+        );
+        assertCurrent();
+      },
+      componentGenerationId,
+      componentId: component.id,
+      signal,
+    });
+  }
 
   constructor(ctx: Context, config: ProductComponentServiceConfig) {
     super(ctx, "productComponents");
@@ -506,7 +601,12 @@ export class ProductComponentService extends Service {
           }));
           throw new ProtocolError("extension_component_unsupported", "enabled component kind is not installed");
         }
-        const pending = compiler.prepare(component, snapshot, signal);
+        const pending = compiler.prepare(
+          component,
+          snapshot,
+          signal,
+          this.#prepareAuthority(component, snapshot, signal),
+        );
         if (isProxy(pending) || !(pending instanceof Promise)) {
           throw new TypeError("component compiler must return one native Promise");
         }
@@ -591,7 +691,11 @@ export class ProductComponentService extends Service {
     const entered = await this.#config.runAtCommitBoundary(signal, () => {
       this.#phase = "committing";
       const installed: (() => void)[] = [];
+      const previous = this.#effective;
+      const previousDisposers = previous?.installedDisposers ?? [];
       try {
+        for (const dispose of [...previousDisposers].reverse()) dispose();
+        if (previous !== undefined) previous.installedDisposers = Object.freeze([]);
         for (const contribution of candidate.contributions) {
           const disposer = contribution.install();
           if (disposer !== undefined) {
@@ -606,6 +710,21 @@ export class ProductComponentService extends Service {
         const rollbackErrors: unknown[] = [];
         for (const dispose of installed.reverse()) {
           try { dispose(); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+        }
+        if (previous !== undefined) {
+          const restored: (() => void)[] = [];
+          try {
+            for (const contribution of previous.contributions) {
+              const disposer = contribution.install();
+              if (disposer !== undefined) restored.push(disposer);
+            }
+            previous.installedDisposers = Object.freeze(restored);
+          } catch (rollbackError) {
+            rollbackErrors.push(rollbackError);
+            for (const dispose of restored.reverse()) {
+              try { dispose(); } catch (disposeError) { rollbackErrors.push(disposeError); }
+            }
+          }
         }
         commitFailure = rollbackErrors.length === 0
           ? error

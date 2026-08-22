@@ -8,6 +8,7 @@
   "files": ["src/composition.ts", "src/host-model.ts", "src/index.ts", "src/primary-session.ts"],
   "references": [
     { "path": "../component-runtime" },
+    { "path": "../components-mcp" },
     { "path": "../host-ports" },
     { "path": "../operation-runtime" },
     { "path": "../product-profile" },

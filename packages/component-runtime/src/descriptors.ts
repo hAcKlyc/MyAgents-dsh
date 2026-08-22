@@ -10,6 +10,7 @@ import {
   type MethodParams,
   type MethodResult,
 } from "@myagents-dsh/protocol";
+import type { ToolRunContext } from "@deepseek-ai/dsh-tools";
 
 export type ExtensionSnapshot = MethodParams<"extension/replace">;
 export type ExtensionComponent = ExtensionSnapshot["components"][number];
@@ -38,12 +39,26 @@ export interface PreparedComponentPlan {
   readonly dispose: () => Promise<void>;
 }
 
+export interface ComponentPrepareAuthority {
+  readonly componentGenerationId: string;
+  readonly componentId: string;
+  readonly signal: AbortSignal;
+  readonly assertCurrent: () => void;
+  readonly assertToolExecution: (toolName: string, execution: ToolRunContext) => void;
+  readonly authorizeToolExecution: (
+    toolName: string,
+    target: string,
+    execution: ToolRunContext,
+  ) => Promise<void>;
+}
+
 export interface ComponentCompiler {
   readonly kind: ExtensionComponent["kind"];
   readonly prepare: (
     component: ExtensionComponent,
     snapshot: ExtensionSnapshot,
     signal: AbortSignal,
+    authority: ComponentPrepareAuthority,
   ) => Promise<PreparedComponentPlan>;
 }
 

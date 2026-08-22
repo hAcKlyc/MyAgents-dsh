@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "rootDir": ".",
+    "outDir": "../../dist/packages/components-mcp",
+    "tsBuildInfoFile": "../../dist/packages/components-mcp/.tsbuildinfo"
+  },
+  "files": ["src/compiler.ts", "src/index.ts", "src/sdk-connection.ts"],
+  "references": [
+    { "path": "../component-runtime" },
+    { "path": "../host-ports" },
+    { "path": "../tool-contracts" }
+  ]
+}

@@ -8,6 +8,13 @@ import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers
 
 import { Context } from "@deepseek-ai/cordis";
 import type { ComponentCompiler, ExtensionComponent } from "@myagents-dsh/component-runtime";
+import type { McpConnectionFactory } from "@myagents-dsh/components-mcp";
+import { createSdkMcpConnectionFactory } from "@myagents-dsh/components-mcp/sdk";
+import {
+  LATEST_PROTOCOL_VERSION,
+  type JSONRPCMessage,
+} from "@modelcontextprotocol/sdk/types.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import {
   freezeMessage,
@@ -46,6 +53,7 @@ import { startNativeRpcLifecycle } from "@myagents-dsh/runtime-server";
 import {
   claimNativeRpcLifecycleAuthority,
   composeDshRootServices,
+  createProductMcpComponentCompiler,
   DshRootComposition,
   installCanonicalToolPlane,
   installHostDeepSeekModelPlane,
@@ -136,6 +144,23 @@ const artifactExtensionAuthority: Omit<MethodParams<"extension/replace">, "diges
 const artifactExtensionSnapshot = Object.freeze({
   ...artifactExtensionAuthority,
   digest: extensionSnapshotDigest(artifactExtensionAuthority),
+});
+const hostModelExtensionAuthority: Omit<MethodParams<"extension/replace">, "digest"> = {
+  ...artifactExtensionAuthority,
+  revision: "artifact-host-model-components-v1",
+  components: [...artifactExtensionAuthority.components, Object.freeze({
+    id: "artifact-mcp",
+    enabled: true,
+    kind: "mcp" as const,
+    descriptor: Object.freeze({
+      transport: "http" as const,
+      url: "https://mcp.example.test/rpc",
+    }),
+  })],
+};
+const hostModelExtensionSnapshot = Object.freeze({
+  ...hostModelExtensionAuthority,
+  digest: extensionSnapshotDigest(hostModelExtensionAuthority),
 });
 const createArtifactComponentCompiler = (effects: string[]): ComponentCompiler => Object.freeze({
   kind: "agent",
@@ -1133,14 +1158,60 @@ const hostModelComposition = await composeDshRootServices({
   providers: ["fixture-bootstrap"],
 });
 const hostModelComponentEffects: string[] = [];
+let hostModelMcpCloseHits = 0;
+const hostModelMcpWireMethods: string[] = [];
+const hostModelMcpFactory: McpConnectionFactory = createSdkMcpConnectionFactory(Object.freeze({
+  createTransport: (input: Parameters<McpConnectionFactory["connect"]>[0]) => {
+    hostModelComponentEffects.push(`mcp-connect:${input.serverId}`);
+    const transport: Transport = {
+      close: () => {
+        hostModelMcpCloseHits += 1;
+        hostModelComponentEffects.push(`mcp-close:${input.serverId}`);
+        transport.onclose?.();
+        return Promise.resolve();
+      },
+      send: (message: JSONRPCMessage) => {
+        if (!("method" in message)) return Promise.resolve();
+        hostModelMcpWireMethods.push(message.method);
+        if (!("id" in message)) return Promise.resolve();
+        const result = message.method === "initialize"
+          ? {
+              capabilities: { tools: {} },
+              protocolVersion: LATEST_PROTOCOL_VERSION,
+              serverInfo: { name: "artifact-mcp", version: "1.0.0" },
+            }
+          : message.method === "tools/list"
+            ? {
+                tools: [{
+                  description: "Artifact MCP echo",
+                  inputSchema: { type: "object" },
+                  name: "echo",
+                }],
+              }
+            : { content: [{ type: "text", text: "artifact MCP result" }], isError: false };
+        queueMicrotask(() => transport.onmessage?.({
+          id: message.id,
+          jsonrpc: "2.0",
+          result,
+        }));
+        return Promise.resolve();
+      },
+      start: () => Promise.resolve(),
+    };
+    return Promise.resolve(transport);
+  },
+}));
 await installHostDeepSeekModelPlane(hostModelComposition, {
   resolveUserId: () => "00000000-0000-4000-8000-000000000001",
 });
 await installCanonicalToolPlane(hostModelComposition, canonicalToolPlaneConfig);
 await installProductComponentPlane(hostModelComposition, Object.freeze({
   catalog: validatedArtifactToolCatalog,
-  compilers: Object.freeze([createArtifactComponentCompiler(hostModelComponentEffects)]),
-  initialSnapshot: artifactExtensionSnapshot,
+  compilers: Object.freeze([
+    createArtifactComponentCompiler(hostModelComponentEffects),
+    createProductMcpComponentCompiler(hostModelComposition, hostModelMcpFactory),
+  ]),
+  initialSnapshot: hostModelExtensionSnapshot,
 }));
 captureHostModelPermissionRevision = () => hostModelComposition.context.productPermission.currentRevision(
   hostModelComposition.context.productSession.requireAgent(),
@@ -1198,7 +1269,7 @@ await hostModelComposition.context.productSession.bindCreate({
   persistenceRef: "artifact-host-model-persistence",
   provider: hostModelProfile,
   configRevision: "artifact-host-model-config-v1",
-  extensionDigest: artifactExtensionSnapshot.digest,
+  extensionDigest: hostModelExtensionSnapshot.digest,
   systemPrompt: "Synthetic credential-free Host model evidence.",
   permissionMode: "default",
   interactionScenario: "deterministic-headless",
@@ -1248,7 +1319,9 @@ globalThis.fetch = (_input: string | URL | Request, init?: RequestInit): Promise
       }))}}}]},"finish_reason":"tool_calls"}]}`
     : hostModelFetchSequence === 2
       ? '{"choices":[{"delta":{"content":"child credential route verified"},"finish_reason":"stop"}]}'
-      : '{"choices":[{"delta":{"content":"root credential route verified"},"finish_reason":"stop"}]}';
+      : hostModelFetchSequence === 3
+        ? `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"artifact-host-model-mcp-call","type":"function","function":{"name":"mcp__artifact-mcp__echo","arguments":${JSON.stringify(JSON.stringify({ value: "ping" }))}}}]},"finish_reason":"tool_calls"}]}`
+        : '{"choices":[{"delta":{"content":"root credential and MCP route verified"},"finish_reason":"stop"}]}';
   const stream = [
     `data: ${payload}`,
     'data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3}}',
@@ -1266,7 +1339,7 @@ try {
     clientUserMessageId: "artifact-host-model-user-message",
     input: { parts: [{ kind: "text", text: "verify Host-scoped model credentials" }] },
     configRevision: "artifact-host-model-config-v1",
-    extensionDigest: artifactExtensionSnapshot.digest,
+    extensionDigest: hostModelExtensionSnapshot.digest,
     executionEnvironmentRevision: initializeRequest.executionEnvironment.revision,
     executionEnvironmentDigest: initializeRequest.executionEnvironment.digest,
     limits: { maxTurns: 1, maxDurationMs: 30_000 },
@@ -1289,10 +1362,11 @@ try {
 } finally {
   globalThis.fetch = previousFetch;
 }
-assert.deepEqual(hostModelAuthorization, Array.from({ length: 3 }, () => `Bearer ${hostModelSecret}`));
-assert.equal(hostModelCredentialCalls.length, 4);
+assert.deepEqual(hostModelAuthorization, Array.from({ length: 4 }, () => `Bearer ${hostModelSecret}`));
+assert.equal(hostModelCredentialCalls.length, 5);
 assert.deepEqual(hostModelCredentialCalls.map(({ purpose }) => purpose), [
   "availability",
+  "model_request",
   "model_request",
   "model_request",
   "model_request",
@@ -1354,7 +1428,20 @@ const hostModelSecretProjectionRejected = !JSON.stringify({
     header: session.header,
   })),
 }).includes(hostModelSecret);
-const hostCredentialModelVerified = hostModelFetchSequence === 3
+const hostModelMcpPermission = fileToolEvidence.find((entry) =>
+  entry.startsWith("permission:mcp__artifact-mcp__echo:mcp:"));
+const hostModelMcpResult = hostModelComposition.context.productSession.requireAgent().session.events.findLast(
+  (event) => event.type === "tool/result"
+    && String(event.data.message.source.callId) === "artifact-host-model-mcp-call",
+);
+assert.ok(hostModelMcpResult?.type === "tool/result");
+assert.deepEqual(hostModelMcpResult.data.message.content, [{
+  isError: false,
+  type: "text",
+  text: "artifact MCP result",
+}]);
+assert.equal(hostModelMcpPermission?.includes(hostModelExtensionSnapshot.digest), true);
+const hostCredentialModelVerified = hostModelFetchSequence === 4
   && hostCredentialPublicControllerHidden
   && hostModelRequestAuthorityBound
   && hostModelSecretProjectionRejected
@@ -1372,10 +1459,18 @@ await hostModelClient.runtimeShutdown({ reason: "artifact-host-model-complete" }
 await hostModelServer.whenStopped();
 assert.deepEqual(hostModelComponentEffects, [
   "prepare:artifact-declarative-agent",
+  "mcp-connect:artifact-mcp",
   "install:artifact-declarative-agent",
   "uninstall:artifact-declarative-agent",
+  "mcp-close:artifact-mcp",
   "dispose:artifact-declarative-agent",
 ]);
+const hostModelMcpLifecycleVerified = hostModelMcpCloseHits === 1
+  && JSON.stringify(hostModelMcpWireMethods) === JSON.stringify([
+    "initialize", "notifications/initialized", "tools/list", "tools/call",
+  ])
+  && hostModelMcpPermission.includes(hostModelExtensionSnapshot.digest);
+assert.equal(hostModelMcpLifecycleVerified, true);
 hostModelPeer.close();
 hostModelInput.destroy();
 hostModelOutput.destroy();
@@ -2754,6 +2849,7 @@ process.stdout.write(`${JSON.stringify({
   hostPortServiceVerified: reverseMethodOrder.length === 7,
   hostCredentialModelVerified,
   componentGenerationVerified,
+  mcpLifecycleVerified: hostModelMcpLifecycleVerified,
   hostPortLifecycleAuthorityVerified,
   hostPortMethodOrder: reverseMethodOrder,
   hostCredentialModelEvidence: {

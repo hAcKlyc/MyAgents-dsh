@@ -19,6 +19,7 @@
     "packageAuthorities": {
       "@myagents-dsh/artifact-verifier": "0.0.0",
       "@myagents-dsh/component-runtime": "0.0.0",
+      "@myagents-dsh/components-mcp": "0.0.0",
       "@myagents-dsh/host-ports": "0.0.0",
       "@myagents-dsh/operation-runtime": "0.0.0",
       "@myagents-dsh/product-profile": "0.0.0",

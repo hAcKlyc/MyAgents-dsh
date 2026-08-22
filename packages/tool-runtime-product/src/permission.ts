@@ -46,14 +46,21 @@ export type ProductPermissionMode =
   | "dontAsk";
 
 export type ProductPermissionDecision = "allow_once" | "always_allow" | "deny" | "cancelled";
+export type ProductPermissionClass = PermissionClass | "mcp.call";
+
+type ProductPermissionRequest = Readonly<{
+  permissionClass: ProductPermissionClass;
+  target: string;
+  tool: string;
+}>;
 
 export interface ProductPermissionRuleEvent {
   readonly sessionId: string;
   readonly ruleId: string;
   readonly fromRevision: string;
   readonly revision: string;
-  readonly tool: CanonicalToolName;
-  readonly permissionClass: PermissionClass;
+  readonly tool: string;
+  readonly permissionClass: ProductPermissionClass;
   readonly target: string;
   readonly origin: "root";
   readonly createdAt: number;
@@ -72,8 +79,8 @@ export interface ProductPermissionInteractionRequest {
   readonly productTurnId: string;
   readonly dshTurn: number;
   readonly callId: string;
-  readonly tool: CanonicalToolName;
-  readonly permissionClass: PermissionClass;
+  readonly tool: string;
+  readonly permissionClass: ProductPermissionClass;
   readonly target: string;
   readonly origin: "root";
   readonly expectedPermissionRevision: string;
@@ -126,8 +133,8 @@ export interface ProductPermissionRule {
   readonly sessionId: string;
   readonly ruleId: string;
   readonly revision: string;
-  readonly tool: CanonicalToolName;
-  readonly permissionClass: PermissionClass;
+  readonly tool: string;
+  readonly permissionClass: ProductPermissionClass;
   readonly target: string;
   readonly origin: "root";
   readonly createdAt: number;
@@ -326,8 +333,8 @@ const exactLocalDisposer = (value: unknown): ProductLocalInteractionDisposer => 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
 const ruleKey = (rule: Readonly<{
-  tool: CanonicalToolName;
-  permissionClass: PermissionClass;
+  tool: string;
+  permissionClass: ProductPermissionClass;
   target: string;
   origin: "root";
 }>): string => JSON.stringify([rule.tool, rule.permissionClass, rule.target, rule.origin]);
@@ -385,6 +392,19 @@ const validatePermissionClass = (
   return expected;
 };
 
+const validateProductPermissionClass = (
+  value: unknown,
+  tool: string,
+): ProductPermissionClass => {
+  if (canonicalToolNames.has(tool)) {
+    return validatePermissionClass(value, tool as CanonicalToolName);
+  }
+  if (!tool.startsWith("mcp__") || value !== "mcp.call") {
+    throw new TypeError("dynamic permission class must match one namespaced MCP tool");
+  }
+  return "mcp.call";
+};
+
 const validateRuleEvent = (value: unknown): ProductPermissionRuleEvent => {
   const event = exactOwnDataObject(value, [
     "sessionId", "ruleId", "fromRevision", "revision", "tool", "permissionClass", "target",
@@ -395,14 +415,14 @@ const validateRuleEvent = (value: unknown): ProductPermissionRuleEvent => {
   const createdAt = safeEpoch(event.createdAt, "permission rule creation time");
   const expiresAt = safeEpoch(event.expiresAt, "permission rule expiry time");
   if (expiresAt <= createdAt) throw new TypeError("permission rule expiry must follow creation");
-  const tool = validateToolName(event.tool, "permission rule tool");
+  const tool = boundedIdentifier(event.tool, "permission rule tool");
   return Object.freeze({
     sessionId: boundedIdentifier(event.sessionId, "permission rule Session id"),
     ruleId: boundedIdentifier(event.ruleId, "permission rule id"),
     fromRevision: boundedIdentifier(event.fromRevision, "permission rule source revision"),
     revision: boundedIdentifier(event.revision, "permission rule revision"),
     tool,
-    permissionClass: validatePermissionClass(event.permissionClass, tool),
+    permissionClass: validateProductPermissionClass(event.permissionClass, tool),
     target: boundedTarget(event.target),
     origin,
     createdAt,
@@ -881,11 +901,39 @@ export class ProductPermissionService extends Service {
       "product tool permission request",
     );
     const tool = validateToolName(request.tool, "permission request tool");
-    const normalized = Object.freeze({
+    const normalized: ProductPermissionRequest = Object.freeze({
       permissionClass: validatePermissionClass(request.permissionClass, tool),
       target: boundedTarget(request.target),
       tool,
     });
+    return await this.authorizeNormalized(context, normalized);
+  }
+
+  async authorizeExternal(
+    context: ProductToolContext,
+    rawRequest: unknown,
+  ): Promise<"allow" | "deny"> {
+    this.assertHealthy();
+    context.signal.throwIfAborted();
+    const request = exactOwnDataObject(
+      rawRequest,
+      ["permissionClass", "target", "tool"],
+      [],
+      "external product tool permission request",
+    );
+    const tool = boundedIdentifier(request.tool, "external permission tool");
+    const normalized: ProductPermissionRequest = Object.freeze({
+      permissionClass: validateProductPermissionClass(request.permissionClass, tool),
+      target: boundedTarget(request.target),
+      tool,
+    });
+    return await this.authorizeNormalized(context, normalized);
+  }
+
+  private async authorizeNormalized(
+    context: ProductToolContext,
+    normalized: ProductPermissionRequest,
+  ): Promise<"allow" | "deny"> {
     if (context.birth.interactionScenarioRevision !== this.configValue.interaction.revision) {
       throw new ProductPermissionError(
         "interaction_revision_stale",
@@ -907,13 +955,13 @@ export class ProductPermissionService extends Service {
   }
 
   private isAutomaticallyAllowed(
-    request: Readonly<ProductToolPermissionRequest>,
+    request: ProductPermissionRequest,
     birth: ProductPermissionRevisionSnapshot,
     now: number,
   ): boolean {
     if (this.configValue.mode === "bypassPermissions"
       || safeAutoAllow.has(request.permissionClass as PermissionClass)
-      || this.configValue.autoAllowTools.includes(request.tool)
+      || this.configValue.autoAllowTools.includes(request.tool as CanonicalToolName)
       || (this.configValue.mode === "acceptEdits" && request.permissionClass === "workspace.write")) {
       return true;
     }
@@ -925,11 +973,7 @@ export class ProductPermissionService extends Service {
 
   private async requestApproval(
     context: ProductToolContext,
-    request: Readonly<{
-      permissionClass: PermissionClass;
-      target: string;
-      tool: CanonicalToolName;
-    }>,
+    request: ProductPermissionRequest,
     latestRevision: string,
   ): Promise<"allow" | "deny"> {
     if (latestRevision !== context.birth.permissionRevision) {
@@ -1108,11 +1152,7 @@ export class ProductPermissionService extends Service {
 
   private async persistRule(
     context: ProductToolContext,
-    request: Readonly<{
-      permissionClass: PermissionClass;
-      target: string;
-      tool: CanonicalToolName;
-    }>,
+    request: ProductPermissionRequest,
   ): Promise<void> {
     const fold = this.foldInternal(context.agent.session);
     if (fold.latestRevision !== context.birth.permissionRevision) {

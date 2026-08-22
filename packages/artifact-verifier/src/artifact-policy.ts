@@ -54,6 +54,11 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     allowedFiles: ["package.json", "src/descriptors.ts", "src/index.ts", "src/service.ts"],
   },
   {
+    packageName: "@myagents-dsh/components-mcp",
+    relativeDirectory: "packages/components-mcp",
+    allowedFiles: ["package.json", "src/compiler.ts", "src/index.ts", "src/sdk-connection.ts"],
+  },
+  {
     packageName: "@myagents-dsh/host-ports",
     relativeDirectory: "packages/host-ports",
     allowedFiles: ["package.json", "src/credential-provider.ts", "src/index.ts", "src/service.ts"],
