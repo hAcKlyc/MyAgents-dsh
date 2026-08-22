@@ -12,6 +12,7 @@
     { "path": "../packages/component-runtime" },
     { "path": "../packages/components-agents" },
     { "path": "../packages/components-commands" },
+    { "path": "../packages/components-host-tools" },
     { "path": "../packages/components-mcp" },
     { "path": "../packages/components-skills" },
     { "path": "../packages/protocol" },

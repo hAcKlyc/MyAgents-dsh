@@ -63,6 +63,8 @@ const runtimeCompositionSourcePaths = [
   "packages/component-runtime/src/service.ts",
   "packages/components-agents/src/index.ts",
   "packages/components-commands/src/index.ts",
+  "packages/components-host-tools/src/compiler.ts",
+  "packages/components-host-tools/src/index.ts",
   "packages/components-mcp/src/compiler.ts",
   "packages/components-mcp/src/index.ts",
   "packages/components-mcp/src/sdk-connection.ts",
@@ -141,6 +143,7 @@ const runtimePackageWorkspaces = [
   ["packages/component-runtime", "@myagents-dsh/component-runtime"],
   ["packages/components-agents", "@myagents-dsh/components-agents"],
   ["packages/components-commands", "@myagents-dsh/components-commands"],
+  ["packages/components-host-tools", "@myagents-dsh/components-host-tools"],
   ["packages/components-mcp", "@myagents-dsh/components-mcp"],
   ["packages/components-skills", "@myagents-dsh/components-skills"],
   ["packages/protocol", "@myagents-dsh/protocol"],
@@ -995,6 +998,12 @@ const main = (): void => {
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
+      "packages/components-host-tools",
+      "@myagents-dsh/components-host-tools",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
       "packages/components-mcp",
       "@myagents-dsh/components-mcp",
     );
@@ -1121,7 +1130,7 @@ const main = (): void => {
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
         "success", "failure", "file_tools", "edit", "process_search_tools", "web_tools", "interaction",
-        "plan_workflow", "task_graph", "declarative_components", "product_work", "process_abort", "interrupt", "queued_cancel",
+        "plan_workflow", "task_graph", "declarative_components", "host_tool", "product_work", "process_abort", "interrupt", "queued_cancel",
         "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
@@ -1163,10 +1172,10 @@ const main = (): void => {
       evidence.canonicalPermissionEvidence,
       "canonical permission and interaction evidence",
     );
-    if (permissionEvidence.asked !== 23
-      || permissionEvidence.decided !== 23
+    if (permissionEvidence.asked !== 24
+      || permissionEvidence.decided !== 24
       || permissionEvidence.durableRules !== 1
-      || permissionEvidence.providerRequests !== 24
+      || permissionEvidence.providerRequests !== 25
       || permissionEvidence.safeToolsAutoAllowed !== true) {
       throw new Error("canonical permission and interaction evidence differs from the exact policy contract");
     }
@@ -1174,13 +1183,25 @@ const main = (): void => {
       evidence.canonicalTwentyToolPipeline,
       "canonical twenty-tool pipeline evidence",
     );
+    const expectedModelTools = [...CANONICAL_TOOL_NAMES, "mcp__artifact_host__release_check"].toSorted();
     if (canonicalToolPipeline.callCount !== 34
       || JSON.stringify(canonicalToolPipeline.names) !== JSON.stringify(CANONICAL_TOOL_NAMES)
-      || JSON.stringify(canonicalToolPipeline.observedRootToolNames) !== JSON.stringify(CANONICAL_TOOL_NAMES.toSorted())
-      || canonicalToolPipeline.onlyCanonicalToolNames !== true
+      || JSON.stringify(canonicalToolPipeline.observedRootToolNames) !== JSON.stringify(expectedModelTools)
+      || canonicalToolPipeline.onlyExpectedToolNames !== true
       || canonicalToolPipeline.preAssistantCommitTransformHits !== 1
       || canonicalToolPipeline.transformedCallId !== "artifact-write-call") {
       throw new Error("canonical twenty-tool pipeline evidence differs from the exact accumulated contract");
+    }
+    const hostToolEvidence = exactObject(
+      evidence.hostToolComponentEvidence,
+      "generation-owned Host tool evidence",
+    );
+    if (evidence.hostToolComponentVerified !== true
+      || hostToolEvidence.callId !== "artifact-host-tool-call"
+      || hostToolEvidence.componentId !== "mcp__artifact_host__release_check"
+      || hostToolEvidence.hostCalls !== 1
+      || hostToolEvidence.result !== "Host release check accepted") {
+      throw new Error("generation-owned Host tool evidence differs from the exact reverse-port contract");
     }
     const webEvidence = exactObject(evidence.canonicalWebEvidence, "canonical Web tool evidence");
     const webFetch = exactObject(webEvidence.fetch, "canonical WebFetch output evidence");
@@ -1325,9 +1346,11 @@ const main = (): void => {
       "message_event", "usage", "message_event", "usage", "message_event", "usage",
       "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
-      // Declarative Command/Skill, four ProductWork operations, and retained process output.
+      // Declarative Command/Skill, Host tool, four ProductWork operations, and retained process output.
       "turn_admitted", "turn_started", "queued_message", "message_event",
       "assistant_delta", "message_event", "usage", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
@@ -1364,11 +1387,11 @@ const main = (): void => {
     if (JSON.stringify(terminalOutcomes) !== JSON.stringify([
       "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
       "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
-      "succeeded", "succeeded", "succeeded", "succeeded",
+      "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
       "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
     ])) {
       throw new Error(
-        `Runtime terminal projection differs from the twenty real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
+        `Runtime terminal projection differs from the twenty-one real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
       );
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");

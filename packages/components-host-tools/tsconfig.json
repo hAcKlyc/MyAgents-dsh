@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM"],
+    "rootDir": ".",
+    "outDir": "../../dist/packages/components-host-tools",
+    "tsBuildInfoFile": "../../dist/packages/components-host-tools/.tsbuildinfo"
+  },
+  "files": ["src/compiler.ts", "src/index.ts"],
+  "references": [
+    { "path": "../component-runtime" },
+    { "path": "../host-ports" },
+    { "path": "../tool-contracts" },
+    { "path": "../tool-runtime-product" }
+  ]
+}

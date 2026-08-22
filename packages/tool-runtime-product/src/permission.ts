@@ -46,7 +46,7 @@ export type ProductPermissionMode =
   | "dontAsk";
 
 export type ProductPermissionDecision = "allow_once" | "always_allow" | "deny" | "cancelled";
-export type ProductPermissionClass = PermissionClass | "mcp.call";
+export type ProductPermissionClass = PermissionClass | "host_tool.call" | "mcp.call";
 
 type ProductPermissionRequest = Readonly<{
   permissionClass: ProductPermissionClass;
@@ -399,10 +399,10 @@ const validateProductPermissionClass = (
   if (canonicalToolNames.has(tool)) {
     return validatePermissionClass(value, tool as CanonicalToolName);
   }
-  if (!tool.startsWith("mcp__") || value !== "mcp.call") {
-    throw new TypeError("dynamic permission class must match one namespaced MCP tool");
+  if (!tool.startsWith("mcp__") || (value !== "mcp.call" && value !== "host_tool.call")) {
+    throw new TypeError("dynamic permission class must match one namespaced external tool");
   }
-  return "mcp.call";
+  return value;
 };
 
 const validateRuleEvent = (value: unknown): ProductPermissionRuleEvent => {

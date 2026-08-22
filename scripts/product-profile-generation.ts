@@ -34,6 +34,7 @@ const candidatePackagePaths = [
   "packages/component-runtime",
   "packages/components-agents",
   "packages/components-commands",
+  "packages/components-host-tools",
   "packages/components-mcp",
   "packages/components-skills",
   "packages/host-ports",

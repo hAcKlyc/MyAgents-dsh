@@ -43,6 +43,11 @@ import {
   createMcpComponentCompiler,
   type McpConnectionFactory,
 } from "@myagents-dsh/components-mcp";
+import {
+  createHostToolComponentCompiler,
+  type HostToolRequestAuthorityInput,
+  type HostToolRequestAuthorityFactory,
+} from "@myagents-dsh/components-host-tools";
 import { createSkillComponentCompiler } from "@myagents-dsh/components-skills";
 import {
   HostCredentialProvider,
@@ -765,6 +770,41 @@ export const createProductMcpComponentCompiler = (
   });
 };
 
+export const createProductHostToolComponentCompiler = (
+  composition: DshRootComposition,
+): ComponentCompiler => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.canonicalToolPlane !== "installed" || authority.componentPlane !== "absent") {
+    throw new Error(
+      "Host tool compiler requires the exact unclaimed root composition before component configuration",
+    );
+  }
+  composition.snapshot();
+  const requestAuthorities: HostToolRequestAuthorityFactory = Object.freeze({
+    createRequestAuthority: (input: HostToolRequestAuthorityInput) => authority.hostPorts.createRequestAuthority({
+      signal: input.signal,
+      assertCurrent: input.assertCurrent,
+      deadlineMs: input.deadlineMs,
+      runtimeSessionId: String(input.context.agent.id),
+      clientOperationId: input.context.clientOperationId,
+      turnId: input.context.productTurnId,
+      dshTurn: input.context.dshTurn,
+      rootCallId: input.context.rootCallId,
+      callId: input.context.callId,
+      componentGenerationId: input.componentGenerationId,
+      componentId: input.componentId,
+      expectedConfigRevision: input.context.birth.configRevision,
+    }),
+  });
+  return createHostToolComponentCompiler({
+    context: root,
+    requestAuthorities,
+    resolveExecution: (execution, toolName) => root.productTools.resolveExternal(execution, toolName),
+  });
+};
+
 export const createProductSkillComponentCompiler = (
   composition: DshRootComposition,
 ): ComponentCompiler => {
@@ -934,7 +974,7 @@ export const composeDshRootServices = async (
       throw new Error("root composition did not capture its operation lifecycle controller");
     }
     await root.plugin(ProductComponentService, {
-      authorizeToolExecution: async (identity, componentId, toolName, target, execution) => {
+      authorizeToolExecution: async (identity, componentId, componentKind, toolName, target, execution) => {
         const context = root.productTools.resolveExternal(execution, toolName);
         const { dshTurn, operation } = root.sdkOperations.resolveActiveToolOperation(context.agent);
         if (operation.birth.componentRevision !== identity.revision
@@ -943,9 +983,13 @@ export const composeDshRootServices = async (
           throw new ProtocolError("extension_tool_stale", "component tool differs from operation birth authority", true);
         }
         root.productPlan.assertExternalTool(context, toolName);
+        if (componentKind !== "mcp" && componentKind !== "host_tool") {
+          throw new ProtocolError("extension_tool_stale", "component kind cannot own an external tool", true);
+        }
+        const permissionClass = componentKind === "mcp" ? "mcp.call" : "host_tool.call";
         await root.productTools.authorizeExternal(context, Object.freeze({
-          permissionClass: "mcp.call",
-          target: `mcp:${identity.digest}:${componentId}:${target}`,
+          permissionClass,
+          target: `${componentKind}:${identity.digest}:${componentId}:${target}`,
           tool: toolName,
         }));
         root.productPlan.assertExternalTool(context, toolName);

@@ -55,6 +55,7 @@ import {
   composeDshRootServices,
   createProductAgentComponentCompiler,
   createProductCommandComponentCompiler,
+  createProductHostToolComponentCompiler,
   createProductMcpComponentCompiler,
   createProductSkillComponentCompiler,
   DshRootComposition,
@@ -109,6 +110,8 @@ const artifactEffectiveTools = Object.freeze([
   "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
 ] as const);
 const artifactEffectiveToolSet = new Set<string>(artifactEffectiveTools);
+const artifactHostToolName = "mcp__artifact_host__release_check";
+const artifactModelToolSet = new Set<string>([...artifactEffectiveTools, artifactHostToolName]);
 const toolCatalogWithoutDigest = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
@@ -190,6 +193,23 @@ const artifactDeclarativeExtensionAuthority: Omit<MethodParams<"extension/replac
         argumentHint: "<focus>",
         description: "Start one normal product operation for release review",
         resourceId: "review-release-template",
+      }),
+    }),
+    Object.freeze({
+      id: artifactHostToolName,
+      enabled: true,
+      kind: "host_tool" as const,
+      descriptor: Object.freeze({
+        serverId: "artifact_host",
+        toolName: "release_check",
+        description: "Call the exact repository-external Host release check.",
+        inputSchema: Object.freeze({
+          additionalProperties: false,
+          properties: Object.freeze({ focus: Object.freeze({ type: "string" as const }) }),
+          required: ["focus"],
+          type: "object" as const,
+        }),
+        annotations: Object.freeze({ readOnlyHint: true, idempotentHint: true }),
       }),
     }),
   ],
@@ -658,6 +678,15 @@ adapter.enqueue({
   kind: "tool-calls",
 });
 adapter.enqueue({ kind: "complete", text: "dynamic declarative Skill loaded" });
+adapter.enqueue({
+  calls: [{
+    id: "artifact-host-tool-call",
+    name: artifactHostToolName,
+    arguments: JSON.stringify({ focus: "accepted-runtime" }),
+  }],
+  kind: "tool-calls",
+});
+adapter.enqueue({ kind: "complete", text: "Host tool reverse execution completed" });
 
 const rpcDigest = "a".repeat(64);
 let capturePermissionRevision = (): string => {
@@ -955,6 +984,7 @@ await installProductComponentPlane(composition, Object.freeze({
     createProductSkillComponentCompiler(composition),
     createProductAgentComponentCompiler(composition),
     createProductCommandComponentCompiler(composition),
+    createProductHostToolComponentCompiler(composition),
   ]),
   initialSnapshot: artifactDeclarativeExtensionSnapshot,
 }));
@@ -966,6 +996,7 @@ assert.deepEqual(composition.context.productComponents.status(), {
     { key: "skill:release-audit", state: "ready" },
     { key: "agent:release-reviewer", state: "ready" },
     { key: "command:review-release", state: "ready" },
+    { key: `host_tool:${artifactHostToolName}`, state: "ready" },
   ],
 });
 capturePermissionRevision = () => composition.context.productPermission.currentRevision(
@@ -1111,6 +1142,17 @@ const runtimeLifecycle = await startNativeRpcLifecycle(composition, {
 });
 const nativeRpc: NativeRpcServer = runtimeLifecycle.nativeRpc;
 const hostClient = new GeneratedHostClient(hostPeer);
+const hostToolCalls: MethodParams<"host/tool/execute">[] = [];
+hostPeer.registerRequestHandler("host/tool/execute", (params) => {
+  hostToolCalls.push(structuredClone(params));
+  assert.equal(params.tool, artifactHostToolName);
+  assert.deepEqual(params.input, { focus: "accepted-runtime" });
+  return {
+    state: "succeeded" as const,
+    content: [{ type: "text" as const, text: "Host release check accepted" }],
+    structured: { accepted: true, source: "repository-external-host" },
+  };
+});
 const reverseCredentialCanary = "synthetic-reverse-credential-canary";
 const packedReversePair = createInMemoryPeerPair();
 const packedReverseRoot = new Context();
@@ -1947,11 +1989,11 @@ assert.deepEqual(adapter.requests[1]?.messages.map(({ role, content }) => ({ rol
   { role: "assistant", content: [{ type: "text", text: "first completion" }] },
   { role: "user", content: [{ type: "text", text: "second prompt" }] },
 ]);
-assert.deepEqual(adapter.requests[0].toolNames, CANONICAL_TOOL_NAMES.toSorted());
+assert.deepEqual(adapter.requests[0].toolNames, [...CANONICAL_TOOL_NAMES, artifactHostToolName].toSorted());
 assert.equal(
-  adapter.requests.every(({ toolNames }) => toolNames.every((name) => artifactEffectiveToolSet.has(name))),
+  adapter.requests.every(({ toolNames }) => toolNames.every((name) => artifactModelToolSet.has(name))),
   true,
-  "every primary AgentLoop request must expose only canonical tool names",
+  "every primary AgentLoop request must expose only the canonical tools plus the committed Host tool",
 );
 const firstAssistant = primaryAgent.session.events.find(({ type }) => type === "assistant/message");
 assert.ok(firstAssistant?.type === "assistant/message");
@@ -2474,6 +2516,40 @@ assert.deepEqual(await composition.context.skills.snapshot({
   }],
 });
 
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-host-tool-operation",
+  clientUserMessageId: "artifact-host-tool-user-message",
+  input: { parts: [{ kind: "text", text: "Execute one generation-owned Host tool" }] },
+});
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-host-tool-operation")?.state === "terminal",
+  "Host tool operation terminal",
+);
+assert.equal(
+  composition.context.sdkOperations.lookup("artifact-host-tool-operation")?.terminal?.kind,
+  "succeeded",
+);
+assert.equal(durableToolText("artifact-host-tool-call"), "Host release check accepted");
+assert.equal(hostToolCalls.length, 1);
+assert.deepEqual(hostToolCalls[0]?.authority, {
+  requestId: "host-port:1",
+  runtimeGeneration: "artifact-generation",
+  productSessionId: "artifact-product-session",
+  deadlineMs: 120_000,
+  runtimeSessionId: "dsh-artifact-primary",
+  clientOperationId: "artifact-host-tool-operation",
+  turnId: composition.context.sdkOperations.lookup("artifact-host-tool-operation")?.productTurnId,
+  dshTurn: composition.context.sdkOperations.lookup("artifact-host-tool-operation")?.dshTurns[0],
+  rootCallId: "artifact-host-tool-call",
+  callId: "artifact-host-tool-call",
+  componentGenerationId: `${artifactDeclarativeExtensionSnapshot.revision}:${artifactDeclarativeExtensionSnapshot.digest}`,
+  componentId: artifactHostToolName,
+  expectedConfigRevision: "artifact-config-v1",
+});
+assert.ok(fileToolEvidence.includes(`permission:${artifactHostToolName}:host_tool:${artifactDeclarativeExtensionSnapshot.digest}:${artifactHostToolName}:release_check`));
+
 adapter.enqueue({
   calls: [{
     id: "artifact-background-agent-call",
@@ -2848,8 +2924,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 20,
-  "twenty projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 21,
+  "twenty-one projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -2861,7 +2937,7 @@ assert.deepEqual(
   [
     "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
     "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
-    "succeeded", "succeeded", "succeeded", "succeeded",
+    "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
     "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
   ],
 );
@@ -2899,6 +2975,7 @@ assert.deepEqual(componentCatalog.skills, [{
   disableModelInvocation: false,
   name: "release-audit",
 }]);
+assert.deepEqual(componentCatalog.tools, [...CANONICAL_TOOL_NAMES.toSorted(), artifactHostToolName]);
 const componentPublicationVerified = snapshot.componentPlane === "installed"
   && snapshot.componentEffectiveRevision === artifactDeclarativeExtensionSnapshot.revision
   && componentCatalog.revision === artifactDeclarativeExtensionSnapshot.revision;
@@ -2942,8 +3019,8 @@ assert.deepEqual(hostFatalErrors, []);
 const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
 const permissionDecidedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/decided");
 const permissionRuleEvents = primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule");
-assert.equal(permissionAskedEvents.length, 23);
-assert.equal(permissionDecidedEvents.length, 23);
+assert.equal(permissionAskedEvents.length, 24);
+assert.equal(permissionDecidedEvents.length, 24);
 assert.equal(permissionRuleEvents.length, 1);
 packedStandardHost.dispose();
 await packedReverseRoot.fiber.dispose();
@@ -2986,6 +3063,13 @@ process.stdout.write(`${JSON.stringify({
     commandRevision: artifactDeclarativeExtensionSnapshot.revision,
     skillName: "release-audit",
   },
+  hostToolComponentVerified: true,
+  hostToolComponentEvidence: {
+    callId: "artifact-host-tool-call",
+    componentId: artifactHostToolName,
+    hostCalls: hostToolCalls.length,
+    result: "Host release check accepted",
+  },
   mcpLifecycleVerified: hostModelMcpLifecycleVerified,
   hostPortLifecycleAuthorityVerified,
   hostPortMethodOrder: reverseMethodOrder,
@@ -3013,8 +3097,8 @@ process.stdout.write(`${JSON.stringify({
     callCount: canonicalToolCalls.length,
     names: CANONICAL_TOOL_NAMES,
     observedRootToolNames: adapter.requests[0].toolNames,
-    onlyCanonicalToolNames: adapter.requests.every(({ toolNames }) =>
-      toolNames.every((name) => artifactEffectiveToolSet.has(name))),
+    onlyExpectedToolNames: adapter.requests.every(({ toolNames }) =>
+      toolNames.every((name) => artifactModelToolSet.has(name))),
     preAssistantCommitTransformHits,
     transformedCallId: "artifact-write-call",
   },
@@ -3044,7 +3128,7 @@ process.stdout.write(`${JSON.stringify({
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: [
     "success", "failure", "file_tools", "edit", "process_search_tools", "web_tools", "interaction",
-    "plan_workflow", "task_graph", "declarative_components", "product_work", "process_abort", "interrupt", "queued_cancel",
+    "plan_workflow", "task_graph", "declarative_components", "host_tool", "product_work", "process_abort", "interrupt", "queued_cancel",
     "session_close",
   ],
   toolContractRuntimeConsumerVerified: true,

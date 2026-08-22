@@ -1,0 +1,22 @@
+{
+  "name": "@myagents-dsh/components-host-tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Generation-owned Host tool component compiler",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/component-runtime": "0.0.0",
+    "@myagents-dsh/host-ports": "0.0.0",
+    "@myagents-dsh/tool-contracts": "0.0.0",
+    "@myagents-dsh/tool-runtime-product": "0.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6"
+  }
+}

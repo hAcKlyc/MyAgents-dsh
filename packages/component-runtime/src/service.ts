@@ -60,6 +60,7 @@ export interface ProductComponentServiceConfig {
   readonly authorizeToolExecution: (
     identity: ComponentGenerationIdentity,
     componentId: string,
+    componentKind: ExtensionComponent["kind"],
     toolName: string,
     target: string,
     execution: ToolRunContext,
@@ -288,11 +289,12 @@ const normalizeServiceConfig = (value: ProductComponentServiceConfig): Normalize
     authorizeToolExecution: (
       identity: ComponentGenerationIdentity,
       componentId: string,
+      componentKind: ExtensionComponent["kind"],
       toolName: string,
       target: string,
       execution: ToolRunContext,
     ) => Reflect.apply(authorizeToolExecution, value, [
-      identity, componentId, toolName, target, execution,
+      identity, componentId, componentKind, toolName, target, execution,
     ]) as Promise<void>,
     assertToolExecution: (
       identity: ComponentGenerationIdentity,
@@ -460,6 +462,7 @@ export class ProductComponentService extends Service {
         await this.#config.authorizeToolExecution(
           identity,
           component.id,
+          component.kind,
           toolName,
           target,
           execution,

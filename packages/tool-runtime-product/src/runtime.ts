@@ -105,7 +105,7 @@ export interface ProductToolPermissionRequest {
 }
 
 export interface ProductExternalToolPermissionRequest {
-  readonly permissionClass: "mcp.call";
+  readonly permissionClass: "host_tool.call" | "mcp.call";
   readonly target: string;
   readonly tool: string;
 }

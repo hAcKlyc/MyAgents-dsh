@@ -12,6 +12,7 @@
     "@myagents-dsh/component-runtime": "0.0.0",
     "@myagents-dsh/components-agents": "0.0.0",
     "@myagents-dsh/components-commands": "0.0.0",
+    "@myagents-dsh/components-host-tools": "0.0.0",
     "@myagents-dsh/components-mcp": "0.0.0",
     "@myagents-dsh/components-skills": "0.0.0",
     "@myagents-dsh/host-ports": "0.0.0",

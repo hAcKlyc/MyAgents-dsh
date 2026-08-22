@@ -10,6 +10,7 @@
     { "path": "../component-runtime" },
     { "path": "../components-agents" },
     { "path": "../components-commands" },
+    { "path": "../components-host-tools" },
     { "path": "../components-mcp" },
     { "path": "../components-skills" },
     { "path": "../host-ports" },
