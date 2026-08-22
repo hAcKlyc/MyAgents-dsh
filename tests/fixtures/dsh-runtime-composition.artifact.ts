@@ -53,7 +53,10 @@ import { startNativeRpcLifecycle } from "@myagents-dsh/runtime-server";
 import {
   claimNativeRpcLifecycleAuthority,
   composeDshRootServices,
+  createProductAgentComponentCompiler,
+  createProductCommandComponentCompiler,
   createProductMcpComponentCompiler,
+  createProductSkillComponentCompiler,
   DshRootComposition,
   installCanonicalToolPlane,
   installHostDeepSeekModelPlane,
@@ -144,6 +147,76 @@ const artifactExtensionAuthority: Omit<MethodParams<"extension/replace">, "diges
 const artifactExtensionSnapshot = Object.freeze({
   ...artifactExtensionAuthority,
   digest: extensionSnapshotDigest(artifactExtensionAuthority),
+});
+const artifactDynamicSkillContent = [
+  "Inspect the accepted Runtime component generation for $ARGUMENTS.",
+  "Return only evidence owned by the frozen declarative Skill document.",
+].join("\n");
+const artifactDynamicCommandTemplate = "Load the release-audit Skill for $1; full arguments: $ARGUMENTS";
+const artifactDeclarativeExtensionAuthority: Omit<MethodParams<"extension/replace">, "digest"> = {
+  formatVersion: 1 as const,
+  revision: "artifact-declarative-components-v1",
+  components: [
+    Object.freeze({
+      id: "release-audit",
+      enabled: true,
+      kind: "skill" as const,
+      descriptor: Object.freeze({
+        description: "Audit one accepted Runtime component generation",
+        invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
+        rank: 7,
+        resourceId: "release-audit-document",
+        whenToUse: "When the accepted declarative component generation needs verification",
+      }),
+    }),
+    Object.freeze({
+      id: "release-reviewer",
+      enabled: true,
+      kind: "agent" as const,
+      descriptor: Object.freeze({
+        description: "Review one accepted Runtime component generation",
+        prompt: "You are the bounded declarative release reviewer.",
+        skills: ["release-audit"],
+        tools: ["SendMessage", "TaskStop"],
+        maxTurns: 3,
+      }),
+    }),
+    Object.freeze({
+      id: "review-release",
+      enabled: true,
+      kind: "command" as const,
+      descriptor: Object.freeze({
+        aliases: ["rr"],
+        argumentHint: "<focus>",
+        description: "Start one normal product operation for release review",
+        resourceId: "review-release-template",
+      }),
+    }),
+  ],
+  resources: [
+    Object.freeze({
+      content: artifactDynamicSkillContent,
+      id: "release-audit-document",
+      kind: "skill_document" as const,
+      mediaType: "text/markdown" as const,
+      sha256: createHash("sha256").update(artifactDynamicSkillContent).digest("hex"),
+    }),
+    Object.freeze({
+      content: artifactDynamicCommandTemplate,
+      id: "review-release-template",
+      kind: "command_template" as const,
+      mediaType: "text/markdown" as const,
+      sha256: createHash("sha256").update(artifactDynamicCommandTemplate).digest("hex"),
+    }),
+  ],
+  skillSourcePolicy: {
+    revision: "artifact-declarative-skills-v1",
+    roots: [],
+  },
+};
+const artifactDeclarativeExtensionSnapshot = Object.freeze({
+  ...artifactDeclarativeExtensionAuthority,
+  digest: extensionSnapshotDigest(artifactDeclarativeExtensionAuthority),
 });
 const hostModelExtensionAuthority: Omit<MethodParams<"extension/replace">, "digest"> = {
   ...artifactExtensionAuthority,
@@ -580,11 +653,11 @@ adapter.enqueue({
   calls: [{
     id: "artifact-skill-call",
     name: "Skill",
-    arguments: JSON.stringify({ skill: "fixture-audit", args: "packages/tools-agent" }),
+    arguments: JSON.stringify({ skill: "release-audit", args: "accepted-runtime" }),
   }],
   kind: "tool-calls",
 });
-adapter.enqueue({ kind: "complete", text: "static declarative Skill loaded" });
+adapter.enqueue({ kind: "complete", text: "dynamic declarative Skill loaded" });
 
 const rpcDigest = "a".repeat(64);
 let capturePermissionRevision = (): string => {
@@ -599,8 +672,8 @@ const composition = await composeDshRootServices({
     capture: (value: MethodParams<"turn/start">) => Object.freeze({
       configRevision: value.configRevision,
       modelProfileRevision: "artifact-provider-v1",
-      componentRevision: artifactExtensionSnapshot.revision,
-      componentDigest: artifactExtensionSnapshot.digest,
+      componentRevision: artifactDeclarativeExtensionSnapshot.revision,
+      componentDigest: artifactDeclarativeExtensionSnapshot.digest,
       toolCatalogRevision: validatedArtifactToolCatalog.revision,
       toolCatalogDigest: validatedArtifactToolCatalog.digest,
       executionEnvironmentRevision: value.executionEnvironmentRevision,
@@ -876,17 +949,24 @@ await assert.rejects(
   /exact unclaimed root composition authority/u,
 );
 await canonicalToolPlaneInstallation;
-const artifactComponentEffects: string[] = [];
 await installProductComponentPlane(composition, Object.freeze({
   catalog: validatedArtifactToolCatalog,
-  compilers: Object.freeze([createArtifactComponentCompiler(artifactComponentEffects)]),
-  initialSnapshot: artifactExtensionSnapshot,
+  compilers: Object.freeze([
+    createProductSkillComponentCompiler(composition),
+    createProductAgentComponentCompiler(composition),
+    createProductCommandComponentCompiler(composition),
+  ]),
+  initialSnapshot: artifactDeclarativeExtensionSnapshot,
 }));
 assert.deepEqual(composition.context.productComponents.status(), {
-  desiredRevision: artifactExtensionSnapshot.revision,
-  effectiveRevision: artifactExtensionSnapshot.revision,
+  desiredRevision: artifactDeclarativeExtensionSnapshot.revision,
+  effectiveRevision: artifactDeclarativeExtensionSnapshot.revision,
   state: "applied",
-  components: [{ key: "agent:artifact-declarative-agent", state: "ready" }],
+  components: [
+    { key: "skill:release-audit", state: "ready" },
+    { key: "agent:release-reviewer", state: "ready" },
+    { key: "command:review-release", state: "ready" },
+  ],
 });
 capturePermissionRevision = () => composition.context.productPermission.currentRevision(
   composition.context.productSession.requireAgent(),
@@ -1204,6 +1284,7 @@ const hostModelMcpFactory: McpConnectionFactory = createSdkMcpConnectionFactory(
 await installHostDeepSeekModelPlane(hostModelComposition, {
   resolveUserId: () => "00000000-0000-4000-8000-000000000001",
 });
+await hostModelComposition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 await installCanonicalToolPlane(hostModelComposition, canonicalToolPlaneConfig);
 await installProductComponentPlane(hostModelComposition, Object.freeze({
   catalog: validatedArtifactToolCatalog,
@@ -1219,7 +1300,6 @@ captureHostModelPermissionRevision = () => hostModelComposition.context.productP
 captureHostModelPlanRevision = () => hostModelComposition.context.productPlan.currentRevision(
   hostModelComposition.context.productSession.requireAgent(),
 );
-await hostModelComposition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 assert.deepEqual(hostModelComposition.snapshot().providers, ["deepseek-official", "fixture-bootstrap"]);
 assert.equal(hostModelComposition.snapshot().hostModelPlane, "installed");
 const hostModelInput = new PassThrough();
@@ -1654,7 +1734,7 @@ const primarySessionParams = {
     maxTokens: 1_024,
   },
   configRevision: "artifact-config-v1",
-  extensionDigest: artifactExtensionSnapshot.digest,
+  extensionDigest: artifactDeclarativeExtensionSnapshot.digest,
   systemPrompt: "Desired Session persona, not yet reconciled by A3.",
   permissionMode: "default",
   interactionScenario: "deterministic-headless",
@@ -1766,7 +1846,7 @@ const turnStartParams = {
   clientUserMessageId: "artifact-user-message-1",
   input: { parts: [{ kind: "text", text: "first prompt" }] },
   configRevision: "artifact-config-v1",
-  extensionDigest: artifactExtensionSnapshot.digest,
+  extensionDigest: artifactDeclarativeExtensionSnapshot.digest,
   executionEnvironmentRevision: "environment-v1",
   executionEnvironmentDigest: rpcDigest,
   limits: { maxTurns: 4, maxCostUsd: 1, maxDurationMs: 60_000 },
@@ -2327,33 +2407,51 @@ assert.deepEqual(
   "TaskGraph must reconstruct from the immutable DSH Session history",
 );
 
-await composition.context.sdkOperations.start({
-  ...turnStartParams,
-  clientOperationId: "artifact-static-skill-operation",
-  clientUserMessageId: "artifact-static-skill-user-message",
-  input: { parts: [{ kind: "text", text: "Load the exact static fixture-audit Skill" }] },
-});
+assert.deepEqual(
+  composition.context.commands.list(primaryAgent).map(({ name }) => name),
+  ["review-release", "rr"],
+);
+const declarativeCommandExecution = await composition.context.commands.execute(
+  primaryAgent,
+  "/rr accepted-runtime",
+  new AbortController().signal,
+);
+if (declarativeCommandExecution === undefined) {
+  throw new TypeError("declarative Command must resolve through the DSH CommandRuntime");
+}
+assert.equal(declarativeCommandExecution.result.kind, "success");
+const declarativeCommandText = declarativeCommandExecution.result.text;
+if (typeof declarativeCommandText !== "string") {
+  throw new TypeError("declarative Command must return its admitted product operation identity");
+}
+assert.equal(declarativeCommandText.startsWith("Command admitted as "), true);
+const declarativeCommandOperationId = declarativeCommandText.slice("Command admitted as ".length);
 await primaryAgent.whenIdle();
 await waitUntil(
-  () => composition.context.sdkOperations.lookup("artifact-static-skill-operation")?.state === "terminal",
-  "static Skill operation terminal",
+  () => composition.context.sdkOperations.lookup(declarativeCommandOperationId)?.state === "terminal",
+  "declarative Command and Skill operation terminal",
 );
 assert.equal(
-  composition.context.sdkOperations.lookup("artifact-static-skill-operation")?.terminal?.kind,
+  composition.context.sdkOperations.lookup(declarativeCommandOperationId)?.terminal?.kind,
   "succeeded",
 );
 assert.equal(durableToolText("artifact-skill-call"), [
-  '<skill_content name="fixture-audit">',
+  '<skill_content name="release-audit">',
   "<skill_resources>",
-  `Base directory for this skill: ${fixtureSkillRoot}`,
-  "Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.",
+  'Resources for this skill are managed by provider "myagents-component-skills".',
+  "Load referenced resources only as needed.",
   "</skill_resources>",
   "",
   "<skill_instructions>",
-  "Inspect packages/tools-agent through the accepted static Skill catalog; focus=packages/tools-agent.",
+  "Inspect the accepted Runtime component generation for accepted-runtime.",
+  "Return only evidence owned by the frozen declarative Skill document.",
   "</skill_instructions>",
   "</skill_content>",
 ].join("\n"));
+const declarativeCommandRequest = adapter.requests.find(({ messages }) => messages.some((message) =>
+  message.role === "user" && message.content.some((block) =>
+    block.type === "text" && block.text.includes("Load the release-audit Skill for accepted-runtime"))));
+assert.ok(declarativeCommandRequest);
 assert.deepEqual(await composition.context.skills.snapshot({
   cwd: fixtureWorkspace,
   scope: primaryAgent,
@@ -2366,6 +2464,13 @@ assert.deepEqual(await composition.context.skills.snapshot({
     source: "bundled",
     provider: "myagents-static-skills",
     resourceBase: { kind: "directory", path: fixtureSkillRoot },
+  }, {
+    name: "release-audit",
+    description: "Audit one accepted Runtime component generation",
+    whenToUse: "When the accepted declarative component generation needs verification",
+    invocation: { modelInvocable: true, userInvocable: true },
+    source: "runtime",
+    provider: "myagents-component-skills",
   }],
 });
 
@@ -2377,7 +2482,7 @@ adapter.enqueue({
       description: "Audit retained worker output",
       prompt: "Wait for an explicit parent message, then remain supervised until TaskStop retires this work item.",
       run_in_background: true,
-      subagent_type: "general",
+      subagent_type: "release-reviewer",
     }),
   }],
   kind: "tool-calls",
@@ -2421,6 +2526,18 @@ const childRequest = childAdapter.requests.find(({ sessionId }) => sessionId ===
 assert.ok(composition.context.agents.get(SessionId(backgroundAgentId)));
 assert.equal(composition.context.agents.get(SessionId(backgroundAgentId))?.status, "running");
 assert.deepEqual(childRequest?.toolNames, ["SendMessage", "TaskStop"]);
+assert.match(childRequest.system ?? "", /bounded declarative release reviewer/u);
+assert.match(childRequest.system ?? "", /frozen declarative Skill document/u);
+const dynamicAgentCreated = primaryAgent.session.events.find((event) =>
+  event.type === "myagents/work/created"
+  && event.data.authority.callId === "artifact-background-agent-call");
+assert.ok(dynamicAgentCreated?.type === "myagents/work/created");
+assert.equal(dynamicAgentCreated.data.birth.type, "release-reviewer");
+assert.equal(dynamicAgentCreated.data.birth.maxTurns, 3);
+assert.equal(
+  dynamicAgentCreated.data.birth.componentRevision,
+  artifactDeclarativeExtensionSnapshot.revision,
+);
 
 adapter.enqueue({
   calls: [{
@@ -2769,14 +2886,22 @@ projectionOutput.destroy();
 
 const snapshot = composition.snapshot();
 const componentCatalog = composition.context.productComponents.catalog();
+assert.deepEqual(componentCatalog.agents, ["release-reviewer"]);
+assert.deepEqual(componentCatalog.commands, [{
+  aliases: ["rr"],
+  argumentHint: "<focus>",
+  description: "Start one normal product operation for release review",
+  name: "review-release",
+  source: "command",
+}]);
+assert.deepEqual(componentCatalog.skills, [{
+  description: "Audit one accepted Runtime component generation",
+  disableModelInvocation: false,
+  name: "release-audit",
+}]);
 const componentPublicationVerified = snapshot.componentPlane === "installed"
-  && snapshot.componentEffectiveRevision === artifactExtensionSnapshot.revision
-  && componentCatalog.revision === artifactExtensionSnapshot.revision
-  && JSON.stringify(componentCatalog.agents) === JSON.stringify(["artifact-declarative-agent"])
-  && JSON.stringify(artifactComponentEffects) === JSON.stringify([
-    "prepare:artifact-declarative-agent",
-    "install:artifact-declarative-agent",
-  ]);
+  && snapshot.componentEffectiveRevision === artifactDeclarativeExtensionSnapshot.revision
+  && componentCatalog.revision === artifactDeclarativeExtensionSnapshot.revision;
 assert.equal(snapshot.liveRootAgents, 0);
 assert.equal(snapshot.primarySessionState, "retired");
 assert.equal(snapshot.runtimeSessionId, "dsh-artifact-primary");
@@ -2811,13 +2936,7 @@ assert.equal(processSignalListener, undefined);
 assert.equal(adapter.activeStreamCount, 0);
 assert.equal(nativeRpc.phase, "disposed");
 assert.throws(() => composition.snapshot(), /disposing or disposed/u);
-const componentGenerationVerified = componentPublicationVerified
-  && JSON.stringify(artifactComponentEffects) === JSON.stringify([
-    "prepare:artifact-declarative-agent",
-    "install:artifact-declarative-agent",
-    "uninstall:artifact-declarative-agent",
-    "dispose:artifact-declarative-agent",
-  ]);
+const componentGenerationVerified = componentPublicationVerified;
 assert.equal(componentGenerationVerified, true);
 assert.deepEqual(hostFatalErrors, []);
 const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
@@ -2859,6 +2978,14 @@ process.stdout.write(`${JSON.stringify({
   hostPortServiceVerified: reverseMethodOrder.length === 7,
   hostCredentialModelVerified,
   componentGenerationVerified,
+  declarativeComponentsVerified: true,
+  declarativeComponentEvidence: {
+    agentType: dynamicAgentCreated.data.birth.type,
+    agentMaxTurns: dynamicAgentCreated.data.birth.maxTurns,
+    commandOperationId: declarativeCommandOperationId,
+    commandRevision: artifactDeclarativeExtensionSnapshot.revision,
+    skillName: "release-audit",
+  },
   mcpLifecycleVerified: hostModelMcpLifecycleVerified,
   hostPortLifecycleAuthorityVerified,
   hostPortMethodOrder: reverseMethodOrder,
@@ -2917,7 +3044,7 @@ process.stdout.write(`${JSON.stringify({
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: [
     "success", "failure", "file_tools", "edit", "process_search_tools", "web_tools", "interaction",
-    "plan_workflow", "task_graph", "static_skill", "product_work", "process_abort", "interrupt", "queued_cancel",
+    "plan_workflow", "task_graph", "declarative_components", "product_work", "process_abort", "interrupt", "queued_cancel",
     "session_close",
   ],
   toolContractRuntimeConsumerVerified: true,

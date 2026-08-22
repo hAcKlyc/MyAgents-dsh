@@ -457,6 +457,16 @@ const commandDescriptor = strictObject({
   argumentHint: Type.Optional(Type.String({ maxLength: 1_024 })),
   aliases: Type.Optional(Type.Array(identifier, { maxItems: 32, uniqueItems: true })),
 });
+const skillDescriptor = strictObject({
+  resourceId: declarativeReference,
+  description: Type.String({ minLength: 1, maxLength: 4_096 }),
+  whenToUse: Type.Optional(Type.String({ minLength: 1, maxLength: 4_096 })),
+  invocation: strictObject({
+    modelInvocable: Type.Boolean(),
+    userInvocable: Type.Boolean(),
+  }),
+  rank: Type.Optional(Type.Integer({ minimum: 0, maximum: 100_000 })),
+});
 const hookDescriptor = strictObject({
   event: Type.Union([Type.Literal("PreToolUse"), Type.Literal("PostToolUse"), Type.Literal("PermissionRequest")]),
   matcher: Type.Optional(Type.Union([Type.Literal("*"), declarativeReference])),
@@ -503,6 +513,7 @@ const hostToolDescriptor = strictObject({
 const extensionComponent = Type.Union([
   strictObject({ ...componentBase, kind: Type.Literal("agent"), descriptor: agentDescriptor }),
   strictObject({ ...componentBase, kind: Type.Literal("command"), descriptor: commandDescriptor }),
+  strictObject({ ...componentBase, kind: Type.Literal("skill"), descriptor: skillDescriptor }),
   strictObject({ ...componentBase, kind: Type.Literal("hook"), descriptor: hookDescriptor }),
   strictObject({ ...componentBase, kind: Type.Literal("mcp"), descriptor: mcpDescriptor }),
   strictObject({ ...componentBase, kind: Type.Literal("host_tool"), descriptor: hostToolDescriptor }),

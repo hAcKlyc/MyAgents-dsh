@@ -10,6 +10,15 @@ import { CredentialProvider, credentialRef } from "@deepseek-ai/dsh-credentials"
 import type { CredentialInfo, ResolvedCredential } from "@deepseek-ai/dsh-credentials";
 import { CompactionEngine, CompactionId } from "@deepseek-ai/dsh-compaction";
 import type { CompactionAgentContext, CompactionResult } from "@deepseek-ai/dsh-compaction";
+import { CommandId, CommandRuntime, parseCommand } from "@deepseek-ai/dsh-commands";
+import type {
+  CommandDefinition,
+  CommandExecution,
+  CommandInputDescriptor,
+  CommandInvocation,
+  CommandResult,
+  ParsedCommand,
+} from "@deepseek-ai/dsh-commands";
 import { FileSystem, FsTargetKey, FsVersion } from "@deepseek-ai/dsh-fs";
 import type { FsEditRequest, FsWriteIntent } from "@deepseek-ai/dsh-fs";
 import { JobId, JobRegistry } from "@deepseek-ai/dsh-jobs";
@@ -88,6 +97,8 @@ export const dshPublicSurfaceValues = Object.freeze({
   AttachmentStore,
   CompactionEngine,
   CompactionId,
+  CommandId,
+  CommandRuntime,
   Context,
   CredentialProvider,
   FileSystem,
@@ -138,6 +149,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   parseGrepArgs,
   parseSearchArgs,
   parseExitStatus,
+  parseCommand,
   scrubbedParentEnv,
   scopeOf,
   isModelInvocable,
@@ -154,6 +166,7 @@ export interface DshPublicSurfaceTypes {
   attachment: [ImageAttachmentRef, StoredImageAttachment];
   cordis: [Plugin];
   compaction: [CompactionAgentContext, CompactionResult];
+  commands: [CommandDefinition, CommandExecution, CommandInputDescriptor, CommandInvocation, CommandResult, ParsedCommand];
   credentials: [CredentialInfo, ResolvedCredential];
   filesystem: [FsEditRequest, FsWriteIntent];
   fsSearchHelpers: [GlobInput, GrepInput, RipgrepRun];

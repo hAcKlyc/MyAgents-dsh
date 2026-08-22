@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isProxy } from "node:util/types";
 
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { FsInfo, FsPathInfo, FsTarget } from "@deepseek-ai/dsh-fs";
@@ -33,6 +34,7 @@ import {
 import { LocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 
 export const PRODUCT_STATIC_SKILL_PROVIDER = "myagents-static-skills";
+export const PRODUCT_COMPONENT_SKILL_PROVIDER = "myagents-component-skills";
 
 const MAX_SKILLS = 128;
 const MAX_SKILL_SOURCE_BYTES = 240_000;
@@ -59,6 +61,31 @@ export interface StaticSkillCatalog {
 
 export interface ProductSkillServiceConfig {
   readonly catalog: StaticSkillCatalog;
+  readonly registerDynamicController?: (controller: ProductDynamicSkillController) => void;
+}
+
+export interface DynamicSkillGenerationIdentity {
+  readonly digest: string;
+  readonly revision: string;
+}
+
+export interface DynamicSkillRegistration {
+  readonly componentId: string;
+  readonly content: string;
+  readonly description: string;
+  readonly generation: DynamicSkillGenerationIdentity;
+  readonly invocation: SkillInvocationPolicy;
+  readonly name: string;
+  readonly rank: number;
+  readonly sourceSha256: string;
+  readonly whenToUse?: string;
+}
+
+export interface ProductDynamicSkillController {
+  readonly prepare: (registration: DynamicSkillRegistration) => Readonly<{
+    readonly dispose: () => void;
+    readonly install: () => () => void;
+  }>;
 }
 
 declare module "@deepseek-ai/cordis" {
@@ -95,20 +122,30 @@ const boundedText = (value: unknown, maximum: number, description: string): stri
   return value;
 };
 
+const boundedDocument = (value: unknown, maximumBytes: number, description: string): string => {
+  if (typeof value !== "string" || value.length === 0
+    || Buffer.byteLength(value, "utf8") > maximumBytes) {
+    throw new TypeError(`${description} must be a bounded document`);
+  }
+  return value;
+};
+
 const exactObject = (
   value: unknown,
   required: readonly string[],
   optional: readonly string[],
   description: string,
 ): JsonObject => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)
+  if (value === null || typeof value !== "object" || Array.isArray(value) || isProxy(value)
     || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
     throw new TypeError(`${description} must be a plain object`);
   }
   const record = value as JsonObject;
   const allowed = new Set([...required, ...optional]);
+  const descriptors = Object.getOwnPropertyDescriptors(record);
   const keys = Reflect.ownKeys(record);
-  if (keys.some((key) => typeof key !== "string" || !allowed.has(key))) {
+  if (keys.some((key) => typeof key !== "string" || !allowed.has(key)
+    || descriptors[key] === undefined || !descriptors[key].enumerable || !("value" in descriptors[key]))) {
     throw new TypeError(`${description} contains an unsupported field`);
   }
   for (const key of required) {
@@ -245,6 +282,11 @@ interface StaticSkillRootAuthority {
 interface StaticSkillLoadPermit {
   readonly root: StaticSkillRootAuthority;
 }
+
+type DynamicSkillRecord = Readonly<DynamicSkillRegistration & {
+  readonly locator: object;
+  readonly source: string;
+}>;
 
 const parseScalar = (value: string, description: string): string => {
   const trimmed = value.trim();
@@ -732,16 +774,21 @@ export class ProductSkillService extends Service {
   private readonly descriptorsByLocator = new WeakMap<object, StaticSkillDescriptor>();
   private readonly descriptorsBySource: ReadonlyMap<string, StaticSkillDescriptor>;
   private readonly loadPermits = new WeakMap<AbortSignal, StaticSkillLoadPermit>();
+  readonly #dynamicByGeneration = new Map<string, Map<string, DynamicSkillRecord>>();
+  readonly #dynamicByLocator = new WeakMap<object, DynamicSkillRecord>();
+  readonly #dynamicByDefinition = new WeakMap<object, DynamicSkillRecord>();
+  readonly #dynamicViewPermits = new WeakMap<AbortSignal, string>();
+  #invalidateDynamic: (() => void) | undefined;
 
   public constructor(ctx: Context, config: ProductSkillServiceConfig) {
     super(ctx, "productSkills");
-    const normalized = exactObject(
-      normalizeCanonicalJson(config, "ProductSkillService config"),
-      ["catalog"],
-      [],
-      "ProductSkillService config",
-    );
+    const normalized = exactObject(config, ["catalog"], ["registerDynamicController"], "ProductSkillService config");
     this.catalogValue = validateStaticSkillCatalog(normalized.catalog);
+    const registerDynamicController = normalized.registerDynamicController;
+    if (registerDynamicController !== undefined
+      && (typeof registerDynamicController !== "function" || isProxy(registerDynamicController))) {
+      throw new TypeError("ProductSkillService dynamic controller registrar must be a non-proxy function");
+    }
     const candidates: SkillCandidate[] = [];
     const bySource = new Map<string, StaticSkillDescriptor>();
     for (const descriptor of this.catalogValue.skills) {
@@ -766,17 +813,28 @@ export class ProductSkillService extends Service {
     this.descriptorsBySource = bySource;
     ctx.effect(() => {
       const disposeProvider = ctx.skills.registerProvider((control) => this.provider(ctx, control));
+      const disposeDynamicProvider = ctx.skills.registerProvider((control) => {
+        this.#invalidateDynamic = control.invalidate;
+        return this.#dynamicProvider(control);
+      });
       try {
         const disposeTool = ctx.tools.register(this.definition(ctx));
         return () => {
           disposeTool();
+          disposeDynamicProvider();
           disposeProvider();
         };
       } catch (error) {
+        disposeDynamicProvider();
         disposeProvider();
         throw error;
       }
     }, "product-static-skills-and-tool");
+    if (registerDynamicController !== undefined) {
+      Reflect.apply(registerDynamicController, config, [Object.freeze({
+        prepare: (registration: DynamicSkillRegistration) => this.#prepareDynamic(registration),
+      })]);
+    }
   }
 
   public catalog(): StaticSkillCatalog { return this.catalogValue; }
@@ -807,6 +865,127 @@ export class ProductSkillService extends Service {
     });
   }
 
+  #dynamicProvider(control: SkillProviderControl): SkillProvider {
+    return Object.freeze({
+      name: PRODUCT_COMPONENT_SKILL_PROVIDER,
+      list: (options: SkillLookupOptions) => {
+        combinedSignal(options.signal, control.signal).throwIfAborted();
+        const key = options.signal === undefined ? undefined : this.#dynamicViewPermits.get(options.signal);
+        const records = key === undefined ? undefined : this.#dynamicByGeneration.get(key);
+        return Promise.resolve(Object.freeze([...(records?.values() ?? [])].map((record) => Object.freeze({
+          name: record.name,
+          description: record.description,
+          ...(record.whenToUse === undefined ? {} : { whenToUse: record.whenToUse }),
+          invocation: record.invocation,
+          source: "runtime" as const,
+          provider: PRODUCT_COMPONENT_SKILL_PROVIDER,
+          rank: record.rank,
+          locator: record.locator,
+          metadata: Object.freeze({ sourceSha256: record.sourceSha256 }),
+        }))));
+      },
+      get: (candidate: SkillCandidate, options: SkillLookupOptions) => {
+        combinedSignal(options.signal, control.signal).throwIfAborted();
+        const key = options.signal === undefined ? undefined : this.#dynamicViewPermits.get(options.signal);
+        const record = candidate.locator !== null && typeof candidate.locator === "object"
+          ? this.#dynamicByLocator.get(candidate.locator)
+          : undefined;
+        if (record === undefined || key !== this.#generationKey(record.generation)
+          || candidate.name !== record.name) return Promise.resolve(undefined);
+        const definition = Object.freeze({
+          name: record.name,
+          description: record.description,
+          ...(record.whenToUse === undefined ? {} : { whenToUse: record.whenToUse }),
+          invocation: record.invocation,
+          source: "runtime" as const,
+          provider: PRODUCT_COMPONENT_SKILL_PROVIDER,
+          content: record.content,
+          metadata: Object.freeze({ argumentNames: Object.freeze([]), sourceSha256: record.sourceSha256 }),
+        });
+        this.#dynamicByDefinition.set(definition, record);
+        return Promise.resolve(definition);
+      },
+    });
+  }
+
+  #generationKey(identity: DynamicSkillGenerationIdentity): string {
+    return `${identity.revision}:${identity.digest}`;
+  }
+
+  #prepareDynamic(value: DynamicSkillRegistration): Readonly<{
+    readonly dispose: () => void;
+    readonly install: () => () => void;
+  }> {
+    const registration = exactObject(value, [
+      "componentId", "content", "description", "generation", "invocation", "name", "rank", "sourceSha256",
+    ], ["whenToUse"], "dynamic Skill registration");
+    const generation = exactObject(registration.generation, ["digest", "revision"], [], "dynamic Skill generation");
+    const identity = Object.freeze({
+      digest: boundedIdentifier(generation.digest, "dynamic Skill generation digest"),
+      revision: boundedIdentifier(generation.revision, "dynamic Skill generation revision"),
+    });
+    if (!/^[a-f0-9]{64}$/u.test(identity.digest)) throw new TypeError("dynamic Skill generation digest is invalid");
+    const name = boundedIdentifier(registration.name, "dynamic Skill name");
+    if (!isSkillName(name)) throw new TypeError("dynamic Skill name is invalid");
+    const content = boundedDocument(
+      registration.content,
+      MAX_SKILL_SOURCE_BYTES,
+      "dynamic Skill content",
+    );
+    if (!Number.isSafeInteger(registration.rank) || (registration.rank as number) < 0
+      || (registration.rank as number) > 100_000) throw new TypeError("dynamic Skill rank is invalid");
+    if (typeof registration.sourceSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(registration.sourceSha256)) {
+      throw new TypeError("dynamic Skill source digest is invalid");
+    }
+    if (sha256(content) !== registration.sourceSha256) throw new TypeError("dynamic Skill content digest differs");
+    const key = this.#generationKey(identity);
+    const records = this.#dynamicByGeneration.get(key) ?? new Map<string, DynamicSkillRecord>();
+    if (records.has(name)) throw new TypeError("dynamic Skill names must be unique within one generation");
+    const locator = Object.freeze({});
+    const record: DynamicSkillRecord = Object.freeze({
+      componentId: boundedIdentifier(registration.componentId, "dynamic Skill component"),
+      content,
+      description: boundedText(registration.description, 2_048, "dynamic Skill description"),
+      generation: identity,
+      invocation: freezeInvocation(registration.invocation, "dynamic Skill invocation"),
+      locator,
+      name,
+      rank: registration.rank as number,
+      source: `extension:${identity.digest}:${name}`,
+      sourceSha256: registration.sourceSha256,
+      ...(registration.whenToUse === undefined ? {} : {
+        whenToUse: boundedText(registration.whenToUse, 4_096, "dynamic Skill when-to-use"),
+      }),
+    });
+    records.set(name, record);
+    this.#dynamicByGeneration.set(key, records);
+    this.#dynamicByLocator.set(locator, record);
+    let disposed = false;
+    let installed = false;
+    return Object.freeze({
+      dispose: () => {
+        if (installed) throw new Error("dynamic Skill must be unpublished before disposal");
+        if (disposed) return;
+        disposed = true;
+        if (records.get(name) === record) records.delete(name);
+        if (records.size === 0) this.#dynamicByGeneration.delete(key);
+        this.#invalidateDynamic?.();
+      },
+      install: () => {
+        if (disposed || installed) throw new Error("dynamic Skill is disposed or already published");
+        installed = true;
+        this.#invalidateDynamic?.();
+        let active = true;
+        return () => {
+          if (!active) return;
+          active = false;
+          installed = false;
+          this.#invalidateDynamic?.();
+        };
+      },
+    });
+  }
+
   private definition(ctx: Context): ToolDefinition {
     const contract = CANONICAL_TOOL_CONTRACTS.Skill;
     return Object.freeze({
@@ -815,22 +994,34 @@ export class ProductSkillService extends Service {
       parameters: canonicalInputSchemaForDsh(contract.inputSchema),
       output: Object.freeze({
         schema: canonicalOutputSchemaForDsh(contract.outputSchema),
-        render: (_args: unknown, value: unknown) => renderSkill(this.descriptorsBySource, value),
+        render: (_args: unknown, value: unknown) => this.#render(value),
       }),
       ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
       isConcurrencySafe: () => false,
       execute: async (value: unknown, exec: ToolRunContext) => {
         const input = validateCanonicalToolInput("Skill", value) as Readonly<{ skill: string; args?: string }>;
         const product = ctx.productTools.resolve(exec);
+        const generationKey = this.#generationKey({
+            digest: product.birth.componentDigest,
+            revision: product.birth.componentRevision,
+        });
+        const lookupSignal = AbortSignal.any([product.signal]);
+        this.#dynamicViewPermits.set(lookupSignal, generationKey);
         try {
           const view = Object.freeze({
             cwd: product.environment.workspace.canonicalRoot,
             scope: scopeOf(product.agent.ctx),
           });
-          const observed = normalizeObservedSkillCatalog(await ctx.skills.snapshot(Object.freeze({
-            ...view,
-            signal: product.signal,
-          })));
+          let observed: ReturnType<typeof normalizeObservedSkillCatalog>;
+          try {
+            observed = normalizeObservedSkillCatalog(await ctx.skills.snapshot(Object.freeze({
+              ...view,
+              signal: lookupSignal,
+            })));
+          } catch (error) {
+            this.#dynamicViewPermits.delete(lookupSignal);
+            throw error;
+          }
           product.signal.throwIfAborted();
           if (!observed.complete) {
             throw new ProductToolError("skill_invalid", "Skill catalog observation is incomplete");
@@ -842,15 +1033,14 @@ export class ProductSkillService extends Service {
           if (!isModelInvocable(summary)) {
             throw new ProductToolError("skill_invocation_disabled", `Skill is not model-invocable: ${input.skill}`);
           }
-          const summaryAuthority = this.catalogValue.skills.find((candidate) =>
+          const staticAuthority = this.catalogValue.skills.find((candidate) =>
             candidate.name === input.skill && summaryMatches(summary, candidate));
-          if (summaryAuthority === undefined) {
-            throw new ProductToolError("skill_invalid", "Skill catalog winner lacks static product authority");
+          const dynamicAuthority = this.#dynamicByGeneration.get(generationKey)?.get(input.skill);
+          if (staticAuthority === undefined && dynamicAuthority === undefined) {
+            throw new ProductToolError("skill_invalid", "Skill catalog winner lacks product authority");
           }
-          const rootAuthority = await captureApprovedSkillRoot(
-            ctx,
-            product,
-            summaryAuthority.resourceRoot,
+          const rootAuthority = staticAuthority === undefined ? undefined : await captureApprovedSkillRoot(
+            ctx, product, staticAuthority.resourceRoot,
           );
           await ctx.productTools.authorize(product, {
             permissionClass: contract.permissionClass,
@@ -858,13 +1048,13 @@ export class ProductSkillService extends Service {
             tool: "Skill",
           });
           ctx.productTools.assertCurrent(product, "Skill");
-          const loadSignal = AbortSignal.any([product.signal]);
-          this.loadPermits.set(loadSignal, Object.freeze({ root: rootAuthority }));
+          if (rootAuthority !== undefined) this.loadPermits.set(lookupSignal, Object.freeze({ root: rootAuthority }));
           let definition: SkillDefinition | undefined;
           try {
-            definition = await ctx.skills.get(input.skill, Object.freeze({ ...view, signal: loadSignal }));
+            definition = await ctx.skills.get(input.skill, Object.freeze({ ...view, signal: lookupSignal }));
           } finally {
-            this.loadPermits.delete(loadSignal);
+            this.loadPermits.delete(lookupSignal);
+            this.#dynamicViewPermits.delete(lookupSignal);
           }
           product.signal.throwIfAborted();
           ctx.productTools.assertCurrent(product, "Skill");
@@ -872,10 +1062,20 @@ export class ProductSkillService extends Service {
             throw new ProductToolError("skill_invalid", "Skill disappeared after its authorized catalog snapshot");
           }
           const descriptor = this.descriptorsByDefinition.get(definition);
-          if (descriptor === undefined) {
-            throw new ProductToolError("skill_invalid", "loaded Skill lacks static provider ownership");
+          const dynamic = this.#dynamicByDefinition.get(definition);
+          if (descriptor === undefined && dynamic === undefined) {
+            throw new ProductToolError("skill_invalid", "loaded Skill lacks product provider ownership");
           }
-          if (!definitionMatches(definition, summary, descriptor)) {
+          const matches = descriptor === undefined
+            ? definition.name === dynamic?.name
+              && definition.description === dynamic.description
+              && definition.whenToUse === dynamic.whenToUse
+              && definition.provider === PRODUCT_COMPONENT_SKILL_PROVIDER
+              && definition.content === dynamic.content
+              && (definition.metadata as Readonly<{ sourceSha256?: unknown }> | undefined)?.sourceSha256
+                === dynamic.sourceSha256
+            : definitionMatches(definition, summary, descriptor);
+          if (!matches) {
             throw new ProductToolError("skill_invalid", "loaded Skill differs from its authorized catalog winner");
           }
           const expanded = expandSkillArguments(
@@ -884,10 +1084,10 @@ export class ProductSkillService extends Service {
             exactArgumentNames(definition),
           );
           const output = Object.freeze({
-            skill: descriptor.name,
+            skill: descriptor?.name ?? dynamic?.name,
             content: expanded.content,
-            source: descriptor.sourcePath,
-            sourceSha256: descriptor.sourceSha256,
+            source: descriptor?.sourcePath ?? dynamic?.source,
+            sourceSha256: descriptor?.sourceSha256 ?? dynamic?.sourceSha256,
             argumentsExpanded: expanded.expanded,
           });
           try { return validateCanonicalToolOutput("Skill", output); } catch (error) {
@@ -897,8 +1097,29 @@ export class ProductSkillService extends Service {
           product.signal.throwIfAborted();
           if (error instanceof ProductToolError) throw error;
           throw new ProductToolError("skill_invalid", "Skill could not be validated and loaded", { cause: error });
+        } finally {
+          this.loadPermits.delete(lookupSignal);
+          this.#dynamicViewPermits.delete(lookupSignal);
         }
       },
     });
+  }
+
+  #render(value: unknown): ContentBlock[] {
+    const output = value as Readonly<{ skill: string; content: string; source: string }>;
+    const descriptor = this.descriptorsBySource.get(output.source);
+    if (descriptor !== undefined) return renderSkill(this.descriptorsBySource, value);
+    const dynamic = [...this.#dynamicByGeneration.values()]
+      .flatMap((records) => [...records.values()])
+      .find((record) => record.source === output.source && record.name === output.skill);
+    if (dynamic === undefined) throw new TypeError("Skill render projection lacks its product descriptor");
+    return [{
+      type: "text",
+      text: renderSkillContent({
+        name: output.skill,
+        provider: PRODUCT_COMPONENT_SKILL_PROVIDER,
+        content: output.content,
+      }),
+    }];
   }
 }

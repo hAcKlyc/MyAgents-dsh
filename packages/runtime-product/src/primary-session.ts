@@ -1275,6 +1275,17 @@ export class ProductSessionService extends Service {
     return this.executionEnvironmentValue;
   }
 
+  requireOperationConfigRevision(): string {
+    const admission = this.admissionValue?.snapshot();
+    if (admission?.state !== "ready" || admission.desiredConfigRevision === undefined) {
+      throw new ProtocolError(
+        "primary_session_not_ready",
+        "primary Session lacks an effective operation configuration",
+      );
+    }
+    return admission.desiredConfigRevision;
+  }
+
   snapshot(): Readonly<ProductSessionSnapshot> {
     const admission = this.admissionValue?.snapshot() ?? Object.freeze({ state: "unbound" as const });
     const liveRootAgents = this.publicationFenceValue.assertAuthority(admission.state);

@@ -19,7 +19,10 @@
     "packageAuthorities": {
       "@myagents-dsh/artifact-verifier": "0.0.0",
       "@myagents-dsh/component-runtime": "0.0.0",
+      "@myagents-dsh/components-agents": "0.0.0",
+      "@myagents-dsh/components-commands": "0.0.0",
       "@myagents-dsh/components-mcp": "0.0.0",
+      "@myagents-dsh/components-skills": "0.0.0",
       "@myagents-dsh/host-ports": "0.0.0",
       "@myagents-dsh/operation-runtime": "0.0.0",
       "@myagents-dsh/product-profile": "0.0.0",
@@ -39,7 +42,7 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "d98d48905a865c64db8046fe6c4d2e5cda8b9a7a71812e8a2ede746c203e649f",
+    "artifactManifestSha256": "5f301f3666f38364911af7b53407868ec66dea94e74f18066ed4af36f8d12bb6",
     "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",
@@ -80,7 +83,7 @@
       "host/attachment/acquire",
       "host/attachment/release"
     ],
-    "schemaSha256": "e6e65182147a642451b4a1a24326a1fb883527a35a5d0a3d7ad0ac4981be56f9",
+    "schemaSha256": "3b1da6731e2ee1b13fd8718ac03c9e8389e5b92621eca20f80073c59e81090bf",
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "workstream-evidence-only",

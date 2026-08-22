@@ -436,6 +436,28 @@
       ]
     },
     {
+      "id": "commands",
+      "package": "@deepseek-ai/dsh-commands",
+      "importPath": "@deepseek-ai/dsh-commands",
+      "classification": "direct",
+      "batchUse": [
+        "B1-W3"
+      ],
+      "values": [
+        "CommandId",
+        "CommandRuntime",
+        "parseCommand"
+      ],
+      "types": [
+        "CommandDefinition",
+        "CommandExecution",
+        "CommandInputDescriptor",
+        "CommandInvocation",
+        "CommandResult",
+        "ParsedCommand"
+      ]
+    },
+    {
       "id": "filesystem",
       "package": "@deepseek-ai/dsh-fs",
       "importPath": "@deepseek-ai/dsh-fs",

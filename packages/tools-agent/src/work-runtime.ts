@@ -63,6 +63,14 @@ const CHILD_PERSONA = [
   "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
 ].join(" ");
 
+const hasControlCharacter = (value: string): boolean => {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+};
+
 const eventIdentifier = Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000-\\u001F\\u007F]+$" });
 const eventSha256 = Type.String({ pattern: "^[a-f0-9]{64}$" });
 const eventSequence = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
@@ -83,17 +91,21 @@ const workAuthoritySchema = strictObject({
 });
 const workBirthSchema = strictObject({
   allowedReadRoots: Type.Array(Type.String({ minLength: 1, maxLength: 8_192 }), { maxItems: 256, uniqueItems: true }),
-  allowedTools: Type.Tuple([Type.Literal("TaskStop"), Type.Literal("SendMessage")]),
+  allowedTools: Type.Array(eventIdentifier, { maxItems: 256, uniqueItems: true }),
   componentDigest: eventSha256,
   componentRevision: eventIdentifier,
   depth: Type.Integer({ minimum: 1, maximum: 1 }),
   descriptorDigest: eventSha256,
   interaction: Type.Literal("unavailable"),
+  maxTurns: Type.Integer({ minimum: 1, maximum: 10_000 }),
   model: eventIdentifier,
+  modelProfileRevision: eventIdentifier,
   network: Type.Literal("deny"),
   parentOperationId: eventIdentifier,
   parentSessionId: eventIdentifier,
   provider: eventIdentifier,
+  persona: Type.String({ minLength: 1, maxLength: 1_000_000 }),
+  type: eventIdentifier,
 });
 
 export const PRODUCT_WORK_EVENT_SCHEMAS = deepFreeze({
@@ -244,6 +256,30 @@ export interface ProductWorkServiceConfig {
   readonly provider: string;
   readonly requireAgent: () => Agent;
   readonly runtimeHome: () => string;
+  readonly registerDynamicAgentController?: (controller: ProductDynamicAgentController) => void;
+}
+
+export interface DynamicAgentGenerationIdentity {
+  readonly digest: string;
+  readonly revision: string;
+}
+
+export interface DynamicAgentRegistration {
+  readonly componentId: string;
+  readonly description: string;
+  readonly generation: DynamicAgentGenerationIdentity;
+  readonly maxTurns: number;
+  readonly modelProfileRef?: string;
+  readonly persona: string;
+  readonly tools: readonly string[];
+  readonly type: string;
+}
+
+export interface ProductDynamicAgentController {
+  readonly prepare: (registration: DynamicAgentRegistration) => Readonly<{
+    readonly dispose: () => void;
+    readonly install: () => () => void;
+  }>;
 }
 
 export interface ProductWorkSnapshot {
@@ -281,12 +317,20 @@ type WorkEntry = {
 
 type WorkCreationAuthority = Readonly<{
   agent: Agent;
-  birth: Pick<OperationBirthSnapshot, "componentDigest" | "componentRevision">;
+  birth: Pick<OperationBirthSnapshot, "componentDigest" | "componentRevision" | "modelProfileRevision">;
   callId: string;
   catalog: Readonly<{ digest: string; revision: string }>;
   clientOperationId: string;
   dshTurn: number;
   productTurnId: string;
+}>;
+
+type AgentBirthTemplate = Readonly<{
+  readonly allowedTools: readonly string[];
+  readonly maxTurns: number;
+  readonly modelProfileRef?: string;
+  readonly persona: string;
+  readonly type: string;
 }>;
 
 type ChildCreationPermit = Readonly<{
@@ -296,6 +340,7 @@ type ChildCreationPermit = Readonly<{
   parent: Agent;
   ready: NativeDeferred<WorkEntry>;
   taskId: string;
+  template: AgentBirthTemplate;
 }>;
 
 type RecoverableAgentCall = Readonly<{
@@ -387,8 +432,11 @@ const exactConfig = (value: unknown): ProductWorkServiceConfig => {
     throw new TypeError("ProductWorkService config must be a plain object");
   }
   const record = value as JsonObject;
-  const keys = ["durability", "output", "provider", "publication", "requireAgent", "runtimeHome"];
-  if (Reflect.ownKeys(record).length !== keys.length || keys.some((key) => {
+  const requiredKeys = ["durability", "output", "provider", "publication", "requireAgent", "runtimeHome"];
+  const allowedKeys = new Set([...requiredKeys, "registerDynamicAgentController"]);
+  if (requiredKeys.some((key) => !Object.hasOwn(record, key))
+    || Reflect.ownKeys(record).some((key) => typeof key !== "string" || !allowedKeys.has(key))
+    || Reflect.ownKeys(record).some((key) => {
     const descriptor = Object.getOwnPropertyDescriptor(record, key);
     return descriptor === undefined || !descriptor.enumerable || !("value" in descriptor);
   })) {
@@ -452,6 +500,11 @@ const exactConfig = (value: unknown): ProductWorkServiceConfig => {
   const resolve = resolveDescriptor.value as ProductRetainedOutputAuthority["resolve"];
   const requireAgent = record.requireAgent as () => Agent;
   const runtimeHome = record.runtimeHome as () => string;
+  if (record.registerDynamicAgentController !== undefined
+    && (typeof record.registerDynamicAgentController !== "function"
+      || isProxy(record.registerDynamicAgentController))) {
+    throw new TypeError("work dynamic Agent controller registrar is invalid");
+  }
   return Object.freeze({
     durability: Object.freeze({
       flush: (session: Session) => Reflect.apply(flush, durabilityOwner, [session]) as Promise<unknown>,
@@ -476,6 +529,15 @@ const exactConfig = (value: unknown): ProductWorkServiceConfig => {
       },
     }),
     provider: record.provider,
+    ...(record.registerDynamicAgentController === undefined ? {} : {
+      registerDynamicAgentController: (controller: ProductDynamicAgentController) => {
+        Reflect.apply(
+          record.registerDynamicAgentController as (controller: ProductDynamicAgentController) => void,
+          record,
+          [controller],
+        );
+      },
+    }),
     requireAgent: () => Reflect.apply(requireAgent, record, []),
     runtimeHome: () => Reflect.apply(runtimeHome, record, []),
   });
@@ -521,6 +583,7 @@ const workCreationAuthority = (product: ProductToolContext): WorkCreationAuthori
   birth: Object.freeze({
     componentDigest: product.birth.componentDigest,
     componentRevision: product.birth.componentRevision,
+    modelProfileRevision: product.birth.modelProfileRevision,
   }),
   callId: product.callId,
   catalog: Object.freeze({ digest: product.catalog.digest, revision: product.catalog.revision }),
@@ -533,11 +596,13 @@ const descriptorDigestForBirth = (birth: ProductWorkCreatedEventData["birth"]): 
   allowedReadRoots: birth.allowedReadRoots,
   allowedTools: birth.allowedTools,
   interaction: birth.interaction,
+  modelProfileRevision: birth.modelProfileRevision,
   model: birth.model,
   network: birth.network,
-  persona: CHILD_PERSONA,
+  maxTurns: birth.maxTurns,
+  persona: birth.persona,
   provider: birth.provider,
-  type: "general",
+  type: birth.type,
 }));
 
 const agentRequestSha256 = (authority: WorkCreationAuthority, args: JsonObject): string => sha256(
@@ -846,6 +911,7 @@ export class ProductWorkService extends Service {
   private readonly usageByAgent = new Map<string, UsageAccumulator>();
   private readonly continuablePermits = new Map<string, ChildCreationPermit>();
   private readonly componentGenerationWaiters = new Map<string, Set<() => void>>();
+  private readonly dynamicAgents = new Map<string, Map<string, DynamicAgentRegistration>>();
   private readonly pendingChildAuthorities = new Map<string, ChildCreationPermit>();
   private accepting = true;
   private epochCount = 0;
@@ -861,6 +927,9 @@ export class ProductWorkService extends Service {
   constructor(ctx: Context, config: ProductWorkServiceConfig) {
     super(ctx, "productWork");
     this.config = exactConfig(config);
+    this.config.registerDynamicAgentController?.(Object.freeze({
+      prepare: (registration: DynamicAgentRegistration) => this.prepareDynamicAgent(registration),
+    }));
     ctx.effect(() => {
       const detachController = ctx.jobs.attachController("myagents-product-work");
       const stopStart = ctx.on("subagent/start", (info: SubagentRunInfo) => {
@@ -919,12 +988,15 @@ export class ProductWorkService extends Service {
         const permit = this.continuablePermits.get(descriptor.label);
         const expectedModel = entry?.created.model ?? permit?.model;
         const expectedAgentProvider = entry?.created.birth.provider ?? permit?.agentProvider;
+        const expectedPersona = entry?.created.birth.persona ?? permit?.template.persona;
+        const expectedTools = entry?.created.birth.allowedTools ?? permit?.template.allowedTools;
         if (expectedModel === undefined || expectedAgentProvider === undefined
+          || expectedPersona === undefined || expectedTools === undefined
           || descriptor.agentModel !== expectedModel || descriptor.agentProvider !== expectedAgentProvider
-          || descriptor.persona !== CHILD_PERSONA
+          || descriptor.persona !== expectedPersona
           || (descriptor.settlementDelivery !== undefined && descriptor.settlementDelivery !== "external")
           || (entry !== undefined && descriptor.settlementDelivery !== "external")
-          || stableJson(descriptor.toolFilter) !== stableJson({ allow: CHILD_TOOL_NAMES })) {
+          || stableJson(descriptor.toolFilter) !== stableJson({ allow: expectedTools })) {
           throw new Error("continuable child differs from its exact ProductWork birth authority");
         }
         let ready: Promise<WorkEntry>;
@@ -1001,6 +1073,125 @@ export class ProductWorkService extends Service {
         if (errors.length > 0) throw new AggregateError(errors, "product work cleanup failed");
       };
     }, "product-work-runtime");
+  }
+
+  private dynamicGenerationKey(identity: DynamicAgentGenerationIdentity): string {
+    return `${identity.revision}:${identity.digest}`;
+  }
+
+  private prepareDynamicAgent(value: DynamicAgentRegistration): Readonly<{
+    readonly dispose: () => void;
+    readonly install: () => () => void;
+  }> {
+    const normalizedValue = normalizeCanonicalJson(value, "dynamic Agent registration");
+    if (normalizedValue === null || typeof normalizedValue !== "object" || Array.isArray(normalizedValue)) {
+      throw new TypeError("dynamic Agent registration must be an object");
+    }
+    const normalized = normalizedValue as JsonObject;
+    const keys = [
+      "componentId", "description", "generation", "maxTurns", "modelProfileRef", "persona", "tools", "type",
+    ];
+    if (Object.keys(normalized).some((key) => !keys.includes(key))
+      || ["componentId", "description", "generation", "maxTurns", "persona", "tools", "type"]
+        .some((key) => !Object.hasOwn(normalized, key))) {
+      throw new TypeError("dynamic Agent registration has an invalid exact shape");
+    }
+    const generationValue = normalized.generation;
+    if (generationValue === null || typeof generationValue !== "object" || Array.isArray(generationValue)) {
+      throw new TypeError("dynamic Agent generation identity must be an object");
+    }
+    const generation = generationValue as JsonObject;
+    if (Object.keys(generation).sort().join("\0") !== "digest\0revision"
+      || typeof generation.digest !== "string" || !/^[a-f0-9]{64}$/u.test(generation.digest)
+      || typeof generation.revision !== "string" || generation.revision.length === 0
+      || generation.revision.length > 256) {
+      throw new TypeError("dynamic Agent generation identity is invalid");
+    }
+    const identifier = (candidate: unknown, description: string): string => {
+      if (typeof candidate !== "string" || candidate.length === 0 || candidate.length > 256
+        || hasControlCharacter(candidate)) {
+        throw new TypeError(`${description} is invalid`);
+      }
+      return candidate;
+    };
+    const type = identifier(normalized.type, "dynamic Agent type");
+    if (type === "general") throw new TypeError("dynamic Agent may not replace the built-in general descriptor");
+    if (typeof normalized.description !== "string" || normalized.description.length === 0
+      || normalized.description.length > 8_192
+      || typeof normalized.persona !== "string" || normalized.persona.length === 0
+      || normalized.persona.length > 1_000_000
+      || !Number.isSafeInteger(normalized.maxTurns) || (normalized.maxTurns as number) < 1
+      || (normalized.maxTurns as number) > 10_000
+      || !Array.isArray(normalized.tools) || normalized.tools.length > 256
+      || new Set(normalized.tools).size !== normalized.tools.length) {
+      throw new TypeError("dynamic Agent descriptor exceeds its bounded contract");
+    }
+    const tools = Object.freeze(normalized.tools.map((tool) => identifier(tool, "dynamic Agent tool")));
+    if (tools.some((tool) => !(CHILD_TOOL_NAMES as readonly string[]).includes(tool))) {
+      throw new TypeError("dynamic Agent tool policy exceeds the supported child ToolRuntime surface");
+    }
+    const modelProfileRef = normalized.modelProfileRef === undefined
+      ? undefined
+      : identifier(normalized.modelProfileRef, "dynamic Agent model profile reference");
+    const registration: DynamicAgentRegistration = Object.freeze({
+      componentId: identifier(normalized.componentId, "dynamic Agent component"),
+      description: normalized.description,
+      generation: Object.freeze({ digest: generation.digest, revision: generation.revision }),
+      maxTurns: normalized.maxTurns as number,
+      ...(modelProfileRef === undefined ? {} : { modelProfileRef }),
+      persona: normalized.persona,
+      tools,
+      type,
+    });
+    const key = this.dynamicGenerationKey(registration.generation);
+    const records = this.dynamicAgents.get(key) ?? new Map<string, DynamicAgentRegistration>();
+    if (records.has(type)) throw new TypeError("dynamic Agent types must be unique within one generation");
+    records.set(type, registration);
+    this.dynamicAgents.set(key, records);
+    let disposed = false;
+    let installed = false;
+    return Object.freeze({
+      dispose: () => {
+        if (installed) throw new Error("dynamic Agent must be unpublished before disposal");
+        if (disposed) return;
+        disposed = true;
+        if (records.get(type) === registration) records.delete(type);
+        if (records.size === 0) this.dynamicAgents.delete(key);
+      },
+      install: () => {
+        if (disposed || installed) throw new Error("dynamic Agent is disposed or already published");
+        installed = true;
+        let active = true;
+        return () => {
+          if (!active) return;
+          active = false;
+          installed = false;
+        };
+      },
+    });
+  }
+
+  private resolveAgentTemplate(authority: WorkCreationAuthority, type: string): AgentBirthTemplate {
+    if (type === "general") return Object.freeze({
+      allowedTools: CHILD_TOOL_NAMES,
+      maxTurns: 10_000,
+      persona: CHILD_PERSONA,
+      type,
+    });
+    const registration = this.dynamicAgents.get(this.dynamicGenerationKey({
+      digest: authority.birth.componentDigest,
+      revision: authority.birth.componentRevision,
+    }))?.get(type);
+    if (registration === undefined) {
+      throw new ProductToolError("agent_unavailable", "requested child descriptor is unavailable");
+    }
+    return Object.freeze({
+      allowedTools: registration.tools,
+      maxTurns: registration.maxTurns,
+      ...(registration.modelProfileRef === undefined ? {} : { modelProfileRef: registration.modelProfileRef }),
+      persona: registration.persona,
+      type: registration.type,
+    });
   }
 
   snapshot(): readonly ProductWorkSnapshot[] {
@@ -1115,6 +1306,7 @@ export class ProductWorkService extends Service {
       birth: Object.freeze({
         componentDigest: entry?.created.birth.componentDigest ?? "",
         componentRevision: entry?.created.birth.componentRevision ?? "",
+        modelProfileRevision: entry?.created.birth.modelProfileRevision ?? "",
       }),
       callId: entry?.created.authority.callId ?? "",
       catalog: Object.freeze({
@@ -1267,8 +1459,8 @@ export class ProductWorkService extends Service {
       }
       if (descriptor.agentModel !== entry.created.model
           || descriptor.agentProvider !== entry.created.birth.provider
-          || descriptor.persona !== CHILD_PERSONA
-          || stableJson(descriptor.toolFilter) !== stableJson({ allow: CHILD_TOOL_NAMES })
+          || descriptor.persona !== entry.created.birth.persona
+          || stableJson(descriptor.toolFilter) !== stableJson({ allow: entry.created.birth.allowedTools })
           || (descriptor.version >= 3
             ? descriptor.settlementDelivery !== "external"
             : descriptor.settlementDelivery !== undefined)) {
@@ -1362,6 +1554,7 @@ export class ProductWorkService extends Service {
         birth: Object.freeze({
           componentDigest: operation.birth.componentDigest,
           componentRevision: operation.birth.componentRevision,
+          modelProfileRevision: operation.birth.modelProfileRevision,
         }),
         callId,
         catalog: Object.freeze({
@@ -1421,14 +1614,19 @@ export class ProductWorkService extends Service {
     const model = root.options.model;
     const agentProvider = root.options.provider;
     const mode = call.args.run_in_background === false ? "foreground" : "continuable";
+    const template = this.resolveAgentTemplate(
+      call.authority,
+      (call.args.subagent_type as string | undefined) ?? "general",
+    );
     if (model === undefined || agentProvider === undefined
       || (call.args.model !== undefined && call.args.model !== model)
-      || (call.args.subagent_type !== undefined && call.args.subagent_type !== "general")
+      || (template.modelProfileRef !== undefined
+        && template.modelProfileRef !== call.authority.birth.modelProfileRevision)
       || candidate.descriptor.label !== call.taskId
       || candidate.descriptor.agentModel !== model
       || candidate.descriptor.agentProvider !== agentProvider
-      || candidate.descriptor.persona !== CHILD_PERSONA
-      || stableJson(candidate.descriptor.toolFilter) !== stableJson({ allow: CHILD_TOOL_NAMES })
+      || candidate.descriptor.persona !== template.persona
+      || stableJson(candidate.descriptor.toolFilter) !== stableJson({ allow: template.allowedTools })
       || (candidate.descriptor.version >= 3
         ? candidate.descriptor.settlementDelivery !== "external"
         : candidate.descriptor.settlementDelivery !== undefined)) {
@@ -1456,6 +1654,7 @@ export class ProductWorkService extends Service {
           parent: root,
           ready: this.entryDeferred(),
           taskId: call.taskId,
+          template,
         });
         this.continuablePermits.set(call.taskId, permit);
         const messageId = await exactNativePromise(
@@ -1491,6 +1690,7 @@ export class ProductWorkService extends Service {
         recoveredOutputs[0],
         initial.eventSeq,
         initial.id,
+        template,
       );
       this.publishEntry(entry);
       await this.appendCreated(entry);
@@ -1673,7 +1873,6 @@ export class ProductWorkService extends Service {
           || created.birth.parentOperationId !== created.authority.clientOperationId
           || created.birth.model !== created.model
           || created.birth.allowedReadRoots.length !== 0
-          || stableJson(created.birth.allowedTools) !== stableJson(CHILD_TOOL_NAMES)
           || created.birth.descriptorDigest !== descriptorDigestForBirth(created.birth)
           || (created.mode === "continuable") !== (created.outputPath !== undefined)
           || (created.initialChildEventSeq === undefined) !== (created.initialContentSha256 === undefined)
@@ -1719,7 +1918,8 @@ export class ProductWorkService extends Service {
         if (entry?.agentId !== epoch.agentId
           || entry.settlement !== undefined || expectedStart === undefined
           || this.epochCount > MAX_WORK_EPOCHS_TOTAL
-          || epoch.ordinal !== entry.epochs.length + 1 || epoch.ordinal > MAX_WORK_EPOCHS
+          || epoch.ordinal !== entry.epochs.length + 1
+          || epoch.ordinal > Math.min(MAX_WORK_EPOCHS, entry.created.birth.maxTurns)
           || (firstEpoch ? epoch.childStartSeq !== expectedStart : epoch.childStartSeq < expectedStart)
           || epoch.childEndSeq <= epoch.childStartSeq
           || epoch.epochId !== epochIdFor(epoch.agentId, epoch.childStartSeq, epoch.childEndSeq)
@@ -1915,7 +2115,8 @@ export class ProductWorkService extends Service {
     const childEndSeq = ended.endSeq;
     if (expectedMinimum === undefined
       || (entry.epochs.length === 0 ? childStartSeq !== expectedMinimum : childStartSeq < expectedMinimum)
-      || childEndSeq <= childStartSeq || entry.epochs.length >= MAX_WORK_EPOCHS
+      || childEndSeq <= childStartSeq
+      || entry.epochs.length >= Math.min(MAX_WORK_EPOCHS, entry.created.birth.maxTurns)
       || ended.info.id !== entry.agentId || ended.info.provider !== this.config.provider
       || !ended.info.local || String(ended.info.runId) !== ended.observation.runId) {
       throw new Error("ProductWork lifecycle end differs from its exact child epoch authority");
@@ -1950,7 +2151,8 @@ export class ProductWorkService extends Service {
         taskId: entry.taskId,
       });
       const expectedMinimum = entry.epochs.at(-1)?.childEndSeq ?? entry.created.initialChildEventSeq;
-      if (expectedMinimum === undefined || entry.epochs.length >= MAX_WORK_EPOCHS
+      if (expectedMinimum === undefined
+        || entry.epochs.length >= Math.min(MAX_WORK_EPOCHS, entry.created.birth.maxTurns)
         || this.epochCount >= MAX_WORK_EPOCHS_TOTAL
         || (entry.epochs.length === 0
           ? epoch.childStartSeq !== expectedMinimum
@@ -2174,8 +2376,10 @@ export class ProductWorkService extends Service {
       throw new ProductToolError("agent_unavailable", "requested child model alias is absent from the operation-frozen route");
     }
     const type = (args.subagent_type as string | undefined) ?? "general";
-    if (type !== "general") {
-      throw new ProductToolError("agent_unavailable", "requested child descriptor is unavailable");
+    const template = this.resolveAgentTemplate(authority, type);
+    if (template.modelProfileRef !== undefined
+      && template.modelProfileRef !== authority.birth.modelProfileRevision) {
+      throw new ProductToolError("agent_unavailable", "requested child model profile differs from operation birth");
     }
     const background = args.run_in_background !== false;
     let output: ProductRetainedOutputFile | undefined;
@@ -2187,9 +2391,9 @@ export class ProductWorkService extends Service {
       agentOptions: Object.freeze({ model: parentModel, provider: parentProvider }),
       maxDepth: 1,
       parent: product.agent,
-      persona: CHILD_PERSONA,
+      persona: template.persona,
       prompt: messageText(args.description as string, args.prompt as string),
-      toolFilter: Object.freeze({ allow: [...CHILD_TOOL_NAMES] }),
+      toolFilter: Object.freeze({ allow: [...template.allowedTools] }),
     });
     try {
       if (background) {
@@ -2211,6 +2415,7 @@ export class ProductWorkService extends Service {
         parent: product.agent,
         ready: this.entryDeferred(),
         taskId,
+        template,
       });
       creationPermit = permit.ready;
       this.continuablePermits.set(taskId, permit);
@@ -2257,6 +2462,7 @@ export class ProductWorkService extends Service {
         output,
         initialMessage.eventSeq,
         String(started.messageId),
+        template,
       );
       admittedEntry = entry;
       this.publishEntry(entry);
@@ -2330,29 +2536,36 @@ export class ProductWorkService extends Service {
     output: ProductRetainedOutputFile | undefined,
     initialChildEventSeq: number | undefined,
     initialMessageId: string | undefined,
+    template: AgentBirthTemplate,
   ): WorkEntry {
     const birth = Object.freeze({
       allowedReadRoots: Object.freeze([]),
-      allowedTools: CHILD_TOOL_NAMES,
+      allowedTools: template.allowedTools,
       componentDigest: authority.birth.componentDigest,
       componentRevision: authority.birth.componentRevision,
       depth: 1 as const,
       descriptorDigest: sha256(stableJson({
         allowedReadRoots: [],
-        allowedTools: CHILD_TOOL_NAMES,
+        allowedTools: template.allowedTools,
         interaction: "unavailable",
+        maxTurns: template.maxTurns,
         model,
+        modelProfileRevision: authority.birth.modelProfileRevision,
         network: "deny",
-        persona: CHILD_PERSONA,
+        persona: template.persona,
         provider: authority.agent.options.provider,
-        type: args.subagent_type ?? "general",
+        type: template.type,
       })),
       interaction: "unavailable" as const,
+      maxTurns: template.maxTurns,
       model,
+      modelProfileRevision: authority.birth.modelProfileRevision,
       network: "deny" as const,
       parentOperationId: authority.clientOperationId,
       parentSessionId: authority.agent.id,
       provider: authority.agent.options.provider ?? "default",
+      persona: template.persona,
+      type: template.type,
     });
     const created = validateEventData("myagents/work/created", {
       agentId,
@@ -2592,6 +2805,13 @@ export class ProductWorkService extends Service {
       }
       if (recipientEntry.settlement !== undefined || recipientEntry.stopRequested) {
         throw new ProductToolError("recipient_not_found", "recipient is terminal or stopping");
+      }
+      const consumedTurns = recipientEntry.epochs.length + 1;
+      if (consumedTurns >= recipientEntry.created.birth.maxTurns) {
+        throw new ProductToolError(
+          "delivery_failed",
+          "recipient exhausted its operation-frozen maximum turn count",
+        );
       }
       if (caller !== root) {
         const callerEntry = this.byAgent.get(caller.id);

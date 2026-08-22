@@ -61,9 +61,12 @@ const runtimeCompositionSourcePaths = [
   "packages/component-runtime/src/descriptors.ts",
   "packages/component-runtime/src/index.ts",
   "packages/component-runtime/src/service.ts",
+  "packages/components-agents/src/index.ts",
+  "packages/components-commands/src/index.ts",
   "packages/components-mcp/src/compiler.ts",
   "packages/components-mcp/src/index.ts",
   "packages/components-mcp/src/sdk-connection.ts",
+  "packages/components-skills/src/index.ts",
   "packages/host-ports/src/index.ts",
   "packages/host-ports/src/credential-provider.ts",
   "packages/host-ports/src/service.ts",
@@ -136,7 +139,10 @@ const runtimeCompositionSourcePaths = [
 const runtimePackageWorkspaces = [
   ["packages/product-profile", "@myagents-dsh/product-profile"],
   ["packages/component-runtime", "@myagents-dsh/component-runtime"],
+  ["packages/components-agents", "@myagents-dsh/components-agents"],
+  ["packages/components-commands", "@myagents-dsh/components-commands"],
   ["packages/components-mcp", "@myagents-dsh/components-mcp"],
+  ["packages/components-skills", "@myagents-dsh/components-skills"],
   ["packages/protocol", "@myagents-dsh/protocol"],
   ["packages/host-ports", "@myagents-dsh/host-ports"],
   ["packages/operation-runtime", "@myagents-dsh/operation-runtime"],
@@ -977,8 +983,26 @@ const main = (): void => {
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
+      "packages/components-agents",
+      "@myagents-dsh/components-agents",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/components-commands",
+      "@myagents-dsh/components-commands",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
       "packages/components-mcp",
       "@myagents-dsh/components-mcp",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
+      "packages/components-skills",
+      "@myagents-dsh/components-skills",
     );
     stageBuiltPackage(
       consumerRoot,
@@ -1078,6 +1102,7 @@ const main = (): void => {
       || evidence.hostPortServiceVerified !== true
       || evidence.hostCredentialModelVerified !== true
       || evidence.componentGenerationVerified !== true
+      || evidence.declarativeComponentsVerified !== true
       || evidence.mcpLifecycleVerified !== true
       || evidence.hostPortLifecycleAuthorityVerified !== true
       || JSON.stringify(evidence.hostPortMethodOrder) !== JSON.stringify([
@@ -1096,7 +1121,7 @@ const main = (): void => {
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
         "success", "failure", "file_tools", "edit", "process_search_tools", "web_tools", "interaction",
-        "plan_workflow", "task_graph", "static_skill", "product_work", "process_abort", "interrupt", "queued_cancel",
+        "plan_workflow", "task_graph", "declarative_components", "product_work", "process_abort", "interrupt", "queued_cancel",
         "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
@@ -1121,6 +1146,18 @@ const main = (): void => {
       || hostCredentialModelEvidence.requestAuthorityBound !== true
       || hostCredentialModelEvidence.secretNonProjectionVerified !== true) {
       throw new Error("Host credential model evidence differs from the accepted scoped route contract");
+    }
+    const declarativeComponentEvidence = exactObject(
+      evidence.declarativeComponentEvidence,
+      "declarative Skill, Agent, and Command evidence",
+    );
+    if (declarativeComponentEvidence.agentType !== "release-reviewer"
+      || declarativeComponentEvidence.agentMaxTurns !== 3
+      || typeof declarativeComponentEvidence.commandOperationId !== "string"
+      || !declarativeComponentEvidence.commandOperationId.startsWith("command-")
+      || declarativeComponentEvidence.commandRevision !== "artifact-declarative-components-v1"
+      || declarativeComponentEvidence.skillName !== "release-audit") {
+      throw new Error("declarative component evidence differs from the exact W3-A5 contract");
     }
     const permissionEvidence = exactObject(
       evidence.canonicalPermissionEvidence,
@@ -1288,9 +1325,9 @@ const main = (): void => {
       "message_event", "usage", "message_event", "usage", "message_event", "usage",
       "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
-      // Static Skill, four ProductWork operations, and retained process output.
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
+      // Declarative Command/Skill, four ProductWork operations, and retained process output.
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "usage", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",

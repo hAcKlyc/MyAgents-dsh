@@ -107,12 +107,28 @@ export const validateExtensionSnapshot = (value: unknown): ExtensionSnapshot => 
       );
     }
   }
+  const resources = new Map(snapshot.resources.map((resource) => [resource.id, resource] as const));
+  const componentsById = new Map(snapshot.components.map((component) => [component.id, component] as const));
   for (const component of snapshot.components) {
-    if (component.kind === "command" && !resourceIds.has(component.descriptor.resourceId)) {
-      throw new ProtocolError(
-        "extension_resource_missing",
-        "command component references an absent declarative resource",
-      );
+    if (component.kind === "command" || component.kind === "skill") {
+      const resource = resources.get(component.descriptor.resourceId);
+      const expectedKind = component.kind === "command" ? "command_template" : "skill_document";
+      if (resource?.kind !== expectedKind) {
+        throw new ProtocolError(
+          "extension_resource_missing",
+          `${component.kind} component references an absent or mismatched declarative resource`,
+        );
+      }
+    }
+    if (component.kind === "agent") {
+      for (const skillId of component.descriptor.skills ?? []) {
+        if (componentsById.get(skillId)?.kind !== "skill") {
+          throw new ProtocolError(
+            "extension_component_reference_missing",
+            "agent component references an absent declarative Skill component",
+          );
+        }
+      }
     }
   }
   return snapshot;

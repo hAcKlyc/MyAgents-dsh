@@ -1,0 +1,19 @@
+{
+  "name": "@myagents-dsh/components-commands",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Generation-owned declarative Command component compiler",
+  "files": ["src"],
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@myagents-dsh/component-runtime": "0.0.0",
+    "@myagents-dsh/operation-runtime": "0.0.0",
+    "@myagents-dsh/protocol": "0.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-commands": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6"
+  }
+}

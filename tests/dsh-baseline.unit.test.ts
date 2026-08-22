@@ -160,6 +160,7 @@ describe("DSH public boundary", () => {
       "../node_modules/@deepseek-ai/dsh-session/lib/types/json.js",
     ]);
     expect(forbiddenPrivateImports('import { Session } from "@deepseek-ai/dsh-session";')).toEqual([]);
+    expect(forbiddenPrivateImports('import { CommandRuntime } from "@deepseek-ai/dsh-commands";')).toEqual([]);
   });
 
   it("fails closed when a dynamic module target cannot be resolved statically", () => {

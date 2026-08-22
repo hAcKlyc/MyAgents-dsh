@@ -109,9 +109,10 @@ type ComponentPhase = "absent" | "preparing" | "prepared" | "committing" | "effe
 const COMPONENT_KIND_RANK: Readonly<Record<ExtensionComponent["kind"], number>> = Object.freeze({
   mcp: 0,
   host_tool: 1,
-  agent: 2,
-  command: 3,
-  hook: 4,
+  skill: 2,
+  agent: 3,
+  command: 4,
+  hook: 5,
 });
 
 const compareCodePoints = (left: string, right: string): number =>
@@ -318,7 +319,7 @@ const normalizePlaneConfig = (value: ProductComponentPlaneConfig): NormalizedPla
   for (const compilerValue of compilerValues) {
     const compiler = exactObject(compilerValue, ["kind", "prepare"], [], "component compiler");
     const kind = compiler.kind;
-    if (kind !== "agent" && kind !== "command" && kind !== "hook" && kind !== "host_tool"
+    if (kind !== "agent" && kind !== "command" && kind !== "skill" && kind !== "hook" && kind !== "host_tool"
       && kind !== "mcp") {
       throw new TypeError("component compiler kind is unsupported");
     }

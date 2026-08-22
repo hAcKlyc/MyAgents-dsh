@@ -127,7 +127,7 @@ describe("transactional product component generations", () => {
         kind: "command",
         descriptor: Object.freeze({ description: "Missing", resourceId: "absent" }),
       })],
-    ))).toThrow(/absent declarative resource/u);
+    ))).toThrow(/absent or mismatched declarative resource/u);
     const proxy = new Proxy(valid, {});
     expect(() => validateExtensionSnapshot(proxy)).toThrow();
   });

@@ -1,0 +1,18 @@
+{
+  "name": "@myagents-dsh/components-skills",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Generation-owned declarative Skill component compiler",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/component-runtime": "0.0.0",
+    "@myagents-dsh/tools-agent": "0.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-skill": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6"
+  }
+}

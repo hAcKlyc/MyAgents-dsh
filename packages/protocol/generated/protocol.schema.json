@@ -2038,6 +2038,105 @@
                     "descriptor": {
                       "additionalProperties": false,
                       "properties": {
+                        "description": {
+                          "maxLength": 4096,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "invocation": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "modelInvocable": {
+                              "type": "boolean"
+                            },
+                            "userInvocable": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "modelInvocable",
+                            "userInvocable"
+                          ],
+                          "type": "object"
+                        },
+                        "rank": {
+                          "maximum": 100000,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "resourceId": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$",
+                          "type": "string"
+                        },
+                        "whenToUse": {
+                          "maxLength": 4096,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "resourceId",
+                        "description",
+                        "invocation"
+                      ],
+                      "type": "object"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "const": "skill",
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "maxLength": 8192,
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "maxLength": 256,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "tags": {
+                          "items": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$",
+                            "type": "string"
+                          },
+                          "maxItems": 32,
+                          "type": "array",
+                          "uniqueItems": true
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "enabled",
+                    "kind",
+                    "descriptor"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "descriptor": {
+                      "additionalProperties": false,
+                      "properties": {
                         "event": {
                           "anyOf": [
                             {

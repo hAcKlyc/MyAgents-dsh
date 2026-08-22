@@ -10,7 +10,10 @@
   },
   "dependencies": {
     "@myagents-dsh/component-runtime": "0.0.0",
+    "@myagents-dsh/components-agents": "0.0.0",
+    "@myagents-dsh/components-commands": "0.0.0",
     "@myagents-dsh/components-mcp": "0.0.0",
+    "@myagents-dsh/components-skills": "0.0.0",
     "@myagents-dsh/host-ports": "0.0.0",
     "@myagents-dsh/operation-runtime": "0.0.0",
     "@myagents-dsh/product-profile": "0.0.0",
@@ -27,6 +30,7 @@
     "@deepseek-ai/cordis": "4.0.1",
     "@deepseek-ai/dsh-agent": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6",
     "@deepseek-ai/dsh-agent-loop": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6",
+    "@deepseek-ai/dsh-commands": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6",
     "@deepseek-ai/dsh-fs": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6",
     "@deepseek-ai/dsh-llm": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6",
     "@deepseek-ai/dsh-llm-deepseek": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6 || 0.1.0-rc.6",

@@ -3,6 +3,7 @@ import type { Plugin } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
+import { CommandRuntime } from "@deepseek-ai/dsh-commands";
 import { LlmAdapter, LlmRuntime } from "@deepseek-ai/dsh-llm";
 import { SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
@@ -31,10 +32,18 @@ import {
   type ProductComponentPlaneConfig,
   type ProductComponentServiceController,
 } from "@myagents-dsh/component-runtime";
+import { createAgentComponentCompiler } from "@myagents-dsh/components-agents";
+import {
+  ProductCommandService,
+  createCommandComponentCompiler,
+  type DynamicCommandGenerationIdentity,
+  type ProductDynamicCommandController,
+} from "@myagents-dsh/components-commands";
 import {
   createMcpComponentCompiler,
   type McpConnectionFactory,
 } from "@myagents-dsh/components-mcp";
+import { createSkillComponentCompiler } from "@myagents-dsh/components-skills";
 import {
   HostCredentialProvider,
   HostPortService,
@@ -63,6 +72,8 @@ import {
   ProductWorkService,
   validateStaticSkillCatalog,
   type StaticSkillCatalog,
+  type ProductDynamicSkillController,
+  type ProductDynamicAgentController,
 } from "@myagents-dsh/tools-agent";
 import {
   ProductProcessRuntime,
@@ -297,6 +308,9 @@ type CompositionAuthorityState = {
   canonicalToolPlane: "absent" | "installing" | "installed" | "failed";
   canonicalToolPlaneTarget: PlatformTarget | undefined;
   readonly components: ProductComponentServiceController;
+  dynamicSkills: ProductDynamicSkillController | undefined;
+  dynamicAgents: ProductDynamicAgentController | undefined;
+  dynamicCommands: ProductDynamicCommandController | undefined;
   componentPlane: "absent" | "installing" | "installed" | "failed";
   hostModelPlane: "absent" | "installing" | "installed" | "failed";
   hostModelProviderRoute: string | undefined;
@@ -570,7 +584,61 @@ export const installCanonicalToolPlane = async (
       }),
       requireAgent: () => root.productSession.requireAgent(),
     }));
-    fibers.push(await root.plugin(ProductSkillService, { catalog: skillCatalog }));
+    let dynamicSkills: ProductDynamicSkillController | undefined;
+    fibers.push(await root.plugin(ProductSkillService, {
+      catalog: skillCatalog,
+      registerDynamicController: (controller) => {
+        if (dynamicSkills !== undefined) throw new Error("dynamic Skill controller may register exactly once");
+        dynamicSkills = controller;
+      },
+    }));
+    fibers.push(await root.plugin(CommandRuntime));
+    let dynamicCommands: ProductDynamicCommandController | undefined;
+    fibers.push(await root.plugin(ProductCommandService, {
+      registerController: (controller) => {
+        if (dynamicCommands !== undefined) throw new Error("dynamic Command controller may register exactly once");
+        dynamicCommands = controller;
+      },
+      resolveAuthority: (identity: DynamicCommandGenerationIdentity) => {
+        const resolve = () => {
+          root.productComponents.assertSessionExtension(identity.digest);
+          const status = root.productComponents.status();
+          if (status.effectiveRevision !== identity.revision) {
+            throw new ProtocolError(
+              "extension_snapshot_stale",
+              "Command generation is no longer the effective component authority",
+              true,
+            );
+          }
+          const agent = root.productSession.requireAgent();
+          const environment = root.productSession.requireExecutionEnvironment();
+          return Object.freeze({
+            agent,
+            configRevision: root.productSession.requireOperationConfigRevision(),
+            executionEnvironmentDigest: environment.digest,
+            executionEnvironmentRevision: environment.revision,
+          });
+        };
+        const initial = resolve();
+        return Object.freeze({
+          ...initial,
+          assertCurrent: () => {
+            const current = resolve();
+            if (current.agent !== initial.agent
+              || current.configRevision !== initial.configRevision
+              || current.executionEnvironmentDigest !== initial.executionEnvironmentDigest
+              || current.executionEnvironmentRevision !== initial.executionEnvironmentRevision) {
+              throw new ProtocolError(
+                "command_authority_stale",
+                "Command operation authority changed during invocation",
+                true,
+              );
+            }
+          },
+        });
+      },
+      startOperation: (params, control) => root.sdkOperations.start(params, control),
+    }));
     fibers.push(await root.plugin(SealedBashExecutor, {
       authority: () => resolveProductProcessAuthority(
         root.productSession.requireExecutionEnvironment(),
@@ -579,6 +647,7 @@ export const installCanonicalToolPlane = async (
       io: processIo,
     }));
     fibers.push(await root.plugin(ProductProcessRuntime, { io: processIo, process: processConfig }));
+    let dynamicAgents: ProductDynamicAgentController | undefined;
     fibers.push(await root.plugin(ProductWorkService, {
       durability: Object.freeze({
         flush: async (session: Session) => {
@@ -595,6 +664,10 @@ export const installCanonicalToolPlane = async (
         ),
       }),
       provider: "myagents-spawn",
+      registerDynamicAgentController: (controller) => {
+        if (dynamicAgents !== undefined) throw new Error("dynamic Agent controller may register exactly once");
+        dynamicAgents = controller;
+      },
       requireAgent: () => root.productSession.requireAgent(),
       runtimeHome: () => root.productSession.requireExecutionEnvironment().runtimeHome,
     }));
@@ -616,7 +689,17 @@ export const installCanonicalToolPlane = async (
       }));
       fibers.push(await root.plugin(CanonicalWebTools, webConfig));
     }
+    if (dynamicSkills === undefined || dynamicAgents === undefined || dynamicCommands === undefined) {
+      throw new Error(`canonical component controllers did not register exactly once: ${JSON.stringify({
+        agents: dynamicAgents !== undefined,
+        commands: dynamicCommands !== undefined,
+        skills: dynamicSkills !== undefined,
+      })}`);
+    }
     authority.canonicalToolPlane = "installed";
+    authority.dynamicSkills = dynamicSkills;
+    authority.dynamicAgents = dynamicAgents;
+    authority.dynamicCommands = dynamicCommands;
   } catch (error) {
     authority.canonicalToolPlane = "failed";
     const cleanup = await Promise.allSettled(fibers.reverse().map((fiber) => fiber.dispose()));
@@ -650,7 +733,9 @@ export const installProductComponentPlane = async (
   try {
     const result = await authority.components.configure(config);
     if (result.state !== "applied") {
-      throw new Error("initial component generation did not become effective");
+      throw new Error(
+        `initial component generation did not become effective: ${JSON.stringify(result)}`,
+      );
     }
     authority.componentPlane = "installed";
     composition.snapshot();
@@ -678,6 +763,54 @@ export const createProductMcpComponentCompiler = (
     context: root,
     ...(authority.hostCredentials === undefined ? {} : { credentials: authority.hostCredentials }),
   });
+};
+
+export const createProductSkillComponentCompiler = (
+  composition: DshRootComposition,
+): ComponentCompiler => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.canonicalToolPlane !== "installed" || authority.componentPlane !== "absent"
+    || authority.dynamicSkills === undefined) {
+    throw new Error(
+      "Skill compiler requires the exact unclaimed root composition with canonical Skills installed",
+    );
+  }
+  composition.snapshot();
+  return createSkillComponentCompiler({ controller: authority.dynamicSkills });
+};
+
+export const createProductAgentComponentCompiler = (
+  composition: DshRootComposition,
+): ComponentCompiler => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.canonicalToolPlane !== "installed" || authority.componentPlane !== "absent"
+    || authority.dynamicAgents === undefined) {
+    throw new Error(
+      "Agent compiler requires the exact unclaimed root composition with ProductWork installed",
+    );
+  }
+  composition.snapshot();
+  return createAgentComponentCompiler({ controller: authority.dynamicAgents });
+};
+
+export const createProductCommandComponentCompiler = (
+  composition: DshRootComposition,
+): ComponentCompiler => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.canonicalToolPlane !== "installed" || authority.componentPlane !== "absent"
+    || authority.dynamicCommands === undefined) {
+    throw new Error(
+      "Command compiler requires the exact unclaimed root composition with DSH Commands installed",
+    );
+  }
+  composition.snapshot();
+  return createCommandComponentCompiler({ controller: authority.dynamicCommands });
 };
 
 export const installHostDeepSeekModelPlane = async (
@@ -864,6 +997,9 @@ export const composeDshRootServices = async (
       canonicalToolPlaneTarget: undefined,
       components: componentController,
       componentPlane: "absent",
+      dynamicAgents: undefined,
+      dynamicCommands: undefined,
+      dynamicSkills: undefined,
       snapshot: composition.snapshot.bind(composition),
     });
     return composition;
