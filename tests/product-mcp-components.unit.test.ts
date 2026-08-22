@@ -142,7 +142,7 @@ describe("generation-owned MCP component compiler", () => {
           close: () => { closeHits += 1; return Promise.resolve(); },
           listTools: () => {
             effects.push(`list:${generation}`);
-            return Promise.resolve(Object.freeze([Object.freeze({
+            const tool = Object.freeze({
               description: "Fixture MCP tool",
               inputSchema: Object.freeze({
                 additionalProperties: false,
@@ -151,7 +151,8 @@ describe("generation-owned MCP component compiler", () => {
                 type: "object" as const,
               }),
               name: "echo",
-            })]));
+            });
+            return Promise.resolve(Object.freeze(generation === 2 ? [tool, tool] : [tool]));
           },
         });
         return Promise.resolve(connection);
@@ -211,8 +212,29 @@ describe("generation-owned MCP component compiler", () => {
     ]);
     expect(permissionHits).toBe(1);
     expect(executionGuards).toBe(4);
+    const failedReconnect = await controller.replace(snapshot("mcp-reconnect-failed-v1"));
+    expect(failedReconnect).toMatchObject({
+      desiredRevision: "mcp-reconnect-failed-v1",
+      effectiveRevision: "mcp-v1",
+      state: "failed",
+    });
+    expect(root.tools.get("mcp__fixture__echo")).toBe(definition);
+    const retained = await root.tools.execute({
+      arguments: Object.freeze({ value: "retained" }),
+      callId: CallId("call-retained"),
+      name: "mcp__fixture__echo",
+      signal: new AbortController().signal,
+    });
+    expect(retained).toMatchObject({
+      isError: false,
+      value: {
+        content: ["result 1", `[MCP image attachment sha256:${"d".repeat(64)}]`],
+      },
+    });
+    expect(closeHits).toBe(1);
     await controller.replace(snapshot("mcp-v2"));
     expect(root.tools.get("mcp__fixture__echo")).toBeDefined();
+    expect(root.tools.get("mcp__fixture__echo")).not.toBe(definition);
     const replacement = await root.tools.execute({
       arguments: Object.freeze({ value: "replacement" }),
       callId: CallId("call-two"),
@@ -222,15 +244,19 @@ describe("generation-owned MCP component compiler", () => {
     expect(replacement).toMatchObject({
       isError: false,
       value: {
-        content: ["result 2", `[MCP image attachment sha256:${"d".repeat(64)}]`],
+        content: ["result 3", `[MCP image attachment sha256:${"d".repeat(64)}]`],
         isError: false,
         truncated: false,
       },
     });
-    expect(publishImage).toHaveBeenCalledTimes(2);
-    expect(connectHits).toBe(2);
-    await controller.close();
+    expect(publishImage).toHaveBeenCalledTimes(3);
+    expect(connectHits).toBe(3);
+    expect(permissionHits).toBe(3);
+    expect(executionGuards).toBe(12);
+    await new Promise((resolve) => setImmediate(resolve));
     expect(closeHits).toBe(2);
+    await controller.close();
+    expect(closeHits).toBe(3);
     expect(root.tools.get("mcp__fixture__echo")).toBeUndefined();
   });
 

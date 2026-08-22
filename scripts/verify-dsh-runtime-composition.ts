@@ -1124,6 +1124,7 @@ const main = (): void => {
       || evidence.hostAttachmentStoreVerified !== true
       || evidence.hostCredentialModelVerified !== true
       || evidence.componentGenerationVerified !== true
+      || evidence.workstream3LifecycleMatrixVerified !== true
       || evidence.declarativeComponentsVerified !== true
       || evidence.mcpLifecycleVerified !== true
       || evidence.hostPortLifecycleAuthorityVerified !== true
@@ -1207,6 +1208,23 @@ const main = (): void => {
       || hostCredentialModelEvidence.requestAuthorityBound !== true
       || hostCredentialModelEvidence.secretNonProjectionVerified !== true) {
       throw new Error("Host credential model evidence differs from the accepted scoped route contract");
+    }
+    const workstream3LifecycleEvidence = exactObject(
+      evidence.workstream3LifecycleEvidence,
+      "accumulated Workstream 3 lifecycle evidence",
+    );
+    if (workstream3LifecycleEvidence.failedReconnectRetainedRevision !== "artifact-lifecycle-v1"
+      || workstream3LifecycleEvidence.retainedOldCallResult !== "lifecycle result 1"
+      || workstream3LifecycleEvidence.replacementRevision !== "artifact-lifecycle-v2"
+      || workstream3LifecycleEvidence.replacementResult !== "lifecycle result 3"
+      || workstream3LifecycleEvidence.connectionCount !== 3
+      || JSON.stringify(workstream3LifecycleEvidence.closeCounts) !== JSON.stringify({
+        1: 1,
+        2: 1,
+        3: 1,
+      })
+      || workstream3LifecycleEvidence.liveToolAfterClose !== false) {
+      throw new Error("accumulated Workstream 3 lifecycle evidence differs from the exact contract");
     }
     const declarativeComponentEvidence = exactObject(
       evidence.declarativeComponentEvidence,

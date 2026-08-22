@@ -7,8 +7,20 @@ import { PassThrough } from "node:stream";
 import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers/promises";
 
 import { Context } from "@deepseek-ai/cordis";
-import type { ComponentCompiler, ExtensionComponent } from "@myagents-dsh/component-runtime";
-import type { McpConnectionFactory } from "@myagents-dsh/components-mcp";
+import { CallId } from "@deepseek-ai/dsh-llm";
+import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import { ToolRuntime } from "@deepseek-ai/dsh-tools";
+import {
+  ProductComponentService,
+  type ComponentCompiler,
+  type ExtensionComponent,
+  type ProductComponentServiceController,
+} from "@myagents-dsh/component-runtime";
+import {
+  createMcpComponentCompiler,
+  type McpConnection,
+  type McpConnectionFactory,
+} from "@myagents-dsh/components-mcp";
 import { createSdkMcpConnectionFactory } from "@myagents-dsh/components-mcp/sdk";
 import {
   LATEST_PROTOCOL_VERSION,
@@ -464,6 +476,184 @@ for (const childContext of [
   childOutput.destroy();
 }
 await childScopeComposition.dispose();
+
+const lifecycleMcpSnapshot = (revision: string): MethodParams<"extension/replace"> => {
+  const authority: Omit<MethodParams<"extension/replace">, "digest"> = {
+    formatVersion: 1 as const,
+    revision,
+    components: [Object.freeze({
+      id: "artifact_lifecycle",
+      enabled: true,
+      kind: "mcp" as const,
+      descriptor: Object.freeze({
+        transport: "http" as const,
+        url: "https://mcp.example.test/lifecycle",
+      }),
+    })],
+    resources: [],
+    skillSourcePolicy: {
+      revision: `${revision}-skills`,
+      roots: [],
+    },
+  };
+  return Object.freeze({ ...authority, digest: extensionSnapshotDigest(authority) });
+};
+const lifecycleRoot = new Context();
+await lifecycleRoot.plugin(SystemPrompt);
+await lifecycleRoot.plugin(ToolRuntime, { mode: "native" });
+const lifecycleOldCall = Promise.withResolvers<Readonly<{
+  content: readonly Readonly<{ type: "text"; text: string }>[];
+  isError: false;
+}>>();
+const lifecycleOldCallStarted = Promise.withResolvers<undefined>();
+const lifecycleOldGenerationUnused = Promise.withResolvers<undefined>();
+const lifecycleCloseHits = new Map<number, number>();
+let lifecycleConnectHits = 0;
+const lifecycleFactory: McpConnectionFactory = Object.freeze({
+  connect: () => {
+    lifecycleConnectHits += 1;
+    const generation = lifecycleConnectHits;
+    const tool = Object.freeze({
+      description: `Lifecycle MCP tool ${generation}`,
+      inputSchema: Object.freeze({
+        additionalProperties: false,
+        properties: Object.freeze({ value: Object.freeze({ type: "string" }) }),
+        required: Object.freeze(["value"]),
+        type: "object" as const,
+      }),
+      name: "echo",
+    });
+    const connection: McpConnection = Object.freeze({
+      callTool: (_name: string, input: Readonly<Record<string, unknown>>) => {
+        if (generation === 1 && input.value === "hold") {
+          lifecycleOldCallStarted.resolve(undefined);
+          return lifecycleOldCall.promise;
+        }
+        return Promise.resolve(Object.freeze({
+          content: Object.freeze([Object.freeze({
+            type: "text" as const,
+            text: `lifecycle result ${generation}`,
+          })]),
+          isError: false as const,
+        }));
+      },
+      close: () => {
+        lifecycleCloseHits.set(generation, (lifecycleCloseHits.get(generation) ?? 0) + 1);
+        return Promise.resolve();
+      },
+      listTools: () => Promise.resolve(Object.freeze(generation === 2 ? [tool, tool] : [tool])),
+    });
+    return Promise.resolve(connection);
+  },
+});
+let lifecycleController: ProductComponentServiceController | undefined;
+await lifecycleRoot.plugin(ProductComponentService, {
+  authorizeToolExecution: () => Promise.resolve(),
+  assertToolExecution: () => undefined,
+  registerController: (controller) => { lifecycleController = controller; },
+  runAtCommitBoundary: (_signal, commit) => {
+    commit();
+    return Promise.resolve(true);
+  },
+  whenGenerationUnused: ({ revision }) => revision === "artifact-lifecycle-v1"
+    ? lifecycleOldGenerationUnused.promise
+    : Promise.resolve(),
+});
+if (lifecycleController === undefined) throw new Error("missing lifecycle component controller");
+const lifecycleInitial = await lifecycleController.configure({
+  catalog: validatedArtifactToolCatalog,
+  compilers: Object.freeze([createMcpComponentCompiler({
+    connectionFactory: lifecycleFactory,
+    context: lifecycleRoot,
+  })]),
+  initialSnapshot: lifecycleMcpSnapshot("artifact-lifecycle-v1"),
+});
+assert.equal(lifecycleInitial.state, "applied");
+const lifecycleToolName = "mcp__artifact_lifecycle__echo";
+const lifecycleOldDefinition = lifecycleRoot.tools.get(lifecycleToolName);
+assert.ok(lifecycleOldDefinition !== undefined);
+const lifecycleInitialCatalog = JSON.stringify(lifecycleRoot.productComponents.catalog());
+const lifecycleFailed = await lifecycleController.replace(
+  lifecycleMcpSnapshot("artifact-lifecycle-reconnect-failed-v1"),
+);
+assert.deepEqual(lifecycleFailed, {
+  desiredRevision: "artifact-lifecycle-reconnect-failed-v1",
+  effectiveRevision: "artifact-lifecycle-v1",
+  state: "failed",
+  components: [{
+    key: "mcp:artifact_lifecycle",
+    state: "failed",
+    reason: "component_prepare_failed",
+  }],
+});
+assert.equal(lifecycleRoot.tools.get(lifecycleToolName), lifecycleOldDefinition);
+assert.equal(JSON.stringify(lifecycleRoot.productComponents.catalog()), lifecycleInitialCatalog);
+assert.equal(lifecycleCloseHits.get(1) ?? 0, 0);
+assert.equal(lifecycleCloseHits.get(2), 1);
+const lifecycleOldExecution = lifecycleRoot.tools.execute({
+  arguments: Object.freeze({ value: "hold" }),
+  callId: CallId("artifact-lifecycle-old-call"),
+  name: lifecycleToolName,
+  signal: new AbortController().signal,
+});
+await lifecycleOldCallStarted.promise;
+const lifecycleReplacement = await lifecycleController.replace(
+  lifecycleMcpSnapshot("artifact-lifecycle-v2"),
+);
+assert.equal(lifecycleReplacement.state, "applied");
+assert.equal(lifecycleReplacement.effectiveRevision, "artifact-lifecycle-v2");
+assert.notEqual(lifecycleRoot.tools.get(lifecycleToolName), lifecycleOldDefinition);
+assert.equal(lifecycleCloseHits.get(1) ?? 0, 0);
+lifecycleOldCall.resolve(Object.freeze({
+  content: Object.freeze([Object.freeze({
+    type: "text" as const,
+    text: "lifecycle result 1",
+  })]),
+  isError: false as const,
+}));
+const lifecycleRetainedOutcome = await lifecycleOldExecution;
+assert.deepEqual(lifecycleRetainedOutcome, {
+  isError: false,
+  content: [{ type: "text", text: "lifecycle result 1" }],
+  value: {
+    attachments: [],
+    content: ["lifecycle result 1"],
+    isError: false,
+    truncated: false,
+  },
+});
+lifecycleOldGenerationUnused.resolve(undefined);
+await waitUntil(() => lifecycleCloseHits.get(1) === 1, "retired MCP generation cleanup");
+const lifecycleReplacementOutcome = await lifecycleRoot.tools.execute({
+  arguments: Object.freeze({ value: "replacement" }),
+  callId: CallId("artifact-lifecycle-replacement-call"),
+  name: lifecycleToolName,
+  signal: new AbortController().signal,
+});
+assert.deepEqual(lifecycleReplacementOutcome, {
+  isError: false,
+  content: [{ type: "text", text: "lifecycle result 3" }],
+  value: {
+    attachments: [],
+    content: ["lifecycle result 3"],
+    isError: false,
+    truncated: false,
+  },
+});
+await lifecycleController.close();
+assert.equal(lifecycleRoot.tools.get(lifecycleToolName), undefined);
+const lifecycleLiveToolAfterClose = lifecycleRoot.tools.get(lifecycleToolName) !== undefined;
+assert.deepEqual(Object.fromEntries(lifecycleCloseHits), { 1: 1, 2: 1, 3: 1 });
+await lifecycleRoot.fiber.dispose();
+const workstream3LifecycleEvidence = Object.freeze({
+  failedReconnectRetainedRevision: lifecycleFailed.effectiveRevision,
+  retainedOldCallResult: lifecycleRetainedOutcome.value.content[0],
+  replacementRevision: lifecycleReplacement.effectiveRevision,
+  replacementResult: lifecycleReplacementOutcome.value.content[0],
+  connectionCount: lifecycleConnectHits,
+  closeCounts: Object.freeze(Object.fromEntries(lifecycleCloseHits)),
+  liveToolAfterClose: lifecycleLiveToolAfterClose,
+});
 adapter.enqueue({
   kind: "complete",
   text: ["first ", "completion"],
@@ -3477,6 +3667,8 @@ process.stdout.write(`${JSON.stringify({
   },
   hostCredentialModelVerified,
   componentGenerationVerified,
+  workstream3LifecycleMatrixVerified: true,
+  workstream3LifecycleEvidence,
   declarativeComponentsVerified: true,
   declarativeComponentEvidence: {
     agentType: dynamicAgentCreated.data.birth.type,
