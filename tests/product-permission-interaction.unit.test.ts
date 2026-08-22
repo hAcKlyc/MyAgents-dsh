@@ -83,7 +83,7 @@ const mounted = async (
   interaction: ProductLocalInteractionProvider,
   overrides: Partial<Pick<
     ProductPermissionServiceConfig,
-    "autoAllowTools" | "interactionTimeoutMs" | "maxRules" | "mode" | "ruleTtlMs"
+    "autoAllowTools" | "hook" | "interactionTimeoutMs" | "maxRules" | "mode" | "ruleTtlMs"
   >> = {},
 ) => {
   const context = new Context();
@@ -107,6 +107,7 @@ const mounted = async (
       },
     }),
     interaction,
+    ...(overrides.hook === undefined ? {} : { hook: overrides.hook }),
     interactionTimeoutMs: overrides.interactionTimeoutMs ?? 1_000,
     maxRules: overrides.maxRules ?? 8,
     mode: overrides.mode ?? "default",
@@ -165,6 +166,30 @@ const request = (
 ): ProductToolPermissionRequest => Object.freeze({ permissionClass, target, tool });
 
 describe("product permission policy and local interaction provider", () => {
+  it("runs the generation Hook after birth validation and scopes approval to one call", async () => {
+    const local = provider("scenario-hook", (pending, settlement) => response(pending, "deny", settlement));
+    const decisions: Array<"allow_once" | "deny"> = ["allow_once", "deny"];
+    const hookRequests: unknown[] = [];
+    const state = await mounted(local.provider, {
+      hook: Object.freeze({
+        authorize: (_context, hookRequest) => {
+          hookRequests.push(hookRequest);
+          return Promise.resolve(decisions.shift() ?? "deny");
+        },
+      }),
+    });
+
+    await expect(state.context.productPermission.authorize(state.product(), request()))
+      .resolves.toBe("allow");
+    await expect(state.context.productPermission.authorize(state.product(), request()))
+      .resolves.toBe("deny");
+    expect(hookRequests).toEqual([
+      { permissionClass: "process.execute", target: "workspace-command", tool: "Bash" },
+      { permissionClass: "process.execute", target: "workspace-command", tool: "Bash" },
+    ]);
+    expect(local.permissionRequests).toEqual([]);
+  });
+
   it("auto-allows only the exact safe read policy without opening an interaction", async () => {
     const local = provider("scenario-v1", (pending, settlement) => response(pending, "deny", settlement));
     const state = await mounted(local.provider);

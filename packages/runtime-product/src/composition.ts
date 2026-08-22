@@ -48,6 +48,11 @@ import {
   type HostToolRequestAuthorityInput,
   type HostToolRequestAuthorityFactory,
 } from "@myagents-dsh/components-host-tools";
+import {
+  ProductHookRuntime,
+  createHookComponentCompiler,
+  type ProductHookRuntimeController,
+} from "@myagents-dsh/components-hooks";
 import { createSkillComponentCompiler } from "@myagents-dsh/components-skills";
 import {
   HostCredentialProvider,
@@ -316,6 +321,7 @@ type CompositionAuthorityState = {
   dynamicSkills: ProductDynamicSkillController | undefined;
   dynamicAgents: ProductDynamicAgentController | undefined;
   dynamicCommands: ProductDynamicCommandController | undefined;
+  hooks: ProductHookRuntimeController | undefined;
   componentPlane: "absent" | "installing" | "installed" | "failed";
   hostModelPlane: "absent" | "installing" | "installed" | "failed";
   hostModelProviderRoute: string | undefined;
@@ -545,6 +551,7 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(ApprovalService, { policy: "ask" }));
     fibers.push(await root.plugin(UserQuestionService));
     const permissionDeadline = root.productSession.settlementDeadlineAuthority();
+    let hookController: ProductHookRuntimeController | undefined;
     fibers.push(await root.plugin(ProductPermissionService, {
       ...permissionConfig,
       clock: Date.now,
@@ -553,6 +560,13 @@ export const installCanonicalToolPlane = async (
           root.sessions.flush(session),
           "product permission durability flush",
         ),
+      }),
+      hook: Object.freeze({
+        authorize: (context: ProductToolContext, request: Readonly<{
+          permissionClass: string;
+          target: string;
+          tool: string;
+        }>) => hookController?.authorizePermission(context, request) ?? Promise.resolve("continue" as const),
       }),
     }));
     const planAuthority: ProductToolRuntimeConfig["plan"] = Object.freeze({
@@ -568,6 +582,36 @@ export const installCanonicalToolPlane = async (
       requireAgent: () => root.productSession.requireAgent(),
       resolveOperation: (agent) => root.sdkOperations.resolveActiveToolOperation(agent),
     }));
+    fibers.push(await root.plugin(ProductHookRuntime, {
+      registerController: (controller) => {
+        if (hookController !== undefined) throw new Error("Host Hook controller may register exactly once");
+        hookController = controller;
+      },
+      resolveOperation: (agent: Agent) => {
+        const initial = root.sdkOperations.resolveActiveToolOperation(agent);
+        const assertCurrent = () => {
+          const current = root.sdkOperations.resolveActiveToolOperation(agent);
+          if (current.dshTurn !== initial.dshTurn
+            || current.operation.clientOperationId !== initial.operation.clientOperationId
+            || current.operation.productTurnId !== initial.operation.productTurnId
+            || current.operation.birth.componentRevision !== initial.operation.birth.componentRevision
+            || current.operation.birth.componentDigest !== initial.operation.birth.componentDigest) {
+            throw new ProtocolError("hook_authority_stale", "Hook operation authority is stale", true);
+          }
+        };
+        return Object.freeze({
+          agent,
+          birth: initial.operation.birth,
+          clientOperationId: initial.operation.clientOperationId,
+          dshTurn: initial.dshTurn,
+          origin: "root" as const,
+          productTurnId: initial.operation.productTurnId,
+          assertCurrent,
+        });
+      },
+    }));
+    if (hookController === undefined) throw new Error("Host Hook controller did not register");
+    authority.hooks = hookController;
     fibers.push(await root.plugin(ProductPlanService, {
       ...planConfig,
       durability: Object.freeze({
@@ -802,6 +846,48 @@ export const createProductHostToolComponentCompiler = (
     context: root,
     requestAuthorities,
     resolveExecution: (execution, toolName) => root.productTools.resolveExternal(execution, toolName),
+  });
+};
+
+export const createProductHookComponentCompiler = (
+  composition: DshRootComposition,
+): ComponentCompiler => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.canonicalToolPlane !== "installed" || authority.componentPlane !== "absent"
+    || authority.hooks === undefined) {
+    throw new Error(
+      "Hook compiler requires the exact unclaimed root composition with the Hook coordinator installed",
+    );
+  }
+  composition.snapshot();
+  return createHookComponentCompiler({
+    hooks: authority.hooks,
+    execute: (invocation, request) => {
+      const assertCurrent = () => {
+        invocation.operation.assertCurrent();
+        if (`${invocation.operation.birth.componentRevision}:${invocation.operation.birth.componentDigest}`
+          !== invocation.componentGenerationId) {
+          throw new ProtocolError("hook_authority_stale", "Hook component differs from operation birth authority", true);
+        }
+      };
+      assertCurrent();
+      return root.hostPorts.executeHostHook(authority.hostPorts.createRequestAuthority({
+        signal: invocation.signal,
+        assertCurrent,
+        deadlineMs: invocation.deadlineMs,
+        runtimeSessionId: String(invocation.operation.agent.id),
+        clientOperationId: invocation.operation.clientOperationId,
+        turnId: invocation.operation.productTurnId,
+        dshTurn: invocation.operation.dshTurn,
+        rootCallId: invocation.rootCallId,
+        callId: invocation.callId,
+        componentGenerationId: invocation.componentGenerationId,
+        componentId: invocation.componentId,
+        expectedConfigRevision: invocation.operation.birth.configRevision,
+      }), request);
+    },
   });
 };
 
@@ -1043,6 +1129,7 @@ export const composeDshRootServices = async (
       componentPlane: "absent",
       dynamicAgents: undefined,
       dynamicCommands: undefined,
+      hooks: undefined,
       dynamicSkills: undefined,
       snapshot: composition.snapshot.bind(composition),
     });

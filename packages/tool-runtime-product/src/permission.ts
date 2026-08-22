@@ -127,6 +127,12 @@ export interface ProductPermissionServiceConfig extends ProductPermissionPlaneCo
   readonly durability: Readonly<{
     flush(session: Session): Promise<boolean>;
   }>;
+  readonly hook?: Readonly<{
+    authorize(
+      context: ProductToolContext,
+      request: Readonly<{ permissionClass: string; target: string; tool: string }>,
+    ): Promise<"allow_once" | "continue" | "deny">;
+  }>;
 }
 
 export interface ProductPermissionRule {
@@ -579,7 +585,7 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
   const config = exactOwnDataObject(value, [
     "mode", "autoAllowTools", "interaction", "interactionTimeoutMs", "maxRules", "ruleTtlMs",
     "clock", "durability",
-  ], [], "product permission service config");
+  ], ["hook"], "product permission service config");
   const plane = validateProductPermissionPlaneConfig({
     mode: config.mode,
     autoAllowTools: config.autoAllowTools,
@@ -591,11 +597,25 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
   const clock = dataFunction(config, "clock", "permission clock");
   const durability = exactOwnDataObject(config.durability, ["flush"], [], "permission durability authority");
   const flush = dataFunction(durability, "flush", "permission durability flush");
+  const hook = config.hook === undefined
+    ? undefined
+    : exactOwnDataObject(config.hook, ["authorize"], [], "permission Hook authority");
+  const authorizeHook = hook === undefined
+    ? undefined
+    : dataFunction(hook, "authorize", "permission Hook authorizer");
   return Object.freeze({
     ...plane,
     clock: () => Reflect.apply(clock, config, []) as number,
     durability: Object.freeze({
       flush: (session: Session) => Reflect.apply(flush, durability, [session]) as Promise<boolean>,
+    }),
+    ...(authorizeHook === undefined ? {} : {
+      hook: Object.freeze({
+        authorize: (
+          context: ProductToolContext,
+          request: Readonly<{ permissionClass: string; target: string; tool: string }>,
+        ) => Reflect.apply(authorizeHook, hook, [context, request]) as Promise<"allow_once" | "continue" | "deny">,
+      }),
     }),
   });
 };
@@ -947,6 +967,18 @@ export class ProductPermissionService extends Service {
         "permission_revision_stale",
         "operation permission revision is absent from durable policy history",
       );
+    }
+    if (this.configValue.hook !== undefined) {
+      const hookDecision: unknown = await exactNativePromise(
+        this.configValue.hook.authorize(context, normalized),
+        "permission Hook authority",
+      );
+      context.signal.throwIfAborted();
+      if (hookDecision === "deny") return "deny";
+      if (hookDecision === "allow_once") return "allow";
+      if (hookDecision !== "continue") {
+        throw new ProductPermissionError("permission_hook_invalid", "permission Hook returned an invalid decision");
+      }
     }
     const now = this.now();
     if (this.isAutomaticallyAllowed(normalized, birth, now)) return "allow";

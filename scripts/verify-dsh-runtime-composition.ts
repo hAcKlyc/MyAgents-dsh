@@ -65,6 +65,8 @@ const runtimeCompositionSourcePaths = [
   "packages/components-commands/src/index.ts",
   "packages/components-host-tools/src/compiler.ts",
   "packages/components-host-tools/src/index.ts",
+  "packages/components-hooks/src/index.ts",
+  "packages/components-hooks/src/runtime.ts",
   "packages/components-mcp/src/compiler.ts",
   "packages/components-mcp/src/index.ts",
   "packages/components-mcp/src/sdk-connection.ts",
@@ -144,6 +146,7 @@ const runtimePackageWorkspaces = [
   ["packages/components-agents", "@myagents-dsh/components-agents"],
   ["packages/components-commands", "@myagents-dsh/components-commands"],
   ["packages/components-host-tools", "@myagents-dsh/components-host-tools"],
+  ["packages/components-hooks", "@myagents-dsh/components-hooks"],
   ["packages/components-mcp", "@myagents-dsh/components-mcp"],
   ["packages/components-skills", "@myagents-dsh/components-skills"],
   ["packages/protocol", "@myagents-dsh/protocol"],
@@ -1004,6 +1007,12 @@ const main = (): void => {
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
+      "packages/components-hooks",
+      "@myagents-dsh/components-hooks",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
       "packages/components-mcp",
       "@myagents-dsh/components-mcp",
     );
@@ -1203,6 +1212,19 @@ const main = (): void => {
       || hostToolEvidence.result !== "Host release check accepted") {
       throw new Error("generation-owned Host tool evidence differs from the exact reverse-port contract");
     }
+    const hostHookEvidence = exactObject(
+      evidence.hostHookComponentEvidence,
+      "generation-owned Host Hook evidence",
+    );
+    if (hostHookEvidence.callCount !== 2
+      || hostHookEvidence.callId !== "artifact-write-call"
+      || hostHookEvidence.componentId !== "artifact-pre-write-hook"
+      || hostHookEvidence.event !== "PreToolUse"
+      || hostHookEvidence.hookId !== "artifact-pre-write-hook"
+      || hostHookEvidence.tool !== "Write"
+      || hostHookEvidence.transformedCallId !== "artifact-write-call") {
+      throw new Error("generation-owned Host Hook evidence differs from the exact reverse-port contract");
+    }
     const webEvidence = exactObject(evidence.canonicalWebEvidence, "canonical Web tool evidence");
     const webFetch = exactObject(webEvidence.fetch, "canonical WebFetch output evidence");
     const webFetchUsage = exactObject(webFetch.usage, "canonical WebFetch usage evidence");
@@ -1336,8 +1358,8 @@ const main = (): void => {
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
       // Interaction, plan workflow, and Task graph operations.
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "usage", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "message_event", "usage", "message_event", "usage", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",

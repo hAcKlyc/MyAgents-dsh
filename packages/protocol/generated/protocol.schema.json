@@ -2179,6 +2179,28 @@
                             }
                           ]
                         },
+                        "originScope": {
+                          "items": {
+                            "anyOf": [
+                              {
+                                "const": "root",
+                                "type": "string"
+                              },
+                              {
+                                "const": "foreground_child",
+                                "type": "string"
+                              },
+                              {
+                                "const": "background_child",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "maxItems": 3,
+                          "minItems": 1,
+                          "type": "array",
+                          "uniqueItems": true
+                        },
                         "priority": {
                           "maximum": 10000,
                           "minimum": -10000,

@@ -76,6 +76,7 @@ const allowedTargetPackages = new Set([
   "@myagents-dsh/components-agents",
   "@myagents-dsh/components-commands",
   "@myagents-dsh/components-host-tools",
+  "@myagents-dsh/components-hooks",
   "@myagents-dsh/components-mcp",
   "@myagents-dsh/components-skills",
   "@myagents-dsh/dynamic-e2e",

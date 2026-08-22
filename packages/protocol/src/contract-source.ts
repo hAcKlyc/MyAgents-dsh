@@ -470,6 +470,11 @@ const skillDescriptor = strictObject({
 const hookDescriptor = strictObject({
   event: Type.Union([Type.Literal("PreToolUse"), Type.Literal("PostToolUse"), Type.Literal("PermissionRequest")]),
   matcher: Type.Optional(Type.Union([Type.Literal("*"), declarativeReference])),
+  originScope: Type.Optional(Type.Array(Type.Union([
+    Type.Literal("root"),
+    Type.Literal("foreground_child"),
+    Type.Literal("background_child"),
+  ]), { minItems: 1, maxItems: 3, uniqueItems: true })),
   priority: Type.Optional(Type.Integer({ minimum: -10_000, maximum: 10_000 })),
   timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 600_000 })),
   failurePolicy: Type.Union([Type.Literal("deny"), Type.Literal("abort_operation")]),

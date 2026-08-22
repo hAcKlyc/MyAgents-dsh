@@ -21,6 +21,7 @@
       "@myagents-dsh/component-runtime": "0.0.0",
       "@myagents-dsh/components-agents": "0.0.0",
       "@myagents-dsh/components-commands": "0.0.0",
+      "@myagents-dsh/components-hooks": "0.0.0",
       "@myagents-dsh/components-host-tools": "0.0.0",
       "@myagents-dsh/components-mcp": "0.0.0",
       "@myagents-dsh/components-skills": "0.0.0",
@@ -43,7 +44,7 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "d4a7c5ec6156ef9bedd23ab7fb3ca748e98ee91cb883dba702c368ba06865ece",
+    "artifactManifestSha256": "e6a98348d1488b0d08731c1c40d84d4262cb9051584e1a24afc571341e929eca",
     "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",
@@ -84,7 +85,7 @@
       "host/attachment/acquire",
       "host/attachment/release"
     ],
-    "schemaSha256": "3b1da6731e2ee1b13fd8718ac03c9e8389e5b92621eca20f80073c59e81090bf",
+    "schemaSha256": "a86ad80bb85e4d65169fdfe4e79d8cc5e2e651ba2d0feffea78340124195bbf8",
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "workstream-evidence-only",

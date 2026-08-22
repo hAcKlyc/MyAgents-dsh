@@ -11,6 +11,7 @@
     { "path": "../components-agents" },
     { "path": "../components-commands" },
     { "path": "../components-host-tools" },
+    { "path": "../components-hooks" },
     { "path": "../components-mcp" },
     { "path": "../components-skills" },
     { "path": "../host-ports" },

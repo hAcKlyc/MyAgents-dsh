@@ -17,9 +17,7 @@ import {
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import {
-  freezeMessage,
   LlmAdapter,
-  type AssistantMessage,
   type GenerateOptions,
   type LlmModelInfo,
   type LlmProviderInfo,
@@ -55,6 +53,7 @@ import {
   composeDshRootServices,
   createProductAgentComponentCompiler,
   createProductCommandComponentCompiler,
+  createProductHookComponentCompiler,
   createProductHostToolComponentCompiler,
   createProductMcpComponentCompiler,
   createProductSkillComponentCompiler,
@@ -196,6 +195,19 @@ const artifactDeclarativeExtensionAuthority: Omit<MethodParams<"extension/replac
       }),
     }),
     Object.freeze({
+      id: "artifact-pre-write-hook",
+      enabled: true,
+      kind: "hook" as const,
+      descriptor: Object.freeze({
+        event: "PreToolUse" as const,
+        failurePolicy: "deny" as const,
+        matcher: "Write",
+        originScope: ["root" as const],
+        priority: 0,
+        timeoutMs: 5_000,
+      }),
+    }),
+    Object.freeze({
       id: artifactHostToolName,
       enabled: true,
       kind: "host_tool" as const,
@@ -279,27 +291,6 @@ const createArtifactComponentCompiler = (effects: string[]): ComponentCompiler =
   },
 });
 
-interface ArtifactPreparedAssistantToolCall {
-  readonly callId: string;
-  readonly name: string;
-  readonly rawArguments: string;
-  readonly parsedArguments: unknown;
-}
-
-interface ArtifactPreparedAssistantCommit {
-  readonly message: AssistantMessage;
-  readonly toolCalls: readonly ArtifactPreparedAssistantToolCall[];
-}
-
-interface ArtifactPatchedAgentEventContext {
-  on(
-    name: "agent/pre-assistant-commit",
-    listener: (
-      payload: Readonly<{ commit: ArtifactPreparedAssistantCommit }>,
-      next: () => Promise<ArtifactPreparedAssistantCommit>,
-    ) => Promise<ArtifactPreparedAssistantCommit>,
-  ): () => void;
-}
 assert.deepEqual(validatedArtifactToolCatalog.implementationCatalog, CANONICAL_TOOL_NAMES);
 assert.throws(() => validateEffectiveToolCatalog({
   ...validatedArtifactToolCatalog,
@@ -314,6 +305,10 @@ const fixtureTemporaryRoot = join(fixtureRoot, "temporary");
 const fixtureFile = join(fixtureWorkspace, "governed.txt");
 const untransformedWriteContent = "untransformed input must never persist\n";
 const transformedWriteContent = "after governed Write\n";
+const transformedWriteArguments = JSON.stringify({
+  file_path: fixtureFile,
+  content: transformedWriteContent,
+});
 const editedFileContent = "after governed Edit\n";
 const fixtureSkillRoot = join(fixtureWorkspace, "skills", "fixture-audit");
 const fixtureSkillSourcePath = join(fixtureSkillRoot, "SKILL.md");
@@ -718,45 +713,7 @@ const composition = await composeDshRootServices({
   systemPrompt: { persona: "Composition-owned persona, not the desired Session revision." },
   tools: { mode: "native" },
 });
-const transformedWriteArguments = JSON.stringify({
-  file_path: fixtureFile,
-  content: transformedWriteContent,
-});
 let preAssistantCommitTransformHits = 0;
-const stopPreAssistantCommitTransform = (composition.context as unknown as ArtifactPatchedAgentEventContext).on(
-  "agent/pre-assistant-commit",
-  async (_payload, next) => {
-    const inherited = await next();
-    if (!inherited.toolCalls.some(({ callId }) => callId === "artifact-write-call")) {
-      return inherited;
-    }
-    preAssistantCommitTransformHits += 1;
-    const message = freezeMessage({
-      id: inherited.message.id,
-      role: "assistant",
-      source: inherited.message.source,
-      content: inherited.message.content.map((block) => block.type === "tool-call"
-        && String(block.id) === "artifact-write-call"
-        ? { ...block, arguments: transformedWriteArguments }
-        : block),
-    });
-    return Object.freeze({
-      message,
-      toolCalls: Object.freeze(inherited.toolCalls.map((call) =>
-        call.callId === "artifact-write-call"
-          ? Object.freeze({
-              callId: call.callId,
-              name: call.name,
-              rawArguments: transformedWriteArguments,
-              parsedArguments: Object.freeze({
-                file_path: fixtureFile,
-                content: transformedWriteContent,
-              }),
-            })
-          : call)),
-    });
-  },
-);
 await composition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
@@ -984,6 +941,7 @@ await installProductComponentPlane(composition, Object.freeze({
     createProductSkillComponentCompiler(composition),
     createProductAgentComponentCompiler(composition),
     createProductCommandComponentCompiler(composition),
+    createProductHookComponentCompiler(composition),
     createProductHostToolComponentCompiler(composition),
   ]),
   initialSnapshot: artifactDeclarativeExtensionSnapshot,
@@ -996,6 +954,7 @@ assert.deepEqual(composition.context.productComponents.status(), {
     { key: "skill:release-audit", state: "ready" },
     { key: "agent:release-reviewer", state: "ready" },
     { key: "command:review-release", state: "ready" },
+    { key: "hook:artifact-pre-write-hook", state: "ready" },
     { key: `host_tool:${artifactHostToolName}`, state: "ready" },
   ],
 });
@@ -1143,6 +1102,7 @@ const runtimeLifecycle = await startNativeRpcLifecycle(composition, {
 const nativeRpc: NativeRpcServer = runtimeLifecycle.nativeRpc;
 const hostClient = new GeneratedHostClient(hostPeer);
 const hostToolCalls: MethodParams<"host/tool/execute">[] = [];
+const hostHookCalls: MethodParams<"host/hook/execute">[] = [];
 hostPeer.registerRequestHandler("host/tool/execute", (params) => {
   hostToolCalls.push(structuredClone(params));
   assert.equal(params.tool, artifactHostToolName);
@@ -1152,6 +1112,22 @@ hostPeer.registerRequestHandler("host/tool/execute", (params) => {
     content: [{ type: "text" as const, text: "Host release check accepted" }],
     structured: { accepted: true, source: "repository-external-host" },
   };
+});
+hostPeer.registerRequestHandler("host/hook/execute", (params) => {
+  hostHookCalls.push(structuredClone(params));
+  assert.equal(params.hookId, "artifact-pre-write-hook");
+  assert.equal(params.event, "PreToolUse");
+  assert.equal(params.tool, "Write");
+  assert.equal(params.origin, "root");
+  if ((params.input as { file_path?: unknown }).file_path === fixtureFile) {
+    assert.deepEqual(params.input, { file_path: fixtureFile, content: untransformedWriteContent });
+    preAssistantCommitTransformHits += 1;
+    return {
+      state: "continue" as const,
+      updatedInput: { file_path: fixtureFile, content: transformedWriteContent },
+    };
+  }
+  return { state: "continue" as const };
 });
 const reverseCredentialCanary = "synthetic-reverse-credential-canary";
 const packedReversePair = createInMemoryPeerPair();
@@ -2031,8 +2007,9 @@ await waitUntil(
   () => composition.context.sdkOperations.lookup("artifact-file-operation")?.state === "terminal",
   "governed file-tool operation terminal",
 );
-assert.equal(composition.context.sdkOperations.lookup("artifact-file-operation")?.terminal?.kind, "succeeded");
-stopPreAssistantCommitTransform();
+if (composition.context.sdkOperations.lookup("artifact-file-operation")?.terminal?.kind !== "succeeded") {
+  throw new Error(`governed file-tool operation failed: ${JSON.stringify(primaryAgent.session.events.slice(-12))}`);
+}
 assert.equal(preAssistantCommitTransformHits, 1);
 const governedToolResults = primaryAgent.session.events.filter((event) =>
   event.type === "tool/result" && ["artifact-read-call", "artifact-write-call"]
@@ -2534,7 +2511,7 @@ assert.equal(
 assert.equal(durableToolText("artifact-host-tool-call"), "Host release check accepted");
 assert.equal(hostToolCalls.length, 1);
 assert.deepEqual(hostToolCalls[0]?.authority, {
-  requestId: "host-port:1",
+  requestId: "host-port:3",
   runtimeGeneration: "artifact-generation",
   productSessionId: "artifact-product-session",
   deadlineMs: 120_000,
@@ -3069,6 +3046,15 @@ process.stdout.write(`${JSON.stringify({
     componentId: artifactHostToolName,
     hostCalls: hostToolCalls.length,
     result: "Host release check accepted",
+  },
+  hostHookComponentEvidence: {
+    callCount: hostHookCalls.length,
+    callId: hostHookCalls.find(({ authority }) => authority.callId === "artifact-write-call")?.authority.callId,
+    componentId: hostHookCalls[0]?.authority.componentId,
+    event: hostHookCalls[0]?.event,
+    hookId: hostHookCalls[0]?.hookId,
+    tool: hostHookCalls[0]?.tool,
+    transformedCallId: "artifact-write-call",
   },
   mcpLifecycleVerified: hostModelMcpLifecycleVerified,
   hostPortLifecycleAuthorityVerified,
