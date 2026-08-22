@@ -362,6 +362,11 @@ const stageBuiltPackage = (
       "./dsh-reuse-matrix-v1.json": "./generated/dsh-reuse-matrix-v1.json",
       "./tool-contract-meta.json": "./generated/tool-contract-meta.json",
     };
+  } else if (workspaceDirectory === "packages/components-mcp") {
+    packageExports = {
+      ".": "./src/index.js",
+      "./sdk": "./src/sdk-connection.js",
+    };
   } else if (workspaceDirectory === "apps/runtime-server") {
     packageExports = {
       ".": "./src/index.js",
@@ -437,6 +442,10 @@ const cleanBuildRuntimeComposition = (
       repositoryRoot,
       "packages/tool-contracts/generated/tool-contract-meta.json",
     )]],
+    ["@myagents-dsh/components-mcp/sdk", [resolve(
+      repositoryRoot,
+      "packages/components-mcp/src/sdk-connection.ts",
+    )]],
   ];
   const workspaceCompilerPaths: Record<string, readonly string[]> = Object.fromEntries(
     workspaceCompilerPathEntries,
@@ -472,6 +481,10 @@ const cleanBuildRuntimeComposition = (
     ["@myagents-dsh/tool-contracts/tool-contract-meta.json", resolve(
       repositoryRoot,
       "packages/tool-contracts/generated/tool-contract-meta.json",
+    )],
+    ["@myagents-dsh/components-mcp/sdk", resolve(
+      repositoryRoot,
+      "packages/components-mcp/src/sdk-connection.ts",
     )],
   ] as const) {
     if (!resolutionTrace.includes(
