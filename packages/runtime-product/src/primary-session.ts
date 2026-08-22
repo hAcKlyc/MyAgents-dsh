@@ -1,6 +1,7 @@
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent, AgentHandle, AgentSetup } from "@deepseek-ai/dsh-agent";
 import { SessionId, type Session } from "@deepseek-ai/dsh-session";
+import { PERSONA_ORDER, PERSONA_SECTION } from "@deepseek-ai/dsh-system-prompt";
 import { selectPlatformAdapter, type PlatformTarget } from "@myagents-dsh/product-profile";
 import type { SettlementDeadlineAuthority } from "@myagents-dsh/operation-runtime";
 import {
@@ -1107,6 +1108,12 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
   constructor(
     private readonly context: Context,
     private readonly publicationFence: PrimaryRootPublicationFence,
+    private readonly assertPublicationCurrent?: (
+      agent: Agent,
+      request: PrimarySessionBackendRequest,
+    ) => void,
+    private readonly validateResume?: (agent: Agent) => Promise<void>,
+    private readonly reconcileResume?: (agent: Agent) => Promise<void>,
   ) {}
 
   async create(request: PrimarySessionBackendRequest): Promise<PrimarySessionBackendResult> {
@@ -1121,7 +1128,30 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
         },
         meta: { cwd: request.workspace.path },
         sessionId: SessionId(request.runtimeSessionId),
-        setup: publication.setup,
+        setup: async (agentContext) => {
+          const agent = agentContext.agent;
+          if (agent?.id !== request.runtimeSessionId) {
+            throw new Error("unpublished root Agent differs from the admitted primary Session");
+          }
+          agentContext.systemPrompt.section(Object.freeze({
+            name: PERSONA_SECTION,
+            order: PERSONA_ORDER,
+            text: request.params.systemPrompt,
+          }));
+          request.signal.throwIfAborted();
+          this.assertPublicationCurrent?.(agent, request);
+          const preparedPublication = await publication.setup(agentContext);
+          if (preparedPublication === undefined) {
+            throw new Error("primary Session publication guard did not prepare a commit boundary");
+          }
+          return Object.freeze({
+            commit: () => {
+              request.signal.throwIfAborted();
+              this.assertPublicationCurrent?.(agent, request);
+              preparedPublication.commit();
+            },
+          });
+        },
         signal: request.signal,
       });
       const durableSequence = rawHandle.agent.session.seq;
@@ -1134,25 +1164,110 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
         handle: Object.freeze({ agent: handle.agent, dispose: () => handle.dispose() }),
         runtimeSessionId: request.runtimeSessionId,
         durableSequence,
+        effectiveConfigRevision: request.params.configRevision,
       };
     } catch (error) {
-      await rawHandle?.dispose();
+      if (rawHandle !== undefined) {
+        try {
+          await rawHandle.dispose();
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "primary Session create and rollback both failed",
+            { cause: cleanupError },
+          );
+        }
+      }
       throw error;
     } finally {
       publication.cancel();
     }
   }
 
-  resume(): Promise<PrimarySessionBackendResult> {
-    return Promise.resolve({ state: "recovery_required" });
+  async resume(request: PrimarySessionBackendRequest): Promise<PrimarySessionBackendResult> {
+    const publication = this.publicationFence.prepare(request.runtimeSessionId);
+    let rawHandle: AgentHandle | undefined;
+    try {
+      rawHandle = await this.context.agents.resume({
+        agentOptions: {
+          maxTokens: request.params.provider.maxTokens,
+          model: request.params.provider.modelId,
+          provider: request.params.provider.providerRouteId,
+        },
+        resumeSessionId: SessionId(request.runtimeSessionId),
+        setup: async (agentContext) => {
+          const agent = agentContext.agent;
+          if (agent?.id !== request.runtimeSessionId) {
+            throw new Error("unpublished resumed Agent differs from the admitted primary Session");
+          }
+          agentContext.systemPrompt.section(Object.freeze({
+            name: PERSONA_SECTION,
+            order: PERSONA_ORDER,
+            text: request.params.systemPrompt,
+          }));
+          request.signal.throwIfAborted();
+          await this.validateResume?.(agent);
+          request.signal.throwIfAborted();
+          this.assertPublicationCurrent?.(agent, request);
+          const preparedPublication = await publication.setup(agentContext);
+          if (preparedPublication === undefined) {
+            throw new Error("primary Session publication guard did not prepare a commit boundary");
+          }
+          return Object.freeze({
+            commit: () => {
+              request.signal.throwIfAborted();
+              this.assertPublicationCurrent?.(agent, request);
+              preparedPublication.commit();
+            },
+          });
+        },
+        signal: request.signal,
+      });
+      request.signal.throwIfAborted();
+      await this.reconcileResume?.(rawHandle.agent);
+      request.signal.throwIfAborted();
+      const durableSequence = rawHandle.agent.session.seq;
+      if (!Number.isSafeInteger(durableSequence) || durableSequence < 0) {
+        throw new TypeError("resumed DSH primary Session durable sequence is invalid");
+      }
+      const handle = rawHandle;
+      return Object.freeze({
+        state: "ready" as const,
+        handle: Object.freeze({ agent: handle.agent, dispose: () => handle.dispose() }),
+        runtimeSessionId: request.runtimeSessionId,
+        durableSequence,
+        effectiveConfigRevision: request.params.configRevision,
+      });
+    } catch (error) {
+      if (rawHandle !== undefined) {
+        try {
+          await rawHandle.dispose();
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "primary Session resume and rollback both failed",
+            { cause: cleanupError },
+          );
+        }
+      }
+      throw error;
+    } finally {
+      publication.cancel();
+    }
   }
 }
 
 export interface ProductSessionServiceConfig {
+  readonly assertPublicationCurrent?: (
+    agent: Agent,
+    request: PrimarySessionBackendRequest,
+  ) => void;
   readonly backend?: PrimarySessionBackend;
   readonly childPublicationAuthority?: object;
   readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard;
   readonly quiescenceGraceMs?: number;
+  readonly reconcileResume?: (agent: Agent) => Promise<void>;
+  readonly validateResume?: (agent: Agent) => Promise<void>;
 }
 
 export class ProductSessionService extends Service {
@@ -1175,16 +1290,51 @@ export class ProductSessionService extends Service {
     const normalized = exactOwnDataObject(
       config,
       [],
-      ["backend", "childPublicationAuthority", "providerAdmissionGuard", "quiescenceGraceMs"],
+      [
+        "assertPublicationCurrent",
+        "backend",
+        "childPublicationAuthority",
+        "providerAdmissionGuard",
+        "quiescenceGraceMs",
+        "reconcileResume",
+        "validateResume",
+      ],
       "ProductSessionService config",
     );
     this.childPublicationAuthorityValue = Object.hasOwn(normalized, "childPublicationAuthority")
       ? normalized.childPublicationAuthority as object
       : undefined;
     this.publicationFenceValue = new PrimaryRootPublicationFence(ctx);
+    const assertPublicationCurrent = Object.hasOwn(normalized, "assertPublicationCurrent")
+      ? normalized.assertPublicationCurrent as (
+          agent: Agent,
+          request: PrimarySessionBackendRequest,
+        ) => void
+      : undefined;
+    const validateResume = Object.hasOwn(normalized, "validateResume")
+      ? normalized.validateResume as ((agent: Agent) => Promise<void>)
+      : undefined;
+    const reconcileResume = Object.hasOwn(normalized, "reconcileResume")
+      ? normalized.reconcileResume as ((agent: Agent) => Promise<void>)
+      : undefined;
+    for (const [description, callback] of [
+      ["Session publication current-authority guard", assertPublicationCurrent],
+      ["resume validator", validateResume],
+      ["resume reconciler", reconcileResume],
+    ] as const) {
+      if (callback !== undefined && (typeof callback !== "function" || utilTypes.isProxy(callback))) {
+        throw new TypeError(`ProductSession ${description} must be a non-proxy function`);
+      }
+    }
     this.backendValue = Object.hasOwn(normalized, "backend")
       ? normalized.backend as PrimarySessionBackend
-      : new DshPrimarySessionBackend(ctx, this.publicationFenceValue);
+      : new DshPrimarySessionBackend(
+          ctx,
+          this.publicationFenceValue,
+          assertPublicationCurrent,
+          validateResume,
+          reconcileResume,
+        );
     const providerAdmissionGuard = Object.hasOwn(normalized, "providerAdmissionGuard")
       ? normalized.providerAdmissionGuard as PrimarySessionProviderAdmissionGuard
       : undefined;

@@ -24,7 +24,7 @@
     "TaskUpdate"
   ],
   "capabilityProfileDigest": "80d3f130738d75c57caa6ad6d233b6f2cfc57a7ad3a786985d985445c7177d02",
-  "contractSourceSha256": "95a67369f1e63ae64b5edf5d015b9d55c1aafd5810444554dec7f602a5486f73",
+  "contractSourceSha256": "7439c711375e84129a4f53f7553c58589c564da1d54df5907aca730402b4716c",
   "developmentDshVersion": "0.1.1-rc.2",
   "dshArtifactManifestSha256": "08065a585a0014f7465c0327666d66d173fd15ad9a9dd83ea500c2f7a89916d0",
   "dshEngineVersion": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",

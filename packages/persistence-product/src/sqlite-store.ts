@@ -23,6 +23,7 @@ import {
   type SessionPersistenceRevision as PersistenceRevision,
   type SessionPersistenceSnapshot,
   type StoredPrefix,
+  type StoredSuffix,
 } from "@deepseek-ai/dsh-session-persistence";
 import type { SqliteDurabilityPlan } from "@myagents-dsh/product-profile";
 
@@ -181,6 +182,29 @@ export class ProductSqliteStore implements PersistenceBackend<never> {
         meta: this.#decodeHeader(row),
         events,
         revision: this.#revision(row),
+      };
+    });
+  }
+
+  loadStoredFrom(
+    id: SessionId,
+    fromSeq: number,
+    signal?: AbortSignal,
+  ): Promise<StoredSuffix | undefined> {
+    if (!Number.isSafeInteger(fromSeq) || fromSeq < 0) {
+      return Promise.reject(new TypeError(
+        `product SQLite suffix fromSeq must be a non-negative safe integer, got ${String(fromSeq)}`,
+      ));
+    }
+    return this.#locks.run(id, signal, () => {
+      signal?.throwIfAborted();
+      const row = this.#readActiveSession(id);
+      if (row === undefined) return undefined;
+      const events = this.#readAndValidateEventsFrom(row, fromSeq);
+      signal?.throwIfAborted();
+      return {
+        meta: this.#decodeHeader(row),
+        events,
       };
     });
   }
@@ -492,30 +516,99 @@ export class ProductSqliteStore implements PersistenceBackend<never> {
     for (const [index, value] of values.entries()) {
       const stored = this.#decodeEventRow(value);
       if (stored.seq !== index) throw new Error(`session ${row.sessionId} stored event sequence is not contiguous`);
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(stored.envelopeJson);
-      } catch (error) {
-        throw new Error(`session ${row.sessionId} event ${stored.seq} contains invalid JSON`, { cause: error });
-      }
-      const snapshot = snapshotJsonValue(parsed);
-      if (snapshot === undefined || canonicalJson(snapshot as JsonValue) !== stored.envelopeJson) {
-        throw new Error(`session ${row.sessionId} event ${stored.seq} is not canonical lossless JSON`);
-      }
-      const event = snapshot as unknown as SessionEvent;
-      if (event.seq !== stored.seq || event.type !== stored.type || event.time !== stored.time) {
-        throw new Error(`session ${row.sessionId} event ${stored.seq} row disagrees with its envelope`);
-      }
-      previousHash = chainHash(previousHash, stored.envelopeJson);
-      if (stored.chainHash !== previousHash) {
-        throw new Error(`session ${row.sessionId} event ${stored.seq} chain hash is invalid`);
-      }
-      events.push(event);
+      const decoded = this.#validateEventEnvelope(row.sessionId, stored, previousHash);
+      previousHash = decoded.chainHash;
+      events.push(decoded.event);
     }
     if (previousHash !== row.headHash) {
       throw new Error(`session ${row.sessionId} active generation head hash is invalid`);
     }
     return events;
+  }
+
+  #readAndValidateEventsFrom(row: ActiveSessionRow, fromSeq: number): SessionEvent[] {
+    const database = this.#requireDatabase();
+    const prefixLength = Math.min(fromSeq, row.eventCount);
+    const aggregate = asRecord(database.prepare(`
+      SELECT count(*) AS count, min(seq) AS min_seq, max(seq) AS max_seq
+        FROM session_events
+       WHERE session_id = ? AND generation_id = ? AND seq < ?
+    `).get(row.sessionId, row.activeGenerationId, prefixLength), "Session prefix aggregate");
+    const count = rowInteger(aggregate, "count", "Session prefix aggregate");
+    const prefixBoundsMatch = prefixLength === 0
+      ? aggregate.min_seq === null && aggregate.max_seq === null
+      : aggregate.min_seq === 0 && aggregate.max_seq === prefixLength - 1;
+    if (count !== prefixLength || !prefixBoundsMatch) {
+      throw new Error(`session ${row.sessionId} stored prefix below seq ${fromSeq} is not contiguous`);
+    }
+
+    let previousHash = EMPTY_HEAD_HASH;
+    if (prefixLength > 0) {
+      const predecessor = database.prepare(`
+        SELECT seq, type, time, envelope_json, chain_hash
+          FROM session_events
+         WHERE session_id = ? AND generation_id = ? AND seq = ?
+      `).get(row.sessionId, row.activeGenerationId, prefixLength - 1);
+      if (predecessor === undefined) {
+        throw new Error(`session ${row.sessionId} suffix lacks its exact predecessor anchor`);
+      }
+      const stored = this.#decodeEventRow(predecessor);
+      if (stored.seq !== prefixLength - 1) {
+        throw new Error(`session ${row.sessionId} suffix predecessor identity is invalid`);
+      }
+      previousHash = stored.chainHash;
+    }
+
+    const values = database.prepare(`
+      SELECT seq, type, time, envelope_json, chain_hash
+        FROM session_events
+       WHERE session_id = ? AND generation_id = ? AND seq >= ?
+       ORDER BY seq
+    `).all(row.sessionId, row.activeGenerationId, prefixLength) as unknown[];
+    const expectedLength = row.eventCount - prefixLength;
+    if (values.length !== expectedLength) {
+      throw new Error(`session ${row.sessionId} suffix length differs from active generation metadata`);
+    }
+    const events: SessionEvent[] = [];
+    for (const [offset, value] of values.entries()) {
+      const stored = this.#decodeEventRow(value);
+      if (stored.seq !== prefixLength + offset) {
+        throw new Error(`session ${row.sessionId} stored suffix sequence is not contiguous`);
+      }
+      const decoded = this.#validateEventEnvelope(row.sessionId, stored, previousHash);
+      previousHash = decoded.chainHash;
+      events.push(decoded.event);
+    }
+    if (previousHash !== row.headHash) {
+      throw new Error(`session ${row.sessionId} active generation head hash is invalid`);
+    }
+    return events;
+  }
+
+  #validateEventEnvelope(
+    sessionId: string,
+    stored: EventRow,
+    previousHash: string,
+  ): Readonly<{ chainHash: string; event: SessionEvent }> {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(stored.envelopeJson);
+    } catch (error) {
+      throw new Error(`session ${sessionId} event ${stored.seq} contains invalid JSON`, { cause: error });
+    }
+    const snapshot = snapshotJsonValue(parsed);
+    if (snapshot === undefined || canonicalJson(snapshot as JsonValue) !== stored.envelopeJson) {
+      throw new Error(`session ${sessionId} event ${stored.seq} is not canonical lossless JSON`);
+    }
+    const event = snapshot as unknown as SessionEvent;
+    if (event.seq !== stored.seq || event.type !== stored.type || event.time !== stored.time) {
+      throw new Error(`session ${sessionId} event ${stored.seq} row disagrees with its envelope`);
+    }
+    const expectedHash = chainHash(previousHash, stored.envelopeJson);
+    if (stored.chainHash !== expectedHash) {
+      throw new Error(`session ${sessionId} event ${stored.seq} chain hash is invalid`);
+    }
+    return Object.freeze({ chainHash: expectedHash, event });
   }
 
   #decodeEventRow(value: unknown): EventRow {

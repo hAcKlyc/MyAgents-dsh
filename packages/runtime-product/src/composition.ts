@@ -327,6 +327,10 @@ export interface DshRootCompositionAuthority {
   readonly respondInteraction: (
     params: MethodParams<"interaction/respond">,
   ) => MethodResult<"interaction/respond">;
+  readonly sessionCatalogs: () => Readonly<Pick<
+    MethodResult<"session/create">,
+    "extensionCatalog" | "toolCatalog"
+  >>;
   readonly serviceOrder: typeof DSH_ROOT_SERVICE_ORDER;
 }
 
@@ -335,6 +339,8 @@ declare const nativeRpcLifecycleAuthorityBrand: unique symbol;
 export interface NativeRpcLifecycleAuthority {
   readonly [nativeRpcLifecycleAuthorityBrand]: "native-rpc-lifecycle-authority";
 }
+
+type SessionBindingResult = MethodResult<"session/create">;
 
 type CompositionAuthorityState = {
   readonly childPublicationAuthority: object;
@@ -349,6 +355,8 @@ type CompositionAuthorityState = {
   claimed: boolean;
   canonicalToolPlane: "absent" | "installing" | "installed" | "failed";
   canonicalToolPlaneTarget: PlatformTarget | undefined;
+  canonicalPermissionMode: string | undefined;
+  canonicalAutoAllowTools: readonly string[] | undefined;
   readonly components: ProductComponentServiceController;
   dynamicSkills: ProductDynamicSkillController | undefined;
   dynamicAgents: ProductDynamicAgentController | undefined;
@@ -376,12 +384,53 @@ type NativeRpcLifecycleAuthorityState = {
   readonly respondInteraction: (
     params: MethodParams<"interaction/respond">,
   ) => MethodResult<"interaction/respond">;
+  readonly sessionCatalogs: () => Readonly<Pick<
+    MethodResult<"session/create">,
+    "extensionCatalog" | "toolCatalog"
+  >>;
   readonly snapshot: () => DshRootCompositionSnapshot;
   consumed: boolean;
 };
 
 const compositionAuthorities = new WeakMap<Context, CompositionAuthorityState>();
 const nativeRpcLifecycleAuthorities = new WeakMap<object, NativeRpcLifecycleAuthorityState>();
+
+const equalStringArrays = (left: readonly string[], right: readonly string[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
+
+const assertInitialSessionConfiguration = (
+  state: CompositionAuthorityState,
+  request: PrimarySessionBackendRequest,
+): void => {
+  if (state.canonicalToolPlane !== "installed" || state.componentPlane !== "installed"
+    || state.canonicalPermissionMode === undefined || state.canonicalAutoAllowTools === undefined
+    || state.hostInteractionRevision === undefined) {
+    throw new ProtocolError(
+      "primary_session_not_ready",
+      "initial Session configuration authorities are not installed",
+      true,
+    );
+  }
+  const params = request.params;
+  const catalog = state.context.productTools.catalog();
+  const toolPolicy = params.toolPolicy;
+  const effective = catalog.effectiveTools;
+  const disabled = catalog.implementationCatalog.filter((tool) => !effective.includes(tool));
+  if (params.permissionMode !== state.canonicalPermissionMode
+    || params.interactionScenario !== state.hostInteractionRevision
+    || (toolPolicy?.builtinTools !== undefined
+      && !equalStringArrays(toolPolicy.builtinTools, effective))
+    || (toolPolicy?.autoAllowTools !== undefined
+      && !equalStringArrays(toolPolicy.autoAllowTools, state.canonicalAutoAllowTools))
+    || (toolPolicy?.disallowedTools !== undefined
+      && !equalStringArrays(toolPolicy.disallowedTools, disabled))) {
+    throw new ProtocolError(
+      "primary_session_configuration_stale",
+      "initial Session configuration differs from the installed Runtime authorities",
+      true,
+    );
+  }
+};
 
 const transportOnlyHostPortLifecycle = (
   controller: HostPortServiceController,
@@ -483,6 +532,21 @@ export const claimNativeRpcLifecycleAuthority = (
       installProductPersistence(state, runtimeHome, platformTarget),
     respondInteraction: (params) => state.hostInteraction?.respond(params)
       ?? Object.freeze({ state: "expired" as const }),
+    sessionCatalogs: () => {
+      if (state.canonicalToolPlane !== "installed" || state.componentPlane !== "installed") {
+        throw new ProtocolError(
+          "primary_session_not_ready",
+          "primary Session catalogs are not installed",
+          true,
+        );
+      }
+      const extensionCatalog = state.context.productComponents.catalog();
+      const toolCatalog = state.context.productTools.catalog() as unknown as SessionBindingResult["toolCatalog"];
+      return Object.freeze({
+        extensionCatalog,
+        toolCatalog,
+      });
+    },
     snapshot: state.snapshot,
   });
   return authority;
@@ -516,6 +580,7 @@ export const consumeNativeRpcLifecycleAuthority = (
     hostPorts: state.hostPorts,
     installPersistence: (runtimeHome: string) => state.installPersistence(runtimeHome, platformTarget),
     respondInteraction: state.respondInteraction,
+    sessionCatalogs: state.sessionCatalogs,
     serviceOrder: DSH_ROOT_SERVICE_ORDER,
   });
 };
@@ -1062,6 +1127,8 @@ export const installCanonicalToolPlane = async (
       })}`);
     }
     authority.canonicalToolPlane = "installed";
+    authority.canonicalPermissionMode = permissionConfig.mode;
+    authority.canonicalAutoAllowTools = permissionConfig.autoAllowTools;
     authority.hostAttachments = installedAttachmentController;
     authority.dynamicSkills = dynamicSkills;
     authority.dynamicAgents = dynamicAgents;
@@ -1375,6 +1442,7 @@ export const composeDshRootServices = async (
   const root = new Context();
   const childPublicationAuthority = Object.freeze({});
   let providerAdmissionGuard: ((request: PrimarySessionBackendRequest) => Promise<void>) | undefined;
+  let providerAdmissionAssert: ((request: PrimarySessionBackendRequest) => void) | undefined;
   let modelProfileBirthGuard: ((revision: string) => void) | undefined;
   let hostPortController: HostPortServiceController | undefined;
   let componentController: ProductComponentServiceController | undefined;
@@ -1399,10 +1467,38 @@ export const composeDshRootServices = async (
       },
     });
     await root.plugin(ProductSessionService, {
+      assertPublicationCurrent: (agent, request) => {
+        request.signal.throwIfAborted();
+        if (agent.id !== request.runtimeSessionId) {
+          throw new ProtocolError(
+            "primary_session_conflict",
+            "resumed Agent differs from the primary Session admission",
+          );
+        }
+        const authority = compositionAuthorities.get(root);
+        if (authority === undefined) throw new Error("root composition authority is unavailable");
+        root.productComponents.assertSessionExtension(request.params.extensionDigest);
+        assertInitialSessionConfiguration(authority, request);
+        providerAdmissionAssert?.(request);
+      },
       childPublicationAuthority,
       providerAdmissionGuard: async (request) => {
+        const authority = compositionAuthorities.get(root);
+        if (authority === undefined) throw new Error("root composition authority is unavailable");
         root.productComponents.assertSessionExtension(request.params.extensionDigest);
+        assertInitialSessionConfiguration(authority, request);
         await providerAdmissionGuard?.(request);
+      },
+      reconcileResume: async (agent) => {
+        await root.productWork.initialize(agent);
+      },
+      validateResume: (agent) => {
+        root.sdkOperations.validatePersisted(agent);
+        root.productPermission.fold(agent.session);
+        root.productPlan.validatePersisted(agent);
+        root.productTaskGraph.validatePersisted(agent);
+        root.productWork.validatePersisted(agent);
+        return Promise.resolve();
       },
     });
     await root.plugin(SdkOperationService, {
@@ -1583,10 +1679,13 @@ export const composeDshRootServices = async (
           throw new Error("Host model plane guards may install exactly once");
         }
         providerAdmissionGuard = (request) => authority.preflight(request);
+        providerAdmissionAssert = (request) => authority.assertAdmission(request);
         modelProfileBirthGuard = (revision) => authority.assertBirth(revision);
       },
       canonicalToolPlane: "absent",
       canonicalToolPlaneTarget: undefined,
+      canonicalPermissionMode: undefined,
+      canonicalAutoAllowTools: undefined,
       components: componentController,
       componentPlane: "absent",
       dynamicAgents: undefined,

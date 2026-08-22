@@ -24,6 +24,8 @@ import {
   validateProtocolLimits,
   type InitializeParams,
   type InitializeResult,
+  type MethodParams,
+  type MethodResult,
   type ProtocolLimits,
   type RequestContext,
 } from "@myagents-dsh/protocol";
@@ -335,6 +337,10 @@ type NativeRpcCompositionCapabilities = Readonly<{
   bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   hostPorts: HostPortTransportLifecycle;
   installPersistence: (runtimeHome: string) => Promise<void>;
+  sessionCatalogs: () => Readonly<Pick<
+    MethodResult<"session/create">,
+    "extensionCatalog" | "toolCatalog"
+  >>;
 }>;
 
 const nativeRpcCompositionCapabilities = new WeakMap<object, NativeRpcCompositionCapabilities>();
@@ -393,6 +399,7 @@ export class NativeRpcServer extends Service {
       bindAttachmentLeaseLimit: compositionAuthority.bindAttachmentLeaseLimit,
       hostPorts: compositionAuthority.hostPorts,
       installPersistence: compositionAuthority.installPersistence,
+      sessionCatalogs: compositionAuthority.sessionCatalogs,
     }));
     this.terminationCommittedPromise = new Promise((resolve) => {
       this.resolveTermination = resolve;
@@ -436,6 +443,12 @@ export class NativeRpcServer extends Service {
           this.handleShutdown(params, context)),
         this.peerValue.registerRequestHandler("interaction/respond", (params) =>
           compositionAuthority.respondInteraction(params)),
+        this.peerValue.registerRequestHandler("session/create", (params, context) =>
+          this.handleSessionBinding("create", params, context)),
+        this.peerValue.registerRequestHandler("session/resume", (params, context) =>
+          this.handleSessionBinding("resume", params, context)),
+        this.peerValue.registerRequestHandler("session/close", (params, context) =>
+          this.handleSessionClose(params, context)),
       );
       ctx.effect(
         () => () => this.disposeTransport().catch(() => undefined),
@@ -588,6 +601,55 @@ export class NativeRpcServer extends Service {
         queuedInputs,
       },
     };
+  }
+
+  private async handleSessionBinding(
+    mode: "create" | "resume",
+    params: MethodParams<"session/create"> | MethodParams<"session/resume">,
+    context: RequestContext,
+  ): Promise<MethodResult<"session/create">> {
+    const before = compositionCapabilitiesOf(this).sessionCatalogs();
+    context.signal.throwIfAborted();
+    context.commit();
+    const binding = mode === "create"
+      ? await this.productSessionValue.bindCreate(params, context.signal)
+      : await this.productSessionValue.bindResume(params, context.signal);
+    if (binding.state !== "ready" || binding.durableSequence === undefined
+      || binding.effectiveConfigRevision === undefined) {
+      throw new ProtocolError(
+        "session_recovery_required",
+        "primary Session requires explicit recovery before it can become ready",
+      );
+    }
+    const after = compositionCapabilitiesOf(this).sessionCatalogs();
+    const snapshot = this.productSessionValue.snapshot();
+    if (snapshot.state !== "ready" || snapshot.runtimeSessionId !== binding.runtimeSessionId
+      || snapshot.durableSequence !== binding.durableSequence
+      || snapshot.effectiveConfigRevision !== binding.effectiveConfigRevision
+      || JSON.stringify(after) !== JSON.stringify(before)) {
+      throw new ProtocolError(
+        "session_recovery_required",
+        "primary Session authority changed before its binding result",
+      );
+    }
+    return Object.freeze({
+      state: "ready" as const,
+      runtimeSessionId: binding.runtimeSessionId,
+      historyFormat: SESSION_FORMAT,
+      durableHead: Object.freeze({ sequence: binding.durableSequence }),
+      effectiveConfigRevision: binding.effectiveConfigRevision,
+      extensionCatalog: after.extensionCatalog,
+      toolCatalog: after.toolCatalog,
+    });
+  }
+
+  private async handleSessionClose(
+    params: MethodParams<"session/close">,
+    context: RequestContext,
+  ): Promise<MethodResult<"session/close">> {
+    context.signal.throwIfAborted();
+    context.commit();
+    return await this.productSessionValue.close(params);
   }
 
   private handleShutdown(params: { readonly reason?: string }, context: RequestContext): { readonly ok: true } {

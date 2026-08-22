@@ -833,7 +833,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w3-a3"
+    || selfCheckProfile.stage !== "batch-1-w4-a2"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -1123,6 +1123,8 @@ const main = (): void => {
       || evidence.nativeRpcShutdown !== "shutdown"
       || evidence.nativeRpcStopped !== true
       || evidence.productPersistenceVerified !== true
+      || evidence.failedResumePublicationRejected !== true
+      || evidence.initialConfigurationMismatchRejected !== true
       || evidence.canonicalFileToolsVerified !== true
       || evidence.canonicalProcessSearchToolsVerified !== true
       || evidence.canonicalWebToolsVerified !== true
@@ -1156,6 +1158,7 @@ const main = (): void => {
       || evidence.queuedCancellationVerified !== true
       || evidence.runtimeEventProjectionVerified !== true
       || evidence.sessionCloseVerified !== true
+      || evidence.sessionRestartResumeVerified !== true
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
         "success", "image_input", "failure", "file_tools", "binary_attachment", "edit", "process_search_tools", "web_tools", "interaction",
@@ -1174,11 +1177,15 @@ const main = (): void => {
       || persistenceEvidence.format !== "myagents-sqlite-session-v1"
       || persistenceEvidence.generationCount !== 1
       || persistenceEvidence.productEventReloaded !== true
+      || persistenceEvidence.resumedEventCount !== persistenceEvidence.eventCount + 1
+      || persistenceEvidence.resumedDurableSequence !== persistenceEvidence.resumedEventCount
+      || persistenceEvidence.resumedSourcePrefixByteEquivalent !== true
+      || persistenceEvidence.resumedWithoutModelReplay !== true
       || typeof persistenceEvidence.revision !== "number"
       || !Number.isSafeInteger(persistenceEvidence.revision)
       || persistenceEvidence.revision < 1
       || persistenceEvidence.schemaVersion !== 1) {
-      throw new Error("product SQLite persistence evidence differs from the exact W4-A1 contract");
+      throw new Error("product SQLite persistence evidence differs from the exact W4-A2 contract");
     }
     const hostAttachmentEvidence = exactObject(
       evidence.hostAttachmentEvidence,
@@ -1376,9 +1383,13 @@ const main = (): void => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
       return (result as Record<string, unknown>).primarySessionState === "retired";
     });
-    const shutdownFrame = frames.find(({ result }) => {
+    const okFrames = frames.filter(({ result }) => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
       return (result as Record<string, unknown>).ok === true;
+    });
+    const createFrames = frames.filter(({ result }) => {
+      if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
+      return (result as Record<string, unknown>).historyFormat === "dsh-session-events-v1";
     });
     const initializeResult = exactObject(initializeFrame?.result, "observed initialize result");
     const runtimeEngine = exactObject(initializeResult.runtimeEngine, "observed Runtime engine");
@@ -1388,7 +1399,8 @@ const main = (): void => {
       retiredStatusFrame?.result,
       "observed retired status result",
     );
-    const shutdownResult = exactObject(shutdownFrame?.result, "observed shutdown result");
+    const createdSession = exactObject(createFrames[0]?.result, "observed session/create result");
+    const createdDurableHead = exactObject(createdSession.durableHead, "observed created durable head");
     if (runtimeEngine.version !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
       || runtimeEngine.buildRevision !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
       || initializeResult.profileDigest !== BATCH1_CANDIDATE_PROFILE_SHA256
@@ -1398,15 +1410,64 @@ const main = (): void => {
       || statusResult.primarySessionState !== "ready"
       || statusResult.runtimeSessionId !== "dsh-artifact-primary"
       || statusResult.desiredConfigRevision !== "artifact-config-v1"
-      || Object.hasOwn(statusResult, "effectiveConfigRevision")
+      || statusResult.effectiveConfigRevision !== "artifact-config-v1"
       || retiredStatusResult.primarySessionState !== "retired"
       || exactObject(retiredStatusResult.active, "observed retired activity").rootTurns !== 0
       || exactObject(retiredStatusResult.active, "observed retired activity").queuedInputs !== 0
-      || shutdownResult.ok !== true) {
-      throw new Error("observed native RPC frames differ from the content-addressed Batch 1 authority");
+      || okFrames.length !== 3
+      || createFrames.length !== 2
+      || JSON.stringify(createFrames[0]?.result) !== JSON.stringify(createFrames[1]?.result)
+      || createdSession.state !== "ready"
+      || createdSession.runtimeSessionId !== "dsh-artifact-primary"
+      || createdSession.effectiveConfigRevision !== "artifact-config-v1"
+      || !Number.isSafeInteger(createdDurableHead.sequence)
+      || (createdDurableHead.sequence as number) < 0) {
+      throw new Error(`observed native RPC frames differ from the content-addressed Batch 1 authority: ${JSON.stringify({
+        createFrameCount: createFrames.length,
+        createdDurableSequence: createdDurableHead.sequence,
+        createdEffectiveConfigRevision: createdSession.effectiveConfigRevision,
+        createdRuntimeSessionId: createdSession.runtimeSessionId,
+        createdState: createdSession.state,
+        duplicateCreateEqual: JSON.stringify(createFrames[0]?.result) === JSON.stringify(createFrames[1]?.result),
+        okFrameCount: okFrames.length,
+        readyStatus: statusResult,
+        retiredState: retiredStatusResult.primarySessionState,
+      })}`);
     }
     if (frames.some(({ method }) => method === "runtime/event")) {
       throw new Error("inactive candidate profile emitted an unavailable Runtime notification");
+    }
+    if (!Array.isArray(evidence.resumeNativeRpcFrames) || evidence.resumeNativeRpcFrames.length < 5) {
+      throw new Error("runtime composition must expose the observed restart/resume response frames");
+    }
+    const resumeFrames = evidence.resumeNativeRpcFrames.map((frame, index) =>
+      exactObject(frame, `observed restart/resume RPC frame ${String(index)}`));
+    const resumeBindingFrames = resumeFrames.filter(({ result }) => {
+      if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
+      return (result as Record<string, unknown>).historyFormat === "dsh-session-events-v1";
+    });
+    const resumeOkFrames = resumeFrames.filter(({ result }) => {
+      if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
+      return (result as Record<string, unknown>).ok === true;
+    });
+    const resumedSession = exactObject(
+      resumeBindingFrames[0]?.result,
+      "observed session/resume result",
+    );
+    const resumedDurableHead = exactObject(
+      resumedSession.durableHead,
+      "observed resumed durable head",
+    );
+    if (resumeBindingFrames.length !== 2
+      || JSON.stringify(resumeBindingFrames[0]?.result) !== JSON.stringify(resumeBindingFrames[1]?.result)
+      || resumeOkFrames.length !== 2
+      || resumedSession.state !== "ready"
+      || resumedSession.runtimeSessionId !== "dsh-artifact-primary"
+      || resumedSession.historyFormat !== "dsh-session-events-v1"
+      || resumedSession.effectiveConfigRevision !== "artifact-config-v1"
+      || !Number.isSafeInteger(resumedDurableHead.sequence)
+      || resumedDurableHead.sequence !== persistenceEvidence.resumedDurableSequence) {
+      throw new Error("observed restart/resume RPC frames differ from the exact W4-A2 contract");
     }
     const processBoundaryEvidence = exactObject(
       evidence.processBoundaryEvidence,

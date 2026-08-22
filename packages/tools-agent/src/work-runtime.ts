@@ -1277,6 +1277,29 @@ export class ProductWorkService extends Service {
     return initialization;
   }
 
+  validatePersisted(agent: Agent): void {
+    this.assertHealthy();
+    if (this.primary !== undefined || this.initialization !== undefined
+      || this.byTask.size !== 0 || this.byAgent.size !== 0 || this.messages.size !== 0
+      || this.epochCount !== 0 || this.messageBytes !== 0 || this.messageSequence !== 0) {
+      throw this.fence(new Error("ProductWork persisted validation requires a pristine projection"));
+    }
+    let failure: unknown;
+    try {
+      this.hydrate(agent);
+    } catch (error) {
+      failure = error;
+    } finally {
+      this.byTask.clear();
+      this.byAgent.clear();
+      this.messages.clear();
+      this.epochCount = 0;
+      this.messageBytes = 0;
+      this.messageSequence = 0;
+    }
+    if (failure !== undefined) throw this.fence(failure);
+  }
+
   private childModelLineage(
     agent: Agent,
     configRevision: string,

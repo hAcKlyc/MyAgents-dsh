@@ -736,7 +736,7 @@ export const REFERENCE_RUNTIME_CAPABILITIES: RuntimeCapabilityProfile = {
 
 export const BATCH1_RUNTIME_CAPABILITIES = Object.freeze({
   profile: "myagents-dsh-batch-1-candidate-v1",
-  sessions: Object.freeze({ resume: "unavailable", history: "unavailable", compact: "unavailable", fork: "unavailable", rewind: "unavailable", delete: "unavailable" }),
+  sessions: Object.freeze({ resume: "dsh-native", history: "unavailable", compact: "unavailable", fork: "unavailable", rewind: "unavailable", delete: "unavailable" }),
   turns: Object.freeze({ steer: "unavailable", followUp: "unavailable", interrupt: "unavailable", terminal: "unavailable", idempotency: "unavailable" }),
   interaction: Object.freeze({ permission: "unavailable", askUser: "unavailable", plan: "unavailable", settlement: "unavailable", headless: "unavailable" }),
   configuration: Object.freeze({ provider: "unsupported", model: "unsupported", reasoningEffort: "unsupported", permissionMode: "unsupported", interactionScenario: "unsupported", systemPrompt: "unsupported", mcp: "unsupported", agents: "unsupported" }),

@@ -39,6 +39,7 @@ import type {
   HostProviderRequestScope,
 } from "@myagents-dsh/host-ports";
 import { ProtocolError, type MethodParams } from "@myagents-dsh/protocol";
+import { isDeepStrictEqual } from "node:util";
 import { isProxy } from "node:util/types";
 
 import type { PrimarySessionBackendRequest } from "./primary-session.js";
@@ -308,6 +309,20 @@ export class HostDeepSeekModelAuthority {
       throw error;
     } finally {
       if (this.#candidate === request) this.#candidate = undefined;
+    }
+  }
+
+  assertAdmission(request: PrimarySessionBackendRequest): void {
+    request.signal.throwIfAborted();
+    const binding = this.requireBinding();
+    const profile = validateHostDeepSeekProfile(request.params.provider);
+    if (binding.runtimeSessionId !== request.runtimeSessionId
+      || binding.configRevision !== request.params.configRevision
+      || !isDeepStrictEqual(binding.profile, profile)) {
+      throw new ProtocolError(
+        "provider_profile_stale",
+        "Provider profile admission is no longer current",
+      );
     }
   }
 

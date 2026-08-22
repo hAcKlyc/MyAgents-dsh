@@ -9,7 +9,8 @@ import { DatabaseSync } from "node:sqlite";
 
 import { Context } from "@deepseek-ai/cordis";
 import { CallId } from "@deepseek-ai/dsh-llm";
-import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import { assembleContextFor, type Agent } from "@deepseek-ai/dsh-agent";
+import { PERSONA_SECTION, SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import {
   ProductComponentService,
@@ -28,7 +29,6 @@ import {
   type JSONRPCMessage,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { Agent } from "@deepseek-ai/dsh-agent";
 import {
   LlmAdapter,
   type GenerateOptions,
@@ -923,7 +923,7 @@ const composition = await composeDshRootServices({
     }),
   }),
   providers: ["fixture"],
-  systemPrompt: { persona: "Composition-owned persona, not the desired Session revision." },
+  systemPrompt: { persona: "Composition fallback persona before primary Session admission." },
   tools: { mode: "native" },
 });
 const hostInteractionProvider = createHostBackedInteractionProvider(composition, Object.freeze({
@@ -1784,7 +1784,7 @@ await hostModelComposition.context.productSession.bindCreate({
   extensionDigest: hostModelExtensionSnapshot.digest,
   systemPrompt: "Synthetic credential-free Host model evidence.",
   permissionMode: "default",
-  interactionScenario: "deterministic-headless",
+  interactionScenario: "artifact-interaction-v1",
 });
 const hostModelProjectionInput = new PassThrough();
 const hostModelProjectionOutput = new PassThrough();
@@ -2170,10 +2170,65 @@ const primarySessionParams = {
   },
   configRevision: "artifact-config-v1",
   extensionDigest: artifactDeclarativeExtensionSnapshot.digest,
-  systemPrompt: "Desired Session persona, not yet reconciled by A3.",
+  systemPrompt: "Artifact primary Session persona.",
   permissionMode: "default",
-  interactionScenario: "deterministic-headless",
+  interactionScenario: "artifact-interaction-v1",
 } satisfies MethodParams<"session/create">;
+const configurationMismatchComposition = await composeDshRootServices({
+  adapter: new ScriptedFakeLlmAdapter({
+    provider: "fixture",
+    model: "fixture-model",
+    contextWindow: 8_192,
+  }),
+  providers: ["fixture"],
+});
+await installCanonicalToolPlane(
+  configurationMismatchComposition,
+  bindCanonicalToolPlaneConfig(configurationMismatchComposition),
+);
+await installProductComponentPlane(configurationMismatchComposition, Object.freeze({
+  catalog: validatedArtifactToolCatalog,
+  compilers: Object.freeze([
+    createProductSkillComponentCompiler(configurationMismatchComposition),
+    createProductAgentComponentCompiler(configurationMismatchComposition),
+    createProductCommandComponentCompiler(configurationMismatchComposition),
+    createProductHookComponentCompiler(configurationMismatchComposition),
+    createProductHostToolComponentCompiler(configurationMismatchComposition),
+  ]),
+  initialSnapshot: artifactDeclarativeExtensionSnapshot,
+}));
+configurationMismatchComposition.context.productSession.bindExecutionEnvironment({
+  attachmentStagingRoot: initializeRequest.executionEnvironment.attachmentStagingRoot,
+  digest: initializeRequest.executionEnvironment.digest,
+  environment: initializeRequest.executionEnvironment.environment,
+  executables: initializeRequest.executionEnvironment.executables,
+  network: initializeRequest.executionEnvironment.network,
+  platformTarget: "darwin-arm64",
+  process: initializeRequest.executionEnvironment.process,
+  revision: initializeRequest.executionEnvironment.revision,
+  runtimeHome: initializeRequest.runtimeHome,
+  workspace: initializeRequest.executionEnvironment.workspace,
+});
+configurationMismatchComposition.context.productSession.bindWorkspace({
+  identity: initializeRequest.workspace.identity,
+  path: initializeRequest.workspace.path,
+  platformTarget: "darwin-arm64",
+});
+await assert.rejects(
+  configurationMismatchComposition.context.productSession.bindCreate({
+    ...primarySessionParams,
+    clientOperationId: "artifact-configuration-mismatch",
+    runtimeSessionId: "artifact-configuration-mismatch",
+    interactionScenario: "stale-interaction-v0",
+  }),
+  /configuration differs from the installed Runtime authorities/u,
+);
+assert.equal(configurationMismatchComposition.context.productSession.snapshot().state, "recovery_required");
+assert.deepEqual(configurationMismatchComposition.context.agents.roots(), []);
+assert.deepEqual(configurationMismatchComposition.context.sessions.list(), []);
+await configurationMismatchComposition.dispose();
+assert.throws(() => configurationMismatchComposition.snapshot(), /disposing or disposed/u);
+const initialConfigurationMismatchRejected = true;
 let primaryPublicationSnapshotVerified = false;
 let roguePublicationObserved = false;
 composition.context.on("session/created", (session) => {
@@ -2199,6 +2254,11 @@ const concurrentRogue = composition.context.agents.create({
   },
 });
 await rogueSetupStarted.promise;
+const [createdPrimary, exactCreatedPrimary] = await Promise.all([
+  hostClient.sessionCreate(primarySessionParams),
+  hostClient.sessionCreate(primarySessionParams),
+]);
+assert.deepEqual(exactCreatedPrimary, createdPrimary);
 const firstPrimaryAdmission = composition.context.productSession.bindCreate(primarySessionParams);
 const exactPrimaryRetry = composition.context.productSession.bindCreate(primarySessionParams);
 assert.equal(exactPrimaryRetry, firstPrimaryAdmission);
@@ -2207,9 +2267,16 @@ rogueSetupRelease.resolve(undefined);
 await assert.rejects(concurrentRogue, /lacks the primary Session admission authority/u);
 assert.equal(primaryPublicationSnapshotVerified, true);
 assert.equal(roguePublicationObserved, false);
+assert.equal(createdPrimary.state, "ready");
+assert.equal(createdPrimary.runtimeSessionId, "dsh-artifact-primary");
+assert.equal(createdPrimary.historyFormat, "dsh-session-events-v1");
+assert.equal(createdPrimary.durableHead.sequence, primaryBinding.durableSequence);
+assert.equal(createdPrimary.effectiveConfigRevision, "artifact-config-v1");
+assert.deepEqual(createdPrimary.toolCatalog, validatedArtifactToolCatalog);
+assert.deepEqual(createdPrimary.extensionCatalog, composition.context.productComponents.catalog());
 assert.equal(primaryBinding.state, "ready");
 assert.equal(primaryBinding.runtimeSessionId, "dsh-artifact-primary");
-assert.equal(Object.hasOwn(primaryBinding, "effectiveConfigRevision"), false);
+assert.equal(primaryBinding.effectiveConfigRevision, "artifact-config-v1");
 assert.throws(() => composition.context.productSession.bindCreate({
   ...primarySessionParams,
   systemPrompt: "Conflicting primary Session prompt.",
@@ -2226,9 +2293,15 @@ assert.equal(rpcStatus.initialized, true);
 assert.equal(rpcStatus.primarySessionState, "ready");
 assert.equal(rpcStatus.runtimeSessionId, "dsh-artifact-primary");
 assert.equal(rpcStatus.desiredConfigRevision, "artifact-config-v1");
-assert.equal(Object.hasOwn(rpcStatus, "effectiveConfigRevision"), false);
+assert.equal(rpcStatus.effectiveConfigRevision, "artifact-config-v1");
 
 const primaryAgent = composition.context.productSession.requireAgent();
+const primaryPrompt = await composition.context.systemPrompt.assemble(assembleContextFor(primaryAgent));
+assert.equal(
+  primaryPrompt.sections.find(({ name }) => name === PERSONA_SECTION)?.text,
+  primarySessionParams.systemPrompt,
+  "created primary Session must install the requested persona in its Agent scope",
+);
 for (const name of CANONICAL_TOOL_NAMES) {
   assert.ok(composition.context.tools.get(name, primaryAgent), `missing canonical tool ${name}`);
 }
@@ -3491,17 +3564,15 @@ await composition.context.sdkOperations.start({
   input: { parts: [{ kind: "text", text: "close this active Session" }] },
 });
 await waitUntil(() => adapter.activeStreamCount === 1, "active stream before session/close");
-const firstSessionClose = composition.context.productSession.close({
-  clientOperationId: "artifact-primary-session-close",
-});
-const exactSessionClose = composition.context.productSession.close({
-  clientOperationId: "artifact-primary-session-close",
-});
-assert.equal(exactSessionClose, firstSessionClose);
+const [firstSessionClose, exactSessionClose] = await Promise.all([
+  hostClient.sessionClose({ clientOperationId: "artifact-primary-session-close" }),
+  hostClient.sessionClose({ clientOperationId: "artifact-primary-session-close" }),
+]);
+assert.deepEqual(exactSessionClose, firstSessionClose);
 assert.throws(() => composition.context.productSession.close({
   clientOperationId: "artifact-conflicting-session-close",
 }), /clientOperationId differs/u);
-assert.deepEqual(await firstSessionClose, { ok: true });
+assert.deepEqual(firstSessionClose, { ok: true });
 assert.equal(composition.context.productSession.snapshot().state, "retired");
 const shutdownTerminal = primaryAgent.session.events.findLast((event) =>
   event.type === "myagents/operation/terminal"
@@ -3638,7 +3709,208 @@ const persistedPrimary = await persistenceReloadContext.sessionPersistence.inspe
 );
 assert.equal(persistedPrimary.events.length, persistenceSession.event_count);
 assert.ok(persistedPrimary.events.some(({ type }) => type.startsWith("myagents/")));
+const invalidResumeSessionId = SessionId("dsh-artifact-invalid-resume");
+await persistenceReloadContext.sessionPersistence.create(Object.freeze({
+  ...persistedPrimary.meta,
+  id: invalidResumeSessionId,
+}));
+await persistenceReloadContext.sessionPersistence.append(invalidResumeSessionId, [Object.freeze({
+  data: Object.freeze({ required: true }),
+  seq: 0,
+  time: 1,
+  type: "myagents/unknown-required-resume-fixture",
+}) as unknown as SessionEvent]);
 await persistenceReloadContext.fiber.dispose();
+const persistedPrimaryBytes = JSON.stringify(persistedPrimary.events);
+
+const failedResumeComposition = await composeDshRootServices({
+  adapter: new ScriptedFakeLlmAdapter({ provider: "fixture", model: "fixture-model" }),
+  providers: ["fixture"],
+});
+await installCanonicalToolPlane(
+  failedResumeComposition,
+  bindCanonicalToolPlaneConfig(failedResumeComposition),
+);
+await installProductComponentPlane(failedResumeComposition, Object.freeze({
+  catalog: validatedArtifactToolCatalog,
+  compilers: Object.freeze([
+    createProductSkillComponentCompiler(failedResumeComposition),
+    createProductAgentComponentCompiler(failedResumeComposition),
+    createProductCommandComponentCompiler(failedResumeComposition),
+    createProductHookComponentCompiler(failedResumeComposition),
+    createProductHostToolComponentCompiler(failedResumeComposition),
+  ]),
+  initialSnapshot: artifactDeclarativeExtensionSnapshot,
+}));
+const failedResumeInput = new PassThrough();
+const failedResumeOutput = new PassThrough();
+const failedResumeHostPeer = new JsonRpcPeer({
+  input: failedResumeOutput,
+  output: failedResumeInput,
+  role: "host",
+  limits: REFERENCE_PROTOCOL_LIMITS,
+});
+const failedResumeLifecycle = await startNativeRpcLifecycle(failedResumeComposition, {
+  input: failedResumeInput,
+  output: failedResumeOutput,
+  runtimeGeneration: "artifact-failed-resume-generation",
+  platformTarget: "darwin-arm64",
+}, {
+  processBoundary: {
+    subscribe: () => () => undefined,
+    scheduleForceExit: () => () => undefined,
+  },
+});
+const failedResumeHostClient = new GeneratedHostClient(failedResumeHostPeer);
+await failedResumeHostClient.initialize(initializeRequest);
+await waitUntil(
+  () => failedResumeLifecycle.nativeRpc.phase === "await_initialized",
+  "failed-resume Runtime initialize response completion",
+);
+await failedResumeHostClient.initialized();
+await waitUntil(
+  () => failedResumeLifecycle.nativeRpc.phase === "ready",
+  "failed-resume Runtime readiness",
+);
+const invalidResumeParams = {
+  ...primarySessionParams,
+  clientOperationId: "artifact-invalid-session-resume",
+  runtimeSessionId: invalidResumeSessionId,
+} satisfies MethodParams<"session/resume">;
+const failedResumeResults = await Promise.allSettled([
+  failedResumeHostClient.sessionResume(invalidResumeParams),
+  failedResumeHostClient.sessionResume(invalidResumeParams),
+]);
+assert.deepEqual(failedResumeResults.map(({ status }) => status), ["rejected", "rejected"]);
+assert.equal(failedResumeComposition.context.productSession.snapshot().state, "recovery_required");
+assert.deepEqual(failedResumeComposition.context.agents.roots(), []);
+assert.deepEqual(failedResumeComposition.context.sessions.list(), []);
+await failedResumeHostClient.runtimeShutdown({ reason: "artifact-failed-resume-proof-complete" });
+const failedResumeStopped = await failedResumeLifecycle.whenStopped();
+assert.equal(failedResumeStopped.disposed, true);
+assert.equal(failedResumeStopped.exit.kind, "shutdown");
+failedResumeHostPeer.close();
+failedResumeInput.destroy();
+failedResumeOutput.destroy();
+const failedResumePublicationRejected = true;
+
+const resumeAdapter = new ScriptedFakeLlmAdapter({
+  provider: "fixture",
+  model: "fixture-model",
+  contextWindow: 8_192,
+});
+const resumedComposition = await composeDshRootServices({
+  adapter: resumeAdapter,
+  providers: ["fixture"],
+});
+await installCanonicalToolPlane(
+  resumedComposition,
+  bindCanonicalToolPlaneConfig(resumedComposition),
+);
+await installProductComponentPlane(resumedComposition, Object.freeze({
+  catalog: validatedArtifactToolCatalog,
+  compilers: Object.freeze([
+    createProductSkillComponentCompiler(resumedComposition),
+    createProductAgentComponentCompiler(resumedComposition),
+    createProductCommandComponentCompiler(resumedComposition),
+    createProductHookComponentCompiler(resumedComposition),
+    createProductHostToolComponentCompiler(resumedComposition),
+  ]),
+  initialSnapshot: artifactDeclarativeExtensionSnapshot,
+}));
+const resumeRuntimeInput = new PassThrough();
+const resumeRuntimeOutput = new PassThrough();
+const observedResumeFrames: Array<Record<string, unknown>> = [];
+let observedResumeBytes = "";
+resumeRuntimeOutput.on("data", (chunk: Buffer | string) => {
+  observedResumeBytes += chunk.toString();
+  let newline = observedResumeBytes.indexOf("\n");
+  while (newline >= 0) {
+    observedResumeFrames.push(JSON.parse(observedResumeBytes.slice(0, newline)) as Record<string, unknown>);
+    observedResumeBytes = observedResumeBytes.slice(newline + 1);
+    newline = observedResumeBytes.indexOf("\n");
+  }
+});
+const resumeHostPeer = new JsonRpcPeer({
+  input: resumeRuntimeOutput,
+  output: resumeRuntimeInput,
+  role: "host",
+  limits: REFERENCE_PROTOCOL_LIMITS,
+});
+const resumedLifecycle = await startNativeRpcLifecycle(resumedComposition, {
+  input: resumeRuntimeInput,
+  output: resumeRuntimeOutput,
+  runtimeGeneration: "artifact-resume-generation",
+  platformTarget: "darwin-arm64",
+}, {
+  processBoundary: {
+    subscribe: () => () => undefined,
+    scheduleForceExit: () => () => undefined,
+  },
+});
+const resumeHostClient = new GeneratedHostClient(resumeHostPeer);
+const resumeInitialization = await resumeHostClient.initialize(initializeRequest);
+assert.equal(resumeInitialization.runtimeEngine.version, ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion);
+await waitUntil(
+  () => resumedLifecycle.nativeRpc.phase === "await_initialized",
+  "resume Runtime initialize response completion",
+);
+await resumeHostClient.initialized();
+await waitUntil(() => resumedLifecycle.nativeRpc.phase === "ready", "resume Runtime readiness");
+const resumeSessionParams = {
+  ...primarySessionParams,
+  clientOperationId: "artifact-primary-session-resume",
+} satisfies MethodParams<"session/resume">;
+const [resumedPrimary, exactResumedPrimary] = await Promise.all([
+  resumeHostClient.sessionResume(resumeSessionParams),
+  resumeHostClient.sessionResume(resumeSessionParams),
+]);
+assert.deepEqual(exactResumedPrimary, resumedPrimary);
+assert.equal(resumedPrimary.state, "ready");
+assert.equal(resumedPrimary.runtimeSessionId, "dsh-artifact-primary");
+assert.equal(resumedPrimary.historyFormat, "dsh-session-events-v1");
+assert.equal(resumedPrimary.effectiveConfigRevision, "artifact-config-v1");
+assert.deepEqual(resumedPrimary.toolCatalog, validatedArtifactToolCatalog);
+assert.deepEqual(resumedPrimary.extensionCatalog, resumedComposition.context.productComponents.catalog());
+const resumedAgent = resumedComposition.context.productSession.requireAgent();
+const resumedPrompt = await resumedComposition.context.systemPrompt.assemble(assembleContextFor(resumedAgent));
+assert.equal(
+  resumedPrompt.sections.find(({ name }) => name === PERSONA_SECTION)?.text,
+  resumeSessionParams.systemPrompt,
+  "resumed primary Session must restore the requested persona in its fresh Agent scope",
+);
+assert.equal(resumedPrimary.durableHead.sequence, resumedAgent.session.seq);
+assert.equal(
+  JSON.stringify(resumedAgent.session.events.slice(0, persistedPrimary.events.length)),
+  persistedPrimaryBytes,
+  "resumed Session must preserve the complete durable source prefix byte-for-byte",
+);
+assert.equal(resumedAgent.session.events.length, persistedPrimary.events.length + 1);
+assert.deepEqual(resumedAgent.session.events.at(-1), {
+  type: "session/end-seed",
+  seq: persistedPrimary.events.length,
+  time: resumedAgent.session.events.at(-1)?.time,
+  data: {},
+});
+assert.equal(resumeAdapter.requests.length, 0, "Session resume must not replay model work");
+assert.deepEqual(await resumeHostClient.sessionClose({
+  clientOperationId: "artifact-resumed-session-close",
+}), { ok: true });
+await resumeHostClient.runtimeShutdown({ reason: "artifact-resume-proof-complete" });
+const resumedStopped = await resumedLifecycle.whenStopped();
+assert.equal(resumedStopped.disposed, true);
+assert.equal(resumedStopped.exit.kind, "shutdown");
+assert.throws(() => resumedComposition.snapshot(), /disposing or disposed/u);
+resumeHostPeer.close();
+resumeRuntimeInput.destroy();
+resumeRuntimeOutput.destroy();
+const resumedPersistenceProbe = new DatabaseSync(persistencePath, { readOnly: true });
+const resumedPersistenceSession = resumedPersistenceProbe.prepare(
+  "SELECT event_count, revision FROM sessions WHERE id = ?",
+).get("dsh-artifact-primary") as { event_count: number; revision: number };
+resumedPersistenceProbe.close();
+assert.equal(resumedPersistenceSession.event_count, persistedPrimary.events.length + 1);
+assert.ok(resumedPersistenceSession.revision > persistenceSession.revision);
 const hostAttachmentStagingEntriesAfterUse = await readdir(fixtureAttachmentStaging);
 assert.deepEqual(hostAttachmentStagingEntriesAfterUse, []);
 assert.throws(() => composition.snapshot(), /disposing or disposed/u);
@@ -3688,11 +3960,19 @@ process.stdout.write(`${JSON.stringify({
   nativeRpcShutdown: rpcShutdown.kind,
   nativeRpcStopped: stopped.disposed,
   productPersistenceVerified: true,
+  failedResumePublicationRejected,
+  initialConfigurationMismatchRejected,
   productPersistenceEvidence: {
     eventCount: persistenceSession.event_count,
     format: persistenceMeta.persistence_format,
     generationCount: persistenceGenerationCount.count,
     productEventReloaded: persistedPrimary.events.some(({ type }) => type.startsWith("myagents/")),
+    resumedDurableSequence: resumedPrimary.durableHead.sequence,
+    resumedEventCount: resumedPersistenceSession.event_count,
+    resumedSourcePrefixByteEquivalent: JSON.stringify(
+      resumedAgent.session.events.slice(0, persistedPrimary.events.length),
+    ) === persistedPrimaryBytes,
+    resumedWithoutModelReplay: true,
     revision: persistenceSession.revision,
     schemaVersion: persistenceMeta.schema_version,
   },
@@ -3802,7 +4082,9 @@ process.stdout.write(`${JSON.stringify({
   queuedCancellationVerified: true,
   runtimeEventProjectionVerified: true,
   sessionCloseVerified: true,
+  sessionRestartResumeVerified: true,
   nativeRpcFrames: observedRuntimeFrames,
+  resumeNativeRpcFrames: observedResumeFrames,
   workstreamRuntimeEvents: projectedRuntimeEvents,
   patchedWakePending: true,
   publicationGuardsVerified: true,

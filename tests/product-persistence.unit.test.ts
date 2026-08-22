@@ -184,6 +184,119 @@ describe("ProductSqliteSessionPersistence", () => {
     await reopened.fiber.dispose();
   });
 
+  it("reads an exact validated suffix without scanning unrelated prefix envelopes", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-suffix");
+    const meta = header(id);
+    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+
+    await context.sessionPersistence.create(meta);
+    await context.sessionPersistence.append(id, [...turn(0, 1), ...turn(2, 2)]);
+
+    const complete = await context.sessionPersistence.readFrom(id, 0);
+    const suffix = await context.sessionPersistence.readFrom(id, 2);
+    expect(Buffer.from(JSON.stringify(suffix.events))).toEqual(
+      Buffer.from(JSON.stringify(complete.events.slice(2))),
+    );
+    expect((await context.sessionPersistence.readFrom(id, 4)).events).toEqual([]);
+    expect((await context.sessionPersistence.readFrom(id, 99)).events).toEqual([]);
+    await expect(context.sessionPersistence.readFrom(id, -1)).rejects.toThrow(/non-negative safe integer/u);
+    await expect(context.sessionPersistence.readFrom(id, Number.MAX_SAFE_INTEGER + 1))
+      .rejects.toThrow(/non-negative safe integer/u);
+
+    const probe = new DatabaseSync(databasePath);
+    const generation = probe.prepare(
+      "SELECT active_generation_id FROM sessions WHERE id = ?",
+    ).get(id) as { active_generation_id: string };
+    probe.prepare(`
+      UPDATE session_events
+         SET envelope_json = ?
+       WHERE session_id = ? AND generation_id = ? AND seq = 0
+    `).run("not-json", id, generation.active_generation_id);
+
+    expect((await context.sessionPersistence.readFrom(id, 2)).events.map(({ seq }) => seq))
+      .toEqual([2, 3]);
+    await expect(context.sessionPersistence.readFrom(id, 0)).rejects.toThrow(/event 0 contains invalid JSON/u);
+
+    probe.prepare(`
+      UPDATE session_events
+         SET envelope_json = ?
+       WHERE session_id = ? AND generation_id = ? AND seq = 2
+    `).run("also-not-json", id, generation.active_generation_id);
+    await expect(context.sessionPersistence.readFrom(id, 2)).rejects.toThrow(/event 2 contains invalid JSON/u);
+
+    probe.prepare(`
+      DELETE FROM session_events
+       WHERE session_id = ? AND generation_id = ? AND seq = 1
+    `).run(id, generation.active_generation_id);
+    probe.close();
+    await expect(context.sessionPersistence.readFrom(id, 2)).rejects.toThrow(/prefix.*not contiguous/u);
+    await context.fiber.dispose();
+  });
+
+  it("repairs only a proven interrupted DSH tail and durably preserves its closer", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const id = SessionId("product-persistence-interrupted");
+    const first = await mount(runtimeHome);
+    await first.sessionPersistence.create(header(id));
+    await first.sessionPersistence.append(id, turn(0, 1).slice(0, 1));
+    await first.fiber.dispose();
+
+    const reopened = await mount(runtimeHome);
+    const repaired = await reopened.sessionPersistence.load(id);
+    expect(repaired.events).toHaveLength(2);
+    expect(repaired.events[0]).toMatchObject({ seq: 0, type: "turn/start", data: { turn: 1 } });
+    expect(repaired.events[1]).toMatchObject({
+      seq: 1,
+      type: "turn/end",
+      data: { turn: 1, reason: { kind: "interrupted" } },
+    });
+    const durable = await reopened.sessionPersistence.readFrom(id, 0);
+    expect(Buffer.from(JSON.stringify(durable.events))).toEqual(
+      Buffer.from(JSON.stringify(repaired.events)),
+    );
+    await reopened.fiber.dispose();
+
+    const secondReopen = await mount(runtimeHome);
+    const secondLoad = await secondReopen.sessionPersistence.load(id);
+    expect(secondLoad.events).toEqual(repaired.events);
+    await secondReopen.fiber.dispose();
+  });
+
+  it("refuses an unknown required stored event without mutating its log", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const id = SessionId("product-persistence-unknown-event");
+    const first = await mount(runtimeHome);
+    await first.sessionPersistence.create(header(id));
+    await first.sessionPersistence.append(id, [Object.freeze({
+      data: Object.freeze({ required: true }),
+      seq: 0,
+      time: 1,
+      type: "myagents/unknown-required-event",
+    }) as unknown as SessionEvent, ...turn(1, 1)]);
+    await first.fiber.dispose();
+
+    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const before = new DatabaseSync(databasePath, { readOnly: true });
+    const beforeRow = before.prepare(
+      "SELECT event_count, head_hash FROM sessions WHERE id = ?",
+    ).get(id);
+    before.close();
+
+    const reopened = await mount(runtimeHome);
+    expect((await reopened.sessionPersistence.readFrom(id, 1)).events.map(({ seq }) => seq))
+      .toEqual([1, 2]);
+    await expect(reopened.sessionPersistence.inspect(id)).rejects.toThrow(/unknown to this harness/u);
+    await reopened.fiber.dispose();
+
+    const after = new DatabaseSync(databasePath, { readOnly: true });
+    expect(after.prepare("SELECT event_count, head_hash FROM sessions WHERE id = ?").get(id))
+      .toEqual(beforeRow);
+    expect(scalar(after, "SELECT count(*) AS value FROM session_events WHERE session_id = ?", id)).toBe(3);
+    after.close();
+  });
+
   it("allows exactly one first materialization across competing coordinators", async () => {
     const runtimeHome = await makeRuntimeHome();
     const first = await mount(runtimeHome);

@@ -851,6 +851,20 @@ export class ProductTaskGraphService extends Service {
     }
   }
 
+  validatePersisted(agent: Agent): ProductTaskGraphSnapshot {
+    this.assertHealthy();
+    try {
+      return foldProductTaskGraph(agent.session.events, String(agent.session.id));
+    } catch (error) {
+      this.failure ??= error;
+      throw new ProductToolError(
+        "task_graph_unavailable",
+        "durable TaskGraph projection cannot be trusted",
+        { cause: error },
+      );
+    }
+  }
+
   private definition(
     name: TaskToolName,
     concurrencySafe: boolean,

@@ -599,6 +599,23 @@ export class ProductPlanService extends Service {
 
   currentRevision(agent: Agent): string { return this.snapshot(agent).revision; }
 
+  validatePersisted(agent: Agent): ProductPlanSnapshot {
+    this.assertHealthy();
+    const runtimeHome = planRuntimeHome(this.configValue.environment());
+    const sessionId = boundedIdentifier(String(agent.session.id), "plan Session id");
+    const path = this.configValue.io.pathFor(runtimeHome, sessionId);
+    try {
+      return foldProductPlan(agent.session.events, sessionId, this.configValue.revision, path);
+    } catch (error) {
+      this.failure ??= error;
+      throw new ProductToolError(
+        "plan_recovery_required",
+        "durable plan state cannot be trusted",
+        { cause: error },
+      );
+    }
+  }
+
   snapshot(agent: Agent): ProductPlanSnapshot {
     this.assertHealthy();
     if (agent !== this.configValue.requireAgent()) {

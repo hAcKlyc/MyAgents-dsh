@@ -75,7 +75,10 @@
       "initialize",
       "runtime/status",
       "runtime/shutdown",
-      "interaction/respond"
+      "interaction/respond",
+      "session/create",
+      "session/resume",
+      "session/close"
     ],
     "availableNotifications": [
       "initialized",
@@ -94,7 +97,7 @@
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "workstream-evidence-only",
-  "stage": "batch-1-w3-a3",
+  "stage": "batch-1-w4-a2",
   "tools": {
     "contractProfile": "canonical-agent-experience-v1",
     "contractSha256": "64cb973113a855f35f883211aab170c836ca6d6d9cc079d33ebd1c88bf51335c"

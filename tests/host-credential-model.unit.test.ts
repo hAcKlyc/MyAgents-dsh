@@ -247,6 +247,39 @@ describe("Host credential and model route", () => {
       .rejects.toMatchObject({ code: "credential_read_only" });
   });
 
+  it("revalidates the exact admitted Session, config, and Provider profile at publication", async () => {
+    const harness = await createHarness();
+    harness.pair.host.registerRequestHandler("host/credential/resolve", () => ({
+      authoritativeCredentialRevision: "credential-v1",
+      available: true,
+      kind: "availability" as const,
+    }));
+    const authority = new HostDeepSeekModelAuthority(
+      fakeModelContext(harness.root),
+      harness.credentialController,
+      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" },
+    );
+    const admitted = sessionRequest();
+    await authority.preflight(admitted);
+
+    expect(() => authority.assertAdmission(admitted)).not.toThrow();
+    expect(() => authority.assertAdmission(Object.freeze({
+      ...admitted,
+      runtimeSessionId: "different-runtime-session",
+    }))).toThrow(expect.objectContaining({ code: "provider_profile_stale" }));
+    expect(() => authority.assertAdmission(Object.freeze({
+      ...admitted,
+      params: Object.freeze({ ...admitted.params, configRevision: "config-v2" }),
+    }))).toThrow(expect.objectContaining({ code: "provider_profile_stale" }));
+    expect(() => authority.assertAdmission(Object.freeze({
+      ...admitted,
+      params: Object.freeze({
+        ...admitted.params,
+        provider: Object.freeze({ ...admitted.params.provider, maxTokens: 256 }),
+      }),
+    }))).toThrow(expect.objectContaining({ code: "provider_profile_stale" }));
+  });
+
   it("rejects stale material and never projects Host-controlled secret fields", async () => {
     const harness = await createHarness();
     const secret = "revision-secret-canary";

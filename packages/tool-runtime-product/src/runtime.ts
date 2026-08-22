@@ -360,6 +360,10 @@ export class ProductToolRuntime extends Service {
     });
   }
 
+  catalog(): ReturnType<typeof validateEffectiveToolCatalog> {
+    return validateEffectiveToolCatalog(this.configValue.catalog());
+  }
+
   resolve(exec: Readonly<ToolExecution>): ProductToolContext {
     if (exec.agent === undefined || exec.agent !== this.configValue.requireAgent()) {
       throw new ProductToolError("tool_operation_denied", "tool call lacks official primary Agent ownership");

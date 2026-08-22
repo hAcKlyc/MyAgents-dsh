@@ -462,6 +462,32 @@ describe("SdkOperationService admission and idempotency", () => {
     await expect(fixture.dispose()).resolves.toBeUndefined();
   });
 
+  it("retires restored terminal history without inventing a live projector authority", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    await fixture.dispose();
+    expect(fixture.agent.session.events.at(-1)?.type).toBe("myagents/operation/terminal");
+
+    let retirementGuard: RetirementGuard | undefined;
+    const replacement = await fixture.context.plugin(SdkOperationService, {
+      birthAuthority: Object.freeze({ capture: () => birth() }),
+      drainOwnedWork: () => Promise.resolve(),
+      ownsRootContextMessage: () => false,
+      registerRetirementGuard: (guard) => { retirementGuard = guard; },
+      requireAgent: () => fixture.agent,
+      retirePrimary: () => {
+        if (retirementGuard === undefined) throw new Error("replacement retirement guard was not registered");
+        return retirementGuard(fixture.agent);
+      },
+      settlementDeadlineAuthority: immediateSettlementDeadline,
+    });
+    expect(() => fixture.context.sdkOperations.validatePersisted(fixture.agent)).not.toThrow();
+    await expect(replacement.dispose()).resolves.toBeUndefined();
+  });
+
   it("flushes before acceptance and returns exact known truth without duplicating input", async () => {
     const fixture = await mountService();
     await fixture.service.start(params());

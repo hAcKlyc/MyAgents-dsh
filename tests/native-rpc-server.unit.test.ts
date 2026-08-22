@@ -10,6 +10,7 @@ import {
   JsonRpcPeer,
   PROTOCOL_VERSION,
   REFERENCE_PROTOCOL_LIMITS,
+  SESSION_FORMAT,
   type InitializeParams,
   type MethodParams,
   type MethodResult,
@@ -17,6 +18,11 @@ import {
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
 import type { HostPortService, HostPortTransportLifecycle } from "@myagents-dsh/host-ports";
+import {
+  CANONICAL_TOOL_CONTRACT_SHA256,
+  CANONICAL_TOOL_NAMES,
+  effectiveToolCatalogDigest,
+} from "@myagents-dsh/tool-contracts";
 import { NativeRpcServer } from "@myagents-dsh/rpc-server";
 import { RuntimeProcessLifecycle } from "@myagents-dsh/runtime-server";
 import type * as ProductProfileExports from "@myagents-dsh/product-profile";
@@ -57,6 +63,11 @@ const persistenceInstallState = vi.hoisted(() => ({
     return Promise.resolve();
   },
 }));
+const sessionCatalogState = vi.hoisted(() => ({
+  current: (): unknown => {
+    throw new Error("synthetic Session catalogs are not configured");
+  },
+}));
 
 vi.mock("@myagents-dsh/product-profile", async (importOriginal) => {
   const actual = await importOriginal<typeof ProductProfileExports>();
@@ -80,12 +91,40 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
       installPersistence: (runtimeHome: string) => persistenceInstallState.current(runtimeHome),
       respondInteraction: (params: MethodParams<"interaction/respond">) =>
         interactionResponseState.current(params) as MethodResult<"interaction/respond">,
+      sessionCatalogs: () => sessionCatalogState.current(),
       serviceOrder: [],
     }),
   };
 });
 
 const digest = "a".repeat(64);
+const toolCatalogAuthority = Object.freeze({
+  formatVersion: 1 as const,
+  contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
+  implementationCatalog: CANONICAL_TOOL_NAMES,
+  effectiveTools: Object.freeze([...CANONICAL_TOOL_NAMES]),
+  revision: "synthetic-tools-v1",
+  diagnostics: Object.freeze(CANONICAL_TOOL_NAMES.map((tool) => Object.freeze({
+    tool,
+    available: true as const,
+  }))),
+});
+const syntheticSessionCatalogs = Object.freeze({
+  extensionCatalog: Object.freeze({
+    revision: "synthetic-extensions-v1",
+    digest,
+    tools: Object.freeze([]),
+    commands: Object.freeze([]),
+    skills: Object.freeze([]),
+    agents: Object.freeze([]),
+    mcpServers: Object.freeze([]),
+  }),
+  toolCatalog: Object.freeze({
+    ...toolCatalogAuthority,
+    digest: effectiveToolCatalogDigest(toolCatalogAuthority),
+  }),
+});
+sessionCatalogState.current = () => syntheticSessionCatalogs;
 const compositionAuthority = Object.freeze({}) as NativeRpcLifecycleAuthority;
 const createHostPortLifecycle = (): HostPortLifecycle => ({
   activate: () => undefined,
@@ -102,16 +141,62 @@ const createRoot = (
 ): Context => {
   hostPortLifecycleState.current = hostPorts;
   const root = new Context();
+  let sessionSnapshot: Record<string, unknown> = Object.freeze({ state: "unbound" as const });
   root.provide("sessions", {
     flush: () => Promise.resolve(true),
   } as never);
   root.provide("productSession", {
+    bindCreate: (params: MethodParams<"session/create">) => {
+      const runtimeSessionId = params.runtimeSessionId ?? "synthetic-generated-session";
+      sessionSnapshot = Object.freeze({
+        state: "ready" as const,
+        runtimeSessionId,
+        desiredConfigRevision: params.configRevision,
+        effectiveConfigRevision: params.configRevision,
+        durableSequence: 0,
+      });
+      return Promise.resolve(Object.freeze({
+        state: "ready" as const,
+        mode: "create" as const,
+        runtimeSessionId,
+        clientOperationId: params.clientOperationId,
+        persistenceRef: params.persistenceRef,
+        desiredConfigRevision: params.configRevision,
+        effectiveConfigRevision: params.configRevision,
+        durableSequence: 0,
+        fingerprint: "synthetic-create-fingerprint",
+      }));
+    },
     bindExecutionEnvironment: (environment: unknown) => environment,
+    bindResume: (params: MethodParams<"session/resume">) => {
+      sessionSnapshot = Object.freeze({
+        state: "ready" as const,
+        runtimeSessionId: params.runtimeSessionId,
+        desiredConfigRevision: params.configRevision,
+        effectiveConfigRevision: params.configRevision,
+        durableSequence: 12,
+      });
+      return Promise.resolve(Object.freeze({
+        state: "ready" as const,
+        mode: "resume" as const,
+        runtimeSessionId: params.runtimeSessionId,
+        clientOperationId: params.clientOperationId,
+        persistenceRef: params.persistenceRef,
+        desiredConfigRevision: params.configRevision,
+        effectiveConfigRevision: params.configRevision,
+        durableSequence: 12,
+        fingerprint: "synthetic-resume-fingerprint",
+      }));
+    },
     bindWorkspace: (workspace: unknown) => workspace,
+    close: () => {
+      sessionSnapshot = Object.freeze({ ...sessionSnapshot, state: "retired" as const });
+      return Promise.resolve(Object.freeze({ ok: true as const }));
+    },
     retire,
-    snapshot: () => Object.freeze({ state: "unbound" as const }),
+    snapshot: () => sessionSnapshot,
     whenSettlementFailed: () => settlementFailure,
-  } as ProductSessionService);
+  } as unknown as ProductSessionService);
   root.provide("sdkOperations", {
     bindTerminalReservationAuthority: () => undefined,
     lookup: () => undefined,
@@ -197,6 +282,30 @@ const initializeParamsForTarget = (target: PlatformTarget): InitializeParams => 
   }
   return params;
 };
+
+const sessionParams = (
+  runtimeSessionId: string,
+  clientOperationId: string,
+): MethodParams<"session/resume"> => ({
+  clientOperationId,
+  runtimeSessionId,
+  persistenceRef: `persistence-${runtimeSessionId}`,
+  provider: {
+    revision: "provider-v1",
+    providerRouteId: "fixture",
+    api: "openai-completions",
+    provider: "fixture",
+    modelId: "fixture-model",
+    credentialRef: "fixture-credential",
+    contextWindow: 8_192,
+    maxTokens: 1_024,
+  },
+  configRevision: "config-v1",
+  extensionDigest: digest,
+  systemPrompt: "Synthetic primary Session prompt.",
+  permissionMode: "default",
+  interactionScenario: "deterministic-headless",
+});
 
 type Harness = Readonly<{
   root: Context;
@@ -424,6 +533,58 @@ describe("native RPC Cordis service", () => {
     }
     expect(harness.server.phase).toBe("disposed");
     expect(harness.hostFatalErrors).toEqual([]);
+  });
+
+  it("routes create, resume, and close through the sole ProductSession owner", async () => {
+    const createdHarness = await createHarness();
+    try {
+      await createdHarness.client.initialize(initializeParams());
+      await vi.waitFor(() => expect(createdHarness.server.phase).toBe("await_initialized"));
+      await createdHarness.client.initialized();
+      const create = sessionParams("native-created-session", "native-create-operation");
+      const created = await createdHarness.client.sessionCreate(create);
+      expect(created).toEqual({
+        state: "ready",
+        runtimeSessionId: "native-created-session",
+        historyFormat: SESSION_FORMAT,
+        durableHead: { sequence: 0 },
+        effectiveConfigRevision: "config-v1",
+        ...syntheticSessionCatalogs,
+      });
+      expect(await createdHarness.client.runtimeStatus({})).toMatchObject({
+        primarySessionState: "ready",
+        runtimeSessionId: "native-created-session",
+        effectiveConfigRevision: "config-v1",
+      });
+      await expect(createdHarness.client.sessionClose({ clientOperationId: "native-close-operation" }))
+        .resolves.toEqual({ ok: true });
+      expect(await createdHarness.client.runtimeStatus({})).toMatchObject({
+        primarySessionState: "retired",
+      });
+    } finally {
+      await createdHarness.close();
+    }
+
+    const resumedHarness = await createHarness();
+    try {
+      await resumedHarness.client.initialize(initializeParams());
+      await vi.waitFor(() => expect(resumedHarness.server.phase).toBe("await_initialized"));
+      await resumedHarness.client.initialized();
+      const resumed = await resumedHarness.client.sessionResume(
+        sessionParams("native-resumed-session", "native-resume-operation"),
+      );
+      expect(resumed).toMatchObject({
+        state: "ready",
+        runtimeSessionId: "native-resumed-session",
+        historyFormat: SESSION_FORMAT,
+        durableHead: { sequence: 12 },
+        effectiveConfigRevision: "config-v1",
+      });
+      expect(resumed.toolCatalog).toEqual(syntheticSessionCatalogs.toolCatalog);
+      expect(resumed.extensionCatalog).toEqual(syntheticSessionCatalogs.extensionCatalog);
+    } finally {
+      await resumedHarness.close();
+    }
   });
 
   it("rejects duplicate initialization and session work before initialized confirmation", async () => {

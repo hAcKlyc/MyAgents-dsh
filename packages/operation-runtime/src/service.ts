@@ -1109,13 +1109,12 @@ export class SdkOperationService extends Service {
     const settledFold = this.foldValue(agent);
     if (settledFold.operations.length > 0) {
       const terminalAuthority = this.terminalReservationAuthorityValue;
-      if (terminalAuthority === undefined) {
-        throw this.fence(new Error("primary retirement lost terminal-delivery ownership"));
+      if (terminalAuthority !== undefined) {
+        await this.configValue.settlementDeadlineAuthority.wait(
+          terminalAuthority.whenIdle(),
+          "primary retirement terminal projection drain",
+        );
       }
-      await this.configValue.settlementDeadlineAuthority.wait(
-        terminalAuthority.whenIdle(),
-        "primary retirement terminal projection drain",
-      );
     }
     this.assertHealthy();
   }
@@ -1183,6 +1182,11 @@ export class SdkOperationService extends Service {
     } catch (error) {
       throw this.fence(error);
     }
+  }
+
+  validatePersisted(agent: Agent): ProductOperationFold {
+    this.assertHealthy();
+    return this.foldValue(agent);
   }
 
   private assertHealthy(): void {
