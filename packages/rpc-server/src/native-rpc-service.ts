@@ -420,10 +420,6 @@ export class NativeRpcServer extends Service {
         this.peerValue.registerRequestHandler("runtime/status", () => this.statusSnapshot()),
         this.peerValue.registerRequestHandler("runtime/shutdown", (params, context) =>
           this.handleShutdown(params, context)),
-        this.peerValue.registerNotificationHandler(
-          "initialized",
-          () => hostPortLifecycleOf(this).activate(),
-        ),
       );
       ctx.effect(
         () => () => this.disposeTransport().catch(() => undefined),
@@ -603,6 +599,7 @@ export class NativeRpcServer extends Service {
   private authorizeNotification(method: string): void {
     if (method === "rpc/cancel") return;
     if (this.phaseValue === "await_initialized" && method === "initialized") {
+      hostPortLifecycleOf(this).activate();
       this.phaseValue = "ready";
       return;
     }

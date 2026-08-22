@@ -245,8 +245,6 @@ const rawResponse = async (
   return response;
 };
 
-const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
-
 describe("native RPC Cordis service", () => {
   it("binds, activates, stops, and drains the sole Host port owner in transport order", async () => {
     const events: string[] = [];
@@ -288,9 +286,8 @@ describe("native RPC Cordis service", () => {
       "session:synthetic-product-session",
     ]);
     await vi.waitFor(() => expect(root.nativeRpc.phase).toBe("await_initialized"));
-    await client.initialized();
-    for (let attempts = 0; attempts < 50 && !events.includes("activate"); attempts += 1) await tick();
-    expect(events).toContain("activate");
+    runtimeInput.write(`${JSON.stringify({ jsonrpc: "2.0", method: "initialized", params: {} })}\n`);
+    expect(events.at(-1)).toBe("activate");
     await client.runtimeShutdown({ reason: "fixture" });
     await root.nativeRpc.whenStopped();
     expect(events.indexOf("stop:shutdown")).toBeGreaterThan(events.indexOf("activate"));
