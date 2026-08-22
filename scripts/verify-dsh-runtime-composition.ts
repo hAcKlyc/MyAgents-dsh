@@ -447,6 +447,7 @@ const cleanBuildRuntimeComposition = (
       composite: false,
       declaration: false,
       declarationMap: false,
+      lib: ["ES2024", "DOM", "DOM.Iterable"],
       outDir: buildRoot,
       rootDir: repositoryRoot,
       sourceMap: false,
