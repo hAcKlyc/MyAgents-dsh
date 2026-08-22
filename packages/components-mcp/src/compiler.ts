@@ -326,7 +326,7 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
   }
   const connect = factory.connect;
   const connectMcp = (input: McpConnectionFactoryInput): Promise<McpConnection> =>
-    Reflect.apply(connect, factory, [input]) as Promise<McpConnection>;
+    Reflect.apply(connect, factory, [input]);
   return Object.freeze({
     kind: "mcp" as const,
     prepare: async (
