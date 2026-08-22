@@ -1436,9 +1436,13 @@ const hostModelMcpResult = hostModelComposition.context.productSession.requireAg
 );
 assert.ok(hostModelMcpResult?.type === "tool/result");
 assert.deepEqual(hostModelMcpResult.data.message.content, [{
+  content: [{
+    type: "text",
+    text: "artifact MCP result",
+  }],
   isError: false,
-  type: "text",
-  text: "artifact MCP result",
+  toolCallId: "artifact-host-model-mcp-call",
+  type: "tool-result",
 }]);
 assert.equal(hostModelMcpPermission?.includes(hostModelExtensionSnapshot.digest), true);
 const hostCredentialModelVerified = hostModelFetchSequence === 4
