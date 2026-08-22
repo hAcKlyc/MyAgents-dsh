@@ -897,7 +897,11 @@ const renderJson = (_args: unknown, value: unknown): ContentBlock[] => [
 ];
 
 export class ProductWorkService extends Service {
-  static inject = ["agents", "jobs", "productTools", "sessionPersistence", "sessions", "subagents", "tools"];
+  // Persistence is installed only after the Host supplies the canonical Runtime
+  // home during initialize. ProductWork must register its controller before that
+  // boundary, while every persistence-dependent operation resolves the then-live
+  // public service explicitly below.
+  static inject = ["agents", "jobs", "productTools", "sessions", "subagents", "tools"];
   private readonly config: ProductWorkServiceConfig;
   private readonly byAgent = new Map<string, WorkEntry>();
   private readonly byTask = new Map<string, WorkEntry>();

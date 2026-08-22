@@ -81,6 +81,12 @@ const runtimeCompositionSourcePaths = [
   "packages/operation-runtime/src/limits.ts",
   "packages/operation-runtime/src/service.ts",
   "packages/operation-runtime/src/terminal.ts",
+  "packages/persistence-product/src/index.ts",
+  "packages/persistence-product/src/known-events.ts",
+  "packages/persistence-product/src/provider.ts",
+  "packages/persistence-product/src/schema.ts",
+  "packages/persistence-product/src/session-lock.ts",
+  "packages/persistence-product/src/sqlite-store.ts",
   "packages/product-profile/src/candidate-runtime-profile-authority.ts",
   "packages/product-profile/src/candidate-runtime-profile.ts",
   "packages/product-profile/src/index.ts",
@@ -154,6 +160,7 @@ const runtimePackageWorkspaces = [
   ["packages/protocol", "@myagents-dsh/protocol"],
   ["packages/host-ports", "@myagents-dsh/host-ports"],
   ["packages/operation-runtime", "@myagents-dsh/operation-runtime"],
+  ["packages/persistence-product", "@myagents-dsh/persistence-product"],
   ["packages/rpc-server", "@myagents-dsh/rpc-server"],
   ["packages/runtime-product", "@myagents-dsh/runtime-product"],
   ["packages/task-graph", "@myagents-dsh/task-graph"],
@@ -985,6 +992,12 @@ const main = (): void => {
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
+      "packages/persistence-product",
+      "@myagents-dsh/persistence-product",
+    );
+    stageBuiltPackage(
+      consumerRoot,
+      buildRoot,
       "packages/component-runtime",
       "@myagents-dsh/component-runtime",
     );
@@ -1109,6 +1122,7 @@ const main = (): void => {
       || evidence.nativeRpcSchemaSha256 !== protocolMetaJson.schemaSha256
       || evidence.nativeRpcShutdown !== "shutdown"
       || evidence.nativeRpcStopped !== true
+      || evidence.productPersistenceVerified !== true
       || evidence.canonicalFileToolsVerified !== true
       || evidence.canonicalProcessSearchToolsVerified !== true
       || evidence.canonicalWebToolsVerified !== true
@@ -1149,6 +1163,22 @@ const main = (): void => {
         "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
+    }
+    const persistenceEvidence = exactObject(
+      evidence.productPersistenceEvidence,
+      "product SQLite persistence evidence",
+    );
+    if (typeof persistenceEvidence.eventCount !== "number"
+      || !Number.isSafeInteger(persistenceEvidence.eventCount)
+      || persistenceEvidence.eventCount < 1
+      || persistenceEvidence.format !== "myagents-sqlite-session-v1"
+      || persistenceEvidence.generationCount !== 1
+      || persistenceEvidence.productEventReloaded !== true
+      || typeof persistenceEvidence.revision !== "number"
+      || !Number.isSafeInteger(persistenceEvidence.revision)
+      || persistenceEvidence.revision < 1
+      || persistenceEvidence.schemaVersion !== 1) {
+      throw new Error("product SQLite persistence evidence differs from the exact W4-A1 contract");
     }
     const hostAttachmentEvidence = exactObject(
       evidence.hostAttachmentEvidence,

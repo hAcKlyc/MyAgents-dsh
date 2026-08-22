@@ -156,7 +156,14 @@ export class ArtifactRuntimeProcess {
     };
     this.#child = spawn(
       exactAbsolutePath(value.nodeExecutable, "artifact Node executable"),
-      [exactAbsolutePath(value.artifactEntrypoint, "artifact entrypoint")],
+      [
+        // Node 24 still labels its built-in SQLite API experimental. The Runtime
+        // pins this exact Node line and exercises SQLite as an accepted platform
+        // capability, so the Host suppresses only that warning category while
+        // retaining every application diagnostic on stderr.
+        "--disable-warning=ExperimentalWarning",
+        exactAbsolutePath(value.artifactEntrypoint, "artifact entrypoint"),
+      ],
       {
         ...spawnOptions,
         detached: process.platform !== "win32",

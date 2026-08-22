@@ -2,8 +2,8 @@ export class ProtocolError extends Error {
   readonly code: string;
   readonly retryable: boolean;
 
-  constructor(code: string, message: string, retryable = false) {
-    super(message);
+  constructor(code: string, message: string, retryable = false, options?: ErrorOptions) {
+    super(message, options);
     this.name = "ProtocolError";
     this.code = code;
     this.retryable = retryable;

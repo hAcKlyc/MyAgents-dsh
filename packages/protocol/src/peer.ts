@@ -680,6 +680,7 @@ export class JsonRpcPeer {
       });
       if (controller.signal.aborted && !inbound.committed) {
         await this.#sendError(frame.id, JSON_RPC_ERROR.cancelled, "Request cancelled");
+        responseSent = true;
       } else {
         await this.#send({
           jsonrpc: "2.0",
@@ -691,8 +692,10 @@ export class JsonRpcPeer {
     } catch (error) {
       if (controller.signal.aborted) {
         await this.#sendError(frame.id, JSON_RPC_ERROR.cancelled, "Request cancelled");
+        responseSent = true;
       } else if (error instanceof ProtocolError && error.code === "protocol_invalid_params") {
         await this.#sendError(frame.id, JSON_RPC_ERROR.invalidParams, error.message);
+        responseSent = true;
       } else if (error instanceof ProtocolError && error.code === "protocol_invalid_result") {
         this.#fatal(error);
       } else if (error instanceof ProtocolError) {
@@ -700,8 +703,10 @@ export class JsonRpcPeer {
           code: error.code,
           retryable: error.retryable,
         });
+        responseSent = true;
       } else {
         await this.#sendError(frame.id, JSON_RPC_ERROR.internalError, "Internal request error");
+        responseSent = true;
       }
     } finally {
       this.#inbound.delete(frame.id);

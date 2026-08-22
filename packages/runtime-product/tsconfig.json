@@ -16,6 +16,7 @@
     { "path": "../components-skills" },
     { "path": "../host-ports" },
     { "path": "../operation-runtime" },
+    { "path": "../persistence-product" },
     { "path": "../product-profile" },
     { "path": "../protocol" },
     { "path": "../task-graph" },

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers/promises";
+import { DatabaseSync } from "node:sqlite";
 
 import { Context } from "@deepseek-ai/cordis";
 import { CallId } from "@deepseek-ai/dsh-llm";
@@ -36,8 +37,7 @@ import {
   type LlmResolvedModelInfo,
   type StreamChunk,
 } from "@deepseek-ai/dsh-llm";
-import { Session, SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
-import SqliteSessionPersistence from "@deepseek-ai/dsh-session-persistence-sqlite";
+import { Session, SessionId, SessionStore, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { resolveRgPath } from "@deepseek-ai/dsh-tool-fs-search";
 import {
   HostPortService,
@@ -46,7 +46,13 @@ import {
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_CANDIDATE_PROFILE_SHA256,
+  selectPlatformAdapter,
 } from "@myagents-dsh/product-profile";
+import {
+  PRODUCT_PERSISTENCE_FORMAT,
+  ProductSqliteSessionPersistence,
+  productSessionDatabasePath,
+} from "@myagents-dsh/persistence-product";
 import {
   JsonRpcPeer,
   PROTOCOL_VERSION,
@@ -929,7 +935,6 @@ assert.throws(() => createHostBackedInteractionProvider(composition, Object.free
   deadlineMs: 5_000,
 })), /exact unclaimed root composition authority/u);
 let preAssistantCommitTransformHits = 0;
-await composition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
 const artifactRipgrepPath = await resolveRgPath();
@@ -1172,7 +1177,6 @@ const noSearchComposition = await composeDshRootServices({
   adapter: new ScriptedFakeLlmAdapter(),
   providers: ["fixture"],
 });
-await noSearchComposition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 const previousAmbientSearchProvider = process.env.DSH_WEB_SEARCH_PROVIDER;
 process.env.DSH_WEB_SEARCH_PROVIDER = "ambient-forbidden-search";
 try {
@@ -1200,7 +1204,6 @@ const mismatchedPlatformComposition = await composeDshRootServices({
   adapter: new ScriptedFakeLlmAdapter(),
   providers: ["fixture"],
 });
-await mismatchedPlatformComposition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 await installCanonicalToolPlane(
   mismatchedPlatformComposition,
   bindCanonicalToolPlaneConfig(mismatchedPlatformComposition),
@@ -1677,7 +1680,6 @@ const hostModelMcpFactory: McpConnectionFactory = createSdkMcpConnectionFactory(
 await installHostDeepSeekModelPlane(hostModelComposition, {
   resolveUserId: () => "00000000-0000-4000-8000-000000000001",
 });
-await hostModelComposition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 await installCanonicalToolPlane(
   hostModelComposition,
   bindCanonicalToolPlaneConfig(hostModelComposition),
@@ -2037,6 +2039,9 @@ assert.equal(rpcInitialization.runtimeEngine.version, ACCEPTED_PATCHED_DSH_ARTIF
 assert.equal(rpcInitialization.runtimeEngine.buildRevision, ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256);
 assert.equal(rpcInitialization.profileDigest, BATCH1_CANDIDATE_PROFILE_SHA256);
 assert.equal(rpcInitialization.runtimeCapabilities.profile, "myagents-dsh-batch-1-candidate-v1");
+const initializedPersistenceSnapshot = composition.snapshot();
+assert.equal(initializedPersistenceSnapshot.persistencePlane, "installed");
+assert.equal(initializedPersistenceSnapshot.persistenceFormat, PRODUCT_PERSISTENCE_FORMAT);
 await waitUntil(() => nativeRpc.phase === "await_initialized", "initialize response completion");
 await hostClient.initialized();
 await waitUntil(() => nativeRpc.phase === "ready", "Host reverse-port activation");
@@ -3598,6 +3603,42 @@ assert.equal(processSignalListener, undefined);
 assert.equal(adapter.activeStreamCount, 0);
 assert.equal(nativeRpc.phase, "disposed");
 assert.equal(hostAttachmentLeases.size, 0);
+const persistencePlatform = selectPlatformAdapter("darwin-arm64");
+const persistencePath = productSessionDatabasePath(persistencePlatform, fixtureRuntimeHome);
+const persistenceProbe = new DatabaseSync(persistencePath, { readOnly: true });
+const persistenceMeta = persistenceProbe.prepare(
+  "SELECT persistence_format, schema_version FROM store_meta WHERE singleton = 1",
+).get() as { persistence_format: string; schema_version: number };
+const persistenceSession = persistenceProbe.prepare(
+  "SELECT active_generation_id, event_count, revision FROM sessions WHERE id = ?",
+).get("dsh-artifact-primary") as {
+  active_generation_id: string;
+  event_count: number;
+  revision: number;
+};
+const persistenceGenerationCount = persistenceProbe.prepare(
+  "SELECT count(*) AS count FROM session_generations WHERE session_id = ?",
+).get("dsh-artifact-primary") as { count: number };
+persistenceProbe.close();
+assert.equal(persistenceMeta.persistence_format, PRODUCT_PERSISTENCE_FORMAT);
+assert.equal(persistenceMeta.schema_version, 1);
+assert.equal(persistenceGenerationCount.count, 1);
+assert.ok(persistenceSession.active_generation_id.length > 0);
+assert.ok(persistenceSession.event_count > 0);
+assert.ok(persistenceSession.revision > 0);
+const persistenceReloadContext = new Context();
+await persistenceReloadContext.plugin(SessionStore);
+await persistenceReloadContext.plugin(ProductSqliteSessionPersistence, {
+  durability: persistencePlatform.sqliteDurabilityPlan(persistencePath),
+  platform: persistencePlatform,
+  runtimeHome: fixtureRuntimeHome,
+});
+const persistedPrimary = await persistenceReloadContext.sessionPersistence.inspect(
+  SessionId("dsh-artifact-primary"),
+);
+assert.equal(persistedPrimary.events.length, persistenceSession.event_count);
+assert.ok(persistedPrimary.events.some(({ type }) => type.startsWith("myagents/")));
+await persistenceReloadContext.fiber.dispose();
 const hostAttachmentStagingEntriesAfterUse = await readdir(fixtureAttachmentStaging);
 assert.deepEqual(hostAttachmentStagingEntriesAfterUse, []);
 assert.throws(() => composition.snapshot(), /disposing or disposed/u);
@@ -3646,6 +3687,15 @@ process.stdout.write(`${JSON.stringify({
   nativeRpcSchemaSha256: rpcInitialization.schemaSha256,
   nativeRpcShutdown: rpcShutdown.kind,
   nativeRpcStopped: stopped.disposed,
+  productPersistenceVerified: true,
+  productPersistenceEvidence: {
+    eventCount: persistenceSession.event_count,
+    format: persistenceMeta.persistence_format,
+    generationCount: persistenceGenerationCount.count,
+    productEventReloaded: persistedPrimary.events.some(({ type }) => type.startsWith("myagents/")),
+    revision: persistenceSession.revision,
+    schemaVersion: persistenceMeta.schema_version,
+  },
   processBoundaryEvidence: {
     schedules: processBoundarySchedules,
     deadlineCancelHits: processBoundaryDeadlineCancelHits,

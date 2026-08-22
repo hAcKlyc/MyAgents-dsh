@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 
@@ -22,7 +22,7 @@ type JsonObject = Record<string, unknown>;
 const entrypoint = resolve(process.argv[2] ?? "");
 assert.equal(process.argv.length, 3, "process conformance accepts exactly one artifact entrypoint");
 
-const processTestRoot = mkdtempSync(resolve(tmpdir(), "myagents-dsh-process-conformance-"));
+const processTestRoot = realpathSync(mkdtempSync(resolve(tmpdir(), "myagents-dsh-process-conformance-")));
 const processHome = resolve(processTestRoot, "home");
 const processTemporary = resolve(processTestRoot, "temporary");
 const runtimeHome = resolve(processTestRoot, "runtime-home");

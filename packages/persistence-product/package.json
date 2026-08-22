@@ -1,0 +1,24 @@
+{
+  "name": "@myagents-dsh/persistence-product",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Product-owned SQLite DSH Session persistence and mutation storage authority",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/operation-runtime": "0.0.0",
+    "@myagents-dsh/product-profile": "0.0.0",
+    "@myagents-dsh/task-graph": "0.0.0",
+    "@myagents-dsh/tool-runtime-product": "0.0.0",
+    "@myagents-dsh/tools-agent": "0.0.0",
+    "@myagents-dsh/tools-interaction": "0.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-session": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49 || 0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-persistence": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49 || 0.1.1-rc.2"
+  }
+}

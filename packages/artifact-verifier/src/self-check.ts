@@ -26,7 +26,6 @@ import {
 const deferredAuthorities = Object.freeze([
   "checkpoint-format",
   "effective-tool-catalog",
-  "persistence-format",
 ] as const);
 
 type JsonObject = Record<string, unknown>;

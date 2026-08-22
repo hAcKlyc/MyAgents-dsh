@@ -80,6 +80,11 @@ import {
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
 import {
+  PRODUCT_PERSISTENCE_FORMAT,
+  ProductSqliteSessionPersistence,
+  productSessionDatabasePath,
+} from "@myagents-dsh/persistence-product";
+import {
   ProductPermissionService,
   ProductToolRuntime,
   validateProductPermissionPlaneConfig,
@@ -169,6 +174,8 @@ export interface DshRootCompositionSnapshot {
   readonly componentState?: "applied" | "queued" | "restart_when_idle" | "failed";
   readonly liveRootAgents: number;
   readonly hostModelPlane: "absent" | "installed";
+  readonly persistenceFormat?: typeof PRODUCT_PERSISTENCE_FORMAT;
+  readonly persistencePlane: "absent" | "installed";
   readonly providers: readonly string[];
   readonly primarySessionState: PrimarySessionState;
   readonly runtimeSessionId?: string;
@@ -316,6 +323,7 @@ export interface DshRootCompositionAuthority {
   readonly dispose: () => Promise<void>;
   readonly bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   readonly hostPorts: HostPortTransportLifecycle;
+  readonly installPersistence: (runtimeHome: string) => Promise<void>;
   readonly respondInteraction: (
     params: MethodParams<"interaction/respond">,
   ) => MethodResult<"interaction/respond">;
@@ -353,6 +361,10 @@ type CompositionAuthorityState = {
   componentPlane: "absent" | "installing" | "installed" | "failed";
   hostModelPlane: "absent" | "installing" | "installed" | "failed";
   hostModelProviderRoute: string | undefined;
+  persistenceInstallPromise: Promise<void> | undefined;
+  persistencePlane: "absent" | "installing" | "installed" | "failed";
+  persistenceRuntimeHome: string | undefined;
+  persistenceTarget: PlatformTarget | undefined;
 };
 
 type NativeRpcLifecycleAuthorityState = {
@@ -360,6 +372,7 @@ type NativeRpcLifecycleAuthorityState = {
   readonly context: Context;
   readonly dispose: () => Promise<void>;
   readonly hostPorts: HostPortTransportLifecycle;
+  readonly installPersistence: (runtimeHome: string, platformTarget: PlatformTarget) => Promise<void>;
   readonly respondInteraction: (
     params: MethodParams<"interaction/respond">,
   ) => MethodResult<"interaction/respond">;
@@ -383,6 +396,66 @@ const transportOnlyHostPortLifecycle = (
   stopAccepting: (reason?: string) => controller.stopAccepting(reason),
 });
 
+const installProductPersistence = (
+  state: CompositionAuthorityState,
+  runtimeHome: string,
+  platformTarget: PlatformTarget,
+): Promise<void> => {
+  if (!state.claimed || state.context !== state.context.root) {
+    return Promise.reject(new Error("product persistence requires the claimed direct-root lifecycle authority"));
+  }
+  if (state.persistencePlane === "failed") {
+    return Promise.reject(new Error("product persistence installation previously failed"));
+  }
+  if (state.persistencePlane !== "absent") {
+    if (state.persistenceRuntimeHome !== runtimeHome || state.persistenceTarget !== platformTarget) {
+      return Promise.reject(new Error("product persistence installation identity changed"));
+    }
+    return state.persistenceInstallPromise ?? Promise.resolve();
+  }
+  if (state.canonicalToolPlane === "installed"
+    && state.canonicalToolPlaneTarget !== platformTarget) {
+    return Promise.reject(new Error("product persistence platform differs from the canonical tool plane"));
+  }
+  const platform = selectPlatformAdapter(platformTarget);
+  const databasePath = productSessionDatabasePath(platform, runtimeHome);
+  const durability = platform.sqliteDurabilityPlan(databasePath);
+  state.persistencePlane = "installing";
+  state.persistenceRuntimeHome = runtimeHome;
+  state.persistenceTarget = platformTarget;
+  const installation = (async () => {
+    let providerFiber: { dispose(): Promise<void> } | undefined;
+    try {
+      providerFiber = await state.context.plugin(ProductSqliteSessionPersistence, {
+        durability,
+        platform,
+        runtimeHome,
+      });
+      if (!(state.context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+        throw new Error("product SQLite persistence did not install through the public DSH service seam");
+      }
+      state.persistencePlane = "installed";
+      state.snapshot();
+    } catch (error) {
+      state.persistencePlane = "failed";
+      if (providerFiber !== undefined) {
+        try {
+          await providerFiber.dispose();
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "product persistence installation and cleanup both failed",
+            { cause: cleanupError },
+          );
+        }
+      }
+      throw error;
+    }
+  })();
+  state.persistenceInstallPromise = installation;
+  return installation;
+};
+
 export const claimNativeRpcLifecycleAuthority = (
   composition: DshRootComposition,
 ): NativeRpcLifecycleAuthority => {
@@ -391,7 +464,8 @@ export const claimNativeRpcLifecycleAuthority = (
   if (context !== context.root || state?.composition !== composition || state.claimed
     || state.canonicalToolPlane === "installing" || state.canonicalToolPlane === "failed"
     || state.componentPlane === "installing" || state.componentPlane === "failed"
-    || state.hostModelPlane === "installing" || state.hostModelPlane === "failed") {
+    || state.hostModelPlane === "installing" || state.hostModelPlane === "failed"
+    || state.persistencePlane === "installing" || state.persistencePlane === "failed") {
     throw new Error("native RPC requires one unconsumed composeDshRootServices Context authority");
   }
   state.snapshot();
@@ -405,6 +479,8 @@ export const claimNativeRpcLifecycleAuthority = (
     context: state.context,
     dispose: state.dispose,
     hostPorts,
+    installPersistence: (runtimeHome, platformTarget) =>
+      installProductPersistence(state, runtimeHome, platformTarget),
     respondInteraction: (params) => state.hostInteraction?.respond(params)
       ?? Object.freeze({ state: "expired" as const }),
     snapshot: state.snapshot,
@@ -438,6 +514,7 @@ export const consumeNativeRpcLifecycleAuthority = (
     context: installationContext,
     dispose: state.dispose,
     hostPorts: state.hostPorts,
+    installPersistence: (runtimeHome: string) => state.installPersistence(runtimeHome, platformTarget),
     respondInteraction: state.respondInteraction,
     serviceOrder: DSH_ROOT_SERVICE_ORDER,
   });
@@ -579,6 +656,10 @@ export class DshRootComposition {
         componentState: componentStatus.state,
       }),
       hostModelPlane: hostModelProviderRoute === undefined ? "absent" : "installed",
+      persistencePlane: componentAuthority?.persistencePlane === "installed" ? "installed" : "absent",
+      ...(componentAuthority?.persistencePlane === "installed"
+        ? { persistenceFormat: PRODUCT_PERSISTENCE_FORMAT }
+        : {}),
       liveRootAgents: primarySession.liveRootAgents,
       primarySessionState: primarySession.state,
       providers: Object.freeze(registeredProviders),
@@ -1493,6 +1574,10 @@ export const composeDshRootServices = async (
       hostCredentials: undefined,
       hostModelPlane: "absent",
       hostModelProviderRoute: undefined,
+      persistenceInstallPromise: undefined,
+      persistencePlane: "absent",
+      persistenceRuntimeHome: undefined,
+      persistenceTarget: undefined,
       installHostModelGuards: (authority) => {
         if (providerAdmissionGuard !== undefined || modelProfileBirthGuard !== undefined) {
           throw new Error("Host model plane guards may install exactly once");

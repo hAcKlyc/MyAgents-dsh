@@ -102,6 +102,19 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     ],
   },
   {
+    packageName: "@myagents-dsh/persistence-product",
+    relativeDirectory: "packages/persistence-product",
+    allowedFiles: [
+      "package.json",
+      "src/index.ts",
+      "src/known-events.ts",
+      "src/provider.ts",
+      "src/schema.ts",
+      "src/session-lock.ts",
+      "src/sqlite-store.ts",
+    ],
+  },
+  {
     packageName: "@myagents-dsh/product-profile",
     relativeDirectory: "packages/product-profile",
     allowedFiles: [

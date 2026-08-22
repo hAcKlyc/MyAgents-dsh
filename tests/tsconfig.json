@@ -28,6 +28,7 @@
     { "path": "../packages/tools-web" },
     { "path": "../packages/compatibility" },
     { "path": "../packages/operation-runtime" },
+    { "path": "../packages/persistence-product" },
     { "path": "../packages/product-profile" },
     { "path": "../packages/rpc-server" },
     { "path": "../packages/runtime-product" },

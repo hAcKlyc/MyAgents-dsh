@@ -131,7 +131,6 @@ describe("Runtime artifact self-check", () => {
       expect(report.deferredAuthorities).toEqual([
         "checkpoint-format",
         "effective-tool-catalog",
-        "persistence-format",
       ]);
       expect(Object.isFrozen(report)).toBe(true);
       expect(Object.isFrozen(report.protocol.runtimeCapabilities)).toBe(true);

@@ -50,6 +50,13 @@ const interactionResponseState = vi.hoisted(() => ({
     return { state: "expired" as const };
   },
 }));
+const persistenceInstallState = vi.hoisted(() => ({
+  calls: [] as string[],
+  current: (runtimeHome: string): Promise<void> => {
+    persistenceInstallState.calls.push(runtimeHome);
+    return Promise.resolve();
+  },
+}));
 
 vi.mock("@myagents-dsh/product-profile", async (importOriginal) => {
   const actual = await importOriginal<typeof ProductProfileExports>();
@@ -70,6 +77,7 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
       dispose: () => Promise.resolve(),
       bindAttachmentLeaseLimit: hostPortLifecycleState.current.bindAttachmentLeaseLimit,
       hostPorts: hostPortLifecycleState.current,
+      installPersistence: (runtimeHome: string) => persistenceInstallState.current(runtimeHome),
       respondInteraction: (params: MethodParams<"interaction/respond">) =>
         interactionResponseState.current(params) as MethodResult<"interaction/respond">,
       serviceOrder: [],
@@ -352,6 +360,7 @@ describe("native RPC Cordis service", () => {
   });
 
   it("binds the accepted patched engine, negotiates minimum limits, and shuts down after its response", async () => {
+    persistenceInstallState.calls.length = 0;
     const harness = await createHarness();
     try {
       await expect(harness.client.runtimeStatus({}))
@@ -372,6 +381,7 @@ describe("native RPC Cordis service", () => {
         profileDigest: BATCH1_CANDIDATE_PROFILE_SHA256,
       });
       expect(initialized.runtimeEngine.version).toBe(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion);
+      expect(persistenceInstallState.calls).toEqual(["/fixture/runtime-home"]);
       await vi.waitFor(() => expect(harness.server.phase).toBe("await_initialized"));
       expect(harness.server.phase).toBe("await_initialized");
       expect(await harness.client.runtimeStatus({})).toMatchObject({ initialized: false });
@@ -575,6 +585,36 @@ describe("native RPC Cordis service", () => {
       for (const callback of callbacks) callback();
       input.destroy();
       output.destroy();
+    }
+  });
+
+  it("commits fatal cleanup only after a failed persistence response is written", async () => {
+    const previousInstall = persistenceInstallState.current;
+    persistenceInstallState.current = () => Promise.reject(
+      new Error("synthetic-persistence-detail-must-not-cross-rpc"),
+    );
+    const harness = await createHarness();
+    try {
+      await expect(harness.client.initialize(initializeParams())).rejects.toMatchObject({
+        code: "persistence_initialization_failed",
+        message: "Runtime persistence initialization failed",
+        retryable: false,
+      });
+      await expect(harness.server.whenTerminationCommitted()).resolves.toEqual({
+        kind: "runtime_fatal",
+        code: "persistence_initialization_failed",
+        retryable: false,
+      });
+      await expect(harness.server.whenExitRequested()).resolves.toEqual({
+        kind: "runtime_fatal",
+        code: "persistence_initialization_failed",
+        retryable: false,
+      });
+      expect(harness.server.phase).toBe("disposed");
+      expect(harness.hostFatalErrors).toEqual([]);
+    } finally {
+      persistenceInstallState.current = previousInstall;
+      await harness.close();
     }
   });
 

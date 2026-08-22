@@ -21,6 +21,7 @@ const workspacePackages = new Map([
   ["packages/components-skills", "@myagents-dsh/components-skills"],
   ["packages/host-ports", "@myagents-dsh/host-ports"],
   ["packages/operation-runtime", "@myagents-dsh/operation-runtime"],
+  ["packages/persistence-product", "@myagents-dsh/persistence-product"],
   ["packages/product-profile", "@myagents-dsh/product-profile"],
   ["packages/protocol", "@myagents-dsh/protocol"],
   ["packages/rpc-server", "@myagents-dsh/rpc-server"],
@@ -103,6 +104,14 @@ const expectedWorkspaceFiles = new Map([
     "src/limits.ts",
     "src/service.ts",
     "src/terminal.ts",
+  ]],
+  ["packages/persistence-product", [
+    "src/index.ts",
+    "src/known-events.ts",
+    "src/provider.ts",
+    "src/schema.ts",
+    "src/session-lock.ts",
+    "src/sqlite-store.ts",
   ]],
   ["packages/product-profile", [
     "manifests/accepted-patched-dsh-artifact-v1.json",

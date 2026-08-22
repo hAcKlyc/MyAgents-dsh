@@ -40,6 +40,7 @@ const candidatePackagePaths = [
   "packages/components-skills",
   "packages/host-ports",
   "packages/operation-runtime",
+  "packages/persistence-product",
   "packages/product-profile",
   "packages/protocol",
   "packages/rpc-server",

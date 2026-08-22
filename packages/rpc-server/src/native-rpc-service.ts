@@ -334,6 +334,7 @@ const emptyActiveCounts = () => ({
 type NativeRpcCompositionCapabilities = Readonly<{
   bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   hostPorts: HostPortTransportLifecycle;
+  installPersistence: (runtimeHome: string) => Promise<void>;
 }>;
 
 const nativeRpcCompositionCapabilities = new WeakMap<object, NativeRpcCompositionCapabilities>();
@@ -391,6 +392,7 @@ export class NativeRpcServer extends Service {
     nativeRpcCompositionCapabilities.set(this, Object.freeze({
       bindAttachmentLeaseLimit: compositionAuthority.bindAttachmentLeaseLimit,
       hostPorts: compositionAuthority.hostPorts,
+      installPersistence: compositionAuthority.installPersistence,
     }));
     this.terminationCommittedPromise = new Promise((resolve) => {
       this.resolveTermination = resolve;
@@ -483,7 +485,7 @@ export class NativeRpcServer extends Service {
     this.requestExit(Object.freeze({ kind: "signal", signal }));
   }
 
-  private handleInitialize(params: InitializeParams, context: RequestContext): InitializeResult {
+  private async handleInitialize(params: InitializeParams, context: RequestContext): Promise<InitializeResult> {
     if (this.phaseValue !== "await_initialize") {
       throw new ProtocolError("protocol_phase_error", "initialize may succeed exactly once");
     }
@@ -506,6 +508,26 @@ export class NativeRpcServer extends Service {
       path: params.workspace.path,
       platformTarget: this.configValue.platformTarget,
     });
+    context.signal.throwIfAborted();
+    try {
+      await compositionCapabilitiesOf(this).installPersistence(params.runtimeHome);
+    } catch (error) {
+      const request = Object.freeze({
+        kind: "runtime_fatal" as const,
+        code: "persistence_initialization_failed",
+        retryable: false,
+      });
+      this.phaseValue = "terminated";
+      this.publishTerminationIntent(request);
+      context.afterResponse(() => this.requestExit(request));
+      throw new ProtocolError(
+        "persistence_initialization_failed",
+        "Runtime persistence initialization failed",
+        false,
+        { cause: error },
+      );
+    }
+    context.signal.throwIfAborted();
     hostPortLifecycleOf(this).bindProductSession(params.productSessionId);
     const limits = minimumLimits(params.limits, this.configValue.limits);
     compositionCapabilitiesOf(this).bindAttachmentLeaseLimit(limits.maxAttachmentLeases);
@@ -623,7 +645,13 @@ export class NativeRpcServer extends Service {
   }
 
   private onFatalError(error: ProtocolError): void {
-    if (this.phaseValue === "disposed" || this.phaseValue === "terminated") return;
+    if (this.phaseValue === "disposed") return;
+    if (this.phaseValue === "terminated") {
+      if (this.exitRequestValue === undefined && this.terminationRequestValue !== undefined) {
+        this.requestExit(this.terminationRequestValue);
+      }
+      return;
+    }
     this.phaseValue = "terminated";
     this.requestExit(Object.freeze({
       kind: "transport_fatal",
