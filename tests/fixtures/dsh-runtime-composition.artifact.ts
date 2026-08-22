@@ -27,7 +27,6 @@ import {
 import { Session, SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import SqliteSessionPersistence from "@deepseek-ai/dsh-session-persistence-sqlite";
 import { resolveRgPath } from "@deepseek-ai/dsh-tool-fs-search";
-import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import {
   HostPortService,
   type HostPortServiceController,
@@ -43,6 +42,7 @@ import {
   extensionSnapshotDigest,
   type InitializeParams,
   type MethodParams,
+  type MethodResult,
   type RuntimeEventEnvelope,
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
@@ -51,6 +51,7 @@ import { startNativeRpcLifecycle } from "@myagents-dsh/runtime-server";
 import {
   claimNativeRpcLifecycleAuthority,
   composeDshRootServices,
+  createHostBackedInteractionProvider,
   createProductAgentComponentCompiler,
   createProductCommandComponentCompiler,
   createProductHookComponentCompiler,
@@ -73,8 +74,6 @@ import {
   type ProductWorkEpochEventData,
 } from "@myagents-dsh/tools-agent";
 import type {
-  ProductLocalInteractionSettlement,
-  ProductPermissionInteractionRequest,
   ProductToolCheckpointRequest,
   ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
@@ -713,6 +712,14 @@ const composition = await composeDshRootServices({
   systemPrompt: { persona: "Composition-owned persona, not the desired Session revision." },
   tools: { mode: "native" },
 });
+const hostInteractionProvider = createHostBackedInteractionProvider(composition, Object.freeze({
+  revision: "artifact-interaction-v1",
+  deadlineMs: 5_000,
+}));
+assert.throws(() => createHostBackedInteractionProvider(composition, Object.freeze({
+  revision: "artifact-interaction-v1",
+  deadlineMs: 5_000,
+})), /exact unclaimed root composition authority/u);
 let preAssistantCommitTransformHits = 0;
 await composition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
 const fileToolEvidence: string[] = [];
@@ -797,38 +804,7 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
   }),
   permission: Object.freeze({
     autoAllowTools: Object.freeze([]),
-    interaction: Object.freeze({
-      revision: "artifact-interaction-v1",
-      decidePermission: (
-        request: ProductPermissionInteractionRequest,
-        settlement: ProductLocalInteractionSettlement<unknown>,
-      ) => {
-        if (request.tool !== "Agent" || request.target !== "Verify child model lineage") {
-          fileToolEvidence.push(`permission:${request.tool}:${request.target}`);
-        }
-        settlement.resolve(Object.freeze({
-          interactionId: request.interactionId,
-          expectedPermissionRevision: request.expectedPermissionRevision,
-          decision: request.tool === "Write" && request.target !== fixturePlanPath
-            ? "always_allow" as const
-            : "allow_once" as const,
-        }));
-        return () => undefined;
-      },
-      answerQuestions: (
-        request: AskUserQuestionRequest,
-        settlement: ProductLocalInteractionSettlement<unknown>,
-      ) => {
-        interactionToolEvidence.push(`question:${request.questions.map(({ id }) => id).join(",")}`);
-        settlement.resolve({
-          answers: request.questions.map((question) => ({
-            id: question.id,
-            selected: [question.intent?.kind === "plan-review" ? question.intent.approve : "Proceed"],
-          })),
-        });
-        return () => undefined;
-      },
-    }),
+    interaction: hostInteractionProvider,
     interactionTimeoutMs: 5_000,
     maxRules: 16,
     mode: "default",
@@ -922,6 +898,18 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
     }),
   }),
 });
+const bindCanonicalToolPlaneConfig = (
+  targetComposition: DshRootComposition,
+): CanonicalToolPlaneConfig => Object.freeze({
+  ...canonicalToolPlaneConfig,
+  permission: Object.freeze({
+    ...canonicalToolPlaneConfig.permission,
+    interaction: createHostBackedInteractionProvider(targetComposition, Object.freeze({
+      revision: "artifact-interaction-v1",
+      deadlineMs: canonicalToolPlaneConfig.permission.interactionTimeoutMs,
+    })),
+  }),
+});
 await assert.rejects(
   installCanonicalToolPlane(
     new DshRootComposition(composition.context, composition.providers),
@@ -929,6 +917,17 @@ await assert.rejects(
   ),
   /exact unclaimed root composition authority/u,
 );
+await assert.rejects(installCanonicalToolPlane(composition, Object.freeze({
+  ...canonicalToolPlaneConfig,
+  permission: Object.freeze({
+    ...canonicalToolPlaneConfig.permission,
+    interaction: Object.freeze({
+      revision: "artifact-interaction-v1",
+      decidePermission: () => () => undefined,
+      answerQuestions: () => () => undefined,
+    }),
+  }),
+})), /composition-owned Host interaction Provider/u);
 const canonicalToolPlaneInstallation = installCanonicalToolPlane(composition, canonicalToolPlaneConfig);
 await assert.rejects(
   installCanonicalToolPlane(composition, canonicalToolPlaneConfig),
@@ -978,8 +977,9 @@ await noSearchComposition.context.plugin(SqliteSessionPersistence, { path: ":mem
 const previousAmbientSearchProvider = process.env.DSH_WEB_SEARCH_PROVIDER;
 process.env.DSH_WEB_SEARCH_PROVIDER = "ambient-forbidden-search";
 try {
+  const noSearchToolPlaneConfig = bindCanonicalToolPlaneConfig(noSearchComposition);
   await installCanonicalToolPlane(noSearchComposition, Object.freeze({
-    ...canonicalToolPlaneConfig,
+    ...noSearchToolPlaneConfig,
     web: Object.freeze({ fetch: noSearchWebConfig.fetch }),
   }));
 } finally {
@@ -1002,7 +1002,10 @@ const mismatchedPlatformComposition = await composeDshRootServices({
   providers: ["fixture"],
 });
 await mismatchedPlatformComposition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
-await installCanonicalToolPlane(mismatchedPlatformComposition, canonicalToolPlaneConfig);
+await installCanonicalToolPlane(
+  mismatchedPlatformComposition,
+  bindCanonicalToolPlaneConfig(mismatchedPlatformComposition),
+);
 const mismatchedPlatformInput = new PassThrough();
 const mismatchedPlatformOutput = new PassThrough();
 await assert.rejects(Promise.resolve(mismatchedPlatformComposition.context.plugin(NativeRpcServer, {
@@ -1101,8 +1104,101 @@ const runtimeLifecycle = await startNativeRpcLifecycle(composition, {
 });
 const nativeRpc: NativeRpcServer = runtimeLifecycle.nativeRpc;
 const hostClient = new GeneratedHostClient(hostPeer);
+const hostInteractionCalls: MethodParams<"host/interaction/request">[] = [];
+const hostInteractionResponses: Array<MethodResult<"interaction/respond">> = [];
+const hostInteractionCancellations: Array<{ interactionId: string; reason: string }> = [];
 const hostToolCalls: MethodParams<"host/tool/execute">[] = [];
 const hostHookCalls: MethodParams<"host/hook/execute">[] = [];
+let hostInteractionOrderingProbed = false;
+hostPeer.registerNotificationHandler("host/interaction/cancel", (params) => {
+  hostInteractionCancellations.push(structuredClone(params));
+});
+hostPeer.registerRequestHandler("host/interaction/request", (params, context) => {
+  hostInteractionCalls.push(structuredClone(params));
+  const rawSchema: unknown = params.schema;
+  assert.ok(rawSchema !== null && typeof rawSchema === "object" && !Array.isArray(rawSchema));
+  const schema = rawSchema as Readonly<{
+    origin?: unknown;
+    permissionClass?: unknown;
+    questions?: readonly Readonly<{
+      id: string;
+      question: string;
+      intent?: Readonly<{ kind: "plan-review"; approve: string }>;
+    }>[];
+    target?: unknown;
+    tool?: unknown;
+  }>;
+  let decision: "allow_once" | "always_allow" | "answered";
+  let value: unknown;
+  let questions: readonly Readonly<{
+    id: string;
+    question: string;
+    intent?: Readonly<{ kind: "plan-review"; approve: string }>;
+  }>[] | undefined;
+  if (params.kind === "permission") {
+    assert.equal(schema.origin, "root");
+    assert.equal(typeof schema.permissionClass, "string");
+    assert.equal(typeof schema.target, "string");
+    assert.equal(typeof schema.tool, "string");
+    if (schema.tool !== "Agent" || schema.target !== "Verify child model lineage") {
+      fileToolEvidence.push(`permission:${String(schema.tool)}:${String(schema.target)}`);
+    }
+    decision = schema.tool === "Write" && schema.target !== fixturePlanPath
+      ? "always_allow"
+      : "allow_once";
+  } else {
+    const rawQuestions: unknown = schema.questions;
+    assert.ok(Array.isArray(rawQuestions));
+    const normalizedQuestions = rawQuestions as readonly Readonly<{
+      id: string;
+      question: string;
+      intent?: Readonly<{ kind: "plan-review"; approve: string }>;
+    }>[];
+    questions = normalizedQuestions;
+    interactionToolEvidence.push(`question:${normalizedQuestions.map(({ id }) => id).join(",")}`);
+    decision = "answered";
+    value = {
+      answers: normalizedQuestions.map((question) => ({
+        id: question.id,
+        selected: [question.intent?.kind === "plan-review" ? question.intent.approve : "Proceed"],
+      })),
+    };
+  }
+  const heldForCancellation = params.kind === "ask_user"
+    && questions?.some(({ question }) => question === "Wait for Host cancellation?") === true;
+  if (heldForCancellation) return { registered: true };
+  context.afterResponse(() => {
+    const publishResponse = async (): Promise<void> => {
+      if (!hostInteractionOrderingProbed) {
+        hostInteractionOrderingProbed = true;
+        hostInteractionResponses.push(await hostClient.interactionRespond({
+          interactionId: params.interactionId,
+          expectedRevision: `${params.desiredPolicyRevision}-stale`,
+          decision,
+          ...(value === undefined ? {} : { value }),
+        }));
+      }
+      hostInteractionResponses.push(await hostClient.interactionRespond({
+        interactionId: params.interactionId,
+        expectedRevision: params.desiredPolicyRevision,
+        decision,
+        ...(value === undefined ? {} : { value }),
+      }));
+      if (hostInteractionResponses.length === 2) {
+        hostInteractionResponses.push(await hostClient.interactionRespond({
+          interactionId: params.interactionId,
+          expectedRevision: params.desiredPolicyRevision,
+          decision,
+          ...(value === undefined ? {} : { value }),
+        }));
+      }
+    };
+    void publishResponse().catch((error: unknown) => {
+      hostFatalErrors.push(error instanceof Error ? error : new Error("Host interaction response failed"));
+    });
+  });
+  return { registered: true };
+});
 hostPeer.registerRequestHandler("host/tool/execute", (params) => {
   hostToolCalls.push(structuredClone(params));
   assert.equal(params.tool, artifactHostToolName);
@@ -1303,7 +1399,10 @@ await installHostDeepSeekModelPlane(hostModelComposition, {
   resolveUserId: () => "00000000-0000-4000-8000-000000000001",
 });
 await hostModelComposition.context.plugin(SqliteSessionPersistence, { path: ":memory:" });
-await installCanonicalToolPlane(hostModelComposition, canonicalToolPlaneConfig);
+await installCanonicalToolPlane(
+  hostModelComposition,
+  bindCanonicalToolPlaneConfig(hostModelComposition),
+);
 await installProductComponentPlane(hostModelComposition, Object.freeze({
   catalog: validatedArtifactToolCatalog,
   compilers: Object.freeze([
@@ -1354,6 +1453,19 @@ await hostModelComposition.context.plugin(NativeRpcServer, {
 });
 const hostModelServer = hostModelComposition.context.nativeRpc;
 const hostModelClient = new GeneratedHostClient(hostModelPeer);
+const hostModelInteractionCalls: MethodParams<"host/interaction/request">[] = [];
+hostModelPeer.registerRequestHandler("host/interaction/request", (params, context) => {
+  hostModelInteractionCalls.push(structuredClone(params));
+  assert.equal(params.kind, "permission");
+  context.afterResponse(() => {
+    void hostModelClient.interactionRespond({
+      interactionId: params.interactionId,
+      expectedRevision: params.desiredPolicyRevision,
+      decision: "allow_once",
+    });
+  });
+  return { registered: true };
+});
 await hostModelClient.initialize({
   ...initializeRequest,
   productSessionId: "artifact-host-model-product-session",
@@ -1461,6 +1573,7 @@ try {
   globalThis.fetch = previousFetch;
 }
 assert.deepEqual(hostModelAuthorization, Array.from({ length: 4 }, () => `Bearer ${hostModelSecret}`));
+assert.ok(hostModelInteractionCalls.length > 0);
 assert.equal(hostModelCredentialCalls.length, 5);
 assert.deepEqual(hostModelCredentialCalls.map(({ purpose }) => purpose), [
   "availability",
@@ -1526,8 +1639,11 @@ const hostModelSecretProjectionRejected = !JSON.stringify({
     header: session.header,
   })),
 }).includes(hostModelSecret);
-const hostModelMcpPermission = fileToolEvidence.find((entry) =>
-  entry.startsWith("permission:mcp__artifact-mcp__echo:mcp:"));
+const hostModelMcpPermission = hostModelInteractionCalls.find((request) =>
+  request.kind === "permission"
+  && JSON.stringify(request.schema).includes("mcp__artifact-mcp__echo"));
+const hostModelMcpPermissionVerified = JSON.stringify(hostModelMcpPermission?.schema)
+  .includes(hostModelExtensionSnapshot.digest);
 const hostModelMcpResult = hostModelComposition.context.productSession.requireAgent().session.events.findLast(
   (event) => event.type === "tool/result"
     && String(event.data.message.source.callId) === "artifact-host-model-mcp-call",
@@ -1542,7 +1658,7 @@ assert.deepEqual(hostModelMcpResult.data.message.content, [{
   toolCallId: "artifact-host-model-mcp-call",
   type: "tool-result",
 }]);
-assert.equal(hostModelMcpPermission?.includes(hostModelExtensionSnapshot.digest), true);
+assert.equal(hostModelMcpPermissionVerified, true);
 const hostCredentialModelVerified = hostModelFetchSequence === 4
   && hostCredentialPublicControllerHidden
   && hostModelRequestAuthorityBound
@@ -1571,12 +1687,12 @@ const hostModelMcpLifecycleVerified = hostModelMcpCloseHits === 1
   && JSON.stringify(hostModelMcpWireMethods) === JSON.stringify([
     "initialize", "notifications/initialized", "tools/list", "tools/call",
   ])
-  && hostModelMcpPermission.includes(hostModelExtensionSnapshot.digest);
+  && hostModelMcpPermissionVerified;
 assert.equal(hostModelMcpCloseHits, 1);
 assert.deepEqual(hostModelMcpWireMethods, [
   "initialize", "notifications/initialized", "tools/list", "tools/call",
 ]);
-assert.equal(hostModelMcpPermission.includes(hostModelExtensionSnapshot.digest), true);
+assert.equal(hostModelMcpPermissionVerified, true);
 assert.equal(hostModelMcpLifecycleVerified, true);
 hostModelPeer.close();
 hostModelInput.destroy();
@@ -2510,8 +2626,11 @@ assert.equal(
 );
 assert.equal(durableToolText("artifact-host-tool-call"), "Host release check accepted");
 assert.equal(hostToolCalls.length, 1);
-assert.deepEqual(hostToolCalls[0]?.authority, {
-  requestId: "host-port:3",
+const hostToolAuthority = hostToolCalls[0]?.authority;
+assert.ok(hostToolAuthority !== undefined);
+const { requestId: hostToolRequestId, ...hostToolBoundAuthority } = hostToolAuthority;
+assert.match(hostToolRequestId, /^host-port:\d+$/u);
+assert.deepEqual(hostToolBoundAuthority, {
   runtimeGeneration: "artifact-generation",
   productSessionId: "artifact-product-session",
   deadlineMs: 120_000,
@@ -2779,6 +2898,68 @@ for (const name of CANONICAL_TOOL_NAMES) {
 
 adapter.enqueue({
   calls: [{
+    id: "artifact-host-interaction-cancel-call",
+    name: "AskUserQuestion",
+    arguments: JSON.stringify({
+      questions: [{
+        question: "Wait for Host cancellation?",
+        header: "Cancel",
+        options: [
+          { label: "Proceed", description: "This response is intentionally withheld." },
+          { label: "Stop", description: "The operation interrupt owns settlement." },
+        ],
+        multiSelect: false,
+      }],
+    }),
+  }],
+  kind: "tool-calls",
+});
+await composition.context.sdkOperations.start({
+  ...turnStartParams,
+  clientOperationId: "artifact-host-interaction-cancel-operation",
+  clientUserMessageId: "artifact-host-interaction-cancel-user-message",
+  input: { parts: [{ kind: "text", text: "Cancel one registered Host interaction" }] },
+});
+await waitUntil(
+  () => hostInteractionCalls.some(({ kind, schema }) => kind === "ask_user"
+    && JSON.stringify(schema).includes("Wait for Host cancellation?")),
+  "Host interaction registration before cancellation",
+);
+const heldHostInteraction = hostInteractionCalls.findLast(({ kind, schema }) => kind === "ask_user"
+  && JSON.stringify(schema).includes("Wait for Host cancellation?"));
+assert.ok(heldHostInteraction);
+assert.deepEqual(await composition.context.sdkOperations.interrupt({
+  clientOperationId: "artifact-host-interaction-cancel-operation",
+  cancelQueued: false,
+}), { ok: true, stillQueuedMessageIds: [], cancelledMessageIds: [] });
+await primaryAgent.whenIdle();
+await waitUntil(
+  () => hostInteractionCancellations.some(({ interactionId }) =>
+    interactionId === heldHostInteraction.interactionId),
+  "Host interaction cancellation notification",
+);
+await waitUntil(
+  () => composition.context.sdkOperations.lookup("artifact-host-interaction-cancel-operation")?.state
+    === "terminal",
+  "cancelled Host interaction operation terminal",
+);
+const cancelledHostInteractionTerminal = composition.context.sdkOperations
+  .lookup("artifact-host-interaction-cancel-operation")?.terminal;
+assert.equal(cancelledHostInteractionTerminal?.kind, "aborted");
+assert.equal(cancelledHostInteractionTerminal.reason, "user");
+const cancelledHostInteractionUsage = cancelledHostInteractionTerminal.usage;
+assert.ok(cancelledHostInteractionUsage);
+assert.equal(cancelledHostInteractionUsage.totalTokens, 2);
+hostInteractionResponses.push(await hostClient.interactionRespond({
+  interactionId: heldHostInteraction.interactionId,
+  expectedRevision: heldHostInteraction.desiredPolicyRevision,
+  decision: "answered",
+  value: { answers: [] },
+}));
+assert.equal(hostInteractionResponses.at(-1)?.state, "expired");
+
+adapter.enqueue({
+  calls: [{
     id: "artifact-aborted-bash-call",
     name: "Bash",
     arguments: JSON.stringify({ command: "/bin/sleep 30" }),
@@ -2901,8 +3082,8 @@ assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
 await workstreamProjector.whenIdle();
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 21,
-  "twenty-one projected Runtime terminals",
+  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 22,
+  "twenty-two projected Runtime terminals",
 );
 assert.deepEqual(
   projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
@@ -2915,7 +3096,7 @@ assert.deepEqual(
     "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
     "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
     "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
-    "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
+    "aborted:user", "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
   ],
 );
 const firstUsage = projectedRuntimeEvents.find(({ event }) => event.kind === "usage");
@@ -2996,9 +3177,21 @@ assert.deepEqual(hostFatalErrors, []);
 const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
 const permissionDecidedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/decided");
 const permissionRuleEvents = primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule");
-assert.equal(permissionAskedEvents.length, 24);
-assert.equal(permissionDecidedEvents.length, 24);
+assert.equal(permissionAskedEvents.length, 25);
+assert.equal(permissionDecidedEvents.length, 25);
 assert.equal(permissionRuleEvents.length, 1);
+assert.equal(hostInteractionResponses.length, hostInteractionCalls.length + 2);
+assert.ok(hostInteractionCalls.length >= permissionAskedEvents.length);
+assert.deepEqual(
+  [...new Set(hostInteractionCalls.map(({ kind }) => kind))].sort(),
+  ["ask_user", "permission", "plan_approval"],
+);
+assert.ok(hostInteractionResponses.some(({ state }) => state === "applied"));
+assert.ok(hostInteractionResponses.some((response) => response.state === "rejected"
+  && response.code === "interaction_revision_stale"));
+assert.ok(hostInteractionResponses.some(({ state }) => state === "already_settled"));
+assert.ok(hostInteractionResponses.some(({ state }) => state === "expired"));
+assert.equal(hostInteractionCancellations.length, 1);
 packedStandardHost.dispose();
 await packedReverseRoot.fiber.dispose();
 packedReversePair.close();
@@ -3075,6 +3268,14 @@ process.stdout.write(`${JSON.stringify({
   canonicalProcessSearchToolsVerified: true,
   canonicalWebToolsVerified: true,
   canonicalPermissionInteractionVerified: true,
+  hostInteractionProviderVerified: true,
+  hostInteractionEvidence: {
+    calls: hostInteractionCalls.length,
+    cancellations: hostInteractionCancellations.length,
+    kinds: [...new Set(hostInteractionCalls.map(({ kind }) => kind))].sort(),
+    responses: hostInteractionResponses.length,
+    responseStates: [...new Set(hostInteractionResponses.map(({ state }) => state))].sort(),
+  },
   canonicalInteractionPlanToolsVerified: true,
   canonicalTaskGraphVerified: true,
   canonicalStaticSkillVerified: true,
@@ -3114,7 +3315,7 @@ process.stdout.write(`${JSON.stringify({
   roguePublicationInvisible: !roguePublicationObserved,
   terminalCases: [
     "success", "failure", "file_tools", "edit", "process_search_tools", "web_tools", "interaction",
-    "plan_workflow", "task_graph", "declarative_components", "host_tool", "product_work", "process_abort", "interrupt", "queued_cancel",
+    "plan_workflow", "task_graph", "declarative_components", "host_tool", "product_work", "host_interaction_cancel", "process_abort", "interrupt", "queued_cancel",
     "session_close",
   ],
   toolContractRuntimeConsumerVerified: true,

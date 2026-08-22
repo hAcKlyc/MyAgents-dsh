@@ -10,6 +10,7 @@ export const BATCH1_AVAILABLE_HOST_METHODS = Object.freeze([
   "initialize",
   "runtime/status",
   "runtime/shutdown",
+  "interaction/respond",
 ] as const);
 export const BATCH1_AVAILABLE_REVERSE_METHODS = Object.freeze([
   "host/credential/resolve",

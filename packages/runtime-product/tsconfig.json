@@ -5,7 +5,7 @@
     "outDir": "../../dist/packages/runtime-product",
     "tsBuildInfoFile": "../../dist/packages/runtime-product/.tsbuildinfo"
   },
-  "files": ["src/composition.ts", "src/host-model.ts", "src/index.ts", "src/primary-session.ts"],
+  "files": ["src/composition.ts", "src/host-interaction.ts", "src/host-model.ts", "src/index.ts", "src/primary-session.ts"],
   "references": [
     { "path": "../component-runtime" },
     { "path": "../components-agents" },

@@ -44,7 +44,7 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "e6a98348d1488b0d08731c1c40d84d4262cb9051584e1a24afc571341e929eca",
+    "artifactManifestSha256": "ac68ed20a7d686e831e1bbf7447f788a7ce46d279ba33d24d5c6e2a116605e46",
     "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",
@@ -70,7 +70,8 @@
     "availableHostMethods": [
       "initialize",
       "runtime/status",
-      "runtime/shutdown"
+      "runtime/shutdown",
+      "interaction/respond"
     ],
     "availableNotifications": [
       "initialized",

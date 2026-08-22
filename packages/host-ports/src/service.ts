@@ -5,6 +5,7 @@ import {
   type HostRequestAuthority,
   type MethodParams,
   type MethodResult,
+  type NotificationParams,
 } from "@myagents-dsh/protocol";
 import { isProxy } from "node:util/types";
 
@@ -76,7 +77,11 @@ export interface HostPortRequestAuthorityFactory {
 }
 
 export interface HostPortServiceController
-  extends HostPortTransportLifecycle, HostPortRequestAuthorityFactory {}
+  extends HostPortTransportLifecycle, HostPortRequestAuthorityFactory {
+  readonly notifyInteractionCancelled: (
+    params: NotificationParams<"host/interaction/cancel">,
+  ) => void;
+}
 
 export interface HostPortServiceConfig {
   readonly registerController: (controller: HostPortServiceController) => void;
@@ -256,6 +261,7 @@ export class HostPortService extends Service {
   readonly #stopController = new AbortController();
   readonly #active = new Map<string, ActiveRequest>();
   readonly #cleanupFailures: Error[] = [];
+  readonly #controlWrites = new Set<Promise<void>>();
   readonly #requestAuthorities = new WeakMap<object, NormalizedAuthority>();
 
   constructor(ctx: Context, config: HostPortServiceConfig) {
@@ -272,6 +278,8 @@ export class HostPortService extends Service {
       close: () => this.#close(),
       createRequestAuthority: (input: HostPortRequestAuthorityInput) =>
         this.#createRequestAuthority(input),
+      notifyInteractionCancelled: (params: NotificationParams<"host/interaction/cancel">) =>
+        this.#notifyInteractionCancelled(params),
       stopAccepting: (reason?: string) => this.#stopAccepting(reason),
     });
     registerController(controller);
@@ -326,6 +334,9 @@ export class HostPortService extends Service {
     this.#closePromise ??= (async () => {
       this.#stopAccepting();
       await Promise.all([...this.#active.values()].map(({ completion }) => completion));
+      while (this.#controlWrites.size > 0) {
+        await Promise.all([...this.#controlWrites]);
+      }
       this.#peerValue = undefined;
       this.#runtimeGenerationValue = undefined;
       this.#productSessionIdValue = undefined;
@@ -349,6 +360,27 @@ export class HostPortService extends Service {
     const authority = Object.freeze({}) as HostPortRequestAuthority;
     this.#requestAuthorities.set(authority, normalized);
     return authority;
+  }
+
+  #notifyInteractionCancelled(
+    params: NotificationParams<"host/interaction/cancel">,
+  ): void {
+    const interactionId = boundedIdentifier(params.interactionId, "Host interaction cancellation id");
+    const reason = boundedIdentifier(params.reason, "Host interaction cancellation reason");
+    const peer = this.#peerValue;
+    if (peer === undefined || this.#stateValue === "unbound" || this.#stateValue === "closed") return;
+    const pending = peer.notify("host/interaction/cancel", { interactionId, reason });
+    const completion = pending.then(
+      () => undefined,
+      () => {
+        this.#cleanupFailures.push(serviceError(
+          "host_interaction_cancel_failed",
+          "Host interaction cancellation could not be delivered",
+          true,
+        ));
+      },
+    ).finally(() => this.#controlWrites.delete(completion));
+    this.#controlWrites.add(completion);
   }
 
   snapshot(): HostPortServiceSnapshot {

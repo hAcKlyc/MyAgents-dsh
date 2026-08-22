@@ -126,7 +126,7 @@ describe("Runtime artifact self-check", () => {
       expect(report.profile.stage).toBe("batch-1-w3-a3");
       expect(report.dsh.packageCount).toBe(51);
       expect(report.protocol.availableHostMethods).toEqual([
-        "initialize", "runtime/status", "runtime/shutdown",
+        "initialize", "runtime/status", "runtime/shutdown", "interaction/respond",
       ]);
       expect(report.deferredAuthorities).toEqual([
         "checkpoint-format",

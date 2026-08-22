@@ -147,7 +147,14 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/runtime-product",
     relativeDirectory: "packages/runtime-product",
-    allowedFiles: ["package.json", "src/composition.ts", "src/host-model.ts", "src/index.ts", "src/primary-session.ts"],
+    allowedFiles: [
+      "package.json",
+      "src/composition.ts",
+      "src/host-interaction.ts",
+      "src/host-model.ts",
+      "src/index.ts",
+      "src/primary-session.ts",
+    ],
   },
   {
     packageName: "@myagents-dsh/task-graph",

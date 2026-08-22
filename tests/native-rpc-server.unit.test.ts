@@ -11,6 +11,8 @@ import {
   PROTOCOL_VERSION,
   REFERENCE_PROTOCOL_LIMITS,
   type InitializeParams,
+  type MethodParams,
+  type MethodResult,
   type ProtocolError,
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
@@ -38,6 +40,13 @@ const hostPortLifecycleState = vi.hoisted<{ current: HostPortLifecycle }>(() => 
     stopAccepting: () => undefined,
   },
 }));
+const interactionResponseState = vi.hoisted(() => ({
+  calls: [] as unknown[],
+  current: (params: unknown): unknown => {
+    void params;
+    return { state: "expired" as const };
+  },
+}));
 
 vi.mock("@myagents-dsh/product-profile", async (importOriginal) => {
   const actual = await importOriginal<typeof ProductProfileExports>();
@@ -57,6 +66,8 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
       context: context.root,
       dispose: () => Promise.resolve(),
       hostPorts: hostPortLifecycleState.current,
+      respondInteraction: (params: MethodParams<"interaction/respond">) =>
+        interactionResponseState.current(params) as MethodResult<"interaction/respond">,
       serviceOrder: [],
     }),
   };
@@ -246,6 +257,39 @@ const rawResponse = async (
 };
 
 describe("native RPC Cordis service", () => {
+  it("routes Host interaction responses only through the composition-owned broker", async () => {
+    interactionResponseState.calls.length = 0;
+    interactionResponseState.current = (params: unknown) => {
+      interactionResponseState.calls.push(structuredClone(params));
+      return { state: "applied" as const, effectivePolicyRevision: "permission-v1" };
+    };
+    const harness = await createHarness();
+    try {
+      await harness.client.initialize(initializeParams());
+      await vi.waitFor(() => expect(harness.server.phase).toBe("await_initialized"));
+      await harness.client.initialized();
+      await expect(harness.client.interactionRespond({
+        interactionId: "interaction-1",
+        expectedRevision: "permission-v1",
+        decision: "allow_once",
+      })).resolves.toEqual({
+        state: "applied",
+        effectivePolicyRevision: "permission-v1",
+      });
+      expect(interactionResponseState.calls).toEqual([{
+        interactionId: "interaction-1",
+        expectedRevision: "permission-v1",
+        decision: "allow_once",
+      }]);
+    } finally {
+      interactionResponseState.current = (params: unknown) => {
+        void params;
+        return { state: "expired" as const };
+      };
+      await harness.close();
+    }
+  });
+
   it("binds, activates, stops, and drains the sole Host port owner in transport order", async () => {
     const events: string[] = [];
     const hostPorts: HostPortLifecycle = {

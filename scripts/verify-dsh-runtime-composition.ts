@@ -101,6 +101,7 @@ const runtimeCompositionSourcePaths = [
   "packages/rpc-server/src/event-projector.ts",
   "packages/rpc-server/src/native-rpc-service.ts",
   "packages/runtime-product/src/composition.ts",
+  "packages/runtime-product/src/host-interaction.ts",
   "packages/runtime-product/src/host-model.ts",
   "packages/runtime-product/src/index.ts",
   "packages/runtime-product/src/primary-session.ts",
@@ -1111,6 +1112,7 @@ const main = (): void => {
       || evidence.canonicalProcessSearchToolsVerified !== true
       || evidence.canonicalWebToolsVerified !== true
       || evidence.canonicalPermissionInteractionVerified !== true
+      || evidence.hostInteractionProviderVerified !== true
       || evidence.canonicalInteractionPlanToolsVerified !== true
       || evidence.canonicalTaskGraphVerified !== true
       || evidence.canonicalStaticSkillVerified !== true
@@ -1139,10 +1141,25 @@ const main = (): void => {
       || evidence.toolContractRuntimeConsumerVerified !== true
       || JSON.stringify(evidence.terminalCases) !== JSON.stringify([
         "success", "failure", "file_tools", "edit", "process_search_tools", "web_tools", "interaction",
-        "plan_workflow", "task_graph", "declarative_components", "host_tool", "product_work", "process_abort", "interrupt", "queued_cancel",
+        "plan_workflow", "task_graph", "declarative_components", "host_tool", "product_work", "host_interaction_cancel", "process_abort", "interrupt", "queued_cancel",
         "session_close",
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
+    }
+    const hostInteractionEvidence = exactObject(
+      evidence.hostInteractionEvidence,
+      "Host interaction evidence",
+    );
+    if (!Number.isSafeInteger(hostInteractionEvidence.calls)
+      || (hostInteractionEvidence.calls as number) < 3
+      || hostInteractionEvidence.cancellations !== 1
+      || !Number.isSafeInteger(hostInteractionEvidence.responses)
+      || hostInteractionEvidence.responses !== (hostInteractionEvidence.calls as number) + 2
+      || JSON.stringify(hostInteractionEvidence.kinds)
+        !== JSON.stringify(["ask_user", "permission", "plan_approval"])
+      || JSON.stringify(hostInteractionEvidence.responseStates)
+        !== JSON.stringify(["already_settled", "applied", "expired", "rejected"])) {
+      throw new Error("Host interaction evidence differs from the accepted artifact contract");
     }
     const hostCredentialModelEvidence = exactObject(
       evidence.hostCredentialModelEvidence,
@@ -1181,8 +1198,8 @@ const main = (): void => {
       evidence.canonicalPermissionEvidence,
       "canonical permission and interaction evidence",
     );
-    if (permissionEvidence.asked !== 24
-      || permissionEvidence.decided !== 24
+    if (permissionEvidence.asked !== 25
+      || permissionEvidence.decided !== 25
       || permissionEvidence.durableRules !== 1
       || permissionEvidence.providerRequests !== 25
       || permissionEvidence.safeToolsAutoAllowed !== true) {
@@ -1369,8 +1386,6 @@ const main = (): void => {
       "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
       // Declarative Command/Skill, Host tool, four ProductWork operations, and retained process output.
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "usage", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
@@ -1383,7 +1398,10 @@ const main = (): void => {
       "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
       "assistant_delta", "message_event", "usage", "turn_terminal",
-      // Process abort, running/queued cancellation, and Session close.
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
+      "assistant_delta", "message_event", "usage", "turn_terminal",
+      // Host-interaction cancellation, process abort, running/queued cancellation, and Session close.
+      "turn_admitted", "turn_started", "queued_message", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message",
       "turn_admitted", "queued_message", "turn_terminal", "turn_terminal",
@@ -1395,9 +1413,13 @@ const main = (): void => {
         { length: Math.max(actualEventKinds.length, expectedEventKinds.length) },
         (_, index) => index,
       ).find((index) => actualEventKinds[index] !== expectedEventKinds[index]);
+      const contextStart = Math.max(0, (firstDifference ?? 0) - 5);
+      const contextEnd = (firstDifference ?? 0) + 8;
       throw new Error(
         `Runtime workstream event sequence differs from exact evidence at ${String(firstDifference)}: `
-        + `expected=${JSON.stringify(expectedEventKinds)}, actual=${JSON.stringify(actualEventKinds)}`,
+        + `expected=${JSON.stringify(expectedEventKinds.slice(contextStart, contextEnd))}, `
+        + `actual=${JSON.stringify(actualEventKinds.slice(contextStart, contextEnd))}, `
+        + `lengths=${String(expectedEventKinds.length)}/${String(actualEventKinds.length)}`,
       );
     }
     const terminalOutcomes = projectedEvents
@@ -1410,10 +1432,10 @@ const main = (): void => {
       "succeeded", "succeeded", "failed", "succeeded", "succeeded", "succeeded",
       "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
       "succeeded", "succeeded", "succeeded", "succeeded", "succeeded",
-      "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
+      "aborted:user", "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
     ])) {
       throw new Error(
-        `Runtime terminal projection differs from the twenty-one real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
+        `Runtime terminal projection differs from the twenty-two real DSH operation outcomes: ${JSON.stringify(terminalOutcomes)}`,
       );
     }
     const usageEvent = projectedEvents.find(({ kind }) => kind === "usage");

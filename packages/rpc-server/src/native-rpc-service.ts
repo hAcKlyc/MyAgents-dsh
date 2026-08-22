@@ -420,6 +420,8 @@ export class NativeRpcServer extends Service {
         this.peerValue.registerRequestHandler("runtime/status", () => this.statusSnapshot()),
         this.peerValue.registerRequestHandler("runtime/shutdown", (params, context) =>
           this.handleShutdown(params, context)),
+        this.peerValue.registerRequestHandler("interaction/respond", (params) =>
+          compositionAuthority.respondInteraction(params)),
       );
       ctx.effect(
         () => () => this.disposeTransport().catch(() => undefined),

@@ -58,6 +58,7 @@ describe("official product profile authority", () => {
           "initialize",
           "runtime/status",
           "runtime/shutdown",
+          "interaction/respond",
         ],
         availableNotifications: ["initialized", "rpc/cancel"],
         availableReverseMethods: [

@@ -261,6 +261,29 @@ describe("HostPortService", () => {
     expect(JSON.stringify(harness.service.snapshot())).not.toContain(credentialCanary);
   });
 
+  it("publishes bounded interaction cancellation through the hidden transport controller", async () => {
+    const harness = await createHarness();
+    const cancellations: Array<{ interactionId: string; reason: string }> = [];
+    const stop = harness.pair.host.registerNotificationHandler("host/interaction/cancel", (params) => {
+      cancellations.push(structuredClone(params));
+    });
+    harness.controller.notifyInteractionCancelled({
+      interactionId: "interaction-cancel-1",
+      reason: "interaction_cancelled",
+    });
+    for (let attempts = 0; attempts < 20 && cancellations.length === 0; attempts += 1) await tick();
+    expect(cancellations).toEqual([{
+      interactionId: "interaction-cancel-1",
+      reason: "interaction_cancelled",
+    }]);
+    expect(() => harness.controller.notifyInteractionCancelled({
+      interactionId: "",
+      reason: "interaction_cancelled",
+    })).toThrow("bounded identifier");
+    expect("notifyInteractionCancelled" in harness.service).toBe(false);
+    stop();
+  });
+
   it("settles caller cancellation, deadline, stale authority, and owner close exactly once", async () => {
     const pending = deferred<{ state: "failed"; code: string }>();
     const entered = deferred<RequestContext>();

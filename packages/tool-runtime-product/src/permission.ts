@@ -74,6 +74,7 @@ declare module "@deepseek-ai/dsh-session/types" {
 }
 
 export interface ProductPermissionInteractionRequest {
+  readonly agent: Agent;
   readonly interactionId: string;
   readonly clientOperationId: string;
   readonly productTurnId: string;
@@ -620,7 +621,7 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
   });
 };
 
-const validatePermissionResponse = (
+export const validateProductPermissionInteractionResponse = (
   value: unknown,
   request: ProductPermissionInteractionRequest,
 ): ProductPermissionInteractionResponse => {
@@ -735,7 +736,7 @@ const validateQuestionItems = (value: unknown): AskUserQuestionItem[] => {
   return Object.freeze(questions) as unknown as AskUserQuestionItem[];
 };
 
-const validateQuestionAnswer = (
+export const validateProductQuestionAnswer = (
   value: unknown,
   request: AskUserQuestionRequest,
 ): AskUserQuestionAnswer => {
@@ -1041,6 +1042,7 @@ export class ProductPermissionService extends Service {
       request.target,
     ]))}`;
     const interactionRequest = Object.freeze({
+      agent: context.agent,
       interactionId,
       clientOperationId: context.clientOperationId,
       productTurnId: context.productTurnId,
@@ -1109,7 +1111,7 @@ export class ProductPermissionService extends Service {
     const settlement = this.registerInteraction<ProductPermissionInteractionResponse>(
       pending.request.signal,
       (callbacks) => this.configValue.interaction.decidePermission(pending.request, callbacks),
-      (candidate) => validatePermissionResponse(candidate, pending.request),
+      (candidate) => validateProductPermissionInteractionResponse(candidate, pending.request),
     ).then((candidate) => {
       pending.response = candidate;
       return candidate.decision === "allow_once" || candidate.decision === "always_allow"
@@ -1155,7 +1157,7 @@ export class ProductPermissionService extends Service {
       const settlement = this.registerInteraction<AskUserQuestionAnswer>(
         controller.signal,
         (callbacks) => this.configValue.interaction.answerQuestions(borrowed, callbacks),
-        (candidate) => validateQuestionAnswer(candidate, borrowed),
+        (candidate) => validateProductQuestionAnswer(candidate, borrowed),
       );
       let answer: AskUserQuestionAnswer;
       try {

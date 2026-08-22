@@ -25,7 +25,11 @@ import {
   type OperationBirthAuthority,
   type OperationLifecycleController,
 } from "@myagents-dsh/operation-runtime";
-import { ProtocolError } from "@myagents-dsh/protocol";
+import {
+  ProtocolError,
+  type MethodParams,
+  type MethodResult,
+} from "@myagents-dsh/protocol";
 import {
   ProductComponentService,
   type ComponentCompiler,
@@ -73,6 +77,7 @@ import {
   ProductToolRuntime,
   validateProductPermissionPlaneConfig,
   type ProductPermissionPlaneConfig,
+  type ProductLocalInteractionProvider,
   type ProductToolContext,
   type ProductToolRuntimeConfig,
 } from "@myagents-dsh/tool-runtime-product";
@@ -117,6 +122,13 @@ import {
   type HostDeepSeekModelPlaneConfig,
 } from "./host-model.js";
 import type { PrimarySessionBackendRequest } from "./primary-session.js";
+import {
+  createProductHostInteractionBridge,
+  type HostBackedInteractionProviderConfig,
+  type HostInteractionResponseController,
+} from "./host-interaction.js";
+
+export type { HostBackedInteractionProviderConfig } from "./host-interaction.js";
 
 export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "session-store",
@@ -296,6 +308,9 @@ export interface DshRootCompositionAuthority {
   readonly context: Context;
   readonly dispose: () => Promise<void>;
   readonly hostPorts: HostPortTransportLifecycle;
+  readonly respondInteraction: (
+    params: MethodParams<"interaction/respond">,
+  ) => MethodResult<"interaction/respond">;
   readonly serviceOrder: typeof DSH_ROOT_SERVICE_ORDER;
 }
 
@@ -322,6 +337,10 @@ type CompositionAuthorityState = {
   dynamicAgents: ProductDynamicAgentController | undefined;
   dynamicCommands: ProductDynamicCommandController | undefined;
   hooks: ProductHookRuntimeController | undefined;
+  hostInteraction: HostInteractionResponseController | undefined;
+  hostInteractionProvider: ProductLocalInteractionProvider | undefined;
+  hostInteractionDeadlineMs: number | undefined;
+  hostInteractionRevision: string | undefined;
   componentPlane: "absent" | "installing" | "installed" | "failed";
   hostModelPlane: "absent" | "installing" | "installed" | "failed";
   hostModelProviderRoute: string | undefined;
@@ -331,6 +350,9 @@ type NativeRpcLifecycleAuthorityState = {
   readonly context: Context;
   readonly dispose: () => Promise<void>;
   readonly hostPorts: HostPortTransportLifecycle;
+  readonly respondInteraction: (
+    params: MethodParams<"interaction/respond">,
+  ) => MethodResult<"interaction/respond">;
   readonly snapshot: () => DshRootCompositionSnapshot;
   consumed: boolean;
 };
@@ -371,6 +393,8 @@ export const claimNativeRpcLifecycleAuthority = (
     context: state.context,
     dispose: state.dispose,
     hostPorts,
+    respondInteraction: (params) => state.hostInteraction?.respond(params)
+      ?? Object.freeze({ state: "expired" as const }),
     snapshot: state.snapshot,
   });
   return authority;
@@ -401,8 +425,107 @@ export const consumeNativeRpcLifecycleAuthority = (
     context: installationContext,
     dispose: state.dispose,
     hostPorts: state.hostPorts,
+    respondInteraction: state.respondInteraction,
     serviceOrder: DSH_ROOT_SERVICE_ORDER,
   });
+};
+
+export const createHostBackedInteractionProvider = (
+  composition: DshRootComposition,
+  config: HostBackedInteractionProviderConfig,
+): ProductLocalInteractionProvider => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.canonicalToolPlane !== "absent" || authority.hostInteraction !== undefined) {
+    throw new Error("Host interaction Provider requires the exact unclaimed root composition authority");
+  }
+  const candidate: unknown = config;
+  if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)) {
+    throw new TypeError("Host interaction Provider config must be a plain object");
+  }
+  const normalized = exactOwnDataKeys(
+    candidate,
+    ["revision", "deadlineMs"],
+    "Host interaction Provider config",
+  );
+  if (!Object.hasOwn(normalized, "revision") || !Object.hasOwn(normalized, "deadlineMs")) {
+    throw new TypeError("Host interaction Provider config has an invalid exact shape");
+  }
+  const bridge = createProductHostInteractionBridge({
+    controller: authority.hostPorts,
+    hostPorts: root.hostPorts,
+    revision: normalized.revision as string,
+    deadlineMs: normalized.deadlineMs as number,
+    resolveAuthority: (agent, signal, expectedPermissionRevision, deadlineMs) => {
+      const initial = root.sdkOperations.resolveActiveToolOperation(agent);
+      if (expectedPermissionRevision !== undefined
+        && initial.operation.birth.permissionRevision !== expectedPermissionRevision) {
+        throw new ProtocolError(
+          "interaction_revision_stale",
+          "Host interaction differs from the operation-frozen permission revision",
+          true,
+        );
+      }
+      if (initial.operation.birth.interactionScenarioRevision !== normalized.revision) {
+        throw new ProtocolError(
+          "interaction_revision_stale",
+          "Host interaction differs from the operation-frozen scenario revision",
+          true,
+        );
+      }
+      const session = root.productSession.snapshot();
+      const runtimeSessionId = session.runtimeSessionId;
+      if (runtimeSessionId === undefined) {
+        throw new ProtocolError(
+          "interaction_unavailable",
+          "Host interaction requires one admitted Runtime Session",
+        );
+      }
+      const assertCurrent = (): void => {
+        const current = root.sdkOperations.resolveActiveToolOperation(agent);
+        const currentSession = root.productSession.snapshot();
+        if (current.dshTurn !== initial.dshTurn
+          || current.operation.clientOperationId !== initial.operation.clientOperationId
+          || current.operation.productTurnId !== initial.operation.productTurnId
+          || current.operation.birth.configRevision !== initial.operation.birth.configRevision
+          || current.operation.birth.permissionRevision !== initial.operation.birth.permissionRevision
+          || current.operation.birth.interactionScenarioRevision
+            !== initial.operation.birth.interactionScenarioRevision
+          || currentSession.runtimeSessionId !== runtimeSessionId) {
+          throw new ProtocolError(
+            "interaction_authority_stale",
+            "Host interaction operation authority is stale",
+            true,
+          );
+        }
+      };
+      const requestAuthority = authority.hostPorts.createRequestAuthority(Object.freeze({
+        signal,
+        assertCurrent,
+        deadlineMs,
+        runtimeSessionId,
+        clientOperationId: initial.operation.clientOperationId,
+        turnId: initial.operation.productTurnId,
+        dshTurn: initial.dshTurn,
+        expectedConfigRevision: initial.operation.birth.configRevision,
+      }));
+      return Object.freeze({
+        authority: requestAuthority,
+        assertCurrent,
+        clientOperationId: initial.operation.clientOperationId,
+        dshTurn: initial.dshTurn,
+        expectedConfigRevision: initial.operation.birth.configRevision,
+        expectedPermissionRevision: initial.operation.birth.permissionRevision,
+        productTurnId: initial.operation.productTurnId,
+      });
+    },
+  });
+  authority.hostInteraction = bridge.controller;
+  authority.hostInteractionProvider = bridge.provider;
+  authority.hostInteractionDeadlineMs = normalized.deadlineMs as number;
+  authority.hostInteractionRevision = normalized.revision as string;
+  return bridge.provider;
 };
 
 export class DshRootComposition {
@@ -503,6 +626,14 @@ export const installCanonicalToolPlane = async (
   const normalized = candidate as CanonicalToolPlaneConfig;
   const processConfig = validateProductProcessRuntimeConfig(normalized.process);
   const permissionConfig = validateProductPermissionPlaneConfig(normalized.permission);
+  if (normalized.permission.interaction !== authority.hostInteractionProvider
+    || authority.hostInteractionRevision !== permissionConfig.interaction.revision
+    || authority.hostInteractionDeadlineMs !== permissionConfig.interactionTimeoutMs
+    || authority.hostInteraction === undefined) {
+    throw new TypeError(
+      "canonical tool plane requires its exact composition-owned Host interaction Provider",
+    );
+  }
   const planConfig = validateProductPlanPlaneConfig(normalized.plan);
   const skillCatalog = validateStaticSkillCatalog(normalized.skills);
   const webConfig = normalized.web === undefined
@@ -1130,6 +1261,10 @@ export const composeDshRootServices = async (
       dynamicAgents: undefined,
       dynamicCommands: undefined,
       hooks: undefined,
+      hostInteraction: undefined,
+      hostInteractionProvider: undefined,
+      hostInteractionDeadlineMs: undefined,
+      hostInteractionRevision: undefined,
       dynamicSkills: undefined,
       snapshot: composition.snapshot.bind(composition),
     });
