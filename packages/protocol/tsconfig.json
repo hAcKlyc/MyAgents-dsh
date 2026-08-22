@@ -8,10 +8,12 @@
   "files": [
     "generated/canonical-tools.generated.ts",
     "src/canonical-digests.ts",
+    "src/canonical-json.ts",
     "src/contract-source.ts",
     "src/errors.ts",
     "src/index.ts",
     "src/peer.ts",
+    "src/session-read.ts",
     "src/tool-catalog-schema.ts",
     "src/tool-catalog.ts",
     "src/validation.ts",

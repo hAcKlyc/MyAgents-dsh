@@ -20,6 +20,7 @@ import {
   isProductKnownSessionEventType,
   productSessionDatabasePath,
 } from "@myagents-dsh/persistence-product";
+import { SessionReadAssembler } from "@myagents-dsh/protocol";
 import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
 
 const roots: string[] = [];
@@ -232,6 +233,177 @@ describe("ProductSqliteSessionPersistence", () => {
     `).run(id, generation.active_generation_id);
     probe.close();
     await expect(context.sessionPersistence.readFrom(id, 2)).rejects.toThrow(/prefix.*not contiguous/u);
+    await context.fiber.dispose();
+  });
+
+  it("projects one stable hash-verified cursor chain and chunks an oversized event", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-session-read");
+    const largeText = "chunked-🙂-".repeat(1_600);
+    const events = Object.freeze([
+      { data: { turn: 1 }, seq: 0, time: 1, type: "turn/start" },
+      { data: { turn: 1, step: 1 }, seq: 1, time: 2, type: "step/start" },
+      {
+        data: { turn: 1, step: 1, chunk: { type: "text-delta", index: 0, text: largeText } },
+        seq: 2,
+        time: 3,
+        type: "assistant/chunk",
+      },
+      { data: { turn: 1, step: 1 }, seq: 3, time: 4, type: "step/end" },
+      { data: { turn: 1, reason: { kind: "completed" } }, seq: 4, time: 5, type: "turn/end" },
+    ]) as unknown as readonly SessionEvent[];
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, events);
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("test did not install product persistence");
+    }
+    const persistence = context.sessionPersistence;
+    const revisionsBefore = await persistence.listSnapshots();
+    const assembler = new SessionReadAssembler();
+    const pages: Awaited<ReturnType<typeof persistence.readSession>>[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await persistence.readSession({
+        ...(cursor === undefined ? {} : { cursor }),
+        maxResultBytes: 4_096,
+        runtimeGeneration: "session-read-generation",
+        runtimeSessionId: id,
+      });
+      expect(Buffer.byteLength(JSON.stringify(page), "utf8")).toBeLessThanOrEqual(4_096);
+      assembler.accept(page, cursor);
+      pages.push(page);
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+
+    const reconstructed = assembler.finish();
+    expect(reconstructed.map(({ sequence, eventType }) => ({ sequence, eventType }))).toEqual([
+      { sequence: 0, eventType: "turn/start" },
+      { sequence: 1, eventType: "step/start" },
+      { sequence: 2, eventType: "assistant/chunk" },
+      { sequence: 3, eventType: "step/end" },
+      { sequence: 4, eventType: "turn/end" },
+    ]);
+    expect(reconstructed[2]?.data).toEqual(events[2]?.data);
+    const chunks = pages.flatMap(({ records }) => records)
+      .filter((record) => record.kind === "event_chunk");
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.map(({ chunkIndex }) => chunkIndex)).toEqual(
+      chunks.map((_, index) => index),
+    );
+    expect(new Set(chunks.map(({ chunkCount }) => chunkCount))).toEqual(new Set([chunks.length]));
+    expect(await persistence.listSnapshots()).toEqual(revisionsBefore);
+
+    const first = await persistence.readSession({
+      maxResultBytes: 4_096,
+      runtimeGeneration: "session-read-generation",
+      runtimeSessionId: id,
+    });
+    expect(first.nextCursor).toBeDefined();
+    if (first.nextCursor === undefined) throw new Error("initial Session read must return a cursor");
+    const validCursor = first.nextCursor;
+    const tampered = `${validCursor.slice(0, -1)}${validCursor.endsWith("A") ? "B" : "A"}`;
+    await expect(persistence.readSession({
+      cursor: tampered,
+      maxResultBytes: 4_096,
+      runtimeGeneration: "session-read-generation",
+      runtimeSessionId: id,
+    })).rejects.toMatchObject({ code: "cursor_invalid" });
+    await expect(persistence.readSession({
+      cursor: validCursor,
+      maxResultBytes: 4_096,
+      runtimeGeneration: "different-generation",
+      runtimeSessionId: id,
+    })).rejects.toMatchObject({ code: "cursor_stale" });
+    await expect(persistence.readSession({
+      cursor: validCursor,
+      maxResultBytes: 4_096,
+      runtimeGeneration: "session-read-generation",
+      runtimeSessionId: "different-session",
+    })).rejects.toMatchObject({ code: "cursor_stale" });
+    await expect(persistence.readSession({
+      maxResultBytes: 4_096,
+      runtimeGeneration: "session-read-generation",
+      runtimeSessionId: "missing-session",
+    })).rejects.toMatchObject({ code: "primary_session_not_ready" });
+    await expect(persistence.readSession({
+      maxResultBytes: 1_023,
+      runtimeGeneration: "session-read-generation",
+      runtimeSessionId: id,
+    })).rejects.toThrow("result budget must be a bounded safe integer");
+    await expect(persistence.readSession({
+      maxResultBytes: 1_024,
+      runtimeGeneration: "session-read-generation",
+      runtimeSessionId: id,
+    })).rejects.toMatchObject({ code: "session_read_frame_too_small" });
+
+    await persistence.append(id, turn(5, 2));
+    await expect(persistence.readSession({
+      cursor: validCursor,
+      maxResultBytes: 4_096,
+      runtimeGeneration: "session-read-generation",
+      runtimeSessionId: id,
+    })).rejects.toMatchObject({ code: "cursor_stale" });
+
+    const controller = new AbortController();
+    controller.abort(new Error("synthetic read cancellation"));
+    await expect(persistence.readSession({
+      maxResultBytes: 4_096,
+      runtimeGeneration: "session-read-generation",
+      runtimeSessionId: id,
+      signal: controller.signal,
+    })).rejects.toThrow("synthetic read cancellation");
+    await context.fiber.dispose();
+  });
+
+  it("fails a cursor continuation closed over a corrupt durable suffix without mutation", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-session-read-corrupt");
+    const largeText = "corrupt-suffix-fixture-".repeat(1_000);
+    const events = Object.freeze([
+      { data: { turn: 1 }, seq: 0, time: 1, type: "turn/start" },
+      { data: { turn: 1, step: 1 }, seq: 1, time: 2, type: "step/start" },
+      {
+        data: { turn: 1, step: 1, chunk: { type: "text-delta", index: 0, text: largeText } },
+        seq: 2,
+        time: 3,
+        type: "assistant/chunk",
+      },
+      { data: { turn: 1, step: 1 }, seq: 3, time: 4, type: "step/end" },
+      { data: { turn: 1, reason: { kind: "completed" } }, seq: 4, time: 5, type: "turn/end" },
+    ]) as unknown as readonly SessionEvent[];
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, events);
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("test did not install product persistence");
+    }
+    const persistence = context.sessionPersistence;
+    const first = await persistence.readSession({
+      maxResultBytes: 4_096,
+      runtimeGeneration: "session-read-corrupt-generation",
+      runtimeSessionId: id,
+    });
+    if (first.nextCursor === undefined) throw new Error("corrupt suffix fixture must span pages");
+
+    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const probe = new DatabaseSync(databasePath);
+    const before = probe.prepare(
+      "SELECT event_count, head_hash, revision FROM sessions WHERE id = ?",
+    ).get(id);
+    probe.prepare(
+      "UPDATE session_events SET envelope_json = ? WHERE session_id = ? AND seq = 2",
+    ).run("not-json", id);
+    await expect(persistence.readSession({
+      cursor: first.nextCursor,
+      maxResultBytes: 4_096,
+      runtimeGeneration: "session-read-corrupt-generation",
+      runtimeSessionId: id,
+    })).rejects.toMatchObject({ code: "session_read_failed" });
+    expect(probe.prepare(
+      "SELECT event_count, head_hash, revision FROM sessions WHERE id = ?",
+    ).get(id)).toEqual(before);
+    probe.close();
     await context.fiber.dispose();
   });
 

@@ -9,11 +9,13 @@
     "src/index.ts",
     "src/known-events.ts",
     "src/provider.ts",
+    "src/read.ts",
     "src/schema.ts",
     "src/session-lock.ts",
     "src/sqlite-store.ts"
   ],
   "references": [
+    { "path": "../protocol" },
     { "path": "../operation-runtime" },
     { "path": "../product-profile" },
     { "path": "../task-graph" },

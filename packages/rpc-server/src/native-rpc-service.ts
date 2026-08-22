@@ -447,6 +447,8 @@ export class NativeRpcServer extends Service {
           this.handleSessionBinding("create", params, context)),
         this.peerValue.registerRequestHandler("session/resume", (params, context) =>
           this.handleSessionBinding("resume", params, context)),
+        this.peerValue.registerRequestHandler("session/read", (params, context) =>
+          this.handleSessionRead(params, context)),
         this.peerValue.registerRequestHandler("session/close", (params, context) =>
           this.handleSessionClose(params, context)),
       );
@@ -650,6 +652,27 @@ export class NativeRpcServer extends Service {
     context.signal.throwIfAborted();
     context.commit();
     return await this.productSessionValue.close(params);
+  }
+
+  private handleSessionRead(
+    params: MethodParams<"session/read">,
+    context: RequestContext,
+  ): Promise<MethodResult<"session/read">> {
+    context.signal.throwIfAborted();
+    const envelopeWithNullResult = `${JSON.stringify({
+      jsonrpc: "2.0",
+      id: context.requestId,
+      result: null,
+    })}\n`;
+    const resultBudget = this.peerValue.maxFrameBytes
+      - Buffer.byteLength(envelopeWithNullResult, "utf8")
+      + Buffer.byteLength("null", "utf8");
+    return this.productSessionValue.read(
+      params,
+      this.configValue.runtimeGeneration,
+      resultBudget,
+      context.signal,
+    );
   }
 
   private handleShutdown(params: { readonly reason?: string }, context: RequestContext): { readonly ok: true } {

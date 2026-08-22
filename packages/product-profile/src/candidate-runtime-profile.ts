@@ -13,6 +13,7 @@ export const BATCH1_AVAILABLE_HOST_METHODS = Object.freeze([
   "interaction/respond",
   "session/create",
   "session/resume",
+  "session/read",
   "session/close",
 ] as const);
 export const BATCH1_AVAILABLE_REVERSE_METHODS = Object.freeze([
@@ -49,7 +50,7 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
 export interface Batch1CandidateProfileManifest {
   readonly formatVersion: 1;
   readonly profileId: typeof BATCH1_CANDIDATE_PROFILE_ID;
-  readonly stage: "batch-1-w4-a2";
+  readonly stage: "batch-1-w4-a3";
   readonly runtimeActivation: "workstream-evidence-only";
   readonly protocol: Readonly<{
     version: string;
@@ -131,7 +132,7 @@ export const buildBatch1CandidateProfile = (
 ): Batch1CandidateProfileManifest => Object.freeze({
   formatVersion: 1,
   profileId: BATCH1_CANDIDATE_PROFILE_ID,
-  stage: "batch-1-w4-a2",
+  stage: "batch-1-w4-a3",
   runtimeActivation: "workstream-evidence-only",
   protocol: Object.freeze({
     version: exactIdentifier(input.protocolVersion, "candidate protocol version"),

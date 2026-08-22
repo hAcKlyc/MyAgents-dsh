@@ -1489,6 +1489,16 @@ export const composeDshRootServices = async (
         assertInitialSessionConfiguration(authority, request);
         await providerAdmissionGuard?.(request);
       },
+      readSession: (request) => {
+        const persistence = root.get("sessionPersistence");
+        if (!(persistence instanceof ProductSqliteSessionPersistence)) {
+          throw new ProtocolError(
+            "primary_session_not_ready",
+            "Product Session persistence is not installed",
+          );
+        }
+        return persistence.readSession(request);
+      },
       reconcileResume: async (agent) => {
         await root.productWork.initialize(agent);
       },

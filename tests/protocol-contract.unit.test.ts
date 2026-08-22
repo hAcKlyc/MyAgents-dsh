@@ -8,6 +8,8 @@ import {
   CANONICAL_TOOL_NAMES,
   RPC_METHODS,
   RPC_NOTIFICATIONS,
+  SessionReadAssembler,
+  canonicalSessionReadData,
   parseJsonRpcFrame,
   validateMethodParams,
   validateMethodResult,
@@ -171,5 +173,105 @@ describe("candidate-v2 protocol authority", () => {
         data: { protocolCode: "old-shape", retryable: false },
       },
     }))).toThrow("error data");
+  });
+
+  it("verifies whole Session data hashes and rejects a corrupted chunk chain", () => {
+    const data = { turn: 1 };
+    expect(() => validateMethodResult("session/read", {
+      runtimeSessionId: "session-read-hash",
+      historyFormat: "dsh-session-events-v1",
+      durableHead: { sequence: 1 },
+      records: [{
+        kind: "event",
+        sequence: 0,
+        eventType: "turn/start",
+        eventSha256: canonicalSessionReadData(data).sha256,
+        data,
+      }],
+    })).not.toThrow();
+    expect(() => validateMethodResult("session/read", {
+      runtimeSessionId: "session-read-hash",
+      historyFormat: "dsh-session-events-v1",
+      durableHead: { sequence: 1 },
+      records: [{
+        kind: "event",
+        sequence: 0,
+        eventType: "turn/start",
+        eventSha256: "f".repeat(64),
+        data,
+      }],
+    })).toThrow("canonical SHA-256");
+
+    const bytes = Buffer.from(JSON.stringify({ text: "chunked" }), "utf8");
+    const eventSha256 = createHash("sha256").update(bytes).digest("hex");
+    const assembler = new SessionReadAssembler();
+    assembler.accept({
+      runtimeSessionId: "session-read-chunks",
+      historyFormat: "dsh-session-events-v1",
+      durableHead: { sequence: 1 },
+      records: [{
+        kind: "event_chunk",
+        sequence: 0,
+        eventType: "assistant/chunk",
+        eventSha256,
+        chunkIndex: 0,
+        chunkCount: 2,
+        offsetBytes: 0,
+        totalBytes: bytes.length,
+        dataBase64: bytes.subarray(0, 4).toString("base64"),
+      }],
+      nextCursor: "cursor-1",
+    });
+    expect(() => assembler.accept({
+      runtimeSessionId: "session-read-chunks",
+      historyFormat: "dsh-session-events-v1",
+      durableHead: { sequence: 1 },
+      records: [{
+        kind: "event_chunk",
+        sequence: 0,
+        eventType: "assistant/chunk",
+        eventSha256,
+        chunkIndex: 1,
+        chunkCount: 2,
+        offsetBytes: 4,
+        totalBytes: bytes.length,
+        dataBase64: Buffer.concat([Buffer.from("y"), bytes.subarray(5)]).toString("base64"),
+      }],
+    }, "cursor-1")).toThrow("SHA-256");
+
+    expect(() => validateMethodResult("session/read", {
+      runtimeSessionId: "session-read-stalled",
+      historyFormat: "dsh-session-events-v1",
+      durableHead: { sequence: 1 },
+      records: [],
+      nextCursor: "cursor-stalled",
+    })).toThrow("record progress");
+    const repeatedCursorAssembler = new SessionReadAssembler();
+    repeatedCursorAssembler.accept({
+      runtimeSessionId: "session-read-repeat",
+      historyFormat: "dsh-session-events-v1",
+      durableHead: { sequence: 2 },
+      records: [{
+        kind: "event",
+        sequence: 0,
+        eventType: "turn/start",
+        eventSha256: canonicalSessionReadData(data).sha256,
+        data,
+      }],
+      nextCursor: "cursor-repeat",
+    });
+    expect(() => repeatedCursorAssembler.accept({
+      runtimeSessionId: "session-read-repeat",
+      historyFormat: "dsh-session-events-v1",
+      durableHead: { sequence: 2 },
+      records: [{
+        kind: "event",
+        sequence: 1,
+        eventType: "turn/start",
+        eventSha256: canonicalSessionReadData(data).sha256,
+        data,
+      }],
+      nextCursor: "cursor-repeat",
+    }, "cursor-repeat")).toThrow("repeated its request cursor");
   });
 });

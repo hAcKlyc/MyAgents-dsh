@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
   lstat,
@@ -54,6 +54,12 @@ interface ActiveSessionRow {
   readonly headerJson: string;
   readonly sessionId: string;
   readonly sessionRevision: number;
+}
+
+export interface ProductSqliteReadSnapshot {
+  readonly durableSequence: number;
+  readonly header: SessionHeader;
+  readonly revision: PersistenceRevision;
 }
 
 interface EventRow {
@@ -214,6 +220,34 @@ export class ProductSqliteStore implements PersistenceBackend<never> {
       const row = this.#readActiveSession(id);
       return row === undefined ? undefined : this.#revision(row);
     });
+  }
+
+  readProductSnapshot(
+    id: SessionId,
+    signal?: AbortSignal,
+  ): Promise<ProductSqliteReadSnapshot | undefined> {
+    return this.#locks.run(id, signal, () => {
+      const row = this.#readActiveSession(id);
+      if (row === undefined) return undefined;
+      return Object.freeze({
+        durableSequence: row.eventCount,
+        header: this.#decodeHeader(row),
+        revision: this.#revision(row),
+      });
+    });
+  }
+
+  async cursorMac(payload: Uint8Array, signal?: AbortSignal): Promise<Buffer> {
+    signal?.throwIfAborted();
+    await this.initialize();
+    signal?.throwIfAborted();
+    const storeId = this.#storeId;
+    if (storeId === undefined) throw new Error("product SQLite store identity is unavailable");
+    const key = createHash("sha256")
+      .update("myagents-session-read-cursor-v1\0", "utf8")
+      .update(storeId, "utf8")
+      .digest();
+    return createHmac("sha256", key).update(payload).digest();
   }
 
   appendBatch(

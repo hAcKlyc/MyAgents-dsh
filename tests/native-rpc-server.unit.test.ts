@@ -9,12 +9,13 @@ import {
   DSH_ENGINE_VERSION,
   JsonRpcPeer,
   PROTOCOL_VERSION,
+  ProtocolError,
   REFERENCE_PROTOCOL_LIMITS,
   SESSION_FORMAT,
+  canonicalSessionReadData,
   type InitializeParams,
   type MethodParams,
   type MethodResult,
-  type ProtocolError,
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
 import type { HostPortService, HostPortTransportLifecycle } from "@myagents-dsh/host-ports";
@@ -138,6 +139,7 @@ const createRoot = (
   retire: () => Promise<void> = () => Promise.resolve(),
   settlementFailure: Promise<ProductSessionSettlementFailure> = new Promise(() => undefined),
   hostPorts: HostPortLifecycle = createHostPortLifecycle(),
+  sessionCloseBarrier: Promise<void> = Promise.resolve(),
 ): Context => {
   hostPortLifecycleState.current = hostPorts;
   const root = new Context();
@@ -189,9 +191,29 @@ const createRoot = (
       }));
     },
     bindWorkspace: (workspace: unknown) => workspace,
-    close: () => {
+    close: async () => {
+      sessionSnapshot = Object.freeze({ ...sessionSnapshot, state: "closing" as const });
+      await sessionCloseBarrier;
       sessionSnapshot = Object.freeze({ ...sessionSnapshot, state: "retired" as const });
-      return Promise.resolve(Object.freeze({ ok: true as const }));
+      return Object.freeze({ ok: true as const });
+    },
+    read: () => {
+      if (typeof sessionSnapshot.runtimeSessionId !== "string") {
+        throw new ProtocolError("primary_session_not_ready", "synthetic Session is not ready");
+      }
+      const data = Object.freeze({ turn: 1 });
+      return Promise.resolve(Object.freeze({
+        runtimeSessionId: sessionSnapshot.runtimeSessionId,
+        historyFormat: SESSION_FORMAT,
+        durableHead: Object.freeze({ sequence: 1 }),
+        records: Object.freeze([Object.freeze({
+          kind: "event" as const,
+          sequence: 0,
+          eventType: "turn/start",
+          eventSha256: canonicalSessionReadData(data).sha256,
+          data,
+        })]),
+      })) as Promise<MethodResult<"session/read">>;
     },
     retire,
     snapshot: () => sessionSnapshot,
@@ -318,7 +340,10 @@ type Harness = Readonly<{
   close(): Promise<void>;
 }>;
 
-const createHarness = async (platformTarget: PlatformTarget = "darwin-arm64"): Promise<Harness> => {
+const createHarness = async (
+  platformTarget: PlatformTarget = "darwin-arm64",
+  sessionCloseBarrier: Promise<void> = Promise.resolve(),
+): Promise<Harness> => {
   const runtimeInput = new PassThrough();
   const runtimeOutput = new PassThrough();
   const hostFatalErrors: ProtocolError[] = [];
@@ -329,7 +354,7 @@ const createHarness = async (platformTarget: PlatformTarget = "darwin-arm64"): P
     limits: REFERENCE_PROTOCOL_LIMITS,
     onFatalError: (error) => hostFatalErrors.push(error),
   });
-  const root = createRoot();
+  const root = createRoot(undefined, undefined, undefined, sessionCloseBarrier);
   await root.plugin(NativeRpcServer, {
     compositionAuthority,
     input: runtimeInput,
@@ -536,11 +561,14 @@ describe("native RPC Cordis service", () => {
   });
 
   it("routes create, resume, and close through the sole ProductSession owner", async () => {
-    const createdHarness = await createHarness();
+    const sessionCloseBarrier = Promise.withResolvers<undefined>();
+    const createdHarness = await createHarness("darwin-arm64", sessionCloseBarrier.promise);
     try {
       await createdHarness.client.initialize(initializeParams());
       await vi.waitFor(() => expect(createdHarness.server.phase).toBe("await_initialized"));
       await createdHarness.client.initialized();
+      await expect(createdHarness.client.sessionRead({}))
+        .rejects.toMatchObject({ code: "primary_session_not_ready" });
       const create = sessionParams("native-created-session", "native-create-operation");
       const created = await createdHarness.client.sessionCreate(create);
       expect(created).toEqual({
@@ -556,10 +584,34 @@ describe("native RPC Cordis service", () => {
         runtimeSessionId: "native-created-session",
         effectiveConfigRevision: "config-v1",
       });
-      await expect(createdHarness.client.sessionClose({ clientOperationId: "native-close-operation" }))
-        .resolves.toEqual({ ok: true });
+      await expect(createdHarness.client.sessionRead({})).resolves.toEqual({
+        runtimeSessionId: "native-created-session",
+        historyFormat: SESSION_FORMAT,
+        durableHead: { sequence: 1 },
+        records: [{
+          kind: "event",
+          sequence: 0,
+          eventType: "turn/start",
+          eventSha256: canonicalSessionReadData({ turn: 1 }).sha256,
+          data: { turn: 1 },
+        }],
+      });
+      const closing = createdHarness.client.sessionClose({ clientOperationId: "native-close-operation" });
+      await vi.waitFor(async () => expect(await createdHarness.client.runtimeStatus({})).toMatchObject({
+        primarySessionState: "closing",
+      }));
+      await expect(createdHarness.client.sessionRead({})).resolves.toMatchObject({
+        runtimeSessionId: "native-created-session",
+        durableHead: { sequence: 1 },
+      });
+      sessionCloseBarrier.resolve(undefined);
+      await expect(closing).resolves.toEqual({ ok: true });
       expect(await createdHarness.client.runtimeStatus({})).toMatchObject({
         primarySessionState: "retired",
+      });
+      await expect(createdHarness.client.sessionRead({})).resolves.toMatchObject({
+        runtimeSessionId: "native-created-session",
+        durableHead: { sequence: 1 },
       });
     } finally {
       await createdHarness.close();

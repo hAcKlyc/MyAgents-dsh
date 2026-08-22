@@ -317,7 +317,7 @@ const sessionBindingResult = strictObject({
 });
 const sessionReadRecord = Type.Union([
   strictObject({ kind: Type.Literal("event"), sequence: nonNegativeInteger, eventType: identifier, eventSha256: sha256, data: Type.Unknown() }),
-  strictObject({ kind: Type.Literal("event_chunk"), sequence: nonNegativeInteger, eventType: identifier, eventSha256: sha256, offsetBytes: nonNegativeInteger, totalBytes: Type.Integer({ minimum: 1 }), dataBase64: Type.String({ minLength: 4, maxLength: MAX_FRAME_BYTES, pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" }) }),
+  strictObject({ kind: Type.Literal("event_chunk"), sequence: nonNegativeInteger, eventType: identifier, eventSha256: sha256, chunkIndex: nonNegativeInteger, chunkCount: Type.Integer({ minimum: 1 }), offsetBytes: nonNegativeInteger, totalBytes: Type.Integer({ minimum: 1 }), dataBase64: Type.String({ minLength: 4, maxLength: MAX_FRAME_BYTES, pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" }) }),
 ]);
 export const SessionReadResultSchema = strictObject({
   runtimeSessionId: identifier,

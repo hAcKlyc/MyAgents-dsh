@@ -10,6 +10,7 @@ import {
   type MethodParams,
   type MethodResult,
 } from "@myagents-dsh/protocol";
+import type { ProductSessionReadRequest } from "@myagents-dsh/persistence-product";
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
@@ -1266,6 +1267,9 @@ export interface ProductSessionServiceConfig {
   readonly childPublicationAuthority?: object;
   readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard;
   readonly quiescenceGraceMs?: number;
+  readonly readSession?: (
+    request: ProductSessionReadRequest,
+  ) => Promise<MethodResult<"session/read">>;
   readonly reconcileResume?: (agent: Agent) => Promise<void>;
   readonly validateResume?: (agent: Agent) => Promise<void>;
 }
@@ -1275,6 +1279,7 @@ export class ProductSessionService extends Service {
   private readonly backendValue: PrimarySessionBackend;
   private readonly childPublicationAuthorityValue: object | undefined;
   private readonly providerAdmissionGuardValue: PrimarySessionProviderAdmissionGuard | undefined;
+  private readonly readSessionValue: ProductSessionServiceConfig["readSession"];
   private readonly publicationFenceValue: PrimaryRootPublicationFence;
   private executionEnvironmentValue: ProductExecutionEnvironment | undefined;
   private workspaceValue: PrimarySessionWorkspace | undefined;
@@ -1296,6 +1301,7 @@ export class ProductSessionService extends Service {
         "childPublicationAuthority",
         "providerAdmissionGuard",
         "quiescenceGraceMs",
+        "readSession",
         "reconcileResume",
         "validateResume",
       ],
@@ -1343,6 +1349,13 @@ export class ProductSessionService extends Service {
       throw new TypeError("ProductSession Provider admission guard must be a non-proxy function");
     }
     this.providerAdmissionGuardValue = providerAdmissionGuard;
+    const readSession = Object.hasOwn(normalized, "readSession")
+      ? normalized.readSession as ProductSessionServiceConfig["readSession"]
+      : undefined;
+    if (readSession !== undefined && (typeof readSession !== "function" || utilTypes.isProxy(readSession))) {
+      throw new TypeError("ProductSession read projection must be a non-proxy function");
+    }
+    this.readSessionValue = readSession;
     this.settlementDeadlineValue = createRuntimeSettlementDeadlineAuthority(
       Object.hasOwn(normalized, "quiescenceGraceMs")
         ? normalized.quiescenceGraceMs as number
@@ -1454,6 +1467,27 @@ export class ProductSessionService extends Service {
       throw new ProtocolError("protocol_environment_mismatch", "primary Session workspace is not initialized");
     }
     return this.admissionValue.bindResume(value, signal);
+  }
+
+  read(
+    value: unknown,
+    runtimeGeneration: string,
+    maxResultBytes: number,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/read">> {
+    const params = validateMethodParams("session/read", value);
+    const snapshot = this.snapshot();
+    if (this.readSessionValue === undefined || snapshot.runtimeSessionId === undefined
+      || (snapshot.state !== "ready" && snapshot.state !== "closing" && snapshot.state !== "retired")) {
+      throw new ProtocolError("primary_session_not_ready", "Primary Session has no readable durable identity");
+    }
+    return Reflect.apply(this.readSessionValue, undefined, [Object.freeze({
+      ...(params.cursor === undefined ? {} : { cursor: params.cursor }),
+      maxResultBytes,
+      runtimeGeneration,
+      runtimeSessionId: snapshot.runtimeSessionId,
+      ...(signal === undefined ? {} : { signal }),
+    })]);
   }
 
   prepareChildPublication(authority: object, child: Agent, parent: Agent): () => void {

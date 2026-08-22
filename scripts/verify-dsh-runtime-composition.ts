@@ -23,6 +23,10 @@ import {
   BATCH1_CANDIDATE_PROFILE_SHA256,
 } from "@myagents-dsh/product-profile";
 import protocolMetaJson from "@myagents-dsh/protocol/protocol-meta.json" with { type: "json" };
+import {
+  SessionReadAssembler,
+  validateMethodResult,
+} from "@myagents-dsh/protocol";
 import { CANONICAL_TOOL_NAMES } from "@myagents-dsh/tool-contracts";
 
 import {
@@ -84,6 +88,7 @@ const runtimeCompositionSourcePaths = [
   "packages/persistence-product/src/index.ts",
   "packages/persistence-product/src/known-events.ts",
   "packages/persistence-product/src/provider.ts",
+  "packages/persistence-product/src/read.ts",
   "packages/persistence-product/src/schema.ts",
   "packages/persistence-product/src/session-lock.ts",
   "packages/persistence-product/src/sqlite-store.ts",
@@ -97,10 +102,12 @@ const runtimeCompositionSourcePaths = [
   "packages/protocol/generated/host-client.generated.ts",
   "packages/protocol/generated/canonical-tools.generated.ts",
   "packages/protocol/src/canonical-digests.ts",
+  "packages/protocol/src/canonical-json.ts",
   "packages/protocol/src/contract-source.ts",
   "packages/protocol/src/errors.ts",
   "packages/protocol/src/index.ts",
   "packages/protocol/src/peer.ts",
+  "packages/protocol/src/session-read.ts",
   "packages/protocol/src/tool-catalog-schema.ts",
   "packages/protocol/src/tool-catalog.ts",
   "packages/protocol/src/validation.ts",
@@ -833,7 +840,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w4-a2"
+    || selfCheckProfile.stage !== "batch-1-w4-a3"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -1123,6 +1130,7 @@ const main = (): void => {
       || evidence.nativeRpcShutdown !== "shutdown"
       || evidence.nativeRpcStopped !== true
       || evidence.productPersistenceVerified !== true
+      || evidence.sessionReadVerified !== true
       || evidence.failedResumePublicationRejected !== true
       || evidence.initialConfigurationMismatchRejected !== true
       || evidence.canonicalFileToolsVerified !== true
@@ -1177,15 +1185,26 @@ const main = (): void => {
       || persistenceEvidence.format !== "myagents-sqlite-session-v1"
       || persistenceEvidence.generationCount !== 1
       || persistenceEvidence.productEventReloaded !== true
-      || persistenceEvidence.resumedEventCount !== persistenceEvidence.eventCount + 1
+      || persistenceEvidence.resumedEventCount !== persistenceEvidence.eventCount + 2
       || persistenceEvidence.resumedDurableSequence !== persistenceEvidence.resumedEventCount
       || persistenceEvidence.resumedSourcePrefixByteEquivalent !== true
       || persistenceEvidence.resumedWithoutModelReplay !== true
+      || typeof persistenceEvidence.sessionReadChunkRecords !== "number"
+      || !Number.isSafeInteger(persistenceEvidence.sessionReadChunkRecords)
+      || persistenceEvidence.sessionReadChunkRecords < 2
+      || persistenceEvidence.sessionReadEventCount !== persistenceEvidence.resumedEventCount
+      || typeof persistenceEvidence.sessionReadPages !== "number"
+      || !Number.isSafeInteger(persistenceEvidence.sessionReadPages)
+      || persistenceEvidence.sessionReadPages < 5
+      || persistenceEvidence.sessionReadRevisionStable !== true
+      || persistenceEvidence.sessionReadSourceEquivalent !== true
+      || typeof persistenceEvidence.sessionReadOversizedSha256 !== "string"
+      || !/^[a-f0-9]{64}$/u.test(persistenceEvidence.sessionReadOversizedSha256)
       || typeof persistenceEvidence.revision !== "number"
       || !Number.isSafeInteger(persistenceEvidence.revision)
       || persistenceEvidence.revision < 1
       || persistenceEvidence.schemaVersion !== 1) {
-      throw new Error("product SQLite persistence evidence differs from the exact W4-A2 contract");
+      throw new Error("product SQLite persistence/read evidence differs from the exact W4-A3 contract");
     }
     const hostAttachmentEvidence = exactObject(
       evidence.hostAttachmentEvidence,
@@ -1444,7 +1463,12 @@ const main = (): void => {
       exactObject(frame, `observed restart/resume RPC frame ${String(index)}`));
     const resumeBindingFrames = resumeFrames.filter(({ result }) => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
-      return (result as Record<string, unknown>).historyFormat === "dsh-session-events-v1";
+      return (result as Record<string, unknown>).historyFormat === "dsh-session-events-v1"
+        && Object.hasOwn(result, "state");
+    });
+    const sessionReadFrames = resumeFrames.filter(({ result }) => {
+      if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
+      return Array.isArray((result as Record<string, unknown>).records);
     });
     const resumeOkFrames = resumeFrames.filter(({ result }) => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
@@ -1466,8 +1490,29 @@ const main = (): void => {
       || resumedSession.historyFormat !== "dsh-session-events-v1"
       || resumedSession.effectiveConfigRevision !== "artifact-config-v1"
       || !Number.isSafeInteger(resumedDurableHead.sequence)
-      || resumedDurableHead.sequence !== persistenceEvidence.resumedDurableSequence) {
+      || resumedDurableHead.sequence !== persistenceEvidence.eventCount + 1) {
       throw new Error("observed restart/resume RPC frames differ from the exact W4-A2 contract");
+    }
+    if (sessionReadFrames.length !== persistenceEvidence.sessionReadPages) {
+      throw new Error("observed session/read response count differs from the W4-A3 evidence");
+    }
+    const sessionReadAssembler = new SessionReadAssembler();
+    let sessionReadCursor: string | undefined;
+    let observedSessionReadChunks = 0;
+    for (const frame of sessionReadFrames) {
+      const page = validateMethodResult("session/read", frame.result);
+      if (page.durableHead.sequence !== persistenceEvidence.sessionReadEventCount) {
+        throw new Error("observed session/read durable head differs across the cursor chain");
+      }
+      observedSessionReadChunks += page.records.filter(({ kind }) => kind === "event_chunk").length;
+      sessionReadAssembler.accept(page, sessionReadCursor);
+      sessionReadCursor = page.nextCursor;
+    }
+    const observedSessionReadEvents = sessionReadAssembler.finish();
+    if (observedSessionReadEvents.length !== persistenceEvidence.sessionReadEventCount
+      || observedSessionReadChunks !== persistenceEvidence.sessionReadChunkRecords
+      || observedSessionReadEvents.at(-1)?.eventSha256 !== persistenceEvidence.sessionReadOversizedSha256) {
+      throw new Error("observed session/read records differ from the exact W4-A3 cursor/hash contract");
     }
     const processBoundaryEvidence = exactObject(
       evidence.processBoundaryEvidence,

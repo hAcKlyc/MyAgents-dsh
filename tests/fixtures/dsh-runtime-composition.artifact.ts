@@ -57,6 +57,8 @@ import {
   JsonRpcPeer,
   PROTOCOL_VERSION,
   REFERENCE_PROTOCOL_LIMITS,
+  SessionReadAssembler,
+  canonicalSessionReadData,
   extensionSnapshotDigest,
   type InitializeParams,
   type MethodParams,
@@ -3893,6 +3895,52 @@ assert.deepEqual(resumedAgent.session.events.at(-1), {
   data: {},
 });
 assert.equal(resumeAdapter.requests.length, 0, "Session resume must not replay model work");
+const oversizedSessionReadText = "artifact-session-read-chunk-".repeat(48_000);
+resumedAgent.session.append("todo/write", {
+  todos: [{ content: oversizedSessionReadText, status: "pending" }],
+});
+await resumedComposition.context.sessions.flush(resumedAgent.session);
+const sessionReadRevisionProbe = new DatabaseSync(persistencePath, { readOnly: true });
+const sessionReadBefore = sessionReadRevisionProbe.prepare(
+  "SELECT event_count, revision FROM sessions WHERE id = ?",
+).get("dsh-artifact-primary") as { event_count: number; revision: number };
+const sessionReadAssembler = new SessionReadAssembler();
+const sessionReadPages: Array<MethodResult<"session/read">> = [];
+let sessionReadCursor: string | undefined;
+do {
+  const requestCursor = sessionReadCursor;
+  const page = await resumeHostClient.sessionRead(
+    requestCursor === undefined ? {} : { cursor: requestCursor },
+  );
+  sessionReadAssembler.accept(page, requestCursor);
+  sessionReadPages.push(page);
+  sessionReadCursor = page.nextCursor;
+} while (sessionReadCursor !== undefined);
+const sessionReadEvents = sessionReadAssembler.finish();
+assert.equal(sessionReadEvents.length, resumedAgent.session.events.length);
+for (const [index, event] of resumedAgent.session.events.entries()) {
+  const projected = sessionReadEvents[index];
+  assert.equal(projected?.sequence, event.seq);
+  assert.equal(projected.eventType, event.type);
+  const canonical = canonicalSessionReadData(event.data);
+  assert.equal(projected.eventSha256, canonical.sha256);
+  assert.deepEqual(projected.data, canonical.value);
+}
+const sessionReadChunkRecords = sessionReadPages.flatMap(({ records }) => records)
+  .filter((record) => record.kind === "event_chunk");
+assert.ok(sessionReadPages.length > 4);
+assert.ok(sessionReadChunkRecords.length > 1);
+assert.equal(sessionReadChunkRecords[0]?.sequence, resumedAgent.session.seq - 1);
+assert.equal(sessionReadChunkRecords.at(-1)?.sequence, resumedAgent.session.seq - 1);
+assert.equal(
+  (sessionReadEvents.at(-1)?.data as { todos: Array<{ content: string }> }).todos[0]?.content,
+  oversizedSessionReadText,
+);
+const sessionReadAfter = sessionReadRevisionProbe.prepare(
+  "SELECT event_count, revision FROM sessions WHERE id = ?",
+).get("dsh-artifact-primary") as { event_count: number; revision: number };
+sessionReadRevisionProbe.close();
+assert.deepEqual(sessionReadAfter, sessionReadBefore, "session/read must not mutate durable storage");
 assert.deepEqual(await resumeHostClient.sessionClose({
   clientOperationId: "artifact-resumed-session-close",
 }), { ok: true });
@@ -3909,7 +3957,7 @@ const resumedPersistenceSession = resumedPersistenceProbe.prepare(
   "SELECT event_count, revision FROM sessions WHERE id = ?",
 ).get("dsh-artifact-primary") as { event_count: number; revision: number };
 resumedPersistenceProbe.close();
-assert.equal(resumedPersistenceSession.event_count, persistedPrimary.events.length + 1);
+assert.equal(resumedPersistenceSession.event_count, persistedPrimary.events.length + 2);
 assert.ok(resumedPersistenceSession.revision > persistenceSession.revision);
 const hostAttachmentStagingEntriesAfterUse = await readdir(fixtureAttachmentStaging);
 assert.deepEqual(hostAttachmentStagingEntriesAfterUse, []);
@@ -3960,6 +4008,7 @@ process.stdout.write(`${JSON.stringify({
   nativeRpcShutdown: rpcShutdown.kind,
   nativeRpcStopped: stopped.disposed,
   productPersistenceVerified: true,
+  sessionReadVerified: true,
   failedResumePublicationRejected,
   initialConfigurationMismatchRejected,
   productPersistenceEvidence: {
@@ -3967,12 +4016,25 @@ process.stdout.write(`${JSON.stringify({
     format: persistenceMeta.persistence_format,
     generationCount: persistenceGenerationCount.count,
     productEventReloaded: persistedPrimary.events.some(({ type }) => type.startsWith("myagents/")),
-    resumedDurableSequence: resumedPrimary.durableHead.sequence,
+    resumedDurableSequence: sessionReadEvents.length,
     resumedEventCount: resumedPersistenceSession.event_count,
     resumedSourcePrefixByteEquivalent: JSON.stringify(
       resumedAgent.session.events.slice(0, persistedPrimary.events.length),
     ) === persistedPrimaryBytes,
     resumedWithoutModelReplay: true,
+    sessionReadChunkRecords: sessionReadChunkRecords.length,
+    sessionReadEventCount: sessionReadEvents.length,
+    sessionReadPages: sessionReadPages.length,
+    sessionReadRevisionStable: sessionReadAfter.revision === sessionReadBefore.revision,
+    sessionReadSourceEquivalent: sessionReadEvents.every((event, index) => {
+      const source = resumedAgent.session.events[index];
+      if (source?.seq !== event.sequence) return false;
+      if (source.type !== event.eventType) return false;
+      const canonical = canonicalSessionReadData(source.data);
+      return event.eventSha256 === canonical.sha256
+        && JSON.stringify(event.data) === JSON.stringify(canonical.value);
+    }),
+    sessionReadOversizedSha256: sessionReadEvents.at(-1)?.eventSha256,
     revision: persistenceSession.revision,
     schemaVersion: persistenceMeta.schema_version,
   },

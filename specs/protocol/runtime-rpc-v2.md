@@ -301,6 +301,8 @@ type SessionReadRecord =
       sequence: number
       eventType: string
       eventSha256: Sha256
+      chunkIndex: number
+      chunkCount: number
       offsetBytes: number
       totalBytes: number
       dataBase64: string

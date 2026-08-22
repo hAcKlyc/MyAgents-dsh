@@ -9241,6 +9241,14 @@
                 {
                   "additionalProperties": false,
                   "properties": {
+                    "chunkCount": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "chunkIndex": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
                     "dataBase64": {
                       "maxLength": 1048576,
                       "minLength": 4,
@@ -9279,6 +9287,8 @@
                     "sequence",
                     "eventType",
                     "eventSha256",
+                    "chunkIndex",
+                    "chunkCount",
                     "offsetBytes",
                     "totalBytes",
                     "dataBase64"

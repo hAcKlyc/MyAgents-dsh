@@ -27,7 +27,12 @@ import {
 } from "@myagents-dsh/product-profile";
 
 import { isProductKnownSessionEventType } from "./known-events.js";
+import {
+  ProductSessionReadProjector,
+  type ProductSessionReadRequest,
+} from "./read.js";
 import { ProductSqliteStore } from "./sqlite-store.js";
+import type { MethodResult } from "@myagents-dsh/protocol";
 
 export interface ProductSqliteSessionPersistenceConfig {
   readonly durability: SqliteDurabilityPlan;
@@ -173,6 +178,7 @@ interface ProductCoordinatorOptions extends PersistenceCoordinatorOptions {
 
 interface ProductPersistenceState {
   readonly coordinator: PersistenceCoordinator<never>;
+  readonly reader: ProductSessionReadProjector;
   readonly store: ProductSqliteStore;
 }
 
@@ -204,8 +210,14 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
       preparedSessionCacheSize: normalized.preparedSessionCacheSize,
       writeBatchMaxDelayMs: normalized.writeBatchMaxDelayMs,
     });
+    const coordinator = new PersistenceCoordinator(ctx, store, coordinatorOptions);
     productPersistenceStates.set(this, Object.freeze({
-      coordinator: new PersistenceCoordinator(ctx, store, coordinatorOptions),
+      coordinator,
+      reader: new ProductSessionReadProjector({
+        cursorMac: (payload, signal) => store.cursorMac(payload, signal),
+        readFrom: (id, fromSeq, signal) => coordinator.readFrom(id, fromSeq, signal),
+        snapshot: (id, signal) => store.readProductSnapshot(id, signal),
+      }),
       store,
     }));
   }
@@ -252,6 +264,10 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
 
   listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]> {
     return stateOf(this).store.listSnapshots(signal);
+  }
+
+  readSession(request: ProductSessionReadRequest): Promise<MethodResult<"session/read">> {
+    return stateOf(this).reader.read(request);
   }
 }
 

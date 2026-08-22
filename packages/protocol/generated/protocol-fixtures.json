@@ -289,7 +289,7 @@
         },
         "runtimeGeneration": "generation-1",
         "runtimeVersion": "0.0.0",
-        "schemaSha256": "16519d3b23ccc98475ed517bf14cd1711f7dfcc0afd207b5fb3faf2541365412",
+        "schemaSha256": "0b7770a844598123126e85dde78337a166ade19b6a7c0f4c578694406d6f9c14",
         "sessionFormat": "dsh-session-events-v1"
       }
     },
@@ -464,6 +464,8 @@
         "historyFormat": "dsh-session-events-v1",
         "records": [
           {
+            "chunkCount": 1,
+            "chunkIndex": 0,
             "dataBase64": "YWJj",
             "eventSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "eventType": "dsh.large-event",
@@ -488,6 +490,8 @@
         "historyFormat": "dsh-session-events-v1",
         "records": [
           {
+            "chunkCount": 1,
+            "chunkIndex": 0,
             "dataBase64": "YWJj",
             "eventSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "eventType": "dsh.large-event",
@@ -1069,7 +1073,7 @@
     }
   ],
   "protocolVersion": "2.0.0-draft.1",
-  "schemaSha256": "16519d3b23ccc98475ed517bf14cd1711f7dfcc0afd207b5fb3faf2541365412",
+  "schemaSha256": "0b7770a844598123126e85dde78337a166ade19b6a7c0f4c578694406d6f9c14",
   "valid": [
     {
       "frame": {
@@ -1264,7 +1268,7 @@
           },
           "runtimeGeneration": "generation-1",
           "runtimeVersion": "0.0.0",
-          "schemaSha256": "16519d3b23ccc98475ed517bf14cd1711f7dfcc0afd207b5fb3faf2541365412",
+          "schemaSha256": "0b7770a844598123126e85dde78337a166ade19b6a7c0f4c578694406d6f9c14",
           "sessionFormat": "dsh-session-events-v1"
         }
       },
@@ -1338,14 +1342,16 @@
                 "content": "synthetic",
                 "role": "user"
               },
-              "eventSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "eventSha256": "d10544f6d4bb61a73afd05ce970a62c1e799922f616281da557f89db559fa974",
               "eventType": "dsh.message",
               "kind": "event",
               "sequence": 1
             },
             {
+              "chunkCount": 1,
+              "chunkIndex": 0,
               "dataBase64": "YWJj",
-              "eventSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "eventSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
               "eventType": "dsh.large-event",
               "kind": "event_chunk",
               "offsetBytes": 0,
