@@ -9,6 +9,21 @@ Runtime evidence authority for the rest of Batch 1. The candidate profile remain
 internal `workstream-evidence-only`; this checkpoint does not activate a public
 Host surface or complete Workstream 3.
 
+## Final refresh successor gate
+
+`B1-DSH-R2` is the mandatory successor to this accepted mid-Batch rebaseline.
+It remains `in_progress` until Workstream 4 implementation is frozen. A fresh
+fetch on 2026-08-23 found no newer upstream delta: official `origin/master` and
+the newest release tag both still resolve to commit
+`b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` and tree
+`53915efe4e2126cc7779b73dfc8a3bcec5318c44`.
+
+Before Batch 1 acceptance, the final gate must fetch again, record both the
+newest release and unreleased upstream head, repeat the patch dispositions and
+capability-to-Batch mapping, choose one immutable source authority, and rebuild
+all DSH/consumer/profile/protocol/Runtime evidence from it. The moving upstream
+branch is review input, never an implicit production dependency.
+
 ## Immutable upstream identity
 
 | Field | Prior authority | Rebaseline candidate |

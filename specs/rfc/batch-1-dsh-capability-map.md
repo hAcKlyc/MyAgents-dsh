@@ -2,7 +2,7 @@
 type: technical-rfc
 status: draft
 batch: 1
-updated: 2026-08-15
+updated: 2026-08-23
 depends_on:
   - ./batch-1-architecture-design.md
 ---
@@ -19,7 +19,7 @@ This document answers the implementation split that is easy to blur when describ
 - which model-visible tools require exact compatibility definitions;
 - which semantics currently require an upstream/fork decision.
 
-All classifications are re-audited against `deepseek-harness@0.1.1-rc.2`, repository commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, under Batch action `B1-DSH-R1`. The exact delta and patch dispositions are recorded in [`../dsh/upstream-rebaseline-0.1.1-rc.2.md`](../dsh/upstream-rebaseline-0.1.1-rc.2.md); a later pin change must repeat that gate.
+All classifications are re-audited against `deepseek-harness@0.1.1-rc.2`, repository commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, under Batch action `B1-DSH-R1`. The exact delta and patch dispositions are recorded in [`../dsh/upstream-rebaseline-0.1.1-rc.2.md`](../dsh/upstream-rebaseline-0.1.1-rc.2.md). Final pre-release action `B1-DSH-R2` must repeat the audit after the Workstream 4 implementation freeze against both the newest official release and the exact then-current upstream head; a later pin change must update this map and the review record in the same accepted change.
 
 ## 2. Classification vocabulary
 
