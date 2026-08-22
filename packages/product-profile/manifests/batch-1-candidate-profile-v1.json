@@ -8,6 +8,7 @@
       "@deepseek-ai/dsh-tools:ToolRuntime",
       "@myagents-dsh/runtime-product:adapterRegistration",
       "@deepseek-ai/dsh-agent-loop:AgentLoop",
+      "@myagents-dsh/host-ports:HostPortService",
       "@myagents-dsh/runtime-product:ProductSessionService",
       "@myagents-dsh/operation-runtime:SdkOperationService",
       "@myagents-dsh/rpc-server:NativeRpcServer"
@@ -15,6 +16,7 @@
     "maxPrimaryRootSessions": 1,
     "packageAuthorities": {
       "@myagents-dsh/artifact-verifier": "0.0.0",
+      "@myagents-dsh/host-ports": "0.0.0",
       "@myagents-dsh/operation-runtime": "0.0.0",
       "@myagents-dsh/product-profile": "0.0.0",
       "@myagents-dsh/protocol": "0.0.0",
@@ -33,7 +35,7 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "00e415a38986f5a6bf116745b8780f6519e60fa941b16504a20bb200b4f5c193",
+    "artifactManifestSha256": "758be07dec2d1ddb26a7111b9dee971bae70704a1d65c9a71a7740c5a3646238",
     "artifactVersion": "0.1.0-rc.5.myagents.47f943859bef.e5cf423a15c6",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",
@@ -65,12 +67,20 @@
       "initialized",
       "rpc/cancel"
     ],
-    "availableReverseMethods": [],
-    "schemaSha256": "1ede8582e8f9c9798b3ce6f20e61339e9bb5c2332bdd5ae70c7e726d97883353",
+    "availableReverseMethods": [
+      "host/credential/resolve",
+      "host/interaction/request",
+      "host/tool/execute",
+      "host/hook/execute",
+      "host/attachment/put",
+      "host/attachment/acquire",
+      "host/attachment/release"
+    ],
+    "schemaSha256": "e6e65182147a642451b4a1a24326a1fb883527a35a5d0a3d7ad0ac4981be56f9",
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "workstream-evidence-only",
-  "stage": "batch-1-w1-a10",
+  "stage": "batch-1-w3-a1",
   "tools": {
     "contractProfile": "canonical-agent-experience-v1",
     "contractSha256": "64cb973113a855f35f883211aab170c836ca6d6d9cc079d33ebd1c88bf51335c"

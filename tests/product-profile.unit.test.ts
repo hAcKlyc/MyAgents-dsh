@@ -48,7 +48,7 @@ describe("official product profile authority", () => {
     });
     expect(BATCH1_CANDIDATE_PROFILE).toMatchObject({
       profileId: "myagents-dsh-batch-1-candidate-v1",
-      stage: "batch-1-w1-a10",
+      stage: "batch-1-w3-a1",
       runtimeActivation: "workstream-evidence-only",
       composition: {
         maxPrimaryRootSessions: 1,
@@ -60,10 +60,19 @@ describe("official product profile authority", () => {
           "runtime/shutdown",
         ],
         availableNotifications: ["initialized", "rpc/cancel"],
-        availableReverseMethods: [],
+        availableReverseMethods: [
+          "host/credential/resolve",
+          "host/interaction/request",
+          "host/tool/execute",
+          "host/hook/execute",
+          "host/attachment/put",
+          "host/attachment/acquire",
+          "host/attachment/release",
+        ],
       },
     });
     expect(BATCH1_CANDIDATE_PROFILE.composition.installedPluginAllowlist).toEqual(expect.arrayContaining([
+      "@myagents-dsh/host-ports:HostPortService",
       "@myagents-dsh/runtime-product:ProductSessionService",
       "@myagents-dsh/operation-runtime:SdkOperationService",
       "@myagents-dsh/rpc-server:NativeRpcServer",

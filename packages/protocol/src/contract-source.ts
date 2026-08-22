@@ -535,11 +535,28 @@ const applyResult = strictObject({
   components: Type.Array(componentStatus, { maxItems: 2_048 }),
 });
 
+export const HostRequestAuthoritySchema = strictObject({
+  requestId: identifier,
+  runtimeGeneration: identifier,
+  productSessionId: identifier,
+  runtimeSessionId: Type.Optional(identifier),
+  clientOperationId: Type.Optional(identifier),
+  turnId: Type.Optional(identifier),
+  dshTurn: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+  rootCallId: Type.Optional(identifier),
+  callId: Type.Optional(identifier),
+  componentGenerationId: Type.Optional(identifier),
+  componentId: Type.Optional(identifier),
+  expectedConfigRevision: Type.Optional(revision),
+  expectedCredentialRevision: Type.Optional(revision),
+  deadlineMs: Type.Integer({ minimum: 1, maximum: 600_000 }),
+});
+
 const credentialResolve = Type.Union([
-  strictObject({ requestId: identifier, productSessionId: identifier, runtimeGeneration: identifier, credentialRef: identifier, subject: Type.Literal("provider"), providerRouteId: identifier, profileRevision: revision, purpose: Type.Literal("availability") }),
-  strictObject({ requestId: identifier, productSessionId: identifier, runtimeGeneration: identifier, credentialRef: identifier, subject: Type.Literal("provider"), providerRouteId: identifier, profileRevision: revision, purpose: Type.Literal("model_request"), clientOperationId: identifier, modelRequestId: identifier }),
-  strictObject({ requestId: identifier, productSessionId: identifier, runtimeGeneration: identifier, credentialRef: identifier, subject: Type.Literal("mcp"), serverId: identifier, extensionDigest: sha256, credentialRevision: revision, materialSlot: Type.Union([Type.Literal("env"), Type.Literal("header"), Type.Literal("oauth")]), purpose: Type.Literal("availability") }),
-  strictObject({ requestId: identifier, productSessionId: identifier, runtimeGeneration: identifier, credentialRef: identifier, subject: Type.Literal("mcp"), serverId: identifier, extensionDigest: sha256, credentialRevision: revision, materialSlot: Type.Union([Type.Literal("env"), Type.Literal("header"), Type.Literal("oauth")]), purpose: Type.Literal("connection"), connectionAttemptId: identifier }),
+  strictObject({ authority: HostRequestAuthoritySchema, credentialRef: identifier, subject: Type.Literal("provider"), providerRouteId: identifier, profileRevision: revision, purpose: Type.Literal("availability") }),
+  strictObject({ authority: HostRequestAuthoritySchema, credentialRef: identifier, subject: Type.Literal("provider"), providerRouteId: identifier, profileRevision: revision, purpose: Type.Literal("model_request"), modelRequestId: identifier }),
+  strictObject({ authority: HostRequestAuthoritySchema, credentialRef: identifier, subject: Type.Literal("mcp"), serverId: identifier, extensionDigest: sha256, credentialRevision: revision, materialSlot: Type.Union([Type.Literal("env"), Type.Literal("header"), Type.Literal("oauth")]), purpose: Type.Literal("availability") }),
+  strictObject({ authority: HostRequestAuthoritySchema, credentialRef: identifier, subject: Type.Literal("mcp"), serverId: identifier, extensionDigest: sha256, credentialRevision: revision, materialSlot: Type.Union([Type.Literal("env"), Type.Literal("header"), Type.Literal("oauth")]), purpose: Type.Literal("connection"), connectionAttemptId: identifier }),
 ]);
 const credentialResolveResult = Type.Union([
   strictObject({ kind: Type.Literal("availability"), available: Type.Boolean(), authoritativeCredentialRevision: revision, reasonCode: Type.Optional(identifier) }),
@@ -651,12 +668,12 @@ export const RPC_METHODS = {
   "interaction/respond": method("host_to_runtime", strictObject({ interactionId: identifier, expectedRevision: revision, decision: Type.Union([Type.Literal("deny"), Type.Literal("allow_once"), Type.Literal("always_allow"), Type.Literal("answered"), Type.Literal("cancelled")]), value: Type.Optional(Type.Unknown()) }), Type.Union([strictObject({ state: Type.Literal("applied"), effectivePolicyRevision: revision }), strictObject({ state: Type.Literal("rejected"), code: identifier }), strictObject({ state: Type.Literal("already_settled") }), strictObject({ state: Type.Literal("expired") })])),
   "utility/run": method("host_to_runtime", strictObject({ clientOperationId: identifier, prompt: Type.String({ minLength: 1, maxLength: 1_000_000 }), systemPrompt: Type.String({ maxLength: 1_000_000 }), modelProfileRevision: revision, maxTokens: Type.Integer({ minimum: 1 }) }), strictObject({ state: Type.Union([Type.Literal("succeeded"), Type.Literal("failed"), Type.Literal("aborted")]), text: Type.Optional(Type.String({ maxLength: 1_000_000 })), usage: Type.Optional(TokenUsageSchema), code: Type.Optional(identifier) })),
   "host/credential/resolve": method("runtime_to_host", credentialResolve, credentialResolveResult),
-  "host/interaction/request": method("runtime_to_host", strictObject({ interactionId: identifier, clientOperationId: identifier, turnId: identifier, toolCallId: Type.Optional(identifier), kind: Type.Union([Type.Literal("permission"), Type.Literal("ask_user"), Type.Literal("plan_approval")]), schema: Type.Unknown(), permissionAction: Type.Optional(identifier), desiredPolicyRevision: revision, scenario: identifier, cancellationToken: identifier }), strictObject({ registered: Type.Literal(true) })),
-  "host/tool/execute": method("runtime_to_host", strictObject({ runtimeGeneration: identifier, runtimeSessionId: identifier, turnId: identifier, toolCallId: identifier, tool: identifier, input: Type.Unknown() }), hostToolResult),
-  "host/hook/execute": method("runtime_to_host", strictObject({ runtimeGeneration: identifier, runtimeSessionId: identifier, turnId: identifier, toolCallId: identifier, hookId: identifier, event: Type.Union([Type.Literal("PreToolUse"), Type.Literal("PostToolUse"), Type.Literal("PermissionRequest")]), tool: identifier, input: Type.Unknown(), result: Type.Optional(hostToolResult), origin: Type.Union([Type.Literal("root"), Type.Literal("foreground_child"), Type.Literal("background_child")]), agentId: Type.Optional(identifier), permissionMode: Type.Optional(identifier) }), hostHookResult),
-  "host/attachment/put": method("runtime_to_host", strictObject({ runtimeGeneration: identifier, runtimeSessionId: identifier, mimeType: identifier, name: Type.String({ maxLength: 512 }), sizeBytes: nonNegativeInteger, sha256, stagingPath: absolutePath }), attachmentRef),
-  "host/attachment/acquire": method("runtime_to_host", strictObject({ runtimeGeneration: identifier, runtimeSessionId: identifier, attachmentId: identifier, expectedMimeType: identifier, expectedSizeBytes: nonNegativeInteger, expectedSha256: sha256 }), strictObject({ leaseId: identifier, readOnlyPath: absolutePath, mimeType: identifier, sizeBytes: nonNegativeInteger, sha256 })),
-  "host/attachment/release": method("runtime_to_host", strictObject({ runtimeGeneration: identifier, runtimeSessionId: identifier, leaseId: identifier }), okResult),
+  "host/interaction/request": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, interactionId: identifier, kind: Type.Union([Type.Literal("permission"), Type.Literal("ask_user"), Type.Literal("plan_approval")]), schema: Type.Unknown(), permissionAction: Type.Optional(identifier), desiredPolicyRevision: revision, scenario: identifier, cancellationToken: identifier }), strictObject({ registered: Type.Literal(true) })),
+  "host/tool/execute": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, tool: identifier, input: Type.Unknown() }), hostToolResult),
+  "host/hook/execute": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, hookId: identifier, event: Type.Union([Type.Literal("PreToolUse"), Type.Literal("PostToolUse"), Type.Literal("PermissionRequest")]), tool: identifier, input: Type.Unknown(), result: Type.Optional(hostToolResult), origin: Type.Union([Type.Literal("root"), Type.Literal("foreground_child"), Type.Literal("background_child")]), agentId: Type.Optional(identifier), permissionMode: Type.Optional(identifier) }), hostHookResult),
+  "host/attachment/put": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, mimeType: identifier, name: Type.String({ maxLength: 512 }), sizeBytes: nonNegativeInteger, sha256, stagingPath: absolutePath }), attachmentRef),
+  "host/attachment/acquire": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, attachmentId: identifier, expectedMimeType: identifier, expectedSizeBytes: nonNegativeInteger, expectedSha256: sha256 }), strictObject({ leaseId: identifier, readOnlyPath: absolutePath, mimeType: identifier, sizeBytes: nonNegativeInteger, sha256 })),
+  "host/attachment/release": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, leaseId: identifier }), okResult),
 } as const;
 
 export const RPC_NOTIFICATIONS = {
@@ -678,6 +695,7 @@ export type RuntimeCapabilityProfile = Static<typeof RuntimeCapabilityProfileSch
 export type RuntimeEventEnvelope = Static<typeof RuntimeEventEnvelopeSchema>;
 export type TurnTerminal = Static<typeof TurnTerminalSchema>;
 export type SessionReadResult = Static<typeof SessionReadResultSchema>;
+export type HostRequestAuthority = Static<typeof HostRequestAuthoritySchema>;
 
 export const REFERENCE_PROTOCOL_LIMITS: ProtocolLimits = {
   maxFrameBytes: MAX_FRAME_BYTES,

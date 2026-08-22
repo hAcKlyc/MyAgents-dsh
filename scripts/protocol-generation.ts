@@ -259,9 +259,12 @@ const buildFixtures = (schemaDigest: string): unknown => {
         id: "r:credential-1",
         method: "host/credential/resolve",
         params: {
-          requestId: "credential-request-1",
-          productSessionId: "product-session-1",
-          runtimeGeneration: "generation-1",
+          authority: {
+            requestId: "credential-request-1",
+            productSessionId: "product-session-1",
+            runtimeGeneration: "generation-1",
+            deadlineMs: 30_000,
+          },
           credentialRef: "provider-credential",
           subject: "provider",
           providerRouteId: "route-1",

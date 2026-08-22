@@ -58,6 +58,8 @@ const runtimeCompositionSourcePaths = [
   "packages/artifact-verifier/src/repository-entry.ts",
   "packages/artifact-verifier/src/runtime-artifact.ts",
   "packages/artifact-verifier/src/self-check.ts",
+  "packages/host-ports/src/index.ts",
+  "packages/host-ports/src/service.ts",
   "packages/operation-runtime/src/events.ts",
   "packages/operation-runtime/src/fold.ts",
   "packages/operation-runtime/src/index.ts",
@@ -125,10 +127,12 @@ const runtimeCompositionSourcePaths = [
 const runtimePackageWorkspaces = [
   ["packages/product-profile", "@myagents-dsh/product-profile"],
   ["packages/protocol", "@myagents-dsh/protocol"],
+  ["packages/host-ports", "@myagents-dsh/host-ports"],
   ["packages/operation-runtime", "@myagents-dsh/operation-runtime"],
   ["packages/rpc-server", "@myagents-dsh/rpc-server"],
   ["packages/runtime-product", "@myagents-dsh/runtime-product"],
   ["packages/task-graph", "@myagents-dsh/task-graph"],
+  ["packages/test-host", "@myagents-dsh/test-host"],
   ["packages/testkit", "@myagents-dsh/testkit"],
   ["packages/tool-contracts", "@myagents-dsh/tool-contracts"],
   ["packages/tool-runtime-product", "@myagents-dsh/tool-runtime-product"],
@@ -783,7 +787,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w1-a10"
+    || selfCheckProfile.stage !== "batch-1-w3-a1"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -932,6 +936,7 @@ const main = (): void => {
       "@myagents-dsh/tool-contracts",
     );
     stageBuiltPackage(consumerRoot, buildRoot, "packages/protocol", "@myagents-dsh/protocol");
+    stageBuiltPackage(consumerRoot, buildRoot, "packages/host-ports", "@myagents-dsh/host-ports");
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
@@ -1033,6 +1038,17 @@ const main = (): void => {
       || evidence.canonicalProductWorkVerified !== true
       || evidence.ambientWebSearchFallbackRejected !== true
       || evidence.operationCorrelationVerified !== true
+      || evidence.hostPortServiceVerified !== true
+      || evidence.hostPortLifecycleAuthorityVerified !== true
+      || JSON.stringify(evidence.hostPortMethodOrder) !== JSON.stringify([
+        "host/credential/resolve",
+        "host/interaction/request",
+        "host/tool/execute",
+        "host/hook/execute",
+        "host/attachment/put",
+        "host/attachment/acquire",
+        "host/attachment/release",
+      ])
       || evidence.operationInterruptVerified !== true
       || evidence.queuedCancellationVerified !== true
       || evidence.runtimeEventProjectionVerified !== true

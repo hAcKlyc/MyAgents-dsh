@@ -1,4 +1,4 @@
-import { Service, type Context } from "@deepseek-ai/cordis";
+import { Service, symbols, type Context } from "@deepseek-ai/cordis";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_AVAILABLE_HOST_METHODS,
@@ -11,6 +11,7 @@ import {
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
 import type { SdkOperationService } from "@myagents-dsh/operation-runtime";
+import type { HostPortTransportLifecycle } from "@myagents-dsh/host-ports";
 import {
   BATCH1_RUNTIME_CAPABILITIES,
   DSH_ENGINE_VERSION,
@@ -330,8 +331,21 @@ const emptyActiveCounts = () => ({
   utilityRuns: 0,
 });
 
+const nativeRpcHostPortLifecycles = new WeakMap<object, HostPortTransportLifecycle>();
+
+const hostPortLifecycleOf = (service: NativeRpcServer): HostPortTransportLifecycle => {
+  const original = (service as unknown as Record<PropertyKey, unknown>)[symbols.original];
+  const lifecycle = nativeRpcHostPortLifecycles.get(
+    original !== null && typeof original === "object" ? original : service,
+  );
+  if (lifecycle === undefined) {
+    throw new Error("Native RPC lost its composition-owned Host port lifecycle authority");
+  }
+  return lifecycle;
+};
+
 export class NativeRpcServer extends Service {
-  static inject = ["sessions", "productSession", "sdkOperations"];
+  static inject = ["sessions", "productSession", "sdkOperations", "hostPorts"];
   private readonly peerValue: JsonRpcPeer;
   private readonly productSessionValue: ProductSessionService;
   private readonly operationsValue: SdkOperationService;
@@ -365,6 +379,7 @@ export class NativeRpcServer extends Service {
         !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256) {
       throw new Error("native RPC composition authority differs from the accepted DSH root graph");
     }
+    nativeRpcHostPortLifecycles.set(this, compositionAuthority.hostPorts);
     this.terminationCommittedPromise = new Promise((resolve) => {
       this.resolveTermination = resolve;
     });
@@ -397,6 +412,7 @@ export class NativeRpcServer extends Service {
       authorizeInboundNotification: (method) => this.authorizeNotification(method),
       onFatalError: (error) => this.onFatalError(error),
     });
+    hostPortLifecycleOf(this).bindTransport(this.peerValue, this.configValue.runtimeGeneration);
     try {
       this.stopHandlers.push(
         this.peerValue.registerRequestHandler("initialize", (params, context) =>
@@ -404,7 +420,10 @@ export class NativeRpcServer extends Service {
         this.peerValue.registerRequestHandler("runtime/status", () => this.statusSnapshot()),
         this.peerValue.registerRequestHandler("runtime/shutdown", (params, context) =>
           this.handleShutdown(params, context)),
-        this.peerValue.registerNotificationHandler("initialized", () => undefined),
+        this.peerValue.registerNotificationHandler(
+          "initialized",
+          () => hostPortLifecycleOf(this).activate(),
+        ),
       );
       ctx.effect(
         () => () => this.disposeTransport().catch(() => undefined),
@@ -477,6 +496,7 @@ export class NativeRpcServer extends Service {
       path: params.workspace.path,
       platformTarget: this.configValue.platformTarget,
     });
+    hostPortLifecycleOf(this).bindProductSession(params.productSessionId);
     const limits = minimumLimits(params.limits, this.configValue.limits);
     context.commit();
     this.peerValue.updateLimits(limits);
@@ -612,6 +632,7 @@ export class NativeRpcServer extends Service {
   }
 
   private publishTerminationIntent(request: NativeRpcExitRequest): void {
+    hostPortLifecycleOf(this).stopAccepting(request.kind);
     if (this.terminationRequestValue !== undefined) return;
     this.terminationRequestValue = request;
     this.resolveTermination(request);
@@ -621,20 +642,29 @@ export class NativeRpcServer extends Service {
     this.disposePromise ??= (async () => {
       if (this.phaseValue === "disposed") return;
       for (const stop of this.stopHandlers.splice(0).reverse()) stop();
-      let failure: unknown;
+      const failures: unknown[] = [];
+      try {
+        await hostPortLifecycleOf(this).close();
+      } catch (error) {
+        failures.push(error);
+      }
       try {
         await this.productSessionValue.retire();
       } catch (error) {
-        failure = error;
+        failures.push(error);
       } finally {
         this.phaseValue = "disposed";
         this.peerValue.close(new ProtocolError("runtime_disposed", "Native RPC transport was disposed", true));
         this.requestExit(Object.freeze({ kind: "disposed" }));
       }
-      if (failure !== undefined) {
+      if (failures.length === 1) {
+        const [failure] = failures;
         throw failure instanceof Error
           ? failure
           : new Error("native RPC transport disposal failed", { cause: failure });
+      }
+      if (failures.length > 1) {
+        throw new AggregateError(failures, "native RPC transport disposal failed");
       }
     })();
     return this.disposePromise;

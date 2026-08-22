@@ -3120,6 +3120,100 @@
             "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
             "type": "string"
           },
+          "authority": {
+            "additionalProperties": false,
+            "properties": {
+              "callId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "clientOperationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentGenerationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "deadlineMs": {
+                "maximum": 600000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "dshTurn": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expectedConfigRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "expectedCredentialRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "productSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "requestId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "rootCallId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeGeneration": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "turnId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestId",
+              "runtimeGeneration",
+              "productSessionId",
+              "deadlineMs"
+            ],
+            "type": "object"
+          },
           "expectedMimeType": {
             "maxLength": 256,
             "minLength": 1,
@@ -3133,23 +3227,10 @@
           "expectedSizeBytes": {
             "minimum": 0,
             "type": "integer"
-          },
-          "runtimeGeneration": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "runtimeSessionId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
           }
         },
         "required": [
-          "runtimeGeneration",
-          "runtimeSessionId",
+          "authority",
           "attachmentId",
           "expectedMimeType",
           "expectedSizeBytes",
@@ -3202,6 +3283,100 @@
       "params": {
         "additionalProperties": false,
         "properties": {
+          "authority": {
+            "additionalProperties": false,
+            "properties": {
+              "callId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "clientOperationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentGenerationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "deadlineMs": {
+                "maximum": 600000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "dshTurn": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expectedConfigRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "expectedCredentialRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "productSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "requestId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "rootCallId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeGeneration": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "turnId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestId",
+              "runtimeGeneration",
+              "productSessionId",
+              "deadlineMs"
+            ],
+            "type": "object"
+          },
           "mimeType": {
             "maxLength": 256,
             "minLength": 1,
@@ -3210,18 +3385,6 @@
           },
           "name": {
             "maxLength": 512,
-            "type": "string"
-          },
-          "runtimeGeneration": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "runtimeSessionId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
             "type": "string"
           },
           "sha256": {
@@ -3240,8 +3403,7 @@
           }
         },
         "required": [
-          "runtimeGeneration",
-          "runtimeSessionId",
+          "authority",
           "mimeType",
           "name",
           "sizeBytes",
@@ -3288,19 +3450,101 @@
       "params": {
         "additionalProperties": false,
         "properties": {
+          "authority": {
+            "additionalProperties": false,
+            "properties": {
+              "callId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "clientOperationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentGenerationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "deadlineMs": {
+                "maximum": 600000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "dshTurn": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expectedConfigRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "expectedCredentialRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "productSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "requestId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "rootCallId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeGeneration": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "turnId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestId",
+              "runtimeGeneration",
+              "productSessionId",
+              "deadlineMs"
+            ],
+            "type": "object"
+          },
           "leaseId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "runtimeGeneration": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "runtimeSessionId": {
             "maxLength": 256,
             "minLength": 1,
             "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
@@ -3308,8 +3552,7 @@
           }
         },
         "required": [
-          "runtimeGeneration",
-          "runtimeSessionId",
+          "authority",
           "leaseId"
         ],
         "type": "object"
@@ -3335,13 +3578,101 @@
           {
             "additionalProperties": false,
             "properties": {
-              "credentialRef": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
+              "authority": {
+                "additionalProperties": false,
+                "properties": {
+                  "callId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "clientOperationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "componentGenerationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "componentId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "deadlineMs": {
+                    "maximum": 600000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "dshTurn": {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "expectedConfigRevision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "expectedCredentialRevision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "productSessionId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "rootCallId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "runtimeGeneration": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "runtimeSessionId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "runtimeGeneration",
+                  "productSessionId",
+                  "deadlineMs"
+                ],
+                "type": "object"
               },
-              "productSessionId": {
+              "credentialRef": {
                 "maxLength": 256,
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
@@ -3363,27 +3694,13 @@
                 "const": "availability",
                 "type": "string"
               },
-              "requestId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
-              "runtimeGeneration": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
               "subject": {
                 "const": "provider",
                 "type": "string"
               }
             },
             "required": [
-              "requestId",
-              "productSessionId",
-              "runtimeGeneration",
+              "authority",
               "credentialRef",
               "subject",
               "providerRouteId",
@@ -3395,11 +3712,99 @@
           {
             "additionalProperties": false,
             "properties": {
-              "clientOperationId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
+              "authority": {
+                "additionalProperties": false,
+                "properties": {
+                  "callId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "clientOperationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "componentGenerationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "componentId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "deadlineMs": {
+                    "maximum": 600000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "dshTurn": {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "expectedConfigRevision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "expectedCredentialRevision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "productSessionId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "rootCallId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "runtimeGeneration": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "runtimeSessionId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "runtimeGeneration",
+                  "productSessionId",
+                  "deadlineMs"
+                ],
+                "type": "object"
               },
               "credentialRef": {
                 "maxLength": 256,
@@ -3408,12 +3813,6 @@
                 "type": "string"
               },
               "modelRequestId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
-              "productSessionId": {
                 "maxLength": 256,
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
@@ -3435,33 +3834,18 @@
                 "const": "model_request",
                 "type": "string"
               },
-              "requestId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
-              "runtimeGeneration": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
               "subject": {
                 "const": "provider",
                 "type": "string"
               }
             },
             "required": [
-              "requestId",
-              "productSessionId",
-              "runtimeGeneration",
+              "authority",
               "credentialRef",
               "subject",
               "providerRouteId",
               "profileRevision",
               "purpose",
-              "clientOperationId",
               "modelRequestId"
             ],
             "type": "object"
@@ -3469,6 +3853,100 @@
           {
             "additionalProperties": false,
             "properties": {
+              "authority": {
+                "additionalProperties": false,
+                "properties": {
+                  "callId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "clientOperationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "componentGenerationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "componentId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "deadlineMs": {
+                    "maximum": 600000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "dshTurn": {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "expectedConfigRevision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "expectedCredentialRevision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "productSessionId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "rootCallId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "runtimeGeneration": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "runtimeSessionId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "runtimeGeneration",
+                  "productSessionId",
+                  "deadlineMs"
+                ],
+                "type": "object"
+              },
               "credentialRef": {
                 "maxLength": 256,
                 "minLength": 1,
@@ -3501,26 +3979,8 @@
                   }
                 ]
               },
-              "productSessionId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
               "purpose": {
                 "const": "availability",
-                "type": "string"
-              },
-              "requestId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
-              "runtimeGeneration": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
                 "type": "string"
               },
               "serverId": {
@@ -3535,9 +3995,7 @@
               }
             },
             "required": [
-              "requestId",
-              "productSessionId",
-              "runtimeGeneration",
+              "authority",
               "credentialRef",
               "subject",
               "serverId",
@@ -3551,6 +4009,100 @@
           {
             "additionalProperties": false,
             "properties": {
+              "authority": {
+                "additionalProperties": false,
+                "properties": {
+                  "callId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "clientOperationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "componentGenerationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "componentId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "deadlineMs": {
+                    "maximum": 600000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "dshTurn": {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "expectedConfigRevision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "expectedCredentialRevision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "productSessionId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "rootCallId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "runtimeGeneration": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "runtimeSessionId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requestId",
+                  "runtimeGeneration",
+                  "productSessionId",
+                  "deadlineMs"
+                ],
+                "type": "object"
+              },
               "connectionAttemptId": {
                 "maxLength": 256,
                 "minLength": 1,
@@ -3589,26 +4141,8 @@
                   }
                 ]
               },
-              "productSessionId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
               "purpose": {
                 "const": "connection",
-                "type": "string"
-              },
-              "requestId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
-              "runtimeGeneration": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
                 "type": "string"
               },
               "serverId": {
@@ -3623,9 +4157,7 @@
               }
             },
             "required": [
-              "requestId",
-              "productSessionId",
-              "runtimeGeneration",
+              "authority",
               "credentialRef",
               "subject",
               "serverId",
@@ -3714,6 +4246,100 @@
             "minLength": 1,
             "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
             "type": "string"
+          },
+          "authority": {
+            "additionalProperties": false,
+            "properties": {
+              "callId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "clientOperationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentGenerationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "deadlineMs": {
+                "maximum": 600000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "dshTurn": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expectedConfigRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "expectedCredentialRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "productSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "requestId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "rootCallId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeGeneration": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "turnId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestId",
+              "runtimeGeneration",
+              "productSessionId",
+              "deadlineMs"
+            ],
+            "type": "object"
           },
           "event": {
             "anyOf": [
@@ -3873,31 +4499,7 @@
             ],
             "type": "object"
           },
-          "runtimeGeneration": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "runtimeSessionId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
           "tool": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "toolCallId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "turnId": {
             "maxLength": 256,
             "minLength": 1,
             "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
@@ -3905,10 +4507,7 @@
           }
         },
         "required": [
-          "runtimeGeneration",
-          "runtimeSessionId",
-          "turnId",
-          "toolCallId",
+          "authority",
           "hookId",
           "event",
           "tool",
@@ -4094,13 +4693,101 @@
       "params": {
         "additionalProperties": false,
         "properties": {
-          "cancellationToken": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
+          "authority": {
+            "additionalProperties": false,
+            "properties": {
+              "callId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "clientOperationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentGenerationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "deadlineMs": {
+                "maximum": 600000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "dshTurn": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expectedConfigRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "expectedCredentialRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "productSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "requestId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "rootCallId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeGeneration": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "turnId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestId",
+              "runtimeGeneration",
+              "productSessionId",
+              "deadlineMs"
+            ],
+            "type": "object"
           },
-          "clientOperationId": {
+          "cancellationToken": {
             "maxLength": 256,
             "minLength": 1,
             "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
@@ -4146,24 +4833,11 @@
             "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
             "type": "string"
           },
-          "schema": {},
-          "toolCallId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "turnId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          }
+          "schema": {}
         },
         "required": [
+          "authority",
           "interactionId",
-          "clientOperationId",
-          "turnId",
           "kind",
           "schema",
           "desiredPolicyRevision",
@@ -4191,32 +4865,102 @@
       "params": {
         "additionalProperties": false,
         "properties": {
+          "authority": {
+            "additionalProperties": false,
+            "properties": {
+              "callId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "clientOperationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentGenerationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "componentId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "deadlineMs": {
+                "maximum": 600000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "dshTurn": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expectedConfigRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "expectedCredentialRevision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "productSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "requestId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "rootCallId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeGeneration": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "runtimeSessionId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "turnId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "requestId",
+              "runtimeGeneration",
+              "productSessionId",
+              "deadlineMs"
+            ],
+            "type": "object"
+          },
           "input": {},
-          "runtimeGeneration": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "runtimeSessionId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
           "tool": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "toolCallId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "turnId": {
             "maxLength": 256,
             "minLength": 1,
             "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
@@ -4224,10 +4968,7 @@
           }
         },
         "required": [
-          "runtimeGeneration",
-          "runtimeSessionId",
-          "turnId",
-          "toolCallId",
+          "authority",
           "tool",
           "input"
         ],

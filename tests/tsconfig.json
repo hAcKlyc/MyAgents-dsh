@@ -10,6 +10,7 @@
   "references": [
     { "path": "../packages/artifact-verifier" },
     { "path": "../packages/protocol" },
+    { "path": "../packages/host-ports" },
     { "path": "../packages/tool-contracts" },
     { "path": "../packages/task-graph" },
     { "path": "../packages/tool-runtime-product" },

@@ -7,6 +7,7 @@
   },
   "files": ["src/event-projector.ts", "src/index.ts", "src/native-rpc-service.ts"],
   "references": [
+    { "path": "../host-ports" },
     { "path": "../operation-runtime" },
     { "path": "../protocol" },
     { "path": "../product-profile" },

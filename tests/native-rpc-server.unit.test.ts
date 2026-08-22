@@ -14,6 +14,7 @@ import {
   type ProtocolError,
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
+import type { HostPortService, HostPortTransportLifecycle } from "@myagents-dsh/host-ports";
 import { NativeRpcServer } from "@myagents-dsh/rpc-server";
 import { RuntimeProcessLifecycle } from "@myagents-dsh/runtime-server";
 import type * as ProductProfileExports from "@myagents-dsh/product-profile";
@@ -26,6 +27,17 @@ import type {
 import type * as RuntimeProductExports from "@myagents-dsh/runtime-product";
 import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
+
+type HostPortLifecycle = HostPortTransportLifecycle;
+const hostPortLifecycleState = vi.hoisted<{ current: HostPortLifecycle }>(() => ({
+  current: {
+    activate: () => undefined,
+    bindProductSession: () => undefined,
+    bindTransport: () => undefined,
+    close: () => Promise.resolve(),
+    stopAccepting: () => undefined,
+  },
+}));
 
 vi.mock("@myagents-dsh/product-profile", async (importOriginal) => {
   const actual = await importOriginal<typeof ProductProfileExports>();
@@ -44,6 +56,7 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
       artifactVersion: profile.ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion,
       context: context.root,
       dispose: () => Promise.resolve(),
+      hostPorts: hostPortLifecycleState.current,
       serviceOrder: [],
     }),
   };
@@ -51,10 +64,19 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
 
 const digest = "a".repeat(64);
 const compositionAuthority = Object.freeze({}) as NativeRpcLifecycleAuthority;
+const createHostPortLifecycle = (): HostPortLifecycle => ({
+  activate: () => undefined,
+  bindProductSession: () => undefined,
+  bindTransport: () => undefined,
+  close: () => Promise.resolve(),
+  stopAccepting: () => undefined,
+});
 const createRoot = (
   retire: () => Promise<void> = () => Promise.resolve(),
   settlementFailure: Promise<ProductSessionSettlementFailure> = new Promise(() => undefined),
+  hostPorts: HostPortLifecycle = createHostPortLifecycle(),
 ): Context => {
+  hostPortLifecycleState.current = hostPorts;
   const root = new Context();
   root.provide("sessions", {
     flush: () => Promise.resolve(true),
@@ -73,6 +95,7 @@ const createRoot = (
     snapshot: () => Object.freeze({ recoveryRequired: false, operations: Object.freeze([]) }),
     start: () => Promise.reject(new Error("synthetic turn admission is not configured")),
   } as unknown as SdkOperationService);
+  root.provide("hostPorts", {} as HostPortService);
   return root;
 };
 
@@ -222,7 +245,64 @@ const rawResponse = async (
   return response;
 };
 
+const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
 describe("native RPC Cordis service", () => {
+  it("binds, activates, stops, and drains the sole Host port owner in transport order", async () => {
+    const events: string[] = [];
+    const hostPorts: HostPortLifecycle = {
+      activate: () => { events.push("activate"); },
+      bindProductSession: (productSessionId) => { events.push(`session:${productSessionId}`); },
+      bindTransport: (peer, runtimeGeneration) => {
+        expect(peer.role).toBe("runtime");
+        events.push(`transport:${runtimeGeneration}`);
+      },
+      close: () => { events.push("close-host-ports"); return Promise.resolve(); },
+      stopAccepting: (reason) => { events.push(`stop:${reason ?? "runtime_stopping"}`); },
+    };
+    const runtimeInput = new PassThrough();
+    const runtimeOutput = new PassThrough();
+    const host = new JsonRpcPeer({
+      input: runtimeOutput,
+      output: runtimeInput,
+      role: "host",
+      limits: REFERENCE_PROTOCOL_LIMITS,
+    });
+    const root = createRoot(
+      () => { events.push("retire-session"); return Promise.resolve(); },
+      new Promise(() => undefined),
+      hostPorts,
+    );
+    await root.plugin(NativeRpcServer, {
+      compositionAuthority,
+      input: runtimeInput,
+      output: runtimeOutput,
+      runtimeGeneration: "synthetic-generation",
+      platformTarget: "darwin-arm64",
+    });
+    expect(Reflect.ownKeys(root.nativeRpc)).not.toContain("hostPortLifecycleValue");
+    const client = new GeneratedHostClient(host);
+    await client.initialize(initializeParams());
+    expect(events).toEqual([
+      "transport:synthetic-generation",
+      "session:synthetic-product-session",
+    ]);
+    await vi.waitFor(() => expect(root.nativeRpc.phase).toBe("await_initialized"));
+    await client.initialized();
+    for (let attempts = 0; attempts < 50 && !events.includes("activate"); attempts += 1) await tick();
+    expect(events).toContain("activate");
+    await client.runtimeShutdown({ reason: "fixture" });
+    await root.nativeRpc.whenStopped();
+    expect(events.indexOf("stop:shutdown")).toBeGreaterThan(events.indexOf("activate"));
+    expect(events.indexOf("close-host-ports")).toBeGreaterThan(events.indexOf("stop:shutdown"));
+    expect(events.indexOf("retire-session")).toBeGreaterThan(events.indexOf("close-host-ports"));
+
+    await root.fiber.dispose();
+    host.close();
+    runtimeInput.destroy();
+    runtimeOutput.destroy();
+  });
+
   it("binds the accepted patched engine, negotiates minimum limits, and shuts down after its response", async () => {
     const harness = await createHarness();
     try {

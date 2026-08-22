@@ -11,7 +11,15 @@ export const BATCH1_AVAILABLE_HOST_METHODS = Object.freeze([
   "runtime/status",
   "runtime/shutdown",
 ] as const);
-export const BATCH1_AVAILABLE_REVERSE_METHODS = Object.freeze([] as const);
+export const BATCH1_AVAILABLE_REVERSE_METHODS = Object.freeze([
+  "host/credential/resolve",
+  "host/interaction/request",
+  "host/tool/execute",
+  "host/hook/execute",
+  "host/attachment/put",
+  "host/attachment/acquire",
+  "host/attachment/release",
+] as const);
 export const BATCH1_AVAILABLE_NOTIFICATIONS = Object.freeze([
   "initialized",
   "rpc/cancel",
@@ -25,6 +33,7 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
   "@deepseek-ai/dsh-tools:ToolRuntime",
   BATCH1_ADAPTER_REGISTRATION_PLUGIN_ID,
   "@deepseek-ai/dsh-agent-loop:AgentLoop",
+  "@myagents-dsh/host-ports:HostPortService",
   "@myagents-dsh/runtime-product:ProductSessionService",
   "@myagents-dsh/operation-runtime:SdkOperationService",
   "@myagents-dsh/rpc-server:NativeRpcServer",
@@ -33,7 +42,7 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
 export interface Batch1CandidateProfileManifest {
   readonly formatVersion: 1;
   readonly profileId: typeof BATCH1_CANDIDATE_PROFILE_ID;
-  readonly stage: "batch-1-w1-a10";
+  readonly stage: "batch-1-w3-a1";
   readonly runtimeActivation: "workstream-evidence-only";
   readonly protocol: Readonly<{
     version: string;
@@ -115,7 +124,7 @@ export const buildBatch1CandidateProfile = (
 ): Batch1CandidateProfileManifest => Object.freeze({
   formatVersion: 1,
   profileId: BATCH1_CANDIDATE_PROFILE_ID,
-  stage: "batch-1-w1-a10",
+  stage: "batch-1-w3-a1",
   runtimeActivation: "workstream-evidence-only",
   protocol: Object.freeze({
     version: exactIdentifier(input.protocolVersion, "candidate protocol version"),

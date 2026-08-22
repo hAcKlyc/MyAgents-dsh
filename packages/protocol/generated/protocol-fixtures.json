@@ -289,7 +289,7 @@
         },
         "runtimeGeneration": "generation-1",
         "runtimeVersion": "0.0.0",
-        "schemaSha256": "1ede8582e8f9c9798b3ce6f20e61339e9bb5c2332bdd5ae70c7e726d97883353",
+        "schemaSha256": "e6e65182147a642451b4a1a24326a1fb883527a35a5d0a3d7ad0ac4981be56f9",
         "sessionFormat": "dsh-session-events-v1"
       }
     },
@@ -1069,7 +1069,7 @@
     }
   ],
   "protocolVersion": "2.0.0-draft.1",
-  "schemaSha256": "1ede8582e8f9c9798b3ce6f20e61339e9bb5c2332bdd5ae70c7e726d97883353",
+  "schemaSha256": "e6e65182147a642451b4a1a24326a1fb883527a35a5d0a3d7ad0ac4981be56f9",
   "valid": [
     {
       "frame": {
@@ -1264,7 +1264,7 @@
           },
           "runtimeGeneration": "generation-1",
           "runtimeVersion": "0.0.0",
-          "schemaSha256": "1ede8582e8f9c9798b3ce6f20e61339e9bb5c2332bdd5ae70c7e726d97883353",
+          "schemaSha256": "e6e65182147a642451b4a1a24326a1fb883527a35a5d0a3d7ad0ac4981be56f9",
           "sessionFormat": "dsh-session-events-v1"
         }
       },
@@ -1280,13 +1280,16 @@
         "jsonrpc": "2.0",
         "method": "host/credential/resolve",
         "params": {
+          "authority": {
+            "deadlineMs": 30000,
+            "productSessionId": "product-session-1",
+            "requestId": "credential-request-1",
+            "runtimeGeneration": "generation-1"
+          },
           "credentialRef": "provider-credential",
-          "productSessionId": "product-session-1",
           "profileRevision": "profile-v1",
           "providerRouteId": "route-1",
           "purpose": "availability",
-          "requestId": "credential-request-1",
-          "runtimeGeneration": "generation-1",
           "subject": "provider"
         }
       },

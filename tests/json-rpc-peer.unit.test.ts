@@ -84,9 +84,12 @@ describe("strict bidirectional JSON-RPC peer", () => {
 
     await expect(pair.host.request("runtime/status", {})).resolves.toEqual(runtimeStatus);
     await expect(pair.runtime.request("host/credential/resolve", {
-      requestId: "credential-request-1",
-      productSessionId: "product-session-1",
-      runtimeGeneration: "generation-1",
+      authority: {
+        requestId: "credential-request-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        deadlineMs: 30_000,
+      },
       credentialRef: "provider-credential",
       subject: "provider",
       providerRouteId: "route-1",
@@ -120,9 +123,12 @@ describe("strict bidirectional JSON-RPC peer", () => {
     const digest = "a".repeat(64);
 
     await expect(pair.runtime.request("host/credential/resolve", {
-      requestId: "credential-request-1",
-      productSessionId: "product-session-1",
-      runtimeGeneration: "generation-1",
+      authority: {
+        requestId: "credential-request-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        deadlineMs: 30_000,
+      },
       credentialRef: "provider-credential",
       subject: "provider",
       providerRouteId: "route-1",
@@ -130,9 +136,16 @@ describe("strict bidirectional JSON-RPC peer", () => {
       purpose: "availability",
     })).resolves.toMatchObject({ kind: "availability", available: false });
     await expect(pair.runtime.request("host/interaction/request", {
+      authority: {
+        requestId: "interaction-request-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        runtimeSessionId: "runtime-session-1",
+        clientOperationId: "operation-1",
+        turnId: "turn-1",
+        deadlineMs: 30_000,
+      },
       interactionId: "interaction-1",
-      clientOperationId: "operation-1",
-      turnId: "turn-1",
       kind: "ask_user",
       schema: { type: "string" },
       desiredPolicyRevision: "policy-v1",
@@ -140,18 +153,28 @@ describe("strict bidirectional JSON-RPC peer", () => {
       cancellationToken: "cancel-1",
     })).resolves.toEqual({ registered: true });
     await expect(pair.runtime.request("host/tool/execute", {
-      runtimeGeneration: "generation-1",
-      runtimeSessionId: "runtime-session-1",
-      turnId: "turn-1",
-      toolCallId: "tool-call-1",
+      authority: {
+        requestId: "tool-request-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        runtimeSessionId: "runtime-session-1",
+        turnId: "turn-1",
+        callId: "tool-call-1",
+        deadlineMs: 30_000,
+      },
       tool: "SyntheticHostTool",
       input: {},
     })).resolves.toEqual({ state: "failed", code: "fixture_tool_unconfigured" });
     await expect(pair.runtime.request("host/hook/execute", {
-      runtimeGeneration: "generation-1",
-      runtimeSessionId: "runtime-session-1",
-      turnId: "turn-1",
-      toolCallId: "tool-call-1",
+      authority: {
+        requestId: "hook-request-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        runtimeSessionId: "runtime-session-1",
+        turnId: "turn-1",
+        callId: "tool-call-1",
+        deadlineMs: 30_000,
+      },
       hookId: "hook-1",
       event: "PreToolUse",
       tool: "Read",
@@ -159,8 +182,13 @@ describe("strict bidirectional JSON-RPC peer", () => {
       origin: "root",
     })).resolves.toEqual({ state: "continue" });
     await expect(pair.runtime.request("host/attachment/put", {
-      runtimeGeneration: "generation-1",
-      runtimeSessionId: "runtime-session-1",
+      authority: {
+        requestId: "attachment-put-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        runtimeSessionId: "runtime-session-1",
+        deadlineMs: 30_000,
+      },
       mimeType: "text/plain",
       name: "synthetic.txt",
       sizeBytes: 3,
@@ -173,16 +201,26 @@ describe("strict bidirectional JSON-RPC peer", () => {
       sha256: digest,
     });
     await expect(pair.runtime.request("host/attachment/acquire", {
-      runtimeGeneration: "generation-1",
-      runtimeSessionId: "runtime-session-1",
+      authority: {
+        requestId: "attachment-acquire-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        runtimeSessionId: "runtime-session-1",
+        deadlineMs: 30_000,
+      },
       attachmentId: "attachment-1",
       expectedMimeType: "text/plain",
       expectedSizeBytes: 3,
       expectedSha256: digest,
     })).rejects.toMatchObject({ code: "host_attachment_unavailable" });
     await expect(pair.runtime.request("host/attachment/release", {
-      runtimeGeneration: "generation-1",
-      runtimeSessionId: "runtime-session-1",
+      authority: {
+        requestId: "attachment-release-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        runtimeSessionId: "runtime-session-1",
+        deadlineMs: 30_000,
+      },
       leaseId: "lease-1",
     })).resolves.toEqual({ ok: true });
 
@@ -342,9 +380,12 @@ describe("strict bidirectional JSON-RPC peer", () => {
       };
     });
     const reverseParams: MethodParams<"host/credential/resolve"> = {
-      requestId: "credential-request-1",
-      productSessionId: "product-session-1",
-      runtimeGeneration: "generation-1",
+      authority: {
+        requestId: "credential-request-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        deadlineMs: 30_000,
+      },
       credentialRef: "credential-1",
       subject: "provider",
       providerRouteId: "route-1",
@@ -356,7 +397,7 @@ describe("strict bidirectional JSON-RPC peer", () => {
     await waitUntil(() => pair.host.inboundRequestCount === 1);
     await expect(pair.runtime.request("host/credential/resolve", {
       ...reverseParams,
-      requestId: "credential-request-2",
+      authority: { ...reverseParams.authority, requestId: "credential-request-2" },
     })).rejects.toMatchObject({ code: "protocol_overloaded" });
     expect(() => pair.runtime.updateLimits({
       ...limits,
@@ -395,10 +436,15 @@ describe("strict bidirectional JSON-RPC peer", () => {
 
   it("rejects non-canonical JSON before serialization without mutating values", () => {
     expect(() => validateMethodParams("host/tool/execute", {
-      runtimeGeneration: "generation-1",
-      runtimeSessionId: "runtime-session-1",
-      turnId: "turn-1",
-      toolCallId: "tool-call-1",
+      authority: {
+        requestId: "tool-request-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        runtimeSessionId: "runtime-session-1",
+        turnId: "turn-1",
+        callId: "tool-call-1",
+        deadlineMs: 30_000,
+      },
       tool: "FixtureTool",
       input: { numeric: Number.NaN },
     })).toThrow(expect.objectContaining({ code: "protocol_invalid_params" }));
@@ -429,10 +475,15 @@ describe("strict bidirectional JSON-RPC peer", () => {
       },
     });
     expect(() => validateMethodParams("host/tool/execute", {
-      runtimeGeneration: "generation-1",
-      runtimeSessionId: "runtime-session-1",
-      turnId: "turn-1",
-      toolCallId: "tool-call-1",
+      authority: {
+        requestId: "tool-request-1",
+        productSessionId: "product-session-1",
+        runtimeGeneration: "generation-1",
+        runtimeSessionId: "runtime-session-1",
+        turnId: "turn-1",
+        callId: "tool-call-1",
+        deadlineMs: 30_000,
+      },
       tool: "FixtureTool",
       input: { payload: executableProxy },
     })).toThrow(expect.objectContaining({ code: "protocol_invalid_params" }));

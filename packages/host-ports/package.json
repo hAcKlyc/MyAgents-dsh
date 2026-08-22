@@ -1,0 +1,17 @@
+{
+  "name": "@myagents-dsh/host-ports",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Single Runtime-to-Host reverse RPC service and lifecycle owner",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/protocol": "0.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1"
+  }
+}

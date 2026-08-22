@@ -510,6 +510,22 @@ Runs one tool-free, in-process, ephemeral model request for bounded auxiliary wo
 
 ## 14. Runtime-to-Host reverse methods
 
+All seven methods carry one strict `authority` envelope. The Runtime-owned
+`HostPortService` injects `requestId`, `runtimeGeneration`, and
+`productSessionId`; callers may supply only the relevant Runtime Session,
+operation, product-turn, DSH-turn, root-call, call, component-generation,
+component, configuration-revision, and credential-revision fields. Every
+envelope also carries a bounded relative `deadlineMs`. The strict JSON-RPC
+peer owns wire correlation and cancellation; after a response, the service
+revalidates the captured caller authority before returning any material or
+capability. A stale or disposed scope rejects locally and cannot be revived
+by a late Host response.
+
+No product consumer receives the peer or constructs generation/Product
+Session authority. Reverse calls are not retried by this layer, and the
+service retains only safe in-flight counts—never credentials, attachment
+bytes, tool input/output, or Host error detail.
+
 ### 14.1 Credentials
 
 `host/credential/resolve` distinguishes:

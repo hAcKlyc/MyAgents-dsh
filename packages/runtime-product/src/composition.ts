@@ -24,6 +24,11 @@ import {
   type OperationBirthAuthority,
 } from "@myagents-dsh/operation-runtime";
 import {
+  HostPortService,
+  type HostPortServiceController,
+  type HostPortTransportLifecycle,
+} from "@myagents-dsh/host-ports";
+import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_ADAPTER_REGISTRATION_PLUGIN_ID,
   assertAcceptedDshRuntimeGraph,
@@ -79,6 +84,7 @@ export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "tool-runtime",
   "llm-adapter",
   "agent-loop",
+  "host-port-service",
   "product-session",
   "sdk-operation",
 ] as const);
@@ -241,6 +247,7 @@ export interface DshRootCompositionAuthority {
   readonly artifactVersion: string;
   readonly context: Context;
   readonly dispose: () => Promise<void>;
+  readonly hostPorts: HostPortTransportLifecycle;
   readonly serviceOrder: typeof DSH_ROOT_SERVICE_ORDER;
 }
 
@@ -255,6 +262,7 @@ type CompositionAuthorityState = {
   readonly composition: DshRootComposition;
   readonly context: Context;
   readonly dispose: () => Promise<void>;
+  readonly hostPorts: HostPortServiceController;
   readonly snapshot: () => DshRootCompositionSnapshot;
   claimed: boolean;
   canonicalToolPlane: "absent" | "installing" | "installed" | "failed";
@@ -264,12 +272,26 @@ type CompositionAuthorityState = {
 type NativeRpcLifecycleAuthorityState = {
   readonly context: Context;
   readonly dispose: () => Promise<void>;
+  readonly hostPorts: HostPortTransportLifecycle;
   readonly snapshot: () => DshRootCompositionSnapshot;
   consumed: boolean;
 };
 
 const compositionAuthorities = new WeakMap<Context, CompositionAuthorityState>();
 const nativeRpcLifecycleAuthorities = new WeakMap<object, NativeRpcLifecycleAuthorityState>();
+
+const transportOnlyHostPortLifecycle = (
+  controller: HostPortServiceController,
+): HostPortTransportLifecycle => Object.freeze({
+  activate: () => controller.activate(),
+  bindProductSession: (productSessionId: string) => controller.bindProductSession(productSessionId),
+  bindTransport: (
+    peer: Parameters<HostPortTransportLifecycle["bindTransport"]>[0],
+    runtimeGeneration: string,
+  ) => controller.bindTransport(peer, runtimeGeneration),
+  close: () => controller.close(),
+  stopAccepting: (reason?: string) => controller.stopAccepting(reason),
+});
 
 export const claimNativeRpcLifecycleAuthority = (
   composition: DshRootComposition,
@@ -282,11 +304,13 @@ export const claimNativeRpcLifecycleAuthority = (
   }
   state.snapshot();
   state.claimed = true;
+  const hostPorts = transportOnlyHostPortLifecycle(state.hostPorts);
   const authority = Object.freeze({}) as NativeRpcLifecycleAuthority;
   nativeRpcLifecycleAuthorities.set(authority, {
     consumed: false,
     context: state.context,
     dispose: state.dispose,
+    hostPorts,
     snapshot: state.snapshot,
   });
   return authority;
@@ -316,6 +340,7 @@ export const consumeNativeRpcLifecycleAuthority = (
     artifactVersion: snapshot.artifactVersion,
     context: installationContext,
     dispose: state.dispose,
+    hostPorts: state.hostPorts,
     serviceOrder: DSH_ROOT_SERVICE_ORDER,
   });
 };
@@ -571,6 +596,7 @@ export const composeDshRootServices = async (
   const { adapter, agentLoop, operationBirthAuthority, providers, systemPrompt, tools } = normalized;
   const root = new Context();
   const childPublicationAuthority = Object.freeze({});
+  let hostPortController: HostPortServiceController | undefined;
   try {
     await root.plugin(SessionStore);
     await root.plugin(AgentRegistry);
@@ -581,6 +607,14 @@ export const composeDshRootServices = async (
     await root.plugin(AgentLoop, {
       ...agentLoop,
       agents: [],
+    });
+    await root.plugin(HostPortService, {
+      registerController: (controller) => {
+        if (hostPortController !== undefined) {
+          throw new Error("root composition Host port controller may register exactly once");
+        }
+        hostPortController = controller;
+      },
     });
     await root.plugin(ProductSessionService, { childPublicationAuthority });
     await root.plugin(SdkOperationService, {
@@ -597,12 +631,16 @@ export const composeDshRootServices = async (
     });
     const composition = new DshRootComposition(root, providers);
     composition.snapshot();
+    if (hostPortController === undefined) {
+      throw new Error("root composition did not capture its Host port controller");
+    }
     compositionAuthorities.set(root, {
       childPublicationAuthority,
       claimed: false,
       composition,
       context: root,
       dispose: composition.dispose.bind(composition),
+      hostPorts: hostPortController,
       canonicalToolPlane: "absent",
       canonicalToolPlaneTarget: undefined,
       snapshot: composition.snapshot.bind(composition),

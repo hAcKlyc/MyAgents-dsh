@@ -23,6 +23,10 @@ import SqliteSessionPersistence from "@deepseek-ai/dsh-session-persistence-sqlit
 import { resolveRgPath } from "@deepseek-ai/dsh-tool-fs-search";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import {
+  HostPortService,
+  type HostPortServiceController,
+} from "@myagents-dsh/host-ports";
+import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_CANDIDATE_PROFILE_SHA256,
 } from "@myagents-dsh/product-profile";
@@ -47,6 +51,7 @@ import {
   type ProductSessionService,
 } from "@myagents-dsh/runtime-product";
 import { ScriptedFakeLlmAdapter } from "@myagents-dsh/testkit";
+import { createInMemoryPeerPair, StandardTestHost } from "@myagents-dsh/test-host";
 import {
   staticSkillCatalogDigest,
   validateStaticSkillCatalog,
@@ -877,6 +882,7 @@ bareContext.provide("productSession", {
   snapshot: () => Object.freeze({ state: "unbound" as const }),
 } as ProductSessionService);
 bareContext.provide("sdkOperations", {} as never);
+bareContext.provide("hostPorts", {} as HostPortService);
 await assert.rejects(Promise.resolve(bareContext.plugin(NativeRpcServer, {
   compositionAuthority: Object.freeze({}) as NativeRpcLifecycleAuthority,
   input: bareInput,
@@ -914,6 +920,7 @@ let processSignalListener: ((signal: "SIGINT" | "SIGTERM") => void) | undefined;
 let processBoundaryUnsubscribeHits = 0;
 let processBoundaryDeadlineCancelHits = 0;
 const processBoundarySchedules: Array<{ exitCode: number; graceMs: number }> = [];
+assert.equal(composition.context.hostPorts.state, "unbound");
 const runtimeLifecycle = await startNativeRpcLifecycle(composition, {
   input: runtimeInput,
   output: runtimeOutput,
@@ -936,6 +943,39 @@ const runtimeLifecycle = await startNativeRpcLifecycle(composition, {
 });
 const nativeRpc: NativeRpcServer = runtimeLifecycle.nativeRpc;
 const hostClient = new GeneratedHostClient(hostPeer);
+const reverseCredentialCanary = "synthetic-reverse-credential-canary";
+const packedReversePair = createInMemoryPeerPair();
+const packedReverseRoot = new Context();
+let packedReverseController: HostPortServiceController | undefined;
+await packedReverseRoot.plugin(HostPortService, {
+  registerController: (controller) => { packedReverseController = controller; },
+});
+if (packedReverseController === undefined) {
+  throw new Error("packed Host port controller was not registered");
+}
+packedReverseController.bindTransport(packedReversePair.runtime, "artifact-packed-host-port-generation");
+packedReverseController.bindProductSession("artifact-packed-product-session");
+packedReverseController.activate();
+const packedStandardHost = new StandardTestHost(new GeneratedHostClient(packedReversePair.host), {
+  "host/credential/resolve": (params) => {
+    packedStandardHost.calls.push({ method: "host/credential/resolve", params: structuredClone(params) });
+    return {
+      kind: "material",
+      authoritativeCredentialRevision: "credential-v1",
+      material: { authorization: reverseCredentialCanary },
+    };
+  },
+  "host/attachment/acquire": (params) => {
+    packedStandardHost.calls.push({ method: "host/attachment/acquire", params: structuredClone(params) });
+    return {
+      leaseId: "artifact-lease-1",
+      readOnlyPath: "/fixture/artifact-lease-1",
+      mimeType: params.expectedMimeType,
+      sizeBytes: params.expectedSizeBytes,
+      sha256: params.expectedSha256,
+    };
+  },
+});
 const initializeRequest: InitializeParams = {
   protocol: { minVersion: PROTOCOL_VERSION, maxVersion: PROTOCOL_VERSION },
   host: {
@@ -1034,6 +1074,116 @@ assert.equal(rpcInitialization.profileDigest, BATCH1_CANDIDATE_PROFILE_SHA256);
 assert.equal(rpcInitialization.runtimeCapabilities.profile, "myagents-dsh-batch-1-candidate-v1");
 await waitUntil(() => nativeRpc.phase === "await_initialized", "initialize response completion");
 await hostClient.initialized();
+await waitUntil(() => nativeRpc.phase === "ready", "Host reverse-port activation");
+assert.equal(composition.context.hostPorts.state, "ready");
+assert.equal("bindTransport" in composition.context.hostPorts, false);
+const hostPortLifecycleAuthorityVerified = composition.context.hostPorts.state === "ready"
+  && !("bindTransport" in composition.context.hostPorts)
+  && !("close" in composition.context.hostPorts)
+  && !Reflect.ownKeys(composition.context.hostPorts).includes("requestAuthorities")
+  && !Reflect.ownKeys(composition.context.hostPorts).includes("stateValue")
+  && !Reflect.ownKeys(nativeRpc).includes("hostPortLifecycleValue");
+const hostPortAuthority = packedReverseController.createRequestAuthority({
+  signal: new AbortController().signal,
+  assertCurrent: () => undefined,
+  deadlineMs: 30_000,
+  runtimeSessionId: "artifact-runtime-session",
+  clientOperationId: "artifact-operation",
+  turnId: "artifact-turn",
+  dshTurn: 1,
+  rootCallId: "artifact-root-call",
+  callId: "artifact-call",
+  componentGenerationId: "artifact-component-generation",
+  componentId: "artifact-component",
+  expectedConfigRevision: "artifact-config-v1",
+  expectedCredentialRevision: "credential-v1",
+});
+const attachmentHostPortAuthority = packedReverseController.createRequestAuthority({
+  signal: new AbortController().signal,
+  assertCurrent: () => undefined,
+  deadlineMs: 30_000,
+  runtimeSessionId: "artifact-runtime-session",
+});
+const reverseCredential = await packedReverseRoot.hostPorts.resolveCredential(hostPortAuthority, {
+  credentialRef: "artifact-credential",
+  subject: "provider",
+  providerRouteId: "fixture",
+  profileRevision: "artifact-provider-v1",
+  purpose: "model_request",
+  modelRequestId: "artifact-model-request",
+});
+assert.equal(reverseCredential.kind, "material");
+assert.equal(reverseCredential.material.authorization, reverseCredentialCanary);
+assert.deepEqual(await packedReverseRoot.hostPorts.requestInteraction(hostPortAuthority, {
+  interactionId: "artifact-interaction",
+  kind: "permission",
+  schema: { type: "object" },
+  permissionAction: "fixture-action",
+  desiredPolicyRevision: "policy-v1",
+  scenario: "fixture",
+  cancellationToken: "artifact-cancellation",
+}), { registered: true });
+assert.deepEqual(await packedReverseRoot.hostPorts.executeHostTool(hostPortAuthority, {
+  tool: "ArtifactHostTool",
+  input: { fixture: true },
+}), { state: "failed", code: "fixture_tool_unconfigured" });
+assert.deepEqual(await packedReverseRoot.hostPorts.executeHostHook(hostPortAuthority, {
+  hookId: "artifact-hook",
+  event: "PreToolUse",
+  tool: "Read",
+  input: { path: "/fixture/input" },
+  origin: "root",
+}), { state: "continue" });
+assert.deepEqual(await packedReverseRoot.hostPorts.putAttachment(attachmentHostPortAuthority, {
+  mimeType: "text/plain",
+  name: "artifact.txt",
+  sizeBytes: 3,
+  sha256: rpcDigest,
+  stagingPath: "/fixture/staging/artifact.txt",
+}), {
+  attachmentId: `synthetic:${rpcDigest}`,
+  mimeType: "text/plain",
+  sizeBytes: 3,
+  sha256: rpcDigest,
+});
+assert.deepEqual(await packedReverseRoot.hostPorts.acquireAttachment(attachmentHostPortAuthority, {
+  attachmentId: "artifact-attachment",
+  expectedMimeType: "text/plain",
+  expectedSizeBytes: 3,
+  expectedSha256: rpcDigest,
+}), {
+  leaseId: "artifact-lease-1",
+  readOnlyPath: "/fixture/artifact-lease-1",
+  mimeType: "text/plain",
+  sizeBytes: 3,
+  sha256: rpcDigest,
+});
+assert.deepEqual(await packedReverseRoot.hostPorts.releaseAttachment(attachmentHostPortAuthority, {
+  leaseId: "artifact-lease-1",
+}), { ok: true });
+const reverseMethodOrder = packedStandardHost.calls.map(({ method }) => method);
+assert.deepEqual(reverseMethodOrder, [
+  "host/credential/resolve",
+  "host/interaction/request",
+  "host/tool/execute",
+  "host/hook/execute",
+  "host/attachment/put",
+  "host/attachment/acquire",
+  "host/attachment/release",
+]);
+const reverseAuthorities = packedStandardHost.calls.map(({ params }) =>
+  (params as { authority: Record<string, unknown> }).authority);
+assert.deepEqual(reverseAuthorities.map(({ requestId }) => requestId), [
+  "host-port:1", "host-port:2", "host-port:3", "host-port:4",
+  "host-port:5", "host-port:6", "host-port:7",
+]);
+for (const authority of reverseAuthorities) {
+  assert.equal(authority.runtimeGeneration, "artifact-packed-host-port-generation");
+  assert.equal(authority.productSessionId, "artifact-packed-product-session");
+  assert.equal(authority.deadlineMs, 30_000);
+}
+assert.equal(packedReverseRoot.hostPorts.snapshot().activeRequests, 0);
+assert.equal(JSON.stringify(packedReverseRoot.hostPorts.snapshot()).includes(reverseCredentialCanary), false);
 const primarySessionParams = {
   clientOperationId: "artifact-primary-session-admission",
   runtimeSessionId: "dsh-artifact-primary",
@@ -2203,6 +2353,9 @@ const permissionRuleEvents = primaryAgent.session.events.filter(({ type }) => ty
 assert.equal(permissionAskedEvents.length, 23);
 assert.equal(permissionDecidedEvents.length, 23);
 assert.equal(permissionRuleEvents.length, 1);
+packedStandardHost.dispose();
+await packedReverseRoot.fiber.dispose();
+packedReversePair.close();
 hostPeer.close();
 runtimeInput.destroy();
 runtimeOutput.destroy();
@@ -2230,6 +2383,9 @@ process.stdout.write(`${JSON.stringify({
     unsubscribeHits: processBoundaryUnsubscribeHits,
   },
   operationCorrelationVerified: true,
+  hostPortServiceVerified: reverseMethodOrder.length === 7,
+  hostPortLifecycleAuthorityVerified,
+  hostPortMethodOrder: reverseMethodOrder,
   operationInterruptVerified: true,
   canonicalFileToolsVerified: true,
   canonicalProcessSearchToolsVerified: true,

@@ -1,5 +1,6 @@
 import { Context } from "@deepseek-ai/cordis";
 import { NativeRpcServer } from "@myagents-dsh/rpc-server";
+import type { HostPortService } from "@myagents-dsh/host-ports";
 import type {
   NativeRpcLifecycleAuthority,
   ProductSessionService,
@@ -22,6 +23,7 @@ describe("native RPC engine authority", () => {
     root.provide("sdkOperations", {
       bindTerminalReservationAuthority: () => undefined,
     } as never);
+    root.provide("hostPorts", {} as HostPortService);
     try {
       await expect(root.plugin(NativeRpcServer, {
         compositionAuthority: Object.freeze({}) as NativeRpcLifecycleAuthority,
