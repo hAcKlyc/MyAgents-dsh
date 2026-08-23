@@ -102,7 +102,7 @@ interface FileIdentity {
 export const PRODUCT_PERSISTENCE_LIMITS = Object.freeze({
   maxCheckpointRecordsPerGeneration: 4_096,
   maxDatabaseBytes: 4 * 1_024 * 1_024 * 1_024,
-  maxEventBytes: 1_048_576,
+  maxEventBytes: 2_097_152,
   maxHeaderBytes: 65_536,
   maxJsonDepth: 64,
   maxJsonNodes: 65_536,
