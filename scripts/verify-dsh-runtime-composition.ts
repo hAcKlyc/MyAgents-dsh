@@ -847,7 +847,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w4-a7"
+    || selfCheckProfile.stage !== "batch-1-w4-a8"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
