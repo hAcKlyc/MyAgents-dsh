@@ -9,6 +9,7 @@
   "include": ["scripts/**/*.ts", "vitest.config.ts"],
   "references": [
     { "path": "./packages/artifact-verifier" },
+    { "path": "./packages/dynamic-e2e" },
     { "path": "./packages/protocol" },
     { "path": "./packages/tool-contracts" },
     { "path": "./packages/compatibility" },
