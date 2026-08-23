@@ -48,7 +48,7 @@ export interface HostInteractionBridgeConfig {
 export interface HostInteractionResponseController {
   readonly respond: (
     params: MethodParams<"interaction/respond">,
-  ) => MethodResult<"interaction/respond">;
+  ) => Promise<MethodResult<"interaction/respond">>;
 }
 
 type InteractionState = "registering" | "waiting";
@@ -59,6 +59,7 @@ type InteractionRecord = {
   readonly assertCurrent: () => void;
   readonly expectedRevision: string;
   readonly interactionId: string;
+  readonly registration: Promise<"waiting" | "expired">;
   readonly reject: (error: Error) => void;
   readonly resolve: (params: MethodParams<"interaction/respond">) => void;
   state: InteractionState;
@@ -259,11 +260,16 @@ class ProductHostInteractionBridge {
         "Host interaction identity was already registered",
       );
     }
+    let settleRegistration: (state: "waiting" | "expired") => void = () => undefined;
+    const registrationState = new Promise<"waiting" | "expired">((resolveRegistration) => {
+      settleRegistration = resolveRegistration;
+    });
     const record: InteractionRecord = {
       authority,
       assertCurrent,
       expectedRevision: boundedIdentifier(expectedRevision, "Host interaction expected revision"),
       interactionId: id,
+      registration: registrationState,
       reject,
       resolve,
       state: "registering",
@@ -272,22 +278,30 @@ class ProductHostInteractionBridge {
     const registration = this.#config.hostPorts.requestInteraction(authority, request);
     void registration.then(
       () => {
-        if (this.#active.get(id) === record) record.state = "waiting";
+        if (this.#active.get(id) === record) {
+          record.state = "waiting";
+          settleRegistration("waiting");
+        } else {
+          settleRegistration("expired");
+        }
       },
       () => {
-        if (this.#active.get(id) !== record) return;
-        this.#active.delete(id);
-        this.#remember(id, "expired");
-        reject(new ProductPermissionError(
-          "interaction_unavailable",
-          "Host did not register the interaction",
-        ));
+        if (this.#active.get(id) === record) {
+          this.#active.delete(id);
+          this.#remember(id, "expired");
+          reject(new ProductPermissionError(
+            "interaction_unavailable",
+            "Host did not register the interaction",
+          ));
+        }
+        settleRegistration("expired");
       },
     );
     return () => {
       if (this.#active.get(id) !== record) return;
       this.#active.delete(id);
       this.#remember(id, "expired");
+      settleRegistration("expired");
       if (record.state === "waiting") {
         this.#config.controller.notifyInteractionCancelled(Object.freeze({
           interactionId: id,
@@ -297,7 +311,9 @@ class ProductHostInteractionBridge {
     };
   }
 
-  #respond(params: MethodParams<"interaction/respond">): MethodResult<"interaction/respond"> {
+  async #respond(
+    params: MethodParams<"interaction/respond">,
+  ): Promise<MethodResult<"interaction/respond">> {
     const id = boundedIdentifier(params.interactionId, "Host interaction response id");
     const record = this.#active.get(id);
     if (record === undefined) {
@@ -305,8 +321,9 @@ class ProductHostInteractionBridge {
         ? Object.freeze({ state: "already_settled" as const })
         : Object.freeze({ state: "expired" as const });
     }
-    if (record.state !== "waiting") {
-      return Object.freeze({ state: "rejected" as const, code: "interaction_not_registered" });
+    if (record.state === "registering") {
+      await record.registration;
+      return this.#respond(params);
     }
     if (params.expectedRevision !== record.expectedRevision) {
       return Object.freeze({ state: "rejected" as const, code: "interaction_revision_stale" });

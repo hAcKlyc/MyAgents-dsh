@@ -343,7 +343,7 @@ export interface DshRootCompositionAuthority {
   readonly installPersistence: (runtimeHome: string) => Promise<void>;
   readonly respondInteraction: (
     params: MethodParams<"interaction/respond">,
-  ) => MethodResult<"interaction/respond">;
+  ) => Promise<MethodResult<"interaction/respond">>;
   readonly sessionCatalogs: () => Readonly<Pick<
     Extract<MethodResult<"session/create">, { state: "ready" }>,
     "extensionCatalog" | "toolCatalog"
@@ -401,7 +401,7 @@ type NativeRpcLifecycleAuthorityState = {
   readonly installPersistence: (runtimeHome: string, platformTarget: PlatformTarget) => Promise<void>;
   readonly respondInteraction: (
     params: MethodParams<"interaction/respond">,
-  ) => MethodResult<"interaction/respond">;
+  ) => Promise<MethodResult<"interaction/respond">>;
   readonly sessionCatalogs: () => Readonly<Pick<
     SessionBindingResult,
     "extensionCatalog" | "toolCatalog"
@@ -555,7 +555,7 @@ export const claimNativeRpcLifecycleAuthority = (
     installPersistence: (runtimeHome, platformTarget) =>
       installProductPersistence(state, runtimeHome, platformTarget),
     respondInteraction: (params) => state.hostInteraction?.respond(params)
-      ?? Object.freeze({ state: "expired" as const }),
+      ?? Promise.resolve(Object.freeze({ state: "expired" as const })),
     sessionCatalogs: () => {
       if (state.canonicalToolPlane !== "installed" || state.componentPlane !== "installed") {
         throw new ProtocolError(
