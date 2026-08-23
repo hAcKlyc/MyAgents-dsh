@@ -30,6 +30,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     allowedFiles: [
       "package.json",
       "src/artifact-policy.ts",
+      "src/batch-1-handoff.ts",
       "src/forbidden-content.ts",
       "src/index.ts",
       "src/repository-entry.ts",

@@ -7,6 +7,7 @@
   "files": ["src"],
   "exports": {
     ".": "./src/index.ts",
+    "./batch-1-handoff": "./src/batch-1-handoff.ts",
     "./runtime-artifact": "./src/runtime-artifact.ts",
     "./self-check": "./src/self-check.ts"
   },

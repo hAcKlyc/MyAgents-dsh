@@ -50,6 +50,8 @@ const expectedScripts = new Map([
   ["verify:dsh-artifact", "tsx scripts/build-patched-dsh-artifact.ts"],
   ["check:dsh-runtime-composition", "tsx scripts/verify-dsh-runtime-composition.ts"],
   ["e2e:dynamic", "tsx packages/dynamic-e2e/src/cli.ts"],
+  ["e2e:native", "tsx scripts/run-batch-1-native-campaign.ts"],
+  ["build:batch-1-handoff", "tsx scripts/build-batch-1-handoff.ts"],
   ["generate:tool-contracts", "tsx scripts/generate-tool-contracts.ts"],
   ["check:tool-contracts", "tsx scripts/generate-tool-contracts.ts --check"],
   ["check:dsh-seams-source", "tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test"],
@@ -79,6 +81,7 @@ const expectedWorkspaceFiles = new Map([
   ["apps/runtime-server", ["src/index.ts", "src/lifecycle.ts", "src/process.ts", "src/self-check.ts"]],
   ["packages/artifact-verifier", [
     "src/artifact-policy.ts",
+    "src/batch-1-handoff.ts",
     "src/forbidden-content.ts",
     "src/index.ts",
     "src/repository-entry.ts",

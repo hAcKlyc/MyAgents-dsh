@@ -10,6 +10,7 @@
   "references": [
     { "path": "./packages/artifact-verifier" },
     { "path": "./packages/dynamic-e2e" },
+    { "path": "./packages/persistence-product" },
     { "path": "./packages/protocol" },
     { "path": "./packages/tool-contracts" },
     { "path": "./packages/compatibility" },
