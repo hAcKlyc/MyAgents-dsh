@@ -176,10 +176,8 @@ export class ArtifactLifecycleProbeDriver implements DynamicRunDriver {
         TMPDIR: input.workspace.temporaryRoot,
       }),
     });
-    const runtimeEvents: unknown[] = [];
     const recordRuntimeEvent = (event: unknown): void => {
-      if (runtimeEvents.length >= 100_000) throw new Error("dynamic Runtime event evidence exceeded its bound");
-      runtimeEvents.push(structuredClone(event));
+      input.evidence.recordPublicEvent(event);
     };
     const stopNotifications = runtime.client.registerRuntimeNotificationHandlers({
       "runtime/event": recordRuntimeEvent,
@@ -203,7 +201,7 @@ export class ArtifactLifecycleProbeDriver implements DynamicRunDriver {
       return Object.freeze({
         outcome: "unavailable" as const,
         reasonCode: this.#reasonCode,
-        publicEvents: Object.freeze([...runtimeEvents]),
+        publicEvents: Object.freeze([]),
         diagnosticFacts: Object.freeze([{
           kind: "artifact_lifecycle_probe",
           artifactManifestSha256: input.artifact.manifestSha256,
@@ -326,10 +324,8 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
         },
       }),
     });
-    const runtimeEvents: unknown[] = [];
     const recordRuntimeEvent = (event: unknown): void => {
-      if (runtimeEvents.length >= 100_000) throw new Error("dynamic Runtime event evidence exceeded its bound");
-      runtimeEvents.push(structuredClone(event));
+      input.evidence.recordPublicEvent(event);
     };
     const stopNotifications = runtime.client.registerRuntimeNotificationHandlers({
       "runtime/event": recordRuntimeEvent,
@@ -416,7 +412,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
       return Object.freeze({
         outcome: passed ? "passed" as const : "failed" as const,
         ...(reasonCode === undefined ? {} : { reasonCode }),
-        publicEvents: Object.freeze(runtimeEvents),
+        publicEvents: Object.freeze([]),
         diagnosticFacts: Object.freeze([{
           kind: "approved_route_identity",
           routeConfigSha256: this.#route.routeConfigSha256,

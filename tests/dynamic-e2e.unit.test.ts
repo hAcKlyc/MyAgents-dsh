@@ -335,6 +335,30 @@ describe("dynamic E2E harness", () => {
     expect(run.driver).toBe("fixture");
   });
 
+  it("retains black-box public events when a driver fails before returning", async () => {
+    const output = await temporaryRoot("myagents-dynamic-failed-runs-");
+    const artifact = await createArtifact();
+    const scenario = (await loadDynamicScenarioCorpus(resolve(packageRoot, "scenarios")))[0];
+    if (scenario === undefined) throw new Error("dynamic scenario corpus is empty");
+    const failingDriver: DynamicRunDriver = Object.freeze({
+      kind: "fixture" as const,
+      execute: ({ evidence }: Parameters<DynamicRunDriver["execute"]>[0]) => {
+        evidence.recordPublicEvent({ kind: "runtime_event_before_failure", sequence: 1 });
+        throw new Error("synthetic driver failure");
+      },
+    });
+    const result = await runDynamicScenario({
+      repositoryRoot,
+      outputRoot: output,
+      artifactRoot: artifact.root,
+      scenario,
+      driver: failingDriver,
+    });
+    expect(result).toMatchObject({ outcome: "failed", reasonCode: "dynamic_driver_failed" });
+    expect(await readFile(resolve(result.evidence.root, "public-events.ndjson"), "utf8"))
+      .toBe('{"kind":"runtime_event_before_failure","sequence":1}\n');
+  });
+
   it("fails closed when credential material reaches any run-owned file before sealing", async () => {
     const output = await temporaryRoot("myagents-dynamic-secret-tree-");
     const artifact = await createArtifact();

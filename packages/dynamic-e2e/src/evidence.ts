@@ -49,7 +49,7 @@ export class DynamicEvidenceRecorder {
     if (this.#publicEvents.length >= MAX_EVIDENCE_ARRAY_LENGTH) {
       throw new Error("public event evidence exceeded its bound");
     }
-    this.#publicEvents.push(event);
+    this.#publicEvents.push(structuredClone(event));
   }
 
   recordDiagnosticFact(fact: unknown): void {
@@ -57,7 +57,7 @@ export class DynamicEvidenceRecorder {
     if (this.#diagnosticFacts.length >= MAX_EVIDENCE_ARRAY_LENGTH) {
       throw new Error("diagnostic evidence exceeded its bound");
     }
-    this.#diagnosticFacts.push(fact);
+    this.#diagnosticFacts.push(structuredClone(fact));
   }
 
   markTerminal(): void {
