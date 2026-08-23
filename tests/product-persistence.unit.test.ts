@@ -96,8 +96,9 @@ afterEach(async () => {
 describe("ProductSqliteSessionPersistence", () => {
   it("owns the exact immutable product event registry", () => {
     expect(Object.isFrozen(PRODUCT_REQUIRED_SESSION_EVENT_TYPES)).toBe(true);
-    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(21);
-    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(21);
+    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(22);
+    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(22);
+    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toContain("myagents/operation/limit");
     for (const type of PRODUCT_REQUIRED_SESSION_EVENT_TYPES) {
       expect(isProductKnownSessionEventType(type)).toBe(true);
     }
