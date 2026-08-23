@@ -45,7 +45,7 @@ const codingWorkspaceIsRepaired = (
     JSON.stringify(beforeByPath.get(path)) === JSON.stringify(afterByPath.get(path)));
 };
 
-const childTaskWorkHasOnlyOptionalReport = (
+const childTaskWorkHasOnlyOptionalMarkdownReport = (
   before: readonly WorkspaceManifestEntry[],
   after: readonly WorkspaceManifestEntry[],
 ): boolean => {
@@ -55,9 +55,12 @@ const childTaskWorkHasOnlyOptionalReport = (
     JSON.stringify(afterByPath.get(path)) !== JSON.stringify(entry))) return false;
   const additions = [...afterByPath].filter(([path]) => !beforeByPath.has(path));
   if (additions.length === 0) return afterByPath.size === beforeByPath.size;
+  const reportPath = additions[0]?.[0];
   const report = additions[0]?.[1];
   return additions.length === 1
-    && additions[0]?.[0] === "audit-report.md"
+    && typeof reportPath === "string"
+    && !reportPath.includes("/")
+    && /^[a-z0-9][a-z0-9._-]{0,127}\.md$/u.test(reportPath)
     && report?.kind === "file"
     && typeof report.size === "number"
     && report.size > 0
@@ -94,7 +97,10 @@ export const evaluateDynamicScenarioPostconditions = (
       record("approved-stable-selection", interactionSelectionIsStable(before, after));
       break;
     case "child-task-work":
-      record("fixture-inputs-preserved-with-optional-audit-report", childTaskWorkHasOnlyOptionalReport(before, after));
+      record(
+        "fixture-inputs-preserved-with-optional-markdown-report",
+        childTaskWorkHasOnlyOptionalMarkdownReport(before, after),
+      );
       break;
     case "adversarial-boundaries":
     case "degraded-host":

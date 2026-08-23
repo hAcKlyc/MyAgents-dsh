@@ -149,15 +149,27 @@ describe("dynamic E2E harness", () => {
       Object.freeze({ path: "area-c.md", kind: "file" as const, size: 1, sha256: "f".repeat(64) }),
     ]);
     const childAfter = Object.freeze([...childBefore, Object.freeze({
-      path: "audit-report.md",
+      path: "combined-findings.md",
       kind: "file" as const,
       size: 4_483,
       sha256: "1".repeat(64),
     })]);
     expect(evaluateDynamicScenarioPostconditions(child, childBefore, childAfter)).toMatchObject({
       passed: true,
-      assertions: [{ name: "fixture-inputs-preserved-with-optional-audit-report", passed: true }],
+      assertions: [{ name: "fixture-inputs-preserved-with-optional-markdown-report", passed: true }],
     });
+    expect(evaluateDynamicScenarioPostconditions(child, childBefore, Object.freeze([...childBefore, Object.freeze({
+      path: "reports/combined-findings.md",
+      kind: "file" as const,
+      size: 4_483,
+      sha256: "1".repeat(64),
+    })])).passed).toBe(false);
+    expect(evaluateDynamicScenarioPostconditions(child, childBefore, Object.freeze([...childAfter, Object.freeze({
+      path: "second-report.md",
+      kind: "file" as const,
+      size: 1,
+      sha256: "2".repeat(64),
+    })])).passed).toBe(false);
   });
 
   it("normalizes evidence trap-safely, redacts private paths, and rejects secret aliases", () => {
