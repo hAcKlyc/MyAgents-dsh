@@ -62,6 +62,7 @@
     "snapshot:dsh-baseline": "tsx scripts/snapshot-dsh-baseline.ts",
     "check:dsh-source": "tsx scripts/snapshot-dsh-baseline.ts --check --check-source ../deepseek-harness",
     "check:dsh-seams-source": "tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test",
+    "check:pre-artifact": "tsx scripts/run-batch-1-pre-artifact-gate.ts",
     "typecheck": "npm run check:foundation && tsc -b --pretty false",
     "lint": "eslint . --max-warnings 0",
     "test": "npm run check:foundation && vitest run",
