@@ -516,6 +516,12 @@ export class ProductComponentService extends Service {
   assertSessionExtension(extensionDigest: string): void {
     const service = originalService(this);
     if (service.#plane === undefined) return;
+    service.#assertEffectiveSnapshot(extensionDigest);
+  }
+
+  assertSessionExtensionCatalog(extensionDigest: string): void {
+    const service = originalService(this);
+    if (service.#plane === undefined) return;
     service.#assertEffectiveCatalog(extensionDigest);
   }
 
@@ -860,6 +866,26 @@ export class ProductComponentService extends Service {
       throw new ProtocolError(
         "extension_catalog_stale",
         "requested extension catalog is not the effective generation",
+        true,
+      );
+    }
+  }
+
+  #assertEffectiveSnapshot(digest: string): void {
+    if (this.#phase === "closed") {
+      throw new ProtocolError("extension_closed", "component service is closed");
+    }
+    if (this.#phase === "committing") {
+      throw new ProtocolError(
+        "extension_commit_in_progress",
+        "extension authority is gated during promotion",
+        true,
+      );
+    }
+    if (this.#recoveryRequired || this.#effective?.snapshot.digest !== digest) {
+      throw new ProtocolError(
+        "extension_snapshot_stale",
+        "requested extension snapshot is not the effective generation",
         true,
       );
     }

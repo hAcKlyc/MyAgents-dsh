@@ -1518,7 +1518,7 @@ export const composeDshRootServices = async (
         }
         const authority = compositionAuthorities.get(root);
         if (authority === undefined) throw new Error("root composition authority is unavailable");
-        root.productComponents.assertSessionExtension(request.params.extensionDigest);
+        root.productComponents.assertSessionExtensionCatalog(request.params.extensionDigest);
         assertInitialSessionConfiguration(authority, request);
         providerAdmissionAssert?.(request);
       },
@@ -1531,7 +1531,7 @@ export const composeDshRootServices = async (
       providerAdmissionGuard: async (request) => {
         const authority = compositionAuthorities.get(root);
         if (authority === undefined) throw new Error("root composition authority is unavailable");
-        root.productComponents.assertSessionExtension(request.params.extensionDigest);
+        root.productComponents.assertSessionExtensionCatalog(request.params.extensionDigest);
         assertInitialSessionConfiguration(authority, request);
         await providerAdmissionGuard?.(request);
       },
@@ -1763,7 +1763,7 @@ export const composeDshRootServices = async (
               || currentEnvironment.digest !== birth.executionEnvironmentDigest) {
               throw new ProtocolError("operation_birth_stale", "attachment input environment authority is stale");
             }
-            root.productComponents.assertSessionExtension(params.extensionDigest);
+            root.productComponents.assertSessionExtensionCatalog(params.extensionDigest);
             if (root.productComponents.status().effectiveRevision !== birth.componentRevision) {
               throw new ProtocolError("operation_birth_stale", "attachment input component authority is stale");
             }
