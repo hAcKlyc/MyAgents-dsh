@@ -1404,6 +1404,9 @@ const main = (): void => {
           "model_request",
           "model_request",
           "model_request",
+          "model_request",
+          "availability",
+          "model_request",
         ])
       || hostCredentialModelEvidence.childModelRequestBound !== true
       || hostCredentialModelEvidence.publicControllerHidden !== true
