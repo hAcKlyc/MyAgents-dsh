@@ -48,8 +48,10 @@ import type { PrimarySessionBackendRequest } from "./primary-session.js";
 
 type ProviderProfile = MethodParams<"session/create">["provider"];
 
-type HostUtilityRequest = Readonly<{
+type HostAuxiliaryRequest = Readonly<{
   clientOperationId: string;
+  kind: "compaction" | "utility";
+  runtimeSessionId?: string;
   signal: AbortSignal;
   token: object;
 }>;
@@ -272,7 +274,7 @@ export class HostDeepSeekModelAuthority {
   readonly #credentials: HostCredentialProviderController;
   #binding: HostProviderCredentialBinding | undefined;
   #candidate: PrimarySessionBackendRequest | undefined;
-  readonly #utilityRequest = new AsyncLocalStorage<HostUtilityRequest>();
+  readonly #auxiliaryRequest = new AsyncLocalStorage<HostAuxiliaryRequest>();
 
   constructor(
     context: Context,
@@ -365,31 +367,33 @@ export class HostDeepSeekModelAuthority {
         "model request differs from the admitted Provider profile",
       );
     }
-    const utility = this.#utilityRequest.getStore();
-    if (utility !== undefined) {
-      if (utility.signal !== signal || utility.signal.aborted) {
-        throw new ProtocolError("provider_request_stale", "utility model request authority is stale");
+    const auxiliary = this.#auxiliaryRequest.getStore();
+    if (auxiliary !== undefined) {
+      if (auxiliary.signal !== signal || auxiliary.signal.aborted
+        || (auxiliary.runtimeSessionId !== undefined
+          && options.sessionId !== auxiliary.runtimeSessionId)) {
+        throw new ProtocolError("provider_request_stale", "auxiliary model request authority is stale");
       }
       const digest = createHash("sha256").update(JSON.stringify([
-        "myagents-dsh-utility-model-request-v1",
-        utility.clientOperationId,
+        `myagents-dsh-${auxiliary.kind}-model-request-v1`,
+        auxiliary.clientOperationId,
       ])).digest("hex").slice(0, 48);
       const assertCurrent = (): void => {
-        if (this.#binding !== binding || utility.signal.aborted
-          || this.#utilityRequest.getStore()?.token !== utility.token) {
-          throw new ProtocolError("provider_request_stale", "utility model request authority is stale");
+        if (this.#binding !== binding || auxiliary.signal.aborted
+          || this.#auxiliaryRequest.getStore()?.token !== auxiliary.token) {
+          throw new ProtocolError("provider_request_stale", "auxiliary model request authority is stale");
         }
       };
       const scope = this.#credentials.createProviderRequestScope({
         assertCurrent,
         binding,
-        clientOperationId: utility.clientOperationId,
+        clientOperationId: auxiliary.clientOperationId,
         deadlineMs: this.#config.requestDeadlineMs,
         dshTurn: 1,
-        modelRequestId: `utility-model-${digest}`,
-        rootCallId: `utility-call-${digest}`,
+        modelRequestId: `${auxiliary.kind}-model-${digest}`,
+        rootCallId: `${auxiliary.kind}-call-${digest}`,
         signal,
-        turnId: `utility-turn-${digest}`,
+        turnId: `${auxiliary.kind}-turn-${digest}`,
       });
       return Object.freeze({ binding, scope });
     }
@@ -470,10 +474,40 @@ export class HostDeepSeekModelAuthority {
     }
     const request = Object.freeze({
       clientOperationId: params.clientOperationId,
+      kind: "utility" as const,
       signal,
       token: Object.freeze({}),
     });
-    return this.#utilityRequest.run(request, () => action(binding.profile));
+    return this.#auxiliaryRequest.run(request, () => action(binding.profile));
+  }
+
+  runCompactionRequest<T>(
+    clientOperationId: string,
+    runtimeSessionId: string,
+    signal: AbortSignal,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    if (typeof clientOperationId !== "string" || clientOperationId.length < 1
+      || typeof runtimeSessionId !== "string" || runtimeSessionId.length < 1
+      || !(signal instanceof AbortSignal) || isProxy(signal)
+      || typeof action !== "function" || isProxy(action)) {
+      return Promise.reject(new TypeError("compaction model request requires exact identity and cancellation"));
+    }
+    const binding = this.requireBinding();
+    if (binding.runtimeSessionId !== runtimeSessionId) {
+      return Promise.reject(new ProtocolError(
+        "provider_request_stale",
+        "compaction Runtime Session differs from the admitted Provider binding",
+      ));
+    }
+    const request = Object.freeze({
+      clientOperationId,
+      kind: "compaction" as const,
+      runtimeSessionId,
+      signal,
+      token: Object.freeze({}),
+    });
+    return this.#auxiliaryRequest.run(request, action);
   }
 
   resolveAttachments() {

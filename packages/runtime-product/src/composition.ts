@@ -1661,6 +1661,7 @@ export const composeDshRootServices = async (
   let providerAdmissionGuard: ((request: PrimarySessionBackendRequest) => Promise<void>) | undefined;
   let providerAdmissionAssert: ((request: PrimarySessionBackendRequest) => void) | undefined;
   let modelProfileBirthGuard: ((revision: string) => void) | undefined;
+  let hostModelRequestAuthority: HostDeepSeekModelAuthority | undefined;
   let hostPortController: HostPortServiceController | undefined;
   let componentController: ProductComponentServiceController | undefined;
   let operationLifecycleController: OperationLifecycleController | undefined;
@@ -1701,11 +1702,22 @@ export const composeDshRootServices = async (
         providerAdmissionAssert?.(request);
       },
       childPublicationAuthority,
-      compactSession: (agent, clientOperationId, signal) => root.compaction.compactNow(
-        agent,
-        signal ?? new AbortController().signal,
-        CommandId(clientOperationId),
-      ),
+      compactSession: (agent, clientOperationId, signal) => {
+        const requestSignal = signal ?? new AbortController().signal;
+        const action = () => root.compaction.compactNow(
+          agent,
+          requestSignal,
+          CommandId(clientOperationId),
+        );
+        return hostModelRequestAuthority === undefined
+          ? action()
+          : hostModelRequestAuthority.runCompactionRequest(
+              clientOperationId,
+              String(agent.id),
+              requestSignal,
+              action,
+            );
+      },
       providerAdmissionGuard: async (request) => {
         const authority = compositionAuthorities.get(root);
         if (authority === undefined) throw new Error("root composition authority is unavailable");
@@ -2068,12 +2080,14 @@ export const composeDshRootServices = async (
       persistenceRuntimeHome: undefined,
       persistenceTarget: undefined,
       installHostModelGuards: (authority) => {
-        if (providerAdmissionGuard !== undefined || modelProfileBirthGuard !== undefined) {
+        if (providerAdmissionGuard !== undefined || modelProfileBirthGuard !== undefined
+          || hostModelRequestAuthority !== undefined) {
           throw new Error("Host model plane guards may install exactly once");
         }
         providerAdmissionGuard = (request) => authority.preflight(request);
         providerAdmissionAssert = (request) => authority.assertAdmission(request);
         modelProfileBirthGuard = (revision) => authority.assertBirth(revision);
+        hostModelRequestAuthority = authority;
       },
       canonicalToolPlane: "absent",
       canonicalToolPlaneTarget: undefined,

@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
 
 import { PROTOCOL_VERSION, REFERENCE_PROTOCOL_LIMITS, type MethodParams } from "@myagents-dsh/protocol";
 import { launchArtifactRuntime } from "@myagents-dsh/test-host";
@@ -52,6 +54,52 @@ export interface DynamicRunResult {
 }
 
 const sha256Text = (text: string): string => createHash("sha256").update(text).digest("hex");
+
+export const createScriptedQuestionAnswer = (
+  params: MethodParams<"host/interaction/request">,
+): Readonly<{ answers: readonly Readonly<{ id: string; selected: readonly string[]; custom?: string }>[] }> => {
+  if (params.kind !== "ask_user" && params.kind !== "plan_approval") {
+    throw new TypeError("scripted question answer requires a question interaction");
+  }
+  const schema = params.schema;
+  if (schema === null || typeof schema !== "object" || Array.isArray(schema)) {
+    throw new TypeError("scripted question interaction schema must be an object");
+  }
+  const questions = (schema as { questions?: unknown }).questions;
+  if (!Array.isArray(questions) || questions.length < 1 || questions.length > 64) {
+    throw new TypeError("scripted question interaction must contain bounded questions");
+  }
+  return Object.freeze({
+    answers: Object.freeze(questions.map((candidate) => {
+      if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+        throw new TypeError("scripted question item must be an object");
+      }
+      const question = candidate as {
+        id?: unknown;
+        intent?: unknown;
+        options?: unknown;
+      };
+      if (typeof question.id !== "string") throw new TypeError("scripted question id is invalid");
+      const options = Array.isArray(question.options) ? question.options : [];
+      const labels = options.flatMap((option) => {
+        if (option === null || typeof option !== "object" || Array.isArray(option)) return [];
+        const label = (option as { label?: unknown }).label;
+        return typeof label === "string" ? [label] : [];
+      });
+      const intent = question.intent !== null && typeof question.intent === "object"
+        && !Array.isArray(question.intent)
+        ? question.intent as { kind?: unknown; approve?: unknown }
+        : undefined;
+      const desired = intent?.kind === "plan-review" && typeof intent.approve === "string"
+        ? intent.approve
+        : labels.includes("stable") ? "stable" : labels[0];
+      if (desired !== undefined && labels.includes(desired)) {
+        return Object.freeze({ id: question.id, selected: Object.freeze([desired]) });
+      }
+      return Object.freeze({ id: question.id, selected: Object.freeze([]), custom: "stable" });
+    })),
+  });
+};
 
 const platformTarget = (): "darwin-arm64" | "win32-x64" | "linux-x64" => {
   const identity = `${process.platform}-${process.arch}`;
@@ -269,68 +317,83 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
     const target = platformTarget();
     const asynchronousHostFailures: Error[] = [];
     const overriddenHostCalls: unknown[] = [];
+    const runtimes: DynamicArtifactHostProcess[] = [];
+    const stopNotifications: Array<() => void> = [];
+    const exits: Array<Readonly<{ code: number | null; signal: NodeJS.Signals | null }>> = [];
     const recordHostCall = (method: string, params: unknown): void => {
       if (overriddenHostCalls.length >= 10_000) throw new Error("dynamic Host call evidence exceeded its bound");
       overriddenHostCalls.push(Object.freeze({ method, params: structuredClone(params) }));
     };
-    const runtime = new DynamicArtifactHostProcess({
-      artifact: input.artifact,
-      cwd: input.workspace.workspace,
-      temporaryRoot: input.workspace.temporaryRoot,
-      secretCanaries: [this.#route.credentialMaterial()],
-      createHandlers: (client) => ({
-        "host/credential/resolve": (params) => {
-          recordHostCall("host/credential/resolve", params);
-          if (params.subject === "mcp") {
-            return {
-              kind: "availability" as const,
-              available: false,
-              authoritativeCredentialRevision: this.#route.credentialRevision,
-              reasonCode: "dynamic_mcp_credential_unavailable",
-            };
-          }
-          return params.purpose === "availability"
-            ? {
-                kind: "availability" as const,
-                available: true,
-                authoritativeCredentialRevision: this.#route.credentialRevision,
-              }
-            : {
-                kind: "material" as const,
-                authoritativeCredentialRevision: this.#route.credentialRevision,
-                material: { [this.#route.materialField]: this.#route.credentialMaterial() },
-              };
-        },
-        "host/interaction/request": (params, context) => {
-          recordHostCall("host/interaction/request", params);
-          context.afterResponse(() => {
-            const response = params.kind === "ask_user"
-              ? {
-                  interactionId: params.interactionId,
-                  expectedRevision: params.desiredPolicyRevision,
-                  decision: "answered" as const,
-                  value: "stable",
-                }
-              : {
-                  interactionId: params.interactionId,
-                  expectedRevision: params.desiredPolicyRevision,
-                  decision: input.scenario.hostPolicy.interaction === "deny" ? "deny" as const : "allow_once" as const,
-                };
-            void client.interactionRespond(response).catch((error: unknown) => {
-              asynchronousHostFailures.push(error instanceof Error ? error : new Error("Host interaction response failed"));
-            });
-          });
-          return { registered: true };
-        },
-      }),
-    });
     const recordRuntimeEvent = (event: unknown): void => {
       input.evidence.recordPublicEvent(event);
     };
-    const stopNotifications = runtime.client.registerRuntimeNotificationHandlers({
-      "runtime/event": recordRuntimeEvent,
-      "host/interaction/cancel": (event) => { recordRuntimeEvent({ kind: "host_interaction_cancel", event }); },
-    });
+    const createRuntime = (): DynamicArtifactHostProcess => {
+      const runtime = new DynamicArtifactHostProcess({
+        artifact: input.artifact,
+        cwd: input.workspace.workspace,
+        temporaryRoot: input.workspace.temporaryRoot,
+        secretCanaries: [this.#route.credentialMaterial()],
+        createHandlers: (client) => ({
+          "host/credential/resolve": (params) => {
+            recordHostCall("host/credential/resolve", params);
+            if (params.subject === "mcp") {
+              return {
+                kind: "availability" as const,
+                available: false,
+                authoritativeCredentialRevision: this.#route.credentialRevision,
+                reasonCode: "dynamic_mcp_credential_unavailable",
+              };
+            }
+            return params.purpose === "availability"
+              ? {
+                  kind: "availability" as const,
+                  available: true,
+                  authoritativeCredentialRevision: this.#route.credentialRevision,
+                }
+              : {
+                  kind: "material" as const,
+                  authoritativeCredentialRevision: this.#route.credentialRevision,
+                  material: { [this.#route.materialField]: this.#route.credentialMaterial() },
+                };
+          },
+          "host/interaction/request": (params, context) => {
+            recordHostCall("host/interaction/request", params);
+            context.afterResponse(() => {
+              const question = params.kind === "ask_user" || params.kind === "plan_approval";
+              const response = question
+                ? input.scenario.hostPolicy.interaction === "deny"
+                  ? {
+                      interactionId: params.interactionId,
+                      expectedRevision: params.desiredPolicyRevision,
+                      decision: "cancelled" as const,
+                    }
+                  : {
+                      interactionId: params.interactionId,
+                      expectedRevision: params.desiredPolicyRevision,
+                      decision: "answered" as const,
+                      value: createScriptedQuestionAnswer(params),
+                    }
+                : {
+                    interactionId: params.interactionId,
+                    expectedRevision: params.desiredPolicyRevision,
+                    decision: input.scenario.hostPolicy.interaction === "deny" ? "deny" as const : "allow_once" as const,
+                  };
+              void client.interactionRespond(response).catch((error: unknown) => {
+                asynchronousHostFailures.push(error instanceof Error ? error : new Error("Host interaction response failed"));
+              });
+            });
+            return { registered: true };
+          },
+        }),
+      });
+      runtimes.push(runtime);
+      stopNotifications.push(runtime.client.registerRuntimeNotificationHandlers({
+        "runtime/event": recordRuntimeEvent,
+        "host/interaction/cancel": (event) => { recordRuntimeEvent({ kind: "host_interaction_cancel", event }); },
+      }));
+      return runtime;
+    };
+    let runtime = createRuntime();
     try {
       const initialize = createInitializeParams(input.workspace, target, {
         networkPolicyRef: this.#route.networkPolicyRef,
@@ -339,15 +402,22 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
         permitBackground: input.scenario.budgets.children > 0 || input.scenario.budgets.processes > 0,
         maxChildren: Math.max(1, Math.min(128, input.scenario.budgets.children + input.scenario.budgets.processes)),
       });
-      const initialized = await runtime.client.initialize(initialize, { signal: input.signal });
-      await runtime.client.initialized();
-      const extensionCatalog = await runtime.client.extensionCatalog({}, { signal: input.signal });
+      const initializeRuntime = async (candidate: DynamicArtifactHostProcess) => {
+        const initialized = await candidate.client.initialize(initialize, { signal: input.signal });
+        await candidate.client.initialized();
+        const extensionCatalog = await candidate.client.extensionCatalog({}, { signal: input.signal });
+        return Object.freeze({ initialized, extensionCatalog });
+      };
+      const initialRuntime = await initializeRuntime(runtime);
+      const initialized = initialRuntime.initialized;
+      let extensionCatalog = initialRuntime.extensionCatalog;
       const runtimeSessionId = `session-${input.workspace.runId}`;
+      const persistenceRef = `persistence-${input.workspace.runId}`;
       const configRevision = "dynamic-config-v1";
       const binding = await runtime.client.sessionCreate({
         clientOperationId: `create-${input.workspace.runId}`,
         runtimeSessionId,
-        persistenceRef: `persistence-${input.workspace.runId}`,
+        persistenceRef,
         provider: this.#route.provider,
         configRevision,
         extensionDigest: extensionCatalog.digest,
@@ -357,6 +427,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
       }, { signal: input.signal });
       if (binding.state !== "ready") throw new Error(`dynamic Session admission is ${binding.state}`);
       const terminals: unknown[] = [];
+      let persistenceLifecycleEvidence: Readonly<Record<string, unknown>> | undefined;
       for (let index = 0; index < input.scenario.prompts.length; index += 1) {
         const prompt = input.scenario.prompts[index];
         if (prompt === undefined) throw new Error("dynamic scenario prompt inventory changed");
@@ -376,6 +447,71 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           origin: { kind: "headless", scenario: input.scenario.id },
         }, { signal: input.signal });
         terminals.push(await waitForOperationTerminal(runtime.client, clientOperationId, input.signal));
+        if (input.scenario.id === "persistence-lifecycle" && index === 0) {
+          const compactOperationId = `${input.workspace.runId}-compact`;
+          const compact = await runtime.client.sessionCompact(
+            { clientOperationId: compactOperationId },
+            { signal: input.signal },
+          );
+          const beforeRestart = await runtime.client.sessionRead({}, { signal: input.signal });
+          const stableBoundaryId = beforeRestart.durableHead.stableBoundaryId;
+          if (stableBoundaryId === undefined) {
+            throw new Error("persistence lifecycle lacks a stable boundary before restart");
+          }
+          await runtime.client.sessionClose({
+            clientOperationId: `restart-close-${input.workspace.runId}`,
+          }, { signal: input.signal });
+          await runtime.client.runtimeShutdown({ reason: "dynamic-persistence-restart" }, { signal: input.signal });
+          const firstExit = await runtime.waitForExit(30_000);
+          exits.push(firstExit);
+          runtime = createRuntime();
+          const resumedRuntime = await initializeRuntime(runtime);
+          extensionCatalog = resumedRuntime.extensionCatalog;
+          const resumed = await runtime.client.sessionResume({
+            clientOperationId: `resume-${input.workspace.runId}`,
+            runtimeSessionId,
+            persistenceRef,
+            provider: this.#route.provider,
+            configRevision,
+            extensionDigest: extensionCatalog.digest,
+            systemPrompt: this.#route.systemPrompt,
+            permissionMode: this.#route.permissionMode,
+            interactionScenario: this.#route.interactionScenario,
+          }, { signal: input.signal });
+          if (resumed.state !== "ready") throw new Error(`dynamic Session resume is ${resumed.state}`);
+          const afterResume = await runtime.client.sessionRead({}, { signal: input.signal });
+          const forkTargetRuntimeHome = resolve(input.workspace.temporaryRoot, "fork-target-runtime-home");
+          await mkdir(forkTargetRuntimeHome, { recursive: false });
+          const forkMutationId = `${input.workspace.runId}-fork`;
+          const forkPrepared = await runtime.client.sessionForkPrepare({
+            clientMutationId: forkMutationId,
+            sourceStableBoundaryId: stableBoundaryId,
+            targetRuntimeHome: forkTargetRuntimeHome,
+            targetPersistenceRef: `${persistenceRef}-fork-target`,
+            targetRuntimeSessionId: `${runtimeSessionId}-fork-target`,
+            targetWorkspaceIdentity: initialize.workspace.identity,
+          }, { signal: input.signal });
+          const forkAborted = await runtime.client.sessionForkAbort({
+            clientMutationId: forkMutationId,
+            token: forkPrepared.token,
+          }, { signal: input.signal });
+          const forkStatus = await runtime.client.sessionForkStatus(
+            { token: forkPrepared.token },
+            { signal: input.signal },
+          );
+          persistenceLifecycleEvidence = Object.freeze({
+            compactState: compact.state,
+            firstExitCode: firstExit.code,
+            resumedState: resumed.state,
+            durableSequenceBeforeRestart: beforeRestart.durableHead.sequence,
+            durableSequenceAfterResume: afterResume.durableHead.sequence,
+            stableBoundaryBeforeRestart: stableBoundaryId,
+            stableBoundaryAfterResume: afterResume.durableHead.stableBoundaryId,
+            forkPreparedState: forkPrepared.state,
+            forkAbortedState: forkAborted.state,
+            forkStatusState: forkStatus.state,
+          });
+        }
       }
       if (asynchronousHostFailures.length > 0) throw new AggregateError(asynchronousHostFailures, "Host interaction response failed");
       const diagnosticRecords: unknown[] = [];
@@ -395,20 +531,38 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
       const finalStatus = await runtime.client.runtimeStatus({}, { signal: input.signal });
       await runtime.client.runtimeShutdown({ reason: "dynamic-scenario-complete" }, { signal: input.signal });
       const exit = await runtime.waitForExit(30_000);
+      exits.push(exit);
       const succeeded = terminals.every((terminal) => (terminal as { kind?: unknown }).kind === "succeeded");
       const activeTotal = Object.values(finalStatus.active).reduce((sum, value) => sum + value, 0);
-      const noUnexpectedFatal = runtime.fatalErrors.every(({ code }) =>
+      const fatalErrors = runtimes.flatMap((candidate) => candidate.fatalErrors);
+      const noUnexpectedFatal = fatalErrors.every(({ code }) =>
         code === "protocol_eof" || code === "protocol_input_closed" || code === "protocol_output_closed");
-      const passed = succeeded && activeTotal === 0 && exit.code === 0 && noUnexpectedFatal;
+      const persistenceLifecycleVerified = input.scenario.id !== "persistence-lifecycle"
+        || (persistenceLifecycleEvidence?.compactState === "accepted"
+          || persistenceLifecycleEvidence?.compactState === "already_known")
+          && persistenceLifecycleEvidence.firstExitCode === 0
+          && persistenceLifecycleEvidence.resumedState === "ready"
+          && typeof persistenceLifecycleEvidence.stableBoundaryAfterResume === "string"
+          && typeof persistenceLifecycleEvidence.durableSequenceBeforeRestart === "number"
+          && typeof persistenceLifecycleEvidence.durableSequenceAfterResume === "number"
+          && persistenceLifecycleEvidence.durableSequenceAfterResume
+            >= persistenceLifecycleEvidence.durableSequenceBeforeRestart
+          && persistenceLifecycleEvidence.forkPreparedState === "prepared"
+          && persistenceLifecycleEvidence.forkAbortedState === "aborted"
+          && persistenceLifecycleEvidence.forkStatusState === "aborted";
+      const passed = succeeded && persistenceLifecycleVerified
+        && activeTotal === 0 && exits.every(({ code }) => code === 0) && noUnexpectedFatal;
       const reasonCode = !succeeded
         ? "operation_terminal_failed"
-        : activeTotal !== 0
-          ? "runtime_resources_remained_live"
-          : exit.code !== 0
-            ? "runtime_exit_failed"
-            : !noUnexpectedFatal
-              ? "runtime_transport_failed"
-              : undefined;
+        : !persistenceLifecycleVerified
+          ? "persistence_lifecycle_failed"
+          : activeTotal !== 0
+            ? "runtime_resources_remained_live"
+            : exits.some(({ code }) => code !== 0)
+              ? "runtime_exit_failed"
+              : !noUnexpectedFatal
+                ? "runtime_transport_failed"
+                : undefined;
       return Object.freeze({
         outcome: passed ? "passed" as const : "failed" as const,
         ...(reasonCode === undefined ? {} : { reasonCode }),
@@ -423,8 +577,11 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           runtimeGeneration: initialized.runtimeGeneration,
         }, {
           kind: "host_reverse_calls",
-          calls: [...overriddenHostCalls, ...runtime.standardHost.calls],
-        }, ...diagnosticRecords]),
+          calls: [...overriddenHostCalls, ...runtimes.flatMap((candidate) => candidate.standardHost.calls)],
+        }, ...(persistenceLifecycleEvidence === undefined ? [] : [{
+          kind: "persistence_lifecycle",
+          ...persistenceLifecycleEvidence,
+        }]), ...diagnosticRecords]),
         hardAssertions: Object.freeze({
           promptCount: input.scenario.prompts.length,
           terminalCount: terminals.length,
@@ -433,18 +590,20 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           generatedClientSchemaMatched: initialized.schemaSha256 === input.artifact.protocolSha256,
           zeroActiveResources: activeTotal === 0,
           diagnosticProjectionComplete: diagnosticsComplete,
+          persistenceLifecycleVerified,
         }),
         resourceFinal: Object.freeze({
           runtimeProcess: exit.code === 0 ? "exited" : "failed",
           active: finalStatus.active,
-          unexpectedHostFatalErrors: noUnexpectedFatal ? 0 : runtime.fatalErrors.length,
+          runtimeProcessCount: runtimes.length,
+          unexpectedHostFatalErrors: noUnexpectedFatal ? 0 : fatalErrors.length,
           credentialScopes: 0,
           attachmentLeases: 0,
         }),
       });
     } finally {
-      stopNotifications();
-      await runtime.close();
+      for (const stop of stopNotifications.reverse()) stop();
+      await Promise.all(runtimes.map((candidate) => candidate.close()));
     }
   }
 }

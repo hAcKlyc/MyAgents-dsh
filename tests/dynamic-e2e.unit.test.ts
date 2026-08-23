@@ -8,9 +8,11 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import type { MethodParams } from "@myagents-dsh/protocol";
 
 import {
   ApprovedDynamicRouteCredentialUnavailableError,
+  createScriptedQuestionAnswer,
   DynamicEvidenceRecorder,
   evaluateDynamicScenarioPostconditions,
   inspectDynamicArtifact,
@@ -43,6 +45,33 @@ afterEach(async () => {
     await chmod(root, 0o700).catch(() => undefined);
     await rm(root, { recursive: true, force: true });
   }));
+});
+
+describe("approved-route scripted interaction", () => {
+  const request = (
+    kind: "ask_user" | "plan_approval",
+    questions: readonly unknown[],
+  ): MethodParams<"host/interaction/request"> => (
+    { kind, schema: { questions } } as unknown as MethodParams<"host/interaction/request">
+  );
+
+  it("returns the exact structured answer shape for a stable selection", () => {
+    expect(createScriptedQuestionAnswer(request("ask_user", [{
+      id: "target-name",
+      question: "Which target?",
+      options: [{ label: "stable" }, { label: "next" }],
+    }]))).toEqual({ answers: [{ id: "target-name", selected: ["stable"] }] });
+  });
+
+  it("selects the declared approval label for a plan review", () => {
+    expect(createScriptedQuestionAnswer(request("plan_approval", [{
+      id: "plan-review",
+      question: "Approve this plan?",
+      detail: "Plan bytes",
+      options: [{ label: "Revise" }, { label: "Approve" }],
+      intent: { kind: "plan-review", approve: "Approve" },
+    }]))).toEqual({ answers: [{ id: "plan-review", selected: ["Approve"] }] });
+  });
 });
 
 const createArtifact = async (
@@ -170,6 +199,41 @@ describe("dynamic E2E harness", () => {
       size: 1,
       sha256: "2".repeat(64),
     })])).passed).toBe(false);
+
+    const interaction = corpus.find(({ id }) => id === "interaction-plan");
+    if (interaction === undefined) throw new Error("interaction scenario is unavailable");
+    const currentDigest = createHash("sha256").update("current\n").digest("hex");
+    const migrationRequest = Object.freeze({
+      path: "migration-request.md",
+      kind: "file" as const,
+      size: 156,
+      sha256: "3".repeat(64),
+    });
+    const currentSelection = Object.freeze({
+      path: "selection.txt",
+      kind: "file" as const,
+      size: 8,
+      sha256: currentDigest,
+    });
+    const interactionBefore = Object.freeze([migrationRequest, currentSelection]);
+    const interactionAfter = Object.freeze([
+      migrationRequest,
+      Object.freeze({
+        path: "selection.txt",
+        kind: "file" as const,
+        size: 7,
+        sha256: createHash("sha256").update("stable\n").digest("hex"),
+      }),
+      Object.freeze({ path: "selection.txt.bak", kind: "file" as const, size: 8, sha256: currentDigest }),
+    ]);
+    expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, interactionAfter)).toMatchObject({
+      passed: true,
+      assertions: [{ name: "approved-stable-selection", passed: true }],
+    });
+    expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, Object.freeze([
+      ...interactionAfter,
+      Object.freeze({ path: "unexpected.txt", kind: "file" as const, size: 1, sha256: "4".repeat(64) }),
+    ])).passed).toBe(false);
   });
 
   it("normalizes evidence trap-safely, redacts private paths, and rejects secret aliases", () => {

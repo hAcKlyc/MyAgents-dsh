@@ -346,6 +346,72 @@ describe("Host credential and model route", () => {
     expect(materialRequest.authority.turnId).toMatch(/^utility-turn-/u);
   });
 
+  it("authorizes compaction summarization for the exact admitted Runtime Session", async () => {
+    const harness = await createHarness();
+    const requests: unknown[] = [];
+    harness.pair.host.registerRequestHandler("host/credential/resolve", (params) => {
+      requests.push(params);
+      return params.purpose === "availability"
+        ? {
+            authoritativeCredentialRevision: "credential-v1",
+            available: true,
+            kind: "availability" as const,
+          }
+        : {
+            authoritativeCredentialRevision: "credential-v1",
+            kind: "material" as const,
+            material: { [credentialValueField]: "synthetic-host-only-key" },
+          };
+    });
+    const authority = new HostDeepSeekModelAuthority(
+      fakeModelContext(harness.root),
+      harness.credentialController,
+      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" },
+    );
+    const adapter = new HostDeepSeekLlmAdapter(
+      authority,
+      harness.credentials,
+      harness.credentialController,
+    );
+    await authority.preflight(sessionRequest());
+    globalThis.fetch = vi.fn(() => Promise.resolve(new Response([
+      'data: {"choices":[{"delta":{"content":"summary"},"finish_reason":"stop"}]}',
+      'data: {"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n"), {
+      headers: { "content-type": "text/event-stream" },
+      status: 200,
+    })));
+    const signal = new AbortController().signal;
+    const chunks = await authority.runCompactionRequest(
+      "compact-operation-1",
+      "runtime-session-1",
+      signal,
+      async () => {
+        const result = [];
+        for await (const chunk of adapter.stream(modelOptions(signal))) result.push(chunk);
+        return result;
+      },
+    );
+    expect(chunks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "text-delta", text: "summary" }),
+      expect.objectContaining({ type: "finish" }),
+    ]));
+    expect(requests[1]).toMatchObject({
+      purpose: "model_request",
+      authority: {
+        clientOperationId: "compact-operation-1",
+      },
+    });
+    const materialRequest = requests[1] as {
+      modelRequestId: unknown;
+      authority: { turnId: unknown };
+    };
+    expect(materialRequest.modelRequestId).toMatch(/^compaction-model-/u);
+    expect(materialRequest.authority.turnId).toMatch(/^compaction-turn-/u);
+  });
+
   it("rejects stale material and never projects Host-controlled secret fields", async () => {
     const harness = await createHarness();
     const secret = "revision-secret-canary";
