@@ -27,6 +27,7 @@ import {
   SessionReadAssembler,
   validateMethodResult,
 } from "@myagents-dsh/protocol";
+import { PRODUCT_PERSISTENCE_SCHEMA_VERSION } from "@myagents-dsh/persistence-product";
 import { CANONICAL_TOOL_NAMES } from "@myagents-dsh/tool-contracts";
 
 import {
@@ -79,6 +80,8 @@ const runtimeCompositionSourcePaths = [
   "packages/host-ports/src/attachment-store.ts",
   "packages/host-ports/src/credential-provider.ts",
   "packages/host-ports/src/service.ts",
+  "packages/checkpoint/src/index.ts",
+  "packages/checkpoint/src/runtime.ts",
   "packages/operation-runtime/src/events.ts",
   "packages/operation-runtime/src/fold.ts",
   "packages/operation-runtime/src/index.ts",
@@ -166,6 +169,7 @@ const runtimePackageWorkspaces = [
   ["packages/components-skills", "@myagents-dsh/components-skills"],
   ["packages/protocol", "@myagents-dsh/protocol"],
   ["packages/host-ports", "@myagents-dsh/host-ports"],
+  ["packages/checkpoint", "@myagents-dsh/checkpoint"],
   ["packages/operation-runtime", "@myagents-dsh/operation-runtime"],
   ["packages/persistence-product", "@myagents-dsh/persistence-product"],
   ["packages/rpc-server", "@myagents-dsh/rpc-server"],
@@ -840,7 +844,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w4-a3"
+    || selfCheckProfile.stage !== "batch-1-w4-a4"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -990,6 +994,7 @@ const main = (): void => {
     );
     stageBuiltPackage(consumerRoot, buildRoot, "packages/protocol", "@myagents-dsh/protocol");
     stageBuiltPackage(consumerRoot, buildRoot, "packages/host-ports", "@myagents-dsh/host-ports");
+    stageBuiltPackage(consumerRoot, buildRoot, "packages/checkpoint", "@myagents-dsh/checkpoint");
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
@@ -1130,6 +1135,7 @@ const main = (): void => {
       || evidence.nativeRpcShutdown !== "shutdown"
       || evidence.nativeRpcStopped !== true
       || evidence.productPersistenceVerified !== true
+      || evidence.checkpointJournalVerified !== true
       || evidence.sessionReadVerified !== true
       || evidence.failedResumePublicationRejected !== true
       || evidence.initialConfigurationMismatchRejected !== true
@@ -1175,6 +1181,16 @@ const main = (): void => {
       ])) {
       throw new Error("runtime composition evidence differs from the accepted artifact contract");
     }
+    const checkpointJournalEvidence = exactObject(
+      evidence.checkpointJournalEvidence,
+      "managed checkpoint journal evidence",
+    );
+    if (JSON.stringify(checkpointJournalEvidence.writePhases)
+        !== JSON.stringify(["prepared", "published", "settled"])
+      || JSON.stringify(checkpointJournalEvidence.editPhases)
+        !== JSON.stringify(["prepared", "published", "settled"])) {
+      throw new Error("managed checkpoint evidence differs from the exact W4-A4 contract");
+    }
     const persistenceEvidence = exactObject(
       evidence.productPersistenceEvidence,
       "product SQLite persistence evidence",
@@ -1203,7 +1219,7 @@ const main = (): void => {
       || typeof persistenceEvidence.revision !== "number"
       || !Number.isSafeInteger(persistenceEvidence.revision)
       || persistenceEvidence.revision < 1
-      || persistenceEvidence.schemaVersion !== 1) {
+      || persistenceEvidence.schemaVersion !== PRODUCT_PERSISTENCE_SCHEMA_VERSION) {
       throw new Error("product SQLite persistence/read evidence differs from the exact W4-A3 contract");
     }
     const hostAttachmentEvidence = exactObject(

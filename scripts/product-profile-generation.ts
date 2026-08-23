@@ -21,6 +21,7 @@ type JsonObject = Record<string, unknown>;
 const workspacePackagePaths = [
   "apps/runtime-server",
   "packages/artifact-verifier",
+  "packages/checkpoint",
   "packages/compatibility",
   "packages/product-profile",
   "packages/protocol",
@@ -31,6 +32,7 @@ const workspacePackagePaths = [
 const candidatePackagePaths = [
   "apps/runtime-server",
   "packages/artifact-verifier",
+  "packages/checkpoint",
   "packages/component-runtime",
   "packages/components-agents",
   "packages/components-commands",

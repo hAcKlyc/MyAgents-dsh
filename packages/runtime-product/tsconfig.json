@@ -7,6 +7,7 @@
   },
   "files": ["src/composition.ts", "src/host-interaction.ts", "src/host-model.ts", "src/index.ts", "src/primary-session.ts"],
   "references": [
+    { "path": "../checkpoint" },
     { "path": "../component-runtime" },
     { "path": "../components-agents" },
     { "path": "../components-commands" },

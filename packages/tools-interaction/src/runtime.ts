@@ -166,7 +166,7 @@ const boundedIdentifier = (value: unknown, description: string): string => {
 
 const planRuntimeHome = (value: unknown): string => {
   const environment = exactDataObject(value, [
-    "attachmentStagingRoot", "digest", "environment", "executables", "network",
+    "attachmentStagingRoot", "checkpoint", "digest", "environment", "executables", "network",
     "platformTarget", "process", "revision", "runtimeHome", "workspace",
   ], [], "plan execution environment");
   if (typeof environment.runtimeHome !== "string" || environment.runtimeHome.length === 0

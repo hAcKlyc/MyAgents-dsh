@@ -508,6 +508,7 @@ export class NativeRpcServer extends Service {
     validateInitializationEnvironment(params, this.configValue.platformTarget);
     this.productSessionValue.bindExecutionEnvironment({
       attachmentStagingRoot: params.executionEnvironment.attachmentStagingRoot,
+      checkpoint: params.executionEnvironment.checkpoint,
       digest: params.executionEnvironment.digest,
       environment: params.executionEnvironment.environment,
       executables: params.executionEnvironment.executables,

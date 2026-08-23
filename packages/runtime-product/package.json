@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@myagents-dsh/checkpoint": "0.0.0",
     "@myagents-dsh/component-runtime": "0.0.0",
     "@myagents-dsh/components-agents": "0.0.0",
     "@myagents-dsh/components-commands": "0.0.0",

@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@myagents-dsh/checkpoint": "0.0.0",
     "@myagents-dsh/product-profile": "0.0.0",
     "@myagents-dsh/tool-contracts": "0.0.0",
     "@myagents-dsh/tool-runtime-product": "0.0.0",

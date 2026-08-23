@@ -15,6 +15,7 @@
     "src/sqlite-store.ts"
   ],
   "references": [
+    { "path": "../checkpoint" },
     { "path": "../protocol" },
     { "path": "../operation-runtime" },
     { "path": "../product-profile" },

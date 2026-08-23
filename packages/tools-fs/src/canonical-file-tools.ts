@@ -57,11 +57,11 @@ const sha256 = (value: Uint8Array | string): string => createHash("sha256").upda
 type CheckpointSettlement = { branch?: "abort" | "commit" | "conflict" };
 
 const settleCheckpoint = async (
-  checkpoint: ProductToolCheckpointHandle,
+  checkpoint: ProductToolCheckpointHandle | undefined,
   settlement: CheckpointSettlement,
   branch: "abort" | "commit" | "conflict",
 ): Promise<void> => {
-  if (settlement.branch !== undefined) return;
+  if (checkpoint === undefined || settlement.branch !== undefined) return;
   settlement.branch = branch;
   await checkpoint[branch]();
 };
@@ -368,7 +368,7 @@ export class CanonicalFileTools extends Service {
     return this.#definition("Read", renderRead, async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
       const path = args.file_path as string;
-      const target = await this.#authorizedTarget(ctx, product, "Read", path, "read");
+      const { target } = await this.#authorizedTarget(ctx, product, "Read", path, "read");
       await ctx.productTools.authorize(product, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.Read.permissionClass,
         target: target.displayPath,
@@ -475,7 +475,8 @@ export class CanonicalFileTools extends Service {
   #writeDefinition(ctx: Context): ToolDefinition {
     return this.#definition("Write", renderMutation, async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
-      const target = await this.#authorizedTarget(ctx, product, "Write", args.file_path as string, "write");
+      const authority = await this.#authorizedTarget(ctx, product, "Write", args.file_path as string, "write");
+      const { target } = authority;
       const release = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
       try {
         const current = await ctx.fs.stat(target, product.signal);
@@ -504,21 +505,24 @@ export class CanonicalFileTools extends Service {
         const content = args.content as string;
         const afterBytes = Buffer.from(content, "utf8");
         const afterSha256 = sha256(content);
-        const checkpoint = await ctx.productTools.prepareCheckpoint(product, {
-          afterBytes,
-          afterSha256,
-          ...(beforeBytes === undefined ? {} : {
-            beforeBytes,
-            beforeSha256: sha256(beforeBytes),
-          }),
-          path: target.displayPath,
-          tool: "Write",
-        });
+        const checkpoint = authority.checkpointEligible
+          ? await ctx.productTools.prepareCheckpoint(product, {
+            afterBytes,
+            afterSha256,
+            ...(beforeBytes === undefined ? {} : {
+              beforeBytes,
+              beforeSha256: sha256(beforeBytes),
+            }),
+            path: target.displayPath,
+            tool: "Write",
+          })
+          : undefined;
         let published = false;
         const settlement: CheckpointSettlement = {};
         try {
           const refreshed = await this.#authorizedTarget(ctx, product, "Write", target.displayPath, "write");
-          if (String(refreshed.targetKey) !== String(target.targetKey)) {
+          if (String(refreshed.target.targetKey) !== String(target.targetKey)
+            || refreshed.checkpointEligible !== authority.checkpointEligible) {
             await settleCheckpoint(checkpoint, settlement, "conflict");
             throw new ProductToolError("mutation_conflict", "Write target identity changed before publication");
           }
@@ -540,7 +544,7 @@ export class CanonicalFileTools extends Service {
           });
           return Object.freeze({
             bytes: Buffer.byteLength(content, "utf8"),
-            checkpointReceipt: checkpoint.receipt,
+            ...(checkpoint === undefined ? {} : { checkpointReceipt: checkpoint.receipt }),
             created: outcome.operation === "create",
             path: target.displayPath,
             sha256: afterSha256,
@@ -574,7 +578,8 @@ export class CanonicalFileTools extends Service {
       if (extname(path).toLowerCase() === ".ipynb") {
         throw new ProductToolError("unsupported_format", "Edit does not mutate notebook structure");
       }
-      const target = await this.#authorizedTarget(ctx, product, "Edit", path, "write");
+      const authority = await this.#authorizedTarget(ctx, product, "Edit", path, "write");
+      const { target } = authority;
       const release = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
       try {
         const info = await this.#regularFile(ctx, target, product.signal);
@@ -608,19 +613,22 @@ export class CanonicalFileTools extends Service {
           tool: "Edit",
         });
         const afterSha256 = sha256(next);
-        const checkpoint = await ctx.productTools.prepareCheckpoint(product, {
-          afterBytes: Buffer.from(next, "utf8"),
-          afterSha256,
-          beforeBytes,
-          beforeSha256: sha256(beforeBytes),
-          path: target.displayPath,
-          tool: "Edit",
-        });
+        const checkpoint = authority.checkpointEligible
+          ? await ctx.productTools.prepareCheckpoint(product, {
+            afterBytes: Buffer.from(next, "utf8"),
+            afterSha256,
+            beforeBytes,
+            beforeSha256: sha256(beforeBytes),
+            path: target.displayPath,
+            tool: "Edit",
+          })
+          : undefined;
         let published = false;
         const settlement: CheckpointSettlement = {};
         try {
           const refreshed = await this.#authorizedTarget(ctx, product, "Edit", target.displayPath, "write");
-          if (String(refreshed.targetKey) !== String(target.targetKey)) {
+          if (String(refreshed.target.targetKey) !== String(target.targetKey)
+            || refreshed.checkpointEligible !== authority.checkpointEligible) {
             await settleCheckpoint(checkpoint, settlement, "conflict");
             throw new ProductToolError("mutation_conflict", "Edit target identity changed before publication");
           }
@@ -638,7 +646,7 @@ export class CanonicalFileTools extends Service {
             version: String(outcome.version),
           });
           return Object.freeze({
-            checkpointReceipt: checkpoint.receipt,
+            ...(checkpoint === undefined ? {} : { checkpointReceipt: checkpoint.receipt }),
             externalChangesRetained,
             path: target.displayPath,
             replacements: args.replace_all === true ? replacements : 1,
@@ -989,10 +997,10 @@ export class CanonicalFileTools extends Service {
     tool: "Read" | "Write" | "Edit",
     path: string,
     mode: "read" | "write",
-  ): Promise<FsTarget> {
+  ): Promise<Readonly<{ checkpointEligible: boolean; target: FsTarget }>> {
     product.signal.throwIfAborted();
     const planTarget = await ctx.productTools.resolvePlanFileTarget(product, tool, path, mode);
-    if (planTarget !== undefined) return planTarget;
+    if (planTarget !== undefined) return Object.freeze({ checkpointEligible: false, target: planTarget });
     const pathInfo = await ctx.fs.lstat(path, undefined, product.signal);
     if (pathInfo?.type === "symlink") throw new ProductToolError("path_denied", `${tool} rejects symbolic links`);
     const target = await ctx.fs.resolve(path, { cwd: product.environment.workspace.canonicalRoot, signal: product.signal });
@@ -1011,13 +1019,19 @@ export class CanonicalFileTools extends Service {
     if (!contained) {
       if (tool === "Read" && mode === "read") {
         if (this.#retainedOutput !== undefined) {
-          return await this.#retainedOutput.resolve(product, path);
+          return Object.freeze({
+            checkpointEligible: false,
+            target: await this.#retainedOutput.resolve(product, path),
+          });
         }
-        return await ctx.productProcesses.resolveRetainedOutput(product, path);
+        return Object.freeze({
+          checkpointEligible: false,
+          target: await ctx.productProcesses.resolveRetainedOutput(product, path),
+        });
       }
       throw new ProductToolError("path_denied", `${tool} target is outside its operation-frozen roots`);
     }
-    return target;
+    return Object.freeze({ checkpointEligible: mode === "write", target });
   }
 
   async #regularFile(ctx: Context, target: FsTarget, signal: AbortSignal): Promise<FsInfo> {

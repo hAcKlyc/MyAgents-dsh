@@ -16,6 +16,7 @@
     { "path": "../packages/components-hooks" },
     { "path": "../packages/components-mcp" },
     { "path": "../packages/components-skills" },
+    { "path": "../packages/checkpoint" },
     { "path": "../packages/protocol" },
     { "path": "../packages/host-ports" },
     { "path": "../packages/tool-contracts" },

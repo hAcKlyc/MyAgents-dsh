@@ -85,6 +85,10 @@ import {
   productSessionDatabasePath,
 } from "@myagents-dsh/persistence-product";
 import {
+  ProductCheckpointService,
+  type ProductCheckpointStore,
+} from "@myagents-dsh/checkpoint";
+import {
   ProductPermissionService,
   ProductToolRuntime,
   validateProductPermissionPlaneConfig,
@@ -370,6 +374,7 @@ type CompositionAuthorityState = {
   hostModelPlane: "absent" | "installing" | "installed" | "failed";
   hostModelProviderRoute: string | undefined;
   persistenceInstallPromise: Promise<void> | undefined;
+  checkpointStore: ProductCheckpointStore | undefined;
   persistencePlane: "absent" | "installing" | "installed" | "failed";
   persistenceRuntimeHome: string | undefined;
   persistenceTarget: PlatformTarget | undefined;
@@ -478,6 +483,12 @@ const installProductPersistence = (
       providerFiber = await state.context.plugin(ProductSqliteSessionPersistence, {
         durability,
         platform,
+        registerCheckpointStore: (store) => {
+          if (state.checkpointStore !== undefined) {
+            throw new Error("product checkpoint Store may register exactly once");
+          }
+          state.checkpointStore = store;
+        },
         runtimeHome,
       });
       if (!(state.context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
@@ -746,7 +757,6 @@ export class DshRootComposition {
 
 export interface CanonicalToolPlaneConfig {
   readonly catalog: ProductToolRuntimeConfig["catalog"];
-  readonly checkpoint: ProductToolRuntimeConfig["checkpoint"];
   readonly permission: ProductPermissionPlaneConfig;
   readonly plan: ProductPlanPlaneConfig;
   readonly platformTarget: PlatformTarget;
@@ -773,8 +783,8 @@ export const installCanonicalToolPlane = async (
   if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
     || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
     || Reflect.ownKeys(candidate).some((key) => typeof key !== "string"
-      || !["catalog", "checkpoint", "permission", "plan", "platformTarget", "process", "skills", "temporaryRoot", "web"].includes(key))
-    || (Reflect.ownKeys(candidate).length !== 8 && Reflect.ownKeys(candidate).length !== 9)
+      || !["catalog", "permission", "plan", "platformTarget", "process", "skills", "temporaryRoot", "web"].includes(key))
+    || (Reflect.ownKeys(candidate).length !== 7 && Reflect.ownKeys(candidate).length !== 8)
     || Reflect.ownKeys(candidate).some((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
       return descriptor === undefined || !descriptor.enumerable || !("value" in descriptor);
@@ -830,6 +840,7 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 10 }));
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
     const localFileSystem = requireLocalWorkspaceFileSystem(root.fs);
+    const checkpointIo = localFileSystem.createCheckpointIoAuthority();
     const attachmentIo = localFileSystem.createAttachmentIoAuthority();
     const processIo = localFileSystem.createProcessIoAuthority();
     const agentOutput = localFileSystem.createAgentOutputAuthority();
@@ -884,9 +895,24 @@ export const installCanonicalToolPlane = async (
       resolveFileTarget: (context, tool, path, mode) =>
         root.productPlan.resolveFileTarget(context, tool, path, mode),
     });
+    const checkpointDeadline = root.productSession.settlementDeadlineAuthority();
+    fibers.push(await root.plugin(ProductCheckpointService, {
+      durability: Object.freeze({
+        flush: (session: Session) => checkpointDeadline.wait(
+          root.sessions.flush(session),
+          "product checkpoint durability flush",
+        ),
+      }),
+      environment: () => root.productSession.requireExecutionEnvironment(),
+      io: checkpointIo,
+      requireAgent: () => root.productSession.requireAgent(),
+      store: () => authority.checkpointStore,
+    }));
     fibers.push(await root.plugin(ProductToolRuntime, {
       catalog: normalized.catalog,
-      checkpoint: normalized.checkpoint,
+      checkpoint: Object.freeze({
+        prepare: (context, request) => root.productCheckpoint.prepare(context, request),
+      }) satisfies ProductToolRuntimeConfig["checkpoint"],
       environment: () => root.productSession.requireExecutionEnvironment(),
       plan: planAuthority,
       requireAgent: () => root.productSession.requireAgent(),
@@ -1502,13 +1528,14 @@ export const composeDshRootServices = async (
       reconcileResume: async (agent) => {
         await root.productWork.initialize(agent);
       },
-      validateResume: (agent) => {
+      validateResume: async (agent) => {
         root.sdkOperations.validatePersisted(agent);
         root.productPermission.fold(agent.session);
         root.productPlan.validatePersisted(agent);
         root.productTaskGraph.validatePersisted(agent);
         root.productWork.validatePersisted(agent);
-        return Promise.resolve();
+        root.productCheckpoint.validatePersisted(agent);
+        await root.productCheckpoint.reconcile(agent);
       },
     });
     await root.plugin(SdkOperationService, {
@@ -1680,6 +1707,7 @@ export const composeDshRootServices = async (
       hostCredentials: undefined,
       hostModelPlane: "absent",
       hostModelProviderRoute: undefined,
+      checkpointStore: undefined,
       persistenceInstallPromise: undefined,
       persistencePlane: "absent",
       persistenceRuntimeHome: undefined,

@@ -13,6 +13,7 @@
     { "path": "./packages/tool-contracts" },
     { "path": "./packages/task-graph" },
     { "path": "./packages/tool-runtime-product" },
+    { "path": "./packages/checkpoint" },
     { "path": "./packages/tools-agent" },
     { "path": "./packages/tools-fs" },
     { "path": "./packages/tools-interaction" },

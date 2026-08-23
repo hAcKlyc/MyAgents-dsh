@@ -50,6 +50,7 @@ import {
 } from "@myagents-dsh/product-profile";
 import {
   PRODUCT_PERSISTENCE_FORMAT,
+  PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   ProductSqliteSessionPersistence,
   productSessionDatabasePath,
 } from "@myagents-dsh/persistence-product";
@@ -93,10 +94,6 @@ import {
   validateStaticSkillCatalog,
   type ProductWorkEpochEventData,
 } from "@myagents-dsh/tools-agent";
-import type {
-  ProductToolCheckpointRequest,
-  ProductToolContext,
-} from "@myagents-dsh/tool-runtime-product";
 import {
   CANONICAL_TOOL_CONTRACT_SHA256,
   CANONICAL_TOOL_NAMES,
@@ -993,21 +990,6 @@ const artifactWebClient = new ProductSafeHttpClient(artifactNetworkPolicy, {
 });
 const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
   catalog: () => validatedArtifactToolCatalog,
-  checkpoint: Object.freeze({
-    prepare: (_context: ProductToolContext, request: ProductToolCheckpointRequest) => {
-      fileToolEvidence.push(`prepare:${request.tool}:${request.path}`);
-      assert.equal(createHash("sha256").update(request.afterBytes).digest("hex"), request.afterSha256);
-      if (request.beforeBytes !== undefined) {
-        assert.equal(createHash("sha256").update(request.beforeBytes).digest("hex"), request.beforeSha256);
-      }
-      return Promise.resolve(Object.freeze({
-        abort: () => { fileToolEvidence.push("abort"); return Promise.resolve(); },
-        commit: () => { fileToolEvidence.push("commit"); return Promise.resolve(); },
-        conflict: () => { fileToolEvidence.push("conflict"); return Promise.resolve(); },
-        receipt: Object.freeze({ checkpointId: "artifact-checkpoint", policyRevision: "checkpoint-v1" }),
-      }));
-    },
-  }),
   permission: Object.freeze({
     autoAllowTools: Object.freeze([]),
     interaction: hostInteractionProvider,
@@ -2201,6 +2183,7 @@ await installProductComponentPlane(configurationMismatchComposition, Object.free
 }));
 configurationMismatchComposition.context.productSession.bindExecutionEnvironment({
   attachmentStagingRoot: initializeRequest.executionEnvironment.attachmentStagingRoot,
+  checkpoint: initializeRequest.executionEnvironment.checkpoint,
   digest: initializeRequest.executionEnvironment.digest,
   environment: initializeRequest.executionEnvironment.environment,
   executables: initializeRequest.executionEnvironment.executables,
@@ -2572,8 +2555,17 @@ assert.equal(governedToolResults.every((event) => event.type === "tool/result"
 assert.equal(await readFile(fixtureFile, "utf8"), transformedWriteContent);
 assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
   `permission:Write:${fixtureFile}`,
-  `prepare:Write:${fixtureFile}`,
-  "commit",
+]);
+await waitUntil(
+  () => primaryAgent.session.events.some((event) => event.type === "myagents/checkpoint/state"
+    && event.data.callId === "artifact-write-call" && event.data.phase === "settled"),
+  "governed Write checkpoint settlement",
+);
+assert.deepEqual(primaryAgent.session.events
+  .filter((event) => event.type === "myagents/checkpoint/state"
+    && event.data.callId === "artifact-write-call")
+  .map((event) => event.type === "myagents/checkpoint/state" ? event.data.phase : undefined), [
+  "prepared", "published", "settled",
 ]);
 assert.equal(
   primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule").length,
@@ -2653,11 +2645,18 @@ assert.equal(governedEditResult.data.message.content[0].isError, false, JSON.str
 assert.equal(await readFile(fixtureFile, "utf8"), editedFileContent);
 assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
   `permission:Write:${fixtureFile}`,
-  `prepare:Write:${fixtureFile}`,
-  "commit",
   `permission:Edit:${fixtureFile}`,
-  `prepare:Edit:${fixtureFile}`,
-  "commit",
+]);
+await waitUntil(
+  () => primaryAgent.session.events.some((event) => event.type === "myagents/checkpoint/state"
+    && event.data.callId === "artifact-edit-call" && event.data.phase === "settled"),
+  "governed Edit checkpoint settlement",
+);
+assert.deepEqual(primaryAgent.session.events
+  .filter((event) => event.type === "myagents/checkpoint/state"
+    && event.data.callId === "artifact-edit-call")
+  .map((event) => event.type === "myagents/checkpoint/state" ? event.data.phase : undefined), [
+  "prepared", "published", "settled",
 ]);
 
 await composition.context.sdkOperations.start({
@@ -3694,7 +3693,7 @@ const persistenceGenerationCount = persistenceProbe.prepare(
 ).get("dsh-artifact-primary") as { count: number };
 persistenceProbe.close();
 assert.equal(persistenceMeta.persistence_format, PRODUCT_PERSISTENCE_FORMAT);
-assert.equal(persistenceMeta.schema_version, 1);
+assert.equal(persistenceMeta.schema_version, PRODUCT_PERSISTENCE_SCHEMA_VERSION);
 assert.equal(persistenceGenerationCount.count, 1);
 assert.ok(persistenceSession.active_generation_id.length > 0);
 assert.ok(persistenceSession.event_count > 0);
@@ -4008,6 +4007,17 @@ process.stdout.write(`${JSON.stringify({
   nativeRpcShutdown: rpcShutdown.kind,
   nativeRpcStopped: stopped.disposed,
   productPersistenceVerified: true,
+  checkpointJournalVerified: true,
+  checkpointJournalEvidence: {
+    writePhases: primaryAgent.session.events
+      .filter((event) => event.type === "myagents/checkpoint/state"
+        && event.data.callId === "artifact-write-call")
+      .map((event) => event.type === "myagents/checkpoint/state" ? event.data.phase : undefined),
+    editPhases: primaryAgent.session.events
+      .filter((event) => event.type === "myagents/checkpoint/state"
+        && event.data.callId === "artifact-edit-call")
+      .map((event) => event.type === "myagents/checkpoint/state" ? event.data.phase : undefined),
+  },
   sessionReadVerified: true,
   failedResumePublicationRejected,
   initialConfigurationMismatchRejected,

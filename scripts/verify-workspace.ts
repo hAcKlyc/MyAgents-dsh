@@ -11,6 +11,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspacePackages = new Map([
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
   ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
+  ["packages/checkpoint", "@myagents-dsh/checkpoint"],
   ["packages/compatibility", "@myagents-dsh/compatibility"],
   ["packages/component-runtime", "@myagents-dsh/component-runtime"],
   ["packages/components-agents", "@myagents-dsh/components-agents"],
@@ -97,6 +98,7 @@ const expectedWorkspaceFiles = new Map([
   ["packages/components-mcp", ["src/compiler.ts", "src/index.ts", "src/sdk-connection.ts"]],
   ["packages/components-skills", ["src/index.ts"]],
   ["packages/host-ports", ["src/attachment-store.ts", "src/credential-provider.ts", "src/index.ts", "src/service.ts"]],
+  ["packages/checkpoint", ["src/index.ts", "src/runtime.ts"]],
   ["packages/operation-runtime", [
     "src/events.ts",
     "src/fold.ts",

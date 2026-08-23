@@ -44,7 +44,12 @@ import type {
 import type {
   ProductRetainedOutputAuthority,
   ProductRetainedOutputFile,
+  ProductToolExecutionEnvironment,
 } from "@myagents-dsh/tool-runtime-product";
+import type {
+  ProductCheckpointFileSnapshot,
+  ProductCheckpointIoAuthority,
+} from "@myagents-dsh/checkpoint";
 import type {
   ProductPlanArtifactRead,
   ProductPlanIoAuthority,
@@ -927,6 +932,17 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     });
   }
 
+  createCheckpointIoAuthority(): ProductCheckpointIoAuthority {
+    return Object.freeze({
+      capture: async (
+        environment: ProductToolExecutionEnvironment,
+        path: string,
+        maxBytes: number,
+        signal: AbortSignal,
+      ) => await this.captureCheckpointFile(environment, path, maxBytes, signal),
+    });
+  }
+
   createAttachmentIoAuthority(): LocalAttachmentIoAuthority {
     return Object.freeze({
       readLease: async (
@@ -972,6 +988,69 @@ export class LocalWorkspaceFileSystem extends FileSystem {
         allowMissingLeaf: boolean,
         signal: AbortSignal,
       ) => await this.resolvePlanArtifact(runtimeHome, sessionId, path, allowMissingLeaf, signal),
+    });
+  }
+
+  private async captureCheckpointFile(
+    environment: ProductToolExecutionEnvironment,
+    path: string,
+    maxBytes: number,
+    signal: AbortSignal,
+  ): Promise<ProductCheckpointFileSnapshot> {
+    abortError(signal);
+    if (environment.platformTarget !== this.adapterValue.target
+      || typeof path !== "string" || path.length === 0 || path.length > 8_192
+      || path.includes("\0") || this.adapterValue.normalizeAbsolutePath(path) !== path
+      || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 8 * 1_024 * 1_024) {
+      throw new FsError("checkpoint file authority is invalid", "FS_SANDBOX_DENIED");
+    }
+    const roots = await Promise.all(environment.workspace.allowedWriteRoots.map(async (rootPath) => {
+      const root = await this.resolve(rootPath, { signal });
+      const info = await this.lstat(rootPath, {}, signal);
+      if (root.displayPath !== rootPath || info?.type !== "directory") {
+        throw new FsError("checkpoint write root is unavailable", "FS_SANDBOX_DENIED");
+      }
+      return root;
+    }));
+    const target = await this.resolve(path, { signal });
+    if (target.displayPath !== path || !roots.some((root) => this.contains(root, target))) {
+      throw new FsError("checkpoint path is outside the operation-frozen write roots", "FS_SANDBOX_DENIED");
+    }
+    const before = await lstat(path).catch((error: unknown) => {
+      if (errorCode(error) === "ENOENT") return undefined;
+      return fsError(error, "checkpoint file inspection failed");
+    });
+    abortError(signal);
+    if (before === undefined) {
+      const finalTarget = await this.resolve(path, { signal });
+      if (finalTarget.displayPath !== target.displayPath || finalTarget.targetKey !== target.targetKey) {
+        throw new FsError("checkpoint absent path identity changed", "FS_STALE_VERSION");
+      }
+      return Object.freeze({
+        exists: false,
+        path,
+        targetKey: String(target.targetKey),
+      });
+    }
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) {
+      throw new FsError("checkpoint target must be a singly-linked regular file", "FS_STALE_VERSION");
+    }
+    const beforeVersion = String(versionOf(before));
+    const bytes = await this.readUnsharedBytes(target, signal, maxBytes);
+    const after = await lstat(path).catch((error: unknown) =>
+      fsError(error, "checkpoint final file inspection failed"));
+    const finalTarget = await this.resolve(path, { signal });
+    if (!after.isFile() || after.isSymbolicLink() || after.nlink !== 1
+      || String(versionOf(after)) !== beforeVersion || finalTarget.displayPath !== target.displayPath
+      || finalTarget.targetKey !== target.targetKey || !roots.some((root) => this.contains(root, finalTarget))) {
+      throw new FsError("checkpoint target identity changed during capture", "FS_STALE_VERSION");
+    }
+    return Object.freeze({
+      bytes,
+      exists: true,
+      path,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      targetKey: String(target.targetKey),
     });
   }
 

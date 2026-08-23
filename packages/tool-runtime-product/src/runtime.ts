@@ -22,6 +22,15 @@ declare module "@deepseek-ai/cordis" {
 
 export interface ProductToolExecutionEnvironment {
   readonly attachmentStagingRoot: string;
+  readonly checkpoint: Readonly<{
+    readonly mode: "managed-file-tools";
+    readonly policyRevision: string;
+    readonly trackedTools: readonly ["Write", "Edit"];
+    readonly tracksChildAgents: false;
+    readonly tracksExternalChanges: false;
+    readonly tracksShell: false;
+    readonly version: 1;
+  }>;
   readonly digest: string;
   readonly environment: Readonly<{
     readonly allowedKeys: readonly string[];

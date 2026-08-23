@@ -24,6 +24,15 @@ const workspace: PrimarySessionWorkspace = Object.freeze({
 });
 
 const processEnvironmentFields = (windows = false) => ({
+  checkpoint: {
+    mode: "managed-file-tools" as const,
+    policyRevision: "checkpoint-v1",
+    trackedTools: ["Write", "Edit"] as const,
+    tracksChildAgents: false as const,
+    tracksExternalChanges: false as const,
+    tracksShell: false as const,
+    version: 1 as const,
+  },
   environment: { allowedKeys: [], inheritedKeys: [], secretValues: "reverse-port-only" as const },
   executables: {
     allowedCommandRefs: [],

@@ -38,6 +38,11 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     ],
   },
   {
+    packageName: "@myagents-dsh/checkpoint",
+    relativeDirectory: "packages/checkpoint",
+    allowedFiles: ["package.json", "src/index.ts", "src/runtime.ts"],
+  },
+  {
     packageName: "@myagents-dsh/compatibility",
     relativeDirectory: "packages/compatibility",
     allowedFiles: [

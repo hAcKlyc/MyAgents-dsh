@@ -45,12 +45,13 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
   "@myagents-dsh/component-runtime:ProductComponentService",
   "@myagents-dsh/rpc-server:NativeRpcServer",
   "@myagents-dsh/persistence-product:ProductSqliteSessionPersistence",
+  "@myagents-dsh/checkpoint:ProductCheckpointService",
 ] as const);
 
 export interface Batch1CandidateProfileManifest {
   readonly formatVersion: 1;
   readonly profileId: typeof BATCH1_CANDIDATE_PROFILE_ID;
-  readonly stage: "batch-1-w4-a3";
+  readonly stage: "batch-1-w4-a4";
   readonly runtimeActivation: "workstream-evidence-only";
   readonly protocol: Readonly<{
     version: string;
@@ -132,7 +133,7 @@ export const buildBatch1CandidateProfile = (
 ): Batch1CandidateProfileManifest => Object.freeze({
   formatVersion: 1,
   profileId: BATCH1_CANDIDATE_PROFILE_ID,
-  stage: "batch-1-w4-a3",
+  stage: "batch-1-w4-a4",
   runtimeActivation: "workstream-evidence-only",
   protocol: Object.freeze({
     version: exactIdentifier(input.protocolVersion, "candidate protocol version"),

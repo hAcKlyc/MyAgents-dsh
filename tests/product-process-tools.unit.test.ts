@@ -225,6 +225,12 @@ const harness = async (options: Readonly<{
   context.agents.register(agent);
   const environment = Object.freeze({
     attachmentStagingRoot: attachments,
+    checkpoint: Object.freeze({
+      mode: "managed-file-tools" as const, policyRevision: "checkpoint-v1",
+      trackedTools: Object.freeze(["Write", "Edit"] as const),
+      tracksChildAgents: false as const, tracksExternalChanges: false as const,
+      tracksShell: false as const, version: 1 as const,
+    }),
     digest: "a".repeat(64),
     environment: Object.freeze({
       allowedKeys: Object.freeze(["PATH"]),

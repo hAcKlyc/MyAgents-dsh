@@ -26,11 +26,19 @@ import {
   type StoredSuffix,
 } from "@deepseek-ai/dsh-session-persistence";
 import type { SqliteDurabilityPlan } from "@myagents-dsh/product-profile";
+import type {
+  ProductCheckpointPhase,
+  ProductCheckpointPrepareInput,
+  ProductCheckpointRecord,
+  ProductCheckpointStore,
+} from "@myagents-dsh/checkpoint";
 
 import {
   PRODUCT_PERSISTENCE_APPLICATION_ID,
+  PRODUCT_CHECKPOINT_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_SQL,
+  PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   PRODUCT_PERSISTENCE_TABLES,
 } from "./schema.js";
@@ -74,6 +82,27 @@ const EMPTY_HEAD_HASH = createHash("sha256").digest("hex");
 const HASH_PATTERN = /^[a-f0-9]{64}$/u;
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const EXPECTED_COLUMNS = Object.freeze({
+  checkpoint_blobs: ["sha256", "size", "bytes", "created_at"],
+  checkpoint_records: [
+    "checkpoint_id",
+    "session_id",
+    "generation_id",
+    "product_turn_id",
+    "client_operation_id",
+    "dsh_turn",
+    "call_id",
+    "path",
+    "tool",
+    "prior_sha256",
+    "expected_sha256",
+    "actual_sha256",
+    "state",
+    "policy_revision",
+    "last_event_phase",
+    "last_event_seq",
+    "prepared_at",
+    "settled_at",
+  ],
   store_meta: ["singleton", "store_id", "schema_version", "persistence_format", "created_at"],
   sessions: ["id", "active_generation_id", "state", "revision", "event_count", "head_hash", "created_at"],
   session_generations: [
@@ -105,6 +134,17 @@ const EXPECTED_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_SQL
   .map((sql) => {
     const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
     if (match?.[1] === undefined) throw new Error("product persistence DDL contains an unknown statement");
+    return Object.freeze({ name: match[1], sql });
+  })
+  .sort((left, right) => compareCodePoints(left.name, right.name)));
+
+const EXPECTED_V1_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V1_SQL
+  .trim()
+  .split(/;\s*/u)
+  .filter((statement) => statement.length > 0)
+  .map((sql) => {
+    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
+    if (match?.[1] === undefined) throw new Error("product persistence v1 DDL contains an unknown statement");
     return Object.freeze({ name: match[1], sql });
   })
   .sort((left, right) => compareCodePoints(left.name, right.name)));
@@ -146,6 +186,30 @@ const rowInteger = (record: Record<string, unknown>, key: string, description: s
   return value as number;
 };
 
+const rowNullableString = (
+  record: Record<string, unknown>,
+  key: string,
+  description: string,
+): string | null => {
+  const value = record[key];
+  if (value !== null && typeof value !== "string") {
+    throw new Error(`${description}.${key} is not nullable text`);
+  }
+  return value;
+};
+
+const rowNullableInteger = (
+  record: Record<string, unknown>,
+  key: string,
+  description: string,
+): number | null => {
+  const value = record[key];
+  if (value !== null && (!Number.isSafeInteger(value) || (value as number) < 0)) {
+    throw new Error(`${description}.${key} is not a nullable non-negative safe integer`);
+  }
+  return value as number | null;
+};
+
 const chainHash = (previous: string, envelopeJson: string): string => createHash("sha256")
   .update(Buffer.from(previous, "hex"))
   .update(Buffer.from(envelopeJson, "utf8"))
@@ -159,7 +223,7 @@ const aggregateFailure = (primary: unknown, cleanup: unknown, description: strin
 };
 
 /** Product SQLite implementation of the public DSH backend hooks. */
-export class ProductSqliteStore implements PersistenceBackend<never> {
+export class ProductSqliteStore implements PersistenceBackend<never>, ProductCheckpointStore {
   readonly name = "product-session-persistence-sqlite";
 
   readonly #locks = new ProductSessionLockTable();
@@ -248,6 +312,181 @@ export class ProductSqliteStore implements PersistenceBackend<never> {
       .update(storeId, "utf8")
       .digest();
     return createHmac("sha256", key).update(payload).digest();
+  }
+
+  prepare(
+    input: ProductCheckpointPrepareInput,
+    signal?: AbortSignal,
+  ): Promise<ProductCheckpointRecord> {
+    return this.#locks.run(input.sessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      this.#assertSchema();
+      const database = this.#requireDatabase();
+      const active = this.#readActiveSession(input.sessionId as SessionId, false);
+      if (active === undefined) throw new Error("checkpoint Session has no active storage generation");
+      const existing = this.#readCheckpoint(input.checkpointId);
+      if (existing !== undefined) {
+        this.#assertCheckpointInput(existing, input, active.activeGenerationId);
+        return existing;
+      }
+      if (input.beforeBytes === undefined ? input.priorSha256 !== null : input.priorSha256 === null) {
+        throw new TypeError("checkpoint prior bytes and digest presence differ");
+      }
+      if (input.beforeBytes !== undefined) {
+        if (input.beforeBytes.byteLength > 8 * 1_024 * 1_024
+          || createHash("sha256").update(input.beforeBytes).digest("hex") !== input.priorSha256) {
+          throw new TypeError("checkpoint prior blob differs from its digest or bound");
+        }
+      }
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const preparedAt = Date.now();
+        if (input.beforeBytes !== undefined && input.priorSha256 !== null) {
+          database.prepare(
+            "INSERT OR IGNORE INTO checkpoint_blobs(sha256, size, bytes, created_at) VALUES (?, ?, ?, ?)",
+          ).run(input.priorSha256, input.beforeBytes.byteLength, Buffer.from(input.beforeBytes), preparedAt);
+          const blob = asRecord(database.prepare(
+            "SELECT size, bytes FROM checkpoint_blobs WHERE sha256 = ?",
+          ).get(input.priorSha256), "checkpoint blob");
+          if (blob.size !== input.beforeBytes.byteLength || !(blob.bytes instanceof Uint8Array)
+            || !Buffer.from(blob.bytes).equals(Buffer.from(input.beforeBytes))) {
+            throw new Error("checkpoint blob identity collided with different bytes");
+          }
+        }
+        database.prepare(`
+          INSERT INTO checkpoint_records(
+            checkpoint_id, session_id, generation_id, product_turn_id,
+            client_operation_id, dsh_turn, call_id, path, tool, prior_sha256,
+            expected_sha256, actual_sha256, state, policy_revision,
+            last_event_phase, last_event_seq, prepared_at, settled_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'prepared', ?, NULL, NULL, ?, NULL)
+        `).run(
+          input.checkpointId,
+          input.sessionId,
+          active.activeGenerationId,
+          input.productTurnId,
+          input.clientOperationId,
+          input.dshTurn,
+          input.callId,
+          input.path,
+          input.tool,
+          input.priorSha256,
+          input.expectedSha256,
+          input.policyRevision,
+          preparedAt,
+        );
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "checkpoint prepare");
+      }
+      const record = this.#readCheckpoint(input.checkpointId);
+      if (record === undefined) throw new Error("checkpoint prepare did not publish its row");
+      return record;
+    });
+  }
+
+  get(
+    checkpointId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductCheckpointRecord | undefined> {
+    signal?.throwIfAborted();
+    const known = this.#readCheckpoint(checkpointId);
+    if (known === undefined) return Promise.resolve(undefined);
+    return this.#locks.run(known.sessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      this.#assertSchema();
+      return this.#readCheckpoint(checkpointId);
+    });
+  }
+
+  transition(
+    checkpointId: string,
+    expected: readonly ProductCheckpointPhase[],
+    next: ProductCheckpointPhase,
+    actualSha256: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<ProductCheckpointRecord> {
+    const known = this.#readCheckpoint(checkpointId);
+    if (known === undefined) return Promise.reject(new Error("checkpoint row is unavailable"));
+    return this.#locks.run(known.sessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      this.#assertSchema();
+      const current = this.#readCheckpoint(checkpointId);
+      if (current === undefined) throw new Error("checkpoint row disappeared");
+      if (current.phase === next && current.actualSha256 === actualSha256) return current;
+      if (!expected.includes(current.phase) || !this.#legalCheckpointTransition(current.phase, next)) {
+        throw new Error(`checkpoint transition ${current.phase} -> ${next} is invalid`);
+      }
+      if (next === "prepared"
+        || ((next === "published" || next === "settled") && actualSha256 === undefined)) {
+        throw new Error("checkpoint transition lacks exact actual file truth");
+      }
+      const settledAt = next === "settled" || next === "aborted" || next === "conflict"
+        ? Date.now()
+        : null;
+      const outcome = this.#requireDatabase().prepare(`
+        UPDATE checkpoint_records
+           SET state = ?, actual_sha256 = ?, settled_at = ?
+         WHERE checkpoint_id = ? AND state = ?
+      `).run(next, actualSha256 ?? null, settledAt, checkpointId, current.phase);
+      if (Number(outcome.changes) !== 1) throw new Error("checkpoint transition lost its exact row authority");
+      const updated = this.#readCheckpoint(checkpointId);
+      if (updated === undefined) throw new Error("checkpoint transition lost its row");
+      return updated;
+    });
+  }
+
+  markEvent(
+    checkpointId: string,
+    phase: ProductCheckpointPhase,
+    eventSeq: number,
+    signal?: AbortSignal,
+  ): Promise<ProductCheckpointRecord> {
+    const known = this.#readCheckpoint(checkpointId);
+    if (known === undefined) return Promise.reject(new Error("checkpoint row is unavailable"));
+    return this.#locks.run(known.sessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      if (!Number.isSafeInteger(eventSeq) || eventSeq < 0) {
+        throw new TypeError("checkpoint event sequence is invalid");
+      }
+      const current = this.#readCheckpoint(checkpointId);
+      if (current?.phase !== phase) {
+        throw new Error("checkpoint event differs from the current journal phase");
+      }
+      if (current.lastEventSeq !== null && current.lastEventSeq >= eventSeq) {
+        if (current.lastEventSeq === eventSeq && current.lastEventPhase === phase) return current;
+        throw new Error("checkpoint event sequence regressed");
+      }
+      const outcome = this.#requireDatabase().prepare(`
+        UPDATE checkpoint_records SET last_event_phase = ?, last_event_seq = ?
+         WHERE checkpoint_id = ? AND state = ?
+           AND (last_event_seq IS NULL OR last_event_seq < ?)
+      `).run(phase, eventSeq, checkpointId, phase, eventSeq);
+      if (Number(outcome.changes) !== 1) throw new Error("checkpoint event correlation lost its row authority");
+      const updated = this.#readCheckpoint(checkpointId);
+      if (updated === undefined) throw new Error("checkpoint event correlation lost its row");
+      return updated;
+    });
+  }
+
+  listUnsettled(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<readonly ProductCheckpointRecord[]> {
+    return this.#locks.run(sessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      this.#assertSchema();
+      const rows = this.#requireDatabase().prepare(`
+        SELECT c.* FROM checkpoint_records AS c
+          JOIN sessions AS s
+            ON s.id = c.session_id AND s.active_generation_id = c.generation_id
+         WHERE c.session_id = ?
+           AND (c.state NOT IN ('settled', 'aborted')
+             OR c.last_event_phase IS NULL OR c.last_event_phase <> c.state)
+         ORDER BY c.prepared_at, c.checkpoint_id
+      `).all(sessionId) as unknown[];
+      return Object.freeze(rows.map((row) => this.#decodeCheckpoint(row)));
+    });
   }
 
   appendBatch(
@@ -371,8 +610,43 @@ export class ProductSqliteStore implements PersistenceBackend<never> {
       } catch (error) {
         this.#rollback(error, "schema bootstrap");
       }
+    } else {
+      this.#migrateV1IfNeeded();
     }
     this.#assertSchema();
+  }
+
+  #migrateV1IfNeeded(): void {
+    const database = this.#requireDatabase();
+    const version = asRecord(database.prepare("PRAGMA user_version").get(), "user version").user_version;
+    if (version !== 1) return;
+    const rows = (database.prepare(
+      "SELECT name, sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    ).all() as unknown[]).map((value) => {
+      const row = asRecord(value, "v1 schema authority row");
+      return {
+        name: rowString(row, "name", "v1 schema authority row"),
+        sql: rowString(row, "sql", "v1 schema authority row"),
+      };
+    });
+    if (JSON.stringify(rows) !== JSON.stringify(EXPECTED_V1_SCHEMA_ROWS)) {
+      throw new Error("product SQLite persistence v1 schema authority is incompatible");
+    }
+    const meta = asRecord(database.prepare(
+      "SELECT schema_version, persistence_format FROM store_meta WHERE singleton = 1",
+    ).get(), "v1 store metadata");
+    if (meta.schema_version !== 1 || meta.persistence_format !== PRODUCT_PERSISTENCE_FORMAT) {
+      throw new Error("product SQLite persistence v1 store metadata is incompatible");
+    }
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      database.exec(PRODUCT_CHECKPOINT_SCHEMA_SQL);
+      database.prepare("UPDATE store_meta SET schema_version = ? WHERE singleton = 1")
+        .run(PRODUCT_PERSISTENCE_SCHEMA_VERSION);
+      database.exec(`PRAGMA user_version = ${PRODUCT_PERSISTENCE_SCHEMA_VERSION}; COMMIT`);
+    } catch (error) {
+      this.#rollback(error, "v1 checkpoint schema migration");
+    }
   }
 
   #assertSchema(): void {
@@ -394,13 +668,13 @@ export class ProductSqliteStore implements PersistenceBackend<never> {
     });
     if (JSON.stringify(schemaRows) !== JSON.stringify(EXPECTED_SCHEMA_ROWS)
       || JSON.stringify(schemaRows.map(({ name }) => name)) !== JSON.stringify(PRODUCT_PERSISTENCE_TABLES)) {
-      throw new Error("product SQLite persistence table authority differs from schema v1");
+      throw new Error("product SQLite persistence table authority differs from schema v2");
     }
     for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
       const columns = (database.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all() as unknown[])
         .map((row) => rowString(asRecord(row, `${table} column`), "name", `${table} column`));
       if (JSON.stringify(columns) !== JSON.stringify(expected)) {
-        throw new Error(`product SQLite persistence ${table} columns differ from schema v1`);
+        throw new Error(`product SQLite persistence ${table} columns differ from schema v2`);
       }
     }
     const meta = asRecord(database.prepare(
@@ -682,6 +956,75 @@ export class ProductSqliteStore implements PersistenceBackend<never> {
     return SessionPersistenceRevision(
       `store:${storeId}:session:${row.sessionId}:generation:${row.activeGenerationId}:revision:${row.sessionRevision}:events:${row.eventCount}:head:${row.headHash}`,
     );
+  }
+
+  #readCheckpoint(checkpointId: string): ProductCheckpointRecord | undefined {
+    const value = this.#requireDatabase().prepare(
+      "SELECT * FROM checkpoint_records WHERE checkpoint_id = ?",
+    ).get(checkpointId);
+    return value === undefined ? undefined : this.#decodeCheckpoint(value);
+  }
+
+  #decodeCheckpoint(value: unknown): ProductCheckpointRecord {
+    const row = asRecord(value, "checkpoint record");
+    const phase = rowString(row, "state", "checkpoint record") as ProductCheckpointPhase;
+    const tool = rowString(row, "tool", "checkpoint record");
+    const priorSha256 = rowNullableString(row, "prior_sha256", "checkpoint record");
+    const actualSha256 = rowNullableString(row, "actual_sha256", "checkpoint record");
+    const lastEventPhase = rowNullableString(row, "last_event_phase", "checkpoint record") as ProductCheckpointPhase | null;
+    const expectedSha256 = rowString(row, "expected_sha256", "checkpoint record");
+    if (!this.#checkpointPhases().includes(phase)
+      || (lastEventPhase !== null && !this.#checkpointPhases().includes(lastEventPhase))
+      || (tool !== "Write" && tool !== "Edit")
+      || (priorSha256 !== null && !HASH_PATTERN.test(priorSha256))
+      || (actualSha256 !== null && !HASH_PATTERN.test(actualSha256))
+      || !HASH_PATTERN.test(expectedSha256)) {
+      throw new Error("checkpoint record state or digest is invalid");
+    }
+    return Object.freeze({
+      ...(actualSha256 === null ? {} : { actualSha256 }),
+      callId: rowString(row, "call_id", "checkpoint record"),
+      checkpointId: rowString(row, "checkpoint_id", "checkpoint record"),
+      clientOperationId: rowString(row, "client_operation_id", "checkpoint record"),
+      dshTurn: rowInteger(row, "dsh_turn", "checkpoint record"),
+      expectedSha256,
+      generationId: rowString(row, "generation_id", "checkpoint record"),
+      lastEventPhase,
+      lastEventSeq: rowNullableInteger(row, "last_event_seq", "checkpoint record"),
+      path: rowString(row, "path", "checkpoint record"),
+      phase,
+      policyRevision: rowString(row, "policy_revision", "checkpoint record"),
+      preparedAt: rowInteger(row, "prepared_at", "checkpoint record"),
+      priorSha256,
+      productTurnId: rowString(row, "product_turn_id", "checkpoint record"),
+      sessionId: rowString(row, "session_id", "checkpoint record"),
+      settledAt: rowNullableInteger(row, "settled_at", "checkpoint record"),
+      tool,
+    });
+  }
+
+  #assertCheckpointInput(
+    record: ProductCheckpointRecord,
+    input: ProductCheckpointPrepareInput,
+    activeGenerationId: string,
+  ): void {
+    if (record.sessionId !== input.sessionId || record.generationId !== activeGenerationId
+      || record.productTurnId !== input.productTurnId
+      || record.clientOperationId !== input.clientOperationId || record.dshTurn !== input.dshTurn
+      || record.callId !== input.callId || record.path !== input.path || record.tool !== input.tool
+      || record.priorSha256 !== input.priorSha256 || record.expectedSha256 !== input.expectedSha256
+      || record.policyRevision !== input.policyRevision) {
+      throw new Error("checkpoint identity was reused with different immutable input");
+    }
+  }
+
+  #checkpointPhases(): readonly ProductCheckpointPhase[] {
+    return ["prepared", "published", "settled", "aborted", "conflict"];
+  }
+
+  #legalCheckpointTransition(from: ProductCheckpointPhase, to: ProductCheckpointPhase): boolean {
+    return (from === "prepared" && (to === "published" || to === "aborted" || to === "conflict"))
+      || (from === "published" && (to === "settled" || to === "conflict"));
   }
 
   async #prepareDirectory(runtimeHome: string, parent: string): Promise<boolean> {

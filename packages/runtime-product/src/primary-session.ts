@@ -39,6 +39,15 @@ export interface PrimarySessionWorkspace {
 
 export interface ProductExecutionEnvironment {
   readonly attachmentStagingRoot: string;
+  readonly checkpoint: Readonly<{
+    readonly mode: "managed-file-tools";
+    readonly policyRevision: string;
+    readonly trackedTools: readonly ["Write", "Edit"];
+    readonly tracksChildAgents: false;
+    readonly tracksExternalChanges: false;
+    readonly tracksShell: false;
+    readonly version: 1;
+  }>;
   readonly digest: string;
   readonly environment: Readonly<{
     readonly allowedKeys: readonly string[];
@@ -336,6 +345,7 @@ export const validateProductExecutionEnvironment = (
     value,
     [
       "attachmentStagingRoot",
+      "checkpoint",
       "digest",
       "environment",
       "executables",
@@ -350,6 +360,28 @@ export const validateProductExecutionEnvironment = (
     "product execution environment authority",
   );
   const revision = boundedIdentifier(environment.revision, "execution environment revision");
+  const checkpoint = exactOwnDataObject(
+    environment.checkpoint,
+    [
+      "mode", "policyRevision", "trackedTools", "tracksChildAgents",
+      "tracksExternalChanges", "tracksShell", "version",
+    ],
+    [],
+    "execution environment checkpoint authority",
+  );
+  if (checkpoint.mode !== "managed-file-tools" || checkpoint.version !== 1
+    || checkpoint.tracksChildAgents !== false || checkpoint.tracksExternalChanges !== false
+    || checkpoint.tracksShell !== false || !Array.isArray(checkpoint.trackedTools)
+    || utilTypes.isProxy(checkpoint.trackedTools)
+    || Object.getPrototypeOf(checkpoint.trackedTools) !== Array.prototype
+    || checkpoint.trackedTools.length !== 2 || checkpoint.trackedTools[0] !== "Write"
+    || checkpoint.trackedTools[1] !== "Edit") {
+    throw new TypeError("execution environment checkpoint authority is incompatible");
+  }
+  const checkpointPolicyRevision = boundedIdentifier(
+    checkpoint.policyRevision,
+    "checkpoint policy revision",
+  );
   if (typeof environment.digest !== "string" || !/^[a-f0-9]{64}$/u.test(environment.digest)) {
     throw new TypeError("execution environment digest must be a lowercase SHA-256");
   }
@@ -474,6 +506,15 @@ export const validateProductExecutionEnvironment = (
   }
   return Object.freeze({
     attachmentStagingRoot,
+    checkpoint: Object.freeze({
+      mode: "managed-file-tools" as const,
+      policyRevision: checkpointPolicyRevision,
+      trackedTools: Object.freeze(["Write", "Edit"] as const),
+      tracksChildAgents: false as const,
+      tracksExternalChanges: false as const,
+      tracksShell: false as const,
+      version: 1 as const,
+    }),
     digest: environment.digest,
     environment: Object.freeze({
       allowedKeys,

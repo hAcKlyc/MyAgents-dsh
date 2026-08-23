@@ -241,6 +241,11 @@
         "version": "0.0.0"
       },
       {
+        "name": "@myagents-dsh/checkpoint",
+        "role": "foundation-contract-owner",
+        "version": "0.0.0"
+      },
+      {
         "name": "@myagents-dsh/compatibility",
         "role": "foundation-contract-owner",
         "version": "0.0.0"

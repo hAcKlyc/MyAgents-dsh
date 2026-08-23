@@ -24,7 +24,6 @@ import {
 } from "./runtime-artifact.js";
 
 const deferredAuthorities = Object.freeze([
-  "checkpoint-format",
   "effective-tool-catalog",
 ] as const);
 

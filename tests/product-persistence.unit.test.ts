@@ -6,7 +6,7 @@ import {
   type SessionEvent,
   type SessionHeader,
 } from "@deepseek-ai/dsh-session";
-import { mkdir, mkdtemp, realpath, rm, symlink, link, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink, link, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
@@ -14,7 +14,9 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   PRODUCT_PERSISTENCE_FORMAT,
+  PRODUCT_PERSISTENCE_APPLICATION_ID,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
+  PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
   PRODUCT_REQUIRED_SESSION_EVENT_TYPES,
   ProductSqliteSessionPersistence,
   isProductKnownSessionEventType,
@@ -89,8 +91,8 @@ afterEach(async () => {
 describe("ProductSqliteSessionPersistence", () => {
   it("owns the exact immutable product event registry", () => {
     expect(Object.isFrozen(PRODUCT_REQUIRED_SESSION_EVENT_TYPES)).toBe(true);
-    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(16);
-    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(16);
+    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(17);
+    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(17);
     for (const type of PRODUCT_REQUIRED_SESSION_EVENT_TYPES) {
       expect(isProductKnownSessionEventType(type)).toBe(true);
     }
@@ -111,6 +113,33 @@ describe("ProductSqliteSessionPersistence", () => {
       selectPlatformAdapter("win32-x64"),
       "C:\\Users\\fixture\\AppData\\Local\\MyAgents",
     )).toBe("C:\\Users\\fixture\\AppData\\Local\\MyAgents\\persistence\\sessions-v1.sqlite");
+  });
+
+  it("migrates the exact v1 Session store to the v2 checkpoint schema without changing history", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const platform = selectPlatformAdapter("darwin-arm64");
+    const databasePath = productSessionDatabasePath(platform, runtimeHome);
+    await mkdir(join(runtimeHome, "persistence"), { mode: 0o700 });
+    const database = new DatabaseSync(databasePath);
+    database.exec(PRODUCT_PERSISTENCE_SCHEMA_V1_SQL);
+    database.prepare(
+      "INSERT INTO store_meta(singleton, store_id, schema_version, persistence_format, created_at) VALUES (1, ?, 1, ?, 1)",
+    ).run("store-v1-fixture", PRODUCT_PERSISTENCE_FORMAT);
+    database.exec(`PRAGMA application_id = ${PRODUCT_PERSISTENCE_APPLICATION_ID}; PRAGMA user_version = 1;`);
+    database.close();
+    await chmod(databasePath, 0o600);
+
+    const context = await mount(runtimeHome);
+    const probe = new DatabaseSync(databasePath, { readOnly: true });
+    expect((probe.prepare("PRAGMA user_version").get() as { user_version: number }).user_version)
+      .toBe(PRODUCT_PERSISTENCE_SCHEMA_VERSION);
+    expect(probe.prepare(
+      "SELECT schema_version, store_id FROM store_meta WHERE singleton = 1",
+    ).get()).toEqual({ schema_version: 2, store_id: "store-v1-fixture" });
+    expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_records")).toBe(0);
+    expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_blobs")).toBe(0);
+    probe.close();
+    await context.fiber.dispose();
   });
 
   it("atomically materializes once, appends contiguously, and preserves prior rows", async () => {

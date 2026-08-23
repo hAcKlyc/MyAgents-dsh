@@ -33,11 +33,13 @@ import {
 } from "./read.js";
 import { ProductSqliteStore } from "./sqlite-store.js";
 import type { MethodResult } from "@myagents-dsh/protocol";
+import type { ProductCheckpointStore } from "@myagents-dsh/checkpoint";
 
 export interface ProductSqliteSessionPersistenceConfig {
   readonly durability: SqliteDurabilityPlan;
   readonly platform: PlatformAdapterContract;
   readonly preparedSessionCacheSize?: number;
+  readonly registerCheckpointStore?: (store: ProductCheckpointStore) => void;
   readonly runtimeHome: string;
   readonly writeBatchMaxDelayMs?: number;
 }
@@ -110,7 +112,7 @@ const validateConfig = (value: unknown): Readonly<Required<ProductSqliteSessionP
   const record = exactOwnDataObject(
     value,
     ["durability", "platform", "runtimeHome"],
-    ["preparedSessionCacheSize", "writeBatchMaxDelayMs"],
+    ["preparedSessionCacheSize", "registerCheckpointStore", "writeBatchMaxDelayMs"],
     "product SQLite persistence config",
   );
   const platform = PLATFORM_TARGETS
@@ -124,6 +126,12 @@ const validateConfig = (value: unknown): Readonly<Required<ProductSqliteSessionP
   }
   const databasePath = productSessionDatabasePath(platform, record.runtimeHome);
   const expectedDurability = platform.sqliteDurabilityPlan(databasePath);
+  const registerCheckpointStore = Object.hasOwn(record, "registerCheckpointStore")
+    ? record.registerCheckpointStore
+    : () => undefined;
+  if (typeof registerCheckpointStore !== "function" || isProxy(registerCheckpointStore)) {
+    throw new TypeError("product SQLite checkpoint Store registration must be a non-Proxy function");
+  }
   const durability = exactOwnDataObject(
     record.durability,
     ["databasePath", "pragmas", "parentDirectoryFlush"],
@@ -160,6 +168,9 @@ const validateConfig = (value: unknown): Readonly<Required<ProductSqliteSessionP
       1_024,
       "prepared Session cache size",
     ),
+    registerCheckpointStore: (store: ProductCheckpointStore) => {
+      Reflect.apply(registerCheckpointStore, value, [store]);
+    },
     runtimeHome: record.runtimeHome,
     writeBatchMaxDelayMs: optionalBoundedInteger(
       record.writeBatchMaxDelayMs,
@@ -220,6 +231,16 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
       }),
       store,
     }));
+    const checkpointStore = Object.freeze<ProductCheckpointStore>({
+      get: (checkpointId, signal) => store.get(checkpointId, signal),
+      listUnsettled: (sessionId, signal) => store.listUnsettled(sessionId, signal),
+      markEvent: (checkpointId, phase, eventSeq, signal) =>
+        store.markEvent(checkpointId, phase, eventSeq, signal),
+      prepare: (input, signal) => store.prepare(input, signal),
+      transition: (checkpointId, expected, next, actualSha256, signal) =>
+        store.transition(checkpointId, expected, next, actualSha256, signal),
+    });
+    normalized.registerCheckpointStore(checkpointStore);
   }
 
   protected async [Service.init](): Promise<void> {
