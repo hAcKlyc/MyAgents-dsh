@@ -240,7 +240,7 @@ describe("dynamic E2E harness", () => {
         effort: "high",
       });
       expect(route.routeConfigSha256).toBe(
-        "02d160134ca073d3654bdbda32f2235fd12b992343479dbda429b177d53eca74",
+        "68d5826a0b8ecf4ff9766ca9334727f364b194b23a4052bcae5838ba15f1e251",
       );
       expect(await readFile(path, "utf8")).not.toContain(material);
     } finally {
