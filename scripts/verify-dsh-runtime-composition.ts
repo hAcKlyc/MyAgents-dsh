@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import {
@@ -322,6 +323,25 @@ const runtimeDependencySection = (
   return result;
 };
 
+export const projectRuntimePackageExports = (
+  value: unknown,
+  description: string,
+): Record<string, string> => {
+  const source = exactObject(value, description);
+  const result: Record<string, string> = {};
+  for (const [specifier, target] of Object.entries(source)) {
+    if ((specifier !== "." && !/^\.\/[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(specifier))
+      || typeof target !== "string"
+      || !/^\.\/[A-Za-z0-9][A-Za-z0-9._/-]*\.(?:ts|json)$/u.test(target)
+      || target.includes("/../")) {
+      throw new TypeError(`${description}.${specifier} must be one safe public file export`);
+    }
+    result[specifier] = target.endsWith(".ts") ? `${target.slice(0, -3)}.js` : target;
+  }
+  if (!Object.hasOwn(result, ".")) throw new TypeError(`${description} must export the package root`);
+  return result;
+};
+
 const stageBuiltPackage = (
   consumerRoot: string,
   buildRoot: string,
@@ -332,6 +352,14 @@ const stageBuiltPackage = (
   if (!statSync(sourceRoot).isDirectory()) throw new Error(`built package is missing: ${sourceRoot}`);
   const destination = resolve(consumerRoot, "node_modules", ...packageName.split("/"));
   mkdirSync(destination, { recursive: true });
+  const workspaceManifest = exactObject(
+    JSON.parse(readFileSync(resolve(repositoryRoot, workspaceDirectory, "package.json"), "utf8")) as unknown,
+    `${workspaceDirectory} package manifest`,
+  );
+  const packageExports = projectRuntimePackageExports(
+    workspaceManifest.exports,
+    `${workspaceDirectory} exports`,
+  );
   cpSync(sourceRoot, resolve(destination, "src"), {
     recursive: true,
     filter: (path) => statSync(path).isDirectory() || path.endsWith(".js"),
@@ -348,6 +376,8 @@ const stageBuiltPackage = (
     for (const filename of [
       "accepted-patched-dsh-artifact-v1.json",
       "batch-1-candidate-profile-v1.json",
+      "official-product-profile-v1.json",
+      "platform-targets-v1.json",
     ]) {
       cpSync(
         resolve(repositoryRoot, "packages/product-profile/manifests", filename),
@@ -355,7 +385,6 @@ const stageBuiltPackage = (
       );
     }
   }
-  let packageExports: Record<string, string> = { ".": "./src/index.js" };
   if (workspaceDirectory === "packages/protocol") {
     const generatedDirectory = resolve(destination, "generated");
     mkdirSync(generatedDirectory);
@@ -368,19 +397,12 @@ const stageBuiltPackage = (
         resolve(generatedDirectory, filename),
       );
     }
-    for (const filename of ["protocol-meta.json", "protocol-fixtures.json"]) {
+    for (const filename of ["protocol-meta.json", "protocol-fixtures.json", "protocol.schema.json"]) {
       cpSync(
         resolve(repositoryRoot, "packages/protocol/generated", filename),
         resolve(generatedDirectory, filename),
       );
     }
-    packageExports = {
-      ".": "./src/index.js",
-      "./generated/host-client": "./generated/host-client.generated.js",
-      "./protocol-fixtures.json": "./generated/protocol-fixtures.json",
-      "./protocol-meta.json": "./generated/protocol-meta.json",
-      "./tool-catalog": "./src/tool-catalog.js",
-    };
   } else if (workspaceDirectory === "packages/tool-contracts") {
     const generatedDirectory = resolve(destination, "generated");
     mkdirSync(generatedDirectory);
@@ -396,35 +418,12 @@ const stageBuiltPackage = (
         resolve(generatedDirectory, filename),
       );
     }
-    packageExports = {
-      ".": "./src/index.js",
-      "./canonical-tool-contracts-v1.json": "./generated/canonical-tool-contracts-v1.json",
-      "./dsh-reuse-matrix-v1.json": "./generated/dsh-reuse-matrix-v1.json",
-      "./tool-contract-meta.json": "./generated/tool-contract-meta.json",
-    };
-  } else if (workspaceDirectory === "packages/components-mcp") {
-    packageExports = {
-      ".": "./src/index.js",
-      "./sdk": "./src/sdk-connection.js",
-    };
-  } else if (workspaceDirectory === "apps/runtime-server") {
-    packageExports = {
-      ".": "./src/index.js",
-      "./process": "./src/process.js",
-      "./self-check": "./src/self-check.js",
-    };
-  } else if (workspaceDirectory === "packages/artifact-verifier") {
-    packageExports = {
-      ".": "./src/index.js",
-      "./batch-1-handoff": "./src/batch-1-handoff.js",
-      "./runtime-artifact": "./src/runtime-artifact.js",
-      "./self-check": "./src/self-check.js",
-    };
   }
-  const workspaceManifest = exactObject(
-    JSON.parse(readFileSync(resolve(repositoryRoot, workspaceDirectory, "package.json"), "utf8")) as unknown,
-    `${workspaceDirectory} package manifest`,
-  );
+  for (const [specifier, target] of Object.entries(packageExports)) {
+    if (!existsSync(resolve(destination, target))) {
+      throw new Error(`${workspaceDirectory} staged export ${specifier} lacks target ${target}`);
+    }
+  }
   const dependencies = runtimeDependencySection(
     workspaceManifest.dependencies,
     `${workspaceDirectory} dependencies`,
@@ -607,6 +606,8 @@ const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
   "scripts/tool-contract-generation.ts",
   "packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json",
   "packages/product-profile/manifests/batch-1-candidate-profile-v1.json",
+  "packages/product-profile/manifests/official-product-profile-v1.json",
+  "packages/product-profile/manifests/platform-targets-v1.json",
   "packages/tool-contracts/generated/catalog-fixtures-v1.json",
   "packages/tool-contracts/generated/canonical-tool-contracts-v1.json",
   "packages/tool-contracts/generated/dsh-reuse-matrix-v1.json",
@@ -614,6 +615,7 @@ const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
   "packages/tool-contracts/generated/tool-contract-meta.json",
   "packages/protocol/generated/protocol-fixtures.json",
   "packages/protocol/generated/protocol-meta.json",
+  "packages/protocol/generated/protocol.schema.json",
   "packages/tools-process/src/windows-job-host.ps1",
   ...runtimePackageWorkspaces.map(([workspace]) => `${workspace}/package.json`),
 ])).sort(compareCodePoint));
@@ -1870,4 +1872,5 @@ const main = (): void => {
   }
 };
 
-main();
+const entrypoint = process.argv[1];
+if (entrypoint !== undefined && import.meta.url === pathToFileURL(resolve(entrypoint)).href) main();
