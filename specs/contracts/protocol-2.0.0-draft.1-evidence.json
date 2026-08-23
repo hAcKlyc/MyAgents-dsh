@@ -14,7 +14,7 @@
   "outputs": {
     "host-client.generated.ts": "51bfc994e6deade81e984e43f96105d33beecbd9c89c5cce56bcd51e14f0e2f1",
     "protocol-fixtures.json": "7c5fe39382bef6fb3d34e7d3b2ccde739026cf13cae31b76343fc82d0d752874",
-    "protocol-meta.json": "8a4498dccb2a399dc5f66acb7c5e66ade3996fd267c6207e1205d3ba426140e1",
+    "protocol-meta.json": "ba19627433174ce58f2bc91bf21929904fd3c08e4a95307faf36c0ebd547b981",
     "protocol.schema.json": "44996aba8afa131ead844f9dde4962bac22c81eb58aa4431036f6996e0b36580"
   },
   "protocolVersion": "2.0.0-draft.1"

@@ -8,7 +8,7 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 - Source/design evidence is `deepseek-harness@b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` (tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`), whose manifests declare `0.1.1-rc.2`.
 - Development dependency evidence is the public npm `0.1.1-rc.2` package set plus `@deepseek-ai/cordis@4.0.1`, pinned by exact versions, tarball URLs, and SHA-512 integrities in `package-lock.json`.
-- Candidate executable evidence is the source-built, five-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49`, content-addressed by manifest SHA-256 `4f8cb4e8e17b8da39a817460c5201bd6982b7b968ac6ed4b494da4382d4feadf`.
+- Candidate executable evidence is the source-built, five-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49`, content-addressed by manifest SHA-256 `a21f74931c7ff84eda3ed0cc83b1bf14cdd1fd6ff6c67a3792eac28f6fc381f0`.
 
 The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 
