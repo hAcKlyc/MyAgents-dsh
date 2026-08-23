@@ -28,6 +28,7 @@ import {
   type DshRootComposition,
   type StaticSkillCatalog,
 } from "@myagents-dsh/runtime-product";
+import { rgPath } from "@vscode/ripgrep";
 import { constants as fsConstants } from "node:fs";
 import { access, readFile, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -120,11 +121,15 @@ const sha256File = async (path: string): Promise<string> =>
 
 const processAuthority = async (target: PlatformTarget) => {
   const platform = selectPlatformAdapter(target);
+  if (target !== resolveRuntimePlatformTarget(process.platform, process.arch)) {
+    throw new Error("official Runtime process authority must match the native artifact target");
+  }
   const [bash, bundledNode, ripgrep] = await Promise.all([
     resolveExecutable("bash", target),
     realpath(process.execPath),
-    resolveExecutable("rg", target),
+    realpath(rgPath),
   ]);
+  await access(ripgrep, fsConstants.X_OK);
   if (target !== "win32-x64") {
     const [bashSha256, bundledNodeSha256, ripgrepSha256] = await Promise.all([
       sha256File(bash), sha256File(bundledNode), sha256File(ripgrep),
