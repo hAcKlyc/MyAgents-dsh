@@ -6,6 +6,7 @@
     "tsBuildInfoFile": "../../dist/packages/persistence-product/.tsbuildinfo"
   },
   "files": [
+    "src/delete.ts",
     "src/index.ts",
     "src/fork.ts",
     "src/known-events.ts",

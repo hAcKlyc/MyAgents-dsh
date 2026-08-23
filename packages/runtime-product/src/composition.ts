@@ -83,6 +83,7 @@ import {
   PRODUCT_PERSISTENCE_FORMAT,
   ProductSqliteSessionPersistence,
   productSessionDatabasePath,
+  type ProductDeleteStore,
   type ProductForkStore,
   type ProductRewindStore,
 } from "@myagents-dsh/persistence-product";
@@ -1526,6 +1527,18 @@ export const composeDshRootServices = async (
           );
         }
         return persistence.readSession(request);
+      },
+      deleteStore: () => {
+        const persistence = root.get("sessionPersistence");
+        if (!(persistence instanceof ProductSqliteSessionPersistence)) return undefined;
+        return Object.freeze({
+          commitDelete: (token, clientMutationId, signal) =>
+            persistence.commitDelete(token, clientMutationId, signal),
+          getDelete: (token, signal) => persistence.getDelete(token, signal),
+          prepareDelete: (input, signal) => persistence.prepareDelete(input, signal),
+          rollbackDelete: (token, clientMutationId, signal) =>
+            persistence.rollbackDelete(token, clientMutationId, signal),
+        } satisfies ProductDeleteStore);
       },
       forkStore: () => {
         const persistence = root.get("sessionPersistence");

@@ -15,6 +15,10 @@ export const BATCH1_AVAILABLE_HOST_METHODS = Object.freeze([
   "session/resume",
   "session/read",
   "session/close",
+  "session/delete/prepare",
+  "session/delete/commit",
+  "session/delete/rollback",
+  "session/delete/status",
   "session/fork/prepare",
   "session/fork/commit",
   "session/fork/abort",
@@ -59,7 +63,7 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
 export interface Batch1CandidateProfileManifest {
   readonly formatVersion: 1;
   readonly profileId: typeof BATCH1_CANDIDATE_PROFILE_ID;
-  readonly stage: "batch-1-w4-a6";
+  readonly stage: "batch-1-w4-a7";
   readonly runtimeActivation: "workstream-evidence-only";
   readonly protocol: Readonly<{
     version: string;
@@ -141,7 +145,7 @@ export const buildBatch1CandidateProfile = (
 ): Batch1CandidateProfileManifest => Object.freeze({
   formatVersion: 1,
   profileId: BATCH1_CANDIDATE_PROFILE_ID,
-  stage: "batch-1-w4-a6",
+  stage: "batch-1-w4-a7",
   runtimeActivation: "workstream-evidence-only",
   protocol: Object.freeze({
     version: exactIdentifier(input.protocolVersion, "candidate protocol version"),

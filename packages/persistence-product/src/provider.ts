@@ -35,6 +35,11 @@ import { ProductSqliteStore } from "./sqlite-store.js";
 import type { MethodResult } from "@myagents-dsh/protocol";
 import type { ProductCheckpointStore } from "@myagents-dsh/checkpoint";
 import type {
+  ProductDeletePrepareInput,
+  ProductDeleteRecord,
+  ProductDeleteStore,
+} from "./delete.js";
+import type {
   ProductForkPrepareInput,
   ProductForkRecord,
   ProductForkStore,
@@ -304,6 +309,25 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
 
   readSession(request: ProductSessionReadRequest): Promise<MethodResult<"session/read">> {
     return stateOf(this).reader.read(request);
+  }
+
+  prepareDelete(
+    input: ProductDeletePrepareInput,
+    signal?: AbortSignal,
+  ): Promise<ProductDeleteRecord> {
+    return stateOf(this).store.prepareDelete(input, signal);
+  }
+
+  commitDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord> {
+    return stateOf(this).store.commitDelete(token, clientMutationId, signal);
+  }
+
+  rollbackDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord> {
+    return stateOf(this).store.rollbackDelete(token, clientMutationId, signal);
+  }
+
+  getDelete(token: string, signal?: AbortSignal): ReturnType<ProductDeleteStore["getDelete"]> {
+    return stateOf(this).store.getDelete(token, signal);
   }
 
   prepareFork(

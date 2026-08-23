@@ -143,6 +143,7 @@ describe("ProductSqliteSessionPersistence", () => {
     });
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_records")).toBe(0);
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_blobs")).toBe(0);
+    expect(scalar(probe, "SELECT count(*) AS value FROM delete_journals")).toBe(0);
     expect(scalar(probe, "SELECT count(*) AS value FROM stable_boundaries")).toBe(0);
     expect(scalar(probe, "SELECT count(*) AS value FROM rewind_child_plans")).toBe(0);
     expect(scalar(probe, "SELECT count(*) AS value FROM fork_journals")).toBe(0);
@@ -185,6 +186,97 @@ describe("ProductSqliteSessionPersistence", () => {
       turn: 1,
     });
     probe.close();
+    await context.fiber.dispose();
+  });
+
+  it("prepares, tombstones, retries, and rolls back only the exact Session generation", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-delete-source");
+    const events = turn(0, 1);
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, events);
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("delete fixture did not install product persistence");
+    }
+    const persistence = context.sessionPersistence;
+    const abandoned = await persistence.prepareDelete({
+      clientMutationId: "delete-client-abandoned",
+      runtimeSessionId: id,
+    });
+    expect(abandoned.phase).toBe("prepared");
+    const abandonedRollback = await persistence.rollbackDelete(
+      abandoned.token,
+      "delete-client-abandoned",
+    );
+    expect(abandonedRollback.phase).toBe("rolled_back");
+    expect(await persistence.rollbackDelete(abandoned.token, "delete-client-abandoned"))
+      .toEqual(abandonedRollback);
+
+    const prepared = await persistence.prepareDelete({
+      clientMutationId: "delete-client-1",
+      runtimeSessionId: id,
+    });
+    expect(await persistence.prepareDelete({
+      clientMutationId: "delete-client-1",
+      runtimeSessionId: id,
+    })).toEqual(prepared);
+    const committed = await persistence.commitDelete(prepared.token, "delete-client-1");
+    expect(committed).toMatchObject({
+      attempt: 1,
+      phase: "committed",
+      receipt: {
+        deletedGenerationId: prepared.sourceGenerationId,
+        durableSequence: 2,
+        runtimeSessionId: id,
+      },
+    });
+    expect(await persistence.commitDelete(prepared.token, "delete-client-1")).toEqual(committed);
+    expect(await persistence.list()).toEqual([]);
+    await expect(persistence.readFrom(id, 0)).rejects.toThrow(/not found|unavailable/u);
+
+    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const tombstoneProbe = new DatabaseSync(databasePath);
+    tombstoneProbe.prepare("UPDATE sessions SET revision = revision + 1 WHERE id = ?").run(id);
+    tombstoneProbe.close();
+    await expect(persistence.rollbackDelete(prepared.token, "delete-client-1"))
+      .rejects.toThrow(/tombstone was replaced/u);
+    const tombstoneRepair = new DatabaseSync(databasePath);
+    tombstoneRepair.prepare("UPDATE sessions SET revision = revision - 1 WHERE id = ?").run(id);
+    tombstoneRepair.close();
+
+    const rolledBack = await persistence.rollbackDelete(prepared.token, "delete-client-1");
+    expect(rolledBack).toMatchObject({ attempt: 2, phase: "rolled_back" });
+    expect(await persistence.rollbackDelete(prepared.token, "delete-client-1")).toEqual(rolledBack);
+    expect((await persistence.readFrom(id, 0)).events).toEqual(events);
+    expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId))).toEqual([id]);
+    await context.fiber.dispose();
+  });
+
+  it("rejects delete commit after the prepared Session revision changes", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-delete-revision-drift");
+    const firstTurn = turn(0, 1);
+    const secondTurn = turn(2, 2);
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, firstTurn);
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("delete revision-drift fixture did not install product persistence");
+    }
+    const persistence = context.sessionPersistence;
+    const prepared = await persistence.prepareDelete({
+      clientMutationId: "delete-client-revision-drift",
+      runtimeSessionId: id,
+    });
+    await persistence.append(id, secondTurn);
+    await expect(persistence.commitDelete(prepared.token, "delete-client-revision-drift"))
+      .rejects.toThrow(/locator or revision changed/u);
+    expect(await persistence.getDelete(prepared.token)).toEqual(prepared);
+    expect((await persistence.readFrom(id, 0)).events).toEqual([...firstTurn, ...secondTurn]);
+    expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId))).toEqual([id]);
+    expect(await persistence.rollbackDelete(prepared.token, "delete-client-revision-drift"))
+      .toMatchObject({ phase: "rolled_back" });
     await context.fiber.dispose();
   });
 

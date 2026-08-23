@@ -11,6 +11,8 @@ import {
   type MethodResult,
 } from "@myagents-dsh/protocol";
 import type {
+  ProductDeleteRecord,
+  ProductDeleteStore,
   ProductForkRecord,
   ProductForkStore,
   ProductRewindRecord,
@@ -1470,6 +1472,7 @@ export interface ProductSessionServiceConfig {
   ) => void;
   readonly backend?: PrimarySessionBackend;
   readonly childPublicationAuthority?: object;
+  readonly deleteStore?: () => ProductDeleteStore | undefined;
   readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard;
   readonly quiescenceGraceMs?: number;
   readonly readSession?: (
@@ -1485,6 +1488,7 @@ export class ProductSessionService extends Service {
   static inject = ["agents", "sessions"];
   private readonly backendValue: PrimarySessionBackend;
   private readonly childPublicationAuthorityValue: object | undefined;
+  private readonly deleteStoreValue: ProductSessionServiceConfig["deleteStore"];
   private readonly forkStoreValue: ProductSessionServiceConfig["forkStore"];
   private readonly providerAdmissionGuardValue: PrimarySessionProviderAdmissionGuard | undefined;
   private readonly readSessionValue: ProductSessionServiceConfig["readSession"];
@@ -1508,6 +1512,7 @@ export class ProductSessionService extends Service {
         "assertPublicationCurrent",
         "backend",
         "childPublicationAuthority",
+        "deleteStore",
         "forkStore",
         "providerAdmissionGuard",
         "quiescenceGraceMs",
@@ -1567,6 +1572,13 @@ export class ProductSessionService extends Service {
       throw new TypeError("ProductSession read projection must be a non-proxy function");
     }
     this.readSessionValue = readSession;
+    const deleteStore = Object.hasOwn(normalized, "deleteStore")
+      ? normalized.deleteStore as ProductSessionServiceConfig["deleteStore"]
+      : undefined;
+    if (deleteStore !== undefined && (typeof deleteStore !== "function" || utilTypes.isProxy(deleteStore))) {
+      throw new TypeError("ProductSession delete Store authority must be a non-proxy function");
+    }
+    this.deleteStoreValue = deleteStore;
     const forkStore = Object.hasOwn(normalized, "forkStore")
       ? normalized.forkStore as ProductSessionServiceConfig["forkStore"]
       : undefined;
@@ -1733,6 +1745,82 @@ export class ProductSessionService extends Service {
       targetStableBoundaryId: params.targetStableBoundaryId,
       targetTranscriptPostcondition: params.targetTranscriptPostcondition,
     }), signal).then((record) => this.#projectRewind(record));
+  }
+
+  deletePrepare(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/delete/prepare">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.deletePrepare(value, signal);
+    const params = validateMethodParams("session/delete/prepare", value);
+    const snapshot = this.snapshot();
+    if (snapshot.state !== "ready" || snapshot.runtimeSessionId === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session is not ready for delete prepare");
+    }
+    return this.#requireDeleteStore().prepareDelete(Object.freeze({
+      clientMutationId: params.clientMutationId,
+      runtimeSessionId: snapshot.runtimeSessionId,
+    }), signal).then((record) => this.#projectDelete(record));
+  }
+
+  deleteCommit(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/delete/commit">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.deleteCommit(value, signal);
+    const params = validateMethodParams("session/delete/commit", value);
+    const store = this.#requireDeleteStore();
+    return store.getDelete(params.token, signal).then(async (record) => {
+      const snapshot = this.snapshot();
+      if (record === undefined || snapshot.runtimeSessionId !== record.runtimeSessionId) {
+        throw new ProtocolError("session_mutation_not_found", "delete token is unavailable for the primary Session");
+      }
+      if (record.phase !== "committed") {
+        signal?.throwIfAborted();
+        await this.retire();
+        return this.#projectDelete(await store.commitDelete(params.token, params.clientMutationId));
+      }
+      return this.#projectDelete(record);
+    });
+  }
+
+  deleteRollback(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/delete/rollback">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.deleteRollback(value, signal);
+    const params = validateMethodParams("session/delete/rollback", value);
+    const store = this.#requireDeleteStore();
+    const snapshot = this.snapshot();
+    return store.getDelete(params.token, signal).then(async (record) => {
+      if (record === undefined || snapshot.runtimeSessionId !== record.runtimeSessionId) {
+        throw new ProtocolError("session_mutation_not_found", "delete token is unavailable for the primary Session");
+      }
+      return this.#projectDelete(await store.rollbackDelete(
+        params.token,
+        params.clientMutationId,
+        signal,
+      ));
+    });
+  }
+
+  deleteStatus(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/delete/status">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.deleteStatus(value, signal);
+    const params = validateMethodParams("session/delete/status", value);
+    const snapshot = this.snapshot();
+    return this.#requireDeleteStore().getDelete(params.token, signal).then((record) => {
+      if (record === undefined || snapshot.runtimeSessionId !== record.runtimeSessionId) {
+        throw new ProtocolError("session_mutation_not_found", "delete token is unavailable for the primary Session");
+      }
+      return this.#projectDelete(record);
+    });
   }
 
   forkPrepare(
@@ -1965,6 +2053,25 @@ export class ProductSessionService extends Service {
       throw new ProtocolError("primary_session_not_ready", "primary Session rewind persistence is not installed");
     }
     return store;
+  }
+
+  #requireDeleteStore(): ProductDeleteStore {
+    const store = this.deleteStoreValue?.();
+    if (store === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session delete persistence is not installed");
+    }
+    return store;
+  }
+
+  #projectDelete(record: ProductDeleteRecord): MethodResult<"session/delete/status"> {
+    const state = record.phase === "committing"
+      ? "prepared"
+      : record.phase === "rolling_back" ? "committed" : record.phase;
+    return Object.freeze({
+      token: record.token,
+      state,
+      ...(record.receipt === undefined ? {} : { receipt: record.receipt }),
+    });
   }
 
   #requireForkStore(): ProductForkStore {

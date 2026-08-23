@@ -88,8 +88,9 @@ const runtimeCompositionSourcePaths = [
   "packages/operation-runtime/src/limits.ts",
   "packages/operation-runtime/src/service.ts",
   "packages/operation-runtime/src/terminal.ts",
-  "packages/persistence-product/src/index.ts",
+  "packages/persistence-product/src/delete.ts",
   "packages/persistence-product/src/fork.ts",
+  "packages/persistence-product/src/index.ts",
   "packages/persistence-product/src/known-events.ts",
   "packages/persistence-product/src/provider.ts",
   "packages/persistence-product/src/read.ts",
@@ -846,7 +847,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w4-a6"
+    || selfCheckProfile.stage !== "batch-1-w4-a7"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -1138,6 +1139,7 @@ const main = (): void => {
       || evidence.nativeRpcStopped !== true
       || evidence.productPersistenceVerified !== true
       || evidence.checkpointJournalVerified !== true
+      || evidence.deleteTransactionVerified !== true
       || evidence.forkTransactionVerified !== true
       || evidence.rewindTransactionVerified !== true
       || evidence.sessionReadVerified !== true
@@ -1214,6 +1216,19 @@ const main = (): void => {
       || !Number.isSafeInteger(rewindEvidence.sourceMessageCount)
       || rewindEvidence.sourceMessageCount <= rewindEvidence.selectedMessageCount) {
       throw new Error("Session rewind evidence differs from the exact W4-A5 contract");
+    }
+    const deleteEvidence = exactObject(
+      evidence.deleteTransactionEvidence,
+      "Session delete transaction evidence",
+    );
+    if (deleteEvidence.committedState !== "committed"
+      || deleteEvidence.generationStateAfterCommit !== "tombstoned"
+      || !Number.isSafeInteger(deleteEvidence.restoredEventCount)
+      || (deleteEvidence.restoredEventCount as number) < 1
+      || deleteEvidence.rolledBackState !== "rolled_back"
+      || deleteEvidence.sessionStateAfterCommit !== "tombstoned"
+      || deleteEvidence.sessionStateAfterRollback !== "active") {
+      throw new Error("Session delete evidence differs from the exact W4-A7 contract");
     }
     const forkEvidence = exactObject(
       evidence.forkTransactionEvidence,
@@ -1529,6 +1544,11 @@ const main = (): void => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
       return (result as Record<string, unknown>).ok === true;
     });
+    const deleteFrames = resumeFrames.filter(({ result }) => {
+      if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
+      return typeof (result as Record<string, unknown>).token === "string"
+        && typeof (result as Record<string, unknown>).state === "string";
+    });
     const resumedSession = exactObject(
       resumeBindingFrames[0]?.result,
       "observed session/resume result",
@@ -1539,7 +1559,12 @@ const main = (): void => {
     );
     if (resumeBindingFrames.length !== 2
       || JSON.stringify(resumeBindingFrames[0]?.result) !== JSON.stringify(resumeBindingFrames[1]?.result)
-      || resumeOkFrames.length !== 2
+      || resumeOkFrames.length !== 1
+      || JSON.stringify(deleteFrames.map(({ result }) =>
+        (result as Record<string, unknown>).state)) !== JSON.stringify([
+        "prepared", "prepared", "committed", "committed",
+        "committed", "rolled_back", "rolled_back", "rolled_back",
+      ])
       || resumedSession.state !== "ready"
       || resumedSession.runtimeSessionId !== "dsh-artifact-primary"
       || resumedSession.historyFormat !== "dsh-session-events-v1"

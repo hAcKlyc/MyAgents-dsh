@@ -4165,9 +4165,69 @@ const sessionReadAfter = sessionReadRevisionProbe.prepare(
 ).get("dsh-artifact-primary") as { event_count: number; revision: number };
 sessionReadRevisionProbe.close();
 assert.deepEqual(sessionReadAfter, sessionReadBefore, "session/read must not mutate durable storage");
-assert.deepEqual(await resumeHostClient.sessionClose({
-  clientOperationId: "artifact-resumed-session-close",
-}), { ok: true });
+const deletePrepared = await resumeHostClient.sessionDeletePrepare({
+  clientMutationId: "artifact-primary-session-delete",
+});
+assert.equal(deletePrepared.state, "prepared");
+assert.deepEqual(await resumeHostClient.sessionDeleteStatus({ token: deletePrepared.token }), deletePrepared);
+const deleteCommitted = await resumeHostClient.sessionDeleteCommit({
+  clientMutationId: "artifact-primary-session-delete",
+  token: deletePrepared.token,
+});
+assert.equal(deleteCommitted.state, "committed");
+assert.deepEqual(await resumeHostClient.sessionDeleteCommit({
+  clientMutationId: "artifact-primary-session-delete",
+  token: deletePrepared.token,
+}), deleteCommitted);
+assert.deepEqual(await resumeHostClient.sessionDeleteStatus({ token: deletePrepared.token }), deleteCommitted);
+assert.equal(resumedComposition.context.productSession.snapshot().state, "retired");
+const deletedSessionProbe = new DatabaseSync(persistencePath, { readOnly: true });
+const deletedSessionState = deletedSessionProbe.prepare(`
+  SELECT s.state AS session_state, g.state AS generation_state, s.event_count
+    FROM sessions AS s JOIN session_generations AS g
+      ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+   WHERE s.id = ?
+`).get("dsh-artifact-primary") as {
+  event_count: number;
+  generation_state: string;
+  session_state: string;
+};
+deletedSessionProbe.close();
+assert.deepEqual({
+  generationState: deletedSessionState.generation_state,
+  sessionState: deletedSessionState.session_state,
+}, { generationState: "tombstoned", sessionState: "tombstoned" });
+const deleteRolledBack = await resumeHostClient.sessionDeleteRollback({
+  clientMutationId: "artifact-primary-session-delete",
+  token: deletePrepared.token,
+});
+assert.equal(deleteRolledBack.state, "rolled_back");
+assert.deepEqual(await resumeHostClient.sessionDeleteRollback({
+  clientMutationId: "artifact-primary-session-delete",
+  token: deletePrepared.token,
+}), deleteRolledBack);
+assert.deepEqual(await resumeHostClient.sessionDeleteStatus({ token: deletePrepared.token }), deleteRolledBack);
+const restoredSessionProbe = new DatabaseSync(persistencePath, { readOnly: true });
+const restoredSessionState = restoredSessionProbe.prepare(`
+  SELECT s.state AS session_state, g.state AS generation_state, s.event_count
+    FROM sessions AS s JOIN session_generations AS g
+      ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+   WHERE s.id = ?
+`).get("dsh-artifact-primary") as {
+  event_count: number;
+  generation_state: string;
+  session_state: string;
+};
+restoredSessionProbe.close();
+assert.deepEqual({
+  eventCount: restoredSessionState.event_count,
+  generationState: restoredSessionState.generation_state,
+  sessionState: restoredSessionState.session_state,
+}, {
+  eventCount: deletedSessionState.event_count,
+  generationState: "active",
+  sessionState: "active",
+});
 await resumeHostClient.runtimeShutdown({ reason: "artifact-resume-proof-complete" });
 const resumedStopped = await resumedLifecycle.whenStopped();
 assert.equal(resumedStopped.disposed, true);
@@ -4235,6 +4295,15 @@ process.stdout.write(`${JSON.stringify({
   checkpointJournalVerified: true,
   rewindTransactionVerified: true,
   forkTransactionVerified: true,
+  deleteTransactionVerified: true,
+  deleteTransactionEvidence: {
+    committedState: deleteCommitted.state,
+    generationStateAfterCommit: deletedSessionState.generation_state,
+    restoredEventCount: restoredSessionState.event_count,
+    rolledBackState: deleteRolledBack.state,
+    sessionStateAfterCommit: deletedSessionState.session_state,
+    sessionStateAfterRollback: restoredSessionState.session_state,
+  },
   forkTransactionEvidence: {
     abortedState: forkAborted.state,
     committedState: forkCommitted.state,

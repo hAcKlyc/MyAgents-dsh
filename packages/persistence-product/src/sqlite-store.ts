@@ -35,6 +35,13 @@ import type {
   ProductCheckpointStore,
 } from "@myagents-dsh/checkpoint";
 
+import type {
+  ProductDeletePhase,
+  ProductDeletePrepareInput,
+  ProductDeleteRecord,
+  ProductDeleteStore,
+} from "./delete.js";
+
 import {
   createProductForkReceiptEvent,
   type ProductForkPhase,
@@ -54,6 +61,7 @@ import {
 import {
   PRODUCT_PERSISTENCE_APPLICATION_ID,
   PRODUCT_CHECKPOINT_SCHEMA_SQL,
+  PRODUCT_DELETE_SCHEMA_SQL,
   PRODUCT_FORK_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_SQL,
@@ -61,9 +69,11 @@ import {
   PRODUCT_PERSISTENCE_SCHEMA_V2_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V3_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V4_SQL,
+  PRODUCT_PERSISTENCE_SCHEMA_V5_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   PRODUCT_PERSISTENCE_TABLES,
   PRODUCT_REWIND_CHILD_SCHEMA_SQL,
+  PRODUCT_SESSION_GENERATIONS_V6_SCHEMA_SQL,
   PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL,
 } from "./schema.js";
 import { ProductSessionLockTable } from "./session-lock.js";
@@ -172,6 +182,11 @@ const EXPECTED_COLUMNS = Object.freeze({
     "last_event_seq",
     "prepared_at",
     "settled_at",
+  ],
+  delete_journals: [
+    "token", "client_mutation_id", "request_fingerprint", "session_id",
+    "source_generation_id", "source_revision", "phase", "attempt",
+    "receipt_json", "created_at", "updated_at",
   ],
   fork_journals: [
     "token",
@@ -319,6 +334,17 @@ const EXPECTED_V4_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V4_SQL
   })
   .sort((left, right) => compareCodePoints(left.name, right.name)));
 
+const EXPECTED_V5_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V5_SQL
+  .trim()
+  .split(/;\s*/u)
+  .filter((statement) => statement.length > 0)
+  .map((sql) => {
+    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
+    if (match?.[1] === undefined) throw new Error("product persistence v5 DDL contains an unknown statement");
+    return Object.freeze({ name: match[1], sql });
+  })
+  .sort((left, right) => compareCodePoints(left.name, right.name)));
+
 const canonicalJson = (value: JsonValue): string => {
   if (value === null || typeof value === "boolean" || typeof value === "number"
     || typeof value === "string") {
@@ -394,7 +420,7 @@ const aggregateFailure = (primary: unknown, cleanup: unknown, description: strin
 
 /** Product SQLite implementation of the public DSH backend hooks. */
 export class ProductSqliteStore implements PersistenceBackend<never>, ProductCheckpointStore,
-  ProductForkStore, ProductRewindStore {
+  ProductDeleteStore, ProductForkStore, ProductRewindStore {
   readonly name = "product-session-persistence-sqlite";
 
   readonly #locks = new ProductSessionLockTable();
@@ -767,6 +793,182 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       if (updated === undefined) throw new Error("rewind file transition lost its row");
       return updated;
     });
+  }
+
+  prepareDelete(
+    input: ProductDeletePrepareInput,
+    signal?: AbortSignal,
+  ): Promise<ProductDeleteRecord> {
+    this.#validateDeleteIdentity(input.runtimeSessionId, input.clientMutationId);
+    return this.#locks.run(input.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      this.#assertSchema();
+      const active = this.#readActiveSession(input.runtimeSessionId as SessionId, false);
+      if (active === undefined) throw new Error("delete source Session is unavailable");
+      const fingerprint = createHash("sha256")
+        .update("myagents-delete-request-v1\0", "utf8")
+        .update(input.clientMutationId).update("\0").update(input.runtimeSessionId)
+        .digest("hex");
+      const existing = this.#readDeleteByClientMutation(input.runtimeSessionId, input.clientMutationId);
+      if (existing !== undefined) {
+        if (existing.requestFingerprint !== fingerprint) {
+          throw new Error("delete client mutation identity was reused with different input");
+        }
+        return existing;
+      }
+      const now = Date.now();
+      const token = `del_${randomUUID()}`;
+      this.#requireDatabase().prepare(`
+        INSERT INTO delete_journals(
+          token, client_mutation_id, request_fingerprint, session_id,
+          source_generation_id, source_revision, phase, attempt,
+          receipt_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'prepared', 0, NULL, ?, ?)
+      `).run(token, input.clientMutationId, fingerprint, active.sessionId,
+        active.activeGenerationId, String(this.#revision(active)), now, now);
+      return this.#requireDeleteIdentity(token, input.clientMutationId);
+    });
+  }
+
+  commitDelete(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductDeleteRecord> {
+    this.#validateDeleteIdentity(token, clientMutationId);
+    const known = this.#readDelete(token);
+    if (known === undefined) return Promise.reject(new Error("delete token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const record = this.#requireDeleteIdentity(token, clientMutationId);
+      if (record.phase === "committed") return record;
+      if (record.phase !== "prepared" && record.phase !== "committing") {
+        throw new Error(`delete cannot commit from ${record.phase}`);
+      }
+      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      if (active?.activeGenerationId !== record.sourceGenerationId
+        || String(this.#revision(active)) !== record.sourceRevision) {
+        throw new Error("delete source locator or revision changed before commit");
+      }
+      const receipt = Object.freeze({
+        deletedGenerationId: record.sourceGenerationId,
+        durableSequence: active.eventCount,
+        headHash: active.headHash,
+        runtimeSessionId: record.runtimeSessionId,
+        sourceRevision: record.sourceRevision,
+        tombstoneRevision: active.sessionRevision + 1,
+      });
+      const receiptJson = snapshotCanonicalJson(receipt, "delete receipt");
+      const database = this.#requireDatabase();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const session = database.prepare(`
+          UPDATE sessions SET state = 'tombstoned', revision = revision + 1
+           WHERE id = ? AND active_generation_id = ? AND state = 'active' AND revision = ?
+        `).run(record.runtimeSessionId, record.sourceGenerationId, active.sessionRevision);
+        const generation = database.prepare(`
+          UPDATE session_generations SET state = 'tombstoned', revision = revision + 1
+           WHERE session_id = ? AND generation_id = ? AND state = 'active' AND revision = ?
+        `).run(record.runtimeSessionId, record.sourceGenerationId, active.generationRevision);
+        const journal = database.prepare(`
+          UPDATE delete_journals
+             SET phase = 'committed', attempt = attempt + 1, receipt_json = ?, updated_at = ?
+           WHERE token = ? AND phase IN ('prepared', 'committing')
+        `).run(receiptJson, Date.now(), token);
+        if (Number(session.changes) !== 1 || Number(generation.changes) !== 1
+          || Number(journal.changes) !== 1) {
+          throw new Error("delete commit lost its exact locator authority");
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "delete commit");
+      }
+      return this.#requireDeleteIdentity(token, clientMutationId);
+    });
+  }
+
+  rollbackDelete(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductDeleteRecord> {
+    this.#validateDeleteIdentity(token, clientMutationId);
+    const known = this.#readDelete(token);
+    if (known === undefined) return Promise.reject(new Error("delete token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const record = this.#requireDeleteIdentity(token, clientMutationId);
+      if (record.phase === "rolled_back") return record;
+      if (record.phase === "prepared") {
+        const outcome = this.#requireDatabase().prepare(`
+          UPDATE delete_journals SET phase = 'rolled_back', attempt = attempt + 1, updated_at = ?
+           WHERE token = ? AND phase = 'prepared'
+        `).run(Date.now(), token);
+        if (Number(outcome.changes) !== 1) throw new Error("delete rollback lost its journal authority");
+        return this.#requireDeleteIdentity(token, clientMutationId);
+      }
+      if (record.phase !== "committed" && record.phase !== "rolling_back") {
+        throw new Error(`delete cannot roll back from ${record.phase}`);
+      }
+      const receipt = this.#deleteReceipt(record);
+      const database = this.#requireDatabase();
+      const raw = database.prepare(`
+        SELECT s.active_generation_id, s.state AS session_state,
+               s.revision AS session_revision, s.event_count AS session_event_count,
+               s.head_hash AS session_head_hash, g.state AS generation_state,
+               g.revision AS generation_revision, g.event_count AS generation_event_count,
+               g.head_hash AS generation_head_hash
+          FROM sessions AS s JOIN session_generations AS g
+            ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+         WHERE s.id = ?
+      `).get(record.runtimeSessionId);
+      const row = asRecord(raw, "delete rollback locator");
+      if (row.active_generation_id !== record.sourceGenerationId
+        || row.session_state !== "tombstoned" || row.generation_state !== "tombstoned"
+        || row.session_revision !== receipt.tombstoneRevision
+        || row.generation_revision !== receipt.tombstoneRevision
+        || row.session_event_count !== receipt.durableSequence
+        || row.generation_event_count !== receipt.durableSequence
+        || row.session_head_hash !== receipt.headHash
+        || row.generation_head_hash !== receipt.headHash) {
+        throw new Error("delete tombstone was replaced before rollback");
+      }
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const session = database.prepare(`
+          UPDATE sessions SET state = 'active', revision = revision + 1
+           WHERE id = ? AND active_generation_id = ? AND state = 'tombstoned'
+             AND revision = ? AND event_count = ? AND head_hash = ?
+        `).run(record.runtimeSessionId, record.sourceGenerationId, receipt.tombstoneRevision,
+          receipt.durableSequence, receipt.headHash);
+        const generation = database.prepare(`
+          UPDATE session_generations SET state = 'active', revision = revision + 1
+           WHERE session_id = ? AND generation_id = ? AND state = 'tombstoned'
+             AND revision = ? AND event_count = ? AND head_hash = ?
+        `).run(record.runtimeSessionId, record.sourceGenerationId, receipt.tombstoneRevision,
+          receipt.durableSequence, receipt.headHash);
+        const journal = database.prepare(`
+          UPDATE delete_journals SET phase = 'rolled_back', attempt = attempt + 1, updated_at = ?
+           WHERE token = ? AND phase IN ('committed', 'rolling_back')
+        `).run(Date.now(), token);
+        if (Number(session.changes) !== 1 || Number(generation.changes) !== 1
+          || Number(journal.changes) !== 1) {
+          throw new Error("delete rollback lost its exact tombstone authority");
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "delete rollback");
+      }
+      return this.#requireDeleteIdentity(token, clientMutationId);
+    });
+  }
+
+  getDelete(token: string, signal?: AbortSignal): Promise<ProductDeleteRecord | undefined> {
+    if (!IDENTIFIER_PATTERN.test(token)) return Promise.reject(new TypeError("delete token is invalid"));
+    signal?.throwIfAborted();
+    const known = this.#readDelete(token);
+    if (known === undefined) return Promise.resolve(undefined);
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => this.#readDelete(token));
   }
 
   prepareFork(
@@ -1706,6 +1908,54 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       } catch (error) {
         this.#rollback(error, "v4 fork schema migration");
       }
+      version = 5;
+    }
+    if (version === 5) {
+      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V5_SCHEMA_ROWS)) {
+        throw new Error("product SQLite persistence v5 schema authority is incompatible");
+      }
+      this.#assertMigrationMetadata(5);
+      database.exec("PRAGMA foreign_keys = OFF");
+      try {
+        database.exec("BEGIN IMMEDIATE");
+        try {
+          database.exec(PRODUCT_SESSION_GENERATIONS_V6_SCHEMA_SQL.replace(
+            "CREATE TABLE session_generations (",
+            "CREATE TABLE session_generations_v6 (",
+          ));
+          database.exec(`
+            INSERT INTO session_generations_v6(
+              session_id, generation_id, header_json, origin, state,
+              revision, event_count, head_hash, created_at
+            )
+            SELECT session_id, generation_id, header_json, origin, state,
+                   revision, event_count, head_hash, created_at
+              FROM session_generations;
+            DROP TABLE session_generations;
+          `);
+          database.exec(PRODUCT_SESSION_GENERATIONS_V6_SCHEMA_SQL);
+          database.exec(`
+            INSERT INTO session_generations(
+              session_id, generation_id, header_json, origin, state,
+              revision, event_count, head_hash, created_at
+            )
+            SELECT session_id, generation_id, header_json, origin, state,
+                   revision, event_count, head_hash, created_at
+              FROM session_generations_v6;
+            DROP TABLE session_generations_v6;
+          `);
+          database.exec(PRODUCT_DELETE_SCHEMA_SQL);
+          database.prepare("UPDATE store_meta SET schema_version = 6 WHERE singleton = 1").run();
+          database.exec("PRAGMA user_version = 6; COMMIT");
+        } catch (error) {
+          this.#rollback(error, "v5 delete schema migration");
+        }
+      } finally {
+        database.exec("PRAGMA foreign_keys = ON");
+      }
+      if (database.prepare("PRAGMA foreign_key_check").all().length > 0) {
+        throw new Error("product SQLite persistence v5 delete schema migration broke foreign keys");
+      }
     }
   }
 
@@ -1737,7 +1987,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     });
     if (JSON.stringify(schemaRows) !== JSON.stringify(EXPECTED_SCHEMA_ROWS)
       || JSON.stringify(schemaRows.map(({ name }) => name)) !== JSON.stringify(PRODUCT_PERSISTENCE_TABLES)) {
-      throw new Error("product SQLite persistence table authority differs from schema v5");
+      throw new Error("product SQLite persistence table authority differs from schema v6");
     }
     for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
       const columns = (database.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all() as unknown[])
@@ -2317,6 +2567,117 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     if (!IDENTIFIER_PATTERN.test(token) || !IDENTIFIER_PATTERN.test(clientMutationId)) {
       throw new TypeError("fork settlement identity is invalid");
     }
+  }
+
+  #validateDeleteIdentity(first: string, second: string): void {
+    if (!IDENTIFIER_PATTERN.test(first) || !IDENTIFIER_PATTERN.test(second)) {
+      throw new TypeError("delete identity is invalid");
+    }
+  }
+
+  #readDelete(token: string): ProductDeleteRecord | undefined {
+    if (this.#database === undefined) return undefined;
+    const value = this.#requireDatabase().prepare(
+      "SELECT * FROM delete_journals WHERE token = ?",
+    ).get(token);
+    return value === undefined ? undefined : this.#decodeDelete(value);
+  }
+
+  #readDeleteByClientMutation(
+    sessionId: string,
+    clientMutationId: string,
+  ): ProductDeleteRecord | undefined {
+    const value = this.#requireDatabase().prepare(`
+      SELECT * FROM delete_journals WHERE session_id = ? AND client_mutation_id = ?
+    `).get(sessionId, clientMutationId);
+    return value === undefined ? undefined : this.#decodeDelete(value);
+  }
+
+  #decodeDelete(value: unknown): ProductDeleteRecord {
+    const row = asRecord(value, "delete journal");
+    const phase = rowString(row, "phase", "delete journal") as ProductDeletePhase;
+    if (!["prepared", "committing", "committed", "rolling_back", "rolled_back", "recovery_required"]
+      .includes(phase)) throw new Error("delete journal phase is invalid");
+    const receiptJson = rowNullableString(row, "receipt_json", "delete journal");
+    let receipt: Readonly<Record<string, unknown>> | undefined;
+    if (receiptJson !== null) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(receiptJson);
+      } catch (error) {
+        throw new Error("delete receipt is invalid JSON", { cause: error });
+      }
+      const snapshot = snapshotJsonValue(parsed);
+      if (snapshot === undefined || snapshot === null || typeof snapshot !== "object"
+        || Array.isArray(snapshot) || canonicalJson(snapshot as JsonValue) !== receiptJson) {
+        throw new Error("delete receipt is not canonical JSON data");
+      }
+      receipt = Object.freeze(snapshot as Record<string, unknown>);
+    }
+    const record = Object.freeze({
+      attempt: rowInteger(row, "attempt", "delete journal"),
+      clientMutationId: rowString(row, "client_mutation_id", "delete journal"),
+      phase,
+      ...(receipt === undefined ? {} : { receipt }),
+      requestFingerprint: rowString(row, "request_fingerprint", "delete journal"),
+      runtimeSessionId: rowString(row, "session_id", "delete journal"),
+      sourceGenerationId: rowString(row, "source_generation_id", "delete journal"),
+      sourceRevision: rowString(row, "source_revision", "delete journal"),
+      token: rowString(row, "token", "delete journal"),
+    });
+    if (![record.clientMutationId, record.runtimeSessionId, record.sourceGenerationId, record.token]
+      .every((entry) => IDENTIFIER_PATTERN.test(entry))
+      || !HASH_PATTERN.test(record.requestFingerprint)
+      || record.sourceRevision.length < 1 || record.sourceRevision.length > 2_048) {
+      throw new Error("delete journal identity is invalid");
+    }
+    return record;
+  }
+
+  #deleteReceipt(record: ProductDeleteRecord): Readonly<{
+    deletedGenerationId: string;
+    durableSequence: number;
+    headHash: string;
+    runtimeSessionId: string;
+    sourceRevision: string;
+    tombstoneRevision: number;
+  }> {
+    const receipt = asRecord(record.receipt, "delete committed receipt");
+    if (JSON.stringify(Object.keys(receipt).sort(compareCodePoints)) !== JSON.stringify([
+      "deletedGenerationId",
+      "durableSequence",
+      "headHash",
+      "runtimeSessionId",
+      "sourceRevision",
+      "tombstoneRevision",
+    ])) {
+      throw new Error("delete committed receipt shape is invalid");
+    }
+    const decoded = Object.freeze({
+      deletedGenerationId: rowString(receipt, "deletedGenerationId", "delete committed receipt"),
+      durableSequence: rowInteger(receipt, "durableSequence", "delete committed receipt"),
+      headHash: rowString(receipt, "headHash", "delete committed receipt"),
+      runtimeSessionId: rowString(receipt, "runtimeSessionId", "delete committed receipt"),
+      sourceRevision: rowString(receipt, "sourceRevision", "delete committed receipt"),
+      tombstoneRevision: rowInteger(receipt, "tombstoneRevision", "delete committed receipt"),
+    });
+    if (decoded.deletedGenerationId !== record.sourceGenerationId
+      || decoded.runtimeSessionId !== record.runtimeSessionId
+      || decoded.sourceRevision !== record.sourceRevision
+      || decoded.tombstoneRevision < 1
+      || !HASH_PATTERN.test(decoded.headHash)) {
+      throw new Error("delete committed receipt identity is invalid");
+    }
+    return decoded;
+  }
+
+  #requireDeleteIdentity(token: string, clientMutationId: string): ProductDeleteRecord {
+    const record = this.#readDelete(token);
+    if (record === undefined) throw new Error("delete token is unavailable");
+    if (record.clientMutationId !== clientMutationId) {
+      throw new Error("delete client mutation identity differs from its prepared journal");
+    }
+    return record;
   }
 
   #readFork(token: string): ProductForkRecord | undefined {

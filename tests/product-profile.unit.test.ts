@@ -48,7 +48,7 @@ describe("official product profile authority", () => {
     });
     expect(BATCH1_CANDIDATE_PROFILE).toMatchObject({
       profileId: "myagents-dsh-batch-1-candidate-v1",
-      stage: "batch-1-w4-a6",
+      stage: "batch-1-w4-a7",
       runtimeActivation: "workstream-evidence-only",
       composition: {
         maxPrimaryRootSessions: 1,
@@ -63,6 +63,10 @@ describe("official product profile authority", () => {
           "session/resume",
           "session/read",
           "session/close",
+          "session/delete/prepare",
+          "session/delete/commit",
+          "session/delete/rollback",
+          "session/delete/status",
           "session/fork/prepare",
           "session/fork/commit",
           "session/fork/abort",

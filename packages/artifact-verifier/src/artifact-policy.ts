@@ -111,6 +111,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     relativeDirectory: "packages/persistence-product",
     allowedFiles: [
       "package.json",
+      "src/delete.ts",
       "src/index.ts",
       "src/fork.ts",
       "src/known-events.ts",

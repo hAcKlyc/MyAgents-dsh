@@ -48,7 +48,7 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "572c14c89fced7e5dd0b85a77572c249bc4751b80574193e7ae28c322489aef7",
+    "artifactManifestSha256": "f442e8c455a0f07d838be41efa3a12db1947458ca28ffcdd5558ae468befc220",
     "artifactVersion": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.1",
@@ -82,6 +82,10 @@
       "session/resume",
       "session/read",
       "session/close",
+      "session/delete/prepare",
+      "session/delete/commit",
+      "session/delete/rollback",
+      "session/delete/status",
       "session/fork/prepare",
       "session/fork/commit",
       "session/fork/abort",
@@ -108,7 +112,7 @@
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "workstream-evidence-only",
-  "stage": "batch-1-w4-a6",
+  "stage": "batch-1-w4-a7",
   "tools": {
     "contractProfile": "canonical-agent-experience-v1",
     "contractSha256": "64cb973113a855f35f883211aab170c836ca6d6d9cc079d33ebd1c88bf51335c"
