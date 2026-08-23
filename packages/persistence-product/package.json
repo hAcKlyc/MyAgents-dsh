@@ -6,7 +6,9 @@
   "description": "Product-owned SQLite DSH Session persistence and mutation storage authority",
   "files": ["src"],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./known-events": "./src/known-events.ts",
+    "./schema": "./src/schema.ts"
   },
   "dependencies": {
     "@myagents-dsh/checkpoint": "0.0.0",

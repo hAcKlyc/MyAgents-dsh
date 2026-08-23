@@ -10,10 +10,12 @@ import {
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
 import {
+  PRODUCT_REQUIRED_SESSION_EVENT_TYPES,
+} from "@myagents-dsh/persistence-product/known-events";
+import {
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
-  PRODUCT_REQUIRED_SESSION_EVENT_TYPES,
-} from "@myagents-dsh/persistence-product";
+} from "@myagents-dsh/persistence-product/schema";
 import {
   BATCH1_RUNTIME_CAPABILITIES,
   CANONICAL_TOOL_CONTRACT_SHA256,
