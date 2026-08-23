@@ -494,6 +494,24 @@ describe("Host credential and model route", () => {
   });
 
   it("fails closed on unsupported or sensitive Provider profile semantics", () => {
+    expect(validateHostDeepSeekProfile({
+      ...profile,
+      pricing: {
+        inputUsdPerMillionTokens: 1,
+        outputUsdPerMillionTokens: 2,
+        cacheReadUsdPerMillionTokens: 3,
+        cacheWriteUsdPerMillionTokens: 4,
+      },
+    })).toMatchObject({ pricing: { outputUsdPerMillionTokens: 2 } });
+    expect(() => validateHostDeepSeekProfile({
+      ...profile,
+      pricing: {
+        inputUsdPerMillionTokens: 1,
+        outputUsdPerMillionTokens: Number.POSITIVE_INFINITY,
+        cacheReadUsdPerMillionTokens: 3,
+        cacheWriteUsdPerMillionTokens: 4,
+      },
+    })).toThrow(expect.objectContaining({ code: "provider_profile_invalid" }));
     expect(() => validateHostDeepSeekProfile({
       ...profile,
       baseUrl: "https://user:secret@provider.example.invalid/v1",

@@ -600,6 +600,7 @@ const modelProfileFingerprint = (
   profile.credentialRef,
   profile.contextWindow,
   profile.maxTokens,
+  stableJson(profile.pricing ?? null),
   profile.reasoning ?? null,
   profile.effort ?? null,
   stableJson(profile.compatibility ?? null),
@@ -998,6 +999,13 @@ export class PrimarySessionAdmission {
       throw new ProtocolError("primary_session_not_ready", "primary Session model profile is not ready");
     }
     return this.#record.params.provider.revision;
+  }
+
+  requireModelProfile(): CanonicalCreateParams["provider"] {
+    if (this.#state !== "ready" || this.#record === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session model profile is not ready");
+    }
+    return this.#record.params.provider;
   }
 
   requireInteractionScenarioRevision(): string {
@@ -1890,6 +1898,13 @@ export class ProductSessionService extends Service {
       throw new ProtocolError("primary_session_not_ready", "primary Session model profile is not ready");
     }
     return this.admissionValue.requireModelProfileRevision();
+  }
+
+  requireOperationModelProfile(): CanonicalCreateParams["provider"] {
+    if (this.admissionValue === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session model profile is not ready");
+    }
+    return this.admissionValue.requireModelProfile();
   }
 
   requireOperationInteractionScenarioRevision(): string {

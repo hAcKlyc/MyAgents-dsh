@@ -6,6 +6,7 @@ import {
   foldProductOperations,
   normalizeDshTokenUsage,
   operationTurnBoundary,
+  priceDshTokenUsage,
   requestContextAtOwnedEvent,
   type ProductOperationRecord,
 } from "@myagents-dsh/operation-runtime";
@@ -77,7 +78,10 @@ const contextAt = (
   return event;
 };
 
-const tokenUsage = (usage: unknown): Extract<RuntimeEvent, { kind: "usage" }>["usage"] => {
+const tokenUsage = (
+  usage: unknown,
+  pricing: ProductOperationRecord["birth"]["pricing"],
+): Extract<RuntimeEvent, { kind: "usage" }>["usage"] => {
   const normalized = normalizeDshTokenUsage(usage);
   const counts = [normalized.inputTokens, normalized.outputTokens,
     normalized.cacheReadTokens, normalized.cacheWriteTokens];
@@ -99,7 +103,7 @@ const tokenUsage = (usage: unknown): Extract<RuntimeEvent, { kind: "usage" }>["u
     cacheReadTokens,
     cacheWriteTokens,
     totalTokens,
-    costUsd: null,
+    costUsd: pricing === undefined ? null : priceDshTokenUsage(normalized, pricing),
   });
 };
 
@@ -240,7 +244,7 @@ export const projectSessionEvent = (
           turnId: operation.productTurnId,
           meteringScopeId: operation.clientOperationId,
           semantics: "last_request",
-          usage: tokenUsage(assistant.data.usage),
+          usage: tokenUsage(assistant.data.usage, operation.birth.pricing),
           contextOccupiedTokens: null,
           runtimeContextWindow: requestContext.contextWindow,
           modelProfileRevision: operation.birth.modelProfileRevision,

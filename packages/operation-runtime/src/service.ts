@@ -27,7 +27,7 @@ import {
   type ProductOperationFold,
   type ProductOperationRecord,
 } from "./fold.js";
-import { deriveOperationTerminal } from "./terminal.js";
+import { deriveOperationAccruedCostUsd, deriveOperationTerminal } from "./terminal.js";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -345,13 +345,14 @@ export class SdkOperationService extends Service {
   private acceptingValue = true;
   private readonly cancellationReasonsValue = new Map<
     string,
-    "user" | "host_shutdown" | "session_replaced"
+    "user" | "host_shutdown" | "session_replaced" | "limit"
   >();
   private correlationDrainValue: Promise<void> = Promise.resolve();
   private failureValue: ProtocolError | undefined;
   private primaryAgentValue: Agent | undefined;
   private nextModelRequestValue = 1;
   private readonly pendingRequestContextSeqs = new Set<number>();
+  private readonly durationTimersValue = new Map<string, ReturnType<typeof setTimeout>>();
   private quiescentMutationValue = false;
   private serialValue: Promise<void> = Promise.resolve();
   private retirementEscalationValue: Promise<void> | undefined;
@@ -474,6 +475,13 @@ export class SdkOperationService extends Service {
       const stopStatus = ctx.on("agent/status", ({ agent, status }) => {
         if (status === "idle" && this.isPrimaryAgent(agent)) this.queueTerminalEvaluation(agent);
       });
+      const stopTurnStopping = ctx.on("agent/turn-stopping", ({ agent, turn, signal }) => {
+        if (!this.isPrimaryAgent(agent)) return;
+        return this.serialize(async () => {
+          signal.throwIfAborted();
+          await this.enforceTurnBoundaryLimits(agent, turn);
+        });
+      });
       const stopSessionEvent = ctx.on("session/event", (session, event) => {
         if (!this.primaryAgentForSession(session)) return;
         const agent = this.primaryAgentValue;
@@ -484,6 +492,7 @@ export class SdkOperationService extends Service {
       });
       yield async () => {
         this.acceptingValue = false;
+        this.clearDurationTimers();
         const failures: unknown[] = [];
         try {
           await this.configValue.retirePrimary();
@@ -502,6 +511,11 @@ export class SdkOperationService extends Service {
           }
           try {
             stopStatus();
+          } catch (error) {
+            failures.push(error);
+          }
+          try {
+            stopTurnStopping();
           } catch (error) {
             failures.push(error);
           }
@@ -623,6 +637,7 @@ export class SdkOperationService extends Service {
     modelProfileRevision: string,
   ): ModelRequestOperationAuthority {
     const initial = this.resolveActiveToolOperation(agent);
+    this.enforceSynchronousRequestLimits(agent, initial.operation);
     if (initial.operation.birth.configRevision !== configRevision
       || initial.operation.birth.modelProfileRevision !== modelProfileRevision) {
       throw new ProtocolError(
@@ -819,10 +834,12 @@ export class SdkOperationService extends Service {
         if (recovered === undefined || recovered.state === "accepted_undelivered") {
           throw this.fence(new Error("exact retry did not durably reconstruct the accepted root message"));
         }
+        this.armDurationTimer(agent, recovered);
         return knownResult(recovered);
       }
       this.assertAdmissionNotCancelled(control);
       control?.commit();
+      if (existing.state !== "terminal") this.armDurationTimer(agent, existing);
       return knownResult(existing);
     }
 
@@ -835,6 +852,12 @@ export class SdkOperationService extends Service {
     const birth = validateOperationBirthSnapshot(captured);
     this.configValue.modelProfileBirthGuard(birth.modelProfileRevision);
     validateBirthAgainstParams(birth, params);
+    if (birth.limits.maxCostUsd !== undefined && birth.pricing === undefined) {
+      throw new ProtocolError(
+        "provider_pricing_unavailable",
+        "USD cost limits require an authoritative Provider pricing profile",
+      );
+    }
     const content = await this.configValue.inputAuthority.prepare(
       params.input,
       birth,
@@ -876,6 +899,11 @@ export class SdkOperationService extends Service {
       agent.followup(rootMessage(params, rootMessageId, content));
       await this.flush(agent);
       this.assertOpen();
+      const admitted = findProductOperation(this.foldValue(agent), params.clientOperationId);
+      if (admitted === undefined) {
+        throw new Error("durable operation admission disappeared before duration scheduling");
+      }
+      this.armDurationTimer(agent, admitted);
     } catch (error) {
       throw this.fence(error);
     }
@@ -893,6 +921,9 @@ export class SdkOperationService extends Service {
     const operation = findProductOperation(this.foldValue(agent), params.clientOperationId);
     if (operation?.state !== "active") {
       throw new ProtocolError("turn_not_active", "turn/steer requires the target operation to be active", true);
+    }
+    if (operation.limit !== undefined) {
+      throw new ProtocolError("turn_limit_reached", "turn/steer cannot extend a limited operation");
     }
     const fingerprint = inputFingerprint(params.input);
     const clientMessageId = `steer-${fingerprint.slice(0, 32)}-${String(agent.session.seq)}`;
@@ -933,6 +964,9 @@ export class SdkOperationService extends Service {
     const operation = findProductOperation(this.foldValue(agent), params.clientOperationId);
     if (operation === undefined || operation.state === "terminal") {
       throw new ProtocolError("turn_not_active", "turn/followUp requires a non-terminal target operation", true);
+    }
+    if (operation.limit !== undefined) {
+      throw new ProtocolError("turn_limit_reached", "turn/followUp cannot extend a limited operation");
     }
     const fingerprint = inputFingerprint(params.input);
     const existing = operation.messages.find(({ messageId }) => messageId === params.messageId);
@@ -1293,6 +1327,7 @@ export class SdkOperationService extends Service {
         terminalAt,
       });
       await this.flush(agent);
+      this.clearDurationTimer(operation.clientOperationId);
     }
   }
 
@@ -1383,10 +1418,188 @@ export class SdkOperationService extends Service {
     void this.correlationDrainValue.catch(() => undefined);
   }
 
+  private operationClock(): number {
+    const value = this.configValue.clock();
+    if (!Number.isSafeInteger(value) || value < 0 || value > 8_640_000_000_000_000) {
+      throw new TypeError("operation limit clock must return a valid non-negative epoch millisecond");
+    }
+    return value;
+  }
+
+  private appendLimit(
+    agent: Agent,
+    operation: ProductOperationRecord,
+    limit: NonNullable<ProductOperationRecord["limit"]>,
+  ): ProductOperationRecord {
+    const current = findProductOperation(this.foldValue(agent), operation.clientOperationId);
+    if (current === undefined || current.state === "terminal") {
+      throw new ProtocolError("turn_not_active", "operation limit target is no longer active", true);
+    }
+    if (current.limit !== undefined) return current;
+    agent.session.append("myagents/operation/limit", limit);
+    this.clearDurationTimer(operation.clientOperationId);
+    this.queueCorrelationFlush(agent);
+    const updated = findProductOperation(this.foldValue(agent), operation.clientOperationId);
+    if (updated?.limit === undefined) {
+      throw this.fence(new Error("operation limit did not become a durable fold fact"));
+    }
+    return updated;
+  }
+
+  private enforceSynchronousRequestLimits(agent: Agent, operation: ProductOperationRecord): void {
+    if (operation.limit !== undefined) {
+      throw new ProtocolError("turn_limit_reached", "model request belongs to a limited operation");
+    }
+    const duration = operation.birth.limits.maxDurationMs;
+    const now = this.operationClock();
+    if (duration !== undefined && now - operation.acceptedAt >= duration) {
+      this.appendLimit(agent, operation, Object.freeze({
+        clientOperationId: operation.clientOperationId,
+        kind: "max_duration" as const,
+        limitMs: duration,
+        observedAt: now,
+      }));
+      throw new ProtocolError("operation_max_duration", "operation exceeded its maximum duration");
+    }
+    const budget = operation.birth.limits.maxCostUsd;
+    if (budget === undefined) return;
+    const accrued = deriveOperationAccruedCostUsd(agent.session.events, operation);
+    if (accrued === null) {
+      throw this.fence(new Error("priced operation lost its authoritative birth rate card"));
+    }
+    if (accrued >= budget) {
+      this.appendLimit(agent, operation, Object.freeze({
+        clientOperationId: operation.clientOperationId,
+        kind: "max_budget" as const,
+        limitUsd: budget,
+        observedAt: now,
+      }));
+      throw new ProtocolError("operation_max_budget", "operation reached its maximum USD budget");
+    }
+  }
+
+  private async enforceTurnBoundaryLimits(agent: Agent, turn: number): Promise<void> {
+    this.assertHealthy();
+    let operation = this.foldValue(agent).operations.find((candidate) =>
+      candidate.state !== "terminal" && candidate.dshTurns.includes(turn));
+    if (operation === undefined) {
+      throw this.fence(new Error("DSH turn-stopping boundary lacks one product-operation owner"));
+    }
+    if (operation.limit === undefined) {
+      const budget = operation.birth.limits.maxCostUsd;
+      const accrued = deriveOperationAccruedCostUsd(agent.session.events, operation);
+      if (budget !== undefined && accrued !== null && accrued >= budget) {
+        operation = this.appendLimit(agent, operation, Object.freeze({
+          clientOperationId: operation.clientOperationId,
+          kind: "max_budget" as const,
+          limitUsd: budget,
+          observedAt: this.operationClock(),
+        }));
+      } else {
+        const maxTurns = operation.birth.limits.maxTurns;
+        const hasPendingContinuation = operation.messages.some((message) =>
+          message.delivered && message.state === "queued");
+        if (maxTurns !== undefined && operation.dshTurns.length >= maxTurns
+          && hasPendingContinuation) {
+          operation = this.appendLimit(agent, operation, Object.freeze({
+            clientOperationId: operation.clientOperationId,
+            kind: "max_turns" as const,
+            limit: maxTurns,
+            observedAt: this.operationClock(),
+          }));
+        }
+      }
+    }
+    if (operation.limit === undefined) return;
+    for (const message of operation.messages) {
+      if (message.delivered && message.state === "queued"
+        && !this.removePendingMessage(agent, message.messageId, "limit")) {
+        throw this.fence(new Error("limited operation lost one pending continuation"));
+      }
+    }
+    await this.correlationDrainValue;
+    this.assertHealthy();
+  }
+
+  private armDurationTimer(agent: Agent, operation: ProductOperationRecord): void {
+    const duration = operation.birth.limits.maxDurationMs;
+    if (duration === undefined || operation.state === "terminal" || operation.limit !== undefined
+      || this.durationTimersValue.has(operation.clientOperationId)) return;
+    const deadline = operation.acceptedAt + duration;
+    if (!Number.isSafeInteger(deadline) || deadline > 8_640_000_000_000_000) {
+      throw new TypeError("operation duration deadline exceeds the supported epoch range");
+    }
+    const remaining = deadline - this.operationClock();
+    const delay = Math.max(0, Math.min(remaining, 2_147_483_647));
+    const timer = setTimeout(() => {
+      this.durationTimersValue.delete(operation.clientOperationId);
+      if (!this.acceptingValue || this.failureValue !== undefined) return;
+      const enforcement = this.serialize(() => this.enforceDurationLimit(
+        agent,
+        operation.clientOperationId,
+        deadline,
+      ));
+      void enforcement.catch((error: unknown) => { this.fence(error); });
+    }, delay);
+    timer.unref();
+    this.durationTimersValue.set(operation.clientOperationId, timer);
+  }
+
+  private async enforceDurationLimit(
+    agent: Agent,
+    clientOperationId: string,
+    deadline: number,
+  ): Promise<void> {
+    this.assertHealthy();
+    let operation = findProductOperation(this.foldValue(agent), clientOperationId);
+    if (operation === undefined || operation.state === "terminal" || operation.limit !== undefined) return;
+    const now = this.operationClock();
+    if (now < deadline) {
+      this.armDurationTimer(agent, operation);
+      return;
+    }
+    const duration = operation.birth.limits.maxDurationMs;
+    if (duration === undefined) return;
+    operation = this.appendLimit(agent, operation, Object.freeze({
+      clientOperationId,
+      kind: "max_duration" as const,
+      limitMs: duration,
+      observedAt: now,
+    }));
+    for (const message of operation.messages) {
+      if (message.delivered && message.state === "queued"
+        && !this.removePendingMessage(agent, message.messageId, "limit")) {
+        throw this.fence(new Error("expired operation lost one pending message"));
+      }
+    }
+    await this.correlationDrainValue;
+    this.assertHealthy();
+    const openTurn = this.openDshTurn(agent);
+    if (openTurn !== undefined && operation.dshTurns.includes(openTurn)) {
+      agent.cancel({ kind: "user" }, { keepInbox: true });
+      await this.configValue.settlementDeadlineAuthority.wait(
+        agent.whenIdle(),
+        "operation duration-limit Agent settlement",
+      );
+    }
+    await this.reconcileAgent(agent);
+  }
+
+  private clearDurationTimer(clientOperationId: string): void {
+    const timer = this.durationTimersValue.get(clientOperationId);
+    if (timer !== undefined) clearTimeout(timer);
+    this.durationTimersValue.delete(clientOperationId);
+  }
+
+  private clearDurationTimers(): void {
+    for (const timer of this.durationTimersValue.values()) clearTimeout(timer);
+    this.durationTimersValue.clear();
+  }
+
   private removePendingMessage(
     agent: Agent,
     messageId: string,
-    reason: "user" | "host_shutdown" | "session_replaced",
+    reason: "user" | "host_shutdown" | "session_replaced" | "limit",
   ): boolean {
     if (this.cancellationReasonsValue.has(messageId)) {
       throw this.fence(new Error("operation message already has an in-flight cancellation owner"));
@@ -1409,7 +1622,11 @@ export class SdkOperationService extends Service {
 
   validatePersisted(agent: Agent): ProductOperationFold {
     this.assertHealthy();
-    return this.foldValue(agent);
+    const fold = this.foldValue(agent);
+    for (const operation of fold.operations) {
+      if (operation.state !== "terminal") this.armDurationTimer(agent, operation);
+    }
+    return fold;
   }
 
   prepareGenerationReplacement(agent: Agent): void {
@@ -1422,6 +1639,7 @@ export class SdkOperationService extends Service {
       throw this.fence(new Error("product-operation generation replacement is not quiescent"));
     }
     this.primaryAgentValue = undefined;
+    this.clearDurationTimers();
     this.acceptingValue = true;
     this.correlationDrainValue = Promise.resolve();
     this.serialValue = Promise.resolve();

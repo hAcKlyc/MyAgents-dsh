@@ -13,6 +13,7 @@ import {
   type MethodParams,
   type MethodResult,
 } from "@myagents-dsh/protocol";
+import { priceDshTokenUsage } from "@myagents-dsh/operation-runtime";
 import { createHash } from "node:crypto";
 import { isProxy } from "node:util/types";
 
@@ -83,7 +84,10 @@ const originalProductUtilityService = (service: ProductUtilityService): ProductU
   return original instanceof ProductUtilityService ? original : service;
 };
 
-const normalizedUsage = (usage: TokenUsage | undefined): MethodResult<"utility/run">["usage"] => {
+const normalizedUsage = (
+  usage: TokenUsage | undefined,
+  pricing: MethodParams<"session/create">["provider"]["pricing"],
+): MethodResult<"utility/run">["usage"] => {
   if (usage === undefined) return undefined;
   const inputTokens = usage.inputTokens;
   const outputTokens = usage.outputTokens;
@@ -104,7 +108,12 @@ const normalizedUsage = (usage: TokenUsage | undefined): MethodResult<"utility/r
     cacheReadTokens,
     cacheWriteTokens,
     totalTokens,
-    costUsd: null,
+    costUsd: pricing === undefined ? null : priceDshTokenUsage({
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+    }, pricing),
   });
 };
 
@@ -210,7 +219,7 @@ export class ProductUtilityService extends Service {
             finish = chunk.reason;
           }
         }
-        const projectedUsage = normalizedUsage(usage);
+        const projectedUsage = normalizedUsage(usage, profile.pricing);
         if (finish?.kind === "stop") {
           const result = validateMethodResult("utility/run", Object.freeze({
             state: "succeeded" as const,

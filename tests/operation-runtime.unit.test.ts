@@ -1,6 +1,6 @@
 import { Context } from "@deepseek-ai/cordis";
 import { Inbox, type Agent } from "@deepseek-ai/dsh-agent";
-import { freezeMessage, MessageId } from "@deepseek-ai/dsh-llm";
+import { CallId, freezeMessage, MessageId } from "@deepseek-ai/dsh-llm";
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import SessionStore from "@deepseek-ai/dsh-session";
 import {
@@ -46,6 +46,12 @@ const birth = (): OperationBirthSnapshot => ({
   planRevision: "plan-1",
   originRevision: "origin-1",
   limits: { maxTurns: 4, maxCostUsd: 2, maxDurationMs: 60_000 },
+  pricing: {
+    inputUsdPerMillionTokens: 0,
+    outputUsdPerMillionTokens: 0,
+    cacheReadUsdPerMillionTokens: 0,
+    cacheWriteUsdPerMillionTokens: 0,
+  },
 });
 
 const appendEvent = <Type extends SessionEvent["type"]>(
@@ -86,6 +92,7 @@ const mountService = async (
   settlementDeadlineAuthority: SettlementDeadlineAuthority = immediateSettlementDeadline,
   bindTerminalReservation = true,
   inputAuthority?: OperationInputAuthority,
+  clock: () => number = () => 1_800_000_000_000,
 ): Promise<MountedService> => {
   const context = new Context();
   mounted.push(context);
@@ -144,7 +151,7 @@ const mountService = async (
       return retirePrimary(agent, retirementGuard);
     },
     settlementDeadlineAuthority,
-    clock: () => 1_800_000_000_000,
+    clock,
   });
   if (bindTerminalReservation) {
     context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({
@@ -175,6 +182,7 @@ const mountService = async (
 
 afterEach(async () => {
   await Promise.all(mounted.splice(0).map((context) => context.fiber.dispose()));
+  vi.useRealTimers();
 });
 
 describe("durable product-operation fold", () => {
@@ -913,7 +921,7 @@ describe("SdkOperationService admission and idempotency", () => {
           cacheReadTokens: 3,
           cacheWriteTokens: 1,
           totalTokens: 13,
-          costUsd: null,
+            costUsd: 0,
           normalizedAs: "turn_total",
           contextOccupiedTokens: null,
           runtimeContextWindow: 8_192,
@@ -1510,6 +1518,178 @@ describe("SdkOperationService admission and idempotency", () => {
       },
     }));
     expect(fixture.service.lookup("operation-1")?.terminal).not.toHaveProperty("usage");
+  });
+
+  it("maps the canonical DSH context-window failure to context_exhausted", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("turn/end", {
+      turn: 1,
+      reason: {
+        kind: "error",
+        error: { code: "CONTEXT_WINDOW_EXCEEDED", message: "synthetic context overflow" },
+      },
+    });
+
+    await vi.waitFor(() => expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "context_exhausted", message: "synthetic context overflow" },
+    }));
+  });
+
+  it("fails an unpriced USD budget before durable operation admission", async () => {
+    const unpricedBirth = structuredClone(birth());
+    Reflect.deleteProperty(unpricedBirth, "pricing");
+    const fixture = await mountService(Object.freeze({ capture: () => unpricedBirth }));
+    await expect(fixture.service.start(params())).rejects.toMatchObject({
+      code: "provider_pricing_unavailable",
+    });
+    expect(fixture.agent.session.events).toEqual([]);
+    expect(fixture.inbox.nextTurn).toEqual([]);
+  });
+
+  it("persists and enforces authoritative accrued USD cost before another model request", async () => {
+    const limits = { maxTurns: 4, maxCostUsd: 0.5, maxDurationMs: 60_000 };
+    const pricedBirth: OperationBirthSnapshot = {
+      ...birth(),
+      limits,
+      pricing: {
+        inputUsdPerMillionTokens: 100_000,
+        outputUsdPerMillionTokens: 200_000,
+        cacheReadUsdPerMillionTokens: 300_000,
+        cacheWriteUsdPerMillionTokens: 400_000,
+      },
+    };
+    const fixture = await mountService(Object.freeze({ capture: () => pricedBirth }));
+    await fixture.service.start({ ...params(), limits });
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("step/start", { turn: 1, step: 1 });
+    fixture.agent.session.append("request/context", {
+      provider: "fixture",
+      model: "fixture-model",
+      contextWindow: 8_192,
+    });
+    fixture.agent.session.append("assistant/message", {
+      turn: 1,
+      step: 1,
+      message: freezeMessage({
+        id: MessageId("assistant-budget-boundary"),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture-model" },
+        content: [{ type: "tool-call", id: CallId("budget-tool-call"), name: "Read", arguments: "{}" }],
+      }),
+      usage: { inputTokens: 2, outputTokens: 3 },
+    }, { surfaceOp: "append", sourceEventSeqs: [] });
+
+    expect(() => fixture.service.createModelRequestAuthority(
+      fixture.agent,
+      "config-1",
+      "model-profile-1",
+    )).toThrow(expect.objectContaining({ code: "operation_max_budget" }));
+    fixture.agent.session.append("step/end", { turn: 1, step: 1 });
+    fixture.agent.session.append("turn/end", {
+      turn: 1,
+      reason: { kind: "error", error: { code: "UNKNOWN", message: "budget stopped request" } },
+    });
+
+    await vi.waitFor(() => expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: {
+        kind: "max_budget",
+        limitUsd: 0.5,
+        usage: { inputTokens: 2, outputTokens: 3, costUsd: 0.8 },
+      },
+    }));
+    expect(fixture.agent.session.events.filter(
+      (event) => event.type === "myagents/operation/limit",
+    )).toHaveLength(1);
+  });
+
+  it("discards a queued continuation at the exact DSH-turn limit boundary", async () => {
+    const limits = { maxTurns: 1, maxDurationMs: 60_000 };
+    const fixture = await mountService(Object.freeze({
+      capture: () => ({ ...birth(), limits }),
+    }));
+    await fixture.service.start({ ...params(), limits });
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    await fixture.service.followUp({
+      clientOperationId: "operation-1",
+      messageId: "continuation-past-limit",
+      input: { parts: [{ kind: "text", text: "continue" }] },
+    });
+    await fixture.context.serial("agent/turn-stopping", {
+      agent: fixture.agent,
+      turn: 1,
+      signal: new AbortController().signal,
+    });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+
+    await vi.waitFor(() => expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      messages: [
+        { state: "claimed", dshTurn: 1 },
+        { state: "cancelled", cancellationReason: "limit" },
+      ],
+      terminal: { kind: "max_turns", limit: 1 },
+    }));
+  });
+
+  it("expires queued work by durable acceptedAt across the wall-clock duration boundary", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_800_000_000_000);
+    const limits = { maxTurns: 4, maxDurationMs: 10 };
+    const fixture = await mountService(
+      Object.freeze({ capture: () => ({ ...birth(), limits }) }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      undefined,
+      Date.now,
+    );
+    await fixture.service.start({ ...params(), limits });
+    await vi.advanceTimersByTimeAsync(11);
+
+    expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      messages: [{ state: "cancelled", cancellationReason: "limit" }],
+      terminal: {
+        kind: "failed",
+        code: "max_duration",
+        message: "Turn exceeded its maximum duration",
+        retryable: false,
+      },
+    });
+  });
+
+  it("re-arms the durable duration deadline after Session recovery", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_800_000_000_000);
+    const limits = { maxTurns: 4, maxDurationMs: 10 };
+    const authority = Object.freeze({ capture: () => ({ ...birth(), limits }) });
+    const original = await mountService(authority, undefined, undefined, undefined, undefined, true, undefined, Date.now);
+    await original.service.start({ ...params(), limits });
+    const seed = structuredClone(original.agent.session.events);
+    await original.dispose();
+
+    vi.setSystemTime(1_800_000_000_011);
+    const restored = await mountService(authority, seed, undefined, undefined, undefined, true, undefined, Date.now);
+    expect(restored.service.validatePersisted(restored.agent).operations).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(restored.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      messages: [{ state: "cancelled", cancellationReason: "limit" }],
+      terminal: { kind: "failed", code: "max_duration", retryable: false },
+    });
+    expect(restored.agent.session.events.filter(
+      (event) => event.type === "myagents/operation/limit",
+    )).toHaveLength(1);
   });
 
   it("lets transport cancellation win only before durable operation acceptance", async () => {

@@ -5,6 +5,7 @@ export const PRODUCT_OPERATION_EVENT_TYPES = Object.freeze([
   "myagents/operation/message",
   "myagents/operation/claimed",
   "myagents/operation/request-context",
+  "myagents/operation/limit",
   "myagents/operation/terminal",
   "myagents/operation/recovery-wake",
 ] as const);
@@ -22,6 +23,13 @@ export interface OperationLimits {
   readonly maxDurationMs?: number;
 }
 
+export interface OperationPricing {
+  readonly inputUsdPerMillionTokens: number;
+  readonly outputUsdPerMillionTokens: number;
+  readonly cacheReadUsdPerMillionTokens: number;
+  readonly cacheWriteUsdPerMillionTokens: number;
+}
+
 export interface OperationBirthSnapshot {
   readonly configRevision: string;
   readonly modelProfileRevision: string;
@@ -36,6 +44,7 @@ export interface OperationBirthSnapshot {
   readonly planRevision: string;
   readonly originRevision: string;
   readonly limits: OperationLimits;
+  readonly pricing?: OperationPricing;
 }
 
 export interface ProductOperationAccepted {
@@ -55,7 +64,7 @@ export interface ProductOperationMessage {
   readonly clientMessageId: string;
   readonly state: "queued" | "cancelled";
   readonly inputFingerprint?: string;
-  readonly cancellationReason?: "user" | "host_shutdown" | "session_replaced";
+  readonly cancellationReason?: "user" | "host_shutdown" | "session_replaced" | "limit";
 }
 
 export interface ProductOperationClaim {
@@ -73,6 +82,15 @@ export interface ProductOperationRequestContext {
   readonly model: string;
   readonly contextWindow: number;
 }
+
+export type ProductOperationLimit = Readonly<{
+  clientOperationId: string;
+  observedAt: number;
+} & (
+  | { kind: "max_turns"; limit: number }
+  | { kind: "max_budget"; limitUsd: number }
+  | { kind: "max_duration"; limitMs: number }
+)>;
 
 export interface ProductOperationTerminal {
   readonly clientOperationId: string;
@@ -103,6 +121,7 @@ declare module "@deepseek-ai/dsh-session/types" {
     "myagents/operation/message": ProductOperationMessage;
     "myagents/operation/claimed": ProductOperationClaim;
     "myagents/operation/request-context": ProductOperationRequestContext;
+    "myagents/operation/limit": ProductOperationLimit;
     "myagents/operation/terminal": ProductOperationTerminal;
     "myagents/operation/recovery-wake": ProductOperationRecoveryWake;
   }

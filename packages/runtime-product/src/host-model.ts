@@ -162,7 +162,7 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
       "api", "contextWindow", "credentialRef", "maxTokens", "modelId", "provider",
       "providerRouteId", "revision",
     ],
-    ["baseUrl", "compatibility", "effort", "reasoning"],
+    ["baseUrl", "compatibility", "effort", "pricing", "reasoning"],
     "Host DeepSeek Provider profile",
   );
   const candidate = record as unknown as ProviderProfile;
@@ -179,6 +179,23 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
       "provider_compatibility_not_supported",
       "untyped Provider compatibility overrides are not supported",
     );
+  }
+  if (candidate.pricing !== undefined) {
+    const pricing = exactOwnDataObject(candidate.pricing, [
+      "inputUsdPerMillionTokens",
+      "outputUsdPerMillionTokens",
+      "cacheReadUsdPerMillionTokens",
+      "cacheWriteUsdPerMillionTokens",
+    ], [], "Host DeepSeek Provider pricing");
+    for (const value of Object.values(pricing)) {
+      if (typeof value !== "number" || !Number.isFinite(value) || Object.is(value, -0)
+        || value < 0 || value > 1_000_000) {
+        throw new ProtocolError(
+          "provider_profile_invalid",
+          "Provider pricing rates must be bounded finite non-negative numbers",
+        );
+      }
+    }
   }
   profileDefaults(candidate);
   if (candidate.baseUrl !== undefined && candidate.baseUrl !== HOST_DEEPSEEK_BASE_URL) {

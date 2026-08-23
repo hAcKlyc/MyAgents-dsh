@@ -1,4 +1,8 @@
-import type { ContentBlock, TokenUsage } from "@deepseek-ai/dsh-llm";
+import {
+  CONTEXT_WINDOW_EXCEEDED_CODE,
+  type ContentBlock,
+  type TokenUsage,
+} from "@deepseek-ai/dsh-llm";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import {
   validateTurnTerminal,
@@ -106,6 +110,51 @@ const usageCounts = (usage: TokenUsage): Readonly<{
     cacheReadTokens: addCount(0, normalized.cacheReadTokens, "DSH cache-read token usage"),
     cacheWriteTokens: addCount(0, normalized.cacheWriteTokens, "DSH cache-write token usage"),
   });
+};
+
+export const priceDshTokenUsage = (
+  usage: Readonly<NormalizedDshTokenUsage>,
+  pricing: NonNullable<ProductOperationRecord["birth"]["pricing"]>,
+): number => {
+  const cost = (
+    usage.inputTokens * pricing.inputUsdPerMillionTokens
+    + usage.outputTokens * pricing.outputUsdPerMillionTokens
+    + usage.cacheReadTokens * pricing.cacheReadUsdPerMillionTokens
+    + usage.cacheWriteTokens * pricing.cacheWriteUsdPerMillionTokens
+  ) / 1_000_000;
+  if (!Number.isFinite(cost) || cost < 0) {
+    throw new TypeError("operation priced usage exceeds the finite protocol cost range");
+  }
+  return cost;
+};
+
+export const deriveOperationAccruedCostUsd = (
+  events: readonly SessionEvent[],
+  operation: ProductOperationRecord,
+): number | null => {
+  const pricing = operation.birth.pricing;
+  if (pricing === undefined) return null;
+  let cost = 0;
+  for (const turn of operation.dshTurns) {
+    const starts = events.filter((event) => event.type === "turn/start" && event.data.turn === turn);
+    const ends = events.filter((event) => event.type === "turn/end" && event.data.turn === turn);
+    const start = starts[0];
+    const end = ends[0];
+    if (starts.length !== 1 || start?.type !== "turn/start" || ends.length > 1
+      || (end !== undefined && end.seq <= start.seq)) {
+      throw new TypeError("priced operation turn has an invalid durable boundary");
+    }
+    for (const event of events) {
+      if (event.type !== "assistant/message" || event.data.turn !== turn
+        || event.data.usage === undefined || event.seq <= start.seq
+        || (end !== undefined && event.seq >= end.seq)) continue;
+      cost += priceDshTokenUsage(normalizeDshTokenUsage(event.data.usage), pricing);
+      if (!Number.isFinite(cost) || cost < 0) {
+        throw new TypeError("accumulated operation cost exceeds the finite protocol range");
+      }
+    }
+  }
+  return cost;
 };
 
 const nonEmptyAssistantContent = (content: readonly ContentBlock[]): boolean => content.some((block) => {
@@ -258,7 +307,14 @@ export const deriveOperationUsageSummary = (
     cacheReadTokens,
     cacheWriteTokens,
     totalTokens,
-    costUsd: null,
+    costUsd: operation.birth.pricing === undefined
+      ? null
+      : priceDshTokenUsage({
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheWriteTokens,
+        }, operation.birth.pricing),
     turnId: operation.productTurnId,
     normalizedAs: "turn_total",
     contextOccupiedTokens: null,
@@ -278,6 +334,21 @@ export const deriveOperationTerminal = (
   }
   const finalDshTurn = operation.dshTurns.at(-1);
   if (finalDshTurn === undefined) {
+    if (operation.limit !== undefined) {
+      const terminal: TurnTerminal = operation.limit.kind === "max_budget"
+        ? { kind: "max_budget", limitUsd: operation.limit.limitUsd }
+        : operation.limit.kind === "max_turns"
+          ? { kind: "max_turns", limit: operation.limit.limit }
+          : {
+              kind: "failed",
+              code: "max_duration",
+              message: "Turn exceeded its maximum duration",
+              retryable: false,
+            };
+      return Object.freeze({
+        terminal: validateTurnTerminal(terminal),
+      });
+    }
     if (operation.messages.length === 0
       || operation.messages.some(({ state }) => state !== "cancelled")) {
       throw new TypeError("operation terminal requires one owned DSH turn or all messages cancelled");
@@ -301,6 +372,28 @@ export const deriveOperationTerminal = (
     throw new TypeError("operation terminal lacks its final DSH turn closure");
   }
   const usage = deriveOperationUsageSummary(events, operation);
+  if (operation.limit !== undefined) {
+    const terminal: TurnTerminal = operation.limit.kind === "max_turns"
+      ? {
+          kind: "max_turns",
+          limit: operation.limit.limit,
+          ...(usage === undefined ? {} : { usage }),
+        }
+      : operation.limit.kind === "max_budget"
+        ? {
+            kind: "max_budget",
+            limitUsd: operation.limit.limitUsd,
+            ...(usage === undefined ? {} : { usage }),
+          }
+        : {
+            kind: "failed",
+            code: "max_duration",
+            message: "Turn exceeded its maximum duration",
+            retryable: false,
+            ...(usage === undefined ? {} : { usage }),
+          };
+    return Object.freeze({ finalDshTurn, terminal: validateTurnTerminal(terminal) });
+  }
   const cancellationAfterFinalTurn = operation.messages.filter(
     ({ state, cancelledAtSeq }) => state === "cancelled"
       && cancelledAtSeq !== undefined
@@ -361,13 +454,19 @@ export const deriveOperationTerminal = (
       };
       break;
     case "error":
-      terminal = {
-        kind: "failed",
-        code: boundedFailureCode(reason.error.code),
-        message: boundedFailureMessage(reason.error.message),
-        retryable: false,
-        ...(usage === undefined ? {} : { usage }),
-      };
+      terminal = reason.error.code === CONTEXT_WINDOW_EXCEEDED_CODE
+        ? {
+            kind: "context_exhausted",
+            message: boundedFailureMessage(reason.error.message),
+            ...(usage === undefined ? {} : { usage }),
+          }
+        : {
+            kind: "failed",
+            code: boundedFailureCode(reason.error.code),
+            message: boundedFailureMessage(reason.error.message),
+            retryable: false,
+            ...(usage === undefined ? {} : { usage }),
+          };
       break;
     case "max-tokens":
       terminal = { kind: "max_output_tokens", ...(usage === undefined ? {} : { usage }) };

@@ -225,6 +225,12 @@ export const ModelExecutionProfileSchema = strictObject({
   credentialRef: identifier,
   contextWindow: Type.Integer({ minimum: 1 }),
   maxTokens: Type.Integer({ minimum: 1 }),
+  pricing: Type.Optional(strictObject({
+    inputUsdPerMillionTokens: Type.Number({ minimum: 0, maximum: 1_000_000 }),
+    outputUsdPerMillionTokens: Type.Number({ minimum: 0, maximum: 1_000_000 }),
+    cacheReadUsdPerMillionTokens: Type.Number({ minimum: 0, maximum: 1_000_000 }),
+    cacheWriteUsdPerMillionTokens: Type.Number({ minimum: 0, maximum: 1_000_000 }),
+  })),
   reasoning: Type.Optional(Type.Boolean()),
   effort: Type.Optional(Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high"), Type.Literal("xhigh"), Type.Literal("max")])),
   compatibility: Type.Optional(jsonRecord),

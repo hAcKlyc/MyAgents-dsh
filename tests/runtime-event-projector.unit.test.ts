@@ -34,6 +34,12 @@ const birth: OperationBirthSnapshot = Object.freeze({
   planRevision: "plan-1",
   originRevision: "origin-1",
   limits: Object.freeze({ maxTurns: 4 }),
+  pricing: Object.freeze({
+    inputUsdPerMillionTokens: 100_000,
+    outputUsdPerMillionTokens: 200_000,
+    cacheReadUsdPerMillionTokens: 300_000,
+    cacheWriteUsdPerMillionTokens: 400_000,
+  }),
 });
 
 interface OperationFixture {
@@ -130,7 +136,7 @@ const appendCompletedTurn = (fixture: OperationFixture): void => {
         cacheReadTokens: 3,
         cacheWriteTokens: 1,
         totalTokens: 13,
-        costUsd: null,
+        costUsd: 2.4,
         turnId: productTurnId,
         normalizedAs: "turn_total",
         contextOccupiedTokens: null,
@@ -148,7 +154,7 @@ afterEach(async () => {
 });
 
 describe("Runtime event projection", () => {
-  it("maps durable DSH facts without inventing cost or context occupancy", () => {
+  it("maps durable DSH facts with frozen pricing and without inventing context occupancy", () => {
     const session = Session.create(SessionId("projection-pure"));
     const fixture = appendAcceptedOperation(session);
     appendCompletedTurn(fixture);
@@ -190,7 +196,7 @@ describe("Runtime event projection", () => {
             cacheReadTokens: 3,
             cacheWriteTokens: 1,
             totalTokens: 13,
-            costUsd: null,
+            costUsd: 2.4,
           },
           contextOccupiedTokens: null,
           runtimeContextWindow: 8_192,

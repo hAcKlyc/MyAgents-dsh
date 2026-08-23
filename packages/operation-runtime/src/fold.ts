@@ -8,12 +8,14 @@ import {
   type ProductOperationAccepted,
   type ProductOperationClaim,
   type ProductOperationMessage,
+  type ProductOperationLimit,
+  type OperationPricing,
   type ProductOperationRequestContext,
   type ProductOperationRecoveryWake,
   type ProductOperationTerminal,
 } from "./events.js";
 import { validateOperationLimits } from "./limits.js";
-import { deriveOperationTerminal } from "./terminal.js";
+import { deriveOperationAccruedCostUsd, deriveOperationTerminal } from "./terminal.js";
 
 export type ProductOperationState =
   | "accepted_undelivered"
@@ -30,7 +32,7 @@ export interface ProductOperationMessageRecord {
   readonly delivered: boolean;
   readonly inputFingerprint?: string;
   readonly dshTurn?: number;
-  readonly cancellationReason?: "user" | "host_shutdown" | "session_replaced";
+  readonly cancellationReason?: "user" | "host_shutdown" | "session_replaced" | "limit";
   readonly cancelledAtSeq?: number;
 }
 
@@ -43,6 +45,7 @@ export interface ProductOperationRecord {
   readonly messages: readonly ProductOperationMessageRecord[];
   readonly dshTurns: readonly number[];
   readonly state: ProductOperationState;
+  readonly limit?: ProductOperationLimit;
   readonly terminal?: TurnTerminal;
 }
 
@@ -78,7 +81,7 @@ type MutableMessage = {
   delivered: boolean;
   inputFingerprint?: string;
   dshTurn?: number;
-  cancellationReason?: "user" | "host_shutdown" | "session_replaced";
+  cancellationReason?: "user" | "host_shutdown" | "session_replaced" | "limit";
   cancelledAtSeq?: number;
 };
 
@@ -87,6 +90,7 @@ type MutableOperation = {
   messages: MutableMessage[];
   dshTurns: number[];
   closedTurns: Set<number>;
+  limit?: ProductOperationLimit;
   terminal?: TurnTerminal;
   terminalSeen: boolean;
   requestContextAssistantSeqs: Set<number>;
@@ -186,6 +190,29 @@ const validateForkReceipt = (value: unknown, runtimeSessionId: string): void => 
   }
 };
 
+const validateOperationPricing = (value: unknown): OperationPricing => {
+  const pricing = exactOwnDataObject(value, [
+    "inputUsdPerMillionTokens",
+    "outputUsdPerMillionTokens",
+    "cacheReadUsdPerMillionTokens",
+    "cacheWriteUsdPerMillionTokens",
+  ], [], "operation pricing");
+  const rate = (key: keyof OperationPricing): number => {
+    const candidate = pricing[key];
+    if (typeof candidate !== "number" || !Number.isFinite(candidate)
+      || Object.is(candidate, -0) || candidate < 0 || candidate > 1_000_000) {
+      return fail(`operation pricing ${key} must be a bounded finite non-negative rate`);
+    }
+    return candidate;
+  };
+  return Object.freeze({
+    inputUsdPerMillionTokens: rate("inputUsdPerMillionTokens"),
+    outputUsdPerMillionTokens: rate("outputUsdPerMillionTokens"),
+    cacheReadUsdPerMillionTokens: rate("cacheReadUsdPerMillionTokens"),
+    cacheWriteUsdPerMillionTokens: rate("cacheWriteUsdPerMillionTokens"),
+  });
+};
+
 export const validateOperationBirthSnapshot = (value: unknown): OperationBirthSnapshot => {
   const birth = exactOwnDataObject(value, [
     "configRevision",
@@ -201,7 +228,7 @@ export const validateOperationBirthSnapshot = (value: unknown): OperationBirthSn
     "planRevision",
     "originRevision",
     "limits",
-  ], [], "operation birth snapshot");
+  ], ["pricing"], "operation birth snapshot");
   return Object.freeze({
     configRevision: boundedIdentifier(birth.configRevision, "operation config revision"),
     modelProfileRevision: boundedIdentifier(birth.modelProfileRevision, "operation model profile revision"),
@@ -225,6 +252,9 @@ export const validateOperationBirthSnapshot = (value: unknown): OperationBirthSn
     planRevision: boundedIdentifier(birth.planRevision, "operation plan revision"),
     originRevision: boundedIdentifier(birth.originRevision, "operation origin revision"),
     limits: validateOperationLimits(birth.limits),
+    ...(Object.hasOwn(birth, "pricing")
+      ? { pricing: validateOperationPricing(birth.pricing) }
+      : {}),
   });
 };
 
@@ -265,11 +295,12 @@ const validateMessage = (value: unknown): ProductOperationMessage => {
   if (event.state === "cancelled"
     && event.cancellationReason !== "user"
     && event.cancellationReason !== "host_shutdown"
-    && event.cancellationReason !== "session_replaced") {
+    && event.cancellationReason !== "session_replaced"
+    && event.cancellationReason !== "limit") {
     return fail("cancelled operation message requires a supported cancellation reason");
   }
   const cancellationReason = event.state === "cancelled"
-    ? event.cancellationReason as "user" | "host_shutdown" | "session_replaced"
+    ? event.cancellationReason as "user" | "host_shutdown" | "session_replaced" | "limit"
     : undefined;
   const inputFingerprint = Object.hasOwn(event, "inputFingerprint")
     ? sha256(event.inputFingerprint, "operation message input fingerprint")
@@ -334,6 +365,48 @@ const validateRequestContext = (value: unknown): ProductOperationRequestContext 
     model: boundedIdentifier(event.model, "request-context model"),
     contextWindow: event.contextWindow as number,
   });
+};
+
+const validateLimit = (value: unknown): ProductOperationLimit => {
+  const base = exactOwnDataObject(
+    value,
+    ["clientOperationId", "kind", "observedAt"],
+    ["limit", "limitUsd", "limitMs"],
+    "operation limit event",
+  );
+  const clientOperationId = boundedIdentifier(base.clientOperationId, "operation limit owner");
+  const observedAt = nonNegativeTimestamp(base.observedAt, "operation limit observation time");
+  if (base.kind === "max_turns") {
+    if (Reflect.ownKeys(base).length !== 4) return fail("max-turns limit has an invalid exact shape");
+    return Object.freeze({
+      clientOperationId,
+      kind: "max_turns" as const,
+      limit: positiveTurn(base.limit, "operation max-turn limit"),
+      observedAt,
+    });
+  }
+  if (base.kind === "max_budget") {
+    if (Reflect.ownKeys(base).length !== 4 || typeof base.limitUsd !== "number"
+      || !Number.isFinite(base.limitUsd) || Object.is(base.limitUsd, -0) || base.limitUsd < 0) {
+      return fail("max-budget limit has an invalid exact shape or value");
+    }
+    return Object.freeze({
+      clientOperationId,
+      kind: "max_budget" as const,
+      limitUsd: base.limitUsd,
+      observedAt,
+    });
+  }
+  if (base.kind === "max_duration") {
+    if (Reflect.ownKeys(base).length !== 4) return fail("max-duration limit has an invalid exact shape");
+    return Object.freeze({
+      clientOperationId,
+      kind: "max_duration" as const,
+      limitMs: positiveTurn(base.limitMs, "operation max-duration limit"),
+      observedAt,
+    });
+  }
+  return fail("operation limit kind is unsupported");
 };
 
 const validateTerminal = (value: unknown): ProductOperationTerminal => {
@@ -462,6 +535,7 @@ const immutableOperation = (operation: MutableOperation): ProductOperationRecord
   }))),
   dshTurns: Object.freeze([...operation.dshTurns]),
   state: terminalState(operation),
+  ...(operation.limit === undefined ? {} : { limit: operation.limit }),
   ...(operation.terminal === undefined ? {} : { terminal: operation.terminal }),
 });
 
@@ -552,7 +626,8 @@ const foldProductOperationsValue = (
         } else {
           if (existing?.state !== "queued"
             || existing.kind !== messageEvent.kind
-            || existing.clientMessageId !== messageEvent.clientMessageId) {
+            || existing.clientMessageId !== messageEvent.clientMessageId
+            || (messageEvent.cancellationReason === "limit" && operation.limit === undefined)) {
             return fail("operation cancellation does not match one pending owned message");
           }
           const discarded = removedDiscardCandidates.get(messageEvent.messageId);
@@ -647,6 +722,33 @@ const foldProductOperationsValue = (
           return fail("operation request-context anchor differs from DSH context authority");
         }
         operation.requestContextAssistantSeqs.add(anchor.assistantEventSeq);
+        break;
+      }
+      case "myagents/operation/limit": {
+        const limit = validateLimit(event.data);
+        const operation = operationFor(operations, limit.clientOperationId, "operation limit event");
+        if (operation.terminalSeen || operation.limit !== undefined) {
+          return fail("operation limit follows terminal or duplicates its first limit fact");
+        }
+        if (limit.kind === "max_turns") {
+          if (operation.accepted.birth.limits.maxTurns !== limit.limit
+            || operation.dshTurns.length < limit.limit
+            || !operation.messages.some((message) => message.delivered && message.state === "queued")) {
+            return fail("max-turns fact lacks its exact birth limit and pending continuation boundary");
+          }
+        } else if (limit.kind === "max_budget") {
+          const immutable = immutableOperation(operation);
+          const accrued = deriveOperationAccruedCostUsd(events.slice(0, index), immutable);
+          if (operation.accepted.birth.limits.maxCostUsd !== limit.limitUsd
+            || operation.accepted.birth.pricing === undefined
+            || accrued === null || accrued < limit.limitUsd) {
+            return fail("max-budget fact lacks its exact priced birth and accrued cost boundary");
+          }
+        } else if (operation.accepted.birth.limits.maxDurationMs !== limit.limitMs
+          || limit.observedAt - operation.accepted.acceptedAt < limit.limitMs) {
+          return fail("max-duration fact precedes its exact birth deadline");
+        }
+        operation.limit = limit;
         break;
       }
       case "myagents/operation/terminal": {

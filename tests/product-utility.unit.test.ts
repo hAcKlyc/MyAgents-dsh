@@ -13,6 +13,12 @@ const profile = Object.freeze({
   credentialRef: "fixture-key",
   contextWindow: 8_192,
   maxTokens: 128,
+  pricing: Object.freeze({
+    inputUsdPerMillionTokens: 100_000,
+    outputUsdPerMillionTokens: 200_000,
+    cacheReadUsdPerMillionTokens: 300_000,
+    cacheWriteUsdPerMillionTokens: 400_000,
+  }),
 });
 
 const params = Object.freeze({
@@ -58,7 +64,7 @@ describe("product utility model service", () => {
           cacheReadTokens: 3,
           cacheWriteTokens: 0,
           totalTokens: 12,
-          costUsd: null,
+          costUsd: 2,
         },
       });
       expect(adapter.requests).toEqual([expect.objectContaining({
@@ -109,7 +115,7 @@ describe("product utility model service", () => {
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
           totalTokens: 2,
-          costUsd: null,
+          costUsd: 0.3,
         },
       });
       const controller = new AbortController();

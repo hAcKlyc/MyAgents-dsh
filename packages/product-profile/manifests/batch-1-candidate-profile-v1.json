@@ -130,7 +130,7 @@
       "host/attachment/acquire",
       "host/attachment/release"
     ],
-    "schemaSha256": "473cbaed28ee671bfd07293c60233ad4438cab92a495cef7d269d57c0d135936",
+    "schemaSha256": "b4579b2880b641c3c2331b60b58e8433c794bd48ea8606a13f667a5b37122976",
     "version": "2.0.0-draft.1"
   },
   "runtimeActivation": "workstream-evidence-only",

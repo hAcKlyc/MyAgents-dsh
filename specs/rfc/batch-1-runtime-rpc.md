@@ -436,10 +436,16 @@ type OperationBirthSnapshot = {
   planRevision: string
   originRevision: string
   limits: { maxTurns?: number; maxCostUsd?: number; maxDurationMs?: number }
+  pricing?: {
+    inputUsdPerMillionTokens: number
+    outputUsdPerMillionTokens: number
+    cacheReadUsdPerMillionTokens: number
+    cacheWriteUsdPerMillionTokens: number
+  }
 }
 ```
 
-Every model request, tool admission, reverse request, attachment lease, and synchronous child operation resolves through this snapshot. `config/apply`, `extension/replace`, credential reconciliation, and tool visibility changes publish only at an allowed boundary; late responses with stale revisions are rejected and cleaned up.
+Every model request, tool admission, reverse request, attachment lease, and synchronous child operation resolves through this snapshot. The optional rate card is Host authority frozen at birth; `maxCostUsd` without it fails before durable admission. One first-limit fact in the DSH Session log arbitrates turn-count, priced-budget, and accepted-at duration boundaries, including recovery, before a later model request or queued continuation can cross them. `config/apply`, `extension/replace`, credential reconciliation, and tool visibility changes publish only at an allowed boundary; late responses with stale revisions are rejected and cleaned up.
 
 ## 16. Shutdown and fatal fencing
 

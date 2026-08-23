@@ -190,9 +190,10 @@ export const composeOfficialRuntimeServices = async (
         const root = authority.composition?.context;
         if (root === undefined) throw new Error("official Runtime composition is not installed");
         const agent = root.productSession.requireAgent();
+        const modelProfile = root.productSession.requireOperationModelProfile();
         return Object.freeze({
           configRevision: params.configRevision,
-          modelProfileRevision: root.productSession.requireOperationModelProfileRevision(),
+          modelProfileRevision: modelProfile.revision,
           componentRevision: OFFICIAL_EXTENSION_SNAPSHOT.revision,
           componentDigest: OFFICIAL_EXTENSION_SNAPSHOT.digest,
           toolCatalogRevision: OFFICIAL_TOOL_CATALOG.revision,
@@ -204,6 +205,7 @@ export const composeOfficialRuntimeServices = async (
           planRevision: root.productPlan.currentRevision(agent),
           originRevision: OFFICIAL_ORIGIN_REVISION,
           limits: params.limits,
+          ...(modelProfile.pricing === undefined ? {} : { pricing: modelProfile.pricing }),
         });
       },
     }),

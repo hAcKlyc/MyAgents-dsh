@@ -924,6 +924,12 @@ const composition = await composeDshRootServices({
       planRevision: capturePlanRevision(),
       originRevision: "artifact-origin-v1",
       limits: value.limits,
+      pricing: {
+        inputUsdPerMillionTokens: 0,
+        outputUsdPerMillionTokens: 0,
+        cacheReadUsdPerMillionTokens: 0,
+        cacheWriteUsdPerMillionTokens: 0,
+      },
     }),
   }),
   providers: ["fixture"],
@@ -1592,6 +1598,12 @@ const hostModelProfile = Object.freeze({
   credentialRef: "ARTIFACT_HOST_MODEL_KEY",
   contextWindow: 8_192,
   maxTokens: 512,
+  pricing: {
+    inputUsdPerMillionTokens: 0,
+    outputUsdPerMillionTokens: 0,
+    cacheReadUsdPerMillionTokens: 0,
+    cacheWriteUsdPerMillionTokens: 0,
+  },
   reasoning: true,
   effort: "high" as const,
 });
@@ -1618,6 +1630,7 @@ const hostModelComposition = await composeDshRootServices({
       planRevision: captureHostModelPlanRevision(),
       originRevision: "artifact-host-model-origin-v1",
       limits: value.limits,
+      pricing: hostModelProfile.pricing,
     }),
   }),
   providers: ["fixture-bootstrap"],
@@ -3837,7 +3850,7 @@ assert.deepEqual(firstUsage.event.usage, {
   cacheReadTokens: 3,
   cacheWriteTokens: 0,
   totalTokens: 12,
-  costUsd: null,
+  costUsd: 0,
 });
 assert.equal(firstUsage.event.contextOccupiedTokens, null);
 assert.equal(firstUsage.event.runtimeContextWindow, 8_192);

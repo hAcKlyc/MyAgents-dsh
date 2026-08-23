@@ -1109,6 +1109,38 @@
                 "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
                 "type": "string"
               },
+              "pricing": {
+                "additionalProperties": false,
+                "properties": {
+                  "cacheReadUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "cacheWriteUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "inputUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "outputUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "inputUsdPerMillionTokens",
+                  "outputUsdPerMillionTokens",
+                  "cacheReadUsdPerMillionTokens",
+                  "cacheWriteUsdPerMillionTokens"
+                ],
+                "type": "object"
+              },
               "provider": {
                 "maxLength": 256,
                 "minLength": 1,
@@ -7192,6 +7224,38 @@
                 "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
                 "type": "string"
               },
+              "pricing": {
+                "additionalProperties": false,
+                "properties": {
+                  "cacheReadUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "cacheWriteUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "inputUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "outputUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "inputUsdPerMillionTokens",
+                  "outputUsdPerMillionTokens",
+                  "cacheReadUsdPerMillionTokens",
+                  "cacheWriteUsdPerMillionTokens"
+                ],
+                "type": "object"
+              },
               "provider": {
                 "maxLength": 256,
                 "minLength": 1,
@@ -9761,6 +9825,38 @@
                 "minLength": 1,
                 "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
                 "type": "string"
+              },
+              "pricing": {
+                "additionalProperties": false,
+                "properties": {
+                  "cacheReadUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "cacheWriteUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "inputUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "outputUsdPerMillionTokens": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "inputUsdPerMillionTokens",
+                  "outputUsdPerMillionTokens",
+                  "cacheReadUsdPerMillionTokens",
+                  "cacheWriteUsdPerMillionTokens"
+                ],
+                "type": "object"
               },
               "provider": {
                 "maxLength": 256,

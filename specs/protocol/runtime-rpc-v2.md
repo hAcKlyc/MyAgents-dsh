@@ -196,15 +196,15 @@ type InitializeResult = {
 
 ## 7. Method inventory
 
-The candidate preserves the 42 request method names from protocol 1.1 so existing Host routing and generated-client concepts can migrate with bounded change.
+The candidate exposes 43 request methods: 36 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 47 names. The 42 protocol-1.1 request names remain recognizable; `session/delete/purge` is the one added request needed to separate recoverable tombstoning from irreversible deletion.
 
-### 7.1 Host-to-Runtime methods: 35
+### 7.1 Host-to-Runtime methods: 36
 
 | Domain | Methods |
 | --- | --- |
 | Runtime | `initialize`, `runtime/status`, `runtime/shutdown` |
 | Session lifecycle | `session/create`, `session/resume`, `session/read`, `session/close`, `session/compact` |
-| Delete transaction | `session/delete/prepare`, `session/delete/commit`, `session/delete/rollback`, `session/delete/status` |
+| Delete transaction | `session/delete/prepare`, `session/delete/commit`, `session/delete/purge`, `session/delete/rollback`, `session/delete/status` |
 | Fork transaction | `session/fork/prepare`, `session/fork/commit`, `session/fork/abort`, `session/fork/status` |
 | Rewind transaction | `session/rewind/prepare`, `session/rewind/commit`, `session/rewind/rollback`, `session/rewind/status` |
 | Turn | `turn/start`, `turn/get`, `turn/steer`, `turn/followUp`, `turn/message/cancel`, `turn/interrupt` |
@@ -263,6 +263,8 @@ Accepts an optional reason. Once committed, new work is rejected, active work is
 - system prompt;
 - permission mode and tool visibility policy;
 - interaction scenario.
+
+The model execution profile may also carry one exact Host-authoritative USD rate card with disjoint per-million-token rates for uncached input, output, cache reads, and cache writes. Runtime freezes that card into every operation birth that uses it. A request containing `limits.maxCostUsd` is rejected before durable turn admission when the selected profile has no rate card; Runtime never guesses prices from provider names or mutable external metadata.
 
 The result is:
 
@@ -423,7 +425,9 @@ type TurnStartResult =
 
 If durable acceptance survives but insertion of its identified DSH Inbox message does not, Runtime enters recovery-required state. It may admit only an exact `turn/start` retry with the same operation ID and immutable fingerprint, reconstruct that already-identified message once, and return `already_known`; different input conflicts. No general new turn is admitted in recovery-required state.
 
-On this wire, “turn” names the product operation identified by `clientOperationId` and its admitted `turnId`. One product turn may own multiple DSH engine turns: the root message starts the interval, and `turn/followUp` may enqueue later FIFO messages before the operation becomes quiescent. Runtime MUST correlate all owned DSH MessageIds and DSH turn numbers to the same product turn. It MUST NOT emit the product terminal at an intermediate DSH `turn/end` while owned follow-up input remains pending. `limits.maxTurns`, when present, counts DSH engine turns inside this product operation.
+On this wire, “turn” names the product operation identified by `clientOperationId` and its admitted `turnId`. One product turn may own multiple DSH engine turns: the root message starts the interval, and `turn/followUp` may enqueue later FIFO messages before the operation becomes quiescent. Runtime MUST correlate all owned DSH MessageIds and DSH turn numbers to the same product turn. It MUST NOT emit the product terminal at an intermediate DSH `turn/end` while owned follow-up input remains pending. `limits.maxTurns`, when present, counts DSH engine turns inside this product operation and prevents a queued continuation from crossing the exact boundary. `limits.maxCostUsd` uses the frozen rate card and durable DSH usage; the cache counters are disjoint from uncached input. `limits.maxDurationMs` runs from durable admission time and is re-armed from that timestamp after recovery.
+
+Limit arbitration appends one durable first-limit fact to the same DSH Session log. Once present, it prevents further model requests and queued continuation delivery. A turn-count fact maps to `max_turns`, a cost fact maps to `max_budget`, and a duration fact maps to non-retryable `failed` with code `max_duration` because this protocol version has no separate duration terminal. A normal completion exactly at a limit remains normal when no further work would cross the limit. The canonical DSH context-window-exceeded code maps to `context_exhausted`; unrelated provider failures remain `failed`.
 
 ### 11.3 Turn terminal
 
@@ -679,7 +683,7 @@ Host MUST branch on negotiated capability values, not runtime name or version gu
 - Paths are canonicalized and revalidated immediately before side effects.
 - Runtime home, workspace roots, attachment staging, and persistence paths have non-overlapping explicit authorities.
 - Environment inheritance is sealed by allowlist.
-- Network providers enforce scheme, DNS/IP/private-range, redirect, response-size, timeout, and cancellation policy.
+- Network providers enforce scheme, DNS/IP/private-range, redirect, response-size, timeout, and cancellation policy. Remote MCP HTTP/SSE uses a trusted composition-injected capability rather than ambient `fetch`: every request resolves and validates all address-family answers, rejects the whole result if any answer is non-public, and pins the selected public address through transport dispatch while preserving the declared Host name for HTTP/TLS.
 - Credentials are reverse-port-only and request/connection scoped.
 - Every Host response is fenced by generation and current operation/component revision.
 - Model-visible and event-visible text is bounded before serialization.
