@@ -228,6 +228,71 @@ describe("one-primary-session admission", () => {
     expect(restored.dispose).toHaveBeenCalledOnce();
   });
 
+  it("preflights and atomically resumes one updated configuration generation", async () => {
+    const source = fakeHandle("runtime-primary");
+    const replacement = fakeHandle("runtime-primary");
+    const resume = vi.fn((request: PrimarySessionBackendRequest) => Promise.resolve(
+      readyResult(replacement.handle, request.runtimeSessionId, 5, request.params.configRevision),
+    ));
+    const admissionGuard = vi.fn(() => Promise.resolve());
+    const configurationGuard = vi.fn(() => Promise.resolve());
+    const admission = new PrimarySessionAdmission(
+      backendWith(
+        () => Promise.resolve(readyResult(source.handle, "runtime-primary", 4, "config-v1")),
+        resume,
+      ),
+      workspace,
+      createRuntimeSettlementDeadlineAuthority(),
+      admissionGuard,
+      configurationGuard,
+    );
+    await admission.bindCreate(createParams());
+    const config: MethodParams<"config/apply"> = {
+      revision: "config-v2",
+      provider: {
+        ...createParams().provider,
+        revision: "provider-v2",
+        modelId: "fixture-model-v2",
+      },
+      permissionMode: "dontAsk",
+      toolPolicy: { builtinTools: [], autoAllowTools: [], disallowedTools: [] },
+      interactionScenario: "headless-v2",
+      systemPrompt: "Replacement primary Session prompt.",
+      executionEnvironmentRevision: "environment-v1",
+      executionEnvironmentDigest: digest,
+    };
+    const candidate = await admission.prepareConfiguration(config, new AbortController().signal);
+    expect(candidate.alreadyEffective).toBe(false);
+    expect(configurationGuard).toHaveBeenCalledOnce();
+    expect(admissionGuard).toHaveBeenCalledOnce();
+    const applyAuthorities = vi.fn(() => Promise.resolve());
+    await admission.replaceGeneration(
+      candidate.mutationKey,
+      () => Promise.resolve(),
+      applyAuthorities,
+      candidate.params,
+    );
+    expect(applyAuthorities).toHaveBeenCalledWith(source.handle.agent);
+    expect(resume).toHaveBeenCalledOnce();
+    expect(resume.mock.calls[0]?.[0].params).toMatchObject({
+      configRevision: "config-v2",
+      provider: { revision: "provider-v2", modelId: "fixture-model-v2" },
+      permissionMode: "dontAsk",
+      interactionScenario: "headless-v2",
+      systemPrompt: "Replacement primary Session prompt.",
+    });
+    expect(admission.snapshot()).toMatchObject({
+      state: "ready",
+      desiredConfigRevision: "config-v2",
+      effectiveConfigRevision: "config-v2",
+    });
+    await expect(admission.prepareConfiguration(
+      { ...config, systemPrompt: "conflicting content" },
+      new AbortController().signal,
+    )).rejects.toMatchObject({ code: "config_revision_conflict" });
+    await admission.retire();
+  });
+
   it("retries durable mutation resume after the locator committed but first publication failed", async () => {
     const source = fakeHandle("runtime-primary");
     const recovered = fakeHandle("runtime-primary");

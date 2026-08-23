@@ -12,6 +12,7 @@ import {
   type ProductLocalInteractionDisposer,
   type ProductLocalInteractionSettlement,
   type ProductPermissionDecision,
+  type ProductPermissionController,
   type ProductPermissionInteractionRequest,
   type ProductPermissionServiceConfig,
   type ProductToolContext,
@@ -96,6 +97,7 @@ const mounted = async (
   const flushes: string[] = [];
   let now = 1_000;
   let flushResult: boolean | Error | Promise<boolean> = true;
+  let permissionController: ProductPermissionController | undefined;
   await context.plugin(ProductPermissionService, {
     autoAllowTools: overrides.autoAllowTools ?? Object.freeze([]),
     clock: () => now,
@@ -111,8 +113,10 @@ const mounted = async (
     interactionTimeoutMs: overrides.interactionTimeoutMs ?? 1_000,
     maxRules: overrides.maxRules ?? 8,
     mode: overrides.mode ?? "default",
+    registerController: (controller) => { permissionController = controller; },
     ruleTtlMs: overrides.ruleTtlMs ?? 60_000,
   });
+  if (permissionController === undefined) throw new Error("permission controller was not registered");
   const session = context.sessions.create(SessionId("permission-session"));
   session.append("turn/start", { turn: 1 });
   const agent = Object.freeze({
@@ -151,6 +155,7 @@ const mounted = async (
   return Object.freeze({
     agent,
     context,
+    permissionController,
     flushes,
     product,
     session,
@@ -166,6 +171,37 @@ const request = (
 ): ProductToolPermissionRequest => Object.freeze({ permissionClass, target, tool });
 
 describe("product permission policy and local interaction provider", () => {
+  it("durably transitions the permission base at a quiescent configuration boundary", async () => {
+    const first = provider("scenario-v1", (pending, settlement) => response(pending, "deny", settlement));
+    const second = provider("scenario-v2", (pending, settlement) => response(pending, "deny", settlement));
+    const state = await mounted(first.provider);
+    const before = state.context.productPermission.currentRevision(state.agent);
+    await state.permissionController.applyConfiguration(state.agent, Object.freeze({
+      mode: "dontAsk",
+      autoAllowTools: Object.freeze([]),
+      interaction: second.provider,
+    }));
+    const after = state.context.productPermission.currentRevision(state.agent);
+    expect(after).not.toBe(before);
+    expect(state.session.events.at(-1)).toMatchObject({
+      type: "myagents/permission/config",
+      data: {
+        sessionId: "permission-session",
+        previousBaseRevision: before,
+        fromRevision: before,
+        revision: after,
+      },
+    });
+    expect(state.flushes).toEqual(["permission-session"]);
+    expect(foldProductPermissions(
+      state.session.events,
+      "permission-session",
+      after,
+      8,
+      60_000,
+    )).toMatchObject({ baseRevision: after, latestRevision: after });
+  });
+
   it("runs the generation Hook after birth validation and scopes approval to one call", async () => {
     const local = provider("scenario-hook", (pending, settlement) => response(pending, "deny", settlement));
     const decisions: Array<"allow_once" | "deny"> = ["allow_once", "deny"];

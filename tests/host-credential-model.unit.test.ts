@@ -280,6 +280,72 @@ describe("Host credential and model route", () => {
     }))).toThrow(expect.objectContaining({ code: "provider_profile_stale" }));
   });
 
+  it("authorizes one tool-free utility request without a DSH Session operation", async () => {
+    const harness = await createHarness();
+    const requests: unknown[] = [];
+    harness.pair.host.registerRequestHandler("host/credential/resolve", (params) => {
+      requests.push(params);
+      return params.purpose === "availability"
+        ? {
+            authoritativeCredentialRevision: "credential-v1",
+            available: true,
+            kind: "availability" as const,
+          }
+        : {
+            authoritativeCredentialRevision: "credential-v1",
+            kind: "material" as const,
+            material: { [credentialValueField]: "synthetic-host-only-key" },
+          };
+    });
+    const authority = new HostDeepSeekModelAuthority(
+      fakeModelContext(harness.root),
+      harness.credentialController,
+      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" },
+    );
+    const adapter = new HostDeepSeekLlmAdapter(
+      authority,
+      harness.credentials,
+      harness.credentialController,
+    );
+    await authority.preflight(sessionRequest());
+    globalThis.fetch = vi.fn(() => Promise.resolve(new Response([
+      'data: {"choices":[{"delta":{"content":"utility"},"finish_reason":"stop"}]}',
+      'data: {"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n"), {
+      headers: { "content-type": "text/event-stream" },
+      status: 200,
+    })));
+    const signal = new AbortController().signal;
+    const options = { ...modelOptions(signal) };
+    Reflect.deleteProperty(options, "sessionId");
+    const chunks = await authority.runUtilityRequest({
+      clientOperationId: "utility-operation-1",
+      modelProfileRevision: profile.revision,
+    }, signal, async () => {
+      const result = [];
+      for await (const chunk of adapter.stream(options)) result.push(chunk);
+      return result;
+    });
+    expect(chunks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "text-delta", text: "utility" }),
+      expect.objectContaining({ type: "finish" }),
+    ]));
+    expect(requests[1]).toMatchObject({
+      purpose: "model_request",
+      authority: {
+        clientOperationId: "utility-operation-1",
+      },
+    });
+    const materialRequest = requests[1] as {
+      modelRequestId: unknown;
+      authority: { turnId: unknown };
+    };
+    expect(materialRequest.modelRequestId).toMatch(/^utility-model-/u);
+    expect(materialRequest.authority.turnId).toMatch(/^utility-turn-/u);
+  });
+
   it("rejects stale material and never projects Host-controlled secret fields", async () => {
     const harness = await createHarness();
     const secret = "revision-secret-canary";

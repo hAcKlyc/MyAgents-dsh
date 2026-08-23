@@ -139,7 +139,7 @@ Fake filesystem/shell/web/MCP/Host tools/credentials/attachments expose controll
 
 From the canonical TypeBox source generate:
 
-- schema and metadata for all 35 Host requests, seven reverse requests, four notifications, cancellation and error frames;
+- schema and metadata for all 36 Host requests, seven reverse requests, four notifications, cancellation and error frames;
 - minimum/typical/maximum valid fixtures;
 - missing/unknown/wrong-type/over-bound/direction/phase/version invalid fixtures;
 - generated Host client compile fixtures;
@@ -415,7 +415,7 @@ A blocking finding must be closed with code/test/doc evidence. Review prose alon
 This RFC is accepted when:
 
 - every Batch 1 PRD/RFC acceptance statement has an evidence owner and executable test mapping;
-- Standard Test Host can exercise all 35 + 7 + 4 contracts from the clean artifact only;
+- Standard Test Host can exercise all 36 + 7 + 4 contracts from the clean artifact only;
 - all twenty canonical and dynamic Host/MCP tools traverse real DSH `ctx.tools` in E2E evidence;
 - seam, crash, race, backpressure, security, secret-canary, resource and mutation matrices are complete;
 - handoff/self-check/artifact manifests are schema-defined, deterministic and sanitized;

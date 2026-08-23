@@ -31,7 +31,18 @@ export const BATCH1_AVAILABLE_HOST_METHODS = Object.freeze([
   "session/rewind/status",
   "turn/start",
   "turn/get",
+  "turn/steer",
+  "turn/followUp",
+  "turn/message/cancel",
+  "turn/interrupt",
+  "command/invoke",
+  "config/apply",
+  "credential/reconcile",
+  "extension/replace",
+  "extension/status",
   "extension/catalog",
+  "extension/reload",
+  "utility/run",
 ] as const);
 export const BATCH1_AVAILABLE_REVERSE_METHODS = Object.freeze([
   "host/credential/resolve",
@@ -46,6 +57,7 @@ export const BATCH1_AVAILABLE_NOTIFICATIONS = Object.freeze([
   "initialized",
   "rpc/cancel",
   "runtime/event",
+  "host/interaction/cancel",
 ] as const);
 
 export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
@@ -61,6 +73,7 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
   "@myagents-dsh/host-ports:HostPortService",
   "@myagents-dsh/host-ports:HostCredentialProvider",
   "@myagents-dsh/runtime-product:ProductSessionService",
+  "@myagents-dsh/runtime-product:ProductUtilityService",
   "@myagents-dsh/operation-runtime:SdkOperationService",
   "@myagents-dsh/component-runtime:ProductComponentService",
   "@myagents-dsh/rpc-server:NativeRpcServer",

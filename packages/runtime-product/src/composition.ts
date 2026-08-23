@@ -26,6 +26,7 @@ import {
   SdkOperationService,
   type OperationBirthAuthority,
   type OperationBirthSnapshot,
+  type OperationAdmissionControl,
   type OperationLifecycleController,
 } from "@myagents-dsh/operation-runtime";
 import {
@@ -48,7 +49,9 @@ import {
 } from "@myagents-dsh/components-commands";
 import {
   createMcpComponentCompiler,
+  createManagedMcpConnectionFactory,
   type McpConnectionFactory,
+  type ManagedMcpTransportConfig,
 } from "@myagents-dsh/components-mcp";
 import {
   createHostToolComponentCompiler,
@@ -98,6 +101,7 @@ import {
   ProductPermissionService,
   ProductToolRuntime,
   validateProductPermissionPlaneConfig,
+  type ProductPermissionController,
   type ProductPermissionPlaneConfig,
   type ProductLocalInteractionProvider,
   type ProductToolContext,
@@ -144,6 +148,7 @@ import {
   type HostDeepSeekModelPlaneConfig,
 } from "./host-model.js";
 import type { PrimarySessionBackendRequest } from "./primary-session.js";
+import { ProductUtilityService } from "./utility.js";
 import {
   createProductHostInteractionBridge,
   type HostBackedInteractionProviderConfig,
@@ -341,6 +346,31 @@ export interface DshRootCompositionAuthority {
   readonly bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   readonly hostPorts: HostPortTransportLifecycle;
   readonly installPersistence: (runtimeHome: string) => Promise<void>;
+  readonly commandInvoke: (
+    params: MethodParams<"command/invoke">,
+    control: OperationAdmissionControl,
+  ) => Promise<MethodResult<"command/invoke">>;
+  readonly configApply: (
+    params: MethodParams<"config/apply">,
+    control: OperationAdmissionControl,
+  ) => Promise<MethodResult<"config/apply">>;
+  readonly utilityRun: (
+    params: MethodParams<"utility/run">,
+    signal: AbortSignal,
+    maxResultBytes: number,
+  ) => Promise<MethodResult<"utility/run">>;
+  readonly utilityActiveCount: () => number;
+  readonly credentialReconcile: (
+    params: MethodParams<"credential/reconcile">,
+  ) => MethodResult<"credential/reconcile">;
+  readonly extensionReplace: (
+    params: MethodParams<"extension/replace">,
+    signal: AbortSignal,
+  ) => Promise<MethodResult<"extension/replace">>;
+  readonly extensionStatus: () => MethodResult<"extension/status">;
+  readonly extensionReload: (
+    signal: AbortSignal,
+  ) => Promise<MethodResult<"extension/catalog">>;
   readonly respondInteraction: (
     params: MethodParams<"interaction/respond">,
   ) => Promise<MethodResult<"interaction/respond">>;
@@ -374,6 +404,8 @@ type CompositionAuthorityState = {
   canonicalToolPlaneTarget: PlatformTarget | undefined;
   canonicalPermissionMode: string | undefined;
   canonicalAutoAllowTools: readonly string[] | undefined;
+  permissionController: ProductPermissionController | undefined;
+  readonly operationLifecycle: OperationLifecycleController;
   readonly components: ProductComponentServiceController;
   dynamicSkills: ProductDynamicSkillController | undefined;
   dynamicAgents: ProductDynamicAgentController | undefined;
@@ -399,6 +431,14 @@ type NativeRpcLifecycleAuthorityState = {
   readonly dispose: () => Promise<void>;
   readonly hostPorts: HostPortTransportLifecycle;
   readonly installPersistence: (runtimeHome: string, platformTarget: PlatformTarget) => Promise<void>;
+  readonly commandInvoke: DshRootCompositionAuthority["commandInvoke"];
+  readonly configApply: DshRootCompositionAuthority["configApply"];
+  readonly utilityRun: DshRootCompositionAuthority["utilityRun"];
+  readonly utilityActiveCount: DshRootCompositionAuthority["utilityActiveCount"];
+  readonly credentialReconcile: DshRootCompositionAuthority["credentialReconcile"];
+  readonly extensionReplace: DshRootCompositionAuthority["extensionReplace"];
+  readonly extensionStatus: DshRootCompositionAuthority["extensionStatus"];
+  readonly extensionReload: DshRootCompositionAuthority["extensionReload"];
   readonly respondInteraction: (
     params: MethodParams<"interaction/respond">,
   ) => Promise<MethodResult<"interaction/respond">>;
@@ -446,6 +486,29 @@ const assertInitialSessionConfiguration = (
       "primary_session_configuration_stale",
       "initial Session configuration differs from the installed Runtime authorities",
       true,
+    );
+  }
+};
+
+const assertConfigurationToolPolicy = (
+  state: CompositionAuthorityState,
+  params: MethodParams<"config/apply">,
+): void => {
+  if (state.canonicalToolPlane !== "installed" || state.canonicalAutoAllowTools === undefined) {
+    throw new ProtocolError("primary_session_not_ready", "configuration tool authority is not installed", true);
+  }
+  const catalog = state.context.productTools.catalog();
+  const policy = params.toolPolicy;
+  const disabled = catalog.implementationCatalog.filter(
+    (tool) => !catalog.effectiveTools.includes(tool),
+  );
+  if ((policy?.builtinTools !== undefined
+      && !equalStringArrays(policy.builtinTools, catalog.effectiveTools))
+    || (policy?.disallowedTools !== undefined
+      && !equalStringArrays(policy.disallowedTools, disabled))) {
+    throw new ProtocolError(
+      "config_tool_policy_unsupported",
+      "configuration cannot replace the build-owned canonical tool catalog",
     );
   }
 };
@@ -550,10 +613,95 @@ export const claimNativeRpcLifecycleAuthority = (
       state.hostAttachments?.bindLeaseLimit(maxAttachmentLeases),
     consumed: false,
     context: state.context,
+    commandInvoke: (params, control) => state.context.productCommands.invoke(params, control),
+    configApply: (params, control) => state.operationLifecycle.runAtNextQuiescentBoundary(
+      control.signal,
+      control.commit,
+      async () => {
+        assertConfigurationToolPolicy(state, params);
+        const candidate = await state.context.productSession.prepareConfiguration(params, control.signal);
+        if (!candidate.alreadyEffective) {
+          const permission = state.permissionController;
+          const interaction = state.hostInteractionProvider;
+          if (permission === undefined || interaction === undefined) {
+            throw new ProtocolError(
+              "primary_session_not_ready",
+              "configuration permission authority is not installed",
+              true,
+            );
+          }
+          const nextInteraction: ProductLocalInteractionProvider = Object.freeze({
+            revision: params.interactionScenario,
+            decidePermission: (
+              request: Parameters<ProductLocalInteractionProvider["decidePermission"]>[0],
+              settlement: Parameters<ProductLocalInteractionProvider["decidePermission"]>[1],
+            ) =>
+              interaction.decidePermission(request, settlement),
+            answerQuestions: (
+              request: Parameters<ProductLocalInteractionProvider["answerQuestions"]>[0],
+              settlement: Parameters<ProductLocalInteractionProvider["answerQuestions"]>[1],
+            ) =>
+              interaction.answerQuestions(request, settlement),
+          });
+          const autoAllowTools = params.toolPolicy?.autoAllowTools
+            ?? state.canonicalAutoAllowTools ?? Object.freeze([]);
+          await state.context.productSession.replaceConfiguration(candidate, async (agent) => {
+            await permission.applyConfiguration(agent, Object.freeze({
+              mode: params.permissionMode as Parameters<
+                ProductPermissionController["applyConfiguration"]
+              >[1]["mode"],
+              autoAllowTools: autoAllowTools as Parameters<
+                ProductPermissionController["applyConfiguration"]
+              >[1]["autoAllowTools"],
+              interaction: nextInteraction,
+            }));
+            state.canonicalPermissionMode = params.permissionMode;
+            state.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
+            state.hostInteractionRevision = params.interactionScenario;
+          });
+        }
+        const session = state.context.productSession.snapshot();
+        const status = state.context.productComponents.status();
+        return Object.freeze({
+          desiredRevision: params.revision,
+          effectiveRevision: session.effectiveConfigRevision ?? params.revision,
+          state: "applied" as const,
+          components: status.components,
+        });
+      },
+    ),
+    credentialReconcile: (params) => {
+      const credentials = state.hostCredentials;
+      if (credentials === undefined) {
+        throw new ProtocolError("credential_unavailable", "Host credential Provider is not installed", true);
+      }
+      return credentials.reconcileMcp(params);
+    },
     dispose: state.dispose,
     hostPorts,
     installPersistence: (runtimeHome, platformTarget) =>
       installProductPersistence(state, runtimeHome, platformTarget),
+    extensionReplace: (params, signal) => state.components.replace(params, signal),
+    extensionStatus: () => state.context.productComponents.status(),
+    extensionReload: async (signal) => {
+      await state.components.reconcile(signal);
+      return state.context.productComponents.catalog();
+    },
+    utilityRun: (params, signal, maxResultBytes) => {
+      const utility = state.context.get("productUtility");
+      if (!(utility instanceof ProductUtilityService)) {
+        return Promise.reject(new ProtocolError(
+          "utility_unavailable",
+          "utility model service is not installed",
+          true,
+        ));
+      }
+      return utility.run(params, signal, maxResultBytes);
+    },
+    utilityActiveCount: () => {
+      const utility = state.context.get("productUtility");
+      return utility instanceof ProductUtilityService ? utility.activeCount : 0;
+    },
     respondInteraction: (params) => state.hostInteraction?.respond(params)
       ?? Promise.resolve(Object.freeze({ state: "expired" as const })),
     sessionCatalogs: () => {
@@ -599,8 +747,16 @@ export const consumeNativeRpcLifecycleAuthority = (
     artifactManifestSha256: snapshot.artifactManifestSha256,
     artifactVersion: snapshot.artifactVersion,
     bindAttachmentLeaseLimit: state.bindAttachmentLeaseLimit,
+    commandInvoke: state.commandInvoke,
+    configApply: state.configApply,
     context: installationContext,
     dispose: state.dispose,
+    credentialReconcile: state.credentialReconcile,
+    extensionReload: state.extensionReload,
+    extensionReplace: state.extensionReplace,
+    extensionStatus: state.extensionStatus,
+    utilityRun: state.utilityRun,
+    utilityActiveCount: state.utilityActiveCount,
     hostPorts: state.hostPorts,
     installPersistence: (runtimeHome: string) => state.installPersistence(runtimeHome, platformTarget),
     respondInteraction: state.respondInteraction,
@@ -886,6 +1042,7 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(UserQuestionService));
     const permissionDeadline = root.productSession.settlementDeadlineAuthority();
     let hookController: ProductHookRuntimeController | undefined;
+    let permissionController: ProductPermissionController | undefined;
     fibers.push(await root.plugin(ProductPermissionService, {
       ...permissionConfig,
       clock: Date.now,
@@ -902,7 +1059,16 @@ export const installCanonicalToolPlane = async (
           tool: string;
         }>) => hookController?.authorizePermission(context, request) ?? Promise.resolve("continue" as const),
       }),
+      registerController: (controller) => {
+        if (permissionController !== undefined) {
+          throw new Error("product permission controller may register exactly once");
+        }
+        permissionController = controller;
+      },
     }));
+    if (permissionController === undefined) {
+      throw new Error("product permission service did not register its composition controller");
+    }
     const planAuthority: ProductToolRuntimeConfig["plan"] = Object.freeze({
       assert: (context, tool) => root.productPlan.assertTool(context, tool),
       resolveFileTarget: (context, tool, path, mode) =>
@@ -1170,6 +1336,7 @@ export const installCanonicalToolPlane = async (
     authority.canonicalToolPlane = "installed";
     authority.canonicalPermissionMode = permissionConfig.mode;
     authority.canonicalAutoAllowTools = permissionConfig.autoAllowTools;
+    authority.permissionController = permissionController;
     authority.hostAttachments = installedAttachmentController;
     authority.dynamicSkills = dynamicSkills;
     authority.dynamicAgents = dynamicAgents;
@@ -1264,6 +1431,14 @@ export const createProductMcpComponentCompiler = (
     },
   });
 };
+
+export const createProductManagedMcpComponentCompiler = (
+  composition: DshRootComposition,
+  config: ManagedMcpTransportConfig,
+): ComponentCompiler => createProductMcpComponentCompiler(
+  composition,
+  createManagedMcpConnectionFactory(composition.context, config),
+);
 
 export const createProductHostToolComponentCompiler = (
   composition: DshRootComposition,
@@ -1461,6 +1636,7 @@ export const installHostDeepSeekModelPlane = async (
       [HOST_DEEPSEEK_PROVIDER_ROUTE],
       new HostDeepSeekLlmAdapter(modelAuthority, root.credentials, credentialController),
     ));
+    await root.plugin(ProductUtilityService, { authority: modelAuthority });
     authority.hostCredentials = credentialController;
     authority.hostModelProviderRoute = HOST_DEEPSEEK_PROVIDER_ROUTE;
     authority.hostModelPlane = "installed";
@@ -1535,6 +1711,9 @@ export const composeDshRootServices = async (
         if (authority === undefined) throw new Error("root composition authority is unavailable");
         root.productComponents.assertSessionExtensionCatalog(request.params.extensionDigest);
         assertInitialSessionConfiguration(authority, request);
+        await providerAdmissionGuard?.(request);
+      },
+      providerConfigurationGuard: async (request) => {
         await providerAdmissionGuard?.(request);
       },
       readSession: (request) => {
@@ -1726,11 +1905,11 @@ export const composeDshRootServices = async (
       },
       inputAuthority: Object.freeze({
         prepare: async (
-          params: MethodParams<"turn/start">,
+          input: MethodParams<"turn/start">["input"],
           birth: OperationBirthSnapshot,
           signal: AbortSignal,
         ): Promise<readonly ContentBlock[]> => {
-          const images = params.input.parts.filter((part) => part.kind === "image_ref");
+          const images = input.parts.filter((part) => part.kind === "image_ref");
           const totalImageBytes = images.reduce((total, image) => total + image.sizeBytes, 0);
           if (images.length > 20 || !Number.isSafeInteger(totalImageBytes)
             || totalImageBytes > 100 * 1_024 * 1_024
@@ -1765,7 +1944,7 @@ export const composeDshRootServices = async (
               || currentEnvironment.digest !== birth.executionEnvironmentDigest) {
               throw new ProtocolError("operation_birth_stale", "attachment input environment authority is stale");
             }
-            root.productComponents.assertSessionExtensionCatalog(params.extensionDigest);
+            root.productComponents.assertSessionExtension(birth.componentDigest);
             if (root.productComponents.status().effectiveRevision !== birth.componentRevision) {
               throw new ProtocolError("operation_birth_stale", "attachment input component authority is stale");
             }
@@ -1786,7 +1965,7 @@ export const composeDshRootServices = async (
             }));
           }
           const content: ContentBlock[] = [];
-          for (const part of params.input.parts) {
+          for (const part of input.parts) {
             if (part.kind === "text") {
               content.push(Object.freeze({ type: "text" as const, text: part.text }));
               continue;
@@ -1900,6 +2079,8 @@ export const composeDshRootServices = async (
       canonicalToolPlaneTarget: undefined,
       canonicalPermissionMode: undefined,
       canonicalAutoAllowTools: undefined,
+      permissionController: undefined,
+      operationLifecycle,
       components: componentController,
       componentPlane: "absent",
       dynamicAgents: undefined,

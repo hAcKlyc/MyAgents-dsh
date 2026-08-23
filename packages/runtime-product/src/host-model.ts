@@ -39,12 +39,20 @@ import type {
   HostProviderRequestScope,
 } from "@myagents-dsh/host-ports";
 import { ProtocolError, type MethodParams } from "@myagents-dsh/protocol";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isProxy } from "node:util/types";
 
 import type { PrimarySessionBackendRequest } from "./primary-session.js";
 
 type ProviderProfile = MethodParams<"session/create">["provider"];
+
+type HostUtilityRequest = Readonly<{
+  clientOperationId: string;
+  signal: AbortSignal;
+  token: object;
+}>;
 
 export const HOST_DEEPSEEK_PROVIDER_ROUTE = "deepseek-official";
 export const HOST_DEEPSEEK_BASE_URL = PUBLIC_BASE_URL;
@@ -264,7 +272,7 @@ export class HostDeepSeekModelAuthority {
   readonly #credentials: HostCredentialProviderController;
   #binding: HostProviderCredentialBinding | undefined;
   #candidate: PrimarySessionBackendRequest | undefined;
-  #failed = false;
+  readonly #utilityRequest = new AsyncLocalStorage<HostUtilityRequest>();
 
   constructor(
     context: Context,
@@ -277,13 +285,19 @@ export class HostDeepSeekModelAuthority {
   }
 
   async preflight(request: PrimarySessionBackendRequest): Promise<void> {
-    if (this.#failed || this.#candidate !== undefined || this.#binding !== undefined) {
+    if (this.#candidate !== undefined) {
       throw new ProtocolError(
         "provider_profile_conflict",
-        "Runtime generation already owns a Provider profile admission",
+        "another Provider profile admission is already in progress",
       );
     }
     const profile = validateHostDeepSeekProfile(request.params.provider);
+    const current = this.#binding;
+    if (current?.runtimeSessionId === request.runtimeSessionId
+      && current.configRevision === request.params.configRevision
+      && isDeepStrictEqual(current.profile, profile)) {
+      return;
+    }
     this.#candidate = request;
     const assertCurrent = (): void => {
       if (this.#candidate !== request || request.signal.aborted) {
@@ -304,9 +318,6 @@ export class HostDeepSeekModelAuthority {
       });
       assertCurrent();
       this.#binding = binding;
-    } catch (error) {
-      this.#failed = true;
-      throw error;
     } finally {
       if (this.#candidate === request) this.#candidate = undefined;
     }
@@ -353,6 +364,34 @@ export class HostDeepSeekModelAuthority {
         "provider_profile_stale",
         "model request differs from the admitted Provider profile",
       );
+    }
+    const utility = this.#utilityRequest.getStore();
+    if (utility !== undefined) {
+      if (utility.signal !== signal || utility.signal.aborted) {
+        throw new ProtocolError("provider_request_stale", "utility model request authority is stale");
+      }
+      const digest = createHash("sha256").update(JSON.stringify([
+        "myagents-dsh-utility-model-request-v1",
+        utility.clientOperationId,
+      ])).digest("hex").slice(0, 48);
+      const assertCurrent = (): void => {
+        if (this.#binding !== binding || utility.signal.aborted
+          || this.#utilityRequest.getStore()?.token !== utility.token) {
+          throw new ProtocolError("provider_request_stale", "utility model request authority is stale");
+        }
+      };
+      const scope = this.#credentials.createProviderRequestScope({
+        assertCurrent,
+        binding,
+        clientOperationId: utility.clientOperationId,
+        deadlineMs: this.#config.requestDeadlineMs,
+        dshTurn: 1,
+        modelRequestId: `utility-model-${digest}`,
+        rootCallId: `utility-call-${digest}`,
+        signal,
+        turnId: `utility-turn-${digest}`,
+      });
+      return Object.freeze({ binding, scope });
     }
     if (options.sessionId === undefined) {
       throw new ProtocolError(
@@ -412,12 +451,37 @@ export class HostDeepSeekModelAuthority {
     return userId as DeepSeekUserId;
   }
 
+  runUtilityRequest<T>(
+    params: Readonly<Pick<MethodParams<"utility/run">, "clientOperationId" | "modelProfileRevision">>,
+    signal: AbortSignal,
+    action: (profile: ProviderProfile) => Promise<T>,
+  ): Promise<T> {
+    if (!(signal instanceof AbortSignal) || isProxy(signal)
+      || typeof action !== "function" || isProxy(action)) {
+      return Promise.reject(new TypeError("utility model request requires native cancellation and action"));
+    }
+    const binding = this.requireBinding();
+    if (binding.profile.revision !== params.modelProfileRevision) {
+      return Promise.reject(new ProtocolError(
+        "model_profile_stale",
+        "utility model profile revision is not effective",
+        true,
+      ));
+    }
+    const request = Object.freeze({
+      clientOperationId: params.clientOperationId,
+      signal,
+      token: Object.freeze({}),
+    });
+    return this.#utilityRequest.run(request, () => action(binding.profile));
+  }
+
   resolveAttachments() {
     return this.#context.get("attachments");
   }
 
   private requireBinding(): HostProviderCredentialBinding {
-    if (this.#failed || this.#binding === undefined) {
+    if (this.#binding === undefined) {
       throw new ProtocolError(
         "provider_profile_not_ready",
         "Host Provider profile is not ready",

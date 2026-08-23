@@ -340,6 +340,29 @@ type NativeRpcCompositionCapabilities = Readonly<{
   bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   hostPorts: HostPortTransportLifecycle;
   installPersistence: (runtimeHome: string) => Promise<void>;
+  commandInvoke: (
+    params: MethodParams<"command/invoke">,
+    control: Readonly<{ signal: AbortSignal; commit: () => void }>,
+  ) => Promise<MethodResult<"command/invoke">>;
+  configApply: (
+    params: MethodParams<"config/apply">,
+    control: Readonly<{ signal: AbortSignal; commit: () => void }>,
+  ) => Promise<MethodResult<"config/apply">>;
+  utilityRun: (
+    params: MethodParams<"utility/run">,
+    signal: AbortSignal,
+    maxResultBytes: number,
+  ) => Promise<MethodResult<"utility/run">>;
+  utilityActiveCount: () => number;
+  credentialReconcile: (
+    params: MethodParams<"credential/reconcile">,
+  ) => MethodResult<"credential/reconcile">;
+  extensionReplace: (
+    params: MethodParams<"extension/replace">,
+    signal: AbortSignal,
+  ) => Promise<MethodResult<"extension/replace">>;
+  extensionStatus: () => MethodResult<"extension/status">;
+  extensionReload: (signal: AbortSignal) => Promise<MethodResult<"extension/catalog">>;
   sessionCatalogs: () => Readonly<Pick<
     Extract<MethodResult<"session/create">, { state: "ready" }>,
     "extensionCatalog" | "toolCatalog"
@@ -402,9 +425,17 @@ export class NativeRpcServer extends Service {
     }
     nativeRpcCompositionCapabilities.set(this, Object.freeze({
       bindAttachmentLeaseLimit: compositionAuthority.bindAttachmentLeaseLimit,
+      commandInvoke: compositionAuthority.commandInvoke,
+      configApply: compositionAuthority.configApply,
+      credentialReconcile: compositionAuthority.credentialReconcile,
+      extensionReload: compositionAuthority.extensionReload,
+      extensionReplace: compositionAuthority.extensionReplace,
+      extensionStatus: compositionAuthority.extensionStatus,
       hostPorts: compositionAuthority.hostPorts,
       installPersistence: compositionAuthority.installPersistence,
       sessionCatalogs: compositionAuthority.sessionCatalogs,
+      utilityRun: compositionAuthority.utilityRun,
+      utilityActiveCount: compositionAuthority.utilityActiveCount,
     }));
     this.terminationCommittedPromise = new Promise((resolve) => {
       this.resolveTermination = resolve;
@@ -546,8 +577,69 @@ export class NativeRpcServer extends Service {
           })))),
         registered("turn/get", this.peerValue.registerRequestHandler("turn/get", (params) =>
           this.operationsValue.get(params))),
+        registered("turn/steer", this.peerValue.registerRequestHandler("turn/steer", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return this.operationsValue.steer(params, context.signal);
+        })),
+        registered("turn/followUp", this.peerValue.registerRequestHandler("turn/followUp", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return this.operationsValue.followUp(params, context.signal);
+        })),
+        registered("turn/message/cancel", this.peerValue.registerRequestHandler("turn/message/cancel", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return this.operationsValue.cancelMessage(params);
+        })),
+        registered("turn/interrupt", this.peerValue.registerRequestHandler("turn/interrupt", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return this.operationsValue.interrupt(params);
+        })),
+        registered("command/invoke", this.peerValue.registerRequestHandler("command/invoke", (params, context) =>
+          compositionAuthority.commandInvoke(params, Object.freeze({
+            signal: context.signal,
+            commit: () => context.commit(),
+          })))),
+        registered("config/apply", this.peerValue.registerRequestHandler("config/apply", (params, context) =>
+          compositionAuthority.configApply(params, Object.freeze({
+            signal: context.signal,
+            commit: () => context.commit(),
+          })))),
+        registered("credential/reconcile", this.peerValue.registerRequestHandler("credential/reconcile", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return compositionAuthority.credentialReconcile(params);
+        })),
+        registered("extension/replace", this.peerValue.registerRequestHandler("extension/replace", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return compositionAuthority.extensionReplace(params, context.signal);
+        })),
+        registered("extension/status", this.peerValue.registerRequestHandler("extension/status", () =>
+          compositionAuthority.extensionStatus())),
         registered("extension/catalog", this.peerValue.registerRequestHandler("extension/catalog", () =>
           compositionAuthority.sessionCatalogs().extensionCatalog)),
+        registered("extension/reload", this.peerValue.registerRequestHandler("extension/reload", (params, context) => {
+          void params;
+          context.signal.throwIfAborted();
+          context.commit();
+          return compositionAuthority.extensionReload(context.signal);
+        })),
+        registered("utility/run", this.peerValue.registerRequestHandler("utility/run", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          const envelopeWithNullResult = `${JSON.stringify({
+            jsonrpc: "2.0",
+            id: "x".repeat(256),
+            result: null,
+          })}\n`;
+          const resultBudget = this.peerValue.maxFrameBytes
+            - Buffer.byteLength(envelopeWithNullResult, "utf8")
+            + Buffer.byteLength("null", "utf8");
+          return compositionAuthority.utilityRun(params, context.signal, resultBudget);
+        })),
       );
       if (JSON.stringify(registeredHostMethods) !== JSON.stringify(BATCH1_AVAILABLE_HOST_METHODS)) {
         throw new Error("native RPC registered Host methods differ from the candidate profile");
@@ -705,6 +797,7 @@ export class NativeRpcServer extends Service {
         compactions: primarySession.activeCompactions,
         rootTurns: activeOperations.length,
         queuedInputs,
+        utilityRuns: compositionCapabilitiesOf(this).utilityActiveCount(),
       },
     });
   }

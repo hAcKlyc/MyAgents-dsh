@@ -20,6 +20,7 @@ import {
   createProductCommandComponentCompiler,
   createProductHookComponentCompiler,
   createProductHostToolComponentCompiler,
+  createProductManagedMcpComponentCompiler,
   createProductSkillComponentCompiler,
   installCanonicalToolPlane,
   installHostDeepSeekModelPlane,
@@ -237,6 +238,9 @@ export const composeOfficialRuntimeServices = async (
     const componentConfig = Object.freeze({
       catalog: OFFICIAL_TOOL_CATALOG,
       compilers: Object.freeze([
+        createProductManagedMcpComponentCompiler(configured, Object.freeze({
+          launchProfiles: Object.freeze({}),
+        })),
         createProductSkillComponentCompiler(configured),
         createProductAgentComponentCompiler(configured),
         createProductCommandComponentCompiler(configured),

@@ -3,11 +3,18 @@ import { CallId } from "@deepseek-ai/dsh-llm";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import {
+  SubprocessRuntime,
+  type SubprocessHandle,
+  type SubprocessSpawnSpec,
+  type SubprocessTerminalHandle,
+} from "@deepseek-ai/dsh-subprocess";
+import {
   ProductComponentService,
   type ProductComponentServiceController,
 } from "@myagents-dsh/component-runtime";
 import {
   createMcpComponentCompiler,
+  createManagedMcpConnectionFactory,
   type McpConnection,
   type McpConnectionFactory,
 } from "@myagents-dsh/components-mcp";
@@ -27,11 +34,86 @@ import {
   type MethodParams,
 } from "@myagents-dsh/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PassThrough } from "node:stream";
 
 const contexts: Context[] = [];
 
+class FixtureManagedSubprocess extends SubprocessRuntime {
+  readonly methods: string[] = [];
+  spawnSpec: SubprocessSpawnSpec | undefined;
+
+  resolveExecutable(command: string): Promise<string> {
+    return Promise.resolve(`/approved/${command}`);
+  }
+
+  spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    this.spawnSpec = spec;
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    let input = "";
+    let exited = false;
+    let settle: ((value: { exitCode: number | null; signal: NodeJS.Signals | null }) => void) | undefined;
+    const done = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+      settle = resolve;
+    });
+    const terminate = (): void => {
+      if (exited) return;
+      exited = true;
+      stdout.end();
+      settle?.({ exitCode: 0, signal: null });
+    };
+    stdin.on("data", (chunk: Buffer | string) => {
+      input += chunk.toString();
+      for (;;) {
+        const newline = input.indexOf("\n");
+        if (newline < 0) break;
+        const line = input.slice(0, newline);
+        input = input.slice(newline + 1);
+        const request = JSON.parse(line) as JSONRPCMessage;
+        if (!("method" in request)) continue;
+        this.methods.push(request.method);
+        if (!("id" in request)) continue;
+        const result = request.method === "initialize"
+          ? {
+              capabilities: { tools: {} },
+              protocolVersion: LATEST_PROTOCOL_VERSION,
+              serverInfo: { name: "managed-fixture", version: "1.0.0" },
+            }
+          : request.method === "tools/list"
+            ? { tools: [{ name: "echo", inputSchema: { type: "object" } }] }
+            : { content: [{ type: "text", text: "managed result" }], isError: false };
+        queueMicrotask(() => stdout.write(`${JSON.stringify({
+          id: request.id,
+          jsonrpc: "2.0",
+          result,
+        })}\n`));
+      }
+    });
+    stdin.on("finish", terminate);
+    return Object.freeze({
+      collected: Object.freeze({}),
+      done,
+      pid: 123,
+      stderr: undefined,
+      stdin,
+      stdout,
+      terminate,
+      waitForExit: (signal?: AbortSignal) => exited
+        ? Promise.resolve(true)
+        : signal === undefined
+          ? done.then(() => true)
+          : Promise.resolve(false),
+    });
+  }
+
+  spawnTerminal(): Promise<SubprocessTerminalHandle> {
+    return Promise.reject(new Error("terminal subprocess is outside this fixture"));
+  }
+}
+
 afterEach(async () => {
   await Promise.allSettled(contexts.splice(0).map((context) => context.fiber.dispose()));
+  vi.unstubAllGlobals();
 });
 
 const catalog = (): EffectiveToolCatalogSnapshot => {
@@ -63,6 +145,93 @@ const snapshot = (revision: string, includeMcp = true): MethodParams<"extension/
 };
 
 describe("generation-owned MCP component compiler", () => {
+  it("runs approved stdio profiles through the managed DSH subprocess Provider", async () => {
+    const root = new Context();
+    contexts.push(root);
+    await root.plugin(FixtureManagedSubprocess);
+    const factory = createManagedMcpConnectionFactory(root, Object.freeze({
+      launchProfiles: Object.freeze({
+        fixture: Object.freeze({
+          argv: Object.freeze(["fixture-mcp", "--stdio"]),
+          cwd: "/approved/workspace",
+          env: Object.freeze({ FIXTURE_MODE: "1" }),
+        }),
+      }),
+    }));
+    const signal = new AbortController().signal;
+    const connection = await factory.connect({
+      descriptor: { transport: "stdio", launchProfileRef: "fixture" },
+      material: Object.freeze({ MCP_TOKEN: "fixture-secret" }),
+      serverId: "fixture",
+      signal,
+    });
+    await expect(connection.listTools(signal)).resolves.toMatchObject([{ name: "echo" }]);
+    await expect(connection.callTool("echo", Object.freeze({}), signal)).resolves.toMatchObject({
+      content: [{ text: "managed result", type: "text" }],
+    });
+    await connection.close();
+    const runtime = root.subprocess as FixtureManagedSubprocess;
+    expect(runtime.methods).toEqual(["initialize", "notifications/initialized", "tools/list", "tools/call"]);
+    expect(runtime.spawnSpec).toMatchObject({
+      argv: ["/approved/fixture-mcp", "--stdio"],
+      cwd: "/approved/workspace",
+      env: { FIXTURE_MODE: "1", MCP_TOKEN: "fixture-secret" },
+      stdio: { stdin: "pipe", stdout: "pipe" },
+    });
+  });
+
+  it("runs remote HTTP through bounded same-origin requests with connection-scoped headers", async () => {
+    const root = new Context();
+    contexts.push(root);
+    const requests: Array<Readonly<{ method: string; url: string; authorization: string | null }>> = [];
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = init?.method ?? "GET";
+      const headers = new Headers(init?.headers);
+      requests.push(Object.freeze({
+        authorization: headers.get("authorization"),
+        method,
+        url,
+      }));
+      if (method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
+      if (typeof init?.body !== "string") return Promise.reject(new Error("fixture expected a JSON body"));
+      const message = JSON.parse(init.body) as JSONRPCMessage;
+      if (!("method" in message)) return Promise.reject(new Error("fixture expected an MCP request"));
+      if (!("id" in message)) return Promise.resolve(new Response(null, { status: 202 }));
+      const result = message.method === "initialize"
+        ? {
+            capabilities: { tools: {} },
+            protocolVersion: LATEST_PROTOCOL_VERSION,
+            serverInfo: { name: "http-fixture", version: "1.0.0" },
+          }
+        : message.method === "tools/list"
+          ? { tools: [{ name: "echo", inputSchema: { type: "object" } }] }
+          : { content: [{ type: "text", text: "http result" }], isError: false };
+      return Promise.resolve(new Response(JSON.stringify({ id: message.id, jsonrpc: "2.0", result }), {
+        headers: { "content-type": "application/json", "mcp-session-id": "fixture-session" },
+        status: 200,
+      }));
+    }));
+    const factory = createManagedMcpConnectionFactory(root, Object.freeze({
+      launchProfiles: Object.freeze({}),
+    }));
+    const signal = new AbortController().signal;
+    const connection = await factory.connect({
+      descriptor: { transport: "http", url: "https://mcp.example.test/rpc" },
+      material: Object.freeze({ Authorization: "Bearer fixture" }),
+      serverId: "fixture",
+      signal,
+    });
+    await expect(connection.listTools(signal)).resolves.toMatchObject([{ name: "echo" }]);
+    await expect(connection.callTool("echo", Object.freeze({}), signal)).resolves.toMatchObject({
+      content: [{ text: "http result", type: "text" }],
+    });
+    await connection.close();
+    expect(requests.map(({ method }) => method)).toEqual(["POST", "POST", "POST", "POST", "DELETE"]);
+    expect(requests.every(({ authorization, url }) => authorization === "Bearer fixture"
+      && url === "https://mcp.example.test/rpc")).toBe(true);
+  });
+
   it("uses the public MCP SDK client over one composition-selected transport", async () => {
     let closeHits = 0;
     const methods: string[] = [];

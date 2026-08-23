@@ -1836,17 +1836,65 @@ try {
   const hostModelTerminal = hostModelComposition.context.sdkOperations
     .lookup("artifact-host-model-operation")?.terminal;
   assert.equal(hostModelTerminal?.kind, "succeeded");
+  const utilityBeforeConfig = await hostModelClient.utilityRun({
+    clientOperationId: "artifact-host-model-utility-v1",
+    prompt: "Return one concise utility result.",
+    systemPrompt: "Use no tools.",
+    modelProfileRevision: hostModelProfile.revision,
+    maxTokens: 32,
+  });
+  assert.equal(utilityBeforeConfig.state, "succeeded");
+  assert.equal(utilityBeforeConfig.text, "root credential and MCP route verified");
+  const nextHostModelProfile = Object.freeze({
+    ...hostModelProfile,
+    revision: "artifact-host-model-profile-v2",
+  });
+  const appliedConfig = await hostModelClient.configApply({
+    revision: "artifact-host-model-config-v2",
+    provider: nextHostModelProfile,
+    permissionMode: "default",
+    interactionScenario: "artifact-interaction-v1",
+    systemPrompt: "Updated credential-free Host model evidence.",
+    executionEnvironmentRevision: initializeRequest.executionEnvironment.revision,
+    executionEnvironmentDigest: initializeRequest.executionEnvironment.digest,
+  });
+  assert.deepEqual(appliedConfig, {
+    desiredRevision: "artifact-host-model-config-v2",
+    effectiveRevision: "artifact-host-model-config-v2",
+    state: "applied",
+    components: hostModelComposition.context.productComponents.status().components,
+  });
+  assert.equal(
+    hostModelComposition.context.productSession.requireOperationConfigRevision(),
+    "artifact-host-model-config-v2",
+  );
+  assert.equal(
+    hostModelComposition.context.productSession.requireOperationModelProfileRevision(),
+    nextHostModelProfile.revision,
+  );
+  const utilityAfterConfig = await hostModelClient.utilityRun({
+    clientOperationId: "artifact-host-model-utility-v2",
+    prompt: "Return one concise utility result after configuration replacement.",
+    systemPrompt: "Use no tools.",
+    modelProfileRevision: nextHostModelProfile.revision,
+    maxTokens: 32,
+  });
+  assert.equal(utilityAfterConfig.state, "succeeded");
+  assert.equal(utilityAfterConfig.text, "root credential and MCP route verified");
 } finally {
   globalThis.fetch = previousFetch;
 }
-assert.deepEqual(hostModelAuthorization, Array.from({ length: 4 }, () => `Bearer ${hostModelSecret}`));
+assert.deepEqual(hostModelAuthorization, Array.from({ length: 6 }, () => `Bearer ${hostModelSecret}`));
 assert.ok(hostModelInteractionCalls.length > 0);
-assert.equal(hostModelCredentialCalls.length, 5);
+assert.equal(hostModelCredentialCalls.length, 8);
 assert.deepEqual(hostModelCredentialCalls.map(({ purpose }) => purpose), [
   "availability",
   "model_request",
   "model_request",
   "model_request",
+  "model_request",
+  "model_request",
+  "availability",
   "model_request",
 ]);
 const hostModelMaterialRequest = hostModelCredentialCalls[1];
@@ -1868,11 +1916,35 @@ assert.equal(hostModelChildMaterialRequest.authority.expectedConfigRevision, "ar
 assert.equal(hostModelChildMaterialRequest.authority.expectedCredentialRevision, "artifact-credential-v1");
 const hostModelRequestAuthorityBound = hostModelCredentialCalls
   .filter((request) => request.subject === "provider" && request.purpose === "model_request")
+  .filter((request) => request.authority.clientOperationId === "artifact-host-model-operation")
   .every((request) => request.authority.clientOperationId === "artifact-host-model-operation"
     && request.authority.expectedConfigRevision === "artifact-host-model-config-v1"
     && request.authority.expectedCredentialRevision === "artifact-credential-v1"
     && request.authority.runtimeSessionId === "artifact-host-model-runtime-session"
     && request.authority.dshTurn === 1);
+const hostModelUtilityRequests = hostModelCredentialCalls.flatMap((request) => {
+  if (request.subject !== "provider" || request.purpose !== "model_request"
+    || request.authority.clientOperationId?.startsWith("artifact-host-model-utility-") !== true) {
+    return [];
+  }
+  return [Object.freeze({
+    clientOperationId: request.authority.clientOperationId,
+    expectedConfigRevision: request.authority.expectedConfigRevision,
+    modelRequestId: request.modelRequestId.startsWith("utility-model-"),
+    turnId: request.authority.turnId?.startsWith("utility-turn-"),
+  })];
+});
+assert.deepEqual(hostModelUtilityRequests, [{
+  clientOperationId: "artifact-host-model-utility-v1",
+  expectedConfigRevision: "artifact-host-model-config-v1",
+  modelRequestId: true,
+  turnId: true,
+}, {
+  clientOperationId: "artifact-host-model-utility-v2",
+  expectedConfigRevision: "artifact-host-model-config-v2",
+  modelRequestId: true,
+  turnId: true,
+}]);
 const hostCredentialPrivateMethods = [
   "createProviderRequestScope",
   "preflightMcp",
@@ -1920,7 +1992,7 @@ assert.deepEqual(hostModelMcpResult.data.message.content, [{
   type: "tool-result",
 }]);
 assert.equal(hostModelMcpPermissionVerified, true);
-const hostCredentialModelVerified = hostModelFetchSequence === 4
+const hostCredentialModelVerified = hostModelFetchSequence === 6
   && hostCredentialPublicControllerHidden
   && hostModelRequestAuthorityBound
   && hostModelSecretProjectionRejected

@@ -94,6 +94,14 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
       context: context.root,
       dispose: () => Promise.resolve(),
       bindAttachmentLeaseLimit: hostPortLifecycleState.current.bindAttachmentLeaseLimit,
+      configApply: (params: MethodParams<"config/apply">) => Promise.resolve(Object.freeze({
+        desiredRevision: params.revision,
+        effectiveRevision: params.revision,
+        state: "applied" as const,
+        components: Object.freeze([]),
+      })),
+      utilityActiveCount: () => 0,
+      utilityRun: () => Promise.resolve(Object.freeze({ state: "succeeded" as const, text: "synthetic" })),
       hostPorts: hostPortLifecycleState.current,
       installPersistence: (runtimeHome: string) => persistenceInstallState.current(runtimeHome),
       respondInteraction: (params: MethodParams<"interaction/respond">) =>
@@ -543,6 +551,28 @@ describe("native RPC Cordis service", () => {
             turnId: `turn-${input.clientOperationId}`,
           },
         });
+      const session = sessionParams("native-config-session", "native-config-bind");
+      await expect(within("config/apply", harness.client.configApply({
+        revision: "config-v2",
+        provider: { ...session.provider, revision: "provider-v2" },
+        permissionMode: "dontAsk",
+        interactionScenario: "deterministic-headless-v2",
+        systemPrompt: "Updated synthetic prompt.",
+        executionEnvironmentRevision: "environment-v1",
+        executionEnvironmentDigest: digest,
+      }))).resolves.toEqual({
+        desiredRevision: "config-v2",
+        effectiveRevision: "config-v2",
+        state: "applied",
+        components: [],
+      });
+      await expect(within("utility/run", harness.client.utilityRun({
+        clientOperationId: "native-utility-v1",
+        prompt: "Return a bounded answer.",
+        systemPrompt: "No tools.",
+        modelProfileRevision: "provider-v2",
+        maxTokens: 16,
+      }))).resolves.toEqual({ state: "succeeded", text: "synthetic" });
     } finally {
       await harness.close();
     }

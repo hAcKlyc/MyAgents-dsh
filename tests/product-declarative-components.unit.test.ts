@@ -275,6 +275,31 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
         origin: { kind: "desktop" },
       });
       expect(events).toHaveLength(2);
+      let commits = 0;
+      await expect(root.productCommands.invoke({
+        clientOperationId: "host-command-operation",
+        clientUserMessageId: "host-command-message",
+        commandId: "rr",
+        arguments: ["main branch", "feature"],
+        configRevision: "config-v1",
+        extensionDigest: "b".repeat(64),
+        executionEnvironmentRevision: "environment-v1",
+        executionEnvironmentDigest: "e".repeat(64),
+        limits: { maxTurns: 2 },
+        origin: { kind: "desktop" },
+      }, Object.freeze({
+        signal: new AbortController().signal,
+        commit: () => { commits += 1; },
+      }))).resolves.toEqual({
+        clientOperationId: "host-command-operation",
+        state: "accepted",
+      });
+      expect(commits).toBe(1);
+      expect(starts[1]).toMatchObject({
+        clientOperationId: "host-command-operation",
+        clientUserMessageId: "host-command-message",
+        input: { parts: [{ kind: "text", text: "Review main branch against feature. Context: main branch feature" }] },
+      });
       unpublish();
       expect(root.commands.list(agent)).toEqual([]);
       prepared.dispose();

@@ -28,6 +28,7 @@ export interface ProductOperationMessageRecord {
   readonly kind: "root" | "steer" | "follow_up";
   readonly state: "queued" | "claimed" | "cancelled";
   readonly delivered: boolean;
+  readonly inputFingerprint?: string;
   readonly dshTurn?: number;
   readonly cancellationReason?: "user" | "host_shutdown" | "session_replaced";
   readonly cancelledAtSeq?: number;
@@ -75,6 +76,7 @@ type MutableMessage = {
   kind: "root" | "steer" | "follow_up";
   state: "queued" | "claimed" | "cancelled";
   delivered: boolean;
+  inputFingerprint?: string;
   dshTurn?: number;
   cancellationReason?: "user" | "host_shutdown" | "session_replaced";
   cancelledAtSeq?: number;
@@ -250,7 +252,7 @@ const validateAccepted = (value: unknown): ProductOperationAccepted => {
 const validateMessage = (value: unknown): ProductOperationMessage => {
   const event = exactOwnDataObject(value, [
     "clientOperationId", "messageId", "kind", "clientMessageId", "state",
-  ], ["cancellationReason"], "operation message event");
+  ], ["cancellationReason", "inputFingerprint"], "operation message event");
   if (event.kind !== "root" && event.kind !== "steer" && event.kind !== "follow_up") {
     return fail("operation message kind is invalid");
   }
@@ -269,12 +271,19 @@ const validateMessage = (value: unknown): ProductOperationMessage => {
   const cancellationReason = event.state === "cancelled"
     ? event.cancellationReason as "user" | "host_shutdown" | "session_replaced"
     : undefined;
+  const inputFingerprint = Object.hasOwn(event, "inputFingerprint")
+    ? sha256(event.inputFingerprint, "operation message input fingerprint")
+    : undefined;
+  if (event.state === "queued" && event.kind !== "root" && inputFingerprint === undefined) {
+    return fail("queued continuation message requires its input fingerprint");
+  }
   return Object.freeze({
     clientOperationId: boundedIdentifier(event.clientOperationId, "operation message owner"),
     messageId: boundedIdentifier(event.messageId, "operation message identity"),
     kind: event.kind,
     clientMessageId: boundedIdentifier(event.clientMessageId, "client message identity"),
     state: event.state,
+    ...(inputFingerprint === undefined ? {} : { inputFingerprint }),
     ...(cancellationReason === undefined
       ? {}
       : { cancellationReason }),
@@ -444,6 +453,7 @@ const immutableOperation = (operation: MutableOperation): ProductOperationRecord
     kind: message.kind,
     state: message.state,
     delivered: message.delivered,
+    ...(message.inputFingerprint === undefined ? {} : { inputFingerprint: message.inputFingerprint }),
     ...(message.dshTurn === undefined ? {} : { dshTurn: message.dshTurn }),
     ...(message.cancellationReason === undefined
       ? {}
@@ -534,6 +544,9 @@ const foldProductOperationsValue = (
             kind: messageEvent.kind,
             state: "queued",
             delivered: false,
+            ...(messageEvent.inputFingerprint === undefined
+              ? {}
+              : { inputFingerprint: messageEvent.inputFingerprint }),
           });
           messageOwners.set(messageEvent.messageId, messageEvent.clientOperationId);
         } else {

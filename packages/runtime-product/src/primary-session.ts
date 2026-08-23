@@ -174,6 +174,12 @@ export interface PrimarySessionBinding {
 type CanonicalCreateParams = MethodParams<"session/create">;
 type CanonicalResumeParams = MethodParams<"session/resume">;
 
+export interface PrimarySessionConfigurationCandidate {
+  readonly alreadyEffective: boolean;
+  readonly mutationKey: string;
+  readonly params: CanonicalResumeParams;
+}
+
 type AdmissionRecord = {
   readonly clientOperationId: string;
   readonly configRevision: string;
@@ -913,6 +919,7 @@ export class PrimarySessionAdmission {
     workspace: PrimarySessionWorkspace,
     settlementDeadline: SettlementDeadlineAuthority = createRuntimeSettlementDeadlineAuthority(),
     private readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard,
+    private readonly providerConfigurationGuard?: PrimarySessionProviderAdmissionGuard,
   ) {
     const candidate: unknown = backend;
     if (candidate === null || typeof candidate !== "object" || utilTypes.isProxy(candidate)
@@ -938,6 +945,10 @@ export class PrimarySessionAdmission {
     if (providerAdmissionGuard !== undefined
       && (typeof providerAdmissionGuard !== "function" || utilTypes.isProxy(providerAdmissionGuard))) {
       throw new TypeError("primary Session Provider admission guard must be a non-proxy function");
+    }
+    if (providerConfigurationGuard !== undefined
+      && (typeof providerConfigurationGuard !== "function" || utilTypes.isProxy(providerConfigurationGuard))) {
+      throw new TypeError("primary Session configuration Provider guard must be a non-proxy function");
     }
   }
 
@@ -1005,6 +1016,7 @@ export class PrimarySessionAdmission {
     mutationKey: string,
     mutate: () => Promise<unknown>,
     beforeDispose?: PrimarySessionRetirementGuard,
+    replacementParams?: CanonicalResumeParams,
   ): Promise<PrimarySessionBinding> {
     boundedIdentifier(mutationKey, "primary Session mutation key");
     if (typeof mutate !== "function" || utilTypes.isProxy(mutate)) {
@@ -1026,16 +1038,102 @@ export class PrimarySessionAdmission {
     if ((!canReplaceReady && !canResumeRecovery) || this.#record === undefined) {
       throw new ProtocolError("primary_session_not_ready", "primary Session is not ready for generation replacement");
     }
+    const currentRecord = this.#record;
+    const nextRecord: AdmissionRecord = replacementParams === undefined
+      ? currentRecord
+      : Object.freeze({
+          ...currentRecord,
+          configRevision: replacementParams.configRevision,
+          fingerprint: admissionFingerprint(
+            "resume",
+            replacementParams,
+            currentRecord.runtimeSessionId,
+            this.#workspace,
+          ),
+          mode: "resume" as const,
+          params: replacementParams,
+        });
     this.#mutationKey = mutationKey;
     this.#mutationSettled = false;
     this.#mutationPromise = canReplaceReady
-      ? this.#replaceGeneration(mutate, beforeDispose)
-      : this.#resumeMutatedGeneration(mutate);
+      ? this.#replaceGeneration(nextRecord, mutate, beforeDispose)
+      : this.#resumeMutatedGeneration(nextRecord, mutate);
+    this.#record = Object.freeze({ ...nextRecord, promise: this.#mutationPromise });
     void this.#mutationPromise.then(
       () => { this.#mutationSettled = true; },
       () => { this.#mutationSettled = true; },
     );
     return this.#mutationPromise;
+  }
+
+  async prepareConfiguration(
+    value: unknown,
+    signal: AbortSignal,
+  ): Promise<PrimarySessionConfigurationCandidate> {
+    const params = validateMethodParams("config/apply", value);
+    if (!(signal instanceof AbortSignal) || utilTypes.isProxy(signal)) {
+      throw new TypeError("primary Session configuration signal must be a native AbortSignal");
+    }
+    signal.throwIfAborted();
+    const record = this.#record;
+    if (this.#state !== "ready" || record === undefined || this.#handle === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "configuration requires one ready primary Session");
+    }
+    const retained = { ...record.params };
+    Reflect.deleteProperty(retained, "toolPolicy");
+    const replacement = Object.freeze({
+      ...retained,
+      configRevision: params.revision,
+      provider: params.provider,
+      permissionMode: params.permissionMode,
+      ...(params.toolPolicy === undefined ? {} : { toolPolicy: params.toolPolicy }),
+      interactionScenario: params.interactionScenario,
+      systemPrompt: params.systemPrompt,
+      runtimeSessionId: record.runtimeSessionId,
+    }) as CanonicalResumeParams;
+    const replacementFingerprint = admissionFingerprint(
+      "resume",
+      replacement,
+      record.runtimeSessionId,
+      this.#workspace,
+    );
+    const currentAsResume = Object.freeze({
+      ...record.params,
+      runtimeSessionId: record.runtimeSessionId,
+    }) as CanonicalResumeParams;
+    const currentFingerprint = admissionFingerprint(
+      "resume",
+      currentAsResume,
+      record.runtimeSessionId,
+      this.#workspace,
+    );
+    if (record.configRevision === params.revision && replacementFingerprint !== currentFingerprint) {
+      throw new ProtocolError(
+        "config_revision_conflict",
+        "configuration revision was reused with different immutable content",
+      );
+    }
+    if (replacementFingerprint === currentFingerprint) {
+      return Object.freeze({
+        alreadyEffective: true,
+        mutationKey: `config:${params.revision}`,
+        params: replacement,
+      });
+    }
+    const request = Object.freeze({
+      mode: "resume" as const,
+      params: replacement,
+      runtimeSessionId: record.runtimeSessionId,
+      signal,
+      workspace: this.#workspace,
+    });
+    await this.providerConfigurationGuard?.(request);
+    signal.throwIfAborted();
+    return Object.freeze({
+      alreadyEffective: false,
+      mutationKey: `config:${params.revision}`,
+      params: replacement,
+    });
   }
 
   close(
@@ -1154,12 +1252,12 @@ export class PrimarySessionAdmission {
   }
 
   async #replaceGeneration(
+    nextRecord: AdmissionRecord,
     mutate: () => Promise<unknown>,
     beforeDispose: PrimarySessionRetirementGuard | undefined,
   ): Promise<PrimarySessionBinding> {
-    const record = this.#record;
     const handle = this.#handle;
-    if (record === undefined || handle === undefined) {
+    if (handle === undefined) {
       throw new ProtocolError("primary_session_not_ready", "primary Session generation is unavailable");
     }
     this.#state = "closing";
@@ -1199,14 +1297,14 @@ export class PrimarySessionAdmission {
       }
       throw new AggregateError(failures, "primary Session mutation settlement failed");
     }
-    return this.#resumeMutatedGeneration(mutate);
+    return this.#resumeMutatedGeneration(nextRecord, mutate);
   }
 
   async #resumeMutatedGeneration(
+    record: AdmissionRecord,
     mutate: () => Promise<unknown>,
   ): Promise<PrimarySessionBinding> {
-    const record = this.#record;
-    if (record === undefined || this.#handle !== undefined) {
+    if (this.#handle !== undefined) {
       throw new ProtocolError(
         "primary_session_not_ready",
         "primary Session mutation recovery lacks an unowned durable identity",
@@ -1541,6 +1639,7 @@ export interface ProductSessionServiceConfig {
   ) => Promise<CompactionResult | null>;
   readonly deleteStore?: () => ProductDeleteStore | undefined;
   readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard;
+  readonly providerConfigurationGuard?: PrimarySessionProviderAdmissionGuard;
   readonly quiescenceGraceMs?: number;
   readonly readSession?: (
     request: ProductSessionReadRequest,
@@ -1563,6 +1662,7 @@ export class ProductSessionService extends Service {
   private readonly deleteStoreValue: ProductSessionServiceConfig["deleteStore"];
   private readonly forkStoreValue: ProductSessionServiceConfig["forkStore"];
   private readonly providerAdmissionGuardValue: PrimarySessionProviderAdmissionGuard | undefined;
+  private readonly providerConfigurationGuardValue: PrimarySessionProviderAdmissionGuard | undefined;
   private readonly readSessionValue: ProductSessionServiceConfig["readSession"];
   private readonly rewindStoreValue: ProductSessionServiceConfig["rewindStore"];
   private readonly publicationFenceValue: PrimaryRootPublicationFence;
@@ -1589,6 +1689,7 @@ export class ProductSessionService extends Service {
         "forkStore",
         "inspectResume",
         "providerAdmissionGuard",
+        "providerConfigurationGuard",
         "quiescenceGraceMs",
         "readSession",
         "rewindStore",
@@ -1651,6 +1752,14 @@ export class ProductSessionService extends Service {
       throw new TypeError("ProductSession Provider admission guard must be a non-proxy function");
     }
     this.providerAdmissionGuardValue = providerAdmissionGuard;
+    const providerConfigurationGuard = Object.hasOwn(normalized, "providerConfigurationGuard")
+      ? normalized.providerConfigurationGuard as PrimarySessionProviderAdmissionGuard
+      : undefined;
+    if (providerConfigurationGuard !== undefined
+      && (typeof providerConfigurationGuard !== "function" || utilTypes.isProxy(providerConfigurationGuard))) {
+      throw new TypeError("ProductSession configuration Provider guard must be a non-proxy function");
+    }
+    this.providerConfigurationGuardValue = providerConfigurationGuard;
     const readSession = Object.hasOwn(normalized, "readSession")
       ? normalized.readSession as ProductSessionServiceConfig["readSession"]
       : undefined;
@@ -1715,6 +1824,7 @@ export class ProductSessionService extends Service {
     }
     this.workspaceValue = workspace;
     const providerAdmissionGuard = this.providerAdmissionGuardValue;
+    const providerConfigurationGuard = this.providerConfigurationGuardValue;
     this.admissionValue = new PrimarySessionAdmission(
       this.backendValue,
       workspace,
@@ -1722,6 +1832,9 @@ export class ProductSessionService extends Service {
       providerAdmissionGuard === undefined
         ? undefined
         : (request) => Reflect.apply(providerAdmissionGuard, undefined, [request]),
+      providerConfigurationGuard === undefined
+        ? undefined
+        : (request) => Reflect.apply(providerConfigurationGuard, undefined, [request]),
     );
     return workspace;
   }
@@ -1784,6 +1897,48 @@ export class ProductSessionService extends Service {
       throw new ProtocolError("primary_session_not_ready", "primary Session interaction scenario is not ready");
     }
     return this.admissionValue.requireInteractionScenarioRevision();
+  }
+
+  prepareConfiguration(
+    value: unknown,
+    signal: AbortSignal,
+  ): Promise<PrimarySessionConfigurationCandidate> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.prepareConfiguration(value, signal);
+    const params = validateMethodParams("config/apply", value);
+    const environment = this.requireExecutionEnvironment();
+    if (params.executionEnvironmentRevision !== environment.revision
+      || params.executionEnvironmentDigest !== environment.digest) {
+      throw new ProtocolError(
+        "protocol_environment_mismatch",
+        "configuration differs from the initialized execution environment",
+      );
+    }
+    if (this.admissionValue === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "configuration requires a primary Session");
+    }
+    return this.admissionValue.prepareConfiguration(params, signal);
+  }
+
+  replaceConfiguration(
+    candidate: PrimarySessionConfigurationCandidate,
+    applyAuthorities: PrimarySessionRetirementGuard,
+  ): Promise<PrimarySessionBinding> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.replaceConfiguration(candidate, applyAuthorities);
+    if (this.admissionValue === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "configuration requires a primary Session");
+    }
+    const retirementGuard = this.retirementGuardValue;
+    return this.admissionValue.replaceGeneration(
+      candidate.mutationKey,
+      () => Promise.resolve(),
+      async (agent) => {
+        await applyAuthorities(agent);
+        await retirementGuard?.(agent);
+      },
+      candidate.params,
+    );
   }
 
   snapshot(): Readonly<ProductSessionSnapshot> {

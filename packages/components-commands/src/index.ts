@@ -1,4 +1,4 @@
-import { Service, type Context } from "@deepseek-ai/cordis";
+import { Service, symbols, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import {
   type CommandDefinition,
@@ -15,6 +15,7 @@ import type {
 import type { OperationAdmissionControl } from "@myagents-dsh/operation-runtime";
 import {
   ProtocolError,
+  validateMethodParams,
   type MethodParams,
   type MethodResult,
 } from "@myagents-dsh/protocol";
@@ -260,11 +261,17 @@ const operationIds = (agent: Agent, invocation: CommandInvocation): Readonly<{
   });
 };
 
+const originalCommandService = (service: ProductCommandService): ProductCommandService => {
+  const original = (service as unknown as Record<PropertyKey, unknown>)[symbols.original];
+  return original instanceof ProductCommandService ? original : service;
+};
+
 export class ProductCommandService extends Service {
   static inject = ["commands"];
 
   readonly #resolveAuthority: ProductCommandServiceConfig["resolveAuthority"];
   readonly #startOperation: ProductCommandServiceConfig["startOperation"];
+  readonly #installed = new Map<string, DynamicCommandRegistration>();
 
   public constructor(ctx: Context, value: ProductCommandServiceConfig) {
     super(ctx, "productCommands");
@@ -306,6 +313,9 @@ export class ProductCommandService extends Service {
       const disposers: (() => void)[] = [];
       try {
         for (const identity of [registration.name, ...registration.aliases]) {
+          if (this.#installed.has(identity)) {
+            throw new ProtocolError("command_collision", `Command identity is already installed: ${identity}`);
+          }
           const definition: CommandDefinition = Object.freeze({
             description: registration.description,
             handler: (invocation: CommandInvocation) => this.#execute(registration, invocation),
@@ -316,6 +326,9 @@ export class ProductCommandService extends Service {
             recordInput: false,
           });
           disposers.push(ctx.commands.register(definition));
+        }
+        for (const identity of [registration.name, ...registration.aliases]) {
+          this.#installed.set(identity, registration);
         }
         installed = Object.freeze(disposers);
       } catch (error) {
@@ -335,6 +348,9 @@ export class ProductCommandService extends Service {
         const current = installed;
         installed = undefined;
         const errors: unknown[] = [];
+        for (const identity of [registration.name, ...registration.aliases]) {
+          if (this.#installed.get(identity) === registration) this.#installed.delete(identity);
+        }
         for (const dispose of [...(current ?? [])].reverse()) {
           try { dispose(); } catch (error) { errors.push(error); }
         }
@@ -349,6 +365,49 @@ export class ProductCommandService extends Service {
       },
       install,
     });
+  }
+
+  invoke(
+    value: unknown,
+    control: OperationAdmissionControl,
+  ): Promise<MethodResult<"command/invoke">> {
+    const service = originalCommandService(this);
+    const params = validateMethodParams("command/invoke", value);
+    if (!(control.signal instanceof AbortSignal) || isProxy(control.signal)
+      || typeof control.commit !== "function" || isProxy(control.commit)) {
+      return Promise.reject(new TypeError("Command invocation requires one native admission control"));
+    }
+    control.signal.throwIfAborted();
+    const registration = service.#installed.get(params.commandId);
+    if (registration === undefined) {
+      return Promise.reject(new ProtocolError("command_unknown", `Command is unavailable: ${params.commandId}`));
+    }
+    const authority = service.#resolveAuthority(registration.generation);
+    authority.assertCurrent();
+    if (params.configRevision !== authority.configRevision
+      || params.extensionDigest !== authority.extensionCatalogDigest
+      || params.executionEnvironmentRevision !== authority.executionEnvironmentRevision
+      || params.executionEnvironmentDigest !== authority.executionEnvironmentDigest) {
+      return Promise.reject(new ProtocolError(
+        "command_authority_stale",
+        "Command invocation differs from the effective operation authority",
+        true,
+      ));
+    }
+    const input = expandCommandTemplate(registration.template, params.arguments);
+    authority.assertCurrent();
+    const operationParams: MethodParams<"turn/start"> = {
+      clientOperationId: params.clientOperationId,
+      clientUserMessageId: params.clientUserMessageId,
+      input: { parts: [{ kind: "text", text: input }] },
+      configRevision: params.configRevision,
+      extensionDigest: params.extensionDigest,
+      executionEnvironmentRevision: params.executionEnvironmentRevision,
+      executionEnvironmentDigest: params.executionEnvironmentDigest,
+      limits: params.limits,
+      origin: params.origin,
+    };
+    return service.#startOperation(operationParams, control);
   }
 
   async #execute(

@@ -41,7 +41,7 @@ export interface OperationBirthAuthority {
 
 export interface OperationInputAuthority {
   readonly prepare: (
-    params: MethodParams<"turn/start">,
+    input: MethodParams<"turn/start">["input"],
     birth: OperationBirthSnapshot,
     signal: AbortSignal,
   ) => Promise<readonly ContentBlock[]>;
@@ -56,6 +56,11 @@ export interface OperationLifecycleController {
     signal: AbortSignal,
     commit: () => void,
   ) => Promise<boolean>;
+  readonly runAtNextQuiescentBoundary: <T>(
+    signal: AbortSignal,
+    commit: () => void,
+    action: () => Promise<T>,
+  ) => Promise<T>;
 }
 
 export interface SdkOperationServiceConfig {
@@ -122,6 +127,12 @@ const operationFingerprint = (
   birth,
   params,
 })).digest("hex");
+
+const inputFingerprint = (input: MethodParams<"turn/followUp">["input"]): string =>
+  createHash("sha256").update(stableJson({
+    format: "myagents-dsh-operation-input-v1",
+    input,
+  })).digest("hex");
 
 const deterministicId = (
   kind: "message" | "turn",
@@ -237,9 +248,9 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
     clock: (config.clock ?? Date.now) as () => number,
     inputAuthority: Object.freeze({
       prepare: prepareInput === undefined
-        ? (params: MethodParams<"turn/start">) => Promise.resolve(textContent(params))
-        : (params: MethodParams<"turn/start">, birth: OperationBirthSnapshot, signal: AbortSignal) =>
-          Reflect.apply(prepareInput, inputAuthorityReceiver, [params, birth, signal]),
+        ? (input: MethodParams<"turn/start">["input"]) => Promise.resolve(textContent(input))
+        : (input: MethodParams<"turn/start">["input"], birth: OperationBirthSnapshot, signal: AbortSignal) =>
+          Reflect.apply(prepareInput, inputAuthorityReceiver, [input, birth, signal]),
     }),
     modelProfileBirthGuard: Object.hasOwn(config, "modelProfileBirthGuard")
       ? config.modelProfileBirthGuard as (revision: string) => void
@@ -265,8 +276,8 @@ const validateBirthAgainstParams = (
   }
 };
 
-const textContent = (params: MethodParams<"turn/start">): readonly ContentBlock[] => Object.freeze(
-  params.input.parts.map((part): ContentBlock => {
+const textContent = (input: MethodParams<"turn/start">["input"]): readonly ContentBlock[] => Object.freeze(
+  input.parts.map((part): ContentBlock => {
     if (part.kind !== "text") {
       throw new ProtocolError(
         "turn_attachment_unavailable",
@@ -290,6 +301,24 @@ const rootMessage = (
     clientOperationId: params.clientOperationId,
     clientMessageId: params.clientUserMessageId,
     delivery: "root",
+  }),
+});
+
+const continuationMessage = (
+  operation: ProductOperationRecord,
+  kind: "steer" | "follow_up",
+  clientMessageId: string,
+  messageId: string,
+  content: readonly ContentBlock[],
+): UserMessage => freezeMessage({
+  id: MessageId(messageId),
+  role: "user",
+  content: [...content],
+  source: Object.freeze({
+    kind: "myagents-operation",
+    clientOperationId: operation.clientOperationId,
+    clientMessageId,
+    delivery: kind,
   }),
 });
 
@@ -334,6 +363,11 @@ export class SdkOperationService extends Service {
     this.configValue.registerLifecycleController(Object.freeze({
       runAtQuiescentBoundary: (signal: AbortSignal, commit: () => void) =>
         this.runAtQuiescentBoundary(signal, commit),
+      runAtNextQuiescentBoundary: <T>(
+        signal: AbortSignal,
+        commit: () => void,
+        action: () => Promise<T>,
+      ) => this.runAtNextQuiescentBoundary(signal, commit, action),
     }));
     ctx.effect(function* (this: SdkOperationService) {
       const stopClaimed = ctx.on("agent/inbox/claimed", ({ agent, message, turn }) => {
@@ -634,6 +668,18 @@ export class SdkOperationService extends Service {
     return this.serialize(() => this.startValue(params, control));
   }
 
+  steer(value: unknown, signal?: AbortSignal): Promise<MethodResult<"turn/steer">> {
+    this.assertOpen();
+    const params = validateMethodParams("turn/steer", value);
+    return this.serialize(() => this.steerValue(params, signal));
+  }
+
+  followUp(value: unknown, signal?: AbortSignal): Promise<MethodResult<"turn/followUp">> {
+    this.assertOpen();
+    const params = validateMethodParams("turn/followUp", value);
+    return this.serialize(() => this.followUpValue(params, signal));
+  }
+
   cancelMessage(value: unknown): Promise<MethodResult<"turn/message/cancel">> {
     this.assertOpen();
     const params = validateMethodParams("turn/message/cancel", value);
@@ -688,6 +734,50 @@ export class SdkOperationService extends Service {
     });
   }
 
+  private runAtNextQuiescentBoundary<T>(
+    signal: AbortSignal,
+    commit: () => void,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    if (!(signal instanceof AbortSignal) || utilTypes.isProxy(signal)
+      || typeof commit !== "function" || utilTypes.isProxy(commit)
+      || typeof action !== "function" || utilTypes.isProxy(action)) {
+      return Promise.reject(new TypeError(
+        "next operation lifecycle boundary requires a native AbortSignal and non-proxy callbacks",
+      ));
+    }
+    return this.serialize(async () => {
+      this.assertOpen();
+      this.assertHealthy();
+      signal.throwIfAborted();
+      const agent = this.primaryAgent();
+      await this.reconcileAgent(agent);
+      if (!agentIsIdle(agent) || this.foldValue(agent).operations.some(({ state }) => state !== "terminal")) {
+        let rejectAbort!: (reason: unknown) => void;
+        const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+        const onAbort = () => rejectAbort(signal.reason);
+        signal.addEventListener("abort", onAbort, { once: true });
+        try {
+          await Promise.race([agent.whenIdle(), aborted]);
+        } finally {
+          signal.removeEventListener("abort", onAbort);
+        }
+        signal.throwIfAborted();
+        await this.reconcileAgent(agent);
+      }
+      if (!agentIsIdle(agent)
+        || this.foldValue(agent).operations.some(({ state }) => state !== "terminal")) {
+        throw new ProtocolError(
+          "runtime_busy",
+          "Runtime did not reach a quiescent operation boundary",
+          true,
+        );
+      }
+      commit();
+      return await action();
+    });
+  }
+
   private async startValue(
     params: MethodParams<"turn/start">,
     control?: OperationAdmissionControl,
@@ -709,7 +799,7 @@ export class SdkOperationService extends Service {
       }
       if (existing.state === "accepted_undelivered") {
         const content = await this.configValue.inputAuthority.prepare(
-          params,
+          params.input,
           existing.birth,
           control?.signal ?? new AbortController().signal,
         );
@@ -737,7 +827,7 @@ export class SdkOperationService extends Service {
     this.configValue.modelProfileBirthGuard(birth.modelProfileRevision);
     validateBirthAgainstParams(birth, params);
     const content = await this.configValue.inputAuthority.prepare(
-      params,
+      params.input,
       birth,
       control?.signal ?? new AbortController().signal,
     );
@@ -781,6 +871,111 @@ export class SdkOperationService extends Service {
       throw this.fence(error);
     }
     return Object.freeze({ state: "accepted", clientOperationId: params.clientOperationId });
+  }
+
+  private async steerValue(
+    params: MethodParams<"turn/steer">,
+    signal = new AbortController().signal,
+  ): Promise<MethodResult<"turn/steer">> {
+    this.assertOpen();
+    this.assertHealthy();
+    const agent = this.primaryAgent();
+    await this.reconcileAgent(agent);
+    const operation = findProductOperation(this.foldValue(agent), params.clientOperationId);
+    if (operation?.state !== "active") {
+      throw new ProtocolError("turn_not_active", "turn/steer requires the target operation to be active", true);
+    }
+    const fingerprint = inputFingerprint(params.input);
+    const clientMessageId = `steer-${fingerprint.slice(0, 32)}-${String(agent.session.seq)}`;
+    const messageId = deterministicId("message", params.clientOperationId, clientMessageId);
+    const content = await this.configValue.inputAuthority.prepare(
+      params.input,
+      operation.birth,
+      signal,
+    );
+    if (agent !== this.configValue.requireAgent()) {
+      throw new ProtocolError("primary_session_replaced", "primary Session changed during steering admission");
+    }
+    try {
+      agent.session.append("myagents/operation/message", {
+        clientOperationId: operation.clientOperationId,
+        messageId,
+        kind: "steer",
+        clientMessageId,
+        state: "queued",
+        inputFingerprint: fingerprint,
+      });
+      agent.steer(continuationMessage(operation, "steer", clientMessageId, messageId, content));
+      await this.flush(agent);
+    } catch (error) {
+      throw this.fence(error);
+    }
+    return Object.freeze({ ok: true as const });
+  }
+
+  private async followUpValue(
+    params: MethodParams<"turn/followUp">,
+    signal = new AbortController().signal,
+  ): Promise<MethodResult<"turn/followUp">> {
+    this.assertOpen();
+    this.assertHealthy();
+    const agent = this.primaryAgent();
+    await this.reconcileAgent(agent);
+    const operation = findProductOperation(this.foldValue(agent), params.clientOperationId);
+    if (operation === undefined || operation.state === "terminal") {
+      throw new ProtocolError("turn_not_active", "turn/followUp requires a non-terminal target operation", true);
+    }
+    const fingerprint = inputFingerprint(params.input);
+    const existing = operation.messages.find(({ messageId }) => messageId === params.messageId);
+    if (existing !== undefined) {
+      if (existing.kind !== "follow_up" || existing.clientMessageId !== params.messageId
+        || existing.inputFingerprint !== fingerprint) {
+        throw new ProtocolError(
+          "queued_message_id_conflict",
+          "follow-up message identity was reused with different immutable input",
+        );
+      }
+      if (existing.state === "cancelled") {
+        return Object.freeze({ messageId: params.messageId, state: "cancelled" as const });
+      }
+      if (existing.delivered) {
+        return Object.freeze({
+          messageId: params.messageId,
+          state: existing.state === "claimed" ? "delivered" as const : "admitted" as const,
+        });
+      }
+    }
+    const content = await this.configValue.inputAuthority.prepare(
+      params.input,
+      operation.birth,
+      signal,
+    );
+    if (agent !== this.configValue.requireAgent()) {
+      throw new ProtocolError("primary_session_replaced", "primary Session changed during follow-up admission");
+    }
+    try {
+      if (existing === undefined) {
+        agent.session.append("myagents/operation/message", {
+          clientOperationId: operation.clientOperationId,
+          messageId: params.messageId,
+          kind: "follow_up",
+          clientMessageId: params.messageId,
+          state: "queued",
+          inputFingerprint: fingerprint,
+        });
+      }
+      agent.followup(continuationMessage(
+        operation,
+        "follow_up",
+        params.messageId,
+        params.messageId,
+        content,
+      ));
+      await this.flush(agent);
+    } catch (error) {
+      throw this.fence(error);
+    }
+    return Object.freeze({ messageId: params.messageId, state: "admitted" as const });
   }
 
   private async cancelMessageValue(

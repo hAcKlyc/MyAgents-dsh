@@ -6,7 +6,7 @@
     "outDir": "../../dist/packages/components-mcp",
     "tsBuildInfoFile": "../../dist/packages/components-mcp/.tsbuildinfo"
   },
-  "files": ["src/compiler.ts", "src/index.ts", "src/sdk-connection.ts"],
+  "files": ["src/compiler.ts", "src/index.ts", "src/managed-transport.ts", "src/sdk-connection.ts"],
   "references": [
     { "path": "../component-runtime" },
     { "path": "../host-ports" },

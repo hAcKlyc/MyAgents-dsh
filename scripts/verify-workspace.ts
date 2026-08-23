@@ -121,7 +121,9 @@ const expectedWorkspaceFiles = new Map([
   ["packages/components-commands", ["src/index.ts"]],
   ["packages/components-host-tools", ["src/compiler.ts", "src/index.ts"]],
   ["packages/components-hooks", ["src/index.ts", "src/runtime.ts"]],
-  ["packages/components-mcp", ["src/compiler.ts", "src/index.ts", "src/sdk-connection.ts"]],
+  ["packages/components-mcp", [
+    "src/compiler.ts", "src/index.ts", "src/managed-transport.ts", "src/sdk-connection.ts",
+  ]],
   ["packages/components-skills", ["src/index.ts"]],
   ["packages/host-ports", ["src/attachment-store.ts", "src/credential-provider.ts", "src/index.ts", "src/service.ts"]],
   ["packages/checkpoint", ["src/index.ts", "src/runtime.ts"]],
@@ -179,6 +181,7 @@ const expectedWorkspaceFiles = new Map([
     "src/host-model.ts",
     "src/index.ts",
     "src/primary-session.ts",
+    "src/utility.ts",
   ]],
   ["packages/task-graph", ["src/index.ts", "src/runtime.ts"]],
   ["packages/test-host", [

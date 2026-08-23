@@ -121,7 +121,7 @@ const mountService = async (
       if (state.failFollowup) throw new Error("synthetic followup failure");
       inbox.append("next-turn", message);
     },
-    steer: () => undefined,
+    steer: (message: Parameters<Agent["steer"]>[0]) => inbox.append("next-step", message),
     inject: () => undefined,
   } as unknown as Agent;
   agentState.value = agent;
@@ -208,6 +208,7 @@ describe("durable product-operation fold", () => {
       kind: "follow_up",
       clientMessageId: "client-followup-1",
       state: "queued",
+      inputFingerprint: "a".repeat(64),
     });
     fixture.agent.followup(freezeMessage({
       id: MessageId(followupId),
@@ -445,8 +446,8 @@ describe("SdkOperationService admission and idempotency", () => {
       undefined,
       true,
       Object.freeze({
-        prepare: async (input: MethodParams<"turn/start">, inputBirth: OperationBirthSnapshot) => {
-          prepareCalls.push(`${input.clientOperationId}:${inputBirth.componentRevision}`);
+        prepare: async (input: MethodParams<"turn/start">["input"], inputBirth: OperationBirthSnapshot) => {
+          prepareCalls.push(`${input.parts.length}:${inputBirth.componentRevision}`);
           return await pending.promise;
         },
       }),
@@ -456,7 +457,7 @@ describe("SdkOperationService admission and idempotency", () => {
       commit: () => undefined,
       signal: controller.signal,
     });
-    await vi.waitFor(() => expect(prepareCalls).toEqual(["operation-1:component-1"]));
+    await vi.waitFor(() => expect(prepareCalls).toEqual(["1:component-1"]));
     controller.abort();
     pending.resolve(Object.freeze([Object.freeze({ type: "text" as const, text: "prepared input" })]));
     await expect(admission).rejects.toMatchObject({ code: "protocol_cancelled" });
@@ -1014,6 +1015,41 @@ describe("SdkOperationService admission and idempotency", () => {
     })).rejects.toMatchObject({ code: "turn_message_unknown" });
   });
 
+  it("durably admits idempotent follow-up and active steering input", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+
+    const followUp = {
+      clientOperationId: "operation-1",
+      messageId: "follow-up-message-1",
+      input: { parts: [{ kind: "text" as const, text: "Continue with the durable follow-up." }] },
+    };
+    await expect(fixture.service.followUp(followUp)).resolves.toEqual({
+      messageId: followUp.messageId,
+      state: "admitted",
+    });
+    await expect(fixture.service.followUp(followUp)).resolves.toEqual({
+      messageId: followUp.messageId,
+      state: "admitted",
+    });
+    await expect(fixture.service.followUp({
+      ...followUp,
+      input: { parts: [{ kind: "text", text: "Conflicting retry." }] },
+    })).rejects.toMatchObject({ code: "queued_message_id_conflict" });
+
+    await expect(fixture.service.steer({
+      clientOperationId: "operation-1",
+      input: { parts: [{ kind: "text", text: "Use this at the nearest step." }] },
+    })).resolves.toEqual({ ok: true });
+    const operation = fixture.service.lookup("operation-1");
+    expect(operation?.messages.filter(({ kind }) => kind === "follow_up")).toHaveLength(1);
+    expect(operation?.messages.filter(({ kind }) => kind === "steer")).toHaveLength(1);
+    expect(fixture.inbox.nextTurn.map(({ id }) => id)).toEqual([followUp.messageId]);
+    expect(fixture.inbox.nextStep).toHaveLength(1);
+  });
+
   it("does not acknowledge a claimed delivery before its correlation flush is durable", async () => {
     const fixture = await mountService();
     await fixture.service.start(params());
@@ -1184,6 +1220,7 @@ describe("SdkOperationService admission and idempotency", () => {
       kind: "follow_up",
       clientMessageId: "client-followup-before-close",
       state: "queued",
+      inputFingerprint: "b".repeat(64),
     });
     fixture.agent.followup(freezeMessage({
       id: MessageId(followupId),
@@ -1309,6 +1346,7 @@ describe("SdkOperationService admission and idempotency", () => {
       kind: "follow_up",
       clientMessageId: "client-followup-without-context",
       state: "queued",
+      inputFingerprint: "c".repeat(64),
     });
     fixture.agent.followup(freezeMessage({
       id: MessageId(followupId),

@@ -13,6 +13,7 @@
       "@myagents-dsh/host-ports:HostPortService",
       "@myagents-dsh/host-ports:HostCredentialProvider",
       "@myagents-dsh/runtime-product:ProductSessionService",
+      "@myagents-dsh/runtime-product:ProductUtilityService",
       "@myagents-dsh/operation-runtime:SdkOperationService",
       "@myagents-dsh/component-runtime:ProductComponentService",
       "@myagents-dsh/rpc-server:NativeRpcServer",
@@ -101,12 +102,24 @@
       "session/rewind/status",
       "turn/start",
       "turn/get",
-      "extension/catalog"
+      "turn/steer",
+      "turn/followUp",
+      "turn/message/cancel",
+      "turn/interrupt",
+      "command/invoke",
+      "config/apply",
+      "credential/reconcile",
+      "extension/replace",
+      "extension/status",
+      "extension/catalog",
+      "extension/reload",
+      "utility/run"
     ],
     "availableNotifications": [
       "initialized",
       "rpc/cancel",
-      "runtime/event"
+      "runtime/event",
+      "host/interaction/cancel"
     ],
     "availableReverseMethods": [
       "host/credential/resolve",

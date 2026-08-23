@@ -783,19 +783,14 @@ export const REFERENCE_RUNTIME_CAPABILITIES: RuntimeCapabilityProfile = {
 
 export const BATCH1_RUNTIME_CAPABILITIES = Object.freeze({
   profile: "myagents-dsh-batch-1-candidate-v1",
-  sessions: Object.freeze({ resume: "dsh-native", history: "unavailable", compact: "unavailable", fork: "unavailable", rewind: "unavailable", delete: "unavailable" }),
-  turns: Object.freeze({ steer: "unavailable", followUp: "unavailable", interrupt: "unavailable", terminal: "unavailable", idempotency: "unavailable" }),
-  interaction: Object.freeze({ permission: "unavailable", askUser: "unavailable", plan: "unavailable", settlement: "unavailable", headless: "unavailable" }),
-  configuration: Object.freeze({ provider: "unsupported", model: "unsupported", reasoningEffort: "unsupported", permissionMode: "unsupported", interactionScenario: "unsupported", systemPrompt: "unsupported", mcp: "unsupported", agents: "unsupported" }),
-  extensions: Object.freeze({ snapshot: "unavailable", componentStatus: "unavailable", arbitraryJavascript: "unsupported" }),
-  tools: Object.freeze({ pipeline: "dsh-ctx-tools-only", catalog: "unavailable", hostTools: "unavailable", hooks: "unavailable" }),
-  hostPorts: Object.freeze({ credentials: "unavailable", interaction: "unavailable", tools: "unavailable", hooks: "unavailable", attachments: "unavailable" }),
-  work: Object.freeze({ children: "unavailable", background: "unavailable", taskGraph: "unavailable", mailbox: "unavailable" }),
-  telemetry: Object.freeze({ usage: "unavailable", context: "unavailable", compaction: "unavailable" }),
-  security: Object.freeze({
-    execution: "trusted-local-user-process",
-    osSandbox: false,
-    secrets: "reverse-port-only",
-    checkpoint: "unavailable",
-  }),
-}) as unknown as RuntimeCapabilityProfile;
+  sessions: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.sessions }),
+  turns: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.turns }),
+  interaction: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.interaction }),
+  configuration: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.configuration }),
+  extensions: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.extensions }),
+  tools: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.tools }),
+  hostPorts: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.hostPorts }),
+  work: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.work }),
+  telemetry: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.telemetry }),
+  security: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.security }),
+}) satisfies RuntimeCapabilityProfile;

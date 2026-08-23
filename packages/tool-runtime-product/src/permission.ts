@@ -29,6 +29,7 @@ declare module "@deepseek-ai/cordis" {
 }
 
 export const PRODUCT_PERMISSION_EVENT_TYPES = Object.freeze([
+  "myagents/permission/config",
   "myagents/permission/rule",
 ] as const);
 
@@ -67,8 +68,16 @@ export interface ProductPermissionRuleEvent {
   readonly expiresAt: number;
 }
 
+export interface ProductPermissionConfigEvent {
+  readonly sessionId: string;
+  readonly previousBaseRevision: string;
+  readonly fromRevision: string;
+  readonly revision: string;
+}
+
 declare module "@deepseek-ai/dsh-session/types" {
   interface SessionEventMap {
+    "myagents/permission/config": ProductPermissionConfigEvent;
     "myagents/permission/rule": ProductPermissionRuleEvent;
   }
 }
@@ -134,6 +143,14 @@ export interface ProductPermissionServiceConfig extends ProductPermissionPlaneCo
       request: Readonly<{ permissionClass: string; target: string; tool: string }>,
     ): Promise<"allow_once" | "continue" | "deny">;
   }>;
+  readonly registerController?: (controller: ProductPermissionController) => void;
+}
+
+export interface ProductPermissionController {
+  readonly applyConfiguration: (
+    agent: Agent,
+    config: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
+  ) => Promise<void>;
 }
 
 export interface ProductPermissionRule {
@@ -437,6 +454,24 @@ const validateRuleEvent = (value: unknown): ProductPermissionRuleEvent => {
   });
 };
 
+const validateConfigEvent = (value: unknown): ProductPermissionConfigEvent => {
+  const event = exactOwnDataObject(
+    value,
+    ["sessionId", "previousBaseRevision", "fromRevision", "revision"],
+    [],
+    "product permission config event",
+  );
+  return Object.freeze({
+    sessionId: boundedIdentifier(event.sessionId, "permission config Session id"),
+    previousBaseRevision: boundedIdentifier(
+      event.previousBaseRevision,
+      "permission previous base revision",
+    ),
+    fromRevision: boundedIdentifier(event.fromRevision, "permission config source revision"),
+    revision: boundedIdentifier(event.revision, "permission config revision"),
+  });
+};
+
 export const foldProductPermissions = (
   events: readonly SessionEvent[],
   sessionId: string,
@@ -448,14 +483,38 @@ export const foldProductPermissions = (
   const normalizedBase = boundedIdentifier(baseRevision, "permission base revision");
   const normalizedMaxRules = positiveInteger(maxRules, 512, "permission maximum rule count");
   const normalizedRuleTtlMs = positiveInteger(ruleTtlMs, 86_400_000, "permission rule TTL");
-  let latestRevision = normalizedBase;
+  const eventsSnapshot = snapshotSessionEvents(events);
+  const firstConfig = eventsSnapshot.find(({ type }) => type === "myagents/permission/config");
+  let policyBase = firstConfig === undefined
+    ? normalizedBase
+    : validateConfigEvent(firstConfig.data).previousBaseRevision;
+  let latestRevision = policyBase;
   let rules = new Map<string, ProductPermissionRule>();
   const history: ProductPermissionRevisionSnapshot[] = [Object.freeze({
-    revision: normalizedBase,
+    revision: policyBase,
     rules: Object.freeze([]),
   })];
   let acceptedRuleEvents = 0;
-  for (const event of snapshotSessionEvents(events)) {
+  for (const event of eventsSnapshot) {
+    if (event.type === "myagents/permission/config") {
+      let candidate: ProductPermissionConfigEvent;
+      try {
+        candidate = validateConfigEvent(event.data);
+      } catch (error) {
+        throw new ProductPermissionFoldError("product permission config event is invalid", { cause: error });
+      }
+      if (candidate.sessionId !== normalizedSessionId
+        || candidate.previousBaseRevision !== policyBase
+        || candidate.fromRevision !== latestRevision
+        || candidate.revision === policyBase) {
+        throw new ProductPermissionFoldError("product permission config revision chain is invalid");
+      }
+      policyBase = candidate.revision;
+      latestRevision = candidate.revision;
+      rules = new Map();
+      history.push(Object.freeze({ revision: latestRevision, rules: Object.freeze([]) }));
+      continue;
+    }
     if (event.type !== "myagents/permission/rule") continue;
     acceptedRuleEvents += 1;
     if (acceptedRuleEvents > normalizedMaxRules) {
@@ -509,9 +568,12 @@ export const foldProductPermissions = (
       rules: Object.freeze([...rules.values()]),
     }));
   }
+  if (policyBase !== normalizedBase) {
+    throw new ProductPermissionFoldError("product permission effective base revision is stale");
+  }
   return Object.freeze({
     sessionId: normalizedSessionId,
-    baseRevision: normalizedBase,
+    baseRevision: policyBase,
     latestRevision,
     history: Object.freeze(history),
   });
@@ -586,7 +648,7 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
   const config = exactOwnDataObject(value, [
     "mode", "autoAllowTools", "interaction", "interactionTimeoutMs", "maxRules", "ruleTtlMs",
     "clock", "durability",
-  ], ["hook"], "product permission service config");
+  ], ["hook", "registerController"], "product permission service config");
   const plane = validateProductPermissionPlaneConfig({
     mode: config.mode,
     autoAllowTools: config.autoAllowTools,
@@ -604,6 +666,9 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
   const authorizeHook = hook === undefined
     ? undefined
     : dataFunction(hook, "authorize", "permission Hook authorizer");
+  const registerController = config.registerController === undefined
+    ? undefined
+    : dataFunction(config, "registerController", "permission controller registration");
   return Object.freeze({
     ...plane,
     clock: () => Reflect.apply(clock, config, []) as number,
@@ -617,6 +682,11 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
           request: Readonly<{ permissionClass: string; target: string; tool: string }>,
         ) => Reflect.apply(authorizeHook, hook, [context, request]) as Promise<"allow_once" | "continue" | "deny">,
       }),
+    }),
+    ...(registerController === undefined ? {} : {
+      registerController: (controller: ProductPermissionController) => {
+        Reflect.apply(registerController, config, [controller]);
+      },
     }),
   });
 };
@@ -807,7 +877,7 @@ const pendingKey = (agent: Agent, callId: string): string => `${agent.id}\0${cal
 
 export class ProductPermissionService extends Service {
   static inject = ["approval", "sessions", "userQuestions"];
-  private readonly configValue: ProductPermissionServiceConfig;
+  private configValue: ProductPermissionServiceConfig;
   private readonly pending = new Map<string, PendingPermission>();
   private readonly activeControllers = new Set<AbortController>();
   private readonly activeInteractionSettlements = new Set<Promise<unknown>>();
@@ -819,6 +889,12 @@ export class ProductPermissionService extends Service {
   constructor(ctx: Context, config: ProductPermissionServiceConfig) {
     super(ctx, "productPermission");
     this.configValue = validateServiceConfig(config);
+    this.configValue.registerController?.(Object.freeze({
+      applyConfiguration: (
+        agent: Agent,
+        next: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
+      ) => this.applyConfiguration(agent, next),
+    }));
     const questionProvider: UserQuestionProvider = Object.freeze({
       ask: (request: AskUserQuestionRequest) => this.answerQuestions(request),
     });
@@ -883,6 +959,55 @@ export class ProductPermissionService extends Service {
   currentRevision(agent: Agent): string {
     this.assertHealthy();
     return this.fold(agent.session).latestRevision;
+  }
+
+  private async applyConfiguration(
+    agent: Agent,
+    next: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
+  ): Promise<void> {
+    this.assertHealthy();
+    if (this.pending.size !== 0 || this.activeInteractionSettlements.size !== 0
+      || this.activeDurabilitySettlements.size !== 0) {
+      throw new ProductPermissionError(
+        "permission_configuration_busy",
+        "permission configuration requires a quiescent interaction boundary",
+      );
+    }
+    const candidate = validateProductPermissionPlaneConfig({
+      mode: next.mode,
+      autoAllowTools: next.autoAllowTools,
+      interaction: next.interaction,
+      interactionTimeoutMs: this.configValue.interactionTimeoutMs,
+      maxRules: this.configValue.maxRules,
+      ruleTtlMs: this.configValue.ruleTtlMs,
+    });
+    const previous = this.foldInternal(agent.session);
+    const nextBase = permissionBaseRevision(candidate, String(agent.session.id));
+    if (nextBase !== previous.baseRevision) {
+      agent.session.append("myagents/permission/config", {
+        sessionId: String(agent.session.id),
+        previousBaseRevision: previous.baseRevision,
+        fromRevision: previous.latestRevision,
+        revision: nextBase,
+      });
+      const pending = exactNativePromise<boolean>(
+        this.configValue.durability.flush(agent.session),
+        "permission configuration durability flush",
+      );
+      if (!(await pending)) {
+        throw new ProductPermissionError(
+          "permission_durability_unavailable",
+          "permission configuration did not reach the Session durability Provider",
+        );
+      }
+    }
+    this.configValue = Object.freeze({
+      ...this.configValue,
+      mode: candidate.mode,
+      autoAllowTools: candidate.autoAllowTools,
+      interaction: candidate.interaction,
+    });
+    this.foldInternal(agent.session);
   }
 
   fold(session: Session): ProductPermissionFold {

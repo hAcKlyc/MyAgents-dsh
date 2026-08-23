@@ -315,7 +315,7 @@ A product `agent/request` listener returns the frozen LLM config for every DSH s
 
 ### 13.1 Reuse as authoritative migration input
 
-- all 35 Host methods, 7 reverse methods, 4 notifications, limits, error families, idempotency and terminal rules;
+- all 36 Host methods, 7 reverse methods, 4 notifications, limits, error families, idempotency and terminal rules;
 - the canonical 20 tool names, exact schemas/descriptions/result/error contracts, concurrency and checkpoint classifications;
 - Host/Test Host fixtures, malformed-frame cases, cancellation/race matrices, secret canaries, artifact checks;
 - managed-file checkpoint algorithms and mutation transaction safety properties;

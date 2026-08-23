@@ -83,7 +83,9 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/components-mcp",
     relativeDirectory: "packages/components-mcp",
-    allowedFiles: ["package.json", "src/compiler.ts", "src/index.ts", "src/sdk-connection.ts"],
+    allowedFiles: [
+      "package.json", "src/compiler.ts", "src/index.ts", "src/managed-transport.ts", "src/sdk-connection.ts",
+    ],
   },
   {
     packageName: "@myagents-dsh/components-skills",
@@ -181,6 +183,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/host-model.ts",
       "src/index.ts",
       "src/primary-session.ts",
+      "src/utility.ts",
     ],
   },
   {

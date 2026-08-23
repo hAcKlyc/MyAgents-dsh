@@ -515,5 +515,5 @@ This RFC is accepted for B1-W1 implementation only when:
 - all planning names above have canonical TypeBox definitions or are replaced by reviewed final names;
 - the required product event seam and pending-wake Spike pass;
 - package APIs allow fake clocks/IDs/LLM/Host/persistence without changing production code paths;
-- the strict peer conformance matrix covers all 35 Host methods, seven reverse methods, and four notifications;
+- the strict peer conformance matrix covers all 36 Host methods, seven reverse methods, and four notifications;
 - independent review finds no second loop, queue, transcript, terminal, or persistence authority.
