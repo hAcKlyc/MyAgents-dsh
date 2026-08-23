@@ -5,7 +5,7 @@
   "title": "Resume, compact, mutate, and clean a durable Session",
   "fixture": "persistence-lifecycle",
   "platforms": ["darwin-arm64", "win32-x64", "linux-x64"],
-  "prompts": ["Respond with a concise durable checkpoint summary of this fixture only. Do not modify workspace files. The Host will compact and restart the Runtime after this turn; do not simulate the restart or generate filler history.", "The Host has resumed this exact Session and exercised a governed mutation from the retained stable boundary. Verify the important context remains and explain the resulting Session state without inventing hidden storage facts. Do not modify workspace files."],
+  "prompts": ["Read the fixture and respond with a concise durable checkpoint summary only. Do not modify workspace files, simulate a restart, or generate filler history.", "Before the Host compacts and restarts the Runtime, confirm the exact synthetic decision from the fixture in one concise sentence. Do not modify workspace files or use tools.", "The Host has resumed this exact Session and exercised a governed mutation from the retained stable boundary. Verify that the synthetic decision remains in context and explain the resulting Session state without inventing hidden storage facts. Do not modify workspace files."],
   "experienceFocus": ["Durable continuity", "Truthful recovery", "Mutation conflict handling"],
   "capabilityCoverage": ["session-resume", "session-read", "compact", "checkpoint", "rewind", "fork", "delete", "crash-recovery"],
   "postconditions": ["Durable head and receipt identities agree", "Mutation reaches one exact terminal", "Session writer and SQLite resources close"],

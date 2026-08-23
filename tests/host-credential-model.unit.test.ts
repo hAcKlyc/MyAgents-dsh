@@ -383,11 +383,12 @@ describe("Host credential and model route", () => {
       headers: { "content-type": "text/event-stream" },
       status: 200,
     })));
-    const signal = new AbortController().signal;
+    const requestController = new AbortController();
+    const signal = AbortSignal.any([requestController.signal, new AbortController().signal]);
     const chunks = await authority.runCompactionRequest(
       "compact-operation-1",
       "runtime-session-1",
-      signal,
+      requestController.signal,
       async () => {
         const result = [];
         for await (const chunk of adapter.stream(modelOptions(signal))) result.push(chunk);

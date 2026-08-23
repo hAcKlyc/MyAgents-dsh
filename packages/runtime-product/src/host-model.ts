@@ -369,7 +369,8 @@ export class HostDeepSeekModelAuthority {
     }
     const auxiliary = this.#auxiliaryRequest.getStore();
     if (auxiliary !== undefined) {
-      if (auxiliary.signal !== signal || auxiliary.signal.aborted
+      if (auxiliary.signal.aborted || signal.aborted
+        || (auxiliary.kind === "utility" && auxiliary.signal !== signal)
         || (auxiliary.runtimeSessionId !== undefined
           && options.sessionId !== auxiliary.runtimeSessionId)) {
         throw new ProtocolError("provider_request_stale", "auxiliary model request authority is stale");
@@ -379,7 +380,7 @@ export class HostDeepSeekModelAuthority {
         auxiliary.clientOperationId,
       ])).digest("hex").slice(0, 48);
       const assertCurrent = (): void => {
-        if (this.#binding !== binding || auxiliary.signal.aborted
+        if (this.#binding !== binding || auxiliary.signal.aborted || signal.aborted
           || this.#auxiliaryRequest.getStore()?.token !== auxiliary.token) {
           throw new ProtocolError("provider_request_stale", "auxiliary model request authority is stale");
         }

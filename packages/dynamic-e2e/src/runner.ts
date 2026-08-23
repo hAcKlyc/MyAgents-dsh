@@ -447,7 +447,8 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           origin: { kind: "headless", scenario: input.scenario.id },
         }, { signal: input.signal });
         terminals.push(await waitForOperationTerminal(runtime.client, clientOperationId, input.signal));
-        if (input.scenario.id === "persistence-lifecycle" && index === 0) {
+        if (input.scenario.id === "persistence-lifecycle"
+          && index === input.scenario.prompts.length - 2) {
           const compactOperationId = `${input.workspace.runId}-compact`;
           const compact = await runtime.client.sessionCompact(
             { clientOperationId: compactOperationId },
