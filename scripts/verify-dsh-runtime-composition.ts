@@ -1797,7 +1797,7 @@ const main = (): void => {
     const usage = exactObject(usageEvent?.usage, "observed Runtime usage");
     if (usage.inputTokens !== 7 || usage.outputTokens !== 2
       || usage.cacheReadTokens !== 3 || usage.cacheWriteTokens !== 0
-      || usage.totalTokens !== 12 || usage.costUsd !== null
+      || usage.totalTokens !== 12 || usage.costUsd !== 0
       || usageEvent?.contextOccupiedTokens !== null
       || usageEvent.runtimeContextWindow !== 8_192) {
       throw new Error("Runtime usage/context projection differs from the durable DSH accounting facts");
