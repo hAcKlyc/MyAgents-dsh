@@ -133,6 +133,7 @@ describe("Runtime artifact self-check", () => {
         "session/fork/status",
         "session/rewind/prepare", "session/rewind/commit", "session/rewind/rollback",
         "session/rewind/status",
+        "turn/start", "turn/get", "extension/catalog",
       ]);
       expect(report.deferredAuthorities).toEqual([
         "effective-tool-catalog",

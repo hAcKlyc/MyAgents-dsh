@@ -29,6 +29,9 @@ export const BATCH1_AVAILABLE_HOST_METHODS = Object.freeze([
   "session/rewind/commit",
   "session/rewind/rollback",
   "session/rewind/status",
+  "turn/start",
+  "turn/get",
+  "extension/catalog",
 ] as const);
 export const BATCH1_AVAILABLE_REVERSE_METHODS = Object.freeze([
   "host/credential/resolve",

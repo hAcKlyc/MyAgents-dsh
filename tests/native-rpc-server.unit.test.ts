@@ -264,12 +264,38 @@ const createRoot = (
     snapshot: () => sessionSnapshot,
     whenSettlementFailed: () => settlementFailure,
   } as unknown as ProductSessionService);
+  const syntheticOperations = new Map<string, Readonly<{
+    admittedAt: string;
+    turnId: string;
+  }>>();
   root.provide("sdkOperations", {
     bindTerminalReservationAuthority: () => undefined,
-    lookup: () => undefined,
+    get: (params: MethodParams<"turn/get">) => {
+      const operation = syntheticOperations.get(params.clientOperationId);
+      return Object.freeze({
+        clientOperationId: params.clientOperationId,
+        ...(operation === undefined ? {} : { admission: operation }),
+      });
+    },
+    lookup: (clientOperationId: string) => syntheticOperations.get(clientOperationId),
     reconcile: () => Promise.resolve(),
     snapshot: () => Object.freeze({ recoveryRequired: false, operations: Object.freeze([]) }),
-    start: () => Promise.reject(new Error("synthetic turn admission is not configured")),
+    start: (
+      params: MethodParams<"turn/start">,
+      control: Readonly<{ signal: AbortSignal; commit: () => void }>,
+    ) => {
+      control.signal.throwIfAborted();
+      const admission = Object.freeze({
+        admittedAt: "2026-08-23T00:00:00.000Z",
+        turnId: `turn-${params.clientOperationId}`,
+      });
+      syntheticOperations.set(params.clientOperationId, admission);
+      control.commit();
+      return Promise.resolve(Object.freeze({
+        state: "accepted" as const,
+        clientOperationId: params.clientOperationId,
+      }));
+    },
   } as unknown as SdkOperationService);
   root.provide("hostPorts", {} as HostPortService);
   return root;
@@ -450,6 +476,62 @@ const rawResponse = async (
 };
 
 describe("native RPC Cordis service", () => {
+  it("registers every advertised handler and routes catalog and turn reads through existing owners", async () => {
+    const harness = await createHarness();
+    const within = async <Value>(label: string, operation: Promise<Value>): Promise<Value> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          operation,
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(
+              `${label} did not settle; phase=${harness.server.phase}; exit=${harness.server.exitRequest?.kind}`
+              + `:${"code" in (harness.server.exitRequest ?? {})
+                ? (harness.server.exitRequest as { code: string }).code : ""}; fatal=${harness.hostFatalErrors
+                .map(({ code }) => code).join(",")}`,
+            )), 1_000);
+          }),
+        ]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+    };
+    try {
+      await within("initialize", harness.client.initialize(initializeParams()));
+      await vi.waitFor(() => expect(harness.server.phase).toBe("await_initialized"));
+      await within("initialized", harness.client.initialized());
+      await vi.waitFor(() => expect(harness.server.phase).toBe("ready"));
+      await expect(within("extension/catalog", harness.client.extensionCatalog({}))).resolves.toEqual(
+        syntheticSessionCatalogs.extensionCatalog,
+      );
+      const input: MethodParams<"turn/start"> = {
+        clientOperationId: "native-operation-v1",
+        clientUserMessageId: "native-message-v1",
+        input: { parts: [{ kind: "text", text: "Run the exact native operation." }] },
+        configRevision: "config-v1",
+        extensionDigest: digest,
+        executionEnvironmentRevision: "environment-v1",
+        executionEnvironmentDigest: digest,
+        limits: { maxTurns: 1, maxDurationMs: 30_000 },
+        origin: { kind: "headless", scenario: "native-handler-parity" },
+      };
+      await expect(within("turn/start", harness.client.turnStart(input))).resolves.toEqual({
+        state: "accepted",
+        clientOperationId: input.clientOperationId,
+      });
+      await expect(within("turn/get", harness.client.turnGet({ clientOperationId: input.clientOperationId })))
+        .resolves.toEqual({
+          clientOperationId: input.clientOperationId,
+          admission: {
+            admittedAt: "2026-08-23T00:00:00.000Z",
+            turnId: `turn-${input.clientOperationId}`,
+          },
+        });
+    } finally {
+      await harness.close();
+    }
+  });
+
   it("routes Host interaction responses only through the composition-owned broker", async () => {
     interactionResponseState.calls.length = 0;
     interactionResponseState.current = (params: unknown) => {

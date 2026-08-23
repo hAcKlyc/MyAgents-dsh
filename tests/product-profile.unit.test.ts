@@ -77,6 +77,9 @@ describe("official product profile authority", () => {
           "session/rewind/commit",
           "session/rewind/rollback",
           "session/rewind/status",
+          "turn/start",
+          "turn/get",
+          "extension/catalog",
         ],
         availableNotifications: ["initialized", "rpc/cancel"],
         availableReverseMethods: [

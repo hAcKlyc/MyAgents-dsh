@@ -98,7 +98,10 @@
       "session/rewind/prepare",
       "session/rewind/commit",
       "session/rewind/rollback",
-      "session/rewind/status"
+      "session/rewind/status",
+      "turn/start",
+      "turn/get",
+      "extension/catalog"
     ],
     "availableNotifications": [
       "initialized",

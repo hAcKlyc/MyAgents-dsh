@@ -538,6 +538,23 @@ export class SdkOperationService extends Service {
     return findProductOperation(this.foldValue(this.primaryAgent()), clientOperationId);
   }
 
+  get(value: unknown): MethodResult<"turn/get"> {
+    this.assertOpen();
+    const params = validateMethodParams("turn/get", value);
+    const operation = this.lookup(params.clientOperationId);
+    if (operation === undefined) {
+      return Object.freeze({ clientOperationId: params.clientOperationId });
+    }
+    return Object.freeze({
+      clientOperationId: operation.clientOperationId,
+      admission: Object.freeze({
+        turnId: operation.productTurnId,
+        admittedAt: new Date(operation.acceptedAt).toISOString(),
+      }),
+      ...(operation.terminal === undefined ? {} : { terminal: operation.terminal }),
+    });
+  }
+
   resolveActiveToolOperation(agent: Agent): Readonly<{
     dshTurn: number;
     operation: ProductOperationRecord;

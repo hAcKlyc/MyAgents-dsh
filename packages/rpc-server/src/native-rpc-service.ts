@@ -436,84 +436,105 @@ export class NativeRpcServer extends Service {
     });
     hostPortLifecycleOf(this).bindTransport(this.peerValue, this.configValue.runtimeGeneration);
     try {
+      const registeredHostMethods: string[] = [];
+      const registered = (method: string, stop: () => void): (() => void) => {
+        if (registeredHostMethods.includes(method)) {
+          throw new Error(`native RPC registered duplicate Host method ${method}`);
+        }
+        registeredHostMethods.push(method);
+        return stop;
+      };
       this.stopHandlers.push(
-        this.peerValue.registerRequestHandler("initialize", (params, context) =>
-          this.handleInitialize(params, context)),
-        this.peerValue.registerRequestHandler("runtime/status", () => this.statusSnapshot()),
-        this.peerValue.registerRequestHandler("runtime/shutdown", (params, context) =>
-          this.handleShutdown(params, context)),
-        this.peerValue.registerRequestHandler("interaction/respond", (params) =>
-          compositionAuthority.respondInteraction(params)),
-        this.peerValue.registerRequestHandler("session/create", (params, context) =>
-          this.handleSessionBinding("create", params, context)),
-        this.peerValue.registerRequestHandler("session/resume", (params, context) =>
-          this.handleSessionBinding("resume", params, context)),
-        this.peerValue.registerRequestHandler("session/read", (params, context) =>
-          this.handleSessionRead(params, context)),
-        this.peerValue.registerRequestHandler("session/close", (params, context) =>
-          this.handleSessionClose(params, context)),
-        this.peerValue.registerRequestHandler("session/compact", (params, context) => {
+        registered("initialize", this.peerValue.registerRequestHandler("initialize", (params, context) =>
+          this.handleInitialize(params, context))),
+        registered("runtime/status", this.peerValue.registerRequestHandler("runtime/status", () =>
+          this.statusSnapshot())),
+        registered("runtime/shutdown", this.peerValue.registerRequestHandler("runtime/shutdown", (params, context) =>
+          this.handleShutdown(params, context))),
+        registered("interaction/respond", this.peerValue.registerRequestHandler("interaction/respond", (params) =>
+          compositionAuthority.respondInteraction(params))),
+        registered("session/create", this.peerValue.registerRequestHandler("session/create", (params, context) =>
+          this.handleSessionBinding("create", params, context))),
+        registered("session/resume", this.peerValue.registerRequestHandler("session/resume", (params, context) =>
+          this.handleSessionBinding("resume", params, context))),
+        registered("session/read", this.peerValue.registerRequestHandler("session/read", (params, context) =>
+          this.handleSessionRead(params, context))),
+        registered("session/close", this.peerValue.registerRequestHandler("session/close", (params, context) =>
+          this.handleSessionClose(params, context))),
+        registered("session/compact", this.peerValue.registerRequestHandler("session/compact", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.compact(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/delete/prepare", (params, context) => {
+        })),
+        registered("session/delete/prepare", this.peerValue.registerRequestHandler("session/delete/prepare", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.deletePrepare(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/delete/commit", (params, context) => {
+        })),
+        registered("session/delete/commit", this.peerValue.registerRequestHandler("session/delete/commit", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.deleteCommit(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/delete/purge", (params, context) => {
+        })),
+        registered("session/delete/purge", this.peerValue.registerRequestHandler("session/delete/purge", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.deletePurge(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/delete/rollback", (params, context) => {
+        })),
+        registered("session/delete/rollback", this.peerValue.registerRequestHandler("session/delete/rollback", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.deleteRollback(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/delete/status", (params, context) =>
-          this.productSessionValue.deleteStatus(params, context.signal)),
-        this.peerValue.registerRequestHandler("session/fork/prepare", (params, context) => {
+        })),
+        registered("session/delete/status", this.peerValue.registerRequestHandler("session/delete/status", (params, context) =>
+          this.productSessionValue.deleteStatus(params, context.signal))),
+        registered("session/fork/prepare", this.peerValue.registerRequestHandler("session/fork/prepare", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.forkPrepare(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/fork/commit", (params, context) => {
+        })),
+        registered("session/fork/commit", this.peerValue.registerRequestHandler("session/fork/commit", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.forkCommit(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/fork/abort", (params, context) => {
+        })),
+        registered("session/fork/abort", this.peerValue.registerRequestHandler("session/fork/abort", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.forkAbort(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/fork/status", (params, context) =>
-          this.productSessionValue.forkStatus(params, context.signal)),
-        this.peerValue.registerRequestHandler("session/rewind/prepare", (params, context) => {
+        })),
+        registered("session/fork/status", this.peerValue.registerRequestHandler("session/fork/status", (params, context) =>
+          this.productSessionValue.forkStatus(params, context.signal))),
+        registered("session/rewind/prepare", this.peerValue.registerRequestHandler("session/rewind/prepare", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.rewindPrepare(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/rewind/commit", (params, context) => {
+        })),
+        registered("session/rewind/commit", this.peerValue.registerRequestHandler("session/rewind/commit", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.rewindCommit(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/rewind/rollback", (params, context) => {
+        })),
+        registered("session/rewind/rollback", this.peerValue.registerRequestHandler("session/rewind/rollback", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.rewindRollback(params, context.signal);
-        }),
-        this.peerValue.registerRequestHandler("session/rewind/status", (params, context) =>
-          this.productSessionValue.rewindStatus(params, context.signal)),
+        })),
+        registered("session/rewind/status", this.peerValue.registerRequestHandler("session/rewind/status", (params, context) =>
+          this.productSessionValue.rewindStatus(params, context.signal))),
+        registered("turn/start", this.peerValue.registerRequestHandler("turn/start", (params, context) =>
+          this.operationsValue.start(params, Object.freeze({
+            signal: context.signal,
+            commit: () => context.commit(),
+          })))),
+        registered("turn/get", this.peerValue.registerRequestHandler("turn/get", (params) =>
+          this.operationsValue.get(params))),
+        registered("extension/catalog", this.peerValue.registerRequestHandler("extension/catalog", () =>
+          compositionAuthority.sessionCatalogs().extensionCatalog)),
       );
+      if (JSON.stringify(registeredHostMethods) !== JSON.stringify(BATCH1_AVAILABLE_HOST_METHODS)) {
+        throw new Error("native RPC registered Host methods differ from the candidate profile");
+      }
       ctx.effect(
         () => () => this.disposeTransport().catch(() => undefined),
         "native-rpc-transport",
