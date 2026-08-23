@@ -234,6 +234,7 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
           configRevision: "config-v1",
           executionEnvironmentDigest: "e".repeat(64),
           executionEnvironmentRevision: "environment-v1",
+          extensionCatalogDigest: "b".repeat(64),
         }),
         startOperation: (params, control) => {
           starts.push(params);
@@ -269,7 +270,7 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
       expect(starts[0]).toMatchObject({
         configRevision: "config-v1",
         executionEnvironmentRevision: "environment-v1",
-        extensionDigest: "a".repeat(64),
+        extensionDigest: "b".repeat(64),
         input: { parts: [{ kind: "text", text: "Review main branch against feature. Context: main branch feature" }] },
         origin: { kind: "desktop" },
       });

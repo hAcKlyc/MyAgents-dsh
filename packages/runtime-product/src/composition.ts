@@ -1052,6 +1052,7 @@ export const installCanonicalToolPlane = async (
             configRevision: root.productSession.requireOperationConfigRevision(),
             executionEnvironmentDigest: environment.digest,
             executionEnvironmentRevision: environment.revision,
+            extensionCatalogDigest: root.productComponents.catalog().digest,
           });
         };
         const initial = resolve();
@@ -1062,7 +1063,8 @@ export const installCanonicalToolPlane = async (
             if (current.agent !== initial.agent
               || current.configRevision !== initial.configRevision
               || current.executionEnvironmentDigest !== initial.executionEnvironmentDigest
-              || current.executionEnvironmentRevision !== initial.executionEnvironmentRevision) {
+              || current.executionEnvironmentRevision !== initial.executionEnvironmentRevision
+              || current.extensionCatalogDigest !== initial.extensionCatalogDigest) {
               throw new ProtocolError(
                 "command_authority_stale",
                 "Command operation authority changed during invocation",

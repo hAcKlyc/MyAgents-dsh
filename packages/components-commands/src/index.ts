@@ -48,6 +48,7 @@ export interface ProductCommandOperationAuthority {
   readonly configRevision: string;
   readonly executionEnvironmentDigest: string;
   readonly executionEnvironmentRevision: string;
+  readonly extensionCatalogDigest: string;
 }
 
 export interface PreparedDynamicCommandRegistration {
@@ -369,7 +370,7 @@ export class ProductCommandService extends Service {
       configRevision: authority.configRevision,
       executionEnvironmentDigest: authority.executionEnvironmentDigest,
       executionEnvironmentRevision: authority.executionEnvironmentRevision,
-      extensionDigest: registration.generation.digest,
+      extensionDigest: authority.extensionCatalogDigest,
       input: { parts: [{ kind: "text", text: input }] },
       limits: {},
       origin: { kind: "desktop" },
