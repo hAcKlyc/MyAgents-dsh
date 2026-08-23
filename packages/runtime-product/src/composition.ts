@@ -137,8 +137,11 @@ import {
 } from "@myagents-dsh/tools-interaction";
 import {
   CanonicalWebTools,
+  ProductSafeHttpClient,
   validateCanonicalWebToolsConfig,
   type CanonicalWebToolsConfig,
+  type ProductNetworkPolicy,
+  type ProductSafeHttpOpenResponse,
 } from "@myagents-dsh/tools-web";
 import { ProductSessionService, type PrimarySessionState } from "./primary-session.js";
 import {
@@ -1432,12 +1435,161 @@ export const createProductMcpComponentCompiler = (
   });
 };
 
+const mcpFetchBody = (
+  body: RequestInit["body"] | null | undefined,
+): Uint8Array | undefined => {
+  if (body === undefined || body === null) return undefined;
+  if (typeof body === "string") return Uint8Array.from(Buffer.from(body));
+  if (body instanceof Uint8Array && !isProxy(body)) return Uint8Array.from(body);
+  if (body instanceof ArrayBuffer && !isProxy(body)) return Uint8Array.from(new Uint8Array(body));
+  throw new TypeError("managed MCP network request body type is unsupported");
+};
+
+const mcpOpenResponse = async (
+  response: ProductSafeHttpOpenResponse,
+  signal: AbortSignal,
+): Promise<Response> => {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(response.headers)) {
+    if (value === undefined) continue;
+    if (typeof value === "string") headers.append(name, value);
+    else for (const item of value) headers.append(name, item);
+  }
+  const encoding = headers.get("content-encoding")?.trim().toLowerCase();
+  if (encoding !== undefined && encoding !== "" && encoding !== "identity") {
+    await response.dispose();
+    throw new TypeError("managed MCP response ignored the required identity encoding");
+  }
+  if (response.statusCode < 200) {
+    await response.dispose();
+    throw new TypeError("managed MCP response status is unsupported");
+  }
+  if ([204, 205, 304].includes(response.statusCode)) {
+    await response.dispose();
+    return new Response(null, { headers, status: response.statusCode });
+  }
+  const iterator = response.body[Symbol.asyncIterator]();
+  let disposed = false;
+  let bytes = 0;
+  const dispose = async (): Promise<void> => {
+    if (disposed) return;
+    disposed = true;
+    signal.removeEventListener("abort", abort);
+    try {
+      await iterator.return?.();
+    } finally {
+      await response.dispose();
+    }
+  };
+  const abort = (): void => { void dispose().catch(() => undefined); };
+  signal.addEventListener("abort", abort, { once: true });
+  if (signal.aborted) abort();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        signal.throwIfAborted();
+        const next = await iterator.next();
+        if (next.done) {
+          await dispose();
+          controller.close();
+          return;
+        }
+        if (!(next.value instanceof Uint8Array) || isProxy(next.value)) {
+          throw new TypeError("managed MCP response yielded an invalid byte chunk");
+        }
+        bytes += next.value.byteLength;
+        if (bytes > 1_048_576) throw new TypeError("managed MCP response exceeds its stream bound");
+        controller.enqueue(Uint8Array.from(next.value));
+      } catch (error) {
+        await dispose().catch(() => undefined);
+        controller.error(error);
+      }
+    },
+    async cancel() {
+      await dispose();
+    },
+  });
+  return new Response(body, { headers, status: response.statusCode });
+};
+
+const createManagedMcpNetworkFetch = (composition: DshRootComposition): typeof globalThis.fetch => {
+  const root = composition.context;
+  let client: ProductSafeHttpClient | undefined;
+  let policyRef: string | undefined;
+  return async (input, init): Promise<Response> => {
+    const candidate: unknown = input;
+    if (isProxy(candidate)) throw new TypeError("managed MCP network request input cannot be a Proxy");
+    const request = candidate instanceof Request ? candidate : undefined;
+    const rawUrl = request?.url ?? (typeof candidate === "string"
+      ? candidate
+      : candidate instanceof URL
+        ? candidate.href
+        : undefined);
+    if (rawUrl === undefined) throw new TypeError("managed MCP network request input is unsupported");
+    const url = new URL(rawUrl);
+    if (init?.redirect !== undefined && init.redirect !== "error") {
+      throw new TypeError("managed MCP network requests must reject redirects");
+    }
+    const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
+    if (method !== "GET" && method !== "POST" && method !== "DELETE") {
+      throw new TypeError("managed MCP network request method is unsupported");
+    }
+    const sourceSignal = init?.signal ?? request?.signal ?? AbortSignal.timeout(120_000);
+    if (!(sourceSignal instanceof AbortSignal) || isProxy(sourceSignal)) {
+      throw new TypeError("managed MCP network request requires a native AbortSignal");
+    }
+    const environment = root.productSession.requireExecutionEnvironment();
+    if (environment.network.mode !== "host-policy") {
+      throw new ProtocolError("network_policy_denied", "Runtime network policy denies remote MCP");
+    }
+    if (client === undefined) {
+      policyRef = environment.network.policyRef;
+      const policy = Object.freeze({
+        allowedHosts: Object.freeze([]),
+        allowedPorts: Object.freeze([80, 443]),
+        deniedHosts: Object.freeze(["metadata.google.internal"]),
+        maxCompressedBytes: 1_048_576,
+        maxCompressionRatio: 1,
+        maxConcurrent: 8,
+        maxDecompressedBytes: 1_048_576,
+        maxQueued: 64,
+        maxRedirects: 0,
+        policyRef,
+        timeoutMs: 120_000,
+      }) satisfies ProductNetworkPolicy;
+      client = new ProductSafeHttpClient(policy);
+    } else if (policyRef !== environment.network.policyRef) {
+      throw new ProtocolError("network_policy_denied", "Runtime network policy reference changed");
+    }
+    const requestHeaders = new Headers(request?.headers);
+    new Headers(init?.headers).forEach((value, name) => requestHeaders.set(name, value));
+    requestHeaders.set("accept-encoding", "identity");
+    requestHeaders.set("user-agent", "MyAgents-DSH-MCP/0.1");
+    const headers: Record<string, string> = Object.create(null) as Record<string, string>;
+    requestHeaders.forEach((value, name) => { headers[name] = value; });
+    const body = init?.body === undefined && request?.body !== null
+      ? await request?.clone().arrayBuffer().then((value) => Uint8Array.from(new Uint8Array(value)))
+      : mcpFetchBody(init?.body);
+    const opened = await client.open(url.toString(), Object.freeze({
+      ...(body === undefined ? {} : { body }),
+      headers: Object.freeze(headers),
+      method,
+      policyRef: environment.network.policyRef,
+      signal: sourceSignal,
+    }));
+    return await mcpOpenResponse(opened, sourceSignal);
+  };
+};
+
 export const createProductManagedMcpComponentCompiler = (
   composition: DshRootComposition,
-  config: ManagedMcpTransportConfig,
+  config: Omit<ManagedMcpTransportConfig, "networkFetch">,
 ): ComponentCompiler => createProductMcpComponentCompiler(
   composition,
-  createManagedMcpConnectionFactory(composition.context, config),
+  createManagedMcpConnectionFactory(composition.context, Object.freeze({
+    ...config,
+    networkFetch: createManagedMcpNetworkFetch(composition),
+  })),
 );
 
 export const createProductHostToolComponentCompiler = (

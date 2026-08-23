@@ -20,6 +20,7 @@ export interface ManagedMcpLaunchProfile {
 
 export interface ManagedMcpTransportConfig {
   readonly launchProfiles: Readonly<Record<string, ManagedMcpLaunchProfile>>;
+  readonly networkFetch: typeof globalThis.fetch;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -90,12 +91,19 @@ const normalizeLaunchProfiles = (
 
 const normalizeConfig = (value: unknown): Readonly<{
   launchProfiles: Readonly<Record<string, ManagedMcpLaunchProfile>>;
+  networkFetch: typeof globalThis.fetch;
 }> => {
   const config = exactObject(value, "managed MCP transport config");
-  if (Reflect.ownKeys(config).length !== 1 || !Object.hasOwn(config, "launchProfiles")) {
+  if (Reflect.ownKeys(config).length !== 2 || !Object.hasOwn(config, "launchProfiles")
+    || !Object.hasOwn(config, "networkFetch") || typeof config.networkFetch !== "function"
+    || isProxy(config.networkFetch)) {
     throw new TypeError("managed MCP transport config has an invalid exact shape");
   }
-  return Object.freeze({ launchProfiles: normalizeLaunchProfiles(config.launchProfiles) });
+  const networkFetch = config.networkFetch as typeof globalThis.fetch;
+  return Object.freeze({
+    launchProfiles: normalizeLaunchProfiles(config.launchProfiles),
+    networkFetch: (input, init) => Reflect.apply(networkFetch, config, [input, init]),
+  });
 };
 
 const blockedIpv4 = (hostname: string): boolean => {
@@ -151,6 +159,7 @@ const credentialHeaders = (material: Readonly<Record<string, string>>): Headers 
 const guardedFetch = (
   endpoint: URL,
   credentials: Headers,
+  networkFetch: typeof globalThis.fetch,
 ): typeof globalThis.fetch => async (input, init) => {
   const requested = new URL(input instanceof Request ? input.url : input);
   if (requested.origin !== endpoint.origin) {
@@ -158,7 +167,7 @@ const guardedFetch = (
   }
   const headers = new Headers(input instanceof Request ? input.headers : init?.headers);
   credentials.forEach((value, name) => headers.set(name, value));
-  return await globalThis.fetch(input, { ...init, headers, redirect: "error" });
+  return await networkFetch(input, { ...init, headers, redirect: "error" });
 };
 
 const boundedResponseText = async (response: Response): Promise<string> => {
@@ -174,6 +183,9 @@ const boundedResponseText = async (response: Response): Promise<string> => {
       if (bytes > 1_048_576) throw new Error("MCP HTTP response exceeds its frame bound");
       chunks.push(next.value);
     }
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
   } finally {
     reader.releaseLock();
   }
@@ -210,10 +222,15 @@ class ManagedHttpTransport implements Transport {
   #started = false;
   #closed = false;
 
-  constructor(endpoint: URL, credentials: Headers, sourceSignal: AbortSignal) {
+  constructor(
+    endpoint: URL,
+    credentials: Headers,
+    sourceSignal: AbortSignal,
+    networkFetch: typeof globalThis.fetch,
+  ) {
     this.#endpoint = endpoint;
     this.#credentials = credentials;
-    this.#fetch = guardedFetch(endpoint, credentials);
+    this.#fetch = guardedFetch(endpoint, credentials, networkFetch);
     this.#sourceSignal = sourceSignal;
   }
 
@@ -253,12 +270,18 @@ class ManagedHttpTransport implements Transport {
       if (!signal.aborted) this.onerror?.(error instanceof Error ? error : new Error("managed MCP HTTP request failed"));
       throw error;
     }
-    if (!response.ok) throw new Error(`managed MCP HTTP request failed with status ${String(response.status)}`);
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`managed MCP HTTP request failed with status ${String(response.status)}`);
+    }
     const nextSessionId = response.headers.get("mcp-session-id");
     if (nextSessionId !== null) {
       this.#sessionId = boundedString(nextSessionId, 256, "MCP session ID");
     }
-    if (response.status === 202 || response.status === 204) return;
+    if (response.status === 202 || response.status === 204) {
+      await response.body?.cancel().catch(() => undefined);
+      return;
+    }
     const text = await boundedResponseText(response);
     for (const incoming of parseHttpMessages(response.headers.get("content-type") ?? "", text)) {
       this.onmessage?.(incoming);
@@ -274,12 +297,13 @@ class ManagedHttpTransport implements Transport {
       headers.set("mcp-session-id", sessionId);
       if (this.#protocolVersion !== undefined) headers.set("mcp-protocol-version", this.#protocolVersion);
       try {
-        await this.#fetch(this.#endpoint, Object.freeze({
+        const response = await this.#fetch(this.#endpoint, Object.freeze({
           headers,
           method: "DELETE",
           redirect: "error" as const,
           signal: AbortSignal.timeout(2_000),
         }));
+        await response.body?.cancel().catch(() => undefined);
       } catch {
         // Local generation retirement still owns and completes cancellation.
       }
@@ -425,9 +449,14 @@ export const createManagedMcpConnectionFactory = (
       }
       const endpoint = remoteEndpoint(input.descriptor.url);
       const headers = credentialHeaders(input.material);
-      const fetch = guardedFetch(endpoint, headers);
+      const fetch = guardedFetch(endpoint, headers, config.networkFetch);
       if (input.descriptor.transport === "http") {
-        return Promise.resolve(new ManagedHttpTransport(endpoint, headers, input.signal));
+        return Promise.resolve(new ManagedHttpTransport(
+          endpoint,
+          headers,
+          input.signal,
+          config.networkFetch,
+        ));
       }
       // Protocol v2 retains explicit legacy SSE descriptors for compatible MCP servers.
       // eslint-disable-next-line @typescript-eslint/no-deprecated

@@ -33,9 +33,20 @@ export interface ProductHttpResponse {
   dispose(): Promise<void>;
 }
 
+export interface ProductHttpRequest {
+  readonly body?: Uint8Array;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly method: "DELETE" | "GET" | "POST";
+}
+
 export interface ProductHttpTransport {
   /** Reject only after abort has made the owned request/response work quiescent. */
-  dispatch(url: URL, address: ProductDnsAnswer, signal: AbortSignal): Promise<ProductHttpResponse>;
+  dispatch(
+    url: URL,
+    address: ProductDnsAnswer,
+    signal: AbortSignal,
+    request?: ProductHttpRequest,
+  ): Promise<ProductHttpResponse>;
 }
 
 export interface ProductSafeHttpClientConfig {
@@ -50,6 +61,18 @@ export interface ProductSafeHttpResult {
   readonly finalUrl: string;
   readonly redirectOrigins: readonly string[];
   readonly statusCode: number;
+}
+
+export interface ProductSafeHttpOpenRequest {
+  readonly body?: Uint8Array;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly method: "DELETE" | "GET" | "POST";
+  readonly policyRef: string;
+  readonly signal: AbortSignal;
+}
+
+export interface ProductSafeHttpOpenResponse extends ProductHttpResponse {
+  readonly finalUrl: string;
 }
 
 type Pref64 = Readonly<{ length: 32 | 40 | 48 | 56 | 64 | 96; prefix: Uint8Array }>;
@@ -445,7 +468,12 @@ const decompress = (
 };
 
 class NodeProductHttpTransport implements ProductHttpTransport {
-  async dispatch(url: URL, address: ProductDnsAnswer, signal: AbortSignal): Promise<ProductHttpResponse> {
+  async dispatch(
+    url: URL,
+    address: ProductDnsAnswer,
+    signal: AbortSignal,
+    requestOptions?: ProductHttpRequest,
+  ): Promise<ProductHttpResponse> {
     const lookup: LookupFunction = (_hostname, options, callback) => {
       if (options.all === true) callback(null, [{ address: address.address, family: address.family }]);
       else callback(null, address.address, address.family);
@@ -455,19 +483,19 @@ class NodeProductHttpTransport implements ProductHttpTransport {
     const response = await new Promise<IncomingMessage>((resolve, reject) => {
       outgoing = request(url, {
         agent: false,
-        headers: {
+        headers: requestOptions?.headers ?? {
           accept: "text/html, text/plain, application/json, application/pdf;q=0.9, */*;q=0.1",
           "accept-encoding": "gzip, deflate, br",
           "user-agent": "MyAgents-DSH/0.1",
         },
         lookup,
-        method: "GET",
+        method: requestOptions?.method ?? "GET",
         signal,
       }, resolve);
       outgoing.once("error", (error) => {
         void waitForNodeClose(outgoing).then(() => reject(error), reject);
       });
-      outgoing.end();
+      outgoing.end(requestOptions?.body);
     });
     const headers: Record<string, string | readonly string[] | undefined> = {};
     for (const [key, value] of Object.entries(response.headers)) {
@@ -497,6 +525,84 @@ const waitForNodeClose = async (owner: IncomingMessage | ClientRequest): Promise
     };
     owner.once("close", closed);
     if (owner.closed) closed();
+  });
+};
+
+const normalizeOpenRequest = (
+  value: ProductSafeHttpOpenRequest,
+  policy: ProductNetworkPolicy,
+): Readonly<{ request: ProductHttpRequest; policyRef: string; signal: AbortSignal }> => {
+  const candidate: unknown = value;
+  if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
+    || (Object.getPrototypeOf(candidate) !== Object.prototype
+      && Object.getPrototypeOf(candidate) !== null)) {
+    throw new TypeError("safe HTTP open request must be a non-proxy plain object");
+  }
+  const record = candidate as Record<string, unknown>;
+  const allowed = new Set(["body", "headers", "method", "policyRef", "signal"]);
+  for (const key of Reflect.ownKeys(record)) {
+    const descriptor = typeof key === "string" ? Object.getOwnPropertyDescriptor(record, key) : undefined;
+    if (typeof key !== "string" || !allowed.has(key) || descriptor === undefined
+      || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new TypeError("safe HTTP open request has an invalid exact shape");
+    }
+  }
+  for (const key of ["method", "policyRef", "signal"]) {
+    if (!Object.hasOwn(record, key)) throw new TypeError("safe HTTP open request is incomplete");
+  }
+  const method = record.method;
+  if (method !== "GET" && method !== "POST" && method !== "DELETE") {
+    throw new TypeError("safe HTTP open request method is unsupported");
+  }
+  const signal = record.signal;
+  if (!(signal instanceof AbortSignal) || isProxy(signal)) {
+    throw new TypeError("safe HTTP open request requires a native AbortSignal");
+  }
+  const policyRef = controlFreeIdentifier(record.policyRef, "safe HTTP open policy reference");
+  const sourceHeaders = record.headers ?? Object.freeze({});
+  if (typeof sourceHeaders !== "object" || Array.isArray(sourceHeaders)
+    || isProxy(sourceHeaders)
+    || (Object.getPrototypeOf(sourceHeaders) !== Object.prototype
+      && Object.getPrototypeOf(sourceHeaders) !== null)) {
+    throw new TypeError("safe HTTP open headers must be a non-proxy plain object");
+  }
+  const headers: Record<string, string> = Object.create(null) as Record<string, string>;
+  let headerBytes = 0;
+  for (const key of Reflect.ownKeys(sourceHeaders)) {
+    const descriptor = typeof key === "string"
+      ? Object.getOwnPropertyDescriptor(sourceHeaders, key)
+      : undefined;
+    if (typeof key !== "string" || descriptor === undefined || !descriptor.enumerable
+      || !("value" in descriptor) || typeof descriptor.value !== "string"
+      || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u.test(key)
+      || descriptor.value.includes("\r") || descriptor.value.includes("\n")) {
+      throw new TypeError("safe HTTP open headers contain an invalid field");
+    }
+    const normalized = key.toLowerCase();
+    if (Object.hasOwn(headers, normalized)
+      || ["connection", "content-length", "host", "proxy-authorization", "transfer-encoding"].includes(normalized)) {
+      throw new TypeError("safe HTTP open headers target a duplicate or transport-owned field");
+    }
+    headerBytes += Buffer.byteLength(normalized) + Buffer.byteLength(descriptor.value);
+    if (headerBytes > 65_536) throw new TypeError("safe HTTP open headers exceed their bound");
+    headers[normalized] = descriptor.value;
+  }
+  let body: Uint8Array | undefined;
+  if (record.body !== undefined) {
+    if (!(record.body instanceof Uint8Array) || isProxy(record.body)
+      || record.body.byteLength > policy.maxCompressedBytes || method === "GET") {
+      throw new TypeError("safe HTTP open request body is invalid or exceeds its bound");
+    }
+    body = Uint8Array.from(record.body);
+  }
+  return Object.freeze({
+    policyRef,
+    signal,
+    request: Object.freeze({
+      method,
+      headers: Object.freeze(headers),
+      ...(body === undefined ? {} : { body }),
+    }),
   });
 };
 
@@ -544,12 +650,89 @@ export class ProductSafeHttpClient {
         throw new TypeError("safe HTTP transport must expose one own-data dispatch method");
       }
       this.#transport = Object.freeze({
-        dispatch: (url: URL, address: ProductDnsAnswer, signal: AbortSignal) => Reflect.apply(
+        dispatch: (
+          url: URL,
+          address: ProductDnsAnswer,
+          signal: AbortSignal,
+          request?: ProductHttpRequest,
+        ) => Reflect.apply(
           dispatch.value as ProductHttpTransport["dispatch"],
           transport,
-          [url, address, signal],
+          [url, address, signal, request],
         ),
       });
+    }
+  }
+
+  async open(
+    rawUrl: string,
+    request: ProductSafeHttpOpenRequest,
+  ): Promise<ProductSafeHttpOpenResponse> {
+    const normalized = normalizeOpenRequest(request, this.#policy);
+    if (normalized.policyRef !== this.#policy.policyRef) {
+      throw new ProductToolError("network_policy_denied", "request network policy reference is stale");
+    }
+    const deadline = AbortSignal.timeout(this.#policy.timeoutMs);
+    const signal = AbortSignal.any([normalized.signal, deadline]);
+    let release: (() => void) | undefined;
+    let response: ProductHttpResponse | undefined;
+    try {
+      release = await this.#acquire(signal);
+      const url = parseSafeUrl(rawUrl, this.#policy);
+      const resolved = await this.#resolve(url.hostname, signal);
+      signal.throwIfAborted();
+      const address = selectPublicAddress(resolved.addresses, resolved.pref64s);
+      const dispatched = this.#transport.dispatch(url, address, signal, normalized.request);
+      if (!isPromise(dispatched) || isProxy(dispatched)) {
+        throw new ProductToolError("unsafe_destination", "safe HTTP transport must return a native Promise");
+      }
+      const rawResponse = await dispatched;
+      try {
+        response = this.#validateResponse(rawResponse);
+      } catch (error) {
+        const cleanupError = await this.#disposeInvalidResponse(rawResponse);
+        if (cleanupError !== undefined) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "safe HTTP response validation and cleanup failed",
+            { cause: error },
+          );
+        }
+        throw error;
+      }
+      if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
+        throw new ProductToolError("unsafe_destination", "safe HTTP request rejected a redirect");
+      }
+      let disposed = false;
+      const ownedResponse = response;
+      const ownedRelease = release;
+      response = undefined;
+      release = undefined;
+      return Object.freeze({
+        body: ownedResponse.body,
+        headers: ownedResponse.headers,
+        statusCode: ownedResponse.statusCode,
+        finalUrl: url.toString(),
+        dispose: async () => {
+          if (disposed) return;
+          disposed = true;
+          try {
+            await ownedResponse.dispose();
+          } finally {
+            ownedRelease();
+          }
+        },
+      });
+    } catch (error) {
+      if (response !== undefined) await response.dispose();
+      if (normalized.signal.aborted) throw normalized.signal.reason;
+      if (deadline.aborted) {
+        throw new ProductToolError("network_policy_denied", "safe HTTP request exceeded its network deadline");
+      }
+      if (error instanceof ProductToolError) throw error;
+      throw new ProductToolError("network_policy_denied", "safe HTTP transport failed safely", { cause: error });
+    } finally {
+      release?.();
     }
   }
 

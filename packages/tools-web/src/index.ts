@@ -15,8 +15,11 @@ export {
 export type {
   ProductDnsAnswer,
   ProductHttpResponse,
+  ProductHttpRequest,
   ProductHttpTransport,
   ProductNetworkPolicy,
   ProductSafeHttpClientConfig,
+  ProductSafeHttpOpenRequest,
+  ProductSafeHttpOpenResponse,
   ProductSafeHttpResult,
 } from "./safe-http.js";

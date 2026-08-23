@@ -157,6 +157,7 @@ describe("generation-owned MCP component compiler", () => {
           env: Object.freeze({ FIXTURE_MODE: "1" }),
         }),
       }),
+      networkFetch: () => Promise.reject(new Error("stdio fixture must not use network")),
     }));
     const signal = new AbortController().signal;
     const connection = await factory.connect({
@@ -184,7 +185,7 @@ describe("generation-owned MCP component compiler", () => {
     const root = new Context();
     contexts.push(root);
     const requests: Array<Readonly<{ method: string; url: string; authorization: string | null }>> = [];
-    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const networkFetch = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
       const url = input instanceof Request ? input.url : String(input);
       const method = init?.method ?? "GET";
       const headers = new Headers(init?.headers);
@@ -211,9 +212,10 @@ describe("generation-owned MCP component compiler", () => {
         headers: { "content-type": "application/json", "mcp-session-id": "fixture-session" },
         status: 200,
       }));
-    }));
+    });
     const factory = createManagedMcpConnectionFactory(root, Object.freeze({
       launchProfiles: Object.freeze({}),
+      networkFetch,
     }));
     const signal = new AbortController().signal;
     const connection = await factory.connect({

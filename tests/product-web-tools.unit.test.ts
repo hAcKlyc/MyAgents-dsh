@@ -199,6 +199,57 @@ describe("safe Web Providers and canonical Web tools", () => {
     await expect(pending).rejects.toBe(failure);
   });
 
+  it("pins governed streaming requests and rejects mixed-answer DNS rebinding", async () => {
+    let resolution = 0;
+    const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(
+      () => Promise.resolve(
+        response(200, { "content-type": "application/json" }, ["{\"ok\":true}"]),
+      ),
+    );
+    const client = new ProductSafeHttpClient(
+      { ...policy, maxConcurrent: 1, maxQueued: 0, maxRedirects: 0 },
+      {
+        lookup: () => {
+          resolution += 1;
+          return Promise.resolve(resolution === 1
+            ? [{ address: "93.184.216.34", family: 4 as const }]
+            : [
+                { address: "93.184.216.34", family: 4 as const },
+                { address: "127.0.0.1", family: 4 as const },
+              ]);
+        },
+        transport: { dispatch },
+      },
+    );
+    const opened = await client.open("https://example.com/mcp", {
+      body: Buffer.from("{\"jsonrpc\":\"2.0\"}"),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+      policyRef: policy.policyRef,
+      signal: new AbortController().signal,
+    });
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of opened.body) chunks.push(chunk);
+    await opened.dispose();
+
+    expect(Buffer.concat(chunks).toString("utf8")).toBe("{\"ok\":true}");
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(dispatch.mock.calls[0]?.[1]).toEqual({ address: "93.184.216.34", family: 4 });
+    expect(dispatch.mock.calls[0]?.[3]).toMatchObject({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    });
+    expect(Buffer.from(dispatch.mock.calls[0]?.[3]?.body ?? []).toString("utf8"))
+      .toBe("{\"jsonrpc\":\"2.0\"}");
+
+    await expect(client.open("https://example.com/mcp", {
+      method: "GET",
+      policyRef: policy.policyRef,
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: "unsafe_destination" });
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
   it("rejects every mixed public/private DNS answer before transport dispatch", async () => {
     const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(() => Promise.resolve(response(200, {}, ["forbidden"])));
     const client = new ProductSafeHttpClient(policy, {
