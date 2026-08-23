@@ -352,6 +352,7 @@ export class SdkOperationService extends Service {
   private primaryAgentValue: Agent | undefined;
   private nextModelRequestValue = 1;
   private readonly pendingRequestContextSeqs = new Set<number>();
+  private quiescentMutationValue = false;
   private serialValue: Promise<void> = Promise.resolve();
   private retirementEscalationValue: Promise<void> | undefined;
   private terminalReservationAuthorityValue: OperationTerminalReservationAuthority | undefined;
@@ -773,8 +774,16 @@ export class SdkOperationService extends Service {
           true,
         );
       }
+      if (this.quiescentMutationValue) {
+        throw this.fence(new Error("operation lifecycle mutation boundary was entered recursively"));
+      }
       commit();
-      return await action();
+      this.quiescentMutationValue = true;
+      try {
+        return await action();
+      } finally {
+        this.quiescentMutationValue = false;
+      }
     });
   }
 
@@ -1294,10 +1303,12 @@ export class SdkOperationService extends Service {
     }
     this.primaryAgentValue = agent;
     this.cancelPendingForRetirement(agent);
-    await this.configValue.settlementDeadlineAuthority.wait(
-      this.serialValue,
-      "primary retirement operation admission drain",
-    );
+    if (!this.quiescentMutationValue) {
+      await this.configValue.settlementDeadlineAuthority.wait(
+        this.serialValue,
+        "primary retirement operation admission drain",
+      );
+    }
     this.assertHealthy();
     this.cancelPendingForRetirement(agent);
     await this.configValue.settlementDeadlineAuthority.wait(

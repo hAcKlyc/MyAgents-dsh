@@ -11,6 +11,7 @@ import {
   type OperationInputAuthority,
   type OperationBirthSnapshot,
   type OperationBirthAuthority,
+  type OperationLifecycleController,
   type SettlementDeadlineAuthority,
 } from "@myagents-dsh/operation-runtime";
 import { ProtocolError, type MethodParams } from "@myagents-dsh/protocol";
@@ -63,6 +64,8 @@ interface MountedService {
   readonly context: Context;
   readonly dispose: () => Promise<void>;
   readonly inbox: Inbox;
+  readonly lifecycle: OperationLifecycleController;
+  readonly retire: () => Promise<void>;
   readonly service: SdkOperationService;
   failFollowup: boolean;
 }
@@ -127,12 +130,14 @@ const mountService = async (
   agentState.value = agent;
   context.on("session/flush", () => undefined);
   let retirementGuard: RetirementGuard | undefined;
+  let lifecycle: OperationLifecycleController | undefined;
   const fiber = await context.plugin(SdkOperationService, {
     birthAuthority,
     drainOwnedWork: () => Promise.resolve(),
     ...(inputAuthority === undefined ? {} : { inputAuthority }),
     ownsRootContextMessage: () => false,
     registerRetirementGuard: (guard) => { retirementGuard = guard; },
+    registerLifecycleController: (controller) => { lifecycle = controller; },
     requireAgent: () => agent,
     retirePrimary: () => {
       if (retirementGuard === undefined) throw new Error("operation retirement guard was not registered");
@@ -147,11 +152,17 @@ const mountService = async (
       whenIdle: () => Promise.resolve(),
     }));
   }
+  if (lifecycle === undefined) throw new Error("operation lifecycle controller was not registered");
   return {
     agent,
     context,
     dispose: () => fiber.dispose(),
     inbox,
+    lifecycle,
+    retire: () => {
+      if (retirementGuard === undefined) throw new Error("operation retirement guard was not registered");
+      return retirementGuard(agent);
+    },
     service: context.sdkOperations,
     get failFollowup() {
       return state.failFollowup;
@@ -435,6 +446,20 @@ describe("durable product-operation fold", () => {
 });
 
 describe("SdkOperationService admission and idempotency", () => {
+  it("does not deadlock retirement initiated inside an owned quiescent mutation", async () => {
+    const fixture = await mountService();
+    const commits: string[] = [];
+    await expect(fixture.lifecycle.runAtNextQuiescentBoundary(
+      new AbortController().signal,
+      () => commits.push("committed"),
+      async () => {
+        await fixture.retire();
+        return "replaced";
+      },
+    )).resolves.toBe("replaced");
+    expect(commits).toEqual(["committed"]);
+  });
+
   it("prepares the complete input before durable acceptance and rejects cancellation without publication", async () => {
     const pending = Promise.withResolvers<readonly [{ readonly type: "text"; readonly text: string }]>();
     const prepareCalls: string[] = [];
