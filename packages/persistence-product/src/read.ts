@@ -13,6 +13,7 @@ export interface ProductSessionReadSnapshot {
   readonly durableSequence: number;
   readonly header: SessionHeader;
   readonly revision: SessionPersistenceRevision;
+  readonly stableBoundaryId?: string;
 }
 
 export interface ProductSessionReadSource {
@@ -100,17 +101,22 @@ const snapshotMatches = (
   right: ProductSessionReadSnapshot,
 ): boolean => left.header.id === right.header.id
   && left.durableSequence === right.durableSequence
-  && left.revision === right.revision;
+  && left.revision === right.revision
+  && left.stableBoundaryId === right.stableBoundaryId;
 
 const resultByteLength = (
   runtimeSessionId: string,
   durableSequence: number,
+  stableBoundaryId: string | undefined,
   records: readonly ReadRecord[],
   includeCursor: boolean,
 ): number => Buffer.byteLength(JSON.stringify({
   runtimeSessionId,
   historyFormat: SESSION_FORMAT,
-  durableHead: { sequence: durableSequence },
+  durableHead: {
+    sequence: durableSequence,
+    ...(stableBoundaryId === undefined ? {} : { stableBoundaryId }),
+  },
   records,
   ...(includeCursor ? { nextCursor: CURSOR_PLACEHOLDER } : {}),
 }), "utf8");
@@ -118,6 +124,7 @@ const resultByteLength = (
 const maxChunkBytes = (
   runtimeSessionId: string,
   durableSequence: number,
+  stableBoundaryId: string | undefined,
   maxResultBytes: number,
 ): number => {
   let low = 0;
@@ -136,7 +143,13 @@ const maxChunkBytes = (
       totalBytes: MAX_SAFE,
       dataBase64: Buffer.alloc(candidate).toString("base64"),
     };
-    if (resultByteLength(runtimeSessionId, durableSequence, [record], true) <= maxResultBytes) {
+    if (resultByteLength(
+      runtimeSessionId,
+      durableSequence,
+      stableBoundaryId,
+      [record],
+      true,
+    ) <= maxResultBytes) {
       low = candidate;
     } else {
       high = candidate - 1;
@@ -295,6 +308,7 @@ export class ProductSessionReadProjector {
     const chunkBytes = maxChunkBytes(
       request.runtimeSessionId,
       durableSequence,
+      stable.snapshot.stableBoundaryId,
       request.maxResultBytes,
     );
     if (cursor.chunkOffset > 0 && cursor.chunkOffset % chunkBytes !== 0) {
@@ -328,6 +342,7 @@ export class ProductSessionReadProjector {
         && resultByteLength(
           request.runtimeSessionId,
           durableSequence,
+          stable.snapshot.stableBoundaryId,
           [...records, whole],
           !wholeCompletesRead,
         ) <= request.maxResultBytes) {
@@ -384,7 +399,12 @@ export class ProductSessionReadProjector {
     const result: ReadResult = {
       runtimeSessionId: request.runtimeSessionId,
       historyFormat: SESSION_FORMAT,
-      durableHead: { sequence: durableSequence },
+      durableHead: {
+        sequence: durableSequence,
+        ...(stable.snapshot.stableBoundaryId === undefined
+          ? {}
+          : { stableBoundaryId: stable.snapshot.stableBoundaryId }),
+      },
       records,
       ...(nextCursor === undefined ? {} : { nextCursor }),
     };

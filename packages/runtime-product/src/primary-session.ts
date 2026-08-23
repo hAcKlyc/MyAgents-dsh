@@ -1,4 +1,4 @@
-import { Service, type Context } from "@deepseek-ai/cordis";
+import { Service, symbols, type Context } from "@deepseek-ai/cordis";
 import type { Agent, AgentHandle, AgentSetup } from "@deepseek-ai/dsh-agent";
 import { SessionId, type Session } from "@deepseek-ai/dsh-session";
 import { PERSONA_ORDER, PERSONA_SECTION } from "@deepseek-ai/dsh-system-prompt";
@@ -10,7 +10,11 @@ import {
   type MethodParams,
   type MethodResult,
 } from "@myagents-dsh/protocol";
-import type { ProductSessionReadRequest } from "@myagents-dsh/persistence-product";
+import type {
+  ProductRewindRecord,
+  ProductRewindStore,
+  ProductSessionReadRequest,
+} from "@myagents-dsh/persistence-product";
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
@@ -154,6 +158,7 @@ type AdmissionRecord = {
   readonly configRevision: string;
   readonly fingerprint: string;
   readonly mode: PrimarySessionMode;
+  readonly params: CanonicalCreateParams | CanonicalResumeParams;
   readonly persistenceRef: string;
   readonly promise: Promise<PrimarySessionBinding>;
   readonly runtimeSessionId: string;
@@ -868,6 +873,9 @@ export class PrimarySessionAdmission {
   #closePromise: Promise<MethodResult<"session/close">> | undefined;
   #retiring = false;
   #retirePromise: Promise<void> | undefined;
+  #mutationKey: string | undefined;
+  #mutationPromise: Promise<PrimarySessionBinding> | undefined;
+  #mutationSettled = false;
   readonly #workspace: PrimarySessionWorkspace;
   readonly #settlementDeadline: SettlementDeadlineAuthority;
 
@@ -947,6 +955,43 @@ export class PrimarySessionAdmission {
   retire(beforeDispose?: PrimarySessionRetirementGuard): Promise<void> {
     this.#retirePromise ??= this.#retire(beforeDispose);
     return this.#retirePromise;
+  }
+
+  replaceGeneration(
+    mutationKey: string,
+    mutate: () => Promise<unknown>,
+    beforeDispose?: PrimarySessionRetirementGuard,
+  ): Promise<PrimarySessionBinding> {
+    boundedIdentifier(mutationKey, "primary Session mutation key");
+    if (typeof mutate !== "function" || utilTypes.isProxy(mutate)) {
+      throw new TypeError("primary Session mutation callback must be a non-Proxy function");
+    }
+    if (this.#mutationKey !== undefined) {
+      if (this.#mutationKey === mutationKey && this.#mutationPromise !== undefined) {
+        if (!this.#mutationSettled || this.#state !== "recovery_required"
+          || this.#handle !== undefined) {
+          return this.#mutationPromise;
+        }
+      }
+      if (!this.#mutationSettled) {
+        throw new ProtocolError("session_idempotency_conflict", "another primary Session mutation owns settlement");
+      }
+    }
+    const canReplaceReady = this.#state === "ready" && this.#handle !== undefined;
+    const canResumeRecovery = this.#state === "recovery_required" && this.#handle === undefined;
+    if ((!canReplaceReady && !canResumeRecovery) || this.#record === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session is not ready for generation replacement");
+    }
+    this.#mutationKey = mutationKey;
+    this.#mutationSettled = false;
+    this.#mutationPromise = canReplaceReady
+      ? this.#replaceGeneration(mutate, beforeDispose)
+      : this.#resumeMutatedGeneration(mutate);
+    void this.#mutationPromise.then(
+      () => { this.#mutationSettled = true; },
+      () => { this.#mutationSettled = true; },
+    );
+    return this.#mutationPromise;
   }
 
   close(
@@ -1056,11 +1101,128 @@ export class PrimarySessionAdmission {
       configRevision: params.configRevision,
       fingerprint,
       mode,
+      params,
       persistenceRef: params.persistenceRef,
       promise,
       runtimeSessionId,
     };
     return promise;
+  }
+
+  async #replaceGeneration(
+    mutate: () => Promise<unknown>,
+    beforeDispose: PrimarySessionRetirementGuard | undefined,
+  ): Promise<PrimarySessionBinding> {
+    const record = this.#record;
+    const handle = this.#handle;
+    if (record === undefined || handle === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session generation is unavailable");
+    }
+    this.#state = "closing";
+    const failures: Error[] = [];
+    if (beforeDispose !== undefined) {
+      try {
+        handle.agent.cancel({ kind: "disposed" }, { keepInbox: true });
+      } catch (error) {
+        failures.push(retirementError(error, "primary Session mutation cancellation failed"));
+      }
+      try {
+        const results = await this.#settlementDeadline.wait(Promise.allSettled([
+          Promise.resolve().then(() => handle.agent.whenIdle()),
+          Promise.resolve().then(() => beforeDispose(handle.agent)),
+        ]), "primary Session mutation settlement");
+        failures.push(...results
+          .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+          .map(({ reason }) => retirementError(reason, "primary Session mutation settlement failed")));
+      } catch (error) {
+        failures.push(retirementError(error, "primary Session mutation settlement deadline failed"));
+      }
+    }
+    try {
+      await this.#settlementDeadline.wait(
+        Promise.resolve().then(() => handle.dispose()),
+        "primary Session mutation handle disposal",
+      );
+      this.#handle = undefined;
+    } catch (error) {
+      failures.push(retirementError(error, "primary Session mutation handle disposal failed"));
+    }
+    if (failures.length > 0) {
+      this.#state = "recovery_required";
+      if (failures.length === 1) {
+        const failure = failures[0];
+        if (failure !== undefined) throw failure;
+      }
+      throw new AggregateError(failures, "primary Session mutation settlement failed");
+    }
+    return this.#resumeMutatedGeneration(mutate);
+  }
+
+  async #resumeMutatedGeneration(
+    mutate: () => Promise<unknown>,
+  ): Promise<PrimarySessionBinding> {
+    const record = this.#record;
+    if (record === undefined || this.#handle !== undefined) {
+      throw new ProtocolError(
+        "primary_session_not_ready",
+        "primary Session mutation recovery lacks an unowned durable identity",
+      );
+    }
+    this.#state = "resuming";
+    try {
+      await mutate();
+      const controller = new AbortController();
+      const params = Object.freeze({
+        ...record.params,
+        runtimeSessionId: record.runtimeSessionId,
+      }) as CanonicalResumeParams;
+      const request = Object.freeze({
+        mode: "resume" as const,
+        params,
+        runtimeSessionId: record.runtimeSessionId,
+        signal: controller.signal,
+        workspace: this.#workspace,
+      });
+      await this.providerAdmissionGuard?.(request);
+      const candidate = await this.backend.resume(request);
+      const cleanup = extractCandidateDisposer(candidate);
+      let result: PrimarySessionBackendResult;
+      try {
+        result = validateBackendResult(candidate, record.runtimeSessionId);
+      } catch (error) {
+        await cleanup?.();
+        throw error;
+      }
+      if (result.state !== "ready") {
+        throw new ProtocolError("session_recovery_required", "rewound Session generation requires recovery");
+      }
+      const binding = Object.freeze({
+        clientOperationId: record.clientOperationId,
+        desiredConfigRevision: record.configRevision,
+        durableSequence: result.durableSequence,
+        ...(result.effectiveConfigRevision === undefined
+          ? {}
+          : { effectiveConfigRevision: result.effectiveConfigRevision }),
+        fingerprint: record.fingerprint,
+        mode: "resume" as const,
+        persistenceRef: record.persistenceRef,
+        runtimeSessionId: record.runtimeSessionId,
+        state: "ready" as const,
+      });
+      this.#binding = binding;
+      this.#handle = result.handle;
+      this.#record = Object.freeze({
+        ...record,
+        mode: "resume" as const,
+        params,
+        promise: Promise.resolve(binding),
+      });
+      this.#state = "ready";
+      return binding;
+    } catch (error) {
+      this.#state = "recovery_required";
+      throw error;
+    }
   }
 
   async #retire(beforeDispose: PrimarySessionRetirementGuard | undefined): Promise<void> {
@@ -1311,6 +1473,7 @@ export interface ProductSessionServiceConfig {
   readonly readSession?: (
     request: ProductSessionReadRequest,
   ) => Promise<MethodResult<"session/read">>;
+  readonly rewindStore?: () => ProductRewindStore | undefined;
   readonly reconcileResume?: (agent: Agent) => Promise<void>;
   readonly validateResume?: (agent: Agent) => Promise<void>;
 }
@@ -1321,6 +1484,7 @@ export class ProductSessionService extends Service {
   private readonly childPublicationAuthorityValue: object | undefined;
   private readonly providerAdmissionGuardValue: PrimarySessionProviderAdmissionGuard | undefined;
   private readonly readSessionValue: ProductSessionServiceConfig["readSession"];
+  private readonly rewindStoreValue: ProductSessionServiceConfig["rewindStore"];
   private readonly publicationFenceValue: PrimaryRootPublicationFence;
   private executionEnvironmentValue: ProductExecutionEnvironment | undefined;
   private workspaceValue: PrimarySessionWorkspace | undefined;
@@ -1343,6 +1507,7 @@ export class ProductSessionService extends Service {
         "providerAdmissionGuard",
         "quiescenceGraceMs",
         "readSession",
+        "rewindStore",
         "reconcileResume",
         "validateResume",
       ],
@@ -1397,6 +1562,13 @@ export class ProductSessionService extends Service {
       throw new TypeError("ProductSession read projection must be a non-proxy function");
     }
     this.readSessionValue = readSession;
+    const rewindStore = Object.hasOwn(normalized, "rewindStore")
+      ? normalized.rewindStore as ProductSessionServiceConfig["rewindStore"]
+      : undefined;
+    if (rewindStore !== undefined && (typeof rewindStore !== "function" || utilTypes.isProxy(rewindStore))) {
+      throw new TypeError("ProductSession rewind Store authority must be a non-proxy function");
+    }
+    this.rewindStoreValue = rewindStore;
     this.settlementDeadlineValue = createRuntimeSettlementDeadlineAuthority(
       Object.hasOwn(normalized, "quiescenceGraceMs")
         ? normalized.quiescenceGraceMs as number
@@ -1531,6 +1703,109 @@ export class ProductSessionService extends Service {
     })]);
   }
 
+  rewindPrepare(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/rewind/prepare">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.rewindPrepare(value, signal);
+    const params = validateMethodParams("session/rewind/prepare", value);
+    const snapshot = this.snapshot();
+    if (snapshot.state !== "ready" || snapshot.runtimeSessionId === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session is not ready for rewind prepare");
+    }
+    return this.#requireRewindStore().prepareRewind(Object.freeze({
+      clientMutationId: params.clientMutationId,
+      runtimeSessionId: snapshot.runtimeSessionId,
+      sourceTranscriptPostcondition: params.sourceTranscriptPostcondition,
+      targetStableBoundaryId: params.targetStableBoundaryId,
+      targetTranscriptPostcondition: params.targetTranscriptPostcondition,
+    }), signal).then((record) => this.#projectRewind(record));
+  }
+
+  rewindCommit(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/rewind/commit">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.rewindCommit(value, signal);
+    const params = validateMethodParams("session/rewind/commit", value);
+    const store = this.#requireRewindStore();
+    const admission = this.admissionValue;
+    if (admission === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session is not initialized");
+    }
+    return store.getRewind(params.token, signal).then(async (known) => {
+      const snapshot = this.snapshot();
+      if (known === undefined || snapshot.runtimeSessionId !== known.runtimeSessionId) {
+        throw new ProtocolError("session_mutation_not_found", "rewind token is unavailable for the primary Session");
+      }
+      if (known.phase !== "committed") {
+        await admission.replaceGeneration(
+          `commit:${params.token}`,
+          () => store.commitRewind(params.token, params.clientMutationId, signal),
+          this.retirementGuardValue,
+        );
+      }
+      const settled = await store.getRewind(params.token, signal);
+      if (settled === undefined) throw new Error("rewind commit lost its journal");
+      return this.#projectRewind(settled);
+    });
+  }
+
+  rewindRollback(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/rewind/rollback">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.rewindRollback(value, signal);
+    const params = validateMethodParams("session/rewind/rollback", value);
+    const store = this.#requireRewindStore();
+    const admission = this.admissionValue;
+    if (admission === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session is not initialized");
+    }
+    return store.getRewind(params.token, signal).then(async (known) => {
+      const snapshot = this.snapshot();
+      if (known === undefined || snapshot.runtimeSessionId !== known.runtimeSessionId) {
+        throw new ProtocolError("session_mutation_not_found", "rewind token is unavailable for the primary Session");
+      }
+      if (known.phase === "prepared") {
+        return this.#projectRewind(await store.rollbackRewind(
+          params.token,
+          params.clientMutationId,
+          signal,
+        ));
+      }
+      if (known.phase !== "rolled_back") {
+        await admission.replaceGeneration(
+          `rollback:${params.token}`,
+          () => store.rollbackRewind(params.token, params.clientMutationId, signal),
+          this.retirementGuardValue,
+        );
+      }
+      const settled = await store.getRewind(params.token, signal);
+      if (settled === undefined) throw new Error("rewind rollback lost its journal");
+      return this.#projectRewind(settled);
+    });
+  }
+
+  rewindStatus(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/rewind/status">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.rewindStatus(value, signal);
+    const params = validateMethodParams("session/rewind/status", value);
+    const snapshot = this.snapshot();
+    return this.#requireRewindStore().getRewind(params.token, signal).then((record) => {
+      if (record === undefined || snapshot.runtimeSessionId !== record.runtimeSessionId) {
+        throw new ProtocolError("session_mutation_not_found", "rewind token is unavailable for the primary Session");
+      }
+      return this.#projectRewind(record);
+    });
+  }
+
   prepareChildPublication(authority: object, child: Agent, parent: Agent): () => void {
     if (this.childPublicationAuthorityValue === undefined
       || authority !== this.childPublicationAuthorityValue) {
@@ -1582,6 +1857,27 @@ export class ProductSessionService extends Service {
     return retirement;
   }
 
+  #requireRewindStore(): ProductRewindStore {
+    const store = this.rewindStoreValue?.();
+    if (store === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session rewind persistence is not installed");
+    }
+    return store;
+  }
+
+  #projectRewind(record: ProductRewindRecord): MethodResult<"session/rewind/status"> {
+    const state = record.phase === "committing"
+      ? "prepared"
+      : record.phase === "rolling_back"
+        ? "committed"
+        : record.phase;
+    return Object.freeze({
+      token: record.token,
+      state,
+      ...(record.receipt === undefined ? {} : { receipt: record.receipt }),
+    });
+  }
+
   private publishSettlementFailure(reason: unknown): void {
     if (this.settlementFailureValue !== undefined) return;
     const rawMessage = reason instanceof Error
@@ -1595,3 +1891,10 @@ export class ProductSessionService extends Service {
     this.resolveSettlementFailure(failure);
   }
 }
+
+const productSessionServiceOwner = (service: ProductSessionService): ProductSessionService => {
+  const original = (service as unknown as Record<PropertyKey, unknown>)[symbols.original];
+  return original !== null && typeof original === "object"
+    ? original as ProductSessionService
+    : service;
+};

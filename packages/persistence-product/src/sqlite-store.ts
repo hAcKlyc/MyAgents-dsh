@@ -30,8 +30,19 @@ import type {
   ProductCheckpointPhase,
   ProductCheckpointPrepareInput,
   ProductCheckpointRecord,
+  ProductCheckpointRewindFile,
+  ProductCheckpointRewindFilePhase,
   ProductCheckpointStore,
 } from "@myagents-dsh/checkpoint";
+
+import {
+  createProductRewindReceiptEvent,
+  productTranscriptPostcondition,
+  type ProductRewindPhase,
+  type ProductRewindPrepareInput,
+  type ProductRewindRecord,
+  type ProductRewindStore,
+} from "./rewind.js";
 
 import {
   PRODUCT_PERSISTENCE_APPLICATION_ID,
@@ -39,8 +50,12 @@ import {
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
+  PRODUCT_PERSISTENCE_SCHEMA_V2_SQL,
+  PRODUCT_PERSISTENCE_SCHEMA_V3_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   PRODUCT_PERSISTENCE_TABLES,
+  PRODUCT_REWIND_CHILD_SCHEMA_SQL,
+  PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL,
 } from "./schema.js";
 import { ProductSessionLockTable } from "./session-lock.js";
 
@@ -68,6 +83,7 @@ export interface ProductSqliteReadSnapshot {
   readonly durableSequence: number;
   readonly header: SessionHeader;
   readonly revision: PersistenceRevision;
+  readonly stableBoundaryId?: string;
 }
 
 interface EventRow {
@@ -78,8 +94,38 @@ interface EventRow {
   readonly type: string;
 }
 
+interface StableBoundaryRow {
+  readonly boundaryId: string;
+  readonly generationId: string;
+  readonly policyVersion: string;
+  readonly prefixHash: string;
+  readonly seqExclusive: number;
+  readonly sessionId: string;
+  readonly turn: number;
+}
+
+interface StoredGenerationRow {
+  readonly eventCount: number;
+  readonly generationId: string;
+  readonly headHash: string;
+  readonly revision: number;
+  readonly sessionId: string;
+  readonly state: string;
+}
+
+interface RewindChildPlanRow {
+  readonly childGenerationId: string;
+  readonly childGenerationRevision: number;
+  readonly childSessionId: string;
+  readonly childSessionRevision: number;
+  readonly state: "prepared" | "tombstoned" | "restored";
+}
+
 const EMPTY_HEAD_HASH = createHash("sha256").digest("hex");
 const HASH_PATTERN = /^[a-f0-9]{64}$/u;
+// The durable identifier authority explicitly excludes every C0/DEL control byte.
+// eslint-disable-next-line no-control-regex
+const IDENTIFIER_PATTERN = /^[^\u0000-\u001f\u007f]{1,256}$/u;
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const EXPECTED_COLUMNS = Object.freeze({
   checkpoint_blobs: ["sha256", "size", "bytes", "created_at"],
@@ -103,6 +149,44 @@ const EXPECTED_COLUMNS = Object.freeze({
     "prepared_at",
     "settled_at",
   ],
+  mutation_journals: [
+    "token",
+    "kind",
+    "client_mutation_id",
+    "request_fingerprint",
+    "session_id",
+    "source_generation_id",
+    "source_revision",
+    "boundary_id",
+    "source_transcript_postcondition",
+    "target_transcript_postcondition",
+    "target_generation_id",
+    "phase",
+    "attempt",
+    "receipt_json",
+    "created_at",
+    "updated_at",
+  ],
+  rewind_child_plans: [
+    "token",
+    "child_session_id",
+    "child_generation_id",
+    "child_session_revision",
+    "child_generation_revision",
+    "state",
+  ],
+  rewind_file_plans: [
+    "token",
+    "path",
+    "expected_current_sha256",
+    "target_sha256",
+    "target_blob_sha256",
+    "rollback_sha256",
+    "rollback_blob_sha256",
+    "sealed",
+    "state",
+    "actual_sha256",
+  ],
   store_meta: ["singleton", "store_id", "schema_version", "persistence_format", "created_at"],
   sessions: ["id", "active_generation_id", "state", "revision", "event_count", "head_hash", "created_at"],
   session_generations: [
@@ -114,6 +198,16 @@ const EXPECTED_COLUMNS = Object.freeze({
     "revision",
     "event_count",
     "head_hash",
+    "created_at",
+  ],
+  stable_boundaries: [
+    "boundary_id",
+    "session_id",
+    "generation_id",
+    "seq_exclusive",
+    "turn",
+    "prefix_hash",
+    "policy_version",
     "created_at",
   ],
   session_events: [
@@ -145,6 +239,28 @@ const EXPECTED_V1_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V1_SQL
   .map((sql) => {
     const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
     if (match?.[1] === undefined) throw new Error("product persistence v1 DDL contains an unknown statement");
+    return Object.freeze({ name: match[1], sql });
+  })
+  .sort((left, right) => compareCodePoints(left.name, right.name)));
+
+const EXPECTED_V2_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V2_SQL
+  .trim()
+  .split(/;\s*/u)
+  .filter((statement) => statement.length > 0)
+  .map((sql) => {
+    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
+    if (match?.[1] === undefined) throw new Error("product persistence v2 DDL contains an unknown statement");
+    return Object.freeze({ name: match[1], sql });
+  })
+  .sort((left, right) => compareCodePoints(left.name, right.name)));
+
+const EXPECTED_V3_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V3_SQL
+  .trim()
+  .split(/;\s*/u)
+  .filter((statement) => statement.length > 0)
+  .map((sql) => {
+    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
+    if (match?.[1] === undefined) throw new Error("product persistence v3 DDL contains an unknown statement");
     return Object.freeze({ name: match[1], sql });
   })
   .sort((left, right) => compareCodePoints(left.name, right.name)));
@@ -223,7 +339,7 @@ const aggregateFailure = (primary: unknown, cleanup: unknown, description: strin
 };
 
 /** Product SQLite implementation of the public DSH backend hooks. */
-export class ProductSqliteStore implements PersistenceBackend<never>, ProductCheckpointStore {
+export class ProductSqliteStore implements PersistenceBackend<never>, ProductCheckpointStore, ProductRewindStore {
   readonly name = "product-session-persistence-sqlite";
 
   readonly #locks = new ProductSessionLockTable();
@@ -293,10 +409,12 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     return this.#locks.run(id, signal, () => {
       const row = this.#readActiveSession(id);
       if (row === undefined) return undefined;
+      const stableBoundaryId = this.#latestStableBoundaryId(row);
       return Object.freeze({
         durableSequence: row.eventCount,
         header: this.#decodeHeader(row),
         revision: this.#revision(row),
+        ...(stableBoundaryId === undefined ? {} : { stableBoundaryId }),
       });
     });
   }
@@ -489,6 +607,675 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     });
   }
 
+  listRewindFiles(
+    token: string,
+    signal?: AbortSignal,
+  ): Promise<readonly ProductCheckpointRewindFile[]> {
+    if (!IDENTIFIER_PATTERN.test(token)) return Promise.reject(new TypeError("rewind token is invalid"));
+    signal?.throwIfAborted();
+    const known = this.#readRewind(token);
+    if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      const rows = this.#requireDatabase().prepare(`
+        SELECT p.*, target.bytes AS target_bytes, rollback.bytes AS rollback_bytes
+          FROM rewind_file_plans AS p
+          LEFT JOIN checkpoint_blobs AS target ON target.sha256 = p.target_blob_sha256
+          LEFT JOIN checkpoint_blobs AS rollback ON rollback.sha256 = p.rollback_blob_sha256
+         WHERE p.token = ? ORDER BY p.path
+      `).all(token) as unknown[];
+      return Object.freeze(rows.map((row) => this.#decodeRewindFile(row)));
+    });
+  }
+
+  sealRewindFile(
+    token: string,
+    path: string,
+    rollbackBytes: Uint8Array,
+    rollbackSha256: string,
+    signal?: AbortSignal,
+  ): Promise<ProductCheckpointRewindFile> {
+    if (!IDENTIFIER_PATTERN.test(token) || typeof path !== "string" || path.length < 1 || path.length > 8_192
+      || !(rollbackBytes instanceof Uint8Array) || rollbackBytes.byteLength > 8 * 1_024 * 1_024
+      || !HASH_PATTERN.test(rollbackSha256)
+      || createHash("sha256").update(rollbackBytes).digest("hex") !== rollbackSha256) {
+      return Promise.reject(new TypeError("rewind file seal input is invalid"));
+    }
+    const known = this.#readRewind(token);
+    if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const database = this.#requireDatabase();
+      const current = this.#readRewindFile(token, path);
+      if (current === undefined) throw new Error("rewind file plan is unavailable");
+      if (current.sealed) {
+        if (current.rollbackSha256 !== rollbackSha256
+          || current.rollbackBytes === undefined
+          || !Buffer.from(current.rollbackBytes).equals(Buffer.from(rollbackBytes))) {
+          throw new Error("rewind file plan was sealed with different rollback bytes");
+        }
+        return current;
+      }
+      if (current.expectedCurrentSha256 !== rollbackSha256 || current.phase !== "prepared") {
+        throw new Error("rewind rollback capture differs from the expected current file");
+      }
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.prepare(`
+          INSERT OR IGNORE INTO checkpoint_blobs(sha256, size, bytes, created_at) VALUES (?, ?, ?, ?)
+        `).run(rollbackSha256, rollbackBytes.byteLength, Buffer.from(rollbackBytes), Date.now());
+        const outcome = database.prepare(`
+          UPDATE rewind_file_plans
+             SET rollback_sha256 = ?, rollback_blob_sha256 = ?, sealed = 1
+           WHERE token = ? AND path = ? AND sealed = 0 AND state = 'prepared'
+        `).run(rollbackSha256, rollbackSha256, token, path);
+        if (Number(outcome.changes) !== 1) throw new Error("rewind file plan seal lost its row authority");
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "rewind file seal");
+      }
+      const sealed = this.#readRewindFile(token, path);
+      if (sealed === undefined) throw new Error("rewind file seal lost its row");
+      return sealed;
+    });
+  }
+
+  transitionRewindFile(
+    token: string,
+    path: string,
+    expected: readonly ProductCheckpointRewindFilePhase[],
+    next: ProductCheckpointRewindFilePhase,
+    actualSha256: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<ProductCheckpointRewindFile> {
+    const known = this.#readRewind(token);
+    if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const current = this.#readRewindFile(token, path);
+      if (current === undefined) throw new Error("rewind file plan is unavailable");
+      if (current.phase === next && current.actualSha256 === actualSha256) return current;
+      if (!current.sealed || !expected.includes(current.phase)
+        || !["prepared", "published", "rolled_back", "conflict"].includes(next)) {
+        throw new Error("rewind file transition is invalid");
+      }
+      const expectedActual = next === "published" ? current.targetSha256 : current.rollbackSha256;
+      if (next !== "conflict" && actualSha256 !== expectedActual) {
+        throw new Error("rewind file transition actual hash differs from its plan");
+      }
+      const outcome = this.#requireDatabase().prepare(`
+        UPDATE rewind_file_plans SET state = ?, actual_sha256 = ?
+         WHERE token = ? AND path = ? AND state = ? AND sealed = 1
+      `).run(next, actualSha256 ?? null, token, path, current.phase);
+      if (Number(outcome.changes) !== 1) throw new Error("rewind file transition lost its row authority");
+      const updated = this.#readRewindFile(token, path);
+      if (updated === undefined) throw new Error("rewind file transition lost its row");
+      return updated;
+    });
+  }
+
+  prepareRewind(
+    input: ProductRewindPrepareInput,
+    signal?: AbortSignal,
+  ): Promise<ProductRewindRecord> {
+    this.#validateRewindPrepareInput(input);
+    return this.#locks.run(input.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      this.#assertSchema();
+      const active = this.#readActiveSession(input.runtimeSessionId as SessionId, false);
+      if (active === undefined) throw new Error("rewind source Session is unavailable");
+      const fingerprint = createHash("sha256")
+        .update("myagents-rewind-request-v1\0", "utf8")
+        .update(input.clientMutationId).update("\0")
+        .update(input.runtimeSessionId).update("\0")
+        .update(input.targetStableBoundaryId).update("\0")
+        .update(input.sourceTranscriptPostcondition).update("\0")
+        .update(input.targetTranscriptPostcondition)
+        .digest("hex");
+      const existing = this.#readRewindByClientMutation(
+        input.runtimeSessionId,
+        input.clientMutationId,
+      );
+      if (existing !== undefined) {
+        if (existing.requestFingerprint !== fingerprint) {
+          throw new Error("rewind client mutation identity was reused with different input");
+        }
+        return existing;
+      }
+      const events = this.#readAndValidateEvents(active);
+      if (productTranscriptPostcondition(events) !== input.sourceTranscriptPostcondition) {
+        throw new Error("rewind source transcript postcondition differs from durable history");
+      }
+      const boundary = this.#readStableBoundary(input.targetStableBoundaryId);
+      if (boundary?.sessionId !== active.sessionId
+        || boundary.generationId !== active.activeGenerationId
+        || boundary.seqExclusive >= active.eventCount) {
+        throw new Error("rewind stable boundary is unavailable or does not precede the durable head");
+      }
+      const targetEvents = events.slice(0, boundary.seqExclusive);
+      if (targetEvents.at(-1)?.seq !== boundary.seqExclusive - 1
+        || boundary.prefixHash !== this.#prefixHashAt(active, boundary.seqExclusive)
+        || productTranscriptPostcondition(targetEvents) !== input.targetTranscriptPostcondition) {
+        throw new Error("rewind stable boundary transcript identity changed");
+      }
+      const unsettled = asRecord(this.#requireDatabase().prepare(`
+        SELECT count(*) AS count FROM checkpoint_records
+         WHERE session_id = ? AND generation_id = ?
+           AND (state NOT IN ('settled', 'aborted')
+             OR last_event_phase IS NULL OR last_event_phase <> state)
+      `).get(active.sessionId, active.activeGenerationId), "rewind checkpoint aggregate");
+      if (rowInteger(unsettled, "count", "rewind checkpoint aggregate") !== 0) {
+        throw new Error("rewind source contains an unsettled managed checkpoint");
+      }
+      const token = `rw_${randomUUID()}`;
+      const targetGenerationId = randomUUID();
+      const excludedChildren = this.#rewindExcludedChildren(active.sessionId, targetEvents);
+      const now = Date.now();
+      const database = this.#requireDatabase();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.prepare(`
+          INSERT INTO mutation_journals(
+            token, kind, client_mutation_id, request_fingerprint, session_id,
+            source_generation_id, source_revision, boundary_id,
+            source_transcript_postcondition, target_transcript_postcondition,
+            target_generation_id, phase, attempt, receipt_json, created_at, updated_at
+          ) VALUES (?, 'rewind', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', 0, NULL, ?, ?)
+        `).run(
+          token,
+          input.clientMutationId,
+          fingerprint,
+          active.sessionId,
+          active.activeGenerationId,
+          String(this.#revision(active)),
+          boundary.boundaryId,
+          input.sourceTranscriptPostcondition,
+          input.targetTranscriptPostcondition,
+          targetGenerationId,
+          now,
+          now,
+        );
+        this.#insertRewindFilePlans(active, boundary, token);
+        this.#insertRewindChildPlans(token, excludedChildren);
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "rewind prepare");
+      }
+      const prepared = this.#readRewind(token);
+      if (prepared === undefined) throw new Error("rewind prepare did not publish its journal");
+      return prepared;
+    });
+  }
+
+  validateCommitRewind(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    this.#validateRewindSettlementIdentity(token, clientMutationId);
+    const known = this.#readRewind(token);
+    if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const record = this.#requireRewindIdentity(token, clientMutationId);
+      if (record.phase === "committed") return;
+      if (record.phase !== "prepared" && record.phase !== "committing") {
+        throw new Error(`rewind cannot validate commit from ${record.phase}`);
+      }
+      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      if (active?.activeGenerationId !== record.sourceGenerationId
+        || String(this.#revision(active)) !== record.sourceRevision) {
+        throw new Error("rewind source locator or revision changed before file publication");
+      }
+      const boundary = this.#readStableBoundary(record.boundaryId);
+      const events = this.#readAndValidateEvents(active);
+      if (boundary?.sessionId !== active.sessionId
+        || boundary.generationId !== active.activeGenerationId
+        || boundary.prefixHash !== this.#prefixHashAt(active, boundary.seqExclusive)
+        || productTranscriptPostcondition(events) !== record.sourceTranscriptPostcondition
+        || productTranscriptPostcondition(events.slice(0, boundary.seqExclusive))
+          !== record.targetTranscriptPostcondition) {
+        throw new Error("rewind source transcript changed before file publication");
+      }
+      for (const child of this.#readRewindChildPlans(token)) {
+        const current = this.#readActiveSession(child.childSessionId as SessionId, false);
+        if (child.state !== "prepared" || current?.activeGenerationId !== child.childGenerationId
+          || current.sessionRevision !== child.childSessionRevision
+          || current.generationRevision !== child.childGenerationRevision) {
+          throw new Error("rewind child generation changed before file publication");
+        }
+      }
+    });
+  }
+
+  commitRewind(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductRewindRecord> {
+    this.#validateRewindSettlementIdentity(token, clientMutationId);
+    const known = this.#readRewind(token);
+    if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const record = this.#requireRewindIdentity(token, clientMutationId);
+      if (record.phase === "committed") return record;
+      if (record.phase !== "prepared" && record.phase !== "committing") {
+        throw new Error(`rewind cannot commit from ${record.phase}`);
+      }
+      const database = this.#requireDatabase();
+      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      if (active?.activeGenerationId !== record.sourceGenerationId
+        || String(this.#revision(active)) !== record.sourceRevision) {
+        throw new Error("rewind source locator or revision changed before commit");
+      }
+      const boundary = this.#readStableBoundary(record.boundaryId);
+      if (boundary?.generationId !== record.sourceGenerationId
+        || boundary.sessionId !== record.runtimeSessionId
+        || boundary.prefixHash !== this.#prefixHashAt(active, boundary.seqExclusive)) {
+        throw new Error("rewind boundary changed before commit");
+      }
+      const sourceEvents = this.#readAndValidateEvents(active);
+      if (productTranscriptPostcondition(sourceEvents) !== record.sourceTranscriptPostcondition
+        || productTranscriptPostcondition(sourceEvents.slice(0, boundary.seqExclusive))
+          !== record.targetTranscriptPostcondition
+        || record.targetGenerationId === undefined) {
+        throw new Error("rewind transcript postcondition changed before commit");
+      }
+      const targetGenerationId = record.targetGenerationId;
+      const unsettledFiles = asRecord(database.prepare(`
+        SELECT count(*) AS count FROM rewind_file_plans
+         WHERE token = ? AND (sealed <> 1 OR state <> 'published')
+      `).get(token), "rewind commit file aggregate");
+      if (rowInteger(unsettledFiles, "count", "rewind commit file aggregate") !== 0) {
+        throw new Error("rewind managed files are not durably published");
+      }
+      const excludedChildren = this.#readRewindChildPlans(token);
+      if (excludedChildren.some(({ state }) => state !== "prepared")) {
+        throw new Error("rewind child generation plan is not prepared for commit");
+      }
+      const targetRevision = active.sessionRevision + 1;
+      const targetBoundaryId = `b_${randomUUID()}`;
+      const committedAt = Date.now();
+      const rewindEvent = createProductRewindReceiptEvent(boundary.seqExclusive, committedAt, {
+        boundaryId: boundary.boundaryId,
+        clientMutationId: record.clientMutationId,
+        sourceGenerationId: record.sourceGenerationId,
+        sourceTranscriptPostcondition: record.sourceTranscriptPostcondition,
+        targetGenerationId,
+        targetTranscriptPostcondition: record.targetTranscriptPostcondition,
+        token,
+      });
+      const rewindEnvelopeJson = snapshotCanonicalJson(rewindEvent, "rewind receipt event");
+      const targetHeadHash = chainHash(boundary.prefixHash, rewindEnvelopeJson);
+      const targetEventCount = boundary.seqExclusive + 1;
+      const receipt = Object.freeze({
+        durableSequence: targetEventCount,
+        rewindEventSequence: boundary.seqExclusive,
+        sourceGenerationId: record.sourceGenerationId,
+        stableBoundaryId: targetBoundaryId,
+        targetGenerationId,
+        targetHeadHash,
+      });
+      const receiptJson = snapshotCanonicalJson(receipt, "rewind commit receipt");
+      if (record.phase === "prepared") {
+        const outcome = database.prepare(`
+          UPDATE mutation_journals SET phase = 'committing', attempt = attempt + 1, updated_at = ?
+           WHERE token = ? AND phase = 'prepared'
+        `).run(Date.now(), token);
+        if (Number(outcome.changes) !== 1) throw new Error("rewind commit lost its prepared journal");
+      }
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.prepare(`
+          INSERT INTO session_generations(
+            session_id, generation_id, header_json, origin, state,
+            revision, event_count, head_hash, created_at
+          ) VALUES (?, ?, ?, 'rewind', 'staging', ?, ?, ?, ?)
+        `).run(
+          active.sessionId,
+          targetGenerationId,
+          active.headerJson,
+          targetRevision,
+          targetEventCount,
+          targetHeadHash,
+          committedAt,
+        );
+        database.prepare(`
+          INSERT INTO session_events(session_id, generation_id, seq, type, time, envelope_json, chain_hash)
+          SELECT session_id, ?, seq, type, time, envelope_json, chain_hash
+            FROM session_events
+           WHERE session_id = ? AND generation_id = ? AND seq < ?
+           ORDER BY seq
+        `).run(targetGenerationId, active.sessionId, active.activeGenerationId, boundary.seqExclusive);
+        const copied = database.prepare(`
+          SELECT count(*) AS count FROM session_events
+           WHERE session_id = ? AND generation_id = ?
+        `).get(active.sessionId, targetGenerationId);
+        if (rowInteger(asRecord(copied, "rewind copied prefix"), "count", "rewind copied prefix")
+          !== boundary.seqExclusive) {
+          throw new Error("rewind copied prefix is incomplete");
+        }
+        database.prepare(`
+          INSERT INTO session_events(
+            session_id, generation_id, seq, type, time, envelope_json, chain_hash
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          active.sessionId,
+          targetGenerationId,
+          rewindEvent.seq,
+          rewindEvent.type,
+          rewindEvent.time,
+          rewindEnvelopeJson,
+          targetHeadHash,
+        );
+        const sourceArchived = database.prepare(`
+          UPDATE session_generations SET state = 'archived'
+           WHERE session_id = ? AND generation_id = ? AND state = 'active'
+        `).run(active.sessionId, active.activeGenerationId);
+        const targetActivated = database.prepare(`
+          UPDATE session_generations SET state = 'active'
+           WHERE session_id = ? AND generation_id = ? AND state = 'staging'
+        `).run(active.sessionId, targetGenerationId);
+        const locatorUpdated = database.prepare(`
+          UPDATE sessions SET active_generation_id = ?, revision = ?, event_count = ?, head_hash = ?
+           WHERE id = ? AND active_generation_id = ? AND revision = ?
+        `).run(
+          targetGenerationId,
+          targetRevision,
+          targetEventCount,
+          targetHeadHash,
+          active.sessionId,
+          active.activeGenerationId,
+          active.sessionRevision,
+        );
+        if (Number(sourceArchived.changes) !== 1 || Number(targetActivated.changes) !== 1
+          || Number(locatorUpdated.changes) !== 1) {
+          throw new Error("rewind active locator switch lost its exact generation authority");
+        }
+        for (const child of excludedChildren) {
+          const childSessionTombstoned = database.prepare(`
+            UPDATE sessions SET state = 'tombstoned', revision = ?
+             WHERE id = ? AND active_generation_id = ? AND state = 'active' AND revision = ?
+          `).run(
+            child.childSessionRevision + 1,
+            child.childSessionId,
+            child.childGenerationId,
+            child.childSessionRevision,
+          );
+          const childGenerationArchived = database.prepare(`
+            UPDATE session_generations SET state = 'archived', revision = ?
+             WHERE session_id = ? AND generation_id = ? AND state = 'active' AND revision = ?
+          `).run(
+            child.childGenerationRevision + 1,
+            child.childSessionId,
+            child.childGenerationId,
+            child.childGenerationRevision,
+          );
+          const childPlanTombstoned = database.prepare(`
+            UPDATE rewind_child_plans SET state = 'tombstoned'
+             WHERE token = ? AND child_session_id = ? AND state = 'prepared'
+          `).run(token, child.childSessionId);
+          if (Number(childSessionTombstoned.changes) !== 1
+            || Number(childGenerationArchived.changes) !== 1
+            || Number(childPlanTombstoned.changes) !== 1) {
+            throw new Error("rewind child generation changed before commit");
+          }
+        }
+        database.prepare(`
+          INSERT INTO stable_boundaries(
+            boundary_id, session_id, generation_id, seq_exclusive,
+            turn, prefix_hash, policy_version, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          targetBoundaryId,
+          active.sessionId,
+          targetGenerationId,
+          boundary.seqExclusive,
+          boundary.turn,
+          boundary.prefixHash,
+          boundary.policyVersion,
+          Date.now(),
+        );
+        const journalCommitted = database.prepare(`
+          UPDATE mutation_journals SET phase = 'committed', receipt_json = ?, updated_at = ?
+           WHERE token = ? AND phase = 'committing'
+        `).run(receiptJson, committedAt, token);
+        if (Number(journalCommitted.changes) !== 1) {
+          throw new Error("rewind commit lost its exact journal authority");
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "rewind commit");
+      }
+      const committed = this.#readRewind(token);
+      if (committed?.phase !== "committed") throw new Error("rewind commit lost its terminal journal");
+      return committed;
+    });
+  }
+
+  validateRollbackRewind(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    this.#validateRewindSettlementIdentity(token, clientMutationId);
+    const known = this.#readRewind(token);
+    if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const record = this.#requireRewindIdentity(token, clientMutationId);
+      if (record.phase === "prepared" || record.phase === "rolled_back") return;
+      if ((record.phase !== "committed" && record.phase !== "rolling_back")
+        || record.targetGenerationId === undefined) {
+        throw new Error(`rewind cannot validate rollback from ${record.phase}`);
+      }
+      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      const receiptSequence = record.receipt?.durableSequence;
+      const receiptHeadHash = record.receipt?.targetHeadHash;
+      if (active?.activeGenerationId !== record.targetGenerationId
+        || !Number.isSafeInteger(receiptSequence) || (receiptSequence as number) < 1
+        || typeof receiptHeadHash !== "string" || !HASH_PATTERN.test(receiptHeadHash)) {
+        throw new Error("rewind rollback target locator changed before file restoration");
+      }
+      const targetEvents = this.#readAndValidateEvents(active);
+      const allowedResumeSeed = targetEvents.length === (receiptSequence as number) + 1
+        && targetEvents.at(-1)?.type === "session/end-seed"
+        && snapshotCanonicalJson(targetEvents.at(-1)?.data, "rewind rollback resume seed") === "{}";
+      const committedHeadMatches = active.eventCount === receiptSequence
+        && active.headHash === receiptHeadHash;
+      if ((!committedHeadMatches && !allowedResumeSeed)
+        || String(targetEvents[(receiptSequence as number) - 1]?.type) !== "myagents/session/rewind") {
+        throw new Error("rewind rollback target generation changed before file restoration");
+      }
+      for (const child of this.#readRewindChildPlans(token)) {
+        const row = this.#requireDatabase().prepare(`
+          SELECT s.active_generation_id, s.state AS session_state, s.revision AS session_revision,
+                 g.state AS generation_state, g.revision AS generation_revision
+            FROM sessions AS s JOIN session_generations AS g
+              ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+           WHERE s.id = ?
+        `).get(child.childSessionId);
+        if (row === undefined) throw new Error("rewind child generation disappeared before file restoration");
+        const current = asRecord(row, "rewind rollback child generation");
+        if (child.state !== "tombstoned"
+          || rowString(current, "active_generation_id", "rewind rollback child generation")
+            !== child.childGenerationId
+          || rowString(current, "session_state", "rewind rollback child generation") !== "tombstoned"
+          || rowString(current, "generation_state", "rewind rollback child generation") !== "archived"
+          || rowInteger(current, "session_revision", "rewind rollback child generation")
+            !== child.childSessionRevision + 1
+          || rowInteger(current, "generation_revision", "rewind rollback child generation")
+            !== child.childGenerationRevision + 1) {
+          throw new Error("rewind child generation changed before file restoration");
+        }
+      }
+    });
+  }
+
+  rollbackRewind(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductRewindRecord> {
+    this.#validateRewindSettlementIdentity(token, clientMutationId);
+    const known = this.#readRewind(token);
+    if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const record = this.#requireRewindIdentity(token, clientMutationId);
+      if (record.phase === "rolled_back") return record;
+      if (record.phase === "prepared") {
+        this.#requireDatabase().prepare(`
+          UPDATE mutation_journals SET phase = 'rolled_back', attempt = attempt + 1, updated_at = ?
+           WHERE token = ? AND phase = 'prepared'
+        `).run(Date.now(), token);
+        return this.#requireRewindIdentity(token, clientMutationId);
+      }
+      if (record.phase !== "committed" && record.phase !== "rolling_back") {
+        throw new Error(`rewind cannot roll back from ${record.phase}`);
+      }
+      if (record.targetGenerationId === undefined) throw new Error("committed rewind lacks a target generation");
+      const database = this.#requireDatabase();
+      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      if (active?.activeGenerationId !== record.targetGenerationId) {
+        throw new Error("rewind rollback target locator changed");
+      }
+      const receiptSequence = record.receipt?.durableSequence;
+      const receiptHeadHash = record.receipt?.targetHeadHash;
+      if (!Number.isSafeInteger(receiptSequence) || (receiptSequence as number) < 1
+        || typeof receiptHeadHash !== "string" || !HASH_PATTERN.test(receiptHeadHash)) {
+        throw new Error("rewind rollback receipt lacks exact committed generation identity");
+      }
+      const targetEvents = this.#readAndValidateEvents(active);
+      const allowedResumeSeed = targetEvents.length === (receiptSequence as number) + 1
+        && targetEvents.at(-1)?.type === "session/end-seed"
+        && snapshotCanonicalJson(targetEvents.at(-1)?.data, "rewind rollback resume seed") === "{}";
+      const committedHeadMatches = active.eventCount === receiptSequence
+        && active.headHash === receiptHeadHash;
+      if (!committedHeadMatches && !allowedResumeSeed) {
+        throw new Error("rewind rollback target generation changed after commit");
+      }
+      const committedTail = targetEvents[(receiptSequence as number) - 1];
+      if (String(committedTail?.type) !== "myagents/session/rewind") {
+        throw new Error("rewind rollback target generation lacks its exact receipt event");
+      }
+      const committedEnvelope = snapshotCanonicalJson(
+        committedTail,
+        "rewind rollback receipt event",
+      );
+      const predecessorHash = (receiptSequence as number) === 1
+        ? EMPTY_HEAD_HASH
+        : rowString(asRecord(database.prepare(`
+            SELECT chain_hash FROM session_events
+             WHERE session_id = ? AND generation_id = ? AND seq = ?
+          `).get(active.sessionId, active.activeGenerationId, (receiptSequence as number) - 2),
+        "rewind rollback receipt predecessor"), "chain_hash", "rewind rollback receipt predecessor");
+      if (chainHash(predecessorHash, committedEnvelope) !== receiptHeadHash) {
+        throw new Error("rewind rollback committed generation identity changed");
+      }
+      const source = this.#readGeneration(record.runtimeSessionId, record.sourceGenerationId);
+      if (source?.state !== "archived") {
+        throw new Error("rewind rollback source generation is unavailable");
+      }
+      const excludedChildren = this.#readRewindChildPlans(token);
+      if (excludedChildren.some(({ state }) => state !== "tombstoned")) {
+        throw new Error("rewind child generation plan is not tombstoned for rollback");
+      }
+      const unsettledFiles = asRecord(database.prepare(`
+        SELECT count(*) AS count FROM rewind_file_plans
+         WHERE token = ? AND state NOT IN ('prepared', 'rolled_back')
+      `).get(token), "rewind rollback file aggregate");
+      if (rowInteger(unsettledFiles, "count", "rewind rollback file aggregate") !== 0) {
+        throw new Error("rewind managed files are not restored for rollback");
+      }
+      const nextRevision = active.sessionRevision + 1;
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        if (record.phase === "committed") {
+          const journalRollingBack = database.prepare(`
+            UPDATE mutation_journals
+               SET phase = 'rolling_back', attempt = attempt + 1, updated_at = ?
+             WHERE token = ? AND phase = 'committed'
+          `).run(Date.now(), token);
+          if (Number(journalRollingBack.changes) !== 1) {
+            throw new Error("rewind rollback lost its exact journal authority");
+          }
+        }
+        const targetArchived = database.prepare(`
+          UPDATE session_generations SET state = 'archived'
+           WHERE session_id = ? AND generation_id = ? AND state = 'active'
+        `).run(active.sessionId, active.activeGenerationId);
+        const sourceActivated = database.prepare(`
+          UPDATE session_generations SET state = 'active', revision = ?
+           WHERE session_id = ? AND generation_id = ? AND state = 'archived'
+        `).run(nextRevision, active.sessionId, record.sourceGenerationId);
+        const locatorUpdated = database.prepare(`
+          UPDATE sessions SET active_generation_id = ?, revision = ?, event_count = ?, head_hash = ?
+           WHERE id = ? AND active_generation_id = ? AND revision = ?
+        `).run(
+          record.sourceGenerationId,
+          nextRevision,
+          source.eventCount,
+          source.headHash,
+          active.sessionId,
+          active.activeGenerationId,
+          active.sessionRevision,
+        );
+        for (const child of excludedChildren) {
+          const childSessionRestored = database.prepare(`
+            UPDATE sessions SET state = 'active', revision = ?
+             WHERE id = ? AND active_generation_id = ? AND state = 'tombstoned' AND revision = ?
+          `).run(
+            child.childSessionRevision + 2,
+            child.childSessionId,
+            child.childGenerationId,
+            child.childSessionRevision + 1,
+          );
+          const childGenerationRestored = database.prepare(`
+            UPDATE session_generations SET state = 'active', revision = ?
+             WHERE session_id = ? AND generation_id = ? AND state = 'archived' AND revision = ?
+          `).run(
+            child.childGenerationRevision + 2,
+            child.childSessionId,
+            child.childGenerationId,
+            child.childGenerationRevision + 1,
+          );
+          const childPlanRestored = database.prepare(`
+            UPDATE rewind_child_plans SET state = 'restored'
+             WHERE token = ? AND child_session_id = ? AND state = 'tombstoned'
+          `).run(token, child.childSessionId);
+          if (Number(childSessionRestored.changes) !== 1
+            || Number(childGenerationRestored.changes) !== 1
+            || Number(childPlanRestored.changes) !== 1) {
+            throw new Error("rewind child generation changed before rollback");
+          }
+        }
+        const journalRolledBack = database.prepare(`
+          UPDATE mutation_journals SET phase = 'rolled_back', updated_at = ?
+           WHERE token = ? AND phase = 'rolling_back'
+        `).run(Date.now(), token);
+        if (Number(targetArchived.changes) !== 1 || Number(sourceActivated.changes) !== 1
+          || Number(locatorUpdated.changes) !== 1 || Number(journalRolledBack.changes) !== 1) {
+          throw new Error("rewind rollback lost its exact locator or journal authority");
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "rewind rollback");
+      }
+      const rolledBack = this.#readRewind(token);
+      if (rolledBack?.phase !== "rolled_back") throw new Error("rewind rollback lost its terminal journal");
+      return rolledBack;
+    });
+  }
+
+  getRewind(token: string, signal?: AbortSignal): Promise<ProductRewindRecord | undefined> {
+    if (!IDENTIFIER_PATTERN.test(token)) return Promise.reject(new TypeError("rewind token is invalid"));
+    signal?.throwIfAborted();
+    const known = this.#readRewind(token);
+    if (known === undefined) return Promise.resolve(undefined);
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => this.#readRewind(token));
+  }
+
   appendBatch(
     meta: SessionHeader,
     events: readonly SessionEvent[],
@@ -611,41 +1398,76 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         this.#rollback(error, "schema bootstrap");
       }
     } else {
-      this.#migrateV1IfNeeded();
+      this.#migrateSchemaIfNeeded();
     }
     this.#assertSchema();
   }
 
-  #migrateV1IfNeeded(): void {
+  #migrateSchemaIfNeeded(): void {
     const database = this.#requireDatabase();
-    const version = asRecord(database.prepare("PRAGMA user_version").get(), "user version").user_version;
-    if (version !== 1) return;
-    const rows = (database.prepare(
+    let version = asRecord(database.prepare("PRAGMA user_version").get(), "user version").user_version;
+    const readSchemaRows = (): ReadonlyArray<Readonly<{ name: string; sql: string }>> =>
+      (database.prepare(
       "SELECT name, sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY name",
     ).all() as unknown[]).map((value) => {
-      const row = asRecord(value, "v1 schema authority row");
+      const row = asRecord(value, "migration schema authority row");
       return {
-        name: rowString(row, "name", "v1 schema authority row"),
-        sql: rowString(row, "sql", "v1 schema authority row"),
+        name: rowString(row, "name", "migration schema authority row"),
+        sql: rowString(row, "sql", "migration schema authority row"),
       };
     });
-    if (JSON.stringify(rows) !== JSON.stringify(EXPECTED_V1_SCHEMA_ROWS)) {
-      throw new Error("product SQLite persistence v1 schema authority is incompatible");
+    if (version === 1) {
+      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V1_SCHEMA_ROWS)) {
+        throw new Error("product SQLite persistence v1 schema authority is incompatible");
+      }
+      this.#assertMigrationMetadata(1);
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.exec(PRODUCT_CHECKPOINT_SCHEMA_SQL);
+        database.prepare("UPDATE store_meta SET schema_version = 2 WHERE singleton = 1").run();
+        database.exec("PRAGMA user_version = 2; COMMIT");
+      } catch (error) {
+        this.#rollback(error, "v1 checkpoint schema migration");
+      }
+      version = 2;
     }
-    const meta = asRecord(database.prepare(
+    if (version === 2) {
+      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V2_SCHEMA_ROWS)) {
+        throw new Error("product SQLite persistence v2 schema authority is incompatible");
+      }
+      this.#assertMigrationMetadata(2);
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.exec(PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL);
+        database.prepare("UPDATE store_meta SET schema_version = 3 WHERE singleton = 1").run();
+        database.exec("PRAGMA user_version = 3; COMMIT");
+      } catch (error) {
+        this.#rollback(error, "v2 stable-boundary schema migration");
+      }
+      version = 3;
+    }
+    if (version === 3) {
+      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V3_SCHEMA_ROWS)) {
+        throw new Error("product SQLite persistence v3 schema authority is incompatible");
+      }
+      this.#assertMigrationMetadata(3);
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.exec(PRODUCT_REWIND_CHILD_SCHEMA_SQL);
+        database.prepare("UPDATE store_meta SET schema_version = 4 WHERE singleton = 1").run();
+        database.exec("PRAGMA user_version = 4; COMMIT");
+      } catch (error) {
+        this.#rollback(error, "v3 rewind-child schema migration");
+      }
+    }
+  }
+
+  #assertMigrationMetadata(version: number): void {
+    const meta = asRecord(this.#requireDatabase().prepare(
       "SELECT schema_version, persistence_format FROM store_meta WHERE singleton = 1",
-    ).get(), "v1 store metadata");
-    if (meta.schema_version !== 1 || meta.persistence_format !== PRODUCT_PERSISTENCE_FORMAT) {
-      throw new Error("product SQLite persistence v1 store metadata is incompatible");
-    }
-    database.exec("BEGIN IMMEDIATE");
-    try {
-      database.exec(PRODUCT_CHECKPOINT_SCHEMA_SQL);
-      database.prepare("UPDATE store_meta SET schema_version = ? WHERE singleton = 1")
-        .run(PRODUCT_PERSISTENCE_SCHEMA_VERSION);
-      database.exec(`PRAGMA user_version = ${PRODUCT_PERSISTENCE_SCHEMA_VERSION}; COMMIT`);
-    } catch (error) {
-      this.#rollback(error, "v1 checkpoint schema migration");
+    ).get(), `v${version} store metadata`);
+    if (meta.schema_version !== version || meta.persistence_format !== PRODUCT_PERSISTENCE_FORMAT) {
+      throw new Error(`product SQLite persistence v${version} store metadata is incompatible`);
     }
   }
 
@@ -668,13 +1490,13 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     });
     if (JSON.stringify(schemaRows) !== JSON.stringify(EXPECTED_SCHEMA_ROWS)
       || JSON.stringify(schemaRows.map(({ name }) => name)) !== JSON.stringify(PRODUCT_PERSISTENCE_TABLES)) {
-      throw new Error("product SQLite persistence table authority differs from schema v2");
+      throw new Error("product SQLite persistence table authority differs from schema v3");
     }
     for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
       const columns = (database.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all() as unknown[])
         .map((row) => rowString(asRecord(row, `${table} column`), "name", `${table} column`));
       if (JSON.stringify(columns) !== JSON.stringify(expected)) {
-        throw new Error(`product SQLite persistence ${table} columns differ from schema v2`);
+        throw new Error(`product SQLite persistence ${table} columns differ from schema v3`);
       }
     }
     const meta = asRecord(database.prepare(
@@ -738,6 +1560,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         insert.run(meta.id, row.activeGenerationId, event.seq, event.type, event.time, envelopeJson, headHash);
         expectedSeq += 1;
       }
+      this.#materializeStableBoundary(row, events, expectedSeq, headHash);
       const revision = row.sessionRevision + 1;
       const sessionUpdate = database.prepare(
         "UPDATE sessions SET revision = ?, event_count = ?, head_hash = ? WHERE id = ? AND active_generation_id = ? AND revision = ?",
@@ -771,6 +1594,457 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
        ORDER BY s.id
     `).all() as unknown[];
     return rows.map((row) => this.#decodeActiveSessionRow(row));
+  }
+
+  #materializeStableBoundary(
+    row: ActiveSessionRow,
+    events: readonly SessionEvent[],
+    seqExclusive: number,
+    prefixHash: string,
+  ): void {
+    const tailType = events.at(-1)?.type;
+    if (tailType !== "myagents/operation/terminal" && tailType !== "turn/end") return;
+    if (tailType === "turn/end") {
+      const productOperations = asRecord(this.#requireDatabase().prepare(`
+        SELECT count(*) AS count FROM session_events
+         WHERE session_id = ? AND generation_id = ? AND type = 'myagents/operation/accepted'
+      `).get(row.sessionId, row.activeGenerationId), "stable boundary operation aggregate");
+      if (rowInteger(productOperations, "count", "stable boundary operation aggregate") !== 0) return;
+    }
+    const unsettled = asRecord(this.#requireDatabase().prepare(`
+      SELECT count(*) AS count FROM checkpoint_records
+       WHERE session_id = ? AND generation_id = ?
+         AND (state NOT IN ('settled', 'aborted')
+           OR last_event_phase IS NULL OR last_event_phase <> state)
+    `).get(row.sessionId, row.activeGenerationId), "stable boundary checkpoint aggregate");
+    if (rowInteger(unsettled, "count", "stable boundary checkpoint aggregate") !== 0) return;
+    const boundaryTurnRow = this.#requireDatabase().prepare(`
+      SELECT envelope_json FROM session_events
+       WHERE session_id = ? AND generation_id = ? AND type = 'turn/end' AND seq < ?
+       ORDER BY seq DESC LIMIT 1
+    `).get(row.sessionId, row.activeGenerationId, seqExclusive);
+    if (boundaryTurnRow === undefined) return;
+    const envelopeJson = rowString(
+      asRecord(boundaryTurnRow, "stable boundary turn"),
+      "envelope_json",
+      "stable boundary turn",
+    );
+    let envelope: unknown;
+    try {
+      envelope = JSON.parse(envelopeJson);
+    } catch (error) {
+      throw new Error("stable boundary turn envelope is invalid JSON", { cause: error });
+    }
+    const snapshot = snapshotJsonValue(envelope);
+    const turn = snapshot !== undefined && snapshot !== null && typeof snapshot === "object"
+      && !Array.isArray(snapshot)
+      ? (snapshot as Record<string, unknown>).data
+      : undefined;
+    const turnNumber = turn !== null && typeof turn === "object" && !Array.isArray(turn)
+      ? (turn as Record<string, unknown>).turn
+      : undefined;
+    if (!Number.isSafeInteger(turnNumber) || (turnNumber as number) < 1) {
+      throw new Error("stable boundary turn identity is invalid");
+    }
+    this.#requireDatabase().prepare(`
+      INSERT INTO stable_boundaries(
+        boundary_id, session_id, generation_id, seq_exclusive,
+        turn, prefix_hash, policy_version, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'stable-boundary-v1', ?)
+      ON CONFLICT(session_id, generation_id, seq_exclusive) DO NOTHING
+    `).run(
+      `b_${randomUUID()}`,
+      row.sessionId,
+      row.activeGenerationId,
+      seqExclusive,
+      turnNumber as number,
+      prefixHash,
+      Date.now(),
+    );
+  }
+
+  #latestStableBoundaryId(row: ActiveSessionRow): string | undefined {
+    const value = this.#requireDatabase().prepare(`
+      SELECT boundary_id, prefix_hash, seq_exclusive FROM stable_boundaries
+       WHERE session_id = ? AND generation_id = ? AND seq_exclusive <= ?
+       ORDER BY seq_exclusive DESC LIMIT 1
+    `).get(row.sessionId, row.activeGenerationId, row.eventCount);
+    if (value === undefined) return undefined;
+    const boundary = asRecord(value, "stable boundary");
+    const boundaryId = rowString(boundary, "boundary_id", "stable boundary");
+    const prefixHash = rowString(boundary, "prefix_hash", "stable boundary");
+    const seqExclusive = rowInteger(boundary, "seq_exclusive", "stable boundary");
+    if (!boundaryId.startsWith("b_") || boundaryId.length > 256 || !HASH_PATTERN.test(prefixHash)) {
+      throw new Error("stable boundary identity is invalid");
+    }
+    const storedPrefixHash = seqExclusive === 0
+      ? EMPTY_HEAD_HASH
+      : rowString(asRecord(this.#requireDatabase().prepare(`
+          SELECT chain_hash FROM session_events
+           WHERE session_id = ? AND generation_id = ? AND seq = ?
+        `).get(row.sessionId, row.activeGenerationId, seqExclusive - 1), "stable boundary prefix"),
+        "chain_hash", "stable boundary prefix");
+    if (storedPrefixHash !== prefixHash) throw new Error("stable boundary prefix hash changed");
+    return boundaryId;
+  }
+
+  #readStableBoundary(boundaryId: string): StableBoundaryRow | undefined {
+    const value = this.#requireDatabase().prepare(
+      "SELECT * FROM stable_boundaries WHERE boundary_id = ?",
+    ).get(boundaryId);
+    if (value === undefined) return undefined;
+    const row = asRecord(value, "stable boundary");
+    const decoded = Object.freeze({
+      boundaryId: rowString(row, "boundary_id", "stable boundary"),
+      generationId: rowString(row, "generation_id", "stable boundary"),
+      policyVersion: rowString(row, "policy_version", "stable boundary"),
+      prefixHash: rowString(row, "prefix_hash", "stable boundary"),
+      seqExclusive: rowInteger(row, "seq_exclusive", "stable boundary"),
+      sessionId: rowString(row, "session_id", "stable boundary"),
+      turn: rowInteger(row, "turn", "stable boundary"),
+    });
+    if (!IDENTIFIER_PATTERN.test(decoded.boundaryId) || !IDENTIFIER_PATTERN.test(decoded.generationId)
+      || !IDENTIFIER_PATTERN.test(decoded.policyVersion) || !IDENTIFIER_PATTERN.test(decoded.sessionId)
+      || !HASH_PATTERN.test(decoded.prefixHash) || decoded.seqExclusive < 1 || decoded.turn < 1) {
+      throw new Error("stable boundary row is invalid");
+    }
+    return decoded;
+  }
+
+  #prefixHashAt(row: ActiveSessionRow, seqExclusive: number): string {
+    if (!Number.isSafeInteger(seqExclusive) || seqExclusive < 1 || seqExclusive > row.eventCount) {
+      throw new Error("stable boundary sequence is outside the active generation");
+    }
+    return rowString(asRecord(this.#requireDatabase().prepare(`
+      SELECT chain_hash FROM session_events
+       WHERE session_id = ? AND generation_id = ? AND seq = ?
+    `).get(row.sessionId, row.activeGenerationId, seqExclusive - 1), "stable boundary prefix"),
+    "chain_hash", "stable boundary prefix");
+  }
+
+  #readGeneration(sessionId: string, generationId: string): StoredGenerationRow | undefined {
+    const value = this.#requireDatabase().prepare(`
+      SELECT session_id, generation_id, state, revision, event_count, head_hash
+        FROM session_generations WHERE session_id = ? AND generation_id = ?
+    `).get(sessionId, generationId);
+    if (value === undefined) return undefined;
+    const row = asRecord(value, "Session generation");
+    const decoded = Object.freeze({
+      eventCount: rowInteger(row, "event_count", "Session generation"),
+      generationId: rowString(row, "generation_id", "Session generation"),
+      headHash: rowString(row, "head_hash", "Session generation"),
+      revision: rowInteger(row, "revision", "Session generation"),
+      sessionId: rowString(row, "session_id", "Session generation"),
+      state: rowString(row, "state", "Session generation"),
+    });
+    if (!HASH_PATTERN.test(decoded.headHash)
+      || !["active", "archived", "staging", "purging"].includes(decoded.state)) {
+      throw new Error("Session generation row is invalid");
+    }
+    return decoded;
+  }
+
+  #validateRewindPrepareInput(input: unknown): asserts input is ProductRewindPrepareInput {
+    if (input === null || typeof input !== "object" || Array.isArray(input)) {
+      throw new TypeError("rewind prepare input must be an object");
+    }
+    const record = input as Partial<ProductRewindPrepareInput>;
+    for (const value of [
+      record.clientMutationId,
+      record.runtimeSessionId,
+      record.targetStableBoundaryId,
+    ]) {
+      if (typeof value !== "string" || !IDENTIFIER_PATTERN.test(value)) {
+        throw new TypeError("rewind prepare identity is invalid");
+      }
+    }
+    if (typeof record.sourceTranscriptPostcondition !== "string"
+      || typeof record.targetTranscriptPostcondition !== "string"
+      || !HASH_PATTERN.test(record.sourceTranscriptPostcondition)
+      || !HASH_PATTERN.test(record.targetTranscriptPostcondition)) {
+      throw new TypeError("rewind transcript postcondition is invalid");
+    }
+  }
+
+  #validateRewindSettlementIdentity(token: string, clientMutationId: string): void {
+    if (!IDENTIFIER_PATTERN.test(token) || !IDENTIFIER_PATTERN.test(clientMutationId)) {
+      throw new TypeError("rewind settlement identity is invalid");
+    }
+  }
+
+  #requireRewindIdentity(token: string, clientMutationId: string): ProductRewindRecord {
+    const record = this.#readRewind(token);
+    if (record === undefined) throw new Error("rewind token is unavailable");
+    if (record.clientMutationId !== clientMutationId) {
+      throw new Error("rewind client mutation identity differs from its prepared journal");
+    }
+    return record;
+  }
+
+  #readRewindByClientMutation(
+    sessionId: string,
+    clientMutationId: string,
+  ): ProductRewindRecord | undefined {
+    const value = this.#requireDatabase().prepare(`
+      SELECT * FROM mutation_journals WHERE session_id = ? AND client_mutation_id = ?
+    `).get(sessionId, clientMutationId);
+    return value === undefined ? undefined : this.#decodeRewind(value);
+  }
+
+  #rewindExcludedChildren(
+    rootSessionId: string,
+    targetEvents: readonly SessionEvent[],
+  ): readonly ActiveSessionRow[] {
+    const retainedDirectChildren = new Set<string>();
+    for (const event of targetEvents) {
+      if (event.type !== "myagents/work/created"
+        || typeof event.data !== "object" || Array.isArray(event.data)) continue;
+      const agentId = (event.data as Record<string, unknown>).agentId;
+      if (typeof agentId !== "string" || !IDENTIFIER_PATTERN.test(agentId)) {
+        throw new Error("rewind target contains an invalid ProductWork child identity");
+      }
+      retainedDirectChildren.add(agentId);
+    }
+    const activeChildren = this.#activeSessionRows()
+      .filter((row) => row.sessionId !== rootSessionId)
+      .map((row) => Object.freeze({ header: this.#decodeHeader(row), row }));
+    const excludedIds = new Set<string>();
+    for (const candidate of activeChildren) {
+      if (candidate.header.origin === "subagent"
+        && String(candidate.header.parentSession) === rootSessionId
+        && !retainedDirectChildren.has(candidate.row.sessionId)) {
+        excludedIds.add(candidate.row.sessionId);
+      }
+    }
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const candidate of activeChildren) {
+        if (candidate.header.origin === "subagent"
+          && candidate.header.parentSession !== undefined
+          && excludedIds.has(String(candidate.header.parentSession))
+          && !excludedIds.has(candidate.row.sessionId)) {
+          excludedIds.add(candidate.row.sessionId);
+          changed = true;
+        }
+      }
+    }
+    if (excludedIds.size > 4_096) {
+      throw new Error("rewind excluded child Session set exceeds the bounded generation plan");
+    }
+    return Object.freeze(activeChildren
+      .filter(({ row }) => excludedIds.has(row.sessionId))
+      .map(({ row }) => row)
+      .sort((left, right) => compareCodePoints(left.sessionId, right.sessionId)));
+  }
+
+  #insertRewindChildPlans(token: string, children: readonly ActiveSessionRow[]): void {
+    const insert = this.#requireDatabase().prepare(`
+      INSERT INTO rewind_child_plans(
+        token, child_session_id, child_generation_id,
+        child_session_revision, child_generation_revision, state
+      ) VALUES (?, ?, ?, ?, ?, 'prepared')
+    `);
+    for (const child of children) {
+      insert.run(
+        token,
+        child.sessionId,
+        child.activeGenerationId,
+        child.sessionRevision,
+        child.generationRevision,
+      );
+    }
+  }
+
+  #readRewindChildPlans(token: string): readonly RewindChildPlanRow[] {
+    const rows = this.#requireDatabase().prepare(`
+      SELECT child_session_id, child_generation_id,
+             child_session_revision, child_generation_revision, state
+        FROM rewind_child_plans WHERE token = ? ORDER BY child_session_id
+    `).all(token) as unknown[];
+    return Object.freeze(rows.map((value) => {
+      const row = asRecord(value, "rewind child plan");
+      const state = rowString(row, "state", "rewind child plan");
+      const decoded = Object.freeze({
+        childGenerationId: rowString(row, "child_generation_id", "rewind child plan"),
+        childGenerationRevision: rowInteger(row, "child_generation_revision", "rewind child plan"),
+        childSessionId: rowString(row, "child_session_id", "rewind child plan"),
+        childSessionRevision: rowInteger(row, "child_session_revision", "rewind child plan"),
+        state: state as RewindChildPlanRow["state"],
+      });
+      if (!IDENTIFIER_PATTERN.test(decoded.childSessionId)
+        || !IDENTIFIER_PATTERN.test(decoded.childGenerationId)
+        || !["prepared", "tombstoned", "restored"].includes(decoded.state)) {
+        throw new Error("rewind child plan is invalid");
+      }
+      return decoded;
+    }));
+  }
+
+  #insertRewindFilePlans(
+    active: ActiveSessionRow,
+    boundary: StableBoundaryRow,
+    token: string,
+  ): void {
+    const rows = this.#requireDatabase().prepare(`
+      SELECT * FROM checkpoint_records
+       WHERE session_id = ? AND generation_id = ? AND dsh_turn > ?
+         AND state = 'settled' AND last_event_phase = 'settled'
+       ORDER BY path, dsh_turn, prepared_at, checkpoint_id
+    `).all(active.sessionId, active.activeGenerationId, boundary.turn) as unknown[];
+    const byPath = new Map<string, ProductCheckpointRecord[]>();
+    for (const value of rows) {
+      const record = this.#decodeCheckpoint(value);
+      if (record.actualSha256 === undefined) {
+        throw new Error("settled rewind checkpoint lacks actual file identity");
+      }
+      const existing = byPath.get(record.path) ?? [];
+      existing.push(record);
+      byPath.set(record.path, existing);
+    }
+    const insert = this.#requireDatabase().prepare(`
+      INSERT INTO rewind_file_plans(
+        token, path, expected_current_sha256, target_sha256, target_blob_sha256,
+        rollback_sha256, rollback_blob_sha256, sealed, state, actual_sha256
+      ) VALUES (?, ?, ?, ?, ?, NULL, NULL, 0, 'prepared', NULL)
+    `);
+    for (const [path, records] of [...byPath].sort(([left], [right]) => compareCodePoints(left, right))) {
+      for (let index = 1; index < records.length; index += 1) {
+        if (records[index]?.priorSha256 !== records[index - 1]?.actualSha256) {
+          throw new Error("rewind managed checkpoint lineage contains an uncovered mutation gap");
+        }
+      }
+      const first = records[0];
+      const last = records.at(-1);
+      if (first === undefined || last?.actualSha256 === undefined) {
+        throw new Error("rewind managed checkpoint lineage is empty");
+      }
+      if (first.priorSha256 !== null) {
+        const blob = this.#requireDatabase().prepare(
+          "SELECT size, bytes FROM checkpoint_blobs WHERE sha256 = ?",
+        ).get(first.priorSha256);
+        if (blob === undefined) throw new Error("rewind target checkpoint blob is unavailable");
+      }
+      insert.run(
+        token,
+        path,
+        last.actualSha256,
+        first.priorSha256,
+        first.priorSha256,
+      );
+    }
+  }
+
+  #readRewindFile(token: string, path: string): ProductCheckpointRewindFile | undefined {
+    const value = this.#requireDatabase().prepare(`
+      SELECT p.*, target.bytes AS target_bytes, rollback.bytes AS rollback_bytes
+        FROM rewind_file_plans AS p
+        LEFT JOIN checkpoint_blobs AS target ON target.sha256 = p.target_blob_sha256
+        LEFT JOIN checkpoint_blobs AS rollback ON rollback.sha256 = p.rollback_blob_sha256
+       WHERE p.token = ? AND p.path = ?
+    `).get(token, path);
+    return value === undefined ? undefined : this.#decodeRewindFile(value);
+  }
+
+  #decodeRewindFile(value: unknown): ProductCheckpointRewindFile {
+    const row = asRecord(value, "rewind file plan");
+    const phase = rowString(row, "state", "rewind file plan") as ProductCheckpointRewindFilePhase;
+    const targetSha256 = rowNullableString(row, "target_sha256", "rewind file plan");
+    const rollbackSha256 = rowNullableString(row, "rollback_sha256", "rewind file plan");
+    const actualSha256 = rowNullableString(row, "actual_sha256", "rewind file plan");
+    const targetBytes = row.target_bytes;
+    const rollbackBytes = row.rollback_bytes;
+    if (!["prepared", "published", "rolled_back", "conflict"].includes(phase)
+      || !HASH_PATTERN.test(rowString(row, "expected_current_sha256", "rewind file plan"))
+      || (targetSha256 !== null && (!HASH_PATTERN.test(targetSha256) || !(targetBytes instanceof Uint8Array)))
+      || (targetSha256 === null && targetBytes !== null)
+      || (rollbackSha256 !== null
+        && (!HASH_PATTERN.test(rollbackSha256) || !(rollbackBytes instanceof Uint8Array)))
+      || (rollbackSha256 === null && rollbackBytes !== null)
+      || (actualSha256 !== null && !HASH_PATTERN.test(actualSha256))
+      || (row.sealed !== 0 && row.sealed !== 1)) {
+      throw new Error("rewind file plan is invalid");
+    }
+    return Object.freeze({
+      ...(actualSha256 === null ? {} : { actualSha256 }),
+      expectedCurrentSha256: rowString(row, "expected_current_sha256", "rewind file plan"),
+      path: rowString(row, "path", "rewind file plan"),
+      phase,
+      ...(rollbackBytes instanceof Uint8Array ? { rollbackBytes: Uint8Array.from(rollbackBytes) } : {}),
+      ...(rollbackSha256 === null ? {} : { rollbackSha256 }),
+      sealed: row.sealed === 1,
+      ...(targetBytes instanceof Uint8Array ? { targetBytes: Uint8Array.from(targetBytes) } : {}),
+      ...(targetSha256 === null ? {} : { targetSha256 }),
+      token: rowString(row, "token", "rewind file plan"),
+    });
+  }
+
+  #readRewind(token: string): ProductRewindRecord | undefined {
+    if (this.#database === undefined) return undefined;
+    const value = this.#requireDatabase().prepare(
+      "SELECT * FROM mutation_journals WHERE token = ?",
+    ).get(token);
+    return value === undefined ? undefined : this.#decodeRewind(value);
+  }
+
+  #decodeRewind(value: unknown): ProductRewindRecord {
+    const row = asRecord(value, "rewind journal");
+    const phase = rowString(row, "phase", "rewind journal") as ProductRewindPhase;
+    const targetGenerationId = rowNullableString(row, "target_generation_id", "rewind journal");
+    const receiptJson = rowNullableString(row, "receipt_json", "rewind journal");
+    if (!["prepared", "committing", "committed", "rolling_back", "rolled_back", "recovery_required"]
+      .includes(phase)) {
+      throw new Error("rewind journal phase is invalid");
+    }
+    let receipt: Readonly<Record<string, unknown>> | undefined;
+    if (receiptJson !== null) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(receiptJson);
+      } catch (error) {
+        throw new Error("rewind receipt is invalid JSON", { cause: error });
+      }
+      const snapshot = snapshotJsonValue(parsed);
+      if (snapshot === undefined || canonicalJson(snapshot as JsonValue) !== receiptJson
+        || snapshot === null || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+        throw new Error("rewind receipt is not canonical JSON data");
+      }
+      receipt = Object.freeze(snapshot as Record<string, unknown>);
+    }
+    const record = Object.freeze({
+      attempt: rowInteger(row, "attempt", "rewind journal"),
+      boundaryId: rowString(row, "boundary_id", "rewind journal"),
+      clientMutationId: rowString(row, "client_mutation_id", "rewind journal"),
+      phase,
+      ...(receipt === undefined ? {} : { receipt }),
+      requestFingerprint: rowString(row, "request_fingerprint", "rewind journal"),
+      runtimeSessionId: rowString(row, "session_id", "rewind journal"),
+      sourceGenerationId: rowString(row, "source_generation_id", "rewind journal"),
+      sourceRevision: rowString(row, "source_revision", "rewind journal"),
+      sourceTranscriptPostcondition: rowString(
+        row,
+        "source_transcript_postcondition",
+        "rewind journal",
+      ),
+      ...(targetGenerationId === null ? {} : { targetGenerationId }),
+      targetTranscriptPostcondition: rowString(
+        row,
+        "target_transcript_postcondition",
+        "rewind journal",
+      ),
+      token: rowString(row, "token", "rewind journal"),
+    });
+    if (![record.boundaryId, record.clientMutationId, record.runtimeSessionId,
+      record.sourceGenerationId, record.token]
+      .every((entry) => IDENTIFIER_PATTERN.test(entry))
+      || record.sourceRevision.length < 1 || record.sourceRevision.length > 2_048
+      || !HASH_PATTERN.test(record.requestFingerprint)
+      || !HASH_PATTERN.test(record.sourceTranscriptPostcondition)
+      || !HASH_PATTERN.test(record.targetTranscriptPostcondition)
+      || (record.targetGenerationId !== undefined && !IDENTIFIER_PATTERN.test(record.targetGenerationId))) {
+      throw new Error("rewind journal identity is invalid");
+    }
+    return record;
   }
 
   #readActiveSession(id: SessionId, validateSchema = true): ActiveSessionRow | undefined {

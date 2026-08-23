@@ -14,10 +14,24 @@ export {
   type ProductSessionReadSource,
 } from "./read.js";
 export {
+  PRODUCT_REWIND_EVENT_TYPES,
+  createProductRewindReceiptEvent,
+  productTranscriptPostcondition,
+  type ProductRewindReceiptEventData,
+  type ProductRewindPhase,
+  type ProductRewindPrepareInput,
+  type ProductRewindRecord,
+  type ProductRewindStore,
+} from "./rewind.js";
+export {
   PRODUCT_CHECKPOINT_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_APPLICATION_ID,
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
+  PRODUCT_PERSISTENCE_SCHEMA_V2_SQL,
+  PRODUCT_PERSISTENCE_SCHEMA_V3_SQL,
+  PRODUCT_REWIND_CHILD_SCHEMA_SQL,
+  PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL,
 } from "./schema.js";

@@ -343,6 +343,62 @@ describe("Runtime event projection", () => {
     await expect(projector.close()).rejects.toMatchObject({ code: "protocol_overloaded" });
   });
 
+  it("continues sequence projection across a quiescent immutable Session generation replacement", async () => {
+    const context = new Context();
+    mounted.push(context);
+    await context.plugin(SessionStore);
+    context.on("session/flush", () => undefined);
+    const sessionId = SessionId("projection-generation-replacement");
+    const first = Session.create(sessionId);
+    const second = Session.create(sessionId);
+    const delivered: RuntimeEventEnvelope[] = [];
+    const peer = {
+      notify: (_method: string, envelope: RuntimeEventEnvelope) => {
+        delivered.push(envelope);
+        return Promise.resolve();
+      },
+      reserveTerminalNotification: () => {
+        throw new Error("generation replacement fixture does not reserve a terminal");
+      },
+    } as unknown as JsonRpcPeer;
+    const productSession = {
+      snapshot: () => Object.freeze({ state: "ready" as const, runtimeSessionId: sessionId }),
+    } as unknown as ProductSessionService;
+    const failures: ProtocolError[] = [];
+    const projector = new RuntimeEventProjector({
+      context,
+      peer,
+      productSession,
+      runtimeGeneration: "projection-generation",
+      productSessionId: () => "product-session-1",
+      onFailure: (error) => failures.push(error),
+    });
+    const appendAndObserve = (session: Session, text: string): void => {
+      const fixture = appendAcceptedOperation(session);
+      session.append("turn/start", { turn: 1 });
+      fixture.inbox.claim("next-turn", 1);
+      session.append("step/start", { turn: 1, step: 1 });
+      const event = session.append("assistant/chunk", {
+        turn: 1,
+        step: 1,
+        chunk: { type: "text-delta", index: 0, text },
+      });
+      context.emit("session/event", session, event);
+    };
+
+    appendAndObserve(first, "generation one");
+    await projector.whenIdle();
+    appendAndObserve(second, "generation two");
+    await projector.whenIdle();
+
+    expect(failures).toEqual([]);
+    expect(delivered).toMatchObject([
+      { sequence: 1, event: { kind: "assistant_delta", delta: "generation one" } },
+      { sequence: 2, event: { kind: "assistant_delta", delta: "generation two" } },
+    ]);
+    await projector.close();
+  });
+
   it("stops new observations but drains an accepted projection before close completes", async () => {
     const context = new Context();
     mounted.push(context);

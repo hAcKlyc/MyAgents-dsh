@@ -1189,6 +1189,23 @@ export class SdkOperationService extends Service {
     return this.foldValue(agent);
   }
 
+  prepareGenerationReplacement(agent: Agent): void {
+    this.assertHealthy();
+    const previous = this.primaryAgentValue;
+    if (previous === undefined) return;
+    if (previous === agent || this.ctx.agents.get(previous.id) === previous
+      || this.acceptingValue || this.cancellationReasonsValue.size !== 0
+      || this.pendingRequestContextSeqs.size !== 0) {
+      throw this.fence(new Error("product-operation generation replacement is not quiescent"));
+    }
+    this.primaryAgentValue = undefined;
+    this.acceptingValue = true;
+    this.correlationDrainValue = Promise.resolve();
+    this.serialValue = Promise.resolve();
+    this.retirementEscalationValue = undefined;
+    this.nextModelRequestValue = 1;
+  }
+
   private assertHealthy(): void {
     if (this.failureValue !== undefined) throw this.failureValue;
   }

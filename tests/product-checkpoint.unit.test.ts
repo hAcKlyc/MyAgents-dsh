@@ -9,6 +9,7 @@ import {
 } from "@myagents-dsh/checkpoint";
 import {
   ProductSqliteSessionPersistence,
+  productTranscriptPostcondition,
   productSessionDatabasePath,
 } from "@myagents-dsh/persistence-product";
 import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
@@ -111,10 +112,19 @@ const checkpointHarness = async () => {
       targetKey: "fixture-file",
     })) as ProductCheckpointFileSnapshot,
   );
+  const restore = (
+    _environment: unknown,
+    _path: string,
+    _expectedSha256: string | undefined,
+    targetBytes: Uint8Array | undefined,
+  ): Promise<ProductCheckpointFileSnapshot> => {
+    bytes = targetBytes === undefined ? undefined : Uint8Array.from(targetBytes);
+    return capture();
+  };
   await context.plugin(ProductCheckpointService, {
     durability: Object.freeze({ flush: (candidate: Session) => context.sessions.flush(candidate) }),
     environment: () => executionEnvironment,
-    io: Object.freeze({ capture }),
+    io: Object.freeze({ capture, restore }),
     requireAgent: () => agent,
     store: () => store,
   });
@@ -135,6 +145,7 @@ const checkpointHarness = async () => {
     agent,
     context,
     databasePath: productSessionDatabasePath(platform, runtimeHome),
+    getBytes: () => bytes === undefined ? undefined : Uint8Array.from(bytes),
     product,
     session,
     setBytes: (value: Uint8Array | undefined) => { bytes = value; },
@@ -144,6 +155,92 @@ const checkpointHarness = async () => {
 };
 
 describe("ProductCheckpointService", () => {
+  it("seals, publishes, and rolls back the exact managed-file rewind plan", async () => {
+    const state = await checkpointHarness();
+    state.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    await state.context.sessions.flush(state.session);
+    if (!(state.context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("rewind fixture did not install product persistence");
+    }
+    const persistence = state.context.sessionPersistence;
+    const targetRead = await persistence.readSession({
+      maxResultBytes: 65_536,
+      runtimeGeneration: "checkpoint-rewind-generation",
+      runtimeSessionId: String(state.session.id),
+    });
+    const targetStableBoundaryId = targetRead.durableHead.stableBoundaryId;
+    if (targetStableBoundaryId === undefined) throw new Error("rewind fixture lacks a target boundary");
+
+    state.session.append("turn/start", { turn: 2 });
+    const product = Object.freeze({
+      ...state.product,
+      callId: "call-write-2",
+      clientOperationId: "operation-write-2",
+      dshTurn: 2,
+      productTurnId: "product-turn-2",
+      rootCallId: "call-write-2",
+    }) as unknown as ProductToolContext;
+    const before = state.getBytes();
+    if (before === undefined) throw new Error("rewind fixture preimage is unavailable");
+    const after = Buffer.from("after-rewind", "utf8");
+    const handle = await state.context.productCheckpoint.prepare(product, {
+      afterBytes: after,
+      afterSha256: digest(after),
+      beforeBytes: before,
+      beforeSha256: digest(before),
+      path: "/fixture/workspace/file.txt",
+      tool: "Write",
+    });
+    state.setBytes(after);
+    await handle.commit();
+    await state.context.productCheckpoint.reconcile(state.agent);
+    state.session.append("turn/end", { turn: 2, reason: { kind: "completed" } });
+    await state.context.sessions.flush(state.session);
+    const sourceEvents = [...state.session.events];
+    const target = sourceEvents.slice(0, 2);
+    const record = await persistence.prepareRewind({
+      clientMutationId: "checkpoint-rewind-1",
+      runtimeSessionId: String(state.session.id),
+      sourceTranscriptPostcondition: productTranscriptPostcondition(sourceEvents),
+      targetStableBoundaryId,
+      targetTranscriptPostcondition: productTranscriptPostcondition(target),
+    });
+    await state.context.productCheckpoint.prepareRewindFiles(record.token);
+    expect(await state.store.listRewindFiles(record.token)).toMatchObject([{
+      expectedCurrentSha256: digest(after),
+      path: "/fixture/workspace/file.txt",
+      rollbackSha256: digest(after),
+      sealed: true,
+      targetSha256: digest(before),
+    }]);
+
+    await state.context.productCheckpoint.publishRewindFiles(record.token);
+    expect(Buffer.from(state.getBytes() ?? [])).toEqual(Buffer.from(before));
+    await persistence.commitRewind(record.token, "checkpoint-rewind-1");
+    let database = new DatabaseSync(state.databasePath, { readOnly: true });
+    expect(database.prepare("SELECT event_count FROM sessions WHERE id = ?").get(state.session.id))
+      .toEqual({ event_count: target.length + 1 });
+    expect(database.prepare(`
+      SELECT e.type FROM session_events AS e
+      JOIN sessions AS s ON s.id = e.session_id AND s.active_generation_id = e.generation_id
+      WHERE e.session_id = ? ORDER BY e.seq DESC LIMIT 1
+    `).get(state.session.id)).toEqual({ type: "myagents/session/rewind" });
+    database.close();
+
+    await state.context.productCheckpoint.rollbackRewindFiles(record.token);
+    expect(Buffer.from(state.getBytes() ?? [])).toEqual(after);
+    await state.context.productCheckpoint.publishRewindFiles(record.token);
+    expect(Buffer.from(state.getBytes() ?? [])).toEqual(Buffer.from(before));
+    await state.context.productCheckpoint.rollbackRewindFiles(record.token);
+    expect(Buffer.from(state.getBytes() ?? [])).toEqual(after);
+    await persistence.rollbackRewind(record.token, "checkpoint-rewind-1");
+    database = new DatabaseSync(state.databasePath, { readOnly: true });
+    expect(database.prepare("SELECT event_count FROM sessions WHERE id = ?").get(state.session.id))
+      .toEqual({ event_count: sourceEvents.length });
+    database.close();
+    await state.context.fiber.dispose();
+  });
+
   it("persists preimages before publication and hash-adjudicates a stranded publish", async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-checkpoint-")));
     roots.push(root);
@@ -174,10 +271,19 @@ describe("ProductCheckpointService", () => {
       path: "/fixture/workspace/file.txt",
       targetKey: "fixture-file",
     }));
+    const restore = (
+      _environment: unknown,
+      _path: string,
+      _expectedSha256: string | undefined,
+      targetBytes: Uint8Array | undefined,
+    ): Promise<ProductCheckpointFileSnapshot> => {
+      bytes = targetBytes === undefined ? undefined : Uint8Array.from(targetBytes);
+      return capture();
+    };
     await context.plugin(ProductCheckpointService, {
       durability: Object.freeze({ flush: (candidate: Session) => context.sessions.flush(candidate) }),
       environment: () => executionEnvironment,
-      io: Object.freeze({ capture }),
+      io: Object.freeze({ capture, restore }),
       requireAgent: () => agent,
       store: () => store,
     });

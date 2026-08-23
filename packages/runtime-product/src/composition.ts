@@ -83,6 +83,7 @@ import {
   PRODUCT_PERSISTENCE_FORMAT,
   ProductSqliteSessionPersistence,
   productSessionDatabasePath,
+  type ProductRewindStore,
 } from "@myagents-dsh/persistence-product";
 import {
   ProductCheckpointService,
@@ -1525,10 +1526,72 @@ export const composeDshRootServices = async (
         }
         return persistence.readSession(request);
       },
+      rewindStore: () => {
+        const persistence = root.get("sessionPersistence");
+        if (!(persistence instanceof ProductSqliteSessionPersistence)) return undefined;
+        const rewindStore = Object.freeze({
+          prepareRewind: async (input, signal) => {
+            const record = await persistence.prepareRewind(input, signal);
+            await root.productCheckpoint.prepareRewindFiles(record.token, signal);
+            return await persistence.getRewind(record.token, signal) ?? record;
+          },
+          validateCommitRewind: (token, clientMutationId, signal) =>
+            persistence.validateCommitRewind(token, clientMutationId, signal),
+          commitRewind: async (token, clientMutationId, signal) => {
+            await persistence.validateCommitRewind(token, clientMutationId, signal);
+            await root.productCheckpoint.publishRewindFiles(token, signal);
+            try {
+              return await persistence.commitRewind(token, clientMutationId, signal);
+            } catch (error) {
+              const journal = await persistence.getRewind(token).catch(() => undefined);
+              if (journal?.phase === "committing") throw error;
+              try {
+                await root.productCheckpoint.rollbackRewindFiles(token);
+              } catch (cleanupError) {
+                throw new AggregateError(
+                  [error, cleanupError],
+                  "rewind storage commit and managed-file compensation failed",
+                  { cause: cleanupError },
+                );
+              }
+              throw error;
+            }
+          },
+          getRewind: (token, signal) => persistence.getRewind(token, signal),
+          validateRollbackRewind: (token, clientMutationId, signal) =>
+            persistence.validateRollbackRewind(token, clientMutationId, signal),
+          rollbackRewind: async (token, clientMutationId, signal) => {
+            const record = await persistence.getRewind(token, signal);
+            if (record?.phase === "committed" || record?.phase === "rolling_back") {
+              await persistence.validateRollbackRewind(token, clientMutationId, signal);
+              await root.productCheckpoint.rollbackRewindFiles(token, signal);
+            }
+            try {
+              return await persistence.rollbackRewind(token, clientMutationId, signal);
+            } catch (error) {
+              const journal = await persistence.getRewind(token).catch(() => undefined);
+              if (journal?.phase !== "committed") throw error;
+              try {
+                await root.productCheckpoint.publishRewindFiles(token);
+              } catch (cleanupError) {
+                throw new AggregateError(
+                  [error, cleanupError],
+                  "rewind storage rollback and managed-file compensation failed",
+                  { cause: cleanupError },
+                );
+              }
+              throw error;
+            }
+          },
+        } satisfies ProductRewindStore);
+        return rewindStore;
+      },
       reconcileResume: async (agent) => {
         await root.productWork.initialize(agent);
       },
       validateResume: async (agent) => {
+        root.sdkOperations.prepareGenerationReplacement(agent);
+        root.productWork.prepareGenerationReplacement(agent);
         root.sdkOperations.validatePersisted(agent);
         root.productPermission.fold(agent.session);
         root.productPlan.validatePersisted(agent);

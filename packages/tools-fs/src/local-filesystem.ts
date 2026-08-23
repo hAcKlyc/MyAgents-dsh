@@ -940,6 +940,21 @@ export class LocalWorkspaceFileSystem extends FileSystem {
         maxBytes: number,
         signal: AbortSignal,
       ) => await this.captureCheckpointFile(environment, path, maxBytes, signal),
+      restore: async (
+        environment: ProductToolExecutionEnvironment,
+        path: string,
+        expectedSha256: string | undefined,
+        targetBytes: Uint8Array | undefined,
+        targetSha256: string | undefined,
+        signal: AbortSignal,
+      ) => await this.restoreCheckpointFile(
+        environment,
+        path,
+        expectedSha256,
+        targetBytes,
+        targetSha256,
+        signal,
+      ),
     });
   }
 
@@ -1052,6 +1067,84 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       sha256: createHash("sha256").update(bytes).digest("hex"),
       targetKey: String(target.targetKey),
     });
+  }
+
+  private async restoreCheckpointFile(
+    environment: ProductToolExecutionEnvironment,
+    path: string,
+    expectedSha256: string | undefined,
+    targetBytes: Uint8Array | undefined,
+    targetSha256: string | undefined,
+    signal: AbortSignal,
+  ): Promise<ProductCheckpointFileSnapshot> {
+    if ((targetBytes === undefined) !== (targetSha256 === undefined)
+      || (targetBytes !== undefined && (targetBytes.byteLength > 8 * 1_024 * 1_024
+        || createHash("sha256").update(targetBytes).digest("hex") !== targetSha256))) {
+      throw new FsError("checkpoint restore target bytes are invalid", "FS_SANDBOX_DENIED");
+    }
+    const before = await this.captureCheckpointFile(environment, path, 8 * 1_024 * 1_024, signal);
+    const beforeSha256 = before.exists ? before.sha256 : undefined;
+    if (beforeSha256 !== expectedSha256) {
+      throw new FsError("checkpoint restore source identity changed", "FS_STALE_VERSION");
+    }
+    if (targetBytes === undefined) {
+      if (before.exists) {
+        await unlink(path).catch((error: unknown) => fsError(error, "checkpoint restore removal failed"));
+      }
+      const removed = await this.captureCheckpointFile(environment, path, 8 * 1_024 * 1_024, signal);
+      if (removed.exists) throw new FsError("checkpoint restore removal did not settle", "FS_STALE_VERSION");
+      return removed;
+    }
+    const temporary = this.pathValue.join(
+      this.pathValue.dirname(path),
+      `.myagents-rewind-${randomBytes(18).toString("hex")}`,
+    );
+    const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+    let handle: FileHandle | undefined;
+    let created = false;
+    try {
+      handle = await open(
+        temporary,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | noFollow,
+        0o600,
+      ).catch((error: unknown) => fsError(error, "checkpoint restore staging creation failed"));
+      created = true;
+      await handle.writeFile(targetBytes);
+      abortError(signal);
+      await handle.sync();
+      const staged = await handle.stat();
+      if (!staged.isFile() || staged.nlink !== 1 || staged.size !== targetBytes.byteLength) {
+        throw new FsError("checkpoint restore staging identity is invalid", "FS_STALE_VERSION");
+      }
+      await handle.close();
+      handle = undefined;
+      const current = await this.captureCheckpointFile(environment, path, 8 * 1_024 * 1_024, signal);
+      if ((current.exists ? current.sha256 : undefined) !== expectedSha256) {
+        throw new FsError("checkpoint restore source changed before publication", "FS_STALE_VERSION");
+      }
+      await rename(temporary, path).catch((error: unknown) =>
+        fsError(error, "checkpoint restore publication failed"));
+      created = false;
+      const restored = await this.captureCheckpointFile(environment, path, 8 * 1_024 * 1_024, signal);
+      if (!restored.exists || restored.sha256 !== targetSha256) {
+        throw new FsError("checkpoint restore target identity is invalid", "FS_STALE_VERSION");
+      }
+      return restored;
+    } catch (error) {
+      const cleanupErrors: unknown[] = [];
+      if (handle !== undefined) {
+        await handle.close().catch((cleanupError: unknown) => cleanupErrors.push(cleanupError));
+      }
+      if (created) {
+        await unlink(temporary).catch((cleanupError: unknown) => {
+          if (errorCode(cleanupError) !== "ENOENT") cleanupErrors.push(cleanupError);
+        });
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError([error, ...cleanupErrors], "checkpoint restore cleanup failed", { cause: error });
+      }
+      throw error;
+    }
   }
 
   private planPathFor(runtimeHome: string, sessionId: string): string {

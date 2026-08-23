@@ -92,6 +92,7 @@ const runtimeCompositionSourcePaths = [
   "packages/persistence-product/src/known-events.ts",
   "packages/persistence-product/src/provider.ts",
   "packages/persistence-product/src/read.ts",
+  "packages/persistence-product/src/rewind.ts",
   "packages/persistence-product/src/schema.ts",
   "packages/persistence-product/src/session-lock.ts",
   "packages/persistence-product/src/sqlite-store.ts",
@@ -844,7 +845,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w4-a4"
+    || selfCheckProfile.stage !== "batch-1-w4-a5"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -1136,6 +1137,7 @@ const main = (): void => {
       || evidence.nativeRpcStopped !== true
       || evidence.productPersistenceVerified !== true
       || evidence.checkpointJournalVerified !== true
+      || evidence.rewindTransactionVerified !== true
       || evidence.sessionReadVerified !== true
       || evidence.failedResumePublicationRejected !== true
       || evidence.initialConfigurationMismatchRejected !== true
@@ -1191,6 +1193,26 @@ const main = (): void => {
         !== JSON.stringify(["prepared", "published", "settled"])) {
       throw new Error("managed checkpoint evidence differs from the exact W4-A4 contract");
     }
+    const rewindEvidence = exactObject(
+      evidence.rewindTransactionEvidence,
+      "Session rewind transaction evidence",
+    );
+    if (typeof rewindEvidence.committedGenerationId !== "string"
+      || rewindEvidence.committedGenerationId.length < 1
+      || rewindEvidence.receiptEvent !== "myagents/session/rewind"
+      || rewindEvidence.restoredFileAfterCommit !== "before"
+      || rewindEvidence.restoredFileAfterRollback !== "after governed Edit"
+      || rewindEvidence.rolledBackState !== "rolled_back"
+      || typeof rewindEvidence.selectedBoundaryId !== "string"
+      || !rewindEvidence.selectedBoundaryId.startsWith("b_")
+      || typeof rewindEvidence.selectedMessageCount !== "number"
+      || !Number.isSafeInteger(rewindEvidence.selectedMessageCount)
+      || rewindEvidence.selectedMessageCount < 1
+      || typeof rewindEvidence.sourceMessageCount !== "number"
+      || !Number.isSafeInteger(rewindEvidence.sourceMessageCount)
+      || rewindEvidence.sourceMessageCount <= rewindEvidence.selectedMessageCount) {
+      throw new Error("Session rewind evidence differs from the exact W4-A5 contract");
+    }
     const persistenceEvidence = exactObject(
       evidence.productPersistenceEvidence,
       "product SQLite persistence evidence",
@@ -1199,7 +1221,7 @@ const main = (): void => {
       || !Number.isSafeInteger(persistenceEvidence.eventCount)
       || persistenceEvidence.eventCount < 1
       || persistenceEvidence.format !== "myagents-sqlite-session-v1"
-      || persistenceEvidence.generationCount !== 1
+      || persistenceEvidence.generationCount !== 2
       || persistenceEvidence.productEventReloaded !== true
       || persistenceEvidence.resumedEventCount !== persistenceEvidence.eventCount + 2
       || persistenceEvidence.resumedDurableSequence !== persistenceEvidence.resumedEventCount
@@ -1424,7 +1446,8 @@ const main = (): void => {
     });
     const createFrames = frames.filter(({ result }) => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
-      return (result as Record<string, unknown>).historyFormat === "dsh-session-events-v1";
+      const candidate = result as Record<string, unknown>;
+      return candidate.historyFormat === "dsh-session-events-v1" && candidate.state === "ready";
     });
     const initializeResult = exactObject(initializeFrame?.result, "observed initialize result");
     const runtimeEngine = exactObject(initializeResult.runtimeEngine, "observed Runtime engine");

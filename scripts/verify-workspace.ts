@@ -112,6 +112,7 @@ const expectedWorkspaceFiles = new Map([
     "src/known-events.ts",
     "src/provider.ts",
     "src/read.ts",
+    "src/rewind.ts",
     "src/schema.ts",
     "src/session-lock.ts",
     "src/sqlite-store.ts",

@@ -451,6 +451,23 @@ export class NativeRpcServer extends Service {
           this.handleSessionRead(params, context)),
         this.peerValue.registerRequestHandler("session/close", (params, context) =>
           this.handleSessionClose(params, context)),
+        this.peerValue.registerRequestHandler("session/rewind/prepare", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return this.productSessionValue.rewindPrepare(params, context.signal);
+        }),
+        this.peerValue.registerRequestHandler("session/rewind/commit", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return this.productSessionValue.rewindCommit(params, context.signal);
+        }),
+        this.peerValue.registerRequestHandler("session/rewind/rollback", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return this.productSessionValue.rewindRollback(params, context.signal);
+        }),
+        this.peerValue.registerRequestHandler("session/rewind/status", (params, context) =>
+          this.productSessionValue.rewindStatus(params, context.signal)),
       );
       ctx.effect(
         () => () => this.disposeTransport().catch(() => undefined),

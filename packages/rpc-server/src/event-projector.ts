@@ -296,6 +296,7 @@ export class RuntimeEventProjector {
   #closed = false;
   #drainPromise: Promise<void> | undefined;
   #failure: ProtocolError | undefined;
+  #hydratingSourceSession: Session | undefined;
   #nextSourceSequence: number | undefined;
   #observedSourceSequence: number | undefined;
   #sequence = 0;
@@ -317,12 +318,33 @@ export class RuntimeEventProjector {
         true,
       );
     }
-    if (!this.#terminalReservations.has(clientOperationId)) {
-      this.#terminalReservations.set(
-        clientOperationId,
-        this.#config.peer.reserveTerminalNotification(clientOperationId),
+    if (this.#terminalReservations.has(clientOperationId)) return;
+    if (this.#sourceSession !== undefined) this.#adoptReservationSession();
+    this.#terminalReservations.set(
+      clientOperationId,
+      this.#config.peer.reserveTerminalNotification(clientOperationId),
+    );
+  }
+
+  #adoptReservationSession(): void {
+    const current = this.#config.productSession.requireAgent().session;
+    if (this.#sourceSession === current) return;
+    const previousDrained = this.#drainPromise === undefined
+      && (this.#nextSourceSequence === undefined
+        || this.#observedSourceSequence === undefined
+        || this.#nextSourceSequence > this.#observedSourceSequence);
+    if ((this.#sourceSession !== undefined && this.#sourceSession.id !== current.id)
+      || !previousDrained || this.#terminalReservations.size !== 0
+      || !Number.isSafeInteger(current.seq) || current.seq < 0) {
+      throw new ProtocolError(
+        "runtime_event_projection_session_changed",
+        "Runtime event projection cannot bind a non-quiescent primary Session generation",
       );
     }
+    this.#sourceSession = current;
+    this.#nextSourceSequence = current.seq;
+    this.#observedSourceSequence = current.seq === 0 ? undefined : current.seq - 1;
+    this.#hydratingSourceSession = undefined;
   }
 
   stopAccepting(): void {
@@ -356,11 +378,37 @@ export class RuntimeEventProjector {
   #observe(session: Session, source: SessionEvent): void {
     if (this.#stopped || this.#closed || this.#failure !== undefined) return;
     try {
+      const productSnapshot = this.#config.productSession.snapshot();
       if (this.#sourceSession !== undefined && this.#sourceSession !== session) {
-        throw new ProtocolError(
-          "runtime_event_projection_session_changed",
-          "Runtime event projection observed more than one owned Session",
-        );
+        const previousDrained = this.#drainPromise === undefined
+          && (this.#nextSourceSequence === undefined
+            || this.#observedSourceSequence === undefined
+            || this.#nextSourceSequence > this.#observedSourceSequence);
+        if (this.#sourceSession.id !== session.id || !previousDrained
+          || this.#terminalReservations.size !== 0) {
+          throw new ProtocolError(
+            "runtime_event_projection_session_changed",
+            "Runtime event projection observed a non-quiescent Session generation change",
+          );
+        }
+        this.#sourceSession = session;
+        this.#nextSourceSequence = undefined;
+        this.#observedSourceSequence = undefined;
+        if (productSnapshot.state !== "ready") this.#hydratingSourceSession = session;
+      }
+      if (this.#hydratingSourceSession === session) {
+        if (this.#observedSourceSequence !== undefined
+          && source.seq !== this.#observedSourceSequence + 1) {
+          throw new ProtocolError(
+            "runtime_event_projection_sequence_gap",
+            "Runtime event projection observed a non-contiguous replacement Session seed",
+          );
+        }
+        this.#sourceSession = session;
+        this.#observedSourceSequence = source.seq;
+        this.#nextSourceSequence = source.seq + 1;
+        if (productSnapshot.state !== "ready") return;
+        this.#hydratingSourceSession = undefined;
       }
       if (!Number.isSafeInteger(source.seq) || source.seq < 0) {
         throw new TypeError("projected DSH Session sequence is invalid");

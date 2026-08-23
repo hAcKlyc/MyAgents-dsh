@@ -52,6 +52,7 @@ import {
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   ProductSqliteSessionPersistence,
+  productTranscriptPostcondition,
   productSessionDatabasePath,
 } from "@myagents-dsh/persistence-product";
 import {
@@ -2215,15 +2216,17 @@ await configurationMismatchComposition.dispose();
 assert.throws(() => configurationMismatchComposition.snapshot(), /disposing or disposed/u);
 const initialConfigurationMismatchRejected = true;
 let primaryPublicationSnapshotVerified = false;
+let primaryPublicationCount = 0;
 let roguePublicationObserved = false;
 composition.context.on("session/created", (session) => {
   if (session.id === primarySessionParams.runtimeSessionId) {
     const transient = composition.context.productSession.snapshot();
-    assert.equal(transient.state, "creating");
+    assert.equal(transient.state, primaryPublicationCount === 0 ? "creating" : "resuming");
     assert.equal(transient.liveRootAgents, 1);
     assert.deepEqual(composition.context.sessions.list(), [session]);
     assert.deepEqual(composition.context.agents.roots().map(({ id }) => id), [session.id]);
     primaryPublicationSnapshotVerified = true;
+    primaryPublicationCount += 1;
   } else if (session.id.startsWith("rogue-")) {
     roguePublicationObserved = true;
   }
@@ -2280,7 +2283,7 @@ assert.equal(rpcStatus.runtimeSessionId, "dsh-artifact-primary");
 assert.equal(rpcStatus.desiredConfigRevision, "artifact-config-v1");
 assert.equal(rpcStatus.effectiveConfigRevision, "artifact-config-v1");
 
-const primaryAgent = composition.context.productSession.requireAgent();
+let primaryAgent = composition.context.productSession.requireAgent();
 const primaryPrompt = await composition.context.systemPrompt.assemble(assembleContextFor(primaryAgent));
 assert.equal(
   primaryPrompt.sections.find(({ name }) => name === PERSONA_SECTION)?.text,
@@ -2529,6 +2532,14 @@ const failedTurn = primaryAgent.session.events.findLast(({ type }) => type === "
 assert.ok(failedTurn?.type === "turn/end");
 assert.equal(failedTurn.data.reason.kind, "error");
 assert.equal(composition.context.sdkOperations.lookup("artifact-operation-3")?.terminal?.kind, "failed");
+await composition.context.sessions.flush(primaryAgent.session);
+const rewindTargetEvents = structuredClone(primaryAgent.session.events);
+const rewindTargetDerivedMessages = structuredClone(primaryAgent.session.deriveMessages());
+const rewindTargetRead = await hostClient.sessionRead({});
+assert.equal(rewindTargetRead.nextCursor, undefined);
+assert.equal(rewindTargetRead.durableHead.sequence, rewindTargetEvents.length);
+const rewindTargetStableBoundaryId = rewindTargetRead.durableHead.stableBoundaryId;
+assert.ok(rewindTargetStableBoundaryId !== undefined);
 
 const governedFileEvidenceStart = fileToolEvidence.length;
 await composition.context.sdkOperations.start({
@@ -3558,17 +3569,79 @@ assert.deepEqual(composition.context.sdkOperations.lookup("artifact-operation-5"
   reason: "user",
 });
 
+await composition.context.sessions.flush(primaryAgent.session);
+const rewindSourceEvents = structuredClone(primaryAgent.session.events);
+const rewindSourceDerivedMessages = structuredClone(primaryAgent.session.deriveMessages());
+const rewindAdapterRequestCount = adapter.requests.length;
+const rewindPrepareParams = {
+  clientMutationId: "artifact-rewind-1",
+  sourceTranscriptPostcondition: productTranscriptPostcondition(rewindSourceEvents),
+  targetStableBoundaryId: rewindTargetStableBoundaryId,
+  targetTranscriptPostcondition: productTranscriptPostcondition(rewindTargetEvents),
+} satisfies MethodParams<"session/rewind/prepare">;
+const rewindPrepared = await hostClient.sessionRewindPrepare(rewindPrepareParams).catch((error: unknown) => {
+  throw new Error("repository-external rewind prepare failed", { cause: error });
+});
+assert.equal(rewindPrepared.state, "prepared");
+assert.deepEqual(await hostClient.sessionRewindStatus({ token: rewindPrepared.token }), rewindPrepared);
+const rewindCommitted = await hostClient.sessionRewindCommit({
+  clientMutationId: "artifact-rewind-1",
+  token: rewindPrepared.token,
+}).catch((error: unknown) => {
+  throw new Error("repository-external rewind commit failed", { cause: error });
+});
+assert.equal(rewindCommitted.state, "committed");
+assert.deepEqual(await hostClient.sessionRewindCommit({
+  clientMutationId: "artifact-rewind-1",
+  token: rewindPrepared.token,
+}), rewindCommitted);
+assert.deepEqual(await hostClient.sessionRewindStatus({ token: rewindPrepared.token }), rewindCommitted);
+assert.equal(await readFile(fixtureFile, "utf8"), "before\n");
+const rewoundAgent = composition.context.productSession.requireAgent();
+assert.notEqual(rewoundAgent, primaryAgent);
+assert.deepEqual(rewoundAgent.session.deriveMessages(), rewindTargetDerivedMessages);
+assert.equal(adapter.requests.length, rewindAdapterRequestCount, "rewind must not replay model work");
+assert.equal(rewoundAgent.session.events.at(-2)?.type, "myagents/session/rewind");
+assert.equal(rewoundAgent.session.events.at(-1)?.type, "session/end-seed");
+const rewindRolledBack = await hostClient.sessionRewindRollback({
+  clientMutationId: "artifact-rewind-1",
+  token: rewindPrepared.token,
+}).catch((error: unknown) => {
+  throw new Error("repository-external rewind rollback failed", { cause: error });
+});
+assert.equal(rewindRolledBack.state, "rolled_back");
+assert.deepEqual(await hostClient.sessionRewindRollback({
+  clientMutationId: "artifact-rewind-1",
+  token: rewindPrepared.token,
+}), rewindRolledBack);
+assert.deepEqual(await hostClient.sessionRewindStatus({ token: rewindPrepared.token }), rewindRolledBack);
+assert.equal(await readFile(fixtureFile, "utf8"), editedFileContent);
+primaryAgent = composition.context.productSession.requireAgent();
+assert.notEqual(primaryAgent, rewoundAgent);
+assert.deepEqual(primaryAgent.session.deriveMessages(), rewindSourceDerivedMessages);
+assert.equal(adapter.requests.length, rewindAdapterRequestCount, "rewind rollback must not replay model work");
+assert.equal(primaryPublicationCount, 3);
+assert.deepEqual(projectionFailures, [], JSON.stringify(projectionFailures.map((error) => ({
+  name: error.name,
+  message: error.message,
+}))));
+
 await composition.context.sdkOperations.start({
   ...turnStartParams,
   clientOperationId: "artifact-operation-6",
   clientUserMessageId: "artifact-user-message-6",
   input: { parts: [{ kind: "text", text: "close this active Session" }] },
+}).catch((error: unknown) => {
+  throw new Error(`repository-external post-rewind operation admission failed from ${
+    JSON.stringify(composition.context.productSession.snapshot())}`, { cause: error });
 });
 await waitUntil(() => adapter.activeStreamCount === 1, "active stream before session/close");
 const [firstSessionClose, exactSessionClose] = await Promise.all([
   hostClient.sessionClose({ clientOperationId: "artifact-primary-session-close" }),
   hostClient.sessionClose({ clientOperationId: "artifact-primary-session-close" }),
-]);
+]).catch((error: unknown) => {
+  throw new Error("repository-external post-rewind session close failed", { cause: error });
+});
 assert.deepEqual(exactSessionClose, firstSessionClose);
 assert.throws(() => composition.context.productSession.close({
   clientOperationId: "artifact-conflicting-session-close",
@@ -3580,7 +3653,9 @@ const shutdownTerminal = primaryAgent.session.events.findLast((event) =>
     && event.data.clientOperationId === "artifact-operation-6");
 assert.ok(shutdownTerminal?.type === "myagents/operation/terminal");
 assert.deepEqual(shutdownTerminal.data.terminal, { kind: "aborted", reason: "host_shutdown" });
-const retiredRpcStatus = await hostClient.runtimeStatus({});
+const retiredRpcStatus = await hostClient.runtimeStatus({}).catch((error: unknown) => {
+  throw new Error("repository-external retired status failed", { cause: error });
+});
 assert.equal(retiredRpcStatus.primarySessionState, "retired");
 assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
@@ -3650,7 +3725,9 @@ assert.equal(adapter.pendingScriptCount, 0);
 
 const cleanupGate = Promise.withResolvers<undefined>();
 composition.context.effect(() => async () => cleanupGate.promise, "artifact-fixture-cleanup-gate");
-await hostClient.runtimeShutdown({ reason: "artifact-fixture-complete" });
+await hostClient.runtimeShutdown({ reason: "artifact-fixture-complete" }).catch((error: unknown) => {
+  throw new Error("repository-external shutdown failed", { cause: error });
+});
 await waitUntil(() => processBoundarySchedules.length === 1, "Runtime forced-exit deadline scheduling");
 assert.deepEqual(processBoundarySchedules, [{ exitCode: 1, graceMs: 30_000 }]);
 assert.equal(processBoundaryDeadlineCancelHits, 0);
@@ -3694,7 +3771,7 @@ const persistenceGenerationCount = persistenceProbe.prepare(
 persistenceProbe.close();
 assert.equal(persistenceMeta.persistence_format, PRODUCT_PERSISTENCE_FORMAT);
 assert.equal(persistenceMeta.schema_version, PRODUCT_PERSISTENCE_SCHEMA_VERSION);
-assert.equal(persistenceGenerationCount.count, 1);
+assert.equal(persistenceGenerationCount.count, 2);
 assert.ok(persistenceSession.active_generation_id.length > 0);
 assert.ok(persistenceSession.event_count > 0);
 assert.ok(persistenceSession.revision > 0);
@@ -4008,6 +4085,17 @@ process.stdout.write(`${JSON.stringify({
   nativeRpcStopped: stopped.disposed,
   productPersistenceVerified: true,
   checkpointJournalVerified: true,
+  rewindTransactionVerified: true,
+  rewindTransactionEvidence: {
+    committedGenerationId: rewindCommitted.receipt?.targetGenerationId,
+    receiptEvent: "myagents/session/rewind",
+    restoredFileAfterCommit: "before",
+    restoredFileAfterRollback: editedFileContent.trim(),
+    rolledBackState: rewindRolledBack.state,
+    selectedBoundaryId: rewindTargetStableBoundaryId,
+    selectedMessageCount: rewindTargetDerivedMessages.length,
+    sourceMessageCount: rewindSourceDerivedMessages.length,
+  },
   checkpointJournalEvidence: {
     writePhases: primaryAgent.session.events
       .filter((event) => event.type === "myagents/checkpoint/state"

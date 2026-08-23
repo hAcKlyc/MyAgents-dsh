@@ -91,6 +91,41 @@ export interface ProductCheckpointStore {
     signal?: AbortSignal,
   ): Promise<ProductCheckpointRecord>;
   listUnsettled(sessionId: string, signal?: AbortSignal): Promise<readonly ProductCheckpointRecord[]>;
+  listRewindFiles(token: string, signal?: AbortSignal): Promise<readonly ProductCheckpointRewindFile[]>;
+  sealRewindFile(
+    token: string,
+    path: string,
+    rollbackBytes: Uint8Array,
+    rollbackSha256: string,
+    signal?: AbortSignal,
+  ): Promise<ProductCheckpointRewindFile>;
+  transitionRewindFile(
+    token: string,
+    path: string,
+    expected: readonly ProductCheckpointRewindFilePhase[],
+    next: ProductCheckpointRewindFilePhase,
+    actualSha256: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<ProductCheckpointRewindFile>;
+}
+
+export type ProductCheckpointRewindFilePhase =
+  | "prepared"
+  | "published"
+  | "rolled_back"
+  | "conflict";
+
+export interface ProductCheckpointRewindFile {
+  readonly actualSha256?: string;
+  readonly expectedCurrentSha256: string;
+  readonly path: string;
+  readonly phase: ProductCheckpointRewindFilePhase;
+  readonly rollbackBytes?: Uint8Array;
+  readonly rollbackSha256?: string;
+  readonly sealed: boolean;
+  readonly targetBytes?: Uint8Array;
+  readonly targetSha256?: string;
+  readonly token: string;
 }
 
 export interface ProductCheckpointFileSnapshot {
@@ -106,6 +141,14 @@ export interface ProductCheckpointIoAuthority {
     environment: ProductToolExecutionEnvironment,
     path: string,
     maxBytes: number,
+    signal: AbortSignal,
+  ): Promise<ProductCheckpointFileSnapshot>;
+  restore(
+    environment: ProductToolExecutionEnvironment,
+    path: string,
+    expectedSha256: string | undefined,
+    targetBytes: Uint8Array | undefined,
+    targetSha256: string | undefined,
     signal: AbortSignal,
   ): Promise<ProductCheckpointFileSnapshot>;
 }
@@ -186,12 +229,13 @@ const validateConfig = (value: ProductCheckpointServiceConfig): ProductCheckpoin
     "product checkpoint config",
   );
   const durability = exactOwnDataObject(config.durability, ["flush"], "checkpoint durability authority");
-  const io = exactOwnDataObject(config.io, ["capture"], "checkpoint filesystem authority");
+  const io = exactOwnDataObject(config.io, ["capture", "restore"], "checkpoint filesystem authority");
   const requireAgent = dataFunction(config, "requireAgent", "checkpoint Agent authority");
   const environment = dataFunction(config, "environment", "checkpoint environment authority");
   const store = dataFunction(config, "store", "checkpoint Store authority");
   const flush = dataFunction(durability, "flush", "checkpoint durability authority");
   const capture = dataFunction(io, "capture", "checkpoint filesystem authority");
+  const restore = dataFunction(io, "restore", "checkpoint filesystem authority");
   return Object.freeze({
     durability: Object.freeze({
       flush: (session: Session) => Reflect.apply(flush, config.durability, [session]) as Promise<unknown>,
@@ -204,6 +248,21 @@ const validateConfig = (value: ProductCheckpointServiceConfig): ProductCheckpoin
         maxBytes: number,
         signal: AbortSignal,
       ) => Reflect.apply(capture, config.io, [environment, path, maxBytes, signal]) as Promise<ProductCheckpointFileSnapshot>,
+      restore: (
+        environment: ProductToolExecutionEnvironment,
+        path: string,
+        expectedSha256: string | undefined,
+        targetBytes: Uint8Array | undefined,
+        targetSha256: string | undefined,
+        signal: AbortSignal,
+      ) => Reflect.apply(restore, config.io, [
+        environment,
+        path,
+        expectedSha256,
+        targetBytes,
+        targetSha256,
+        signal,
+      ]) as Promise<ProductCheckpointFileSnapshot>,
     }),
     requireAgent: () => Reflect.apply(requireAgent, value, []) as Agent,
     store: () => Reflect.apply(store, value, []) as ProductCheckpointStore | undefined,
@@ -528,6 +587,189 @@ export class ProductCheckpointService extends Service {
       conflict: () => settle("conflict"),
       receipt: Object.freeze({ checkpointId: id, policyRevision }),
     });
+  }
+
+  async prepareRewindFiles(token: string, signal?: AbortSignal): Promise<void> {
+    const owner = checkpointServiceOwner(this);
+    if (owner !== this) return owner.prepareRewindFiles(token, signal);
+    this.#assertHealthy();
+    boundedIdentifier(token, "rewind token");
+    const operationSignal = signal ?? new AbortController().signal;
+    const store = this.#requireStore();
+    const files = await exactNativePromise<readonly ProductCheckpointRewindFile[]>(
+      store.listRewindFiles(token, operationSignal),
+      "rewind file plan lookup",
+    );
+    for (const file of files) {
+      operationSignal.throwIfAborted();
+      if (file.sealed) continue;
+      const current = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
+        this.#config.io.capture(
+          this.#config.environment(),
+          file.path,
+          MAX_CHECKPOINT_FILE_BYTES,
+          operationSignal,
+        ),
+        "rewind current file capture",
+      ), file.path);
+      if (!current.exists || current.sha256 !== file.expectedCurrentSha256
+        || current.bytes === undefined) {
+        throw new ProductToolError("mutation_conflict", "rewind current managed file differs from its journal");
+      }
+      await exactNativePromise<ProductCheckpointRewindFile>(store.sealRewindFile(
+        token,
+        file.path,
+        current.bytes,
+        current.sha256,
+        operationSignal,
+      ), "rewind file plan seal");
+    }
+  }
+
+  async publishRewindFiles(token: string, signal?: AbortSignal): Promise<void> {
+    const owner = checkpointServiceOwner(this);
+    if (owner !== this) return owner.publishRewindFiles(token, signal);
+    this.#assertHealthy();
+    const operationSignal = signal ?? new AbortController().signal;
+    const store = this.#requireStore();
+    const files = await exactNativePromise<readonly ProductCheckpointRewindFile[]>(
+      store.listRewindFiles(token, operationSignal),
+      "rewind file plan lookup",
+    );
+    if (files.some((file) => !file.sealed)) {
+      throw new ProductToolError("checkpoint_uncertain", "rewind file plan is not sealed");
+    }
+    const published: ProductCheckpointRewindFile[] = [];
+    try {
+      for (const file of files) {
+        operationSignal.throwIfAborted();
+        if (file.phase === "published") {
+          published.push(file);
+          continue;
+        }
+        if (file.phase !== "prepared" && file.phase !== "rolled_back") {
+          throw new ProductToolError("checkpoint_uncertain", "rewind file plan settled unexpectedly");
+        }
+        const sourcePhase = file.phase;
+        const restored = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
+          this.#config.io.restore(
+            this.#config.environment(),
+            file.path,
+            file.expectedCurrentSha256,
+            file.targetBytes,
+            file.targetSha256,
+            operationSignal,
+          ),
+          "rewind target publication",
+        ), file.path);
+        const actualSha256 = restored.exists ? restored.sha256 : undefined;
+        let transitioned: ProductCheckpointRewindFile;
+        try {
+          transitioned = await exactNativePromise<ProductCheckpointRewindFile>(
+            store.transitionRewindFile(
+              token,
+              file.path,
+              [sourcePhase],
+              "published",
+              actualSha256,
+              operationSignal,
+            ),
+            "rewind file publication journal",
+          );
+        } catch (journalError) {
+          try {
+            await exactNativePromise<ProductCheckpointFileSnapshot>(this.#config.io.restore(
+              this.#config.environment(),
+              file.path,
+              file.targetSha256,
+              file.rollbackBytes,
+              file.rollbackSha256,
+              new AbortController().signal,
+            ), "rewind unjournaled publication compensation");
+          } catch (cleanupError) {
+            this.#failure ??= new AggregateError(
+              [journalError, cleanupError],
+              "rewind publication journal and compensation failed",
+            );
+            throw this.#failure;
+          }
+          throw journalError;
+        }
+        published.push(transitioned);
+      }
+    } catch (error) {
+      const cleanupErrors: unknown[] = [];
+      const cleanupSignal = new AbortController().signal;
+      for (const file of published.reverse()) {
+        try {
+          const restored = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
+            this.#config.io.restore(
+              this.#config.environment(),
+              file.path,
+              file.targetSha256,
+              file.rollbackBytes,
+              file.rollbackSha256,
+              cleanupSignal,
+            ),
+            "rewind publication compensation",
+          ), file.path);
+          await exactNativePromise<ProductCheckpointRewindFile>(store.transitionRewindFile(
+            token,
+            file.path,
+            ["published"],
+            "rolled_back",
+            restored.exists ? restored.sha256 : undefined,
+            cleanupSignal,
+          ), "rewind publication compensation journal");
+        } catch (cleanupError) {
+          cleanupErrors.push(cleanupError);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        this.#failure ??= new AggregateError([error, ...cleanupErrors], "rewind file compensation failed");
+        throw this.#failure;
+      }
+      throw error;
+    }
+  }
+
+  async rollbackRewindFiles(token: string, signal?: AbortSignal): Promise<void> {
+    const owner = checkpointServiceOwner(this);
+    if (owner !== this) return owner.rollbackRewindFiles(token, signal);
+    this.#assertHealthy();
+    const operationSignal = signal ?? new AbortController().signal;
+    const store = this.#requireStore();
+    const files = await exactNativePromise<readonly ProductCheckpointRewindFile[]>(
+      store.listRewindFiles(token, operationSignal),
+      "rewind file plan lookup",
+    );
+    for (const file of [...files].reverse()) {
+      operationSignal.throwIfAborted();
+      if (file.phase === "prepared" || file.phase === "rolled_back") continue;
+      if (file.phase !== "published" || file.rollbackBytes === undefined
+        || file.rollbackSha256 === undefined) {
+        throw new ProductToolError("checkpoint_uncertain", "rewind rollback file plan is invalid");
+      }
+      const restored = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
+        this.#config.io.restore(
+          this.#config.environment(),
+          file.path,
+          file.targetSha256,
+          file.rollbackBytes,
+          file.rollbackSha256,
+          operationSignal,
+        ),
+        "rewind rollback publication",
+      ), file.path);
+      await exactNativePromise<ProductCheckpointRewindFile>(store.transitionRewindFile(
+        token,
+        file.path,
+        ["published"],
+        "rolled_back",
+        restored.exists ? restored.sha256 : undefined,
+        operationSignal,
+      ), "rewind rollback file journal");
+    }
   }
 
   validatePersisted(agent: Agent): void {

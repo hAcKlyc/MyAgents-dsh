@@ -21,6 +21,7 @@ import {
   ProductSqliteSessionPersistence,
   isProductKnownSessionEventType,
   productSessionDatabasePath,
+  productTranscriptPostcondition,
 } from "@myagents-dsh/persistence-product";
 import { SessionReadAssembler } from "@myagents-dsh/protocol";
 import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
@@ -91,8 +92,8 @@ afterEach(async () => {
 describe("ProductSqliteSessionPersistence", () => {
   it("owns the exact immutable product event registry", () => {
     expect(Object.isFrozen(PRODUCT_REQUIRED_SESSION_EVENT_TYPES)).toBe(true);
-    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(17);
-    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(17);
+    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(18);
+    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(18);
     for (const type of PRODUCT_REQUIRED_SESSION_EVENT_TYPES) {
       expect(isProductKnownSessionEventType(type)).toBe(true);
     }
@@ -115,7 +116,7 @@ describe("ProductSqliteSessionPersistence", () => {
     )).toBe("C:\\Users\\fixture\\AppData\\Local\\MyAgents\\persistence\\sessions-v1.sqlite");
   });
 
-  it("migrates the exact v1 Session store to the v2 checkpoint schema without changing history", async () => {
+  it("migrates the exact v1 Session store through checkpoint and stable-boundary schemas", async () => {
     const runtimeHome = await makeRuntimeHome();
     const platform = selectPlatformAdapter("darwin-arm64");
     const databasePath = productSessionDatabasePath(platform, runtimeHome);
@@ -135,10 +136,170 @@ describe("ProductSqliteSessionPersistence", () => {
       .toBe(PRODUCT_PERSISTENCE_SCHEMA_VERSION);
     expect(probe.prepare(
       "SELECT schema_version, store_id FROM store_meta WHERE singleton = 1",
-    ).get()).toEqual({ schema_version: 2, store_id: "store-v1-fixture" });
+    ).get()).toEqual({
+      schema_version: PRODUCT_PERSISTENCE_SCHEMA_VERSION,
+      store_id: "store-v1-fixture",
+    });
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_records")).toBe(0);
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_blobs")).toBe(0);
+    expect(scalar(probe, "SELECT count(*) AS value FROM stable_boundaries")).toBe(0);
+    expect(scalar(probe, "SELECT count(*) AS value FROM rewind_child_plans")).toBe(0);
     probe.close();
+    await context.fiber.dispose();
+  });
+
+  it("persists and projects one opaque stable boundary for a closed durable history", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-stable-boundary");
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, turn(0, 1));
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("test did not install product persistence");
+    }
+    const first = await context.sessionPersistence.readSession({
+      maxResultBytes: 65_536,
+      runtimeGeneration: "stable-boundary-generation",
+      runtimeSessionId: id,
+    });
+    expect(first.durableHead.sequence).toBe(2);
+    expect(first.durableHead.stableBoundaryId).toMatch(/^b_[0-9a-f-]{36}$/u);
+    const second = await context.sessionPersistence.readSession({
+      maxResultBytes: 65_536,
+      runtimeGeneration: "stable-boundary-generation",
+      runtimeSessionId: id,
+    });
+    expect(second.durableHead.stableBoundaryId).toBe(first.durableHead.stableBoundaryId);
+
+    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const probe = new DatabaseSync(databasePath, { readOnly: true });
+    expect(probe.prepare(`
+      SELECT boundary_id, seq_exclusive, turn, policy_version FROM stable_boundaries
+       WHERE session_id = ?
+    `).get(id)).toEqual({
+      boundary_id: first.durableHead.stableBoundaryId,
+      policy_version: "stable-boundary-v1",
+      seq_exclusive: 2,
+      turn: 1,
+    });
+    probe.close();
+    await context.fiber.dispose();
+  });
+
+  it("prepares, commits, retries, and rolls back an immutable generation rewind", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-rewind");
+    const firstTurn = turn(0, 1);
+    const secondTurn = turn(2, 2);
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, firstTurn);
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("test did not install product persistence");
+    }
+    const persistence = context.sessionPersistence;
+    const targetRead = await persistence.readSession({
+      maxResultBytes: 65_536,
+      runtimeGeneration: "rewind-generation",
+      runtimeSessionId: id,
+    });
+    const targetStableBoundaryId = targetRead.durableHead.stableBoundaryId;
+    if (targetStableBoundaryId === undefined) throw new Error("rewind target boundary is unavailable");
+    const excludedChildId = SessionId("product-persistence-rewind-child");
+    await context.sessionPersistence.create(Object.freeze({
+      ...header(excludedChildId),
+      origin: "subagent" as const,
+      parentSession: id,
+      seedLength: 0,
+    }));
+    await context.sessionPersistence.append(excludedChildId, turn(0, 1));
+    await persistence.append(id, secondTurn);
+    const allEvents = [...firstTurn, ...secondTurn];
+    const prepared = await persistence.prepareRewind({
+      clientMutationId: "rewind-client-1",
+      runtimeSessionId: id,
+      sourceTranscriptPostcondition: productTranscriptPostcondition(allEvents),
+      targetStableBoundaryId,
+      targetTranscriptPostcondition: productTranscriptPostcondition(firstTurn),
+    });
+    expect(prepared).toMatchObject({
+      attempt: 0,
+      boundaryId: targetStableBoundaryId,
+      clientMutationId: "rewind-client-1",
+      phase: "prepared",
+      runtimeSessionId: id,
+    });
+    expect(await persistence.prepareRewind({
+      clientMutationId: "rewind-client-1",
+      runtimeSessionId: id,
+      sourceTranscriptPostcondition: productTranscriptPostcondition(allEvents),
+      targetStableBoundaryId,
+      targetTranscriptPostcondition: productTranscriptPostcondition(firstTurn),
+    })).toEqual(prepared);
+
+    const committed = await persistence.commitRewind(prepared.token, "rewind-client-1");
+    expect(committed).toMatchObject({
+      attempt: 1,
+      phase: "committed",
+      receipt: {
+        durableSequence: 3,
+        rewindEventSequence: 2,
+        sourceGenerationId: prepared.sourceGenerationId,
+        targetGenerationId: prepared.targetGenerationId,
+      },
+    });
+    expect(await persistence.commitRewind(prepared.token, "rewind-client-1")).toEqual(committed);
+    expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId)).sort())
+      .toEqual([String(id)]);
+    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const probe = new DatabaseSync(databasePath, { readOnly: true });
+    const rewoundEvents = (probe.prepare(`
+      SELECT envelope_json FROM session_events AS e
+       JOIN sessions AS s
+         ON s.id = e.session_id AND s.active_generation_id = e.generation_id
+       WHERE e.session_id = ? ORDER BY e.seq
+    `).all(id) as Array<{ envelope_json: string }>).map(({ envelope_json }) =>
+      JSON.parse(envelope_json) as SessionEvent);
+    expect(rewoundEvents.slice(0, firstTurn.length)).toEqual(firstTurn);
+    expect(rewoundEvents.at(-1)).toMatchObject({
+      data: {
+        boundaryId: targetStableBoundaryId,
+        clientMutationId: "rewind-client-1",
+        sourceGenerationId: prepared.sourceGenerationId,
+        targetGenerationId: prepared.targetGenerationId,
+        token: prepared.token,
+      },
+      seq: 2,
+      type: "myagents/session/rewind",
+    });
+
+    expect(probe.prepare(`
+      SELECT origin, state, event_count FROM session_generations
+       WHERE session_id = ? ORDER BY state, origin
+    `).all(id)).toEqual([
+      { event_count: 3, origin: "rewind", state: "active" },
+      { event_count: 4, origin: "create", state: "archived" },
+    ]);
+    expect(probe.prepare(`
+      SELECT p.state, s.state AS session_state, g.state AS generation_state
+        FROM rewind_child_plans AS p
+        JOIN sessions AS s ON s.id = p.child_session_id
+        JOIN session_generations AS g
+          ON g.session_id = p.child_session_id AND g.generation_id = p.child_generation_id
+       WHERE p.token = ?
+    `).get(prepared.token)).toEqual({
+      generation_state: "archived",
+      session_state: "tombstoned",
+      state: "tombstoned",
+    });
+    probe.close();
+
+    const rolledBack = await persistence.rollbackRewind(prepared.token, "rewind-client-1");
+    expect(rolledBack.phase).toBe("rolled_back");
+    expect(await persistence.rollbackRewind(prepared.token, "rewind-client-1")).toEqual(rolledBack);
+    expect((await persistence.readFrom(id, 0)).events).toEqual(allEvents);
+    expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId)).sort())
+      .toEqual([String(excludedChildId), String(id)].sort());
     await context.fiber.dispose();
   });
 

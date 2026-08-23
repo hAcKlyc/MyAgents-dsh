@@ -186,6 +186,75 @@ describe("one-primary-session admission", () => {
     await admission.retire();
   });
 
+  it("replaces one durable generation through quiescent disposal and exact resume", async () => {
+    const source = fakeHandle("runtime-primary");
+    const rewound = fakeHandle("runtime-primary");
+    const restored = fakeHandle("runtime-primary");
+    const resume = vi.fn<(
+      request: PrimarySessionBackendRequest,
+    ) => Promise<PrimarySessionBackendResult>>()
+      .mockResolvedValueOnce(readyResult(rewound.handle, "runtime-primary", 2, "config-v1"))
+      .mockResolvedValueOnce(readyResult(restored.handle, "runtime-primary", 4, "config-v1"));
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(source.handle, "runtime-primary", 4, "config-v1")),
+      resume,
+    ), workspace);
+    await admission.bindCreate(createParams());
+    const mutate = vi.fn(() => Promise.resolve());
+    const guard = vi.fn(() => Promise.resolve());
+    const first = admission.replaceGeneration("commit:rewind-1", mutate, guard);
+    expect(admission.replaceGeneration("commit:rewind-1", mutate, guard)).toBe(first);
+    await expect(first).resolves.toMatchObject({
+      durableSequence: 2,
+      mode: "resume",
+      state: "ready",
+    });
+    expect(source.cancel).toHaveBeenCalledWith({ kind: "disposed" }, { keepInbox: true });
+    expect(source.whenIdle).toHaveBeenCalledOnce();
+    expect(source.dispose).toHaveBeenCalledOnce();
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(resume).toHaveBeenCalledOnce();
+    const resumeRequest = resume.mock.calls[0]?.[0];
+    expect(resumeRequest?.mode).toBe("resume");
+    expect(resumeRequest?.params.runtimeSessionId).toBe("runtime-primary");
+    expect(resumeRequest?.runtimeSessionId).toBe("runtime-primary");
+    expect(admission.requireAgent()).toBe(rewound.handle.agent);
+
+    await admission.replaceGeneration("rollback:rewind-1", () => Promise.resolve(), guard);
+    expect(rewound.dispose).toHaveBeenCalledOnce();
+    expect(resume).toHaveBeenCalledTimes(2);
+    expect(admission.snapshot()).toMatchObject({ durableSequence: 4, state: "ready" });
+    await admission.retire();
+    expect(restored.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("retries durable mutation resume after the locator committed but first publication failed", async () => {
+    const source = fakeHandle("runtime-primary");
+    const recovered = fakeHandle("runtime-primary");
+    const resume = vi.fn()
+      .mockRejectedValueOnce(new Error("synthetic post-commit resume failure"))
+      .mockResolvedValueOnce(readyResult(recovered.handle, "runtime-primary", 3, "config-v1"));
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(source.handle, "runtime-primary", 4, "config-v1")),
+      resume,
+    ), workspace);
+    await admission.bindCreate(createParams());
+    const mutate = vi.fn(() => Promise.resolve());
+    const first = admission.replaceGeneration("commit:rewind-recovery", mutate);
+    await expect(first).rejects.toThrow("synthetic post-commit resume failure");
+    expect(admission.snapshot().state).toBe("recovery_required");
+    expect(source.dispose).toHaveBeenCalledOnce();
+
+    const retry = admission.replaceGeneration("commit:rewind-recovery", mutate);
+    expect(retry).not.toBe(first);
+    await expect(retry).resolves.toMatchObject({ durableSequence: 3, state: "ready" });
+    expect(mutate).toHaveBeenCalledTimes(2);
+    expect(resume).toHaveBeenCalledTimes(2);
+    expect(admission.requireAgent()).toBe(recovered.handle.agent);
+    await admission.retire();
+    expect(recovered.dispose).toHaveBeenCalledOnce();
+  });
+
   it("starts the Inbox-preserving retirement guard before awaiting idle and handle disposal", async () => {
     const candidate = fakeHandle("runtime-primary");
     const admission = new PrimarySessionAdmission(backendWith(

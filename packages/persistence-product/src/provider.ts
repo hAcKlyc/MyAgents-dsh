@@ -34,6 +34,11 @@ import {
 import { ProductSqliteStore } from "./sqlite-store.js";
 import type { MethodResult } from "@myagents-dsh/protocol";
 import type { ProductCheckpointStore } from "@myagents-dsh/checkpoint";
+import type {
+  ProductRewindPrepareInput,
+  ProductRewindRecord,
+  ProductRewindStore,
+} from "./rewind.js";
 
 export interface ProductSqliteSessionPersistenceConfig {
   readonly durability: SqliteDurabilityPlan;
@@ -234,11 +239,16 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
     const checkpointStore = Object.freeze<ProductCheckpointStore>({
       get: (checkpointId, signal) => store.get(checkpointId, signal),
       listUnsettled: (sessionId, signal) => store.listUnsettled(sessionId, signal),
+      listRewindFiles: (token, signal) => store.listRewindFiles(token, signal),
       markEvent: (checkpointId, phase, eventSeq, signal) =>
         store.markEvent(checkpointId, phase, eventSeq, signal),
       prepare: (input, signal) => store.prepare(input, signal),
+      sealRewindFile: (token, path, rollbackBytes, rollbackSha256, signal) =>
+        store.sealRewindFile(token, path, rollbackBytes, rollbackSha256, signal),
       transition: (checkpointId, expected, next, actualSha256, signal) =>
         store.transition(checkpointId, expected, next, actualSha256, signal),
+      transitionRewindFile: (token, path, expected, next, actualSha256, signal) =>
+        store.transitionRewindFile(token, path, expected, next, actualSha256, signal),
     });
     normalized.registerCheckpointStore(checkpointStore);
   }
@@ -289,6 +299,49 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
 
   readSession(request: ProductSessionReadRequest): Promise<MethodResult<"session/read">> {
     return stateOf(this).reader.read(request);
+  }
+
+  prepareRewind(
+    input: ProductRewindPrepareInput,
+    signal?: AbortSignal,
+  ): Promise<ProductRewindRecord> {
+    return stateOf(this).store.prepareRewind(input, signal);
+  }
+
+  validateCommitRewind(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return stateOf(this).store.validateCommitRewind(token, clientMutationId, signal);
+  }
+
+  commitRewind(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductRewindRecord> {
+    return stateOf(this).store.commitRewind(token, clientMutationId, signal);
+  }
+
+  validateRollbackRewind(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    return stateOf(this).store.validateRollbackRewind(token, clientMutationId, signal);
+  }
+
+  rollbackRewind(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductRewindRecord> {
+    return stateOf(this).store.rollbackRewind(token, clientMutationId, signal);
+  }
+
+  getRewind(token: string, signal?: AbortSignal): ReturnType<ProductRewindStore["getRewind"]> {
+    return stateOf(this).store.getRewind(token, signal);
   }
 }
 

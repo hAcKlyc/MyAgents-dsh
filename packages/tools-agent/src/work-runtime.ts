@@ -1300,6 +1300,32 @@ export class ProductWorkService extends Service {
     if (failure !== undefined) throw this.fence(failure);
   }
 
+  prepareGenerationReplacement(agent: Agent): void {
+    this.assertHealthy();
+    const previous = this.primary;
+    if (previous === undefined) return;
+    if (previous === agent || this.ctx.agents.get(previous.id) === previous || this.accepting
+      || this.activeExecutions.size !== 0 || this.activeEpochs.size !== 0
+      || this.locks.size !== 0 || this.continuablePermits.size !== 0
+      || this.pendingChildAuthorities.size !== 0 || this.workReservations !== 0
+      || this.componentGenerationWaiters.size !== 0) {
+      throw this.fence(new Error("ProductWork generation replacement is not quiescent"));
+    }
+    this.byTask.clear();
+    this.byAgent.clear();
+    this.latestEnds.clear();
+    this.messages.clear();
+    this.usageByAgent.clear();
+    this.primary = undefined;
+    this.initialization = undefined;
+    this.accepting = true;
+    this.epochCount = 0;
+    this.messageBytes = 0;
+    this.messageSequence = 0;
+    this.nextModelRequest = 1;
+    this.serial = Promise.resolve();
+  }
+
   private childModelLineage(
     agent: Agent,
     configRevision: string,

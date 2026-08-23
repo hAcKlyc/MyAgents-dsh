@@ -1,5 +1,5 @@
 export const PRODUCT_PERSISTENCE_FORMAT = "myagents-sqlite-session-v1" as const;
-export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 2 as const;
+export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 4 as const;
 export const PRODUCT_PERSISTENCE_APPLICATION_ID = 0x4d594147 as const;
 
 export const PRODUCT_PERSISTENCE_SCHEMA_V1_SQL = `
@@ -82,16 +82,98 @@ CREATE TABLE checkpoint_records (
 ) STRICT;
 ` as const;
 
-export const PRODUCT_PERSISTENCE_SCHEMA_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V1_SQL.trim()}
+export const PRODUCT_PERSISTENCE_SCHEMA_V2_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V1_SQL.trim()}
 
 ${PRODUCT_CHECKPOINT_SCHEMA_SQL.trim()}
+` as const;
+
+export const PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL = `
+CREATE TABLE mutation_journals (
+  token                            TEXT PRIMARY KEY,
+  kind                             TEXT NOT NULL CHECK (kind = 'rewind'),
+  client_mutation_id               TEXT NOT NULL,
+  request_fingerprint              TEXT NOT NULL,
+  session_id                       TEXT NOT NULL,
+  source_generation_id             TEXT NOT NULL,
+  source_revision                  TEXT NOT NULL,
+  boundary_id                      TEXT NOT NULL REFERENCES stable_boundaries(boundary_id) ON DELETE RESTRICT,
+  source_transcript_postcondition  TEXT NOT NULL,
+  target_transcript_postcondition  TEXT NOT NULL,
+  target_generation_id             TEXT,
+  phase                            TEXT NOT NULL CHECK (phase IN ('prepared', 'committing', 'committed', 'rolling_back', 'rolled_back', 'recovery_required')),
+  attempt                          INTEGER NOT NULL CHECK (attempt >= 0),
+  receipt_json                     TEXT,
+  created_at                       INTEGER NOT NULL,
+  updated_at                       INTEGER NOT NULL,
+  UNIQUE (session_id, client_mutation_id),
+  FOREIGN KEY (session_id, source_generation_id)
+    REFERENCES session_generations(session_id, generation_id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE rewind_file_plans (
+  token                   TEXT NOT NULL REFERENCES mutation_journals(token) ON DELETE RESTRICT,
+  path                    TEXT NOT NULL,
+  expected_current_sha256 TEXT NOT NULL,
+  target_sha256           TEXT,
+  target_blob_sha256      TEXT REFERENCES checkpoint_blobs(sha256) ON DELETE RESTRICT,
+  rollback_sha256         TEXT,
+  rollback_blob_sha256    TEXT REFERENCES checkpoint_blobs(sha256) ON DELETE RESTRICT,
+  sealed                  INTEGER NOT NULL CHECK (sealed IN (0, 1)),
+  state                   TEXT NOT NULL CHECK (state IN ('prepared', 'published', 'rolled_back', 'conflict')),
+  actual_sha256           TEXT,
+  PRIMARY KEY (token, path),
+  CHECK ((target_sha256 IS NULL) = (target_blob_sha256 IS NULL)),
+  CHECK ((rollback_sha256 IS NULL) = (rollback_blob_sha256 IS NULL))
+) STRICT;
+
+CREATE TABLE stable_boundaries (
+  boundary_id   TEXT PRIMARY KEY,
+  session_id    TEXT NOT NULL,
+  generation_id TEXT NOT NULL,
+  seq_exclusive INTEGER NOT NULL CHECK (seq_exclusive > 0),
+  turn           INTEGER NOT NULL CHECK (turn >= 1),
+  prefix_hash    TEXT NOT NULL,
+  policy_version TEXT NOT NULL,
+  created_at     INTEGER NOT NULL,
+  UNIQUE (session_id, generation_id, seq_exclusive),
+  FOREIGN KEY (session_id, generation_id)
+    REFERENCES session_generations(session_id, generation_id) ON DELETE RESTRICT
+) STRICT;
+` as const;
+
+export const PRODUCT_PERSISTENCE_SCHEMA_V3_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V2_SQL.trim()}
+
+${PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL.trim()}
+` as const;
+
+export const PRODUCT_REWIND_CHILD_SCHEMA_SQL = `
+CREATE TABLE rewind_child_plans (
+  token                     TEXT NOT NULL REFERENCES mutation_journals(token) ON DELETE RESTRICT,
+  child_session_id          TEXT NOT NULL,
+  child_generation_id       TEXT NOT NULL,
+  child_session_revision    INTEGER NOT NULL CHECK (child_session_revision >= 0),
+  child_generation_revision INTEGER NOT NULL CHECK (child_generation_revision >= 0),
+  state                     TEXT NOT NULL CHECK (state IN ('prepared', 'tombstoned', 'restored')),
+  PRIMARY KEY (token, child_session_id),
+  FOREIGN KEY (child_session_id, child_generation_id)
+    REFERENCES session_generations(session_id, generation_id) ON DELETE RESTRICT
+) STRICT;
+` as const;
+
+export const PRODUCT_PERSISTENCE_SCHEMA_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V3_SQL.trim()}
+
+${PRODUCT_REWIND_CHILD_SCHEMA_SQL.trim()}
 ` as const;
 
 export const PRODUCT_PERSISTENCE_TABLES = Object.freeze([
   "checkpoint_blobs",
   "checkpoint_records",
+  "mutation_journals",
+  "rewind_child_plans",
+  "rewind_file_plans",
   "session_events",
   "session_generations",
   "sessions",
+  "stable_boundaries",
   "store_meta",
 ] as const);
