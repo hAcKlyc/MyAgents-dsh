@@ -118,10 +118,21 @@ export const DSH_SEAM_SOURCE = Object.freeze({
       blob: "6d763b7c0aa1b36ed8b1a588539e49ce49d4090b",
       sha256: "66b560e14358f51c77df18171d1c54f1a1f90feb0303e7195733884ca9d43d76",
     }),
+    Object.freeze({
+      path: "packages/llm/llm-deepseek/src/translate.ts",
+      blob: "f1a626735550567e7126cf6121de23c1db56df35",
+      sha256: "69d9b348778fc657fef33262727b64f11c9afde81119302ad80b2a3d1dec5602",
+    }),
+    Object.freeze({
+      path: "packages/llm/llm-deepseek/tests/translate.spec.ts",
+      blob: "e5a98d1c676877e05e2084f648ffc59e8d91f2e7",
+      sha256: "48c2279588133f09b3385ebd547398f9f991ecb61210e499c1ec848e89dcb945",
+    }),
   ]),
 });
 
 export const PATCHED_SOURCE_TESTS = Object.freeze([
+  "packages/llm/llm-deepseek/tests/translate.spec.ts",
   "packages/core/agent-loop/tests/publication-guards.spec.ts",
   "packages/core/agent-loop/tests/cancel.spec.ts",
   "packages/core/agent-loop/tests/pre-assistant-commit.spec.ts",
@@ -139,12 +150,14 @@ const PRE_ASSISTANT_COMMIT_PATCH = "specs/dsh/patches/0002-pre-assistant-commit.
 const KNOWN_EVENT_PATCH = "specs/dsh/patches/0003-persistence-known-event-predicate.patch";
 const PUBLICATION_GUARDS_PATCH = "specs/dsh/patches/0004-publication-guards.patch";
 const PRODUCT_CONTINUABLE_LIFECYCLE_PATCH = "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch";
+const DEEPSEEK_STREAM_TOOL_IDENTITY_PATCH = "specs/dsh/patches/0006-deepseek-stream-tool-identity.patch";
 export const DSH_SEAM_PATCHES = Object.freeze([
   WAKE_PATCH,
   PRE_ASSISTANT_COMMIT_PATCH,
   KNOWN_EVENT_PATCH,
   PUBLICATION_GUARDS_PATCH,
   PRODUCT_CONTINUABLE_LIFECYCLE_PATCH,
+  DEEPSEEK_STREAM_TOOL_IDENTITY_PATCH,
 ] as const);
 
 export interface DshSeamPatchSnapshot {
@@ -303,6 +316,22 @@ export function buildDshSeamDecisions(): object {
         ],
         removalCondition: "an installed DSH release exposes equivalent durable settlement ownership, strict external final durability, and no-reinsert pending wake; setup and selected-child drain are already stock",
       },
+      {
+        id: "DSH-SEAM-007",
+        seam: "deepseek-stream-tool-identity",
+        status: "required_upstream_patch_accepted",
+        adr: "specs/adr/0007-deepseek-stream-tool-identity.md",
+        rejected: "replace-the-official-provider-adapter-or-repair-empty-tool-identities-after-DSH-emission",
+        selectedPublicApi: "stock @deepseek-ai/dsh-llm-deepseek adapter with guarded streamed call-id and tool-name updates",
+        patch: patch(DEEPSEEK_STREAM_TOOL_IDENTITY_PATCH),
+        executableEvidence: [
+          "an established V4-Flash tool id and name survive empty continuation fields",
+          "every subsequent tool-call delta retains the established identity",
+          "the final assembled tool-call block retains the established identity and concatenated arguments",
+          "non-empty stock call identity behavior and parallel-call indexing remain unchanged",
+        ],
+        removalCondition: "an installed DSH release preserves established call ids and tool names across empty stream continuation fields",
+      },
     ],
     evidenceOwners: {
       runtimeSemantics: "tests/dsh-seam-spikes.unit.test.ts",
@@ -392,6 +421,7 @@ export function verifyDshSeamSource(
       "--filter", "@deepseek-ai/dsh-subagent-in-process-driver...",
       "--filter", "@deepseek-ai/dsh-subagent-spawn-in-process...",
       "--filter", "@deepseek-ai/dsh-subagent-fork-in-process...",
+      "--filter", "@deepseek-ai/dsh-llm-deepseek...",
     ], worktree);
     run("corepack", [
       "pnpm", "exec", "tsc", "-b",
@@ -404,6 +434,7 @@ export function verifyDshSeamSource(
       "packages/subagent/subagent-in-process-driver/tsconfig.json",
       "packages/subagent/subagent-spawn-in-process/tsconfig.json",
       "packages/subagent/subagent-fork-in-process/tsconfig.json",
+      "packages/llm/llm-deepseek/tsconfig.json",
       "--pretty", "false",
     ], worktree);
     run("corepack", [

@@ -12,6 +12,7 @@ const expectedRuntimePackageNames = Object.freeze([
   "@deepseek-ai/dsh-attachment",
   "@deepseek-ai/dsh-attachment-local",
   "@deepseek-ai/dsh-llm",
+  "@deepseek-ai/dsh-llm-deepseek",
   "@deepseek-ai/dsh-session",
   "@deepseek-ai/dsh-system-prompt",
   "@deepseek-ai/dsh-tools",
@@ -38,6 +39,7 @@ export interface AcceptedPatchedDshArtifactAuthority {
     "subagents.strictExternalSettlementDurability",
     "subagents.drainContinuableChildren",
     "subagents.resumeContinuable",
+    "llm-deepseek.streamToolIdentity",
   ];
 }
 
@@ -100,6 +102,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "subagents.strictExternalSettlementDurability",
     "subagents.drainContinuableChildren",
     "subagents.resumeContinuable",
+    "llm-deepseek.streamToolIdentity",
   ];
   if (!Array.isArray(requiredPatchedSeams)
     || JSON.stringify(requiredPatchedSeams) !== JSON.stringify(expectedSeams)) {

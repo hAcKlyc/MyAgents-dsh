@@ -84,7 +84,7 @@ describe("patched DSH artifact authority", () => {
       /^0\.1\.1-rc\.2\.myagents\.b150a551b8d4\.[a-f0-9]{12}$/u,
     );
     expect(first.patchSeriesSha256).toMatch(/^[a-f0-9]{64}$/u);
-    expect(first.patches).toHaveLength(5);
+    expect(first.patches).toHaveLength(6);
     expect(first.toolchain).toEqual({
       node: "24.13.1",
       npm: "11.8.0",

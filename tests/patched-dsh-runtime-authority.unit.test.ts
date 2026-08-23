@@ -13,6 +13,10 @@ describe("accepted patched DSH runtime authority", () => {
     expect(Object.keys(ACCEPTED_PATCHED_DSH_ARTIFACT.runtimePackages).sort()).toEqual(
       [...ACCEPTED_DSH_RUNTIME_PACKAGE_NAMES].sort(),
     );
+    expect(ACCEPTED_PATCHED_DSH_ARTIFACT.runtimePackages["@deepseek-ai/dsh-llm-deepseek"])
+      .toBe(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion);
+    expect(ACCEPTED_PATCHED_DSH_ARTIFACT.requiredPatchedSeams)
+      .toContain("llm-deepseek.streamToolIdentity");
     expect(() => assertAcceptedPatchedDshArtifact(structuredClone(ACCEPTED_PATCHED_DSH_ARTIFACT)))
       .not.toThrow();
   });

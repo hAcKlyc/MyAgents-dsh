@@ -8,7 +8,7 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 - Source/design evidence is `deepseek-harness@b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` (tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`), whose manifests declare `0.1.1-rc.2`.
 - Development dependency evidence is the public npm `0.1.1-rc.2` package set plus `@deepseek-ai/cordis@4.0.1`, pinned by exact versions, tarball URLs, and SHA-512 integrities in `package-lock.json`.
-- Candidate executable evidence is the source-built, five-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49`, content-addressed by manifest SHA-256 `a21f74931c7ff84eda3ed0cc83b1bf14cdd1fd6ff6c67a3792eac28f6fc381f0`.
+- Candidate executable evidence is the source-built, six-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.fc0096a8d5bc`, content-addressed by manifest SHA-256 `965c1ac8e990494dbd13f5290795b59e757ab499c00c5291469fb826676e065c`.
 
 The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 
@@ -28,7 +28,7 @@ The manifest records executable consequences and follow-up decisions for the unp
 
 ## Accepted seam decisions
 
-`seam-decisions-v1.json` is the generated registry for the six evidence-backed Foundation and Batch 1 decisions. `npm run check:dsh-seams` verifies its patch digests. `npm run check:dsh-seams-source` additionally verifies every touched fixed-source blob, applies the five patches to a detached temporary worktree, installs only from the primed exact pnpm store, compiles the selected upstream package graph, and runs 371 real patched-source regression tests across Agent cancellation/wake, pre-assistant commit (including strict canonical reconstruction and non-tool/max-token bypass), generated scope routing, persistence, pre-mutation Agent/Session publication guards, trusted unpublished continuable setup, durable external ownership and strict final persistence of continuable-subagent settlement, and exact selected-child drain. CI repeats that gate from separately SHA-pinned checkouts. The numbered ADRs record why each choice was accepted.
+`seam-decisions-v1.json` is the generated registry for the seven evidence-backed Foundation and Batch 1 decisions. `npm run check:dsh-seams` verifies its patch digests. `npm run check:dsh-seams-source` additionally verifies every touched fixed-source blob, applies the six patches to a detached temporary worktree, installs only from the primed exact pnpm store, compiles the selected upstream package graph, and runs 402 real patched-source regression tests across Agent cancellation/wake, pre-assistant commit (including strict canonical reconstruction and non-tool/max-token bypass), generated scope routing, persistence, pre-mutation Agent/Session publication guards, trusted unpublished continuable setup, durable external ownership and strict final persistence of continuable-subagent settlement, exact selected-child drain, and DeepSeek streamed tool identity preservation. CI repeats that gate from separately SHA-pinned checkouts. The numbered ADRs record why each choice was accepted.
 
 These patches target the fixed rc.2 source/design authority. They are not claimed to be the source of the installed registry packages, are not applied to `node_modules`, and do not activate the official product profile. Batch 1 must still pass the accumulated Runtime gates before this candidate may become production authority.
 
@@ -38,7 +38,7 @@ These patches target the fixed rc.2 source/design authority. They are not claime
 
 The versioned review matrix is [upstream-rebaseline-0.1.1-rc.2.md](./upstream-rebaseline-0.1.1-rc.2.md).
 
-The mandatory post-Workstream-4 refresh is recorded in [upstream-refresh-b1-final-0.1.1-rc.2.md](./upstream-refresh-b1-final-0.1.1-rc.2.md). Its fresh fetch found the newest release and `origin/master` still identical to the immutable rc.2 pin, re-ran the five-patch source gate with one worker, re-audited the final Batch capability split, and reproduced the 54-package bundle byte-for-byte.
+The mandatory post-Workstream-4 refresh is recorded in [upstream-refresh-b1-final-0.1.1-rc.2.md](./upstream-refresh-b1-final-0.1.1-rc.2.md). A final G6 preflight again found the newest release and `origin/master` identical to the immutable rc.2 pin, then caught an official-route V4-Flash stream defect in that exact source. The accepted six-patch source gate and rebuilt 54-package bundle include the minimal translator correction and regression.
 
 The refresh compares public APIs and behavior, not only package versions. Patches 0001–0004 remain required and were rebased with new source/blob evidence. Patch 0005 was reduced: ProductWork now uses upstream caller-reserved identity and `drainContinuableChildren`, while the patch retains only exact external settlement delivery, strict final durability, resume/no-reinsert recovery, and infrastructure-failure attribution that rc.2 still lacks.
 

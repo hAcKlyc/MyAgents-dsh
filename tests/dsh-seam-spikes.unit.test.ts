@@ -857,8 +857,9 @@ describe("accepted DSH seam decision registry", () => {
       "public_provider_composition_accepted",
       "required_upstream_patch_accepted",
       "required_upstream_patch_accepted",
+      "required_upstream_patch_accepted",
     ]);
-    expect(evidence.patchSeries).toHaveLength(5);
+    expect(evidence.patchSeries).toHaveLength(6);
     for (const patch of evidence.patchSeries) {
       const digest = createHash("sha256")
         .update(readFileSync(resolve(repositoryRoot, patch.path)))
@@ -882,7 +883,7 @@ describe("accepted DSH seam decision registry", () => {
     expect(evidence.authority.commit).toBe("b150a551b8d465e31e418e1b2eaf5e79bbb7d28e");
     expect(evidence.authority.declaredRelease).toBe("0.1.1-rc.2");
     expect(evidence.authority.executablePackageAssociation).toBe("unproven");
-    expect(evidence.authority.files).toHaveLength(21);
+    expect(evidence.authority.files).toHaveLength(23);
     expect(evidence.authority.files.every(({ blob, sha256 }) =>
       /^[0-9a-f]{40}$/u.test(blob) && /^[0-9a-f]{64}$/u.test(sha256))).toBe(true);
   });
