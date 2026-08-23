@@ -558,11 +558,13 @@ describe("SdkOperationService admission and idempotency", () => {
       clientOperationId: "operation-missing",
     });
     await fixture.service.start(params());
+    const accepted = fixture.service.lookup("operation-1");
+    if (accepted === undefined) throw new Error("accepted operation was not durably projected");
     expect(fixture.service.get({ clientOperationId: "operation-1" })).toEqual({
       clientOperationId: "operation-1",
       admission: {
         admittedAt: "2027-01-15T08:00:00.000Z",
-        turnId: expect.stringMatching(/^turn-/u),
+        turnId: accepted.productTurnId,
       },
     });
     const eventCount = fixture.agent.session.events.length;
