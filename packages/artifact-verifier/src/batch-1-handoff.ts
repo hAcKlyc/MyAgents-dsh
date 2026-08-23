@@ -7,6 +7,9 @@ export const BATCH_1_CHECKPOINT_COVERAGE = "root canonical Write/Edit only" as c
 export const BATCH_1_REVIEW_AREAS = Object.freeze([
   "architecture",
   "protocol",
+  "agent-experience",
+  "lifecycle",
+  "persistence",
   "security",
   "artifact",
 ] as const);

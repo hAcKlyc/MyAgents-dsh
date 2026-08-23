@@ -393,8 +393,9 @@ Required reviews are separately recorded:
 - architecture/DSH boundary: no second loop/session/tool authority or private seam;
 - protocol: all inventory, state, cancellation, errors, bounds and generated drift;
 - Agent Experience: exact twenty, policy/checkpoint/child/TaskGraph behavior;
-- lifecycle/security: Host ports, secrets, extensions, resources and stale fencing;
+- lifecycle: Host ports, dynamic components, resources, stale fencing and cleanup;
 - persistence: invariants, event registry, checkpoint, mutation and crash recovery;
+- security: secrets, permissions, extensions, attachments, network and process boundaries;
 - artifact/supply chain: lock, files, provenance, patch inventory and clean install.
 
 A blocking finding must be closed with code/test/doc evidence. Review prose alone does not mark an implementation ledger item complete.

@@ -109,6 +109,15 @@ describe("Batch 1 handoff authority", () => {
     const handoff = createBatch1Handoff(fixture());
     expect(handoff.schemaVersion).toBe(BATCH_1_HANDOFF_SCHEMA_VERSION);
     expect(handoff.checkpointCoverage).toBe(BATCH_1_CHECKPOINT_COVERAGE);
+    expect(BATCH_1_REVIEW_AREAS).toEqual([
+      "architecture",
+      "protocol",
+      "agent-experience",
+      "lifecycle",
+      "persistence",
+      "security",
+      "artifact",
+    ]);
     expect(handoff.supportedPlatforms.map(({ target }) => target)).toEqual([
       "darwin-arm64", "linux-x64", "win32-x64",
     ]);
