@@ -1,6 +1,7 @@
 # Batch 1 final DSH upstream refresh: `0.1.1-rc.2`
 
-Status: reviewed candidate under Batch 1 action `B1-DSH-R2`.
+Status: accepted under Batch 1 action `B1-DSH-R2` at review commit
+`2dffe1e9a67f867e5f6ed7389cc0204c42ab8a86`.
 
 This is the mandatory post-Workstream-4 successor to
 [`upstream-rebaseline-0.1.1-rc.2.md`](./upstream-rebaseline-0.1.1-rc.2.md). It
@@ -95,5 +96,15 @@ that the implemented split remains correct against the newest public source.
   Batch completion remain owned by the accumulated Batch gates and explicit user
   acceptance, not by the DSH refresh alone.
 
-The final commit-bound Runtime artifact and ledger acceptance are recorded only
-after this review record itself is frozen.
+The final commit-bound Runtime artifact is
+`/private/tmp/myagents-dsh-b1-dsh-r2-runtime-artifact-candidate-v1`, manifest
+`c03dc0d343d54af4fac2e96e8d5bdc3aaf66b0c937404a03aaad77629c12cbae`,
+7,238 files, repository head
+`2dffe1e9a67f867e5f6ed7389cc0204c42ab8a86`, builder authority
+`19a54914a60a7ecb2109fd5b01d5ffc8c7d2bcdce6a6c5b5b36dd37f15b89b54`,
+and root lock
+`203dc36bcc171a7049de58a62695e41abd2d30747dfcf4afc16e32603b187a6d`.
+Independent installed verification passes. Exact Node `24.13.1` / npm
+`11.8.0` root typecheck, lint, forced-single-worker test (40 files / 447
+tests), and build pass with security coverage of 318 cached-or-untracked files
+and 28 actual packed archives.
