@@ -169,10 +169,10 @@ export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
 ] as const);
 
 export interface DshRootCompositionOptions {
-  readonly adapter: LlmAdapter;
+  readonly adapter?: LlmAdapter;
   readonly agentLoop?: Readonly<Pick<AgentLoopConfig, "maxParallelToolCalls">>;
   readonly operationBirthAuthority?: OperationBirthAuthority;
-  readonly providers: readonly string[];
+  readonly providers?: readonly string[];
   readonly systemPrompt?: Readonly<SystemPromptConfig>;
   readonly tools?: Readonly<ToolRuntimeConfig>;
 }
@@ -230,7 +230,7 @@ const optionalPositiveInteger = (value: unknown, description: string): number | 
 };
 
 interface NormalizedDshRootCompositionOptions {
-  readonly adapter: LlmAdapter;
+  readonly adapter?: LlmAdapter;
   readonly agentLoop: Readonly<Pick<AgentLoopConfig, "maxParallelToolCalls">>;
   readonly operationBirthAuthority: OperationBirthAuthority;
   readonly providers: readonly string[];
@@ -260,10 +260,15 @@ export const validateDshRootCompositionOptions = (
     ["adapter", "agentLoop", "operationBirthAuthority", "providers", "systemPrompt", "tools"],
     "DSH root composition options",
   );
-  if (!(options.adapter instanceof LlmAdapter)) {
+  const hasAdapter = Object.hasOwn(options, "adapter");
+  const hasProviders = Object.hasOwn(options, "providers");
+  if (hasAdapter !== hasProviders) {
+    throw new TypeError("DSH composition adapter and provider routes must be supplied together");
+  }
+  if (hasAdapter && !(options.adapter instanceof LlmAdapter)) {
     throw new TypeError("DSH composition adapter must implement the public LlmAdapter contract");
   }
-  if (!Array.isArray(options.providers)) {
+  if (hasProviders && !Array.isArray(options.providers)) {
     throw new TypeError("DSH composition providers must be an array");
   }
   const agentLoop = options.agentLoop === undefined
@@ -302,13 +307,13 @@ export const validateDshRootCompositionOptions = (
   const captureOperationBirth = operationBirthAuthority.capture as OperationBirthAuthority["capture"];
   const operationBirthReceiver = operationBirthAuthority;
   return Object.freeze({
-    adapter: options.adapter,
+    ...(hasAdapter ? { adapter: options.adapter as LlmAdapter } : {}),
     agentLoop: Object.freeze(maxParallelToolCalls === undefined ? {} : { maxParallelToolCalls }),
     operationBirthAuthority: Object.freeze({
       capture: (params: Parameters<OperationBirthAuthority["capture"]>[0]) =>
         Reflect.apply(captureOperationBirth, operationBirthReceiver, [params]),
     }),
-    providers: exactProviders(options.providers as readonly string[]),
+    providers: hasProviders ? exactProviders(options.providers as readonly string[]) : Object.freeze([]),
     systemPrompt: Object.freeze(structuredClone(systemPrompt)),
     tools: Object.freeze(structuredClone(tools)),
   });
@@ -1487,7 +1492,7 @@ export const composeDshRootServices = async (
     await root.plugin(LlmRuntime);
     await root.plugin(SystemPrompt, systemPrompt);
     await root.plugin(ToolRuntime, tools);
-    await root.plugin(adapterPlugin(providers, adapter));
+    if (adapter !== undefined) await root.plugin(adapterPlugin(providers, adapter));
     await root.plugin(TokenMeter);
     await root.plugin(BasicCompactionEngine, { auto: false });
     await root.plugin(AgentLoop, {

@@ -20,6 +20,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "package.json",
       "src/index.ts",
       "src/lifecycle.ts",
+      "src/official-composition.ts",
       "src/process.ts",
       "src/self-check.ts",
     ],

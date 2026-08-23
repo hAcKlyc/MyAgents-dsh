@@ -17,7 +17,7 @@
   "materialField": "apiKey",
   "systemPrompt": "Operate only within the synthetic dynamic acceptance fixture. Follow Runtime permissions, report uncertainty truthfully, and leave every owned resource quiescent.",
   "permissionMode": "default",
-  "interactionScenario": "dynamic-scripted-v1",
+  "interactionScenario": "host-interaction-v1",
   "networkPolicyRef": "dynamic-network-v1",
   "webSearchAdapters": []
 }

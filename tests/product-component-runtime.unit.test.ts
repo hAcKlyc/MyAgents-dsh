@@ -99,6 +99,15 @@ const mount = async (options: Readonly<{
 };
 
 describe("transactional product component generations", () => {
+  it("binds Host session and turn admission to the public effective catalog digest", async () => {
+    const initial = snapshot("extension-catalog-admission-v1");
+    const harness = await mount({ initial });
+    expect(() => harness.service.assertSessionExtension(harness.service.catalog().digest)).not.toThrow();
+    expect(() => harness.service.assertSessionExtension(initial.digest)).toThrow(
+      /requested extension catalog is not the effective generation/u,
+    );
+  });
+
   it("validates canonical immutable snapshots and resource ownership", () => {
     const valid = snapshot("extension-resource-v1", [Object.freeze({
       id: "command-one",

@@ -22,7 +22,12 @@ import {
   runRuntimeArtifactSelfCheck,
 } from "@myagents-dsh/runtime-server/self-check";
 import {
+  OFFICIAL_EXTENSION_SNAPSHOT,
+  OFFICIAL_HOST_INTERACTION_REVISION,
+  OFFICIAL_STATIC_SKILL_CATALOG,
+  OFFICIAL_TOOL_CATALOG,
   runtimeProcessExitCode,
+  startOfficialRuntimeServerProcess,
   startRuntimeServerProcess,
 } from "@myagents-dsh/runtime-server";
 import { runArtifactCli } from "@myagents-dsh/test-host";
@@ -273,16 +278,31 @@ describe("Runtime artifact self-check", () => {
     })).toBe(1);
   });
 
+  it("publishes a credential-free official startup catalog without a bootstrap Provider", () => {
+    expect(OFFICIAL_HOST_INTERACTION_REVISION).toBe("host-interaction-v1");
+    expect(OFFICIAL_EXTENSION_SNAPSHOT.components).toEqual([]);
+    expect(OFFICIAL_STATIC_SKILL_CATALOG.skills).toEqual([]);
+    expect(OFFICIAL_TOOL_CATALOG.effectiveTools).not.toContain("WebFetch");
+    expect(OFFICIAL_TOOL_CATALOG.effectiveTools).not.toContain("WebSearch");
+    expect(OFFICIAL_TOOL_CATALOG.effectiveTools).toHaveLength(18);
+  });
+
   it("rejects reflective process and Tester-launch configuration before side effects", async () => {
+    await expect(startOfficialRuntimeServerProcess(new Proxy({}, {}) as never))
+      .rejects.toThrow("must not be a Proxy");
+    await expect(startOfficialRuntimeServerProcess({
+      runtimeGeneration: "valid-generation",
+      composition: {},
+    } as never)).rejects.toThrow("unsupported or non-data fields");
     await expect(startRuntimeServerProcess(new Proxy({}, {}) as never))
       .rejects.toThrow("must not be a Proxy");
     await expect(startRuntimeServerProcess({
-      composition: {} as never,
+      composition: {},
       runtimeGeneration: "valid-generation",
       unexpected: true,
     } as never)).rejects.toThrow("unsupported or non-data fields");
     await expect(startRuntimeServerProcess({
-      composition: {} as never,
+      composition: {},
       runtimeGeneration: "invalid\0generation",
     })).rejects.toThrow("control characters");
 

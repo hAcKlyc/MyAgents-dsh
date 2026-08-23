@@ -57,6 +57,7 @@ const digestBytes = (bytes: Uint8Array): string => createHash("sha256").update(b
 const runtimeCompositionSourcePaths = [
   "apps/runtime-server/src/index.ts",
   "apps/runtime-server/src/lifecycle.ts",
+  "apps/runtime-server/src/official-composition.ts",
   "apps/runtime-server/src/process.ts",
   "apps/runtime-server/src/self-check.ts",
   "packages/artifact-verifier/src/artifact-policy.ts",

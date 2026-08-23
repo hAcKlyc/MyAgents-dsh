@@ -78,7 +78,13 @@ const expectedDevelopmentDependencies = new Map([
   ["vitest", "4.1.10"],
 ]);
 const expectedWorkspaceFiles = new Map([
-  ["apps/runtime-server", ["src/index.ts", "src/lifecycle.ts", "src/process.ts", "src/self-check.ts"]],
+  ["apps/runtime-server", [
+    "src/index.ts",
+    "src/lifecycle.ts",
+    "src/official-composition.ts",
+    "src/process.ts",
+    "src/self-check.ts",
+  ]],
   ["packages/artifact-verifier", [
     "src/artifact-policy.ts",
     "src/batch-1-handoff.ts",

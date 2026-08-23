@@ -516,7 +516,7 @@ export class ProductComponentService extends Service {
   assertSessionExtension(extensionDigest: string): void {
     const service = originalService(this);
     if (service.#plane === undefined) return;
-    service.#assertEffective(extensionDigest);
+    service.#assertEffectiveCatalog(extensionDigest);
   }
 
   captureOperationBirth(
@@ -525,7 +525,7 @@ export class ProductComponentService extends Service {
   ): OperationBirthSnapshot {
     const service = originalService(this);
     if (service.#plane === undefined) return birth;
-    service.#assertEffective(params.extensionDigest);
+    service.#assertEffectiveCatalog(params.extensionDigest);
     const effective = service.#effective;
     const catalog = service.#plane.catalog;
     if (effective === undefined || birth.toolCatalogRevision !== catalog.revision
@@ -845,7 +845,7 @@ export class ProductComponentService extends Service {
     }));
   }
 
-  #assertEffective(digest: string): void {
+  #assertEffectiveCatalog(digest: string): void {
     if (this.#phase === "closed") {
       throw new ProtocolError("extension_closed", "component service is closed");
     }
@@ -856,10 +856,10 @@ export class ProductComponentService extends Service {
         true,
       );
     }
-    if (this.#recoveryRequired || this.#effective?.snapshot.digest !== digest) {
+    if (this.#recoveryRequired || this.#effective?.catalog.digest !== digest) {
       throw new ProtocolError(
-        "extension_snapshot_stale",
-        "requested extension snapshot is not the effective generation",
+        "extension_catalog_stale",
+        "requested extension catalog is not the effective generation",
         true,
       );
     }

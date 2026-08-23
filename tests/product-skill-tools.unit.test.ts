@@ -178,6 +178,10 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
 };
 
 describe("static declarative Skill tool", () => {
+  it("accepts an empty trusted catalog when a distribution ships no built-in Skills", () => {
+    expect(catalog([])).toMatchObject({ skills: [] });
+  });
+
   it("bounds a source that grows while its open handle is read", async () => {
     const payload = new TextEncoder().encode("123456789");
     const requestedLengths: number[] = [];

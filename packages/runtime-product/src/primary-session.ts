@@ -982,6 +982,20 @@ export class PrimarySessionAdmission {
     return this.#handle.agent;
   }
 
+  requireModelProfileRevision(): string {
+    if (this.#state !== "ready" || this.#record === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session model profile is not ready");
+    }
+    return this.#record.params.provider.revision;
+  }
+
+  requireInteractionScenarioRevision(): string {
+    if (this.#state !== "ready" || this.#record === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session interaction scenario is not ready");
+    }
+    return this.#record.params.interactionScenario;
+  }
+
   retire(beforeDispose?: PrimarySessionRetirementGuard): Promise<void> {
     this.#retirePromise ??= this.#retire(beforeDispose);
     return this.#retirePromise;
@@ -1756,6 +1770,20 @@ export class ProductSessionService extends Service {
       );
     }
     return admission.desiredConfigRevision;
+  }
+
+  requireOperationModelProfileRevision(): string {
+    if (this.admissionValue === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session model profile is not ready");
+    }
+    return this.admissionValue.requireModelProfileRevision();
+  }
+
+  requireOperationInteractionScenarioRevision(): string {
+    if (this.admissionValue === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session interaction scenario is not ready");
+    }
+    return this.admissionValue.requireInteractionScenarioRevision();
   }
 
   snapshot(): Readonly<ProductSessionSnapshot> {

@@ -13,6 +13,7 @@
   "dependencies": {
     "@myagents-dsh/artifact-verifier": "0.0.0",
     "@myagents-dsh/product-profile": "0.0.0",
+    "@myagents-dsh/protocol": "0.0.0",
     "@myagents-dsh/rpc-server": "0.0.0",
     "@myagents-dsh/runtime-product": "0.0.0"
   }

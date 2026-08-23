@@ -105,7 +105,7 @@ const createInitializeParams = (
         ripgrepRef: "bundled-ripgrep",
         ...(target === "win32-x64" ? {
           windowsPowerShellRef: "bundled-powershell",
-          windowsUtf8PreludeRef: "windows-utf8-prelude-v1",
+          windowsUtf8PreludeRef: "windows-utf8-v1",
         } : {}),
         bashDialect: "bash",
         allowedCommandRefs: target === "win32-x64"

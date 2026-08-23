@@ -197,8 +197,8 @@ export const validateStaticSkillCatalog = (value: unknown): StaticSkillCatalog =
   if (typeof catalog.digest !== "string" || !/^[a-f0-9]{64}$/u.test(catalog.digest)) {
     throw new TypeError("static Skill catalog digest must be lowercase SHA-256");
   }
-  if (!Array.isArray(catalog.skills) || catalog.skills.length === 0 || catalog.skills.length > MAX_SKILLS) {
-    throw new TypeError("static Skill catalog must contain one to 128 descriptors");
+  if (!Array.isArray(catalog.skills) || catalog.skills.length > MAX_SKILLS) {
+    throw new TypeError("static Skill catalog must contain zero to 128 descriptors");
   }
   const observedSources = new Set<string>();
   const skills = catalog.skills.map((candidate, index): StaticSkillDescriptor => {

@@ -45,5 +45,12 @@ describe("DSH root service composition boundary", () => {
       adapter,
       providers: ["fixture", "fixture"],
     })).toThrow("provider routes must be unique");
+    expect(validateDshRootCompositionOptions({})).toMatchObject({ providers: [] });
+    expect(() => validateDshRootCompositionOptions({ adapter })).toThrow(
+      "adapter and provider routes must be supplied together",
+    );
+    expect(() => validateDshRootCompositionOptions({ providers: ["fixture"] })).toThrow(
+      "adapter and provider routes must be supplied together",
+    );
   });
 });

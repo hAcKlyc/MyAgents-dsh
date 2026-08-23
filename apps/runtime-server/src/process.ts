@@ -16,6 +16,7 @@ import {
   type RuntimeProcessLifecycle,
   type RuntimeProcessLifecycleOptions,
 } from "./lifecycle.js";
+import { composeOfficialRuntimeServices } from "./official-composition.js";
 
 export interface RuntimeServerProcessConfig {
   readonly composition: DshRootCompositionOptions;
@@ -25,6 +26,8 @@ export interface RuntimeServerProcessConfig {
   readonly limits?: ProtocolLimits;
   readonly lifecycle?: RuntimeProcessLifecycleOptions;
 }
+
+export type OfficialRuntimeServerProcessConfig = Omit<RuntimeServerProcessConfig, "composition">;
 
 type NormalizedRuntimeServerProcessConfig = Readonly<{
   composition: DshRootCompositionOptions;
@@ -102,6 +105,27 @@ const normalizeRuntimeServerProcessConfig = (
   });
 };
 
+const normalizeOfficialRuntimeServerProcessConfig = (
+  value: OfficialRuntimeServerProcessConfig,
+): NormalizedRuntimeServerProcessConfig => {
+  const config = exactOwnDataObject(
+    value,
+    ["runtimeGeneration"],
+    ["input", "output", "limits", "lifecycle"],
+    "Official Runtime server process config",
+  );
+  return normalizeRuntimeServerProcessConfig(Object.freeze({
+    composition: Object.freeze({}),
+    runtimeGeneration: config.runtimeGeneration as string,
+    ...(Object.hasOwn(config, "input") ? { input: config.input as Readable } : {}),
+    ...(Object.hasOwn(config, "output") ? { output: config.output as Writable } : {}),
+    ...(Object.hasOwn(config, "limits") ? { limits: config.limits as ProtocolLimits } : {}),
+    ...(Object.hasOwn(config, "lifecycle")
+      ? { lifecycle: config.lifecycle as RuntimeProcessLifecycleOptions }
+      : {}),
+  }));
+};
+
 const startNormalizedRuntimeServerProcess = async (
   config: NormalizedRuntimeServerProcessConfig,
 ): Promise<RuntimeProcessLifecycle> => {
@@ -123,12 +147,48 @@ export const startRuntimeServerProcess = async (
   normalizeRuntimeServerProcessConfig(value),
 );
 
+export const startOfficialRuntimeServerProcess = async (
+  value: OfficialRuntimeServerProcessConfig,
+): Promise<RuntimeProcessLifecycle> => await startNormalizedOfficialRuntimeServerProcess(
+  normalizeOfficialRuntimeServerProcessConfig(value),
+);
+
+const startNormalizedOfficialRuntimeServerProcess = async (
+  config: NormalizedRuntimeServerProcessConfig,
+): Promise<RuntimeProcessLifecycle> => {
+  assertRuntimeNodeVersion(process.versions.node);
+  const target = resolveRuntimePlatformTarget(process.platform, process.arch);
+  const composition = await composeOfficialRuntimeServices(target);
+  return await startNativeRpcLifecycle(composition, {
+    input: config.input,
+    output: config.output,
+    runtimeGeneration: config.runtimeGeneration,
+    platformTarget: target,
+    ...(config.limits === undefined ? {} : { limits: config.limits }),
+  }, config.lifecycle);
+};
+
 export const runRuntimeServerProcess = async (
   value: RuntimeServerProcessConfig,
 ): Promise<number> => {
   const config = normalizeRuntimeServerProcessConfig(value);
   try {
     const lifecycle = await startNormalizedRuntimeServerProcess(config);
+    return runtimeProcessExitCode((await lifecycle.whenStopped()).exit);
+  } finally {
+    if (config.ownsProcessInput) {
+      process.stdin.pause();
+      process.stdin.destroy();
+    }
+  }
+};
+
+export const runOfficialRuntimeServerProcess = async (
+  value: OfficialRuntimeServerProcessConfig,
+): Promise<number> => {
+  const config = normalizeOfficialRuntimeServerProcessConfig(value);
+  try {
+    const lifecycle = await startNormalizedOfficialRuntimeServerProcess(config);
     return runtimeProcessExitCode((await lifecycle.whenStopped()).exit);
   } finally {
     if (config.ownsProcessInput) {

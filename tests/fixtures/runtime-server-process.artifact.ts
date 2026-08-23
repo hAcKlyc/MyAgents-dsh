@@ -6,17 +6,8 @@ const main = async (): Promise<number> => {
     return 0;
   }
 
-  const [runtimeServer, testkit] = await Promise.all([
-    import("@myagents-dsh/runtime-server/process"),
-    import("@myagents-dsh/testkit"),
-  ]);
-  const adapter = new testkit.ScriptedFakeLlmAdapter({
-    contextWindow: 8_192,
-    model: "fixture-model",
-    provider: "fixture",
-  });
-  return await runtimeServer.runRuntimeServerProcess({
-    composition: { adapter, providers: ["fixture"] },
+  const runtimeServer = await import("@myagents-dsh/runtime-server/process");
+  return await runtimeServer.runOfficialRuntimeServerProcess({
     runtimeGeneration: "artifact-process-generation",
   });
 };
