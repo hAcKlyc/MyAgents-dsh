@@ -99,9 +99,12 @@ that the implemented split remains correct against the newest public source.
   acceptance, not by the DSH refresh alone.
 
 The earlier R2 Runtime artifact at commit `2dffe1e` is superseded because it
-does not contain patch 0006. The final G4/G5 sequence must bind a new clean
-repository commit, this exact six-patch DSH manifest, the regenerated protocol
-schema `67ea3b82594ce90253cebec54cd95f806b03b0c2eac12f2753df583c05e567eb`,
+does not contain patch 0006. A clean G4/G5 correction cycle now binds this exact
+six-patch DSH manifest, regenerated protocol schema
+`67ea3b82594ce90253cebec54cd95f806b03b0c2eac12f2753df583c05e567eb`,
 and candidate profile
-`e0646cff9518d3c3f5428df046e880192c530acf536adab40701f4fcea5ea10a`
-before any real-route or release evidence can pass.
+`e0646cff9518d3c3f5428df046e880192c530acf536adab40701f4fcea5ea10a`.
+The corrected artifact independently verifies; its sanctioned native campaign
+still fails closed as `unavailable` until the Host supplies the approved
+request-scoped credential. Any later repository commit must be rebound through
+G4/G5 before its real-route or release evidence can pass.
