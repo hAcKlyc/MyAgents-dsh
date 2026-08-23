@@ -81,7 +81,7 @@ describe("official product profile authority", () => {
           "turn/get",
           "extension/catalog",
         ],
-        availableNotifications: ["initialized", "rpc/cancel"],
+        availableNotifications: ["initialized", "rpc/cancel", "runtime/event"],
         availableReverseMethods: [
           "host/credential/resolve",
           "host/interaction/request",

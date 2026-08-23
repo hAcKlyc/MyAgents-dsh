@@ -105,7 +105,8 @@
     ],
     "availableNotifications": [
       "initialized",
-      "rpc/cancel"
+      "rpc/cancel",
+      "runtime/event"
     ],
     "availableReverseMethods": [
       "host/credential/resolve",

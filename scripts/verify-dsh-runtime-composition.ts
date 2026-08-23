@@ -1600,8 +1600,17 @@ const main = (): void => {
         retiredState: retiredStatusResult.primarySessionState,
       })}`);
     }
-    if (frames.some(({ method }) => method === "runtime/event")) {
-      throw new Error("inactive candidate profile emitted an unavailable Runtime notification");
+    const runtimeEventFrames = frames.filter(({ method }) => method === "runtime/event");
+    const hasTerminalRuntimeEvent = runtimeEventFrames.some(({ params }) => {
+      if (params === null || typeof params !== "object" || Array.isArray(params)) return false;
+      const event = (params as Record<string, unknown>).event;
+      return event !== null && typeof event === "object" && !Array.isArray(event)
+        && (event as Record<string, unknown>).kind === "turn_terminal";
+    });
+    if (!BATCH1_CANDIDATE_PROFILE.protocol.availableNotifications.includes("runtime/event")
+      || runtimeEventFrames.length === 0
+      || !hasTerminalRuntimeEvent) {
+      throw new Error("runtime composition must expose an available terminal Runtime event notification");
     }
     if (!Array.isArray(evidence.resumeNativeRpcFrames) || evidence.resumeNativeRpcFrames.length < 5) {
       throw new Error("runtime composition must expose the observed restart/resume response frames");

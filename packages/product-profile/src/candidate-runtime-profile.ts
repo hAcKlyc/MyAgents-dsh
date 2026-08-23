@@ -45,6 +45,7 @@ export const BATCH1_AVAILABLE_REVERSE_METHODS = Object.freeze([
 export const BATCH1_AVAILABLE_NOTIFICATIONS = Object.freeze([
   "initialized",
   "rpc/cancel",
+  "runtime/event",
 ] as const);
 
 export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
