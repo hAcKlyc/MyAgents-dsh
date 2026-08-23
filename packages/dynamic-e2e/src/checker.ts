@@ -57,7 +57,7 @@ const hasOnlyBoundedRootMarkdownAdditions = (
   const additions = [...afterByPath].filter(([path]) => !beforeByPath.has(path));
   return additions.length <= maxAdditions && additions.every(([reportPath, report]) =>
     !reportPath.includes("/")
-    && /^[a-z0-9][a-z0-9._-]{0,127}\.md$/u.test(reportPath)
+    && /^[a-z0-9][a-z0-9._-]{0,127}\.md$/iu.test(reportPath)
     && report.kind === "file"
     && typeof report.size === "number"
     && report.size > 0

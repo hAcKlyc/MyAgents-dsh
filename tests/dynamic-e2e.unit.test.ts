@@ -218,7 +218,7 @@ describe("dynamic E2E harness", () => {
     ]);
     expect(evaluateDynamicScenarioPostconditions(web, webBefore, Object.freeze([
       ...webBefore,
-      Object.freeze({ path: "recommendation.md", kind: "file" as const, size: 100, sha256: "a".repeat(64) }),
+      Object.freeze({ path: "RECOMMENDATION.md", kind: "file" as const, size: 100, sha256: "a".repeat(64) }),
     ])).passed).toBe(true);
 
     const interaction = corpus.find(({ id }) => id === "interaction-plan");
