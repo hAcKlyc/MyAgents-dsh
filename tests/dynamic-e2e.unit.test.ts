@@ -255,7 +255,7 @@ describe("dynamic E2E harness", () => {
     try {
       const route = await loadApprovedDynamicRoute(path, environmentName);
       expect(route.provider).toEqual({
-        revision: "deepseek-official-v4-flash-v1",
+        revision: "deepseek-official-v4-flash-v2",
         providerRouteId: "deepseek-official",
         api: "openai-completions",
         provider: "deepseek",
@@ -263,12 +263,12 @@ describe("dynamic E2E harness", () => {
         baseUrl: "https://api.deepseek.com",
         credentialRef: "DEEPSEEK_API_KEY",
         contextWindow: 1_000_000,
-        maxTokens: 8_192,
+        maxTokens: 32_768,
         reasoning: true,
         effort: "high",
       });
       expect(route.routeConfigSha256).toBe(
-        "68d5826a0b8ecf4ff9766ca9334727f364b194b23a4052bcae5838ba15f1e251",
+        "c83f8ebea7345eb486f827ad22a6d5b114b68ae103b7a4501193164c5d43604d",
       );
       expect(await readFile(path, "utf8")).not.toContain(material);
     } finally {
