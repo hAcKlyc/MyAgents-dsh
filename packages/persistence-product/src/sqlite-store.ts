@@ -1,5 +1,12 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  realpathSync,
+} from "node:fs";
 import {
   lstat,
   mkdir,
@@ -9,6 +16,7 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { isProxy } from "node:util/types";
 
 import {
   snapshotJsonValue,
@@ -90,6 +98,18 @@ interface FileIdentity {
   readonly dev: bigint;
   readonly ino: bigint;
 }
+
+export const PRODUCT_PERSISTENCE_LIMITS = Object.freeze({
+  maxCheckpointRecordsPerGeneration: 4_096,
+  maxDatabaseBytes: 4 * 1_024 * 1_024 * 1_024,
+  maxEventBytes: 1_048_576,
+  maxHeaderBytes: 65_536,
+  maxJsonDepth: 64,
+  maxJsonNodes: 65_536,
+  maxPendingMutationsPerSession: 64,
+  maxSessionEvents: 1_000_000,
+  maxSessions: 4_096,
+} as const);
 
 interface ActiveSessionRow {
   readonly activeGenerationId: string;
@@ -188,6 +208,53 @@ const HASH_PATTERN = /^[a-f0-9]{64}$/u;
 // eslint-disable-next-line no-control-regex
 const IDENTIFIER_PATTERN = /^[^\u0000-\u001f\u007f]{1,256}$/u;
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+
+const assertBoundedPlainJson = (value: unknown, description: string): void => {
+  const work: Array<Readonly<{ depth: number; value: unknown }>> = [{ depth: 0, value }];
+  let nodes = 0;
+  while (work.length > 0) {
+    const current = work.pop();
+    if (current === undefined) break;
+    nodes += 1;
+    if (nodes > PRODUCT_PERSISTENCE_LIMITS.maxJsonNodes) {
+      throw new TypeError(`${description} exceeds the persisted JSON node bound`);
+    }
+    const item = current.value;
+    if (item === null || typeof item === "boolean" || typeof item === "string") continue;
+    if (typeof item === "number") {
+      if (!Number.isFinite(item)) throw new TypeError(`${description} contains a non-finite number`);
+      continue;
+    }
+    if (typeof item !== "object" || isProxy(item)) {
+      throw new TypeError(`${description} must be plain lossless JSON`);
+    }
+    if (current.depth >= PRODUCT_PERSISTENCE_LIMITS.maxJsonDepth) {
+      throw new TypeError(`${description} exceeds the persisted JSON depth bound`);
+    }
+    const prototype = Object.getPrototypeOf(item) as unknown;
+    if (Array.isArray(item)) {
+      if (prototype !== Array.prototype) throw new TypeError(`${description} contains a non-plain array`);
+      if (item.length > PRODUCT_PERSISTENCE_LIMITS.maxJsonNodes) {
+        throw new TypeError(`${description} exceeds the persisted JSON array bound`);
+      }
+      for (let index = 0; index < item.length; index += 1) {
+        if (!Object.hasOwn(item, index)) throw new TypeError(`${description} contains a sparse array`);
+      }
+    } else if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError(`${description} contains a non-plain object`);
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(item);
+    for (const key of Reflect.ownKeys(descriptors)) {
+      if (typeof key !== "string") throw new TypeError(`${description} contains a symbol key`);
+      if (Array.isArray(item) && key === "length") continue;
+      const descriptor = descriptors[key];
+      if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+        throw new TypeError(`${description} contains a non-enumerable or accessor property`);
+      }
+      work.push({ depth: current.depth + 1, value: descriptor.value });
+    }
+  }
+};
 const EXPECTED_COLUMNS = Object.freeze({
   checkpoint_blobs: ["sha256", "size", "bytes", "created_at"],
   checkpoint_records: [
@@ -382,10 +449,19 @@ const canonicalJson = (value: JsonValue): string => {
     .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] as JsonValue)}`).join(",")}}`;
 };
 
-const snapshotCanonicalJson = (value: unknown, description: string): string => {
+const snapshotCanonicalJson = (
+  value: unknown,
+  description: string,
+  maxBytes: number = PRODUCT_PERSISTENCE_LIMITS.maxEventBytes,
+): string => {
+  assertBoundedPlainJson(value, description);
   const snapshot = snapshotJsonValue(value);
   if (snapshot === undefined) throw new TypeError(`${description} is not lossless JSON`);
-  return canonicalJson(snapshot as JsonValue);
+  const encoded = canonicalJson(snapshot as JsonValue);
+  if (Buffer.byteLength(encoded, "utf8") > maxBytes) {
+    throw new TypeError(`${description} exceeds the persisted byte bound`);
+  }
+  return encoded;
 };
 
 const asRecord = (value: unknown, description: string): Record<string, unknown> => {
@@ -455,6 +531,8 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
   #closePromise: Promise<void> | undefined;
   #database: DatabaseSync | undefined;
   #databaseIdentity: FileIdentity | undefined;
+  #persistenceDirectoryIdentity: FileIdentity | undefined;
+  #runtimeHomeIdentity: FileIdentity | undefined;
   readonly #forkTargetStores = new Map<string, ProductSqliteStore>();
   #initializePromise: Promise<void> | undefined;
   #storeId: string | undefined;
@@ -664,6 +742,14 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       if (existing !== undefined) {
         this.#assertCheckpointInput(existing, input, active.activeGenerationId);
         return existing;
+      }
+      const checkpointCount = rowInteger(asRecord(database.prepare(`
+        SELECT count(*) AS count FROM checkpoint_records
+         WHERE session_id = ? AND generation_id = ?
+      `).get(active.sessionId, active.activeGenerationId), "checkpoint record count"),
+      "count", "checkpoint record count");
+      if (checkpointCount >= PRODUCT_PERSISTENCE_LIMITS.maxCheckpointRecordsPerGeneration) {
+        throw new Error("checkpoint generation reached the durable record-count bound");
       }
       if (input.beforeBytes === undefined ? input.priorSha256 !== null : input.priorSha256 === null) {
         throw new TypeError("checkpoint prior bytes and digest presence differ");
@@ -952,6 +1038,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         }
         return existing;
       }
+      this.#assertPendingMutationCapacity(active.sessionId);
       const now = Date.now();
       const token = `del_${randomUUID()}`;
       this.#requireDatabase().prepare(`
@@ -1142,6 +1229,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         if (existing.phase === "prepared") await this.#ensureForkTargetStaging(existing, boundary, active);
         return existing;
       }
+      this.#assertPendingMutationCapacity(active.sessionId);
       const unsettled = asRecord(this.#requireDatabase().prepare(`
         SELECT count(*) AS count FROM checkpoint_records
          WHERE session_id = ? AND generation_id = ?
@@ -1309,6 +1397,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         }
         return existing;
       }
+      this.#assertPendingMutationCapacity(active.sessionId);
       const events = this.#readAndValidateEvents(active);
       if (productTranscriptPostcondition(events) !== input.sourceTranscriptPostcondition) {
         throw new Error("rewind source transcript postcondition differs from durable history");
@@ -1909,6 +1998,11 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     const path = this.#options.durability.databasePath;
     const parent = dirname(path);
     const createdParent = await this.#prepareDirectory(this.#options.runtimeHome, parent);
+    this.#runtimeHomeIdentity = await this.#validateDirectory(this.#options.runtimeHome, "Runtime home");
+    this.#persistenceDirectoryIdentity = await this.#validateDirectory(
+      parent,
+      "persistence directory",
+    );
     if (createdParent && this.#options.durability.parentDirectoryFlush === "required") {
       await this.#syncDirectory(this.#options.runtimeHome);
     }
@@ -1928,6 +2022,26 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         throw new Error("product SQLite persistence could not enable WAL journal mode");
       }
       database.exec("PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;");
+      const pageSize = rowInteger(
+        asRecord(database.prepare("PRAGMA page_size").get(), "SQLite page size"),
+        "page_size",
+        "SQLite page size",
+      );
+      if (pageSize < 512 || pageSize > 65_536) {
+        throw new Error("product SQLite page size is outside the supported bound");
+      }
+      const maxPageCount = Math.floor(PRODUCT_PERSISTENCE_LIMITS.maxDatabaseBytes / pageSize);
+      const appliedMaxPageCount = rowInteger(
+        asRecord(
+          database.prepare(`PRAGMA max_page_count = ${String(maxPageCount)}`).get(),
+          "SQLite max page count",
+        ),
+        "max_page_count",
+        "SQLite max page count",
+      );
+      if (appliedMaxPageCount !== maxPageCount) {
+        throw new Error("product SQLite database already exceeds its configured size bound");
+      }
       this.#bootstrapOrValidateSchema();
       database.enableDefensive(true);
       await this.#validateDatabaseIdentity();
@@ -2163,8 +2277,20 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       let row = this.#readActiveSession(meta.id, false);
       if (!isMaterialized) {
         if (row !== undefined) throw new Error(`session ${meta.id} already has a materialized storage generation`);
+        const sessionCount = rowInteger(
+          asRecord(database.prepare("SELECT count(*) AS count FROM sessions").get(), "Session count"),
+          "count",
+          "Session count",
+        );
+        if (sessionCount >= PRODUCT_PERSISTENCE_LIMITS.maxSessions) {
+          throw new Error("product SQLite persistence reached the Session-count bound");
+        }
         const generationId = randomUUID();
-        const headerJson = snapshotCanonicalJson(meta, `session ${meta.id} header`);
+        const headerJson = snapshotCanonicalJson(
+          meta,
+          `session ${meta.id} header`,
+          PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes,
+        );
         const createdAt = Date.now();
         database.prepare(
           "INSERT INTO sessions(id, active_generation_id, state, revision, event_count, head_hash, created_at) VALUES (?, ?, 'active', 0, 0, ?, ?)",
@@ -2177,7 +2303,14 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         throw new Error(`session ${meta.id} has no active storage generation`);
       }
       if (row === undefined) throw new Error(`session ${meta.id} materialization failed`);
-      const headerJson = snapshotCanonicalJson(meta, `session ${meta.id} header`);
+      if (row.eventCount > PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents - events.length) {
+        throw new Error(`session ${meta.id} exceeds the durable event-count bound`);
+      }
+      const headerJson = snapshotCanonicalJson(
+        meta,
+        `session ${meta.id} header`,
+        PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes,
+      );
       if (row.headerJson !== headerJson) throw new Error(`session ${meta.id} immutable header changed`);
       let expectedSeq = row.eventCount;
       let headHash = row.headHash;
@@ -2188,7 +2321,11 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         if (event.seq !== expectedSeq) {
           throw new Error(`session ${meta.id} append starts at seq ${event.seq}, stored next seq is ${expectedSeq}`);
         }
-        const envelopeJson = snapshotCanonicalJson(event, `session ${meta.id} event ${event.seq}`);
+        const envelopeJson = snapshotCanonicalJson(
+          event,
+          `session ${meta.id} event ${event.seq}`,
+          PRODUCT_PERSISTENCE_LIMITS.maxEventBytes,
+        );
         headHash = chainHash(headHash, envelopeJson);
         insert.run(meta.id, row.activeGenerationId, event.seq, event.type, event.time, envelopeJson, headHash);
         expectedSeq += 1;
@@ -2225,7 +2362,11 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
           ON g.session_id = s.id AND g.generation_id = s.active_generation_id
        WHERE s.state = 'active' AND g.state = 'active'
        ORDER BY s.id
+       LIMIT ${String(PRODUCT_PERSISTENCE_LIMITS.maxSessions + 1)}
     `).all() as unknown[];
+    if (rows.length > PRODUCT_PERSISTENCE_LIMITS.maxSessions) {
+      throw new Error("product SQLite persistence exceeds the Session-count bound");
+    }
     return rows.map((row) => this.#decodeActiveSessionRow(row));
   }
 
@@ -2262,12 +2403,16 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       "envelope_json",
       "stable boundary turn",
     );
+    if (Buffer.byteLength(envelopeJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxEventBytes) {
+      throw new Error("stable boundary turn envelope exceeds the persisted byte bound");
+    }
     let envelope: unknown;
     try {
       envelope = JSON.parse(envelopeJson);
     } catch (error) {
       throw new Error("stable boundary turn envelope is invalid JSON", { cause: error });
     }
+    assertBoundedPlainJson(envelope, "stable boundary turn envelope");
     const snapshot = snapshotJsonValue(envelope);
     const turn = snapshot !== undefined && snapshot !== null && typeof snapshot === "object"
       && !Array.isArray(snapshot)
@@ -2631,12 +2776,16 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     }
     let receipt: Readonly<Record<string, unknown>> | undefined;
     if (receiptJson !== null) {
+      if (Buffer.byteLength(receiptJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxEventBytes) {
+        throw new Error("rewind receipt exceeds the persisted byte bound");
+      }
       let parsed: unknown;
       try {
         parsed = JSON.parse(receiptJson);
       } catch (error) {
         throw new Error("rewind receipt is invalid JSON", { cause: error });
       }
+      assertBoundedPlainJson(parsed, "rewind receipt");
       const snapshot = snapshotJsonValue(parsed);
       if (snapshot === undefined || canonicalJson(snapshot as JsonValue) !== receiptJson
         || snapshot === null || typeof snapshot !== "object" || Array.isArray(snapshot)) {
@@ -2711,6 +2860,35 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     }
   }
 
+  #assertPendingMutationCapacity(sessionId: string): void {
+    const database = this.#requireDatabase();
+    const counts = [
+      database.prepare(`
+        SELECT count(*) AS count FROM mutation_journals
+         WHERE session_id = ?
+           AND phase IN ('prepared', 'committing', 'rolling_back', 'recovery_required')
+      `).get(sessionId),
+      database.prepare(`
+        SELECT count(*) AS count FROM fork_journals
+         WHERE source_session_id = ?
+           AND phase IN ('prepared', 'committing', 'aborting', 'recovery_required')
+      `).get(sessionId),
+      database.prepare(`
+        SELECT count(*) AS count FROM delete_journals
+         WHERE session_id = ?
+           AND phase IN ('prepared', 'committing', 'rolling_back', 'recovery_required')
+      `).get(sessionId),
+    ].map((value, index) => rowInteger(
+      asRecord(value, `pending mutation count ${String(index)}`),
+      "count",
+      `pending mutation count ${String(index)}`,
+    ));
+    if (counts.reduce((total, count) => total + count, 0)
+      >= PRODUCT_PERSISTENCE_LIMITS.maxPendingMutationsPerSession) {
+      throw new Error("Session reached the pending mutation-journal bound");
+    }
+  }
+
   #readDelete(token: string): ProductDeleteRecord | undefined {
     if (this.#database === undefined) return undefined;
     const value = this.#requireDatabase().prepare(
@@ -2737,12 +2915,16 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     const receiptJson = rowNullableString(row, "receipt_json", "delete journal");
     let receipt: Readonly<Record<string, unknown>> | undefined;
     if (receiptJson !== null) {
+      if (Buffer.byteLength(receiptJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxEventBytes) {
+        throw new Error("delete receipt exceeds the persisted byte bound");
+      }
       let parsed: unknown;
       try {
         parsed = JSON.parse(receiptJson);
       } catch (error) {
         throw new Error("delete receipt is invalid JSON", { cause: error });
       }
+      assertBoundedPlainJson(parsed, "delete receipt");
       const snapshot = snapshotJsonValue(parsed);
       if (snapshot === undefined || snapshot === null || typeof snapshot !== "object"
         || Array.isArray(snapshot) || canonicalJson(snapshot as JsonValue) !== receiptJson) {
@@ -2845,12 +3027,16 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     }
     let receipt: Readonly<Record<string, unknown>> | undefined;
     if (receiptJson !== null) {
+      if (Buffer.byteLength(receiptJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxEventBytes) {
+        throw new Error("fork receipt exceeds the persisted byte bound");
+      }
       let parsed: unknown;
       try {
         parsed = JSON.parse(receiptJson);
       } catch (error) {
         throw new Error("fork receipt is invalid JSON", { cause: error });
       }
+      assertBoundedPlainJson(parsed, "fork receipt");
       const snapshot = snapshotJsonValue(parsed);
       if (snapshot === undefined || canonicalJson(snapshot as JsonValue) !== receiptJson
         || snapshot === null || typeof snapshot !== "object" || Array.isArray(snapshot)) {
@@ -2961,9 +3147,16 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       token: record.token,
     });
     const events = Object.freeze([...sourceEvents, receiptEvent]);
+    if (events.length > PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents) {
+      throw new Error("fork target exceeds the durable event-count bound");
+    }
     let headHash = EMPTY_HEAD_HASH;
     for (const event of events) {
-      headHash = chainHash(headHash, snapshotCanonicalJson(event, "fork target event"));
+      headHash = chainHash(headHash, snapshotCanonicalJson(
+        event,
+        "fork target event",
+        PRODUCT_PERSISTENCE_LIMITS.maxEventBytes,
+      ));
     }
     const checkpointRows = this.#requireDatabase().prepare(`
       SELECT * FROM checkpoint_records
@@ -3015,7 +3208,11 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         if (row.session_state !== "tombstoned" || row.generation_state !== "staging"
           || row.active_generation_id !== stage.generationId
           || row.event_count !== stage.events.length || row.head_hash !== stage.headHash
-          || row.header_json !== snapshotCanonicalJson(stage.header, "fork target header")) {
+          || row.header_json !== snapshotCanonicalJson(
+            stage.header,
+            "fork target header",
+            PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes,
+          )) {
           throw new Error("fork target Session identity is already occupied");
         }
         const sessionCount = rowInteger(asRecord(database.prepare(
@@ -3034,7 +3231,11 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       }
       database.exec("BEGIN IMMEDIATE");
       try {
-        const headerJson = snapshotCanonicalJson(stage.header, "fork target header");
+        const headerJson = snapshotCanonicalJson(
+          stage.header,
+          "fork target header",
+          PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes,
+        );
         database.prepare(`
           INSERT INTO sessions(id, active_generation_id, state, revision, event_count, head_hash, created_at)
           VALUES (?, ?, 'tombstoned', 0, ?, ?, ?)
@@ -3051,7 +3252,11 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         `);
         let previous = EMPTY_HEAD_HASH;
         for (const event of stage.events) {
-          const envelope = snapshotCanonicalJson(event, "fork target event");
+          const envelope = snapshotCanonicalJson(
+            event,
+            "fork target event",
+            PRODUCT_PERSISTENCE_LIMITS.maxEventBytes,
+          );
           previous = chainHash(previous, envelope);
           insertEvent.run(stage.sessionId, stage.generationId, event.seq, event.type, event.time, envelope, previous);
         }
@@ -3250,7 +3455,9 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       sessionRevision: rowInteger(row, "session_revision", "active Session"),
     };
     if (decoded.activeGenerationId.length === 0 || !HASH_PATTERN.test(decoded.headHash)
-      || decoded.sessionRevision !== decoded.generationRevision) {
+      || decoded.sessionRevision !== decoded.generationRevision
+      || decoded.eventCount > PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents
+      || Buffer.byteLength(decoded.headerJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes) {
       throw new Error("active Session generation identity is inconsistent");
     }
     return decoded;
@@ -3345,12 +3552,16 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     stored: EventRow,
     previousHash: string,
   ): Readonly<{ chainHash: string; event: SessionEvent }> {
+    if (Buffer.byteLength(stored.envelopeJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxEventBytes) {
+      throw new Error(`session ${sessionId} event ${stored.seq} exceeds the persisted byte bound`);
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(stored.envelopeJson);
     } catch (error) {
       throw new Error(`session ${sessionId} event ${stored.seq} contains invalid JSON`, { cause: error });
     }
+    assertBoundedPlainJson(parsed, `session ${sessionId} event ${stored.seq}`);
     const snapshot = snapshotJsonValue(parsed);
     if (snapshot === undefined || canonicalJson(snapshot as JsonValue) !== stored.envelopeJson) {
       throw new Error(`session ${sessionId} event ${stored.seq} is not canonical lossless JSON`);
@@ -3382,12 +3593,16 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
   }
 
   #decodeHeader(row: ActiveSessionRow): SessionHeader {
+    if (Buffer.byteLength(row.headerJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes) {
+      throw new Error(`session ${row.sessionId} header exceeds the persisted byte bound`);
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(row.headerJson);
     } catch (error) {
       throw new Error(`session ${row.sessionId} header contains invalid JSON`, { cause: error });
     }
+    assertBoundedPlainJson(parsed, `session ${row.sessionId} header`);
     const snapshot = snapshotJsonValue(parsed);
     if (snapshot === undefined || canonicalJson(snapshot as JsonValue) !== row.headerJson
       || snapshot === null || typeof snapshot !== "object" || Array.isArray(snapshot)
@@ -3487,7 +3702,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     return created;
   }
 
-  async #validateDirectory(path: string, description: string): Promise<void> {
+  async #validateDirectory(path: string, description: string): Promise<FileIdentity> {
     const info = await lstat(path, { bigint: true });
     if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== path) {
       throw new Error(`${description} must be a canonical real directory`);
@@ -3496,6 +3711,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     if (uid !== undefined && (info.uid !== BigInt(uid) || (info.mode & 0o022n) !== 0n)) {
       throw new Error(`${description} must be current-user-owned and not group/world-writable`);
     }
+    return Object.freeze({ dev: info.dev, ino: info.ino });
   }
 
   async #createDatabaseFile(path: string): Promise<boolean> {
@@ -3515,7 +3731,9 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
 
   async #validateDatabaseFile(path: string): Promise<FileIdentity> {
     const named = await lstat(path, { bigint: true });
-    if (!named.isFile() || named.isSymbolicLink() || named.nlink !== 1n || await realpath(path) !== path) {
+    if (!named.isFile() || named.isSymbolicLink() || named.nlink !== 1n
+      || named.size > BigInt(PRODUCT_PERSISTENCE_LIMITS.maxDatabaseBytes)
+      || await realpath(path) !== path) {
       throw new Error("product SQLite database must be one canonical singly-linked regular file");
     }
     const uid = process.getuid?.();
@@ -3541,6 +3759,78 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     if (expected === undefined) throw new Error("product SQLite database identity is unavailable");
     const current = await this.#validateDatabaseFile(this.#options.durability.databasePath);
     if (!sameIdentity(expected, current)) throw new Error("product SQLite database identity changed after opening");
+  }
+
+  #validateDirectoryIdentitySync(
+    path: string,
+    expected: FileIdentity | undefined,
+    description: string,
+  ): void {
+    if (expected === undefined) throw new Error(`${description} identity is unavailable`);
+    const info = lstatSync(path, { bigint: true });
+    if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(path) !== path
+      || !sameIdentity(expected, info)) {
+      throw new Error(`${description} identity changed after persistence initialization`);
+    }
+    const uid = process.getuid?.();
+    if (uid !== undefined && (info.uid !== BigInt(uid) || (info.mode & 0o022n) !== 0n)) {
+      throw new Error(`${description} ownership or permissions changed after persistence initialization`);
+    }
+  }
+
+  #validateDatabaseIdentitySync(): void {
+    const expected = this.#databaseIdentity;
+    if (expected === undefined) throw new Error("product SQLite database identity is unavailable");
+    const path = this.#options.durability.databasePath;
+    const named = lstatSync(path, { bigint: true });
+    if (!named.isFile() || named.isSymbolicLink() || named.nlink !== 1n
+      || named.size > BigInt(PRODUCT_PERSISTENCE_LIMITS.maxDatabaseBytes)
+      || realpathSync(path) !== path || !sameIdentity(expected, named)) {
+      throw new Error("product SQLite database identity changed after opening");
+    }
+    const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+    const descriptor = openSync(path, constants.O_RDONLY | noFollow);
+    try {
+      const opened = fstatSync(descriptor, { bigint: true });
+      if (!opened.isFile() || opened.nlink !== 1n || !sameIdentity(expected, opened)) {
+        throw new Error("product SQLite database identity changed while revalidating");
+      }
+    } finally {
+      closeSync(descriptor);
+    }
+  }
+
+  #validateSidecarIfPresentSync(path: string): void {
+    try {
+      const info = lstatSync(path, { bigint: true });
+      if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1n) {
+        throw new Error(`product SQLite sidecar ${path} is not a singly-linked regular file`);
+      }
+      const uid = process.getuid?.();
+      if (uid !== undefined && (info.uid !== BigInt(uid) || (info.mode & 0o077n) !== 0n)) {
+        throw new Error(`product SQLite sidecar ${path} is not private`);
+      }
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+      throw error;
+    }
+  }
+
+  #validateStorageIdentitySync(): void {
+    const path = this.#options.durability.databasePath;
+    this.#validateDirectoryIdentitySync(
+      this.#options.runtimeHome,
+      this.#runtimeHomeIdentity,
+      "Runtime home",
+    );
+    this.#validateDirectoryIdentitySync(
+      dirname(path),
+      this.#persistenceDirectoryIdentity,
+      "persistence directory",
+    );
+    this.#validateDatabaseIdentitySync();
+    this.#validateSidecarIfPresentSync(`${path}-wal`);
+    this.#validateSidecarIfPresentSync(`${path}-shm`);
   }
 
   async #validateSidecarIfPresent(path: string): Promise<void> {
@@ -3573,6 +3863,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     if (database === undefined || this.#closePromise !== undefined) {
       throw new Error("product SQLite persistence is not open");
     }
+    this.#validateStorageIdentitySync();
     return database;
   }
 

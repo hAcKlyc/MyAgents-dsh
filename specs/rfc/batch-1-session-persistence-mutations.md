@@ -374,6 +374,22 @@ Recovery never chooses based solely on wall-clock time or file existence. It use
 - Migrations are offline/versioned, backup old store identity, and are crash/retry tested. Batch 1 need only create its initial format; no Pi native log migration is implemented here.
 - Retention/GC is reference-aware, bounded, observable, and disabled for non-terminal/recovery-required transactions.
 
+The initial product SQLite format uses one frozen storage-limit authority:
+
+| Resource | Bound |
+| --- | ---: |
+| Runtime-owned SQLite database | 4 GiB through the connection `max_page_count` plus named-file size/identity checks |
+| Sessions per Runtime home | 4,096 |
+| events per immutable Session generation | 1,000,000 |
+| canonical event envelope | 1,048,576 UTF-8 bytes |
+| canonical Session header | 65,536 UTF-8 bytes |
+| persisted JSON | depth 64 and 65,536 nodes, dense plain own-data values only |
+| checkpoint records per generation | 4,096 |
+| checkpoint blob/file preimage | 8 MiB |
+| simultaneously non-terminal rewind/fork/delete journals per Session | 64 |
+
+These limits are enforced before allocation/decoding or durable insertion and are rechecked when persisted rows are read. They are format policy, not caller-tunable knobs. Every database operation revalidates the canonical Runtime home, persistence directory, singly-linked database inode, and any WAL/SHM sidecar before use; a renamed, linked, substituted, permission-drifted, or oversized storage path fences further work. A10 may add reference-aware retention and compaction, but may not silently raise these bounds or reinterpret over-limit history.
+
 ## 19. Verification
 
 ### 19.1 DSH contract suite

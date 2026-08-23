@@ -7,7 +7,7 @@ import {
   type SessionHeader,
 } from "@deepseek-ai/dsh-session";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, realpath, rm, symlink, link, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_APPLICATION_ID,
+  PRODUCT_PERSISTENCE_LIMITS,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
   PRODUCT_REQUIRED_SESSION_EVENT_TYPES,
@@ -103,6 +104,7 @@ describe("ProductSqliteSessionPersistence", () => {
   });
 
   it("derives one fixed database location from every selected platform adapter", () => {
+    expect(Object.isFrozen(PRODUCT_PERSISTENCE_LIMITS)).toBe(true);
     expect(productSessionDatabasePath(
       selectPlatformAdapter("darwin-arm64"),
       "/Users/fixture/Library/Application Support/MyAgents",
@@ -115,6 +117,108 @@ describe("ProductSqliteSessionPersistence", () => {
       selectPlatformAdapter("win32-x64"),
       "C:\\Users\\fixture\\AppData\\Local\\MyAgents",
     )).toBe("C:\\Users\\fixture\\AppData\\Local\\MyAgents\\persistence\\sessions-v1.sqlite");
+  });
+
+  it("enforces durable JSON, event-count, and SQLite page bounds before unbounded recovery work", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-storage-bounds");
+    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, turn(0, 1));
+
+    const oversized = Object.freeze({
+      data: Object.freeze({ text: "x".repeat(PRODUCT_PERSISTENCE_LIMITS.maxEventBytes) }),
+      seq: 2,
+      time: 3,
+      type: "assistant/message" as const,
+    }) as unknown as SessionEvent;
+    await expect(context.sessionPersistence.append(id, [oversized]))
+      .rejects.toThrow(/persisted byte bound/u);
+    expect((await context.sessionPersistence.readFrom(id, 0)).events).toHaveLength(2);
+
+    let deepData: unknown = "leaf";
+    for (let depth = 0; depth <= PRODUCT_PERSISTENCE_LIMITS.maxJsonDepth; depth += 1) {
+      deepData = { child: deepData };
+    }
+    await expect(context.sessionPersistence.append(id, [Object.freeze({
+      data: deepData,
+      seq: 2,
+      time: 3,
+      type: "assistant/message" as const,
+    }) as unknown as SessionEvent])).rejects.toThrow(/JSON depth bound/u);
+    expect((await context.sessionPersistence.readFrom(id, 0)).events).toHaveLength(2);
+
+    const probe = new DatabaseSync(databasePath);
+    probe.prepare("UPDATE sessions SET event_count = ? WHERE id = ?")
+      .run(PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents + 1, id);
+    probe.prepare("UPDATE session_generations SET event_count = ? WHERE session_id = ?")
+      .run(PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents + 1, id);
+    await expect(context.sessionPersistence.inspect(id)).rejects.toThrow(/generation identity/u);
+    probe.close();
+    await context.fiber.dispose();
+  });
+
+  it("bounds pending mutation journals without disturbing the active generation", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-journal-bound");
+    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, turn(0, 1));
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("journal-bound fixture did not install product persistence");
+    }
+    const persistence = context.sessionPersistence;
+    const probe = new DatabaseSync(databasePath);
+    const source = probe.prepare(
+      "SELECT active_generation_id FROM sessions WHERE id = ?",
+    ).get(id) as { active_generation_id: string };
+    const sourceRevision = String((await persistence.listSnapshots())[0]?.revision);
+    const insert = probe.prepare(`
+      INSERT INTO delete_journals(
+        token, client_mutation_id, request_fingerprint, session_id,
+        source_generation_id, source_revision, phase, attempt,
+        receipt_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'prepared', 0, NULL, 1, 1)
+    `);
+    for (let index = 0; index < PRODUCT_PERSISTENCE_LIMITS.maxPendingMutationsPerSession; index += 1) {
+      insert.run(
+        `del_bound_${String(index)}`,
+        `journal-bound-client-${String(index)}`,
+        createHash("sha256").update(String(index)).digest("hex"),
+        id,
+        source.active_generation_id,
+        sourceRevision,
+      );
+    }
+    probe.close();
+    await expect(persistence.prepareDelete({
+      clientMutationId: "journal-bound-overflow",
+      runtimeSessionId: id,
+    })).rejects.toThrow(/mutation-journal bound/u);
+    expect((await persistence.inspectRecovery(id))).toMatchObject({
+      state: "recovery_required",
+      reason: "persisted_mutation_unsettled",
+      unsettledMutations: ["delete"],
+    });
+    await context.fiber.dispose();
+  });
+
+  it("rejects database path replacement before serving further persistence work", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-database-substitution");
+    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, turn(0, 1));
+
+    const moved = `${databasePath}.moved`;
+    await rename(databasePath, moved);
+    await symlink(moved, databasePath);
+    await expect(context.sessionPersistence.listSnapshots()).rejects.toThrow(/identity changed/u);
+    await expect(context.sessionPersistence.inspect(id)).rejects.toThrow(/identity changed/u);
+    await context.fiber.dispose();
   });
 
   it("migrates the exact v1 Session store through checkpoint and stable-boundary schemas", async () => {
