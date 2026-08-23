@@ -73,6 +73,7 @@ interface MountedService {
   readonly lifecycle: OperationLifecycleController;
   readonly retire: () => Promise<void>;
   readonly service: SdkOperationService;
+  readonly wakePendingCalls: readonly string[];
   failFollowup: boolean;
 }
 
@@ -115,6 +116,7 @@ const mountService = async (
     inserted: () => undefined,
   });
   const state = { failFollowup: false };
+  const wakePendingCalls: string[] = [];
   const agent = {
     id: session.id,
     options: {},
@@ -133,6 +135,10 @@ const mountService = async (
     },
     steer: (message: Parameters<Agent["steer"]>[0]) => inbox.append("next-step", message),
     inject: () => undefined,
+    wakePending: (messageId: MessageId) => {
+      wakePendingCalls.push(String(messageId));
+      return [...inbox.nextStep, ...inbox.nextTurn].some(({ id }) => id === messageId);
+    },
   } as unknown as Agent;
   agentState.value = agent;
   context.on("session/flush", () => undefined);
@@ -171,6 +177,7 @@ const mountService = async (
       return retirementGuard(agent);
     },
     service: context.sdkOperations,
+    wakePendingCalls,
     get failFollowup() {
       return state.failFollowup;
     },
@@ -435,6 +442,80 @@ describe("durable product-operation fold", () => {
       recordedAt: 1_800_000_000_002,
     });
     expect(() => foldProductOperations(fixture.agent.session.events, fixture.agent.id)).not.toThrow();
+  });
+
+  it("wakes one exact durable pending root identity during resume and records the attempt", async () => {
+    const original = await mountService();
+    await original.service.start(params());
+    const seed = structuredClone(original.agent.session.events);
+    const rootMessageId = original.service.lookup("operation-1")?.messages[0]?.messageId;
+    expect(rootMessageId).toBeDefined();
+
+    const restored = await mountService(Object.freeze({ capture: () => birth() }), seed);
+    await restored.service.reconcileResumed(restored.agent);
+
+    expect(restored.wakePendingCalls).toEqual([rootMessageId]);
+    expect(restored.agent.session.events.filter(
+      (event) => event.type === "myagents/operation/recovery-wake",
+    ).map((event) => event.data.phase))
+      .toEqual(["intent", "completed"]);
+    expect(() => foldProductOperations(restored.agent.session.events, restored.agent.id)).not.toThrow();
+    expect(restored.inbox.nextTurn.map(({ id }) => id)).toEqual([rootMessageId]);
+  });
+
+  it("completes an interrupted recovery-wake attempt without inserting another Inbox message", async () => {
+    const original = await mountService();
+    await original.service.start(params());
+    const rootMessageId = original.service.lookup("operation-1")?.messages[0]?.messageId;
+    if (rootMessageId === undefined) throw new Error("resume fixture lacks its root message");
+    const seed = appendEvent(original.agent.session.events, "myagents/operation/recovery-wake", {
+      clientOperationId: "operation-1",
+      messageId: rootMessageId,
+      attemptId: "interrupted-wake-attempt",
+      phase: "intent",
+      recordedAt: 1_800_000_000_000,
+    });
+
+    const restored = await mountService(Object.freeze({ capture: () => birth() }), seed);
+    await restored.service.reconcileResumed(restored.agent);
+
+    const wakes = restored.agent.session.events.filter(
+      (event) => event.type === "myagents/operation/recovery-wake",
+    );
+    expect(restored.wakePendingCalls).toEqual([rootMessageId]);
+    expect(wakes).toHaveLength(2);
+    expect(wakes.at(-1)?.data).toMatchObject({
+      attemptId: "interrupted-wake-attempt",
+      phase: "completed",
+    });
+    expect(restored.inbox.nextTurn).toHaveLength(1);
+  });
+
+  it("settles a resumed continuation at maxTurns without waking it across the boundary", async () => {
+    const limits = { maxTurns: 1, maxDurationMs: 60_000 };
+    const authority = Object.freeze({ capture: () => ({ ...birth(), limits }) });
+    const original = await mountService(authority);
+    await original.service.start({ ...params(), limits });
+    original.agent.session.append("turn/start", { turn: 1 });
+    original.inbox.claim("next-turn", 1);
+    await original.service.followUp({
+      clientOperationId: "operation-1",
+      messageId: "resume-boundary-follow-up",
+      input: { parts: [{ kind: "text", text: "must not cross" }] },
+    });
+    original.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    const seed = structuredClone(original.agent.session.events);
+
+    const restored = await mountService(authority, seed);
+    await restored.service.reconcileResumed(restored.agent);
+
+    expect(restored.wakePendingCalls).toEqual([]);
+    expect(restored.inbox.nextTurn).toEqual([]);
+    expect(restored.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "max_turns", limit: 1 },
+      messages: [{ state: "claimed" }, { state: "cancelled", cancellationReason: "limit" }],
+    });
   });
 
   it("rejects persisted operation timestamps outside the Date epoch range", async () => {
@@ -1608,6 +1689,60 @@ describe("SdkOperationService admission and idempotency", () => {
     )).toHaveLength(1);
   });
 
+  it("preserves normal success when final durable usage equals the USD budget exactly", async () => {
+    const limits = { maxTurns: 4, maxCostUsd: 0.5, maxDurationMs: 60_000 };
+    const fixture = await mountService(Object.freeze({
+      capture: () => ({
+        ...birth(),
+        limits,
+        pricing: {
+          inputUsdPerMillionTokens: 100_000,
+          outputUsdPerMillionTokens: 100_000,
+          cacheReadUsdPerMillionTokens: 100_000,
+          cacheWriteUsdPerMillionTokens: 100_000,
+        },
+      }),
+    }));
+    await fixture.service.start({ ...params(), limits });
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("step/start", { turn: 1, step: 1 });
+    fixture.agent.session.append("request/context", {
+      provider: "fixture",
+      model: "fixture-model",
+      contextWindow: 8_192,
+    });
+    fixture.agent.session.append("assistant/message", {
+      turn: 1,
+      step: 1,
+      message: freezeMessage({
+        id: MessageId("assistant-exact-budget"),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture-model" },
+        content: [{ type: "text", text: "complete at the exact budget" }],
+      }),
+      usage: { inputTokens: 2, outputTokens: 3 },
+    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    await vi.waitFor(() => expect(fixture.agent.session.events.some(
+      (event) => event.type === "myagents/operation/request-context",
+    )).toBe(true));
+    fixture.agent.session.append("step/end", { turn: 1, step: 1 });
+    await fixture.context.serial("agent/turn-stopping", {
+      agent: fixture.agent,
+      turn: 1,
+      signal: new AbortController().signal,
+    });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+
+    await vi.waitFor(() => expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "succeeded", usage: { costUsd: 0.5 } },
+    }));
+    expect(fixture.agent.session.events.some(
+      (event) => event.type === "myagents/operation/limit",
+    )).toBe(false);
+  });
+
   it("discards a queued continuation at the exact DSH-turn limit boundary", async () => {
     const limits = { maxTurns: 1, maxDurationMs: 60_000 };
     const fixture = await mountService(Object.freeze({
@@ -1636,6 +1771,33 @@ describe("SdkOperationService admission and idempotency", () => {
       ],
       terminal: { kind: "max_turns", limit: 1 },
     }));
+  });
+
+  it("cancels a follow-up admitted after the stopping check at the exact turn boundary", async () => {
+    const limits = { maxTurns: 1, maxDurationMs: 60_000 };
+    const fixture = await mountService(Object.freeze({ capture: () => ({ ...birth(), limits }) }));
+    await fixture.service.start({ ...params(), limits });
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    await fixture.context.serial("agent/turn-stopping", {
+      agent: fixture.agent,
+      turn: 1,
+      signal: new AbortController().signal,
+    });
+
+    await expect(fixture.service.followUp({
+      clientOperationId: "operation-1",
+      messageId: "late-boundary-follow-up",
+      input: { parts: [{ kind: "text", text: "too late" }] },
+    })).resolves.toEqual({ messageId: "late-boundary-follow-up", state: "cancelled" });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+
+    await vi.waitFor(() => expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "max_turns", limit: 1 },
+      messages: [{ state: "claimed" }, { state: "cancelled", cancellationReason: "limit" }],
+    }));
+    expect(fixture.inbox.nextTurn).toEqual([]);
   });
 
   it("expires queued work by durable acceptedAt across the wall-clock duration boundary", async () => {
@@ -1680,7 +1842,7 @@ describe("SdkOperationService admission and idempotency", () => {
     vi.setSystemTime(1_800_000_000_011);
     const restored = await mountService(authority, seed, undefined, undefined, undefined, true, undefined, Date.now);
     expect(restored.service.validatePersisted(restored.agent).operations).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(0);
+    await restored.service.reconcileResumed(restored.agent);
 
     expect(restored.service.lookup("operation-1")).toMatchObject({
       state: "terminal",
@@ -1690,6 +1852,7 @@ describe("SdkOperationService admission and idempotency", () => {
     expect(restored.agent.session.events.filter(
       (event) => event.type === "myagents/operation/limit",
     )).toHaveLength(1);
+    expect(restored.wakePendingCalls).toEqual([]);
   });
 
   it("lets transport cancellation win only before durable operation acceptance", async () => {

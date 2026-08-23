@@ -2042,6 +2042,7 @@ export const composeDshRootServices = async (
         return rewindStore;
       },
       reconcileResume: async (agent) => {
+        await root.sdkOperations.reconcileResumed(agent);
         await root.productWork.initialize(agent);
       },
       validateResume: async (agent) => {

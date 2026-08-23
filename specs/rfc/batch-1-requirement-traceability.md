@@ -30,7 +30,7 @@ The old repository is evidence, the preferred source migration input, and the wo
 
 ## 3. Protocol inventory
 
-The previous generated protocol metadata proves this implementation inventory:
+The previous implemented-boundary metadata proved this historical inventory:
 
 ```text
 Host -> Runtime methods: 35
@@ -39,13 +39,13 @@ Notifications: 4
 Canonical tools: 20
 ```
 
-Batch 1 preserves the 42 request names and four notification names while changing the engine-specific shapes to DSH-native candidate v2. Coverage is owned by `specs/protocol/runtime-rpc-v2.md` and the future TypeBox contract source.
+The current Batch 1 candidate adds `session/delete/purge`, so its canonical inventory is 36 Host requests, seven reverse requests, four notifications, 43 request names, and 47 total vocabulary names. Coverage is owned by `specs/protocol/runtime-rpc-v2.md` and the generated TypeBox contract source; the 35 + 7 + 4 figures above remain historical Foundation evidence only.
 
 | Domain | Method count | DSH Batch 1 owner | Coverage |
 | --- | ---: | --- | --- |
 | Runtime lifecycle | 3 | B1-W1 | Runtime/RPC RFC drafted; canonical source and executable evidence pending |
 | Session create/resume/read/close/compact | 5 | B1-W1 + B1-W4 | state/read/repair RFCs drafted; executable evidence pending |
-| Delete transaction | 4 | B1-W4 | SQLite Provider/journal state machine drafted; prototype pending |
+| Delete transaction | 5 | B1-W4 | SQLite Provider/journal state machine, recoverable purge, and executable evidence complete |
 | Fork transaction | 4 | B1-W4 | staged immutable-prefix design drafted; prototype pending |
 | Rewind transaction | 4 | B1-W4 | present; immutable storage-generation design drafted, spike pending |
 | Turn/queue/interrupt | 6 | B1-W1 | operation state machine drafted; acceptance/Inbox/restart-wake spikes pending |

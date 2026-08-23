@@ -7,6 +7,7 @@ import {
   type MessageSource,
   type UserMessage,
 } from "@deepseek-ai/dsh-llm";
+import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import {
   ProtocolError,
   validateMethodParams,
@@ -62,6 +63,16 @@ export interface OperationLifecycleController {
     action: () => Promise<T>,
   ) => Promise<T>;
 }
+
+type IncompleteRecoveryWake = Readonly<{
+  attemptId: string;
+  clientOperationId: string;
+  messageId: string;
+}>;
+
+type WakePendingAgent = Agent & Readonly<{
+  wakePending?: (messageId: MessageId) => boolean;
+}>;
 
 export interface SdkOperationServiceConfig {
   readonly birthAuthority: OperationBirthAuthority;
@@ -143,6 +154,27 @@ const deterministicId = (
   clientOperationId,
   clientUserMessageId,
 ])).digest("hex").slice(0, 48)}`;
+
+const incompleteRecoveryWakes = (
+  events: readonly SessionEvent[],
+): ReadonlyMap<string, IncompleteRecoveryWake> => {
+  const result = new Map<string, IncompleteRecoveryWake>();
+  for (const event of events) {
+    if (event.type !== "myagents/operation/recovery-wake") continue;
+    const wake = event.data;
+    if (wake.phase === "intent") {
+      result.set(wake.messageId, Object.freeze({
+        attemptId: wake.attemptId,
+        clientOperationId: wake.clientOperationId,
+        messageId: wake.messageId,
+      }));
+    } else {
+      const intent = result.get(wake.messageId);
+      if (intent?.attemptId === wake.attemptId) result.delete(wake.messageId);
+    }
+  }
+  return result;
+};
 
 const exactOwnDataObject = (
   value: unknown,
@@ -353,6 +385,7 @@ export class SdkOperationService extends Service {
   private nextModelRequestValue = 1;
   private readonly pendingRequestContextSeqs = new Set<number>();
   private readonly durationTimersValue = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly stoppingTurnsValue = new Set<number>();
   private quiescentMutationValue = false;
   private serialValue: Promise<void> = Promise.resolve();
   private retirementEscalationValue: Promise<void> | undefined;
@@ -477,6 +510,7 @@ export class SdkOperationService extends Service {
       });
       const stopTurnStopping = ctx.on("agent/turn-stopping", ({ agent, turn, signal }) => {
         if (!this.isPrimaryAgent(agent)) return;
+        this.stoppingTurnsValue.add(turn);
         return this.serialize(async () => {
           signal.throwIfAborted();
           await this.enforceTurnBoundaryLimits(agent, turn);
@@ -488,11 +522,15 @@ export class SdkOperationService extends Service {
         if (agent === undefined) return;
         if (event.type === "assistant/message" && event.data.usage !== undefined) {
           this.queueRequestContextCapture(agent, event);
-        } else if (event.type === "turn/end") this.queueTerminalEvaluation(agent);
+        } else if (event.type === "turn/end") {
+          this.stoppingTurnsValue.delete(event.data.turn);
+          this.queueTerminalEvaluation(agent);
+        }
       });
       yield async () => {
         this.acceptingValue = false;
         this.clearDurationTimers();
+        this.stoppingTurnsValue.clear();
         const failures: unknown[] = [];
         try {
           await this.configValue.retirePrimary();
@@ -575,6 +613,11 @@ export class SdkOperationService extends Service {
   reconcile(): Promise<void> {
     this.assertOpen();
     return this.serialize(() => this.reconcileAgent(this.primaryAgent()));
+  }
+
+  reconcileResumed(agent: Agent): Promise<void> {
+    this.assertOpen();
+    return this.serialize(() => this.reconcileResumedAgent(agent));
   }
 
   lookup(clientOperationId: string): ProductOperationRecord | undefined {
@@ -996,10 +1039,17 @@ export class SdkOperationService extends Service {
     if (agent !== this.configValue.requireAgent()) {
       throw new ProtocolError("primary_session_replaced", "primary Session changed during follow-up admission");
     }
+    const current = findProductOperation(this.foldValue(agent), params.clientOperationId);
+    if (current === undefined || current.state === "terminal") {
+      throw new ProtocolError("turn_not_active", "turn/followUp target settled during input admission", true);
+    }
+    if (current.limit !== undefined) {
+      throw new ProtocolError("turn_limit_reached", "turn/followUp cannot extend a limited operation");
+    }
     try {
       if (existing === undefined) {
         agent.session.append("myagents/operation/message", {
-          clientOperationId: operation.clientOperationId,
+          clientOperationId: current.clientOperationId,
           messageId: params.messageId,
           kind: "follow_up",
           clientMessageId: params.messageId,
@@ -1008,17 +1058,26 @@ export class SdkOperationService extends Service {
         });
       }
       agent.followup(continuationMessage(
-        operation,
+        current,
         "follow_up",
         params.messageId,
         params.messageId,
         content,
       ));
+      const stoppingTurn = current.dshTurns.at(-1);
+      if (stoppingTurn !== undefined && this.stoppingTurnsValue.has(stoppingTurn)) {
+        await this.enforceTurnBoundaryLimits(agent, stoppingTurn);
+      }
       await this.flush(agent);
     } catch (error) {
       throw this.fence(error);
     }
-    return Object.freeze({ messageId: params.messageId, state: "admitted" as const });
+    const delivered = findProductOperation(this.foldValue(agent), params.clientOperationId)
+      ?.messages.find(({ messageId }) => messageId === params.messageId);
+    return Object.freeze({
+      messageId: params.messageId,
+      state: delivered?.state === "cancelled" ? "cancelled" as const : "admitted" as const,
+    });
   }
 
   private async cancelMessageValue(
@@ -1452,6 +1511,16 @@ export class SdkOperationService extends Service {
     }
     const duration = operation.birth.limits.maxDurationMs;
     const now = this.operationClock();
+    const maxTurns = operation.birth.limits.maxTurns;
+    if (maxTurns !== undefined && operation.dshTurns.length > maxTurns) {
+      this.appendLimit(agent, operation, Object.freeze({
+        clientOperationId: operation.clientOperationId,
+        kind: "max_turns" as const,
+        limit: maxTurns,
+        observedAt: now,
+      }));
+      throw new ProtocolError("operation_max_turns", "operation exceeded its maximum DSH turn count");
+    }
     if (duration !== undefined && now - operation.acceptedAt >= duration) {
       this.appendLimit(agent, operation, Object.freeze({
         clientOperationId: operation.clientOperationId,
@@ -1486,9 +1555,12 @@ export class SdkOperationService extends Service {
       throw this.fence(new Error("DSH turn-stopping boundary lacks one product-operation owner"));
     }
     if (operation.limit === undefined) {
+      const hasPendingContinuation = operation.messages.some((message) =>
+        message.delivered && message.state === "queued");
       const budget = operation.birth.limits.maxCostUsd;
       const accrued = deriveOperationAccruedCostUsd(agent.session.events, operation);
-      if (budget !== undefined && accrued !== null && accrued >= budget) {
+      if (budget !== undefined && accrued !== null
+        && (accrued > budget || (accrued === budget && hasPendingContinuation))) {
         operation = this.appendLimit(agent, operation, Object.freeze({
           clientOperationId: operation.clientOperationId,
           kind: "max_budget" as const,
@@ -1497,10 +1569,8 @@ export class SdkOperationService extends Service {
         }));
       } else {
         const maxTurns = operation.birth.limits.maxTurns;
-        const hasPendingContinuation = operation.messages.some((message) =>
-          message.delivered && message.state === "queued");
-        if (maxTurns !== undefined && operation.dshTurns.length >= maxTurns
-          && hasPendingContinuation) {
+        if (maxTurns !== undefined && (operation.dshTurns.length > maxTurns
+          || (operation.dshTurns.length === maxTurns && hasPendingContinuation))) {
           operation = this.appendLimit(agent, operation, Object.freeze({
             clientOperationId: operation.clientOperationId,
             kind: "max_turns" as const,
@@ -1596,6 +1666,90 @@ export class SdkOperationService extends Service {
     this.durationTimersValue.clear();
   }
 
+  private async reconcileResumedAgent(agent: Agent): Promise<void> {
+    this.assertHealthy();
+    if (this.primaryAgentValue !== undefined && this.primaryAgentValue !== agent) {
+      throw this.fence(new Error("resumed operation Agent differs from the prepared generation"));
+    }
+    this.primaryAgentValue = agent;
+    const wakePending = (agent as WakePendingAgent).wakePending;
+    if (typeof wakePending !== "function" || utilTypes.isProxy(wakePending)) {
+      throw this.fence(new Error("accepted DSH Agent.wakePending seam is unavailable"));
+    }
+    this.foldValue(agent);
+    const incomplete = incompleteRecoveryWakes(agent.session.events);
+    const wake = async (candidate: IncompleteRecoveryWake, hasIntent: boolean): Promise<void> => {
+      if (!hasIntent) {
+        agent.session.append("myagents/operation/recovery-wake", {
+          ...candidate,
+          phase: "intent",
+          recordedAt: this.operationClock(),
+        });
+      }
+      const woke = Reflect.apply(wakePending, agent, [MessageId(candidate.messageId)]) as unknown;
+      if (typeof woke !== "boolean") {
+        throw this.fence(new Error("DSH Agent.wakePending returned an invalid result"));
+      }
+      agent.session.append("myagents/operation/recovery-wake", {
+        ...candidate,
+        phase: "completed",
+        recordedAt: this.operationClock(),
+      });
+      await this.flush(agent);
+      if (!woke && [...agent.inbox.nextStep, ...agent.inbox.nextTurn]
+        .some(({ id }) => id === candidate.messageId)) {
+        throw this.fence(new Error("DSH Agent.wakePending refused an identity that remains pending"));
+      }
+    };
+    for (const candidate of incomplete.values()) await wake(candidate, true);
+    const wokenMessageIds = new Set(incomplete.keys());
+
+    let fold = this.foldValue(agent);
+    for (const operation of fold.operations) {
+      if (operation.state === "terminal" || operation.limit !== undefined) continue;
+      const duration = operation.birth.limits.maxDurationMs;
+      if (duration !== undefined && this.operationClock() - operation.acceptedAt >= duration) {
+        await this.enforceDurationLimit(
+          agent,
+          operation.clientOperationId,
+          operation.acceptedAt + duration,
+        );
+      }
+    }
+    fold = this.foldValue(agent);
+    for (const operation of fold.operations) {
+      if (operation.state === "terminal" || operation.limit !== undefined
+        || !operation.messages.some((message) => message.delivered && message.state === "queued")) continue;
+      const finalTurn = operation.dshTurns.at(-1);
+      if (finalTurn !== undefined) await this.enforceTurnBoundaryLimits(agent, finalTurn);
+    }
+
+    for (const message of [...agent.inbox.nextStep, ...agent.inbox.nextTurn]) {
+      if (wokenMessageIds.has(message.id)) continue;
+      const source = readOperationMessageSource(message.source);
+      if (source === undefined) continue;
+      const operation = findProductOperation(this.foldValue(agent), source.clientOperationId);
+      const owned = operation?.messages.find(({ messageId }) => messageId === message.id);
+      if (operation === undefined || operation.state === "terminal" || operation.limit !== undefined
+        || owned?.delivered !== true || owned.state !== "queued") {
+        throw this.fence(new Error("resumed pending Inbox message lacks active operation ownership"));
+      }
+      await wake(Object.freeze({
+        attemptId: `recovery-wake-${createHash("sha256").update(stableJson([
+          operation.clientOperationId,
+          message.id,
+          agent.session.seq,
+        ])).digest("hex").slice(0, 40)}`,
+        clientOperationId: operation.clientOperationId,
+        messageId: message.id,
+      }), false);
+    }
+    await this.reconcileAgent(agent);
+    for (const operation of this.foldValue(agent).operations) {
+      if (operation.state !== "terminal") this.armDurationTimer(agent, operation);
+    }
+  }
+
   private removePendingMessage(
     agent: Agent,
     messageId: string,
@@ -1622,11 +1776,7 @@ export class SdkOperationService extends Service {
 
   validatePersisted(agent: Agent): ProductOperationFold {
     this.assertHealthy();
-    const fold = this.foldValue(agent);
-    for (const operation of fold.operations) {
-      if (operation.state !== "terminal") this.armDurationTimer(agent, operation);
-    }
-    return fold;
+    return this.foldValue(agent);
   }
 
   prepareGenerationReplacement(agent: Agent): void {
@@ -1640,6 +1790,7 @@ export class SdkOperationService extends Service {
     }
     this.primaryAgentValue = undefined;
     this.clearDurationTimers();
+    this.stoppingTurnsValue.clear();
     this.acceptingValue = true;
     this.correlationDrainValue = Promise.resolve();
     this.serialValue = Promise.resolve();

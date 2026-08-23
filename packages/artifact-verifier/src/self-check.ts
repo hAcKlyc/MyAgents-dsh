@@ -10,12 +10,22 @@ import {
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
 import {
+  PRODUCT_PERSISTENCE_FORMAT,
+  PRODUCT_PERSISTENCE_SCHEMA_VERSION,
+  PRODUCT_REQUIRED_SESSION_EVENT_TYPES,
+} from "@myagents-dsh/persistence-product";
+import {
   BATCH1_RUNTIME_CAPABILITIES,
+  CANONICAL_TOOL_CONTRACT_SHA256,
   PROTOCOL_VERSION,
+  RPC_NOTIFICATIONS,
   RUNTIME_VERSION,
   SESSION_FORMAT,
+  serializeCanonicalProtocolJson,
 } from "@myagents-dsh/protocol";
 import protocolMetaJson from "@myagents-dsh/protocol/protocol-meta.json" with { type: "json" };
+import { KNOWN_SESSION_EVENT_TYPES } from "@deepseek-ai/dsh-session";
+import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
 import {
@@ -26,6 +36,22 @@ import {
 const deferredAuthorities = Object.freeze([
   "effective-tool-catalog",
 ] as const);
+
+const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+
+export const RUNTIME_SELF_CHECK_CONTRACT_AUTHORITIES = Object.freeze({
+  canonicalToolsSha256: CANONICAL_TOOL_CONTRACT_SHA256,
+  eventsSha256: createHash("sha256").update(serializeCanonicalProtocolJson({
+    dshSessionEventTypes: [...KNOWN_SESSION_EVENT_TYPES].sort(compare),
+    notifications: Object.keys(RPC_NOTIFICATIONS).sort(compare),
+    productSessionEventTypes: [...PRODUCT_REQUIRED_SESSION_EVENT_TYPES].sort(compare),
+    sessionFormat: SESSION_FORMAT,
+  })).digest("hex"),
+  sessionFormat: SESSION_FORMAT,
+  persistenceFormat: PRODUCT_PERSISTENCE_FORMAT,
+  persistenceSchemaVersion: PRODUCT_PERSISTENCE_SCHEMA_VERSION,
+  checkpointFormat: "root-write-edit-v1" as const,
+});
 
 type JsonObject = Record<string, unknown>;
 
@@ -71,6 +97,7 @@ export interface RuntimeArtifactSelfCheckReport {
     digest: string;
     installedPluginAllowlist: readonly string[];
   }>;
+  readonly contracts: typeof RUNTIME_SELF_CHECK_CONTRACT_AUTHORITIES;
   readonly platform: Readonly<{
     contractVersion: typeof PLATFORM_CONTRACT_VERSION;
     target: PlatformTarget;
@@ -192,6 +219,7 @@ export const createRuntimeArtifactSelfCheckReport = (
       digest: BATCH1_CANDIDATE_PROFILE_SHA256,
       installedPluginAllowlist: [...BATCH1_CANDIDATE_PROFILE.composition.installedPluginAllowlist],
     },
+    contracts: { ...RUNTIME_SELF_CHECK_CONTRACT_AUTHORITIES },
     platform: {
       contractVersion: PLATFORM_CONTRACT_VERSION,
       target: adapter.target,

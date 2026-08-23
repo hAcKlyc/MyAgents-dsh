@@ -38,6 +38,7 @@ import {
   type RuntimeArtifactBuildAuthority,
   type RuntimeArtifactManifestAuthority,
 } from "../packages/artifact-verifier/src/runtime-artifact.js";
+import { RUNTIME_SELF_CHECK_CONTRACT_AUTHORITIES } from "../packages/artifact-verifier/src/self-check.js";
 
 import {
   assertContainedNodeModules,
@@ -836,6 +837,7 @@ const assertRuntimeProcessEvidence = (
   const selfCheckDsh = exactObject(selfCheck.dsh, "Runtime self-check DSH identity");
   const selfCheckProtocol = exactObject(selfCheck.protocol, "Runtime self-check protocol identity");
   const selfCheckProfile = exactObject(selfCheck.profile, "Runtime self-check profile identity");
+  const selfCheckContracts = exactObject(selfCheck.contracts, "Runtime self-check contract identity");
   const expectedDshPatches = readDshSeamPatchSet().map(({ order, path, sha256 }) => ({
     order,
     path,
@@ -887,6 +889,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckDsh.packageCount !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
+    || JSON.stringify(selfCheckContracts) !== JSON.stringify(RUNTIME_SELF_CHECK_CONTRACT_AUTHORITIES)
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
     || selfCheckProfile.stage !== "batch-1-w4-a10"
     || processEvidence.invalidCliRejected !== true

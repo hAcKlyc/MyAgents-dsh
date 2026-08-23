@@ -15,6 +15,7 @@
     "src/self-check.ts"
   ],
   "references": [
+    { "path": "../persistence-product" },
     { "path": "../product-profile" },
     { "path": "../protocol" }
   ]

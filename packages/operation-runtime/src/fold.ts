@@ -731,9 +731,12 @@ const foldProductOperationsValue = (
           return fail("operation limit follows terminal or duplicates its first limit fact");
         }
         if (limit.kind === "max_turns") {
+          const hasPendingContinuation = operation.messages.some(
+            (message) => message.delivered && message.state === "queued",
+          );
           if (operation.accepted.birth.limits.maxTurns !== limit.limit
             || operation.dshTurns.length < limit.limit
-            || !operation.messages.some((message) => message.delivered && message.state === "queued")) {
+            || (operation.dshTurns.length === limit.limit && !hasPendingContinuation)) {
             return fail("max-turns fact lacks its exact birth limit and pending continuation boundary");
           }
         } else if (limit.kind === "max_budget") {
@@ -799,6 +802,11 @@ const foldProductOperationsValue = (
             return fail("operation recovery-wake intent does not target a delivered pending message");
           }
           if (attempt !== undefined) return fail("operation recovery-wake attempt identity duplicated");
+          if ([...operation.wakeAttempts.values()].some(
+            (candidate) => !candidate.completed && candidate.messageId === wake.messageId,
+          )) {
+            return fail("operation recovery-wake message already has an incomplete attempt");
+          }
           operation.wakeAttempts.set(wake.attemptId, { completed: false, messageId: wake.messageId });
         } else {
           if (attempt === undefined || attempt.completed || attempt.messageId !== wake.messageId) {

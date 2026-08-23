@@ -130,6 +130,14 @@ describe("Runtime artifact self-check", () => {
       });
       expect(report.profile.stage).toBe("batch-1-w4-a10");
       expect(report.dsh.packageCount).toBe(54);
+      expect(report.contracts).toEqual({
+        canonicalToolsSha256: "b150cf36eed203391a99d5c12d9fbd4dd09ff2bb4400ab635bee95ccb3302092",
+        eventsSha256: "9ca291edb0fff6c331628be64d5add80120f2aafb1a1c3e07a8bc721c0a535a0",
+        sessionFormat: "dsh-session-events-v1",
+        persistenceFormat: "myagents-sqlite-session-v1",
+        persistenceSchemaVersion: 7,
+        checkpointFormat: "root-write-edit-v1",
+      });
       expect(report.protocol.availableHostMethods).toEqual([
         "initialize", "runtime/status", "runtime/shutdown", "interaction/respond",
         "session/create", "session/resume", "session/read", "session/close", "session/compact",
@@ -148,6 +156,7 @@ describe("Runtime artifact self-check", () => {
       ]);
       expect(Object.isFrozen(report)).toBe(true);
       expect(Object.isFrozen(report.protocol.runtimeCapabilities)).toBe(true);
+      expect(Object.isFrozen(report.contracts)).toBe(true);
       expect(serializeRuntimeArtifactSelfCheckReport(report).endsWith("\n")).toBe(true);
       expect(() => assertRuntimeArtifactSelfCheckReport(JSON.parse(
         serializeRuntimeArtifactSelfCheckReport(report),
@@ -179,6 +188,14 @@ describe("Runtime artifact self-check", () => {
     ));
     (report.profile as unknown as { digest: string }).digest = "f".repeat(64);
     expect(() => assertRuntimeArtifactSelfCheckReport(report, artifactFixture.root))
+      .toThrow("differs from exact content authority");
+    const contractTampered = structuredClone(createRuntimeArtifactSelfCheckReport(
+      "darwin-arm64",
+      artifactFixture.integrity,
+      "24.13.1",
+    ));
+    (contractTampered.contracts as unknown as { eventsSha256: string }).eventsSha256 = "e".repeat(64);
+    expect(() => assertRuntimeArtifactSelfCheckReport(contractTampered, artifactFixture.root))
       .toThrow("differs from exact content authority");
     expect(() => assertRuntimeArtifactSelfCheckReport(new Proxy({}, {}), artifactFixture.root))
       .toThrow("must contain only JSON data");

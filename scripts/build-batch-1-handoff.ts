@@ -15,14 +15,9 @@ import {
   type Batch1ReviewReference,
 } from "@myagents-dsh/artifact-verifier/batch-1-handoff";
 import { verifyInstalledRuntimeArtifact } from "@myagents-dsh/artifact-verifier/runtime-artifact";
-import { KNOWN_SESSION_EVENT_TYPES } from "@deepseek-ai/dsh-session";
-import {
-  PRODUCT_PERSISTENCE_FORMAT,
-  PRODUCT_PERSISTENCE_SCHEMA_VERSION,
-  PRODUCT_REQUIRED_SESSION_EVENT_TYPES,
-} from "@myagents-dsh/persistence-product";
+import { RUNTIME_SELF_CHECK_CONTRACT_AUTHORITIES } from "@myagents-dsh/artifact-verifier/self-check";
 import { BATCH1_CANDIDATE_PROFILE_SHA256 } from "@myagents-dsh/product-profile";
-import { BATCH1_RUNTIME_CAPABILITIES, SESSION_FORMAT } from "@myagents-dsh/protocol";
+import { BATCH1_RUNTIME_CAPABILITIES, serializeCanonicalProtocolJson } from "@myagents-dsh/protocol";
 
 import { resolveExternalOutputRoot } from "./run-batch-1-pre-artifact-gate.js";
 
@@ -38,18 +33,7 @@ interface Batch1HandoffReleaseInput {
 
 type JsonObject = Record<string, unknown>;
 const repositoryRoot = resolve(import.meta.dirname, "..");
-const sha256 = (value: string | Uint8Array): string => createHash("sha256").update(value).digest("hex");
 const compare = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
-
-const canonicalize = (value: unknown): string => {
-  if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
-  if (typeof value === "number" && Number.isFinite(value)) return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
-  if (typeof value !== "object") throw new TypeError("handoff authority must contain JSON values");
-  const object = value as JsonObject;
-  return `{${Object.keys(object).sort(compare).map((key) =>
-    `${JSON.stringify(key)}:${canonicalize(object[key])}`).join(",")}}`;
-};
 
 const runGit = (args: readonly string[]): string => {
   const result = spawnSync("git", args, {
@@ -147,17 +131,16 @@ const main = (): void => {
     throw new TypeError("protocol evidence outputs must be an object");
   }
   const outputs = protocolOutputs as JsonObject;
-  const notifications = protocolMetaJson.notifications;
-  if (!Array.isArray(notifications) || notifications.some((item) => typeof item !== "string")) {
-    throw new TypeError("protocol notifications must be an array of strings");
+  const contractAuthorities = RUNTIME_SELF_CHECK_CONTRACT_AUTHORITIES;
+  const canonicalToolsSha256 = authorityString(
+    protocolMetaJson.canonicalToolContractSha256,
+    "canonical tools",
+  );
+  if (canonicalToolsSha256 !== contractAuthorities.canonicalToolsSha256) {
+    throw new Error("handoff canonical tools differ from the public self-check authority");
   }
-  const eventsSha256 = sha256(canonicalize({
-    dshSessionEventTypes: [...KNOWN_SESSION_EVENT_TYPES].sort(compare),
-    notifications,
-    productSessionEventTypes: [...PRODUCT_REQUIRED_SESSION_EVENT_TYPES].sort(compare),
-    sessionFormat: SESSION_FORMAT,
-  }));
-  const capabilitiesSha256 = sha256(canonicalize(BATCH1_RUNTIME_CAPABILITIES));
+  const capabilitiesSha256 = createHash("sha256")
+    .update(serializeCanonicalProtocolJson(BATCH1_RUNTIME_CAPABILITIES)).digest("hex");
   const handoff = createBatch1Handoff({
     source: { repository: "MyAgents-dsh", commit: repositoryHead, dirty: false },
     build: {
@@ -191,15 +174,12 @@ const main = (): void => {
         "capability profile",
       ),
       productProfileSha256: BATCH1_CANDIDATE_PROFILE_SHA256,
-      canonicalToolsSha256: authorityString(
-        protocolMetaJson.canonicalToolContractSha256,
-        "canonical tools",
-      ),
-      eventsSha256,
-      sessionFormat: SESSION_FORMAT,
-      persistenceFormat: PRODUCT_PERSISTENCE_FORMAT,
-      persistenceSchemaVersion: PRODUCT_PERSISTENCE_SCHEMA_VERSION,
-      checkpointFormat: "root-write-edit-v1",
+      canonicalToolsSha256,
+      eventsSha256: contractAuthorities.eventsSha256,
+      sessionFormat: contractAuthorities.sessionFormat,
+      persistenceFormat: contractAuthorities.persistenceFormat,
+      persistenceSchemaVersion: contractAuthorities.persistenceSchemaVersion,
+      checkpointFormat: contractAuthorities.checkpointFormat,
     },
     capabilitiesSha256,
     supportedPlatforms: input.supportedPlatforms,
