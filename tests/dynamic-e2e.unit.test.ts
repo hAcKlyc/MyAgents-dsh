@@ -140,6 +140,24 @@ describe("dynamic E2E harness", () => {
         })
       : entry));
     expect(evaluateDynamicScenarioPostconditions(coding, before, after)).toMatchObject({ passed: true });
+
+    const child = corpus.find(({ id }) => id === "child-task-work");
+    if (child === undefined) throw new Error("child scenario is unavailable");
+    const childBefore = Object.freeze([
+      Object.freeze({ path: "area-a.md", kind: "file" as const, size: 1, sha256: "d".repeat(64) }),
+      Object.freeze({ path: "area-b.md", kind: "file" as const, size: 1, sha256: "e".repeat(64) }),
+      Object.freeze({ path: "area-c.md", kind: "file" as const, size: 1, sha256: "f".repeat(64) }),
+    ]);
+    const childAfter = Object.freeze([...childBefore, Object.freeze({
+      path: "audit-report.md",
+      kind: "file" as const,
+      size: 4_483,
+      sha256: "1".repeat(64),
+    })]);
+    expect(evaluateDynamicScenarioPostconditions(child, childBefore, childAfter)).toMatchObject({
+      passed: true,
+      assertions: [{ name: "fixture-inputs-preserved-with-optional-audit-report", passed: true }],
+    });
   });
 
   it("normalizes evidence trap-safely, redacts private paths, and rejects secret aliases", () => {

@@ -45,6 +45,27 @@ const codingWorkspaceIsRepaired = (
     JSON.stringify(beforeByPath.get(path)) === JSON.stringify(afterByPath.get(path)));
 };
 
+const childTaskWorkHasOnlyOptionalReport = (
+  before: readonly WorkspaceManifestEntry[],
+  after: readonly WorkspaceManifestEntry[],
+): boolean => {
+  const beforeByPath = new Map(before.map((entry) => [entry.path, entry]));
+  const afterByPath = new Map(after.map((entry) => [entry.path, entry]));
+  if ([...beforeByPath].some(([path, entry]) =>
+    JSON.stringify(afterByPath.get(path)) !== JSON.stringify(entry))) return false;
+  const additions = [...afterByPath].filter(([path]) => !beforeByPath.has(path));
+  if (additions.length === 0) return afterByPath.size === beforeByPath.size;
+  const report = additions[0]?.[1];
+  return additions.length === 1
+    && additions[0]?.[0] === "audit-report.md"
+    && report?.kind === "file"
+    && typeof report.size === "number"
+    && report.size > 0
+    && report.size <= 65_536
+    && typeof report.sha256 === "string"
+    && /^[a-f0-9]{64}$/u.test(report.sha256);
+};
+
 const interactionSelectionIsStable = (
   before: readonly WorkspaceManifestEntry[],
   after: readonly WorkspaceManifestEntry[],
@@ -72,8 +93,10 @@ export const evaluateDynamicScenarioPostconditions = (
     case "interaction-plan":
       record("approved-stable-selection", interactionSelectionIsStable(before, after));
       break;
-    case "adversarial-boundaries":
     case "child-task-work":
+      record("fixture-inputs-preserved-with-optional-audit-report", childTaskWorkHasOnlyOptionalReport(before, after));
+      break;
+    case "adversarial-boundaries":
     case "degraded-host":
     case "persistence-lifecycle":
     case "web-components":
