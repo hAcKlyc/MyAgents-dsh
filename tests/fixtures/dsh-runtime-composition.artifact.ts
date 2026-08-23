@@ -68,7 +68,7 @@ import {
   type RuntimeEventEnvelope,
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
-import { NativeRpcServer, RuntimeEventProjector } from "@myagents-dsh/rpc-server";
+import { NativeRpcServer } from "@myagents-dsh/rpc-server";
 import { startNativeRpcLifecycle } from "@myagents-dsh/runtime-server";
 import {
   claimNativeRpcLifecycleAuthority,
@@ -1268,6 +1268,9 @@ const hostPeer = new JsonRpcPeer({
   onFatalError: (error) => hostFatalErrors.push(error),
 });
 const projectedRuntimeEvents: RuntimeEventEnvelope[] = [];
+hostPeer.registerNotificationHandler("runtime/event", (event) => {
+  projectedRuntimeEvents.push(event);
+});
 let processSignalListener: ((signal: "SIGINT" | "SIGTERM") => void) | undefined;
 let processBoundaryUnsubscribeHits = 0;
 let processBoundaryDeadlineCancelHits = 0;
@@ -1697,6 +1700,10 @@ const hostModelPeer = new JsonRpcPeer({
   role: "host",
   limits: REFERENCE_PROTOCOL_LIMITS,
 });
+const hostModelRuntimeEvents: RuntimeEventEnvelope[] = [];
+hostModelPeer.registerNotificationHandler("runtime/event", (event) => {
+  hostModelRuntimeEvents.push(event);
+});
 const hostModelCredentialCalls: MethodParams<"host/credential/resolve">[] = [];
 const hostModelSecret = "artifact-host-model-secret-canary";
 const hostModelCredentialValueField = ["api", "Key"].join("") as "apiKey";
@@ -1775,36 +1782,6 @@ await hostModelComposition.context.productSession.bindCreate({
   permissionMode: "default",
   interactionScenario: "artifact-interaction-v1",
 });
-const hostModelProjectionInput = new PassThrough();
-const hostModelProjectionOutput = new PassThrough();
-const hostModelProjectionFailures: Error[] = [];
-const hostModelProjectionRuntimePeer = new JsonRpcPeer({
-  input: hostModelProjectionInput,
-  output: hostModelProjectionOutput,
-  role: "runtime",
-  limits: REFERENCE_PROTOCOL_LIMITS,
-  onFatalError: (error) => hostModelProjectionFailures.push(error),
-});
-const hostModelProjectionHostPeer = new JsonRpcPeer({
-  input: hostModelProjectionOutput,
-  output: hostModelProjectionInput,
-  role: "host",
-  limits: REFERENCE_PROTOCOL_LIMITS,
-  onFatalError: (error) => hostModelProjectionFailures.push(error),
-});
-hostModelProjectionHostPeer.registerNotificationHandler("runtime/event", () => undefined);
-const hostModelProjector = new RuntimeEventProjector({
-  context: hostModelComposition.context,
-  peer: hostModelProjectionRuntimePeer,
-  productSession: hostModelComposition.context.productSession,
-  runtimeGeneration: "artifact-host-model-projection",
-  productSessionId: () => "artifact-host-model-product-session",
-  onFailure: (error) => hostModelProjectionFailures.push(error),
-});
-hostModelComposition.context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({
-  reserve: (clientOperationId: string) => hostModelProjector.reserve(clientOperationId),
-  whenIdle: () => hostModelProjector.whenIdle(),
-}));
 const previousFetch = globalThis.fetch;
 const hostModelAuthorization: string[] = [];
 let hostModelFetchSequence = 0;
@@ -1920,10 +1897,7 @@ const hostCredentialPublicControllerHidden = [
 const hostModelSecretProjectionRejected = !JSON.stringify({
   composition: hostModelComposition.snapshot(),
   hostPorts: hostModelComposition.context.hostPorts.snapshot(),
-  projectionFailures: hostModelProjectionFailures.map((error) => ({
-    message: error.message,
-    name: error.name,
-  })),
+  runtimeEvents: hostModelRuntimeEvents,
   sessions: hostModelComposition.context.sessions.list().map((session) => ({
     events: session.events,
     header: session.header,
@@ -1954,12 +1928,6 @@ const hostCredentialModelVerified = hostModelFetchSequence === 4
 assert.equal(hostCredentialPublicControllerHidden, true);
 assert.equal(hostModelSecretProjectionRejected, true);
 assert.equal(hostModelRequestAuthorityBound, true);
-await hostModelProjector.close();
-assert.deepEqual(hostModelProjectionFailures, []);
-hostModelProjectionRuntimePeer.close();
-hostModelProjectionHostPeer.close();
-hostModelProjectionInput.destroy();
-hostModelProjectionOutput.destroy();
 await hostModelClient.runtimeShutdown({ reason: "artifact-host-model-complete" });
 await hostModelServer.whenStopped();
 assert.deepEqual(hostModelComponentEffects, [
@@ -2305,38 +2273,6 @@ assert.equal(
   "function",
   "patched Agent.wakePending seam must be installed",
 );
-const projectionInput = new PassThrough();
-const projectionOutput = new PassThrough();
-const projectionFailures: Error[] = [];
-const projectionRuntimePeer = new JsonRpcPeer({
-  input: projectionInput,
-  output: projectionOutput,
-  role: "runtime",
-  limits: REFERENCE_PROTOCOL_LIMITS,
-  onFatalError: (error) => projectionFailures.push(error),
-});
-const projectionHostPeer = new JsonRpcPeer({
-  input: projectionOutput,
-  output: projectionInput,
-  role: "host",
-  limits: REFERENCE_PROTOCOL_LIMITS,
-  onFatalError: (error) => projectionFailures.push(error),
-});
-projectionHostPeer.registerNotificationHandler("runtime/event", (event) => {
-  projectedRuntimeEvents.push(event);
-});
-const workstreamProjector = new RuntimeEventProjector({
-  context: composition.context,
-  peer: projectionRuntimePeer,
-  productSession: composition.context.productSession,
-  runtimeGeneration: "artifact-a5-workstream-generation",
-  productSessionId: () => "artifact-product-session",
-  onFailure: (error) => projectionFailures.push(error),
-});
-composition.context.sdkOperations.bindTerminalReservationAuthority(Object.freeze({
-  reserve: (clientOperationId: string) => workstreamProjector.reserve(clientOperationId),
-  whenIdle: () => workstreamProjector.whenIdle(),
-}));
 let durableOperationEvents: readonly SessionEvent[] = [];
 composition.context.on("session/flush", (session) => {
   durableOperationEvents = structuredClone(session.events);
@@ -3769,10 +3705,6 @@ assert.notEqual(primaryAgent, rewoundAgent);
 assert.deepEqual(primaryAgent.session.deriveMessages(), rewindSourceDerivedMessages);
 assert.equal(adapter.requests.length, rewindAdapterRequestCount, "rewind rollback must not replay model work");
 assert.equal(primaryPublicationCount, 3);
-assert.deepEqual(projectionFailures, [], JSON.stringify(projectionFailures.map((error) => ({
-  name: error.name,
-  message: error.message,
-}))));
 
 await composition.context.sdkOperations.start({
   ...turnStartParams,
@@ -3807,7 +3739,6 @@ const retiredRpcStatus = await hostClient.runtimeStatus({}).catch((error: unknow
 assert.equal(retiredRpcStatus.primarySessionState, "retired");
 assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
-await workstreamProjector.whenIdle();
 await waitUntil(
   () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 24,
   "twenty-four projected Runtime terminals",
@@ -3838,12 +3769,6 @@ assert.deepEqual(firstUsage.event.usage, {
 });
 assert.equal(firstUsage.event.contextOccupiedTokens, null);
 assert.equal(firstUsage.event.runtimeContextWindow, 8_192);
-await workstreamProjector.close();
-assert.deepEqual(projectionFailures, []);
-projectionRuntimePeer.close();
-projectionHostPeer.close();
-projectionInput.destroy();
-projectionOutput.destroy();
 
 const snapshot = composition.snapshot();
 const componentCatalog = composition.context.productComponents.catalog();

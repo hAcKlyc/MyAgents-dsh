@@ -38,6 +38,8 @@ import {
 } from "@myagents-dsh/runtime-product";
 import { Readable, Writable } from "node:stream";
 
+import { RuntimeEventProjector } from "./event-projector.js";
+
 declare module "@deepseek-ai/cordis" {
   interface Context {
     nativeRpc: NativeRpcServer;
@@ -367,6 +369,8 @@ export class NativeRpcServer extends Service {
   private readonly productSessionValue: ProductSessionService;
   private readonly operationsValue: SdkOperationService;
   private readonly configValue: NormalizedConfig;
+  private eventProjectorValue: RuntimeEventProjector | undefined;
+  private productSessionIdValue: string | undefined;
   private readonly stopHandlers: Array<() => void> = [];
   private readonly terminationCommittedPromise: Promise<NativeRpcExitRequest>;
   private readonly exitRequestedPromise: Promise<NativeRpcExitRequest>;
@@ -436,6 +440,19 @@ export class NativeRpcServer extends Service {
     });
     hostPortLifecycleOf(this).bindTransport(this.peerValue, this.configValue.runtimeGeneration);
     try {
+      const eventProjector = new RuntimeEventProjector({
+        context: compositionAuthority.context,
+        onFailure: (error) => this.onEventProjectionFailure(error),
+        peer: this.peerValue,
+        productSession: this.productSessionValue,
+        productSessionId: () => this.productSessionIdValue,
+        runtimeGeneration: this.configValue.runtimeGeneration,
+      });
+      this.eventProjectorValue = eventProjector;
+      this.operationsValue.bindTerminalReservationAuthority(Object.freeze({
+        reserve: (clientOperationId: string) => eventProjector.reserve(clientOperationId),
+        whenIdle: () => eventProjector.whenIdle(),
+      }));
       const registeredHostMethods: string[] = [];
       const registered = (method: string, stop: () => void): (() => void) => {
         if (registeredHostMethods.includes(method)) {
@@ -628,6 +645,7 @@ export class NativeRpcServer extends Service {
     }
     context.signal.throwIfAborted();
     hostPortLifecycleOf(this).bindProductSession(params.productSessionId);
+    this.productSessionIdValue = params.productSessionId;
     const limits = minimumLimits(params.limits, this.configValue.limits);
     compositionCapabilitiesOf(this).bindAttachmentLeaseLimit(limits.maxAttachmentLeases);
     context.commit();
@@ -842,6 +860,16 @@ export class NativeRpcServer extends Service {
     }));
   }
 
+  private onEventProjectionFailure(error: ProtocolError): void {
+    if (this.phaseValue === "disposed" || this.phaseValue === "terminated") return;
+    this.phaseValue = "terminated";
+    this.requestExit(Object.freeze({
+      kind: "runtime_fatal",
+      code: error.code,
+      retryable: error.retryable,
+    }));
+  }
+
   private requestExit(request: NativeRpcExitRequest): void {
     this.publishTerminationIntent(request);
     if (this.exitRequestValue !== undefined) return;
@@ -872,6 +900,11 @@ export class NativeRpcServer extends Service {
       }
       try {
         await this.productSessionValue.retire();
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        await this.eventProjectorValue?.close();
       } catch (error) {
         failures.push(error);
       } finally {

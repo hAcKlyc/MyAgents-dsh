@@ -69,6 +69,12 @@ const sessionCatalogState = vi.hoisted(() => ({
     throw new Error("synthetic Session catalogs are not configured");
   },
 }));
+const terminalReservationState = vi.hoisted<{
+  bindings: Array<Readonly<{
+    reserve: (clientOperationId: string) => void;
+    whenIdle: () => Promise<void>;
+  }>>;
+}>(() => ({ bindings: [] }));
 
 vi.mock("@myagents-dsh/product-profile", async (importOriginal) => {
   const actual = await importOriginal<typeof ProductProfileExports>();
@@ -143,6 +149,7 @@ const createRoot = (
   resumeRecovery = false,
 ): Context => {
   hostPortLifecycleState.current = hostPorts;
+  terminalReservationState.bindings.length = 0;
   const root = new Context();
   let sessionSnapshot: Record<string, unknown> = Object.freeze({
     activeCompactions: 0,
@@ -269,7 +276,12 @@ const createRoot = (
     turnId: string;
   }>>();
   root.provide("sdkOperations", {
-    bindTerminalReservationAuthority: () => undefined,
+    bindTerminalReservationAuthority: (authority: typeof terminalReservationState.bindings[number]) => {
+      if (terminalReservationState.bindings.length !== 0) {
+        throw new Error("synthetic terminal reservation authority must bind exactly once");
+      }
+      terminalReservationState.bindings.push(authority);
+    },
     get: (params: MethodParams<"turn/get">) => {
       const operation = syntheticOperations.get(params.clientOperationId);
       return Object.freeze({
@@ -497,6 +509,10 @@ describe("native RPC Cordis service", () => {
       }
     };
     try {
+      expect(terminalReservationState.bindings).toHaveLength(1);
+      const [terminalReservation] = terminalReservationState.bindings;
+      expect(typeof terminalReservation?.reserve).toBe("function");
+      expect(typeof terminalReservation?.whenIdle).toBe("function");
       await within("initialize", harness.client.initialize(initializeParams()));
       await vi.waitFor(() => expect(harness.server.phase).toBe("await_initialized"));
       await within("initialized", harness.client.initialized());
