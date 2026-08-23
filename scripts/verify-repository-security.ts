@@ -17,6 +17,8 @@ import {
 import { analyzeModuleLoads } from "./dsh-baseline-policy.js";
 import {
   ARTIFACT_LAUNCHER_PATH,
+  DYNAMIC_E2E_HOST_PATH,
+  isExactDynamicE2eChildProcessSource,
   isExactArtifactLauncherChildProcessSource,
   isExactProductNetworkTransportSource,
 } from "./repository-security-policy.js";
@@ -96,6 +98,7 @@ const discoveredWorkspaceDirectories = repositoryPaths
     const match = /^(apps|packages)\/([^/]+)\/package\.json$/u.exec(path);
     return match === null ? [] : [`${match[1]}/${match[2]}`];
   })
+  .filter((path) => path !== "packages/dynamic-e2e")
   .sort();
 const packedWorkspaceDirectories = PACKED_WORKSPACE_POLICIES
   .map(({ relativeDirectory }) => relativeDirectory)
@@ -134,6 +137,7 @@ for (const relativePath of repositoryPaths) {
     for (const specifier of analyzeModuleLoads(source, relativePath).specifiers) {
       if (isNetworkCapableModule(specifier)
         && !isExactArtifactLauncherChildProcessSource(relativePath, specifier, source)
+        && !isExactDynamicE2eChildProcessSource(relativePath, specifier, source)
         && !isExactProductNetworkTransportSource(relativePath, specifier, source)) {
         failures.push(`${relativePath} imports network-capable module ${specifier} outside the isolation/composition owner`);
       }
@@ -147,6 +151,9 @@ for (const relativePath of repositoryPaths) {
 
 if (!repositoryPaths.includes(ARTIFACT_LAUNCHER_PATH)) {
   failures.push("artifact process launcher security owner is absent from the repository inventory");
+}
+if (!repositoryPaths.includes(DYNAMIC_E2E_HOST_PATH)) {
+  failures.push("dynamic E2E process launcher security owner is absent from the repository inventory");
 }
 
 const npmCli = process.env.npm_execpath

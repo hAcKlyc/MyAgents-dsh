@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/dynamic-e2e",
+    "tsBuildInfoFile": "../../dist/packages/dynamic-e2e/.tsbuildinfo"
+  },
+  "files": [
+    "src/artifact.ts",
+    "src/campaign.ts",
+    "src/checker.ts",
+    "src/cli.ts",
+    "src/credential.ts",
+    "src/evidence.ts",
+    "src/host.ts",
+    "src/index.ts",
+    "src/redaction.ts",
+    "src/reporter.ts",
+    "src/runner.ts",
+    "src/scenario.ts",
+    "src/workspace.ts"
+  ],
+  "references": [
+    { "path": "../artifact-verifier" },
+    { "path": "../protocol" },
+    { "path": "../test-host" },
+    { "path": "../tool-contracts" }
+  ]
+}

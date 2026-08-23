@@ -27,6 +27,7 @@
     { "path": "./packages/runtime-product" },
     { "path": "./packages/testkit" },
     { "path": "./packages/test-host" },
+    { "path": "./packages/dynamic-e2e" },
     { "path": "./packages/artifact-verifier" },
     { "path": "./apps/runtime-server" },
     { "path": "./tests" },

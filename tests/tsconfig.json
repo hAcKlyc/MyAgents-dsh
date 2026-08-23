@@ -35,6 +35,7 @@
     { "path": "../packages/runtime-product" },
     { "path": "../packages/testkit" },
     { "path": "../packages/test-host" },
+    { "path": "../packages/dynamic-e2e" },
     { "path": "../apps/runtime-server" },
     { "path": "../tsconfig.tools.json" }
   ]

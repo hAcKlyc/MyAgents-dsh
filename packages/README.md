@@ -6,6 +6,7 @@ The Pre-Batch workspace freezes package ownership before behavior is implemented
 | --- | --- |
 | `protocol` | Canonical native RPC source, projections, and peer contracts |
 | `test-host` | Public generated-client-only Standard Host material |
+| `dynamic-e2e` | Test-only packed-artifact dynamic acceptance orchestrator and sealed evidence owner |
 | `product-profile` | Locked official DSH/plugin composition and digest |
 | `runtime-product` | Product coordination services over DSH public seams |
 | `compatibility` | Versioned sanitized compatibility declarations |
