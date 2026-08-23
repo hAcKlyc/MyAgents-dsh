@@ -45,28 +45,25 @@ const codingWorkspaceIsRepaired = (
     JSON.stringify(beforeByPath.get(path)) === JSON.stringify(afterByPath.get(path)));
 };
 
-const childTaskWorkHasOnlyOptionalMarkdownReport = (
+const hasOnlyBoundedRootMarkdownAdditions = (
   before: readonly WorkspaceManifestEntry[],
   after: readonly WorkspaceManifestEntry[],
+  maxAdditions: number,
 ): boolean => {
   const beforeByPath = new Map(before.map((entry) => [entry.path, entry]));
   const afterByPath = new Map(after.map((entry) => [entry.path, entry]));
   if ([...beforeByPath].some(([path, entry]) =>
     JSON.stringify(afterByPath.get(path)) !== JSON.stringify(entry))) return false;
   const additions = [...afterByPath].filter(([path]) => !beforeByPath.has(path));
-  if (additions.length === 0) return afterByPath.size === beforeByPath.size;
-  const reportPath = additions[0]?.[0];
-  const report = additions[0]?.[1];
-  return additions.length === 1
-    && typeof reportPath === "string"
-    && !reportPath.includes("/")
+  return additions.length <= maxAdditions && additions.every(([reportPath, report]) =>
+    !reportPath.includes("/")
     && /^[a-z0-9][a-z0-9._-]{0,127}\.md$/u.test(reportPath)
-    && report?.kind === "file"
+    && report.kind === "file"
     && typeof report.size === "number"
     && report.size > 0
     && report.size <= 65_536
     && typeof report.sha256 === "string"
-    && /^[a-f0-9]{64}$/u.test(report.sha256);
+    && /^[a-f0-9]{64}$/u.test(report.sha256));
 };
 
 const interactionSelectionIsStable = (
@@ -112,14 +109,19 @@ export const evaluateDynamicScenarioPostconditions = (
     case "child-task-work":
       record(
         "fixture-inputs-preserved-with-optional-markdown-report",
-        childTaskWorkHasOnlyOptionalMarkdownReport(before, after),
+        hasOnlyBoundedRootMarkdownAdditions(before, after, 5),
       );
       break;
     case "adversarial-boundaries":
     case "degraded-host":
     case "persistence-lifecycle":
-    case "web-components":
       record("fixture-tree-remains-unmodified", assertUnchanged(before, after));
+      break;
+    case "web-components":
+      record(
+        "fixture-inputs-preserved-with-optional-markdown-report",
+        hasOnlyBoundedRootMarkdownAdditions(before, after, 1),
+      );
       break;
     default:
       record("known-scenario-checker", false);

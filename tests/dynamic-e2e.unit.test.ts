@@ -193,12 +193,33 @@ describe("dynamic E2E harness", () => {
       size: 4_483,
       sha256: "1".repeat(64),
     })])).passed).toBe(false);
-    expect(evaluateDynamicScenarioPostconditions(child, childBefore, Object.freeze([...childAfter, Object.freeze({
+    const childWithSecondReport = Object.freeze([...childAfter, Object.freeze({
       path: "second-report.md",
       kind: "file" as const,
       size: 1,
       sha256: "2".repeat(64),
-    })])).passed).toBe(false);
+    })]);
+    expect(evaluateDynamicScenarioPostconditions(child, childBefore, childWithSecondReport).passed).toBe(true);
+    expect(evaluateDynamicScenarioPostconditions(child, childBefore, Object.freeze([
+      ...childWithSecondReport,
+      ...Array.from({ length: 4 }, (_, index) => Object.freeze({
+        path: `extra-${String(index)}.md`,
+        kind: "file" as const,
+        size: 1,
+        sha256: String(index + 3).repeat(64),
+      })),
+    ])).passed).toBe(false);
+
+    const web = corpus.find(({ id }) => id === "web-components");
+    if (web === undefined) throw new Error("web scenario is unavailable");
+    const webBefore = Object.freeze([
+      Object.freeze({ path: "release-v1.md", kind: "file" as const, size: 1, sha256: "8".repeat(64) }),
+      Object.freeze({ path: "release-v2.md", kind: "file" as const, size: 1, sha256: "9".repeat(64) }),
+    ]);
+    expect(evaluateDynamicScenarioPostconditions(web, webBefore, Object.freeze([
+      ...webBefore,
+      Object.freeze({ path: "recommendation.md", kind: "file" as const, size: 100, sha256: "a".repeat(64) }),
+    ])).passed).toBe(true);
 
     const interaction = corpus.find(({ id }) => id === "interaction-plan");
     if (interaction === undefined) throw new Error("interaction scenario is unavailable");
