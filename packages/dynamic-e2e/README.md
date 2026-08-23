@@ -9,8 +9,11 @@ npm run e2e:dynamic -- --help
 npm run e2e:dynamic -- list
 npm run e2e:dynamic -- run --scenario coding-workspace --artifact /absolute/runtime-artifact
 npm run e2e:dynamic -- campaign --artifact /absolute/runtime-artifact --jobs 1
+npm run e2e:dynamic -- campaign --artifact /absolute/runtime-artifact \
+  --route-config packages/dynamic-e2e/routes/deepseek-official-v4-flash.json \
+  --credential-env DEEPSEEK_API_KEY --jobs 1
 ```
 
-The Development Main Agent alone supplies an approved route config plus the name of a credential environment variable during the sanctioned real-route campaign. Route JSON contains no secret. Evidence is written beneath ignored `tmp/dynamic-e2e` by default; every retained file is sealed read-only and the verifier rejects unowned files, aliases, or index drift.
+The sanctioned macOS route is frozen in `routes/deepseek-official-v4-flash.json`; it contains no secret and caps each model response at 8,192 tokens. The Development Main Agent must still explicitly supply that path and the credential environment-variable name. Evidence is written beneath ignored `tmp/dynamic-e2e` by default; every retained file is sealed read-only and the verifier rejects unowned files, aliases, or index drift.
 
 External Tester Agents follow [REPORTER_PROMPT.md](./REPORTER_PROMPT.md). Their reports are usability/risk evidence, not release authority.

@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  ApprovedDynamicRouteCredentialUnavailableError,
   DynamicEvidenceRecorder,
   evaluateDynamicScenarioPostconditions,
   inspectDynamicArtifact,
@@ -204,7 +205,47 @@ describe("dynamic E2E harness", () => {
     } finally {
       delete process.env[environmentName];
     }
-    await expect(loadApprovedDynamicRoute(path, environmentName)).rejects.toThrow(/unavailable/u);
+    await expect(loadApprovedDynamicRoute(path, environmentName)).rejects.toBeInstanceOf(
+      ApprovedDynamicRouteCredentialUnavailableError,
+    );
+    const unavailable = await loadApprovedDynamicRoute(path, environmentName).catch((error: unknown) => error);
+    expect(unavailable).toMatchObject({
+      providerRouteId: "approved-deepseek",
+      modelId: "deepseek-chat",
+      routeConfigSha256: createHash("sha256").update(await readFile(path)).digest("hex"),
+    });
+  });
+
+  it("freezes the sanctioned DeepSeek route without credential bytes", async () => {
+    const path = resolve(
+      import.meta.dirname,
+      "../packages/dynamic-e2e/routes/deepseek-official-v4-flash.json",
+    );
+    const environmentName = "MYAGENTS_DYNAMIC_ROUTE_MATERIAL";
+    const material = "synthetic-route-material-canary";
+    process.env[environmentName] = material;
+    try {
+      const route = await loadApprovedDynamicRoute(path, environmentName);
+      expect(route.provider).toEqual({
+        revision: "deepseek-official-v4-flash-v1",
+        providerRouteId: "deepseek-official",
+        api: "openai-completions",
+        provider: "deepseek",
+        modelId: "deepseek-v4-flash",
+        baseUrl: "https://api.deepseek.com",
+        credentialRef: "DEEPSEEK_API_KEY",
+        contextWindow: 1_000_000,
+        maxTokens: 8_192,
+        reasoning: true,
+        effort: "high",
+      });
+      expect(route.routeConfigSha256).toBe(
+        "02d160134ca073d3654bdbda32f2235fd12b992343479dbda429b177d53eca74",
+      );
+      expect(await readFile(path, "utf8")).not.toContain(material);
+    } finally {
+      delete process.env[environmentName];
+    }
   });
 
   it("keeps diagnostics closed until terminal and detects sealed-evidence tampering", async () => {

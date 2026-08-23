@@ -4,7 +4,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { verifyDynamicCampaign, runDynamicCampaign } from "./campaign.js";
-import { loadApprovedDynamicRoute } from "./credential.js";
+import {
+  ApprovedDynamicRouteCredentialUnavailableError,
+  loadApprovedDynamicRoute,
+  type ApprovedDynamicRoute,
+} from "./credential.js";
 import { verifySealedDynamicEvidence } from "./evidence.js";
 import { ApprovedRouteDynamicDriver, ArtifactLifecycleProbeDriver, runDynamicScenario } from "./runner.js";
 import { loadDynamicScenarioCorpus } from "./scenario.js";
@@ -66,6 +70,34 @@ const requiredOption = (value: Readonly<Record<string, string>>, name: string): 
   return result;
 };
 
+const selectDriver = async (
+  routeConfig: string | undefined,
+  credentialEnvironmentName: string | undefined,
+): Promise<Readonly<{
+  driver: ApprovedRouteDynamicDriver | ArtifactLifecycleProbeDriver;
+  route?: ApprovedDynamicRoute;
+}>> => {
+  if (routeConfig === undefined || credentialEnvironmentName === undefined) {
+    return Object.freeze({ driver: new ArtifactLifecycleProbeDriver() });
+  }
+  try {
+    const route = await loadApprovedDynamicRoute(routeConfig, credentialEnvironmentName);
+    return Object.freeze({ driver: new ApprovedRouteDynamicDriver(route), route });
+  } catch (error) {
+    if (!(error instanceof ApprovedDynamicRouteCredentialUnavailableError)) throw error;
+    return Object.freeze({
+      driver: new ArtifactLifecycleProbeDriver({
+        reasonCode: "real_provider_credential_unavailable",
+        routeIdentity: {
+          routeConfigSha256: error.routeConfigSha256,
+          providerRouteId: error.providerRouteId,
+          modelId: error.modelId,
+        },
+      }),
+    });
+  }
+};
+
 const main = async (): Promise<number> => {
   const [command, ...rest] = process.argv.slice(2);
   if (command === undefined || command === "--help" || command === "help") {
@@ -91,12 +123,7 @@ const main = async (): Promise<number> => {
     if ((options["route-config"] === undefined) !== (options["credential-env"] === undefined)) {
       throw new TypeError("dynamic route config and credential environment name must be supplied together");
     }
-    const route = options["route-config"] === undefined
-      ? undefined
-      : await loadApprovedDynamicRoute(
-          requiredOption(options, "route-config"),
-          requiredOption(options, "credential-env"),
-        );
+    const selection = await selectDriver(options["route-config"], options["credential-env"]);
     const scenario = scenarios.find(({ id }) => id === options.scenario);
     if (scenario === undefined) throw new Error(`unknown dynamic scenario ${options.scenario ?? ""}`);
     const result = await runDynamicScenario({
@@ -107,8 +134,10 @@ const main = async (): Promise<number> => {
         expectedArtifactManifestSha256: options["expected-manifest-sha256"],
       }),
       scenario,
-      driver: route === undefined ? new ArtifactLifecycleProbeDriver() : new ApprovedRouteDynamicDriver(route),
-      ...(route === undefined ? {} : { secretCanaries: [route.credentialMaterial()] }),
+      driver: selection.driver,
+      ...(selection.route === undefined ? {} : {
+        secretCanaries: [selection.route.credentialMaterial()],
+      }),
     });
     process.stdout.write(`${JSON.stringify({
       runId: result.runId,
@@ -127,12 +156,7 @@ const main = async (): Promise<number> => {
     if ((options["route-config"] === undefined) !== (options["credential-env"] === undefined)) {
       throw new TypeError("dynamic route config and credential environment name must be supplied together");
     }
-    const route = options["route-config"] === undefined
-      ? undefined
-      : await loadApprovedDynamicRoute(
-          requiredOption(options, "route-config"),
-          requiredOption(options, "credential-env"),
-        );
+    const selection = await selectDriver(options["route-config"], options["credential-env"]);
     const jobs = options.jobs === undefined ? 1 : Number(options.jobs);
     const result = await runDynamicCampaign({
       repositoryRoot,
@@ -143,10 +167,10 @@ const main = async (): Promise<number> => {
       }),
       scenarios,
       jobs,
-      ...(route === undefined ? {} : { secretCanaries: [route.credentialMaterial()] }),
-      createDriver: () => route === undefined
-        ? new ArtifactLifecycleProbeDriver()
-        : new ApprovedRouteDynamicDriver(route),
+      ...(selection.route === undefined ? {} : {
+        secretCanaries: [selection.route.credentialMaterial()],
+      }),
+      createDriver: () => selection.driver,
     });
     process.stdout.write(`${JSON.stringify({
       campaignId: result.campaignId,

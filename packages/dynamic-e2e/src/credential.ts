@@ -43,6 +43,24 @@ export class ApprovedDynamicRoute {
   credentialMaterial(): string { return this.#secret; }
 }
 
+export class ApprovedDynamicRouteCredentialUnavailableError extends Error {
+  readonly routeConfigSha256: string;
+  readonly providerRouteId: string;
+  readonly modelId: string;
+
+  constructor(value: Readonly<{
+    routeConfigSha256: string;
+    providerRouteId: string;
+    modelId: string;
+  }>) {
+    super("approved dynamic route credential is unavailable");
+    this.name = "ApprovedDynamicRouteCredentialUnavailableError";
+    this.routeConfigSha256 = value.routeConfigSha256;
+    this.providerRouteId = value.providerRouteId;
+    this.modelId = value.modelId;
+  }
+}
+
 export const loadApprovedDynamicRoute = async (
   path: string,
   credentialEnvironmentVariable: string,
@@ -100,9 +118,14 @@ export const loadApprovedDynamicRoute = async (
     || new Set(object.webSearchAdapters).size !== object.webSearchAdapters.length) {
     throw new TypeError("dynamic route revisions must be bounded identifiers");
   }
+  const routeConfigSha256 = createHash("sha256").update(bytes).digest("hex");
   const secret = globalThis.process.env[credentialEnvironmentVariable];
   if (secret === undefined || secret.length < 8 || secret.length > 65_536 || secret.includes("\0")) {
-    throw new Error("approved dynamic route credential is unavailable");
+    throw new ApprovedDynamicRouteCredentialUnavailableError({
+      routeConfigSha256,
+      providerRouteId: validated.provider.providerRouteId,
+      modelId: validated.provider.modelId,
+    });
   }
   return new ApprovedDynamicRoute({
     provider: validated.provider,
@@ -114,6 +137,6 @@ export const loadApprovedDynamicRoute = async (
     interactionScenario: object.interactionScenario,
     networkPolicyRef: object.networkPolicyRef,
     webSearchAdapters: Object.freeze([...(object.webSearchAdapters as string[])]),
-    routeConfigSha256: createHash("sha256").update(bytes).digest("hex"),
+    routeConfigSha256,
   });
 };

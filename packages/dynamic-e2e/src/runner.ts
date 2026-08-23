@@ -146,6 +146,24 @@ const createInitializeParams = (
 
 export class ArtifactLifecycleProbeDriver implements DynamicRunDriver {
   readonly kind = "artifact-lifecycle-probe" as const;
+  readonly #reasonCode: "real_provider_route_not_selected" | "real_provider_credential_unavailable";
+  readonly #routeIdentity: Readonly<{
+    routeConfigSha256: string;
+    providerRouteId: string;
+    modelId: string;
+  }> | undefined;
+
+  constructor(options?: Readonly<{
+    reasonCode: "real_provider_credential_unavailable";
+    routeIdentity: Readonly<{
+      routeConfigSha256: string;
+      providerRouteId: string;
+      modelId: string;
+    }>;
+  }>) {
+    this.#reasonCode = options?.reasonCode ?? "real_provider_route_not_selected";
+    this.#routeIdentity = options?.routeIdentity;
+  }
 
   async execute(input: Parameters<DynamicRunDriver["execute"]>[0]): Promise<DynamicDriverResult> {
     const target = platformTarget();
@@ -184,7 +202,7 @@ export class ArtifactLifecycleProbeDriver implements DynamicRunDriver {
       const unexpectedHostFatalCodes = hostFatalCodes.filter((code) => !expectedTransportClosures.has(code));
       return Object.freeze({
         outcome: "unavailable" as const,
-        reasonCode: "real_provider_route_not_selected",
+        reasonCode: this.#reasonCode,
         publicEvents: Object.freeze([...runtimeEvents]),
         diagnosticFacts: Object.freeze([{
           kind: "artifact_lifecycle_probe",
@@ -194,6 +212,8 @@ export class ArtifactLifecycleProbeDriver implements DynamicRunDriver {
           schemaSha256: initialized.schemaSha256,
           hostFatalCodes,
           exit,
+          unavailableReasonCode: this.#reasonCode,
+          ...(this.#routeIdentity === undefined ? {} : { routeIdentity: this.#routeIdentity }),
         }]),
         hardAssertions: Object.freeze({
           artifactIdentityMatched: initialized.runtimeEngine.buildRevision === input.artifact.dshManifestSha256,

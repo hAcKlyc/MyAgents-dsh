@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "provider": {
+    "revision": "deepseek-official-v4-flash-v1",
+    "providerRouteId": "deepseek-official",
+    "api": "openai-completions",
+    "provider": "deepseek",
+    "modelId": "deepseek-v4-flash",
+    "baseUrl": "https://api.deepseek.com",
+    "credentialRef": "DEEPSEEK_API_KEY",
+    "contextWindow": 1000000,
+    "maxTokens": 8192,
+    "reasoning": true,
+    "effort": "high"
+  },
+  "credentialRevision": "deepseek-official-credential-v1",
+  "materialField": "apiKey",
+  "systemPrompt": "Operate only within the synthetic dynamic acceptance fixture. Follow Runtime permissions, report uncertainty truthfully, and leave every owned resource quiescent.",
+  "permissionMode": "default",
+  "interactionScenario": "dynamic-scripted-v1",
+  "networkPolicyRef": "dynamic-network-v1",
+  "webSearchAdapters": []
+}
