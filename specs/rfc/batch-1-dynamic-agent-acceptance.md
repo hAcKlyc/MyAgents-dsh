@@ -2,7 +2,7 @@
 type: technical-rfc
 status: draft
 batch: 1
-updated: 2026-08-15
+updated: 2026-08-23
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ./batch-1-runtime-rpc.md
