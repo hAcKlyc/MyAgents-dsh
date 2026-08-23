@@ -59,6 +59,9 @@ import {
 } from "./rewind.js";
 
 import {
+  isProductKnownSessionEventType,
+} from "./known-events.js";
+import {
   PRODUCT_PERSISTENCE_APPLICATION_ID,
   PRODUCT_CHECKPOINT_SCHEMA_SQL,
   PRODUCT_DELETE_SCHEMA_SQL,
@@ -104,6 +107,30 @@ export interface ProductSqliteReadSnapshot {
   readonly revision: PersistenceRevision;
   readonly stableBoundaryId?: string;
 }
+
+export type ProductPersistedRecoveryInspection = Readonly<
+  | {
+    state: "resume_candidate";
+    generationId: string;
+    persistenceRevision: string;
+    durableSequence: number;
+    headSha256: string;
+    storageState: "active";
+    unsettledMutations: readonly ("delete" | "fork" | "rewind")[];
+  }
+  | {
+    state: "recovery_required";
+    reason: "persisted_session_unavailable" | "persisted_session_tombstoned"
+      | "persisted_mutation_unsettled" | "persisted_history_invalid";
+    retryable: boolean;
+    generationId?: string;
+    persistenceRevision?: string;
+    durableSequence?: number;
+    headSha256?: string;
+    storageState?: "active" | "tombstoned";
+    unsettledMutations: readonly ("delete" | "fork" | "rewind")[];
+  }
+>;
 
 interface EventRow {
   readonly chainHash: string;
@@ -497,6 +524,115 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         header: this.#decodeHeader(row),
         revision: this.#revision(row),
         ...(stableBoundaryId === undefined ? {} : { stableBoundaryId }),
+      });
+    });
+  }
+
+  inspectRecovery(
+    id: SessionId,
+    signal?: AbortSignal,
+  ): Promise<ProductPersistedRecoveryInspection> {
+    return this.#locks.run(id, signal, () => {
+      signal?.throwIfAborted();
+      this.#assertSchema();
+      const value = this.#requireDatabase().prepare(`
+        SELECT s.id AS session_id,
+               s.active_generation_id,
+               s.state AS session_state,
+               s.revision AS session_revision,
+               s.event_count,
+               s.head_hash,
+               g.state AS generation_state,
+               g.revision AS generation_revision,
+               g.header_json
+          FROM sessions s
+          LEFT JOIN session_generations g
+            ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+         WHERE s.id = ?
+      `).get(id);
+      if (value === undefined) {
+        return Object.freeze({
+          state: "recovery_required" as const,
+          reason: "persisted_session_unavailable" as const,
+          retryable: false,
+          unsettledMutations: Object.freeze([]),
+        });
+      }
+      let row: ActiveSessionRow;
+      let storageState: "active" | "tombstoned";
+      try {
+        const raw = asRecord(value, "persisted recovery Session");
+        const sessionState = rowString(raw, "session_state", "persisted recovery Session");
+        const generationState = rowString(raw, "generation_state", "persisted recovery Session");
+        if ((sessionState !== "active" && sessionState !== "tombstoned")
+          || generationState !== sessionState) {
+          throw new Error("persisted recovery Session locator state is inconsistent");
+        }
+        storageState = sessionState;
+        row = this.#decodeActiveSessionRow(raw);
+        this.#decodeHeader(row);
+        const events = this.#readAndValidateEvents(row);
+        if (events.some((event) => !isProductKnownSessionEventType(event.type))) {
+          throw new Error("persisted recovery Session contains an unknown required event type");
+        }
+      } catch {
+        return Object.freeze({
+          state: "recovery_required" as const,
+          reason: "persisted_history_invalid" as const,
+          retryable: false,
+          unsettledMutations: Object.freeze([]),
+        });
+      }
+      const generation = Object.freeze({
+        generationId: row.activeGenerationId,
+        persistenceRevision: String(this.#revision(row)),
+        durableSequence: row.eventCount,
+        headSha256: row.headHash,
+        storageState,
+      });
+      if (storageState === "tombstoned") {
+        return Object.freeze({
+          state: "recovery_required" as const,
+          reason: "persisted_session_tombstoned" as const,
+          retryable: false,
+          ...generation,
+          unsettledMutations: Object.freeze([]),
+        });
+      }
+      const database = this.#requireDatabase();
+      const unsettled = new Set<"delete" | "fork" | "rewind">();
+      if (database.prepare(`
+        SELECT 1 FROM mutation_journals
+         WHERE session_id = ? AND phase IN ('prepared', 'committing', 'rolling_back', 'recovery_required')
+         LIMIT 1
+      `).get(id) !== undefined) unsettled.add("rewind");
+      if (database.prepare(`
+        SELECT 1 FROM fork_journals
+         WHERE source_session_id = ? AND phase IN ('prepared', 'committing', 'recovery_required')
+         LIMIT 1
+      `).get(id) !== undefined) unsettled.add("fork");
+      if (database.prepare(`
+        SELECT 1 FROM delete_journals
+         WHERE session_id = ? AND phase IN ('prepared', 'committing', 'rolling_back', 'recovery_required')
+         LIMIT 1
+      `).get(id) !== undefined) unsettled.add("delete");
+      const unsettledMutations = Object.freeze(
+        (["delete", "fork", "rewind"] as const).filter((kind) => unsettled.has(kind)),
+      );
+      if (unsettledMutations.length > 0) {
+        return Object.freeze({
+          state: "recovery_required" as const,
+          reason: "persisted_mutation_unsettled" as const,
+          retryable: true,
+          ...generation,
+          unsettledMutations,
+        });
+      }
+      return Object.freeze({
+        state: "resume_candidate" as const,
+        ...generation,
+        storageState: "active" as const,
+        unsettledMutations: Object.freeze([]),
       });
     });
   }

@@ -98,6 +98,29 @@ describe("candidate-v2 protocol authority", () => {
       .rejects.toMatchObject({ code: "protocol_schema_mismatch" });
   });
 
+  it("separates ready Session bindings from bounded recovery-only facts", () => {
+    const recovery = {
+      state: "recovery_required",
+      runtimeSessionId: "runtime-recovery",
+      persistenceRef: "persistence-recovery",
+      reason: "persisted_history_invalid",
+      retryable: false,
+      unsettledMutations: [],
+    };
+    expect(validateMethodResult("session/resume", recovery)).toEqual(recovery);
+    expect(() => validateMethodResult("session/resume", {
+      ...recovery,
+      toolCatalog: {},
+    })).toThrow();
+    expect(() => validateMethodResult("session/resume", {
+      state: "ready",
+      runtimeSessionId: "runtime-recovery",
+      historyFormat: "dsh-session-events-v1",
+      durableHead: { sequence: 0 },
+      effectiveConfigRevision: "config-v1",
+    })).toThrow();
+  });
+
   it("binds the schema digest and validates every positive and negative fixture", async () => {
     const [schemaBytes, fixtureBytes] = await Promise.all([
       readFile(resolve(repositoryRoot, "packages/protocol/generated/protocol.schema.json"), "utf8"),

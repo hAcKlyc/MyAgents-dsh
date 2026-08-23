@@ -140,6 +140,7 @@ const createRoot = (
   settlementFailure: Promise<ProductSessionSettlementFailure> = new Promise(() => undefined),
   hostPorts: HostPortLifecycle = createHostPortLifecycle(),
   sessionCloseBarrier: Promise<void> = Promise.resolve(),
+  resumeRecovery = false,
 ): Context => {
   hostPortLifecycleState.current = hostPorts;
   const root = new Context();
@@ -171,6 +172,38 @@ const createRoot = (
     },
     bindExecutionEnvironment: (environment: unknown) => environment,
     bindResume: (params: MethodParams<"session/resume">) => {
+      if (resumeRecovery) {
+        const recovery = Object.freeze({
+          state: "recovery_required" as const,
+          runtimeSessionId: params.runtimeSessionId,
+          persistenceRef: params.persistenceRef,
+          reason: "persisted_mutation_unsettled" as const,
+          retryable: true,
+          generation: Object.freeze({
+            generationId: "generation-recovery-v1",
+            persistenceRevision: "store:fixture:revision:12",
+            durableHead: Object.freeze({ sequence: 12, headSha256: digest }),
+            storageState: "active" as const,
+          }),
+          unsettledMutations: Object.freeze(["rewind" as const]),
+        });
+        sessionSnapshot = Object.freeze({
+          state: "recovery_required" as const,
+          runtimeSessionId: params.runtimeSessionId,
+          desiredConfigRevision: params.configRevision,
+          recovery,
+        });
+        return Promise.resolve(Object.freeze({
+          state: "recovery_required" as const,
+          mode: "resume" as const,
+          runtimeSessionId: params.runtimeSessionId,
+          clientOperationId: params.clientOperationId,
+          persistenceRef: params.persistenceRef,
+          desiredConfigRevision: params.configRevision,
+          fingerprint: "synthetic-recovery-fingerprint",
+          recovery,
+        }));
+      }
       sessionSnapshot = Object.freeze({
         state: "ready" as const,
         runtimeSessionId: params.runtimeSessionId,
@@ -343,6 +376,7 @@ type Harness = Readonly<{
 const createHarness = async (
   platformTarget: PlatformTarget = "darwin-arm64",
   sessionCloseBarrier: Promise<void> = Promise.resolve(),
+  resumeRecovery = false,
 ): Promise<Harness> => {
   const runtimeInput = new PassThrough();
   const runtimeOutput = new PassThrough();
@@ -354,7 +388,7 @@ const createHarness = async (
     limits: REFERENCE_PROTOCOL_LIMITS,
     onFatalError: (error) => hostFatalErrors.push(error),
   });
-  const root = createRoot(undefined, undefined, undefined, sessionCloseBarrier);
+  const root = createRoot(undefined, undefined, undefined, sessionCloseBarrier, resumeRecovery);
   await root.plugin(NativeRpcServer, {
     compositionAuthority,
     input: runtimeInput,
@@ -632,10 +666,49 @@ describe("native RPC Cordis service", () => {
         durableHead: { sequence: 12 },
         effectiveConfigRevision: "config-v1",
       });
+      if (resumed.state !== "ready") throw new Error("expected ready resumed Session binding");
       expect(resumed.toolCatalog).toEqual(syntheticSessionCatalogs.toolCatalog);
       expect(resumed.extensionCatalog).toEqual(syntheticSessionCatalogs.extensionCatalog);
     } finally {
       await resumedHarness.close();
+    }
+  });
+
+  it("returns exact recovery-only resume and status facts without ready catalogs", async () => {
+    const harness = await createHarness("darwin-arm64", Promise.resolve(), true);
+    try {
+      await harness.client.initialize(initializeParams());
+      await vi.waitFor(() => expect(harness.server.phase).toBe("await_initialized"));
+      await harness.client.initialized();
+      const resumed = await harness.client.sessionResume(
+        sessionParams("native-recovery-session", "native-recovery-operation"),
+      );
+      expect(resumed).toEqual({
+        state: "recovery_required",
+        runtimeSessionId: "native-recovery-session",
+        persistenceRef: "persistence-native-recovery-session",
+        reason: "persisted_mutation_unsettled",
+        retryable: true,
+        generation: {
+          generationId: "generation-recovery-v1",
+          persistenceRevision: "store:fixture:revision:12",
+          durableHead: { sequence: 12, headSha256: digest },
+          storageState: "active",
+        },
+        unsettledMutations: ["rewind"],
+      });
+      expect("toolCatalog" in resumed).toBe(false);
+      await expect(harness.client.runtimeStatus({})).resolves.toMatchObject({
+        primarySessionState: "recovery_required",
+        runtimeSessionId: "native-recovery-session",
+        desiredConfigRevision: "config-v1",
+        recovery: resumed,
+      });
+      await expect(harness.client.sessionRead({})).resolves.toMatchObject({
+        runtimeSessionId: "native-recovery-session",
+      });
+    } finally {
+      await harness.close();
     }
   });
 

@@ -21,6 +21,7 @@ import {
   REFERENCE_PROTOCOL_LIMITS,
   RUNTIME_VERSION,
   SESSION_FORMAT,
+  validateMethodResult,
   validateProtocolLimits,
   type InitializeParams,
   type InitializeResult,
@@ -338,7 +339,7 @@ type NativeRpcCompositionCapabilities = Readonly<{
   hostPorts: HostPortTransportLifecycle;
   installPersistence: (runtimeHome: string) => Promise<void>;
   sessionCatalogs: () => Readonly<Pick<
-    MethodResult<"session/create">,
+    Extract<MethodResult<"session/create">, { state: "ready" }>,
     "extensionCatalog" | "toolCatalog"
   >>;
 }>;
@@ -636,7 +637,7 @@ export class NativeRpcServer extends Service {
       (total, operation) => total + operation.messages.filter(({ state }) => state === "queued").length,
       0,
     ) ?? 0;
-    return {
+    return validateMethodResult("runtime/status", {
       runtimeGeneration: this.configValue.runtimeGeneration,
       initialized: this.phaseValue === "ready" || this.phaseValue === "shutdown_requested",
       primarySessionState: primarySession.state,
@@ -649,12 +650,13 @@ export class NativeRpcServer extends Service {
       ...(primarySession.effectiveConfigRevision === undefined
         ? {}
         : { effectiveConfigRevision: primarySession.effectiveConfigRevision }),
+      ...(primarySession.recovery === undefined ? {} : { recovery: primarySession.recovery }),
       active: {
         ...emptyActiveCounts(),
         rootTurns: activeOperations.length,
         queuedInputs,
       },
-    };
+    });
   }
 
   private async handleSessionBinding(
@@ -668,7 +670,16 @@ export class NativeRpcServer extends Service {
     const binding = mode === "create"
       ? await this.productSessionValue.bindCreate(params, context.signal)
       : await this.productSessionValue.bindResume(params, context.signal);
-    if (binding.state !== "ready" || binding.durableSequence === undefined
+    if (binding.state === "recovery_required") {
+      if (binding.recovery === undefined) {
+        throw new ProtocolError(
+          "session_recovery_required",
+          "primary Session recovery facts are unavailable",
+        );
+      }
+      return validateMethodResult("session/resume", binding.recovery);
+    }
+    if (binding.durableSequence === undefined
       || binding.effectiveConfigRevision === undefined) {
       throw new ProtocolError(
         "session_recovery_required",

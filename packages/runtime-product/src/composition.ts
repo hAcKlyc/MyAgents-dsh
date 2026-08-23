@@ -5,7 +5,7 @@ import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
 import { CommandRuntime } from "@deepseek-ai/dsh-commands";
 import { LlmAdapter, LlmRuntime, type ContentBlock } from "@deepseek-ai/dsh-llm";
-import { SessionStore, type Session } from "@deepseek-ai/dsh-session";
+import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
 import * as SubagentSpawnInProcess from "@deepseek-ai/dsh-subagent-spawn-in-process";
@@ -335,7 +335,7 @@ export interface DshRootCompositionAuthority {
     params: MethodParams<"interaction/respond">,
   ) => MethodResult<"interaction/respond">;
   readonly sessionCatalogs: () => Readonly<Pick<
-    MethodResult<"session/create">,
+    Extract<MethodResult<"session/create">, { state: "ready" }>,
     "extensionCatalog" | "toolCatalog"
   >>;
   readonly serviceOrder: typeof DSH_ROOT_SERVICE_ORDER;
@@ -347,7 +347,7 @@ export interface NativeRpcLifecycleAuthority {
   readonly [nativeRpcLifecycleAuthorityBrand]: "native-rpc-lifecycle-authority";
 }
 
-type SessionBindingResult = MethodResult<"session/create">;
+type SessionBindingResult = Extract<MethodResult<"session/create">, { state: "ready" }>;
 
 type CompositionAuthorityState = {
   readonly childPublicationAuthority: object;
@@ -393,7 +393,7 @@ type NativeRpcLifecycleAuthorityState = {
     params: MethodParams<"interaction/respond">,
   ) => MethodResult<"interaction/respond">;
   readonly sessionCatalogs: () => Readonly<Pick<
-    MethodResult<"session/create">,
+    SessionBindingResult,
     "extensionCatalog" | "toolCatalog"
   >>;
   readonly snapshot: () => DshRootCompositionSnapshot;
@@ -1551,6 +1551,58 @@ export const composeDshRootServices = async (
           getFork: (token, signal) => persistence.getFork(token, signal),
           prepareFork: (input, signal) => persistence.prepareFork(input, signal),
         } satisfies ProductForkStore);
+      },
+      inspectResume: async (request) => {
+        const persistence = root.get("sessionPersistence");
+        if (!(persistence instanceof ProductSqliteSessionPersistence)) {
+          return Object.freeze({
+            state: "recovery_required" as const,
+            runtimeSessionId: request.runtimeSessionId,
+            persistenceRef: request.params.persistenceRef,
+            reason: "persisted_session_unavailable" as const,
+            retryable: false,
+            unsettledMutations: Object.freeze([]),
+          });
+        }
+        try {
+          const inspection = await persistence.inspectRecovery(
+            SessionId(request.runtimeSessionId),
+            request.signal,
+          );
+          const generation = inspection.generationId === undefined
+            ? undefined
+            : Object.freeze({
+              generationId: inspection.generationId,
+              persistenceRevision: inspection.persistenceRevision as string,
+              durableHead: Object.freeze({
+                sequence: inspection.durableSequence as number,
+                headSha256: inspection.headSha256 as string,
+              }),
+              storageState: inspection.storageState as "active" | "tombstoned",
+            });
+          if (inspection.state === "resume_candidate") {
+            return Object.freeze({ state: "resume_candidate" as const, generation: generation! });
+          }
+          return Object.freeze({
+            state: "recovery_required" as const,
+            runtimeSessionId: request.runtimeSessionId,
+            persistenceRef: request.params.persistenceRef,
+            reason: inspection.reason,
+            retryable: inspection.retryable,
+            ...(generation === undefined ? {} : { generation }),
+            unsettledMutations: inspection.unsettledMutations,
+          });
+        } catch (error) {
+          request.signal.throwIfAborted();
+          return Object.freeze({
+            state: "recovery_required" as const,
+            runtimeSessionId: request.runtimeSessionId,
+            persistenceRef: request.params.persistenceRef,
+            reason: "persisted_history_invalid" as const,
+            retryable: false,
+            unsettledMutations: Object.freeze([]),
+          });
+        }
       },
       rewindStore: () => {
         const persistence = root.get("sessionPersistence");

@@ -306,8 +306,33 @@ export const TurnTerminalSchema = Type.Union([
 ]);
 
 const durableHead = strictObject({ sequence: nonNegativeInteger, stableBoundaryId: Type.Optional(identifier) });
-const sessionBindingResult = strictObject({
-  state: Type.Union([Type.Literal("ready"), Type.Literal("recovery_required")]),
+const recoveryReason = Type.Union([
+  Type.Literal("persisted_session_unavailable"),
+  Type.Literal("persisted_session_tombstoned"),
+  Type.Literal("persisted_mutation_unsettled"),
+  Type.Literal("persisted_history_invalid"),
+  Type.Literal("persisted_product_state_invalid"),
+]);
+const persistedRecoveryGeneration = strictObject({
+  generationId: identifier,
+  persistenceRevision: Type.String({ minLength: 1, maxLength: 4_096 }),
+  durableHead: strictObject({ sequence: nonNegativeInteger, headSha256: sha256 }),
+  storageState: Type.Union([Type.Literal("active"), Type.Literal("tombstoned")]),
+});
+export const SessionRecoveryStatusSchema = strictObject({
+  state: Type.Literal("recovery_required"),
+  runtimeSessionId: identifier,
+  persistenceRef: identifier,
+  reason: recoveryReason,
+  retryable: Type.Boolean(),
+  generation: Type.Optional(persistedRecoveryGeneration),
+  unsettledMutations: Type.Array(
+    Type.Union([Type.Literal("delete"), Type.Literal("fork"), Type.Literal("rewind")]),
+    { maxItems: 3, uniqueItems: true },
+  ),
+});
+const readySessionBindingResult = strictObject({
+  state: Type.Literal("ready"),
   runtimeSessionId: identifier,
   historyFormat: Type.Literal(SESSION_FORMAT),
   durableHead,
@@ -315,6 +340,10 @@ const sessionBindingResult = strictObject({
   toolCatalog: ToolCatalogSchema,
   extensionCatalog: ExtensionCatalogSchema,
 });
+const sessionBindingResult = Type.Union([
+  readySessionBindingResult,
+  SessionRecoveryStatusSchema,
+]);
 const sessionReadRecord = Type.Union([
   strictObject({ kind: Type.Literal("event"), sequence: nonNegativeInteger, eventType: identifier, eventSha256: sha256, data: Type.Unknown() }),
   strictObject({ kind: Type.Literal("event_chunk"), sequence: nonNegativeInteger, eventType: identifier, eventSha256: sha256, chunkIndex: nonNegativeInteger, chunkCount: Type.Integer({ minimum: 1 }), offsetBytes: nonNegativeInteger, totalBytes: Type.Integer({ minimum: 1 }), dataBase64: Type.String({ minLength: 4, maxLength: MAX_FRAME_BYTES, pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" }) }),
@@ -355,6 +384,7 @@ export const RuntimeStatusSchema = strictObject({
   runtimeSessionId: Type.Optional(identifier),
   desiredConfigRevision: Type.Optional(revision),
   effectiveConfigRevision: Type.Optional(revision),
+  recovery: Type.Optional(SessionRecoveryStatusSchema),
   active: activeCounts,
 });
 
@@ -711,6 +741,22 @@ export type RuntimeCapabilityProfile = Static<typeof RuntimeCapabilityProfileSch
 export type RuntimeEventEnvelope = Static<typeof RuntimeEventEnvelopeSchema>;
 export type TurnTerminal = Static<typeof TurnTerminalSchema>;
 export type SessionReadResult = Static<typeof SessionReadResultSchema>;
+export type SessionRecoveryStatus = Readonly<{
+  state: "recovery_required";
+  runtimeSessionId: string;
+  persistenceRef: string;
+  reason: "persisted_session_unavailable" | "persisted_session_tombstoned"
+    | "persisted_mutation_unsettled" | "persisted_history_invalid"
+    | "persisted_product_state_invalid";
+  retryable: boolean;
+  generation?: Readonly<{
+    generationId: string;
+    persistenceRevision: string;
+    durableHead: Readonly<{ sequence: number; headSha256: string }>;
+    storageState: "active" | "tombstoned";
+  }>;
+  unsettledMutations: readonly ("delete" | "fork" | "rewind")[];
+}>;
 export type HostRequestAuthority = Static<typeof HostRequestAuthoritySchema>;
 
 export const REFERENCE_PROTOCOL_LIMITS: ProtocolLimits = {

@@ -39,15 +39,16 @@ export const validateMethodResult = <Name extends RpcMethodName>(name: Name, val
     throw new ProtocolError("protocol_invalid_result", first?.message ?? `Invalid result for ${name}`);
   }
   if (name === "session/create" || name === "session/resume") {
-    try {
-      validateNormalizedEffectiveToolCatalog(
-        (canonical as Readonly<{ toolCatalog: unknown }>).toolCatalog,
-      );
-    } catch (error) {
-      throw new ProtocolError(
-        "protocol_invalid_result",
-        error instanceof Error ? error.message : "Invalid effective tool catalog",
-      );
+    const binding = canonical as Readonly<{ state: string; toolCatalog?: unknown }>;
+    if (binding.state === "ready") {
+      try {
+        validateNormalizedEffectiveToolCatalog(binding.toolCatalog);
+      } catch (error) {
+        throw new ProtocolError(
+          "protocol_invalid_result",
+          error instanceof Error ? error.message : "Invalid effective tool catalog",
+        );
+      }
     }
   }
   if (name === "session/read") {

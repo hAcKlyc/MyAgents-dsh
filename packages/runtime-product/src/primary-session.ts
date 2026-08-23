@@ -7,8 +7,10 @@ import type { SettlementDeadlineAuthority } from "@myagents-dsh/operation-runtim
 import {
   ProtocolError,
   validateMethodParams,
+  validateMethodResult,
   type MethodParams,
   type MethodResult,
+  type SessionRecoveryStatus,
 } from "@myagents-dsh/protocol";
 import type {
   ProductDeleteRecord,
@@ -108,7 +110,15 @@ export type PrimarySessionBackendResult = Readonly<
     durableSequence: number;
     effectiveConfigRevision?: string;
   }
-  | { state: "recovery_required" }
+  | { state: "recovery_required"; recovery: SessionRecoveryStatus }
+>;
+
+export type PrimarySessionResumeInspection = Readonly<
+  | {
+    state: "resume_candidate";
+    generation: SessionRecoveryStatus["generation"] & {};
+  }
+  | SessionRecoveryStatus
 >;
 
 export interface PrimarySessionBackend {
@@ -129,6 +139,7 @@ export interface PrimarySessionAdmissionSnapshot {
   readonly desiredConfigRevision?: string;
   readonly effectiveConfigRevision?: string;
   readonly durableSequence?: number;
+  readonly recovery?: SessionRecoveryStatus;
 }
 
 export interface ProductSessionSnapshot extends PrimarySessionAdmissionSnapshot {
@@ -151,6 +162,7 @@ export interface PrimarySessionBinding {
   readonly desiredConfigRevision: string;
   readonly effectiveConfigRevision?: string;
   readonly durableSequence?: number;
+  readonly recovery?: SessionRecoveryStatus;
   readonly fingerprint: string;
 }
 
@@ -684,14 +696,22 @@ const validateBackendResult = (
   const result = exactOwnDataObject(
     value,
     ["state"],
-    ["handle", "runtimeSessionId", "durableSequence", "effectiveConfigRevision"],
+    ["handle", "runtimeSessionId", "durableSequence", "effectiveConfigRevision", "recovery"],
     "primary Session backend result",
   );
   if (result.state === "recovery_required") {
-    if (Reflect.ownKeys(result).length !== 1) {
-      throw new TypeError("recovery-required primary Session result contains unsupported fields");
+    if (Reflect.ownKeys(result).length !== 2 || !Object.hasOwn(result, "recovery")) {
+      throw new TypeError("recovery-required primary Session result lacks exact recovery facts");
     }
-    return Object.freeze({ state: "recovery_required" });
+    const validated = validateMethodResult("session/resume", result.recovery);
+    if (validated.state !== "recovery_required") {
+      throw new TypeError("recovery-required primary Session result validated as ready");
+    }
+    const recovery: SessionRecoveryStatus = validated;
+    if (recovery.runtimeSessionId !== runtimeSessionId) {
+      throw new TypeError("recovery-required primary Session result differs from the admitted identity");
+    }
+    return Object.freeze({ state: "recovery_required", recovery });
   }
   if (result.state !== "ready" || Reflect.ownKeys(result).length < 4) {
     throw new TypeError("primary Session backend result has an unsupported state or shape");
@@ -933,6 +953,7 @@ export class PrimarySessionAdmission {
         ...(binding?.effectiveConfigRevision === undefined
           ? {}
           : { effectiveConfigRevision: binding.effectiveConfigRevision }),
+        ...(binding?.recovery === undefined ? {} : { recovery: binding.recovery }),
       }),
     });
   }
@@ -1085,7 +1106,7 @@ export class PrimarySessionAdmission {
             ...(result.effectiveConfigRevision === undefined
               ? {}
               : { effectiveConfigRevision: result.effectiveConfigRevision }),
-          } : {}),
+          } : { recovery: result.recovery }),
         });
         this.#binding = binding;
         this.#handle = result.state === "ready" ? result.handle : undefined;
@@ -1322,6 +1343,9 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
     ) => void,
     private readonly validateResume?: (agent: Agent) => Promise<void>,
     private readonly reconcileResume?: (agent: Agent) => Promise<void>,
+    private readonly inspectResume?: (
+      request: PrimarySessionBackendRequest,
+    ) => Promise<PrimarySessionResumeInspection>,
   ) {}
 
   async create(request: PrimarySessionBackendRequest): Promise<PrimarySessionBackendResult> {
@@ -1393,6 +1417,10 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
   }
 
   async resume(request: PrimarySessionBackendRequest): Promise<PrimarySessionBackendResult> {
+    const inspection = await this.inspectResume?.(request);
+    if (inspection?.state === "recovery_required") {
+      return Object.freeze({ state: "recovery_required", recovery: inspection });
+    }
     const publication = this.publicationFence.prepare(request.runtimeSessionId);
     let rawHandle: AgentHandle | undefined;
     try {
@@ -1458,6 +1486,21 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
           );
         }
       }
+      if (rawHandle === undefined && !request.signal.aborted
+        && inspection?.state === "resume_candidate") {
+        return Object.freeze({
+          state: "recovery_required" as const,
+          recovery: Object.freeze({
+            state: "recovery_required" as const,
+            runtimeSessionId: request.runtimeSessionId,
+            persistenceRef: request.params.persistenceRef,
+            reason: "persisted_product_state_invalid" as const,
+            retryable: false,
+            generation: inspection.generation,
+            unsettledMutations: Object.freeze([]),
+          }),
+        });
+      }
       throw error;
     } finally {
       publication.cancel();
@@ -1479,6 +1522,9 @@ export interface ProductSessionServiceConfig {
     request: ProductSessionReadRequest,
   ) => Promise<MethodResult<"session/read">>;
   readonly forkStore?: () => ProductForkStore | undefined;
+  readonly inspectResume?: (
+    request: PrimarySessionBackendRequest,
+  ) => Promise<PrimarySessionResumeInspection>;
   readonly rewindStore?: () => ProductRewindStore | undefined;
   readonly reconcileResume?: (agent: Agent) => Promise<void>;
   readonly validateResume?: (agent: Agent) => Promise<void>;
@@ -1514,6 +1560,7 @@ export class ProductSessionService extends Service {
         "childPublicationAuthority",
         "deleteStore",
         "forkStore",
+        "inspectResume",
         "providerAdmissionGuard",
         "quiescenceGraceMs",
         "readSession",
@@ -1539,10 +1586,14 @@ export class ProductSessionService extends Service {
     const reconcileResume = Object.hasOwn(normalized, "reconcileResume")
       ? normalized.reconcileResume as ((agent: Agent) => Promise<void>)
       : undefined;
+    const inspectResume = Object.hasOwn(normalized, "inspectResume")
+      ? normalized.inspectResume as ProductSessionServiceConfig["inspectResume"]
+      : undefined;
     for (const [description, callback] of [
       ["Session publication current-authority guard", assertPublicationCurrent],
       ["resume validator", validateResume],
       ["resume reconciler", reconcileResume],
+      ["resume recovery inspector", inspectResume],
     ] as const) {
       if (callback !== undefined && (typeof callback !== "function" || utilTypes.isProxy(callback))) {
         throw new TypeError(`ProductSession ${description} must be a non-proxy function`);
@@ -1556,6 +1607,7 @@ export class ProductSessionService extends Service {
           assertPublicationCurrent,
           validateResume,
           reconcileResume,
+          inspectResume,
         );
     const providerAdmissionGuard = Object.hasOwn(normalized, "providerAdmissionGuard")
       ? normalized.providerAdmissionGuard as PrimarySessionProviderAdmissionGuard
@@ -1715,7 +1767,8 @@ export class ProductSessionService extends Service {
     const params = validateMethodParams("session/read", value);
     const snapshot = this.snapshot();
     if (this.readSessionValue === undefined || snapshot.runtimeSessionId === undefined
-      || (snapshot.state !== "ready" && snapshot.state !== "closing" && snapshot.state !== "retired")) {
+      || (snapshot.state !== "ready" && snapshot.state !== "closing"
+        && snapshot.state !== "retired" && snapshot.state !== "recovery_required")) {
       throw new ProtocolError("primary_session_not_ready", "Primary Session has no readable durable identity");
     }
     return Reflect.apply(this.readSessionValue, undefined, [Object.freeze({

@@ -4007,7 +4007,41 @@ const failedResumeResults = await Promise.allSettled([
   failedResumeHostClient.sessionResume(invalidResumeParams),
   failedResumeHostClient.sessionResume(invalidResumeParams),
 ]);
-assert.deepEqual(failedResumeResults.map(({ status }) => status), ["rejected", "rejected"]);
+assert.deepEqual(failedResumeResults.map(({ status }) => status), ["fulfilled", "fulfilled"]);
+const recoveryResults = failedResumeResults.map((result) => {
+  if (result.status !== "fulfilled") throw result.reason;
+  return result.value;
+});
+assert.deepEqual(recoveryResults[1], recoveryResults[0]);
+assert.deepEqual(recoveryResults[0], {
+  state: "recovery_required",
+  runtimeSessionId: invalidResumeSessionId,
+  persistenceRef: invalidResumeParams.persistenceRef,
+  reason: "persisted_history_invalid",
+  retryable: false,
+  unsettledMutations: [],
+});
+assert.equal("toolCatalog" in recoveryResults[0]!, false);
+assert.deepEqual(await failedResumeHostClient.runtimeStatus({}), {
+  runtimeGeneration: "artifact-failed-resume-generation",
+  initialized: true,
+  primarySessionState: "recovery_required",
+  runtimeSessionId: invalidResumeSessionId,
+  desiredConfigRevision: invalidResumeParams.configRevision,
+  recovery: recoveryResults[0],
+  active: {
+    rootTurns: 0,
+    queuedInputs: 0,
+    childAgents: 0,
+    toolCalls: 0,
+    mcpCalls: 0,
+    interactions: 0,
+    compactions: 0,
+    mutations: 0,
+    extensionReconciles: 0,
+    utilityRuns: 0,
+  },
+});
 assert.equal(failedResumeComposition.context.productSession.snapshot().state, "recovery_required");
 assert.deepEqual(failedResumeComposition.context.agents.roots(), []);
 assert.deepEqual(failedResumeComposition.context.sessions.list(), []);
@@ -4018,7 +4052,7 @@ assert.equal(failedResumeStopped.exit.kind, "shutdown");
 failedResumeHostPeer.close();
 failedResumeInput.destroy();
 failedResumeOutput.destroy();
-const failedResumePublicationRejected = true;
+const failedResumeRecoveryOnly = true;
 
 const resumeAdapter = new ScriptedFakeLlmAdapter({
   provider: "fixture",
@@ -4333,7 +4367,7 @@ process.stdout.write(`${JSON.stringify({
       .map((event) => event.type === "myagents/checkpoint/state" ? event.data.phase : undefined),
   },
   sessionReadVerified: true,
-  failedResumePublicationRejected,
+  failedResumeRecoveryOnly,
   initialConfigurationMismatchRejected,
   productPersistenceEvidence: {
     eventCount: persistenceSession.event_count,

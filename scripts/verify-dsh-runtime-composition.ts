@@ -1143,7 +1143,7 @@ const main = (): void => {
       || evidence.forkTransactionVerified !== true
       || evidence.rewindTransactionVerified !== true
       || evidence.sessionReadVerified !== true
-      || evidence.failedResumePublicationRejected !== true
+      || evidence.failedResumeRecoveryOnly !== true
       || evidence.initialConfigurationMismatchRejected !== true
       || evidence.canonicalFileToolsVerified !== true
       || evidence.canonicalProcessSearchToolsVerified !== true

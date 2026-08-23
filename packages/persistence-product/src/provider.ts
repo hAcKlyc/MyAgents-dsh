@@ -31,7 +31,10 @@ import {
   ProductSessionReadProjector,
   type ProductSessionReadRequest,
 } from "./read.js";
-import { ProductSqliteStore } from "./sqlite-store.js";
+import {
+  ProductSqliteStore,
+  type ProductPersistedRecoveryInspection,
+} from "./sqlite-store.js";
 import type { MethodResult } from "@myagents-dsh/protocol";
 import type { ProductCheckpointStore } from "@myagents-dsh/checkpoint";
 import type {
@@ -289,6 +292,13 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
 
   inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection> {
     return stateOf(this).coordinator.inspect(id, signal);
+  }
+
+  inspectRecovery(
+    id: SessionId,
+    signal?: AbortSignal,
+  ): Promise<ProductPersistedRecoveryInspection> {
+    return stateOf(this).store.inspectRecovery(id, signal);
   }
 
   readFrom(

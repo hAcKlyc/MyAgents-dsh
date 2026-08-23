@@ -559,7 +559,15 @@ describe("one-primary-session admission", () => {
   });
 
   it("binds recovery-required resume without inventing durable or effective truth", async () => {
-    const resume = vi.fn(() => Promise.resolve({ state: "recovery_required" as const }));
+    const recovery = Object.freeze({
+      state: "recovery_required" as const,
+      runtimeSessionId: "runtime-resume",
+      persistenceRef: "persistence-primary",
+      reason: "persisted_product_state_invalid" as const,
+      retryable: false,
+      unsettledMutations: Object.freeze([]),
+    });
+    const resume = vi.fn(() => Promise.resolve({ state: "recovery_required" as const, recovery }));
     const admission = new PrimarySessionAdmission(backendWith(
       () => Promise.reject(new Error("create must not run")),
       resume,
@@ -568,6 +576,7 @@ describe("one-primary-session admission", () => {
       state: "recovery_required",
       mode: "resume",
       runtimeSessionId: "runtime-resume",
+      recovery,
     });
     expect(admission.snapshot()).toEqual({
       state: "recovery_required",
@@ -576,6 +585,7 @@ describe("one-primary-session admission", () => {
       mode: "resume",
       persistenceRef: "persistence-primary",
       runtimeSessionId: "runtime-resume",
+      recovery,
     });
     expect(() => admission.requireAgent()).toThrow("not ready");
     expect(() => admission.bindCreate(createParams()))

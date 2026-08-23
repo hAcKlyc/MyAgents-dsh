@@ -200,11 +200,30 @@ describe("ProductSqliteSessionPersistence", () => {
       throw new Error("delete fixture did not install product persistence");
     }
     const persistence = context.sessionPersistence;
+    expect(await persistence.inspectRecovery(SessionId("missing-recovery-session"))).toEqual({
+      state: "recovery_required",
+      reason: "persisted_session_unavailable",
+      retryable: false,
+      unsettledMutations: [],
+    });
+    await expect(persistence.inspectRecovery(id)).resolves.toMatchObject({
+      state: "resume_candidate",
+      durableSequence: 2,
+      headSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      storageState: "active",
+      unsettledMutations: [],
+    });
     const abandoned = await persistence.prepareDelete({
       clientMutationId: "delete-client-abandoned",
       runtimeSessionId: id,
     });
     expect(abandoned.phase).toBe("prepared");
+    await expect(persistence.inspectRecovery(id)).resolves.toMatchObject({
+      state: "recovery_required",
+      reason: "persisted_mutation_unsettled",
+      retryable: true,
+      unsettledMutations: ["delete"],
+    });
     const abandonedRollback = await persistence.rollbackDelete(
       abandoned.token,
       "delete-client-abandoned",
@@ -212,6 +231,10 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(abandonedRollback.phase).toBe("rolled_back");
     expect(await persistence.rollbackDelete(abandoned.token, "delete-client-abandoned"))
       .toEqual(abandonedRollback);
+    await expect(persistence.inspectRecovery(id)).resolves.toMatchObject({
+      state: "resume_candidate",
+      unsettledMutations: [],
+    });
 
     const prepared = await persistence.prepareDelete({
       clientMutationId: "delete-client-1",
@@ -232,6 +255,14 @@ describe("ProductSqliteSessionPersistence", () => {
       },
     });
     expect(await persistence.commitDelete(prepared.token, "delete-client-1")).toEqual(committed);
+    await expect(persistence.inspectRecovery(id)).resolves.toMatchObject({
+      state: "recovery_required",
+      reason: "persisted_session_tombstoned",
+      retryable: false,
+      generationId: prepared.sourceGenerationId,
+      durableSequence: 2,
+      storageState: "tombstoned",
+    });
     expect(await persistence.list()).toEqual([]);
     await expect(persistence.readFrom(id, 0)).rejects.toThrow(/not found|unavailable/u);
 
@@ -249,6 +280,12 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(rolledBack).toMatchObject({ attempt: 2, phase: "rolled_back" });
     expect(await persistence.rollbackDelete(prepared.token, "delete-client-1")).toEqual(rolledBack);
     expect((await persistence.readFrom(id, 0)).events).toEqual(events);
+    await expect(persistence.inspectRecovery(id)).resolves.toMatchObject({
+      state: "resume_candidate",
+      generationId: prepared.sourceGenerationId,
+      durableSequence: 2,
+      storageState: "active",
+    });
     expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId))).toEqual([id]);
     await context.fiber.dispose();
   });
@@ -277,6 +314,32 @@ describe("ProductSqliteSessionPersistence", () => {
     expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId))).toEqual([id]);
     expect(await persistence.rollbackDelete(prepared.token, "delete-client-revision-drift"))
       .toMatchObject({ phase: "rolled_back" });
+    await context.fiber.dispose();
+  });
+
+  it("projects corrupt persisted history as recovery-only without exposing guessed generation facts", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-recovery-corrupt");
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, turn(0, 1));
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("recovery fixture did not install product persistence");
+    }
+    const database = new DatabaseSync(productSessionDatabasePath(
+      selectPlatformAdapter("darwin-arm64"),
+      runtimeHome,
+    ));
+    database.prepare(
+      "UPDATE session_events SET chain_hash = ? WHERE session_id = ? AND seq = 0",
+    ).run("0".repeat(64), id);
+    database.close();
+    expect(await context.sessionPersistence.inspectRecovery(id)).toEqual({
+      state: "recovery_required",
+      reason: "persisted_history_invalid",
+      retryable: false,
+      unsettledMutations: [],
+    });
     await context.fiber.dispose();
   });
 

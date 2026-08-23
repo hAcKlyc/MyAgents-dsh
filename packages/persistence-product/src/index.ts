@@ -13,6 +13,7 @@ export {
   productSessionDatabasePath,
   type ProductSqliteSessionPersistenceConfig,
 } from "./provider.js";
+export type { ProductPersistedRecoveryInspection } from "./sqlite-store.js";
 export {
   ProductSessionReadProjector,
   type ProductSessionReadRequest,
