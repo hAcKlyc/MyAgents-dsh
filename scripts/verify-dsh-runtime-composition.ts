@@ -58,6 +58,7 @@ const runtimeCompositionSourcePaths = [
   "apps/runtime-server/src/process.ts",
   "apps/runtime-server/src/self-check.ts",
   "packages/artifact-verifier/src/artifact-policy.ts",
+  "packages/artifact-verifier/src/batch-1-handoff.ts",
   "packages/artifact-verifier/src/forbidden-content.ts",
   "packages/artifact-verifier/src/index.ts",
   "packages/artifact-verifier/src/repository-entry.ts",
@@ -415,6 +416,7 @@ const stageBuiltPackage = (
   } else if (workspaceDirectory === "packages/artifact-verifier") {
     packageExports = {
       ".": "./src/index.js",
+      "./batch-1-handoff": "./src/batch-1-handoff.js",
       "./runtime-artifact": "./src/runtime-artifact.js",
       "./self-check": "./src/self-check.js",
     };
@@ -472,6 +474,10 @@ const cleanBuildRuntimeComposition = (
     ["@myagents-dsh/artifact-verifier/runtime-artifact", [resolve(
       repositoryRoot,
       "packages/artifact-verifier/src/runtime-artifact.ts",
+    )]],
+    ["@myagents-dsh/artifact-verifier/batch-1-handoff", [resolve(
+      repositoryRoot,
+      "packages/artifact-verifier/src/batch-1-handoff.ts",
     )]],
     ["@myagents-dsh/artifact-verifier/self-check", [resolve(
       repositoryRoot,
@@ -681,6 +687,27 @@ const assertCleanRuntimeDependencyTree = (
     if (versions.size !== 1 || !versions.has(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion)) {
       throw new Error(`${name} resolved outside the single accepted patched DSH graph`);
     }
+  }
+  const verifierRoot = resolve(candidateRoot, "node_modules/@myagents-dsh/artifact-verifier");
+  const verifierManifest = exactObject(JSON.parse(readFileSync(
+    resolve(verifierRoot, "package.json"),
+    "utf8",
+  )) as unknown, "installed artifact-verifier manifest");
+  const verifierExports = exactObject(
+    verifierManifest.exports,
+    "installed artifact-verifier exports",
+  );
+  if (verifierExports["./batch-1-handoff"] !== "./src/batch-1-handoff.js"
+    || !existsSync(resolve(verifierRoot, "src/batch-1-handoff.js"))) {
+    throw new Error("installed Runtime lacks the public Batch 1 handoff verifier export");
+  }
+  const handoffImport = run(process.execPath, [
+    "--input-type=module",
+    "--eval",
+    "const m = await import('@myagents-dsh/artifact-verifier/batch-1-handoff'); process.stdout.write(m.BATCH_1_HANDOFF_SCHEMA_VERSION);",
+  ], candidateRoot, environment);
+  if (handoffImport !== "batch-1-handoff-v1") {
+    throw new Error("installed Runtime Batch 1 handoff verifier resolved the wrong authority");
   }
 };
 
