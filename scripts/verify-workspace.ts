@@ -108,6 +108,7 @@ const expectedWorkspaceFiles = new Map([
     "src/terminal.ts",
   ]],
   ["packages/persistence-product", [
+    "src/compaction.ts",
     "src/delete.ts",
     "src/index.ts",
     "src/fork.ts",

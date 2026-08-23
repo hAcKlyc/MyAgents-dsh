@@ -112,6 +112,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     allowedFiles: [
       "package.json",
       "src/delete.ts",
+      "src/compaction.ts",
       "src/index.ts",
       "src/fork.ts",
       "src/known-events.ts",

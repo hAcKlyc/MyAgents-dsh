@@ -144,7 +144,10 @@ const createRoot = (
 ): Context => {
   hostPortLifecycleState.current = hostPorts;
   const root = new Context();
-  let sessionSnapshot: Record<string, unknown> = Object.freeze({ state: "unbound" as const });
+  let sessionSnapshot: Record<string, unknown> = Object.freeze({
+    activeCompactions: 0,
+    state: "unbound" as const,
+  });
   root.provide("sessions", {
     flush: () => Promise.resolve(true),
   } as never);
@@ -152,6 +155,7 @@ const createRoot = (
     bindCreate: (params: MethodParams<"session/create">) => {
       const runtimeSessionId = params.runtimeSessionId ?? "synthetic-generated-session";
       sessionSnapshot = Object.freeze({
+        activeCompactions: 0,
         state: "ready" as const,
         runtimeSessionId,
         desiredConfigRevision: params.configRevision,
@@ -188,6 +192,7 @@ const createRoot = (
           unsettledMutations: Object.freeze(["rewind" as const]),
         });
         sessionSnapshot = Object.freeze({
+          activeCompactions: 0,
           state: "recovery_required" as const,
           runtimeSessionId: params.runtimeSessionId,
           desiredConfigRevision: params.configRevision,
@@ -205,6 +210,7 @@ const createRoot = (
         }));
       }
       sessionSnapshot = Object.freeze({
+        activeCompactions: 0,
         state: "ready" as const,
         runtimeSessionId: params.runtimeSessionId,
         desiredConfigRevision: params.configRevision,
@@ -224,12 +230,18 @@ const createRoot = (
       }));
     },
     bindWorkspace: (workspace: unknown) => workspace,
+    compact: () => Promise.resolve(Object.freeze({ state: "accepted" as const })),
     close: async () => {
       sessionSnapshot = Object.freeze({ ...sessionSnapshot, state: "closing" as const });
       await sessionCloseBarrier;
       sessionSnapshot = Object.freeze({ ...sessionSnapshot, state: "retired" as const });
       return Object.freeze({ ok: true as const });
     },
+    deletePurge: (params: MethodParams<"session/delete/purge">) => Promise.resolve(Object.freeze({
+      token: params.token,
+      state: "purged" as const,
+      receipt: Object.freeze({ purged: true }),
+    })),
     read: () => {
       if (typeof sessionSnapshot.runtimeSessionId !== "string") {
         throw new ProtocolError("primary_session_not_ready", "synthetic Session is not ready");
@@ -671,6 +683,32 @@ describe("native RPC Cordis service", () => {
       expect(resumed.extensionCatalog).toEqual(syntheticSessionCatalogs.extensionCatalog);
     } finally {
       await resumedHarness.close();
+    }
+  });
+
+  it("routes manual compaction and irreversible purge through the sole ProductSession owner", async () => {
+    const harness = await createHarness();
+    try {
+      await harness.client.initialize(initializeParams());
+      await vi.waitFor(() => expect(harness.server.phase).toBe("await_initialized"));
+      await harness.client.initialized();
+      await harness.client.sessionCreate(sessionParams(
+        "native-maintenance-session",
+        "native-maintenance-create",
+      ));
+      await expect(harness.client.sessionCompact({
+        clientOperationId: "native-maintenance-compact",
+      })).resolves.toEqual({ state: "accepted" });
+      await expect(harness.client.sessionDeletePurge({
+        clientMutationId: "native-maintenance-purge",
+        token: "native-maintenance-token",
+      })).resolves.toEqual({
+        receipt: { purged: true },
+        state: "purged",
+        token: "native-maintenance-token",
+      });
+    } finally {
+      await harness.close();
     }
   });
 

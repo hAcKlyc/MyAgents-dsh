@@ -1,6 +1,7 @@
 import { Service, symbols, type Context } from "@deepseek-ai/cordis";
 import type { Agent, AgentHandle, AgentSetup } from "@deepseek-ai/dsh-agent";
-import { SessionId, type Session } from "@deepseek-ai/dsh-session";
+import { isCompactCheckpointSource, type CompactionResult } from "@deepseek-ai/dsh-compaction";
+import { SessionId, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { PERSONA_ORDER, PERSONA_SECTION } from "@deepseek-ai/dsh-system-prompt";
 import { selectPlatformAdapter, type PlatformTarget } from "@myagents-dsh/product-profile";
 import type { SettlementDeadlineAuthority } from "@myagents-dsh/operation-runtime";
@@ -12,14 +13,17 @@ import {
   type MethodResult,
   type SessionRecoveryStatus,
 } from "@myagents-dsh/protocol";
-import type {
-  ProductDeleteRecord,
-  ProductDeleteStore,
-  ProductForkRecord,
-  ProductForkStore,
-  ProductRewindRecord,
-  ProductRewindStore,
-  ProductSessionReadRequest,
+import {
+  foldProductCompactions,
+  productCompactionSummarySha256,
+  type ProductDeleteRecord,
+  type ProductDeleteStore,
+  type ProductCompactionReceiptEventData,
+  type ProductForkRecord,
+  type ProductForkStore,
+  type ProductRewindRecord,
+  type ProductRewindStore,
+  type ProductSessionReadRequest,
 } from "@myagents-dsh/persistence-product";
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
@@ -143,6 +147,7 @@ export interface PrimarySessionAdmissionSnapshot {
 }
 
 export interface ProductSessionSnapshot extends PrimarySessionAdmissionSnapshot {
+  readonly activeCompactions: number;
   readonly liveRootAgents: number;
 }
 
@@ -1515,6 +1520,11 @@ export interface ProductSessionServiceConfig {
   ) => void;
   readonly backend?: PrimarySessionBackend;
   readonly childPublicationAuthority?: object;
+  readonly compactSession?: (
+    agent: Agent,
+    clientOperationId: string,
+    signal?: AbortSignal,
+  ) => Promise<CompactionResult | null>;
   readonly deleteStore?: () => ProductDeleteStore | undefined;
   readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard;
   readonly quiescenceGraceMs?: number;
@@ -1534,6 +1544,8 @@ export class ProductSessionService extends Service {
   static inject = ["agents", "sessions"];
   private readonly backendValue: PrimarySessionBackend;
   private readonly childPublicationAuthorityValue: object | undefined;
+  private readonly compactSessionValue: ProductSessionServiceConfig["compactSession"];
+  private readonly compactionPromises = new Map<string, Promise<MethodResult<"session/compact">>>();
   private readonly deleteStoreValue: ProductSessionServiceConfig["deleteStore"];
   private readonly forkStoreValue: ProductSessionServiceConfig["forkStore"];
   private readonly providerAdmissionGuardValue: PrimarySessionProviderAdmissionGuard | undefined;
@@ -1558,6 +1570,7 @@ export class ProductSessionService extends Service {
         "assertPublicationCurrent",
         "backend",
         "childPublicationAuthority",
+        "compactSession",
         "deleteStore",
         "forkStore",
         "inspectResume",
@@ -1573,6 +1586,13 @@ export class ProductSessionService extends Service {
     this.childPublicationAuthorityValue = Object.hasOwn(normalized, "childPublicationAuthority")
       ? normalized.childPublicationAuthority as object
       : undefined;
+    const compactSession = Object.hasOwn(normalized, "compactSession")
+      ? normalized.compactSession as ProductSessionServiceConfig["compactSession"]
+      : undefined;
+    if (compactSession !== undefined && (typeof compactSession !== "function" || utilTypes.isProxy(compactSession))) {
+      throw new TypeError("ProductSession compaction executor must be a non-proxy function");
+    }
+    this.compactSessionValue = compactSession;
     this.publicationFenceValue = new PrimaryRootPublicationFence(ctx);
     const assertPublicationCurrent = Object.hasOwn(normalized, "assertPublicationCurrent")
       ? normalized.assertPublicationCurrent as (
@@ -1741,7 +1761,11 @@ export class ProductSessionService extends Service {
   snapshot(): Readonly<ProductSessionSnapshot> {
     const admission = this.admissionValue?.snapshot() ?? Object.freeze({ state: "unbound" as const });
     const liveRootAgents = this.publicationFenceValue.assertAuthority(admission.state);
-    return Object.freeze({ ...admission, liveRootAgents });
+    return Object.freeze({
+      ...admission,
+      activeCompactions: this.compactionPromises.size,
+      liveRootAgents,
+    });
   }
 
   bindCreate(value: unknown, signal?: AbortSignal): Promise<PrimarySessionBinding> {
@@ -1778,6 +1802,31 @@ export class ProductSessionService extends Service {
       runtimeSessionId: snapshot.runtimeSessionId,
       ...(signal === undefined ? {} : { signal }),
     })]);
+  }
+
+  compact(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/compact">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.compact(value, signal);
+    const params = validateMethodParams("session/compact", value);
+    const agent = this.requireAgent();
+    const known = foldProductCompactions(agent.session.events).get(params.clientOperationId);
+    if (known !== undefined) {
+      this.#validateCompactionReceipt(agent, known);
+      return Promise.resolve(Object.freeze({ state: "already_known" as const }));
+    }
+    const pending = this.compactionPromises.get(params.clientOperationId);
+    if (pending !== undefined) return pending;
+    const operation = this.#compact(params.clientOperationId, signal);
+    this.compactionPromises.set(params.clientOperationId, operation);
+    void operation.finally(() => {
+      if (this.compactionPromises.get(params.clientOperationId) === operation) {
+        this.compactionPromises.delete(params.clientOperationId);
+      }
+    }).catch(() => undefined);
+    return operation;
   }
 
   rewindPrepare(
@@ -1836,6 +1885,27 @@ export class ProductSessionService extends Service {
         return this.#projectDelete(await store.commitDelete(params.token, params.clientMutationId));
       }
       return this.#projectDelete(record);
+    });
+  }
+
+  deletePurge(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/delete/purge">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.deletePurge(value, signal);
+    const params = validateMethodParams("session/delete/purge", value);
+    const store = this.#requireDeleteStore();
+    return store.getDelete(params.token, signal).then(async (record) => {
+      const snapshot = this.snapshot();
+      if (record === undefined || snapshot.runtimeSessionId !== record.runtimeSessionId) {
+        throw new ProtocolError("session_mutation_not_found", "delete token is unavailable for the primary Session");
+      }
+      return this.#projectDelete(await store.purgeDelete(
+        params.token,
+        params.clientMutationId,
+        signal,
+      ));
     });
   }
 
@@ -2098,6 +2168,238 @@ export class ProductSessionService extends Service {
       this.publishSettlementFailure(error);
     });
     return retirement;
+  }
+
+  async #compact(
+    clientOperationId: string,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/compact">> {
+    const executor = this.compactSessionValue;
+    if (executor === undefined) {
+      throw new ProtocolError("compaction_unavailable", "primary Session compaction is not installed");
+    }
+    const snapshot = this.snapshot();
+    const agent = this.requireAgent();
+    if (snapshot.state !== "ready" || snapshot.runtimeSessionId !== String(agent.id)) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session is not ready for compaction");
+    }
+    const recovered = this.#recoverCompaction(agent, clientOperationId);
+    if (recovered === "failed") {
+      throw new ProtocolError("compaction_failed", "the durable compaction attempt failed");
+    }
+    if (recovered !== undefined) {
+      await this.#appendCompactionReceipt(agent, clientOperationId, recovered);
+      return Object.freeze({ state: "already_known" as const });
+    }
+    signal?.throwIfAborted();
+    let result: CompactionResult | null;
+    try {
+      result = await Reflect.apply(executor, undefined, [agent, clientOperationId, signal]);
+    } catch (error) {
+      const durable = this.#recoverCompaction(agent, clientOperationId);
+      if (durable !== undefined && durable !== "failed") {
+        await this.#appendCompactionReceipt(agent, clientOperationId, durable);
+        return Object.freeze({ state: "accepted" as const });
+      }
+      signal?.throwIfAborted();
+      throw new ProtocolError(
+        "compaction_failed",
+        "primary Session compaction failed",
+        false,
+        { cause: error },
+      );
+    }
+    signal?.throwIfAborted();
+    const current = this.snapshot();
+    if (current.state !== "ready" || current.runtimeSessionId !== snapshot.runtimeSessionId
+      || this.requireAgent() !== agent) {
+      throw new ProtocolError("primary_session_replaced", "primary Session changed during compaction");
+    }
+    if (result === null) {
+      const durable = this.#recoverCompaction(agent, clientOperationId);
+      if (durable !== undefined) {
+        throw new ProtocolError(
+          durable === "failed" ? "compaction_failed" : "session_recovery_required",
+          durable === "failed"
+            ? "the durable compaction attempt failed"
+            : "compaction returned no result after committing durable output",
+        );
+      }
+      const sourceEventCount = agent.session.events.length;
+      agent.session.append("myagents/session/compaction", {
+        clientOperationId,
+        outcome: "not_needed",
+        resultEventCount: sourceEventCount + 1,
+        sourceEventCount,
+      });
+      if (!await this.ctx.sessions.flush(agent.session)) {
+        throw new ProtocolError("session_recovery_required", "no-op compaction receipt was not durable");
+      }
+      return Object.freeze({ state: "accepted" as const });
+    }
+    const durable = this.#recoverCompaction(agent, clientOperationId);
+    if (durable === undefined || durable === "failed") {
+      throw new ProtocolError(
+        durable === "failed" ? "compaction_failed" : "session_recovery_required",
+        durable === "failed"
+          ? "the durable compaction attempt failed"
+          : "compaction result lacks its durable marker transaction",
+      );
+    }
+    this.#assertCompactionResultsEqual(result, durable, clientOperationId);
+    await this.#appendCompactionReceipt(agent, clientOperationId, durable);
+    return Object.freeze({ state: "accepted" as const });
+  }
+
+  #validateCompactionReceipt(
+    agent: Agent,
+    receipt: Readonly<ProductCompactionReceiptEventData>,
+  ): void {
+    const durable = this.#recoverCompaction(agent, receipt.clientOperationId);
+    if (receipt.outcome === "not_needed") {
+      if (durable !== undefined) {
+        throw new ProtocolError(
+          "session_recovery_required",
+          "no-op compaction receipt conflicts with a durable marker transaction",
+        );
+      }
+      return;
+    }
+    if (durable === undefined || durable === "failed") {
+      throw new ProtocolError(
+        "session_recovery_required",
+        "completed compaction receipt lacks one successful durable marker transaction",
+      );
+    }
+    if (receipt.compactionId !== String(durable.compactionId)
+      || receipt.startSeq !== durable.startSeq
+      || receipt.summarySeq !== durable.summarySeq
+      || receipt.endSeq !== durable.endSeq
+      || receipt.shadowedTokenCount !== durable.shadowedTokenCount
+      || JSON.stringify(receipt.shadowedSeqs) !== JSON.stringify(durable.shadowedSeqs)
+      || receipt.summarySha256 !== productCompactionSummarySha256(durable.summary)) {
+      throw new ProtocolError(
+        "session_recovery_required",
+        "compaction receipt differs from its durable marker transaction",
+      );
+    }
+  }
+
+  #assertCompactionResultsEqual(
+    returned: CompactionResult,
+    durable: CompactionResult,
+    clientOperationId: string,
+  ): void {
+    if (String(returned.compactionId) !== String(durable.compactionId)
+      || String(returned.sourceCommandId ?? "") !== clientOperationId
+      || returned.startSeq !== durable.startSeq
+      || returned.summarySeq !== durable.summarySeq
+      || returned.endSeq !== durable.endSeq
+      || returned.shadowedTokenCount !== durable.shadowedTokenCount
+      || JSON.stringify(returned.shadowedRange) !== JSON.stringify(durable.shadowedRange)
+      || JSON.stringify(returned.shadowedSeqs) !== JSON.stringify(durable.shadowedSeqs)
+      || productCompactionSummarySha256(returned.summary)
+        !== productCompactionSummarySha256(durable.summary)) {
+      throw new ProtocolError(
+        "session_recovery_required",
+        "compaction return value differs from its durable marker transaction",
+      );
+    }
+  }
+
+  #recoverCompaction(
+    agent: Agent,
+    clientOperationId: string,
+  ): CompactionResult | "failed" | undefined {
+    const starts = agent.session.events.filter((event) => event.type === "compaction/start"
+      && String(event.data.sourceCommandId ?? "") === clientOperationId) as SessionEvent<"compaction/start">[];
+    if (starts.length === 0) return undefined;
+    if (starts.length !== 1) {
+      throw new ProtocolError("session_recovery_required", "compaction operation has duplicate durable starts");
+    }
+    const start = starts[0];
+    if (start === undefined) throw new Error("compaction start identity is unavailable");
+    if (start.data.turn !== null) {
+      throw new ProtocolError("session_recovery_required", "manual compaction start is turn-scoped");
+    }
+    const compactionId = String(start.data.compactionId);
+    const summaries = agent.session.events.filter((event) => event.type === "compaction/summary"
+      && String(event.data.compactionId) === compactionId) as SessionEvent<"compaction/summary">[];
+    const ends = agent.session.events.filter((event) => event.type === "compaction/end"
+      && String(event.data.compactionId) === compactionId) as SessionEvent<"compaction/end">[];
+    if (ends.length === 0) {
+      throw new ProtocolError("session_recovery_required", "compaction operation has an unmatched durable start");
+    }
+    if (ends.length !== 1) {
+      throw new ProtocolError("session_recovery_required", "compaction operation has duplicate durable ends");
+    }
+    const end = ends[0];
+    if (end === undefined) throw new Error("compaction end identity is unavailable");
+    if (end.data.turn !== null || String(end.data.sourceCommandId ?? "") !== clientOperationId) {
+      throw new ProtocolError("session_recovery_required", "manual compaction end identity is invalid");
+    }
+    if (end.data.error !== undefined) return "failed";
+    if (summaries.length !== 1) {
+      throw new ProtocolError("session_recovery_required", "successful compaction lacks one durable summary");
+    }
+    const summary = summaries[0];
+    if (summary === undefined || !(start.seq < summary.seq && summary.seq < end.seq)) {
+      throw new ProtocolError("session_recovery_required", "compaction event order is invalid");
+    }
+    if (String(summary.data.sourceCommandId ?? "") !== clientOperationId) {
+      throw new ProtocolError("session_recovery_required", "compaction summary identity is invalid");
+    }
+    const replacement = agent.session.events.find((event) => event.seq === summary.seq + 1);
+    const source = replacement?.type === "user/message" ? replacement.data.source : undefined;
+    if (source === undefined || !isCompactCheckpointSource(source)
+      || String((source as unknown as { compactionId?: unknown }).compactionId) !== compactionId) {
+      throw new ProtocolError("session_recovery_required", "compaction summary lacks its exact surface replacement");
+    }
+    return Object.freeze({
+      compactionId: start.data.compactionId,
+      ...(start.data.sourceCommandId === undefined ? {} : { sourceCommandId: start.data.sourceCommandId }),
+      endSeq: end.seq,
+      shadowedRange: Object.freeze({ ...summary.data.shadowedRange }),
+      shadowedSeqs: [...summary.data.shadowedSeqs],
+      shadowedTokenCount: summary.data.shadowedTokenCount,
+      startSeq: start.seq,
+      summary: structuredClone(summary.data.summary),
+      summarySeq: summary.seq,
+    });
+  }
+
+  async #appendCompactionReceipt(
+    agent: Agent,
+    clientOperationId: string,
+    result: CompactionResult,
+  ): Promise<void> {
+    const existing = foldProductCompactions(agent.session.events).get(clientOperationId);
+    if (existing !== undefined) return;
+    const sourceEventCount = result.startSeq;
+    const receiptSeq = agent.session.events.length;
+    if (receiptSeq <= result.endSeq) {
+      throw new ProtocolError("session_recovery_required", "compaction receipt would precede its durable end");
+    }
+    agent.session.append("myagents/session/compaction", {
+      clientOperationId,
+      compactionId: String(result.compactionId),
+      endSeq: result.endSeq,
+      outcome: "completed",
+      resultEventCount: receiptSeq + 1,
+      shadowedSeqs: [...result.shadowedSeqs],
+      shadowedTokenCount: result.shadowedTokenCount,
+      sourceEventCount,
+      startSeq: result.startSeq,
+      summarySeq: result.summarySeq,
+      summarySha256: productCompactionSummarySha256(result.summary),
+    });
+    if (!await this.ctx.sessions.flush(agent.session)) {
+      throw new ProtocolError("session_recovery_required", "compaction receipt was not durable");
+    }
+    const durable = foldProductCompactions(agent.session.events).get(clientOperationId);
+    if (durable?.resultEventCount !== receiptSeq + 1) {
+      throw new ProtocolError("session_recovery_required", "compaction receipt did not become durable");
+    }
   }
 
   #requireRewindStore(): ProductRewindStore {

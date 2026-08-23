@@ -688,6 +688,7 @@ export const RPC_METHODS = {
   "session/compact": method("host_to_runtime", operationParams, strictObject({ state: Type.Union([Type.Literal("accepted"), Type.Literal("already_known")]) })),
   "session/delete/prepare": method("host_to_runtime", strictObject({ clientMutationId: identifier }), mutationResult),
   "session/delete/commit": method("host_to_runtime", mutationParams, mutationResult),
+  "session/delete/purge": method("host_to_runtime", mutationParams, mutationResult),
   "session/delete/rollback": method("host_to_runtime", mutationParams, mutationResult),
   "session/delete/status": method("host_to_runtime", strictObject({ token: identifier }), mutationResult),
   "session/fork/prepare": method("host_to_runtime", strictObject({ clientMutationId: identifier, sourceStableBoundaryId: identifier, targetRuntimeHome: absolutePath, targetPersistenceRef: identifier, targetWorkspaceIdentity: identifier, targetRuntimeSessionId: Type.Optional(identifier) }), mutationResult),

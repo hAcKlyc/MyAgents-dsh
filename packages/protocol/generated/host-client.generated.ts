@@ -2,7 +2,7 @@
 import { ProtocolError, type JsonRpcPeer, type MethodParams, type MethodResult, type NotificationParams, type RequestContext } from "../src/index.js";
 
 export const GENERATED_PROTOCOL_VERSION = "2.0.0-draft.1" as const;
-export const GENERATED_SCHEMA_SHA256 = "6c10c17bf16e272cd694667fee2655d17b687aff1bad0e49bfdd9450a4f58af7" as const;
+export const GENERATED_SCHEMA_SHA256 = "44996aba8afa131ead844f9dde4962bac22c81eb58aa4431036f6996e0b36580" as const;
 export const GENERATED_CAPABILITY_PROFILE_DIGEST = "80d3f130738d75c57caa6ad6d233b6f2cfc57a7ad3a786985d985445c7177d02" as const;
 
 export type GeneratedHostRequestHandlers = {
@@ -68,6 +68,10 @@ export class GeneratedHostClient {
 
   sessionDeleteCommit(params: MethodParams<"session/delete/commit">, options?: { signal?: AbortSignal }): Promise<MethodResult<"session/delete/commit">> {
     return this.peer.request("session/delete/commit", params, options);
+  }
+
+  sessionDeletePurge(params: MethodParams<"session/delete/purge">, options?: { signal?: AbortSignal }): Promise<MethodResult<"session/delete/purge">> {
+    return this.peer.request("session/delete/purge", params, options);
   }
 
   sessionDeleteRollback(params: MethodParams<"session/delete/rollback">, options?: { signal?: AbortSignal }): Promise<MethodResult<"session/delete/rollback">> {

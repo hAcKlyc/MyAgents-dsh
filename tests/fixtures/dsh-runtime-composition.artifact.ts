@@ -4155,6 +4155,59 @@ assert.deepEqual(resumedAgent.session.events.at(-1), {
   data: {},
 });
 assert.equal(resumeAdapter.requests.length, 0, "Session resume must not replay model work");
+const longSessionTurnCount = resumedAgent.session.events.filter(({ type }) => type === "turn/end").length;
+assert.ok(longSessionTurnCount >= 10, "manual compaction evidence requires a real long Session history");
+const preCompactionEventCount = resumedAgent.session.events.length;
+resumeAdapter.enqueue({
+  kind: "complete",
+  text: "Artifact long-session compaction summary preserving the accepted Runtime evidence.",
+  usage: { inputTokens: 21, outputTokens: 11, cacheReadTokens: 5 },
+});
+const compactionAccepted = await resumeHostClient.sessionCompact({
+  clientOperationId: "artifact-primary-session-compaction",
+});
+assert.deepEqual(compactionAccepted, { state: "accepted" });
+assert.deepEqual(await resumeHostClient.sessionCompact({
+  clientOperationId: "artifact-primary-session-compaction",
+}), { state: "already_known" });
+assert.equal(resumeAdapter.requests.length, 1, "manual compaction must use one real routed summary request");
+const compactionEvents = resumedAgent.session.events.slice(preCompactionEventCount);
+assert.deepEqual(compactionEvents.map(({ type }) => type), [
+  "compaction/start",
+  "compaction/summary",
+  "user/message",
+  "compaction/end",
+  "myagents/session/compaction",
+]);
+const compactionStart = compactionEvents[0];
+const compactionSummary = compactionEvents[1];
+const compactionReplacement = compactionEvents[2];
+const compactionEnd = compactionEvents[3];
+const compactionReceipt = compactionEvents[4];
+if (compactionStart?.type !== "compaction/start"
+  || compactionSummary?.type !== "compaction/summary"
+  || compactionReplacement?.type !== "user/message"
+  || compactionEnd?.type !== "compaction/end"
+  || compactionReceipt?.type !== "myagents/session/compaction") {
+  throw new Error("manual compaction durable event identity is unavailable");
+}
+assert.equal(compactionStart.data.turn, null);
+assert.equal(String(compactionStart.data.sourceCommandId), "artifact-primary-session-compaction");
+assert.equal(compactionSummary.data.compactionId, compactionStart.data.compactionId);
+assert.equal(compactionEnd.data.compactionId, compactionStart.data.compactionId);
+assert.equal(compactionEnd.data.error, undefined);
+assert.deepEqual(compactionReplacement.data.source, {
+  kind: "plugin",
+  plugin: "compact",
+  compactionId: compactionStart.data.compactionId,
+  sourceCommandId: compactionStart.data.sourceCommandId,
+});
+assert.equal(compactionReceipt.data.clientOperationId, "artifact-primary-session-compaction");
+assert.equal(compactionReceipt.data.outcome, "completed");
+assert.equal(compactionReceipt.data.startSeq, compactionStart.seq);
+assert.equal(compactionReceipt.data.summarySeq, compactionSummary.seq);
+assert.equal(compactionReceipt.data.endSeq, compactionEnd.seq);
+assert.equal(compactionReceipt.data.resultEventCount, resumedAgent.session.events.length);
 const oversizedSessionReadText = "artifact-session-read-chunk-".repeat(48_000);
 resumedAgent.session.append("todo/write", {
   todos: [{ content: oversizedSessionReadText, status: "pending" }],
@@ -4186,6 +4239,7 @@ for (const [index, event] of resumedAgent.session.events.entries()) {
   assert.equal(projected.eventSha256, canonical.sha256);
   assert.deepEqual(projected.data, canonical.value);
 }
+const sessionReadSourceEquivalent = true;
 const sessionReadChunkRecords = sessionReadPages.flatMap(({ records }) => records)
   .filter((record) => record.kind === "event_chunk");
 assert.ok(sessionReadPages.length > 4);
@@ -4277,8 +4331,115 @@ const resumedPersistenceSession = resumedPersistenceProbe.prepare(
   "SELECT event_count, revision FROM sessions WHERE id = ?",
 ).get("dsh-artifact-primary") as { event_count: number; revision: number };
 resumedPersistenceProbe.close();
-assert.equal(resumedPersistenceSession.event_count, persistedPrimary.events.length + 2);
+assert.equal(resumedPersistenceSession.event_count, persistedPrimary.events.length + 7);
 assert.ok(resumedPersistenceSession.revision > persistenceSession.revision);
+
+const purgeComposition = await composeDshRootServices({
+  adapter: new ScriptedFakeLlmAdapter({
+    provider: "fixture",
+    model: "fixture-model",
+    contextWindow: 8_192,
+  }),
+  providers: ["fixture"],
+});
+await installCanonicalToolPlane(purgeComposition, bindCanonicalToolPlaneConfig(purgeComposition));
+await installProductComponentPlane(purgeComposition, Object.freeze({
+  catalog: validatedArtifactToolCatalog,
+  compilers: Object.freeze([
+    createProductSkillComponentCompiler(purgeComposition),
+    createProductAgentComponentCompiler(purgeComposition),
+    createProductCommandComponentCompiler(purgeComposition),
+    createProductHookComponentCompiler(purgeComposition),
+    createProductHostToolComponentCompiler(purgeComposition),
+  ]),
+  initialSnapshot: artifactDeclarativeExtensionSnapshot,
+}));
+const purgeRuntimeInput = new PassThrough();
+const purgeRuntimeOutput = new PassThrough();
+const purgeHostPeer = new JsonRpcPeer({
+  input: purgeRuntimeOutput,
+  output: purgeRuntimeInput,
+  role: "host",
+  limits: REFERENCE_PROTOCOL_LIMITS,
+});
+const purgeLifecycle = await startNativeRpcLifecycle(purgeComposition, {
+  input: purgeRuntimeInput,
+  output: purgeRuntimeOutput,
+  runtimeGeneration: "artifact-purge-generation",
+  platformTarget: "darwin-arm64",
+}, {
+  processBoundary: {
+    subscribe: () => () => undefined,
+    scheduleForceExit: () => () => undefined,
+  },
+});
+const purgeHostClient = new GeneratedHostClient(purgeHostPeer);
+await purgeHostClient.initialize(initializeRequest);
+await waitUntil(
+  () => purgeLifecycle.nativeRpc.phase === "await_initialized",
+  "purge Runtime initialize response completion",
+);
+await purgeHostClient.initialized();
+await waitUntil(() => purgeLifecycle.nativeRpc.phase === "ready", "purge Runtime readiness");
+const purgeRuntimeSessionId = "dsh-artifact-purge-session";
+const purgeSession = await purgeHostClient.sessionCreate({
+  ...primarySessionParams,
+  clientOperationId: "artifact-purge-session-admission",
+  persistenceRef: "artifact-purge-persistence",
+  runtimeSessionId: purgeRuntimeSessionId,
+});
+assert.equal(purgeSession.state, "ready");
+const purgeAgent = purgeComposition.context.productSession.requireAgent();
+purgeAgent.session.append("todo/write", {
+  todos: [{ content: "purge fixture durability anchor", status: "completed" }],
+});
+assert.equal(await purgeComposition.context.sessions.flush(purgeAgent.session), true);
+const purgePrepared = await purgeHostClient.sessionDeletePrepare({
+  clientMutationId: "artifact-purge-delete",
+});
+const purgeCommitted = await purgeHostClient.sessionDeleteCommit({
+  clientMutationId: "artifact-purge-delete",
+  token: purgePrepared.token,
+});
+assert.equal(purgeCommitted.state, "committed");
+const purgeCompleted = await purgeHostClient.sessionDeletePurge({
+  clientMutationId: "artifact-purge-delete",
+  token: purgePrepared.token,
+});
+assert.equal(purgeCompleted.state, "purged");
+assert.deepEqual(await purgeHostClient.sessionDeletePurge({
+  clientMutationId: "artifact-purge-delete",
+  token: purgePrepared.token,
+}), purgeCompleted);
+assert.deepEqual(await purgeHostClient.sessionDeleteStatus({ token: purgePrepared.token }), purgeCompleted);
+const purgeProbe = new DatabaseSync(persistencePath, { readOnly: true });
+const purgedSessionCount = purgeProbe.prepare(
+  "SELECT count(*) AS count FROM sessions WHERE id = ?",
+).get(purgeRuntimeSessionId) as { count: number };
+const purgedGenerationCount = purgeProbe.prepare(
+  "SELECT count(*) AS count FROM session_generations WHERE session_id = ?",
+).get(purgeRuntimeSessionId) as { count: number };
+const purgedEventCount = purgeProbe.prepare(
+  "SELECT count(*) AS count FROM session_events WHERE session_id = ?",
+).get(purgeRuntimeSessionId) as { count: number };
+const purgedJournal = purgeProbe.prepare(
+  "SELECT phase, receipt_json FROM delete_journals WHERE token = ?",
+).get(purgePrepared.token) as { phase: string; receipt_json: string };
+purgeProbe.close();
+assert.equal(purgedSessionCount.count, 0);
+assert.equal(purgedGenerationCount.count, 0);
+assert.equal(purgedEventCount.count, 0);
+assert.equal(purgedJournal.phase, "purged");
+const purgedReceipt = JSON.parse(purgedJournal.receipt_json) as Record<string, unknown>;
+assert.equal(purgedReceipt.purged, true);
+assert.equal(Number.isSafeInteger(purgedReceipt.collectedCheckpointBlobs), true);
+await purgeHostClient.runtimeShutdown({ reason: "artifact-purge-proof-complete" });
+const purgeStopped = await purgeLifecycle.whenStopped();
+assert.equal(purgeStopped.disposed, true);
+assert.equal(purgeStopped.exit.kind, "shutdown");
+purgeHostPeer.close();
+purgeRuntimeInput.destroy();
+purgeRuntimeOutput.destroy();
 const hostAttachmentStagingEntriesAfterUse = await readdir(fixtureAttachmentStaging);
 assert.deepEqual(hostAttachmentStagingEntriesAfterUse, []);
 assert.throws(() => composition.snapshot(), /disposing or disposed/u);
@@ -4332,6 +4493,24 @@ process.stdout.write(`${JSON.stringify({
   rewindTransactionVerified: true,
   forkTransactionVerified: true,
   deleteTransactionVerified: true,
+  compactionVerified: true,
+  compactionEvidence: {
+    acceptedState: compactionAccepted.state,
+    durableEventTypes: compactionEvents.map(({ type }) => type),
+    eventCountAdded: compactionEvents.length,
+    longSessionTurnCount,
+    summaryRequests: resumeAdapter.requests.length,
+  },
+  deletePurgeVerified: true,
+  deletePurgeEvidence: {
+    committedState: purgeCommitted.state,
+    collectedCheckpointBlobs: purgedReceipt.collectedCheckpointBlobs,
+    eventRowsAfterPurge: purgedEventCount.count,
+    generationRowsAfterPurge: purgedGenerationCount.count,
+    journalState: purgedJournal.phase,
+    purged: purgedReceipt.purged,
+    sessionRowsAfterPurge: purgedSessionCount.count,
+  },
   deleteTransactionEvidence: {
     committedState: deleteCommitted.state,
     generationStateAfterCommit: deletedSessionState.generation_state,
@@ -4376,6 +4555,7 @@ process.stdout.write(`${JSON.stringify({
     format: persistenceMeta.persistence_format,
     generationCount: persistenceGenerationCount.count,
     productEventReloaded: persistedPrimary.events.some(({ type }) => type.startsWith("myagents/")),
+    resumedAddedEventCount: resumedPersistenceSession.event_count - persistenceSession.event_count,
     resumedDurableSequence: sessionReadEvents.length,
     resumedEventCount: resumedPersistenceSession.event_count,
     resumedSourcePrefixByteEquivalent: JSON.stringify(
@@ -4386,14 +4566,7 @@ process.stdout.write(`${JSON.stringify({
     sessionReadEventCount: sessionReadEvents.length,
     sessionReadPages: sessionReadPages.length,
     sessionReadRevisionStable: sessionReadAfter.revision === sessionReadBefore.revision,
-    sessionReadSourceEquivalent: sessionReadEvents.every((event, index) => {
-      const source = resumedAgent.session.events[index];
-      if (source?.seq !== event.sequence) return false;
-      if (source.type !== event.eventType) return false;
-      const canonical = canonicalSessionReadData(source.data);
-      return event.eventSha256 === canonical.sha256
-        && JSON.stringify(event.data) === JSON.stringify(canonical.value);
-    }),
+    sessionReadSourceEquivalent,
     sessionReadOversizedSha256: sessionReadEvents.at(-1)?.eventSha256,
     revision: persistenceSession.revision,
     schemaVersion: persistenceMeta.schema_version,

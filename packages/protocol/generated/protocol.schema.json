@@ -8952,6 +8952,81 @@
         "type": "object"
       }
     },
+    "session/delete/purge": {
+      "direction": "host_to_runtime",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "clientMutationId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientMutationId",
+          "token"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "receipt": {
+            "patternProperties": {
+              "^.*$": {}
+            },
+            "type": "object"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "const": "prepared",
+                "type": "string"
+              },
+              {
+                "const": "committed",
+                "type": "string"
+              },
+              {
+                "const": "rolled_back",
+                "type": "string"
+              },
+              {
+                "const": "aborted",
+                "type": "string"
+              },
+              {
+                "const": "purged",
+                "type": "string"
+              },
+              {
+                "const": "recovery_required",
+                "type": "string"
+              }
+            ]
+          },
+          "token": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
     "session/delete/rollback": {
       "direction": "host_to_runtime",
       "params": {

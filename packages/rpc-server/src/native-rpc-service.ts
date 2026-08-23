@@ -452,6 +452,11 @@ export class NativeRpcServer extends Service {
           this.handleSessionRead(params, context)),
         this.peerValue.registerRequestHandler("session/close", (params, context) =>
           this.handleSessionClose(params, context)),
+        this.peerValue.registerRequestHandler("session/compact", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return this.productSessionValue.compact(params, context.signal);
+        }),
         this.peerValue.registerRequestHandler("session/delete/prepare", (params, context) => {
           context.signal.throwIfAborted();
           context.commit();
@@ -461,6 +466,11 @@ export class NativeRpcServer extends Service {
           context.signal.throwIfAborted();
           context.commit();
           return this.productSessionValue.deleteCommit(params, context.signal);
+        }),
+        this.peerValue.registerRequestHandler("session/delete/purge", (params, context) => {
+          context.signal.throwIfAborted();
+          context.commit();
+          return this.productSessionValue.deletePurge(params, context.signal);
         }),
         this.peerValue.registerRequestHandler("session/delete/rollback", (params, context) => {
           context.signal.throwIfAborted();
@@ -653,6 +663,7 @@ export class NativeRpcServer extends Service {
       ...(primarySession.recovery === undefined ? {} : { recovery: primarySession.recovery }),
       active: {
         ...emptyActiveCounts(),
+        compactions: primarySession.activeCompactions,
         rootTurns: activeOperations.length,
         queuedInputs,
       },
@@ -722,9 +733,11 @@ export class NativeRpcServer extends Service {
     context: RequestContext,
   ): Promise<MethodResult<"session/read">> {
     context.signal.throwIfAborted();
+    // Reserve the largest legal request-id envelope so cursor page boundaries stay
+    // stable across retries even when the caller's JSON-RPC id length changes.
     const envelopeWithNullResult = `${JSON.stringify({
       jsonrpc: "2.0",
-      id: context.requestId,
+      id: "x".repeat(256),
       result: null,
     })}\n`;
     const resultBudget = this.peerValue.maxFrameBytes

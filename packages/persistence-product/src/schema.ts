@@ -1,5 +1,5 @@
 export const PRODUCT_PERSISTENCE_FORMAT = "myagents-sqlite-session-v1" as const;
-export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 6 as const;
+export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 7 as const;
 export const PRODUCT_PERSISTENCE_APPLICATION_ID = 0x4d594147 as const;
 
 export const PRODUCT_PERSISTENCE_SCHEMA_V1_SQL = `
@@ -234,10 +234,32 @@ const PRODUCT_PERSISTENCE_SCHEMA_V6_BASE_SQL = PRODUCT_PERSISTENCE_SCHEMA_V5_SQL
   PRODUCT_SESSION_GENERATIONS_V6_SCHEMA_SQL.trim(),
 );
 
-export const PRODUCT_PERSISTENCE_SCHEMA_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V6_BASE_SQL.trim()}
+export const PRODUCT_PERSISTENCE_SCHEMA_V6_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V6_BASE_SQL.trim()}
 
 ${PRODUCT_DELETE_SCHEMA_SQL.trim()}
 ` as const;
+
+export const PRODUCT_DELETE_SCHEMA_V7_SQL = `
+CREATE TABLE delete_journals (
+  token                 TEXT PRIMARY KEY,
+  client_mutation_id    TEXT NOT NULL,
+  request_fingerprint   TEXT NOT NULL,
+  session_id            TEXT NOT NULL,
+  source_generation_id  TEXT NOT NULL,
+  source_revision       TEXT NOT NULL,
+  phase                 TEXT NOT NULL CHECK (phase IN ('prepared', 'committing', 'committed', 'rolling_back', 'rolled_back', 'purged', 'recovery_required')),
+  attempt               INTEGER NOT NULL CHECK (attempt >= 0),
+  receipt_json          TEXT,
+  created_at            INTEGER NOT NULL,
+  updated_at            INTEGER NOT NULL,
+  UNIQUE (session_id, client_mutation_id)
+) STRICT;
+` as const;
+
+export const PRODUCT_PERSISTENCE_SCHEMA_SQL = PRODUCT_PERSISTENCE_SCHEMA_V6_SQL.replace(
+  PRODUCT_DELETE_SCHEMA_SQL.trim(),
+  PRODUCT_DELETE_SCHEMA_V7_SQL.trim(),
+);
 
 export const PRODUCT_PERSISTENCE_TABLES = Object.freeze([
   "checkpoint_blobs",

@@ -3,7 +3,8 @@ import type { Plugin } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
-import { CommandRuntime } from "@deepseek-ai/dsh-commands";
+import { BasicCompactionEngine } from "@deepseek-ai/dsh-compaction-basic";
+import { CommandId, CommandRuntime } from "@deepseek-ai/dsh-commands";
 import { LlmAdapter, LlmRuntime, type ContentBlock } from "@deepseek-ai/dsh-llm";
 import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
@@ -14,6 +15,7 @@ import { SkillRegistry } from "@deepseek-ai/dsh-skill";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
+import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { ApprovalService } from "@deepseek-ai/dsh-user-approval";
 import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
@@ -82,6 +84,7 @@ import {
 import {
   PRODUCT_PERSISTENCE_FORMAT,
   ProductSqliteSessionPersistence,
+  foldProductCompactions,
   productSessionDatabasePath,
   type ProductDeleteStore,
   type ProductForkStore,
@@ -156,6 +159,8 @@ export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "system-prompt",
   "tool-runtime",
   "llm-adapter",
+  "token-meter",
+  "compaction-engine",
   "agent-loop",
   "host-port-service",
   "product-session",
@@ -1483,6 +1488,8 @@ export const composeDshRootServices = async (
     await root.plugin(SystemPrompt, systemPrompt);
     await root.plugin(ToolRuntime, tools);
     await root.plugin(adapterPlugin(providers, adapter));
+    await root.plugin(TokenMeter);
+    await root.plugin(BasicCompactionEngine, { auto: false });
     await root.plugin(AgentLoop, {
       ...agentLoop,
       agents: [],
@@ -1511,6 +1518,11 @@ export const composeDshRootServices = async (
         providerAdmissionAssert?.(request);
       },
       childPublicationAuthority,
+      compactSession: (agent, clientOperationId, signal) => root.compaction.compactNow(
+        agent,
+        signal ?? new AbortController().signal,
+        CommandId(clientOperationId),
+      ),
       providerAdmissionGuard: async (request) => {
         const authority = compositionAuthorities.get(root);
         if (authority === undefined) throw new Error("root composition authority is unavailable");
@@ -1538,6 +1550,8 @@ export const composeDshRootServices = async (
           prepareDelete: (input, signal) => persistence.prepareDelete(input, signal),
           rollbackDelete: (token, clientMutationId, signal) =>
             persistence.rollbackDelete(token, clientMutationId, signal),
+          purgeDelete: (token, clientMutationId, signal) =>
+            persistence.purgeDelete(token, clientMutationId, signal),
         } satisfies ProductDeleteStore);
       },
       forkStore: () => {
@@ -1681,6 +1695,7 @@ export const composeDshRootServices = async (
         await root.productWork.initialize(agent);
       },
       validateResume: async (agent) => {
+        foldProductCompactions(agent.session.events);
         root.sdkOperations.prepareGenerationReplacement(agent);
         root.productWork.prepareGenerationReplacement(agent);
         root.sdkOperations.validatePersisted(agent);

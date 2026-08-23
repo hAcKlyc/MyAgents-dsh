@@ -73,6 +73,7 @@ import {
   PRODUCT_PERSISTENCE_APPLICATION_ID,
   PRODUCT_CHECKPOINT_SCHEMA_SQL,
   PRODUCT_DELETE_SCHEMA_SQL,
+  PRODUCT_DELETE_SCHEMA_V7_SQL,
   PRODUCT_FORK_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_SQL,
@@ -81,6 +82,7 @@ import {
   PRODUCT_PERSISTENCE_SCHEMA_V3_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V4_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V5_SQL,
+  PRODUCT_PERSISTENCE_SCHEMA_V6_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   PRODUCT_PERSISTENCE_TABLES,
   PRODUCT_REWIND_CHILD_SCHEMA_SQL,
@@ -435,6 +437,17 @@ const EXPECTED_V5_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V5_SQL
   .map((sql) => {
     const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
     if (match?.[1] === undefined) throw new Error("product persistence v5 DDL contains an unknown statement");
+    return Object.freeze({ name: match[1], sql });
+  })
+  .sort((left, right) => compareCodePoints(left.name, right.name)));
+
+const EXPECTED_V6_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V6_SQL
+  .trim()
+  .split(/;\s*/u)
+  .filter((statement) => statement.length > 0)
+  .map((sql) => {
+    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
+    if (match?.[1] === undefined) throw new Error("product persistence v6 DDL contains an unknown statement");
     return Object.freeze({ name: match[1], sql });
   })
   .sort((left, right) => compareCodePoints(left.name, right.name)));
@@ -1105,6 +1118,115 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         database.exec("COMMIT");
       } catch (error) {
         this.#rollback(error, "delete commit");
+      }
+      return this.#requireDeleteIdentity(token, clientMutationId);
+    });
+  }
+
+  purgeDelete(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductDeleteRecord> {
+    this.#validateDeleteIdentity(token, clientMutationId);
+    const known = this.#readDelete(token);
+    if (known === undefined) return Promise.reject(new Error("delete token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const record = this.#requireDeleteIdentity(token, clientMutationId);
+      if (record.phase === "purged") return record;
+      if (record.phase !== "committed") {
+        throw new Error(`delete cannot purge from ${record.phase}`);
+      }
+      const receipt = this.#deleteReceipt(record);
+      const database = this.#requireDatabase();
+      const raw = database.prepare(`
+        SELECT s.active_generation_id, s.state AS session_state,
+               s.revision AS session_revision, s.event_count AS session_event_count,
+               s.head_hash AS session_head_hash, g.state AS generation_state,
+               g.revision AS generation_revision, g.event_count AS generation_event_count,
+               g.head_hash AS generation_head_hash
+          FROM sessions AS s JOIN session_generations AS g
+            ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+         WHERE s.id = ?
+      `).get(record.runtimeSessionId);
+      const row = asRecord(raw, "delete purge locator");
+      if (row.active_generation_id !== record.sourceGenerationId
+        || row.session_state !== "tombstoned" || row.generation_state !== "tombstoned"
+        || row.session_revision !== receipt.tombstoneRevision
+        || row.generation_revision !== receipt.tombstoneRevision
+        || row.session_event_count !== receipt.durableSequence
+        || row.generation_event_count !== receipt.durableSequence
+        || row.session_head_hash !== receipt.headHash
+        || row.generation_head_hash !== receipt.headHash) {
+        throw new Error("delete tombstone was replaced before purge");
+      }
+      const competing = rowInteger(asRecord(database.prepare(`
+        SELECT count(*) AS count FROM delete_journals
+         WHERE session_id = ? AND token <> ?
+           AND phase NOT IN ('rolled_back', 'purged')
+      `).get(record.runtimeSessionId, token), "delete purge competing journal aggregate"),
+      "count", "delete purge competing journal aggregate");
+      if (competing !== 0) {
+        throw new Error("delete purge is blocked by another non-terminal delete journal");
+      }
+      const purgedReceipt = Object.freeze({
+        ...receipt,
+        collectedCheckpointBlobs: 0,
+        purged: true as const,
+      });
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.prepare(`
+          DELETE FROM rewind_file_plans
+           WHERE token IN (SELECT token FROM mutation_journals WHERE session_id = ?)
+        `).run(record.runtimeSessionId);
+        database.prepare(`
+          DELETE FROM rewind_child_plans
+           WHERE token IN (SELECT token FROM mutation_journals WHERE session_id = ?)
+        `).run(record.runtimeSessionId);
+        database.prepare("DELETE FROM mutation_journals WHERE session_id = ?")
+          .run(record.runtimeSessionId);
+        database.prepare("DELETE FROM fork_journals WHERE source_session_id = ?")
+          .run(record.runtimeSessionId);
+        database.prepare("DELETE FROM checkpoint_records WHERE session_id = ?")
+          .run(record.runtimeSessionId);
+        database.prepare("DELETE FROM stable_boundaries WHERE session_id = ?")
+          .run(record.runtimeSessionId);
+        const removed = database.prepare(`
+          DELETE FROM sessions
+           WHERE id = ? AND active_generation_id = ? AND state = 'tombstoned'
+             AND revision = ? AND event_count = ? AND head_hash = ?
+        `).run(record.runtimeSessionId, record.sourceGenerationId, receipt.tombstoneRevision,
+          receipt.durableSequence, receipt.headHash);
+        if (Number(removed.changes) !== 1) {
+          throw new Error("delete purge lost its exact tombstone authority");
+        }
+        const blobs = database.prepare(`
+          DELETE FROM checkpoint_blobs
+           WHERE NOT EXISTS (
+             SELECT 1 FROM checkpoint_records AS c WHERE c.prior_sha256 = checkpoint_blobs.sha256
+           ) AND NOT EXISTS (
+             SELECT 1 FROM rewind_file_plans AS r
+              WHERE r.target_blob_sha256 = checkpoint_blobs.sha256
+                 OR r.rollback_blob_sha256 = checkpoint_blobs.sha256
+           )
+        `).run();
+        const receiptJson = snapshotCanonicalJson(Object.freeze({
+          ...purgedReceipt,
+          collectedCheckpointBlobs: Number(blobs.changes),
+        }), "delete purge receipt");
+        const journal = database.prepare(`
+          UPDATE delete_journals
+             SET phase = 'purged', attempt = attempt + 1, receipt_json = ?, updated_at = ?
+           WHERE token = ? AND phase = 'committed'
+        `).run(receiptJson, Date.now(), token);
+        if (Number(journal.changes) !== 1) {
+          throw new Error("delete purge lost its journal authority");
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "delete purge");
       }
       return this.#requireDeleteIdentity(token, clientMutationId);
     });
@@ -2206,6 +2328,57 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       if (database.prepare("PRAGMA foreign_key_check").all().length > 0) {
         throw new Error("product SQLite persistence v5 delete schema migration broke foreign keys");
       }
+      version = 6;
+    }
+    if (version === 6) {
+      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V6_SCHEMA_ROWS)) {
+        throw new Error("product SQLite persistence v6 schema authority is incompatible");
+      }
+      this.#assertMigrationMetadata(6);
+      database.exec("PRAGMA foreign_keys = OFF");
+      try {
+        database.exec("BEGIN IMMEDIATE");
+        try {
+          database.exec(PRODUCT_DELETE_SCHEMA_V7_SQL.replace(
+            "CREATE TABLE delete_journals (",
+            "CREATE TABLE delete_journals_v7 (",
+          ));
+          database.exec(`
+            INSERT INTO delete_journals_v7(
+              token, client_mutation_id, request_fingerprint, session_id,
+              source_generation_id, source_revision, phase, attempt,
+              receipt_json, created_at, updated_at
+            )
+            SELECT token, client_mutation_id, request_fingerprint, session_id,
+                   source_generation_id, source_revision, phase, attempt,
+                   receipt_json, created_at, updated_at
+              FROM delete_journals;
+            DROP TABLE delete_journals;
+          `);
+          database.exec(PRODUCT_DELETE_SCHEMA_V7_SQL);
+          database.exec(`
+            INSERT INTO delete_journals(
+              token, client_mutation_id, request_fingerprint, session_id,
+              source_generation_id, source_revision, phase, attempt,
+              receipt_json, created_at, updated_at
+            )
+            SELECT token, client_mutation_id, request_fingerprint, session_id,
+                   source_generation_id, source_revision, phase, attempt,
+                   receipt_json, created_at, updated_at
+              FROM delete_journals_v7;
+            DROP TABLE delete_journals_v7;
+          `);
+          database.prepare("UPDATE store_meta SET schema_version = 7 WHERE singleton = 1").run();
+          database.exec("PRAGMA user_version = 7; COMMIT");
+        } catch (error) {
+          this.#rollback(error, "v6 reference-aware purge schema migration");
+        }
+      } finally {
+        database.exec("PRAGMA foreign_keys = ON");
+      }
+      if (database.prepare("PRAGMA foreign_key_check").all().length > 0) {
+        throw new Error("product SQLite persistence v6 purge schema migration broke foreign keys");
+      }
     }
   }
 
@@ -2910,7 +3083,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
   #decodeDelete(value: unknown): ProductDeleteRecord {
     const row = asRecord(value, "delete journal");
     const phase = rowString(row, "phase", "delete journal") as ProductDeletePhase;
-    if (!["prepared", "committing", "committed", "rolling_back", "rolled_back", "recovery_required"]
+    if (!["prepared", "committing", "committed", "rolling_back", "rolled_back", "purged", "recovery_required"]
       .includes(phase)) throw new Error("delete journal phase is invalid");
     const receiptJson = rowNullableString(row, "receipt_json", "delete journal");
     let receipt: Readonly<Record<string, unknown>> | undefined;

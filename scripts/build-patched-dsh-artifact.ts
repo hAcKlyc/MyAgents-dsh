@@ -1072,10 +1072,10 @@ const main = (): void => {
       "--offline",
       "--frozen-lockfile",
       "--ignore-scripts",
-      "--reporter=silent",
+      "--reporter=append-only",
       "--store-dir",
       pnpmStore,
-    ], { cwd: worktree, env: buildEnvironment });
+    ], { capture: true, cwd: worktree, env: buildEnvironment });
 
     const workspacePackages = readWorkspacePackages(worktree, buildEnvironment);
     const plan = buildPatchedDshArtifactPlan(workspacePackages, patchSet);

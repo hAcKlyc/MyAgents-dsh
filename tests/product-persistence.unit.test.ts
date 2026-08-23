@@ -21,9 +21,11 @@ import {
   PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
   PRODUCT_REQUIRED_SESSION_EVENT_TYPES,
   ProductSqliteSessionPersistence,
+  foldProductCompactions,
   isProductKnownSessionEventType,
   productSessionDatabasePath,
   productTranscriptPostcondition,
+  validateProductCompactionReceipt,
 } from "@myagents-dsh/persistence-product";
 import { SessionReadAssembler } from "@myagents-dsh/protocol";
 import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
@@ -94,13 +96,47 @@ afterEach(async () => {
 describe("ProductSqliteSessionPersistence", () => {
   it("owns the exact immutable product event registry", () => {
     expect(Object.isFrozen(PRODUCT_REQUIRED_SESSION_EVENT_TYPES)).toBe(true);
-    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(19);
-    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(19);
+    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(20);
+    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(20);
     for (const type of PRODUCT_REQUIRED_SESSION_EVENT_TYPES) {
       expect(isProductKnownSessionEventType(type)).toBe(true);
     }
     expect(isProductKnownSessionEventType("turn/start")).toBe(true);
     expect(isProductKnownSessionEventType("myagents/unknown-required-event")).toBe(false);
+  });
+
+  it("folds one strict durable compaction receipt and rejects reflective input", () => {
+    const receipt = validateProductCompactionReceipt({
+      clientOperationId: "compact-primary-1",
+      compactionId: "compaction-primary-1",
+      endSeq: 5,
+      outcome: "completed",
+      resultEventCount: 7,
+      shadowedSeqs: [0, 1],
+      shadowedTokenCount: 12,
+      sourceEventCount: 2,
+      startSeq: 2,
+      summarySeq: 3,
+      summarySha256: "a".repeat(64),
+    });
+    expect(Object.isFrozen(receipt)).toBe(true);
+    expect(foldProductCompactions([{
+      data: receipt,
+      seq: 6,
+      time: 7,
+      type: "myagents/session/compaction",
+    }])).toEqual(new Map([["compact-primary-1", receipt]]));
+    let getterHits = 0;
+    const malformed: Record<string, unknown> = {};
+    Object.defineProperty(malformed, "outcome", {
+      enumerable: true,
+      get: () => {
+        getterHits += 1;
+        return "not_needed";
+      },
+    });
+    expect(() => validateProductCompactionReceipt(malformed)).toThrow("data fields");
+    expect(getterHits).toBe(0);
   });
 
   it("derives one fixed database location from every selected platform adapter", () => {
@@ -420,6 +456,46 @@ describe("ProductSqliteSessionPersistence", () => {
     expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId))).toEqual([id]);
     expect(await persistence.rollbackDelete(prepared.token, "delete-client-revision-drift"))
       .toMatchObject({ phase: "rolled_back" });
+    await context.fiber.dispose();
+  });
+
+  it("purges only an exact committed tombstone and retains its idempotent receipt", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-delete-purge");
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, turn(0, 1));
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("delete purge fixture did not install product persistence");
+    }
+    const persistence = context.sessionPersistence;
+    const prepared = await persistence.prepareDelete({
+      clientMutationId: "delete-purge-client-1",
+      runtimeSessionId: id,
+    });
+    await expect(persistence.purgeDelete(prepared.token, "delete-purge-client-1"))
+      .rejects.toThrow(/cannot purge from prepared/u);
+    await persistence.commitDelete(prepared.token, "delete-purge-client-1");
+    const purged = await persistence.purgeDelete(prepared.token, "delete-purge-client-1");
+    expect(purged).toMatchObject({
+      phase: "purged",
+      receipt: {
+        collectedCheckpointBlobs: 0,
+        deletedGenerationId: prepared.sourceGenerationId,
+        purged: true,
+        runtimeSessionId: id,
+      },
+    });
+    expect(await persistence.purgeDelete(prepared.token, "delete-purge-client-1"))
+      .toEqual(purged);
+    expect(await persistence.getDelete(prepared.token)).toEqual(purged);
+    expect(await persistence.list()).toEqual([]);
+    await expect(persistence.inspectRecovery(id)).resolves.toEqual({
+      state: "recovery_required",
+      reason: "persisted_session_unavailable",
+      retryable: false,
+      unsettledMutations: [],
+    });
     await context.fiber.dispose();
   });
 

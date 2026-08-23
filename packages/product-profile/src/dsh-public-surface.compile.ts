@@ -17,6 +17,8 @@ import { CredentialProvider, credentialRef } from "@deepseek-ai/dsh-credentials"
 import type { CredentialInfo, ResolvedCredential } from "@deepseek-ai/dsh-credentials";
 import { CompactionEngine, CompactionId } from "@deepseek-ai/dsh-compaction";
 import type { CompactionAgentContext, CompactionResult } from "@deepseek-ai/dsh-compaction";
+import { BasicCompactionEngine } from "@deepseek-ai/dsh-compaction-basic";
+import type { BasicCompactionConfig } from "@deepseek-ai/dsh-compaction-basic";
 import { CommandId, CommandRuntime, parseCommand } from "@deepseek-ai/dsh-commands";
 import type {
   CommandDefinition,
@@ -82,6 +84,8 @@ import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { PromptAssembly, PromptContext, PromptSection } from "@deepseek-ai/dsh-system-prompt";
 import { TOOL_TIMEOUT, apply as applyToolCallTimeoutPolicy } from "@deepseek-ai/dsh-tool-call-timeout-policy";
+import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
+import type { TokenMeasurement, TokenMeterConfig } from "@deepseek-ai/dsh-token-meter";
 import { ToolRuntime, defineTool } from "@deepseek-ai/dsh-tools";
 import type { ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { buildGlobCommand, buildGrepCommand, parseGlobArgs, parseGrepArgs } from "@deepseek-ai/dsh-tool-fs-search";
@@ -108,6 +112,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
   CompactionEngine,
   CompactionId,
+  BasicCompactionEngine,
   CommandId,
   CommandRuntime,
   Context,
@@ -140,6 +145,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   LocalSubprocessRuntime,
   SystemPrompt,
   TOOL_TIMEOUT,
+  TokenMeter,
   ToolRuntime,
   UserQuestionService,
   WebRuntime,
@@ -178,6 +184,7 @@ export interface DshPublicSurfaceTypes {
   attachment: [ImageAttachmentRef, StoredImageAttachment];
   cordis: [Plugin];
   compaction: [CompactionAgentContext, CompactionResult];
+  compactionBasic: [BasicCompactionConfig];
   commands: [CommandDefinition, CommandExecution, CommandInputDescriptor, CommandInvocation, CommandResult, ParsedCommand];
   credentials: [CredentialInfo, ResolvedCredential];
   filesystem: [FsEditRequest, FsWriteIntent];
@@ -208,6 +215,7 @@ export interface DshPublicSurfaceTypes {
   subprocess: [SubprocessHandle, SubprocessSpawnSpec];
   systemPrompt: [PromptAssembly, PromptContext, PromptSection];
   tools: [ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext];
+  tokenMeter: [TokenMeasurement, TokenMeterConfig];
   userQuestions: [AskUserQuestionRequest, UserQuestionProvider];
   web: [WebFetchProvider, WebSearchProvider];
   webHelpers: [WebFetchMeta, WebSearchMeta];

@@ -56,7 +56,7 @@ describe("candidate-v2 protocol authority", () => {
     const reverseMethods = Object.values(RPC_METHODS)
       .filter(({ direction }) => direction === "runtime_to_host");
 
-    expect(hostMethods).toHaveLength(35);
+    expect(hostMethods).toHaveLength(36);
     expect(reverseMethods).toHaveLength(7);
     expect(Object.keys(RPC_NOTIFICATIONS)).toHaveLength(4);
     expect(CANONICAL_TOOL_NAMES).toHaveLength(20);

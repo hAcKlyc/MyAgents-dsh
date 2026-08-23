@@ -4,6 +4,7 @@ export type ProductDeletePhase =
   | "committed"
   | "rolling_back"
   | "rolled_back"
+  | "purged"
   | "recovery_required";
 
 export interface ProductDeletePrepareInput {
@@ -26,6 +27,7 @@ export interface ProductDeleteRecord {
 export interface ProductDeleteStore {
   prepareDelete(input: ProductDeletePrepareInput, signal?: AbortSignal): Promise<ProductDeleteRecord>;
   commitDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord>;
+  purgeDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord>;
   rollbackDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord>;
   getDelete(token: string, signal?: AbortSignal): Promise<ProductDeleteRecord | undefined>;
 }

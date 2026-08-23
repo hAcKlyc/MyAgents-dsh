@@ -1,4 +1,4 @@
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,9 @@ const assert = (condition: boolean, message: string): void => {
 const rootPackage = await readJson(resolve(repositoryRoot, "package.json"));
 const lockfile = await readJson(resolve(repositoryRoot, "package-lock.json"));
 const expectedBaseline = serializeDshBaseline(buildDshBaseline(rootPackage, lockfile));
+if (process.argv.includes("--write")) {
+  await writeFile(baselinePath, expectedBaseline);
+}
 const currentBaseline = await readFile(baselinePath, "utf8");
 assert(currentBaseline === expectedBaseline, "checked-in DSH baseline must regenerate byte-identically from package.json and package-lock.json");
 

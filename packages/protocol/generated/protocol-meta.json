@@ -24,11 +24,11 @@
     "TaskUpdate"
   ],
   "capabilityProfileDigest": "80d3f130738d75c57caa6ad6d233b6f2cfc57a7ad3a786985d985445c7177d02",
-  "contractSourceSha256": "5e8a2495fdb0680a4c78e2ee8441abd9ce45a5c9ea164e5ae4c76d6a874c0833",
+  "contractSourceSha256": "b88ea3a5cac710bcc702614c3daff6f023762055d69313b64474c3cedc061472",
   "developmentDshVersion": "0.1.1-rc.2",
-  "dshArtifactManifestSha256": "f442e8c455a0f07d838be41efa3a12db1947458ca28ffcdd5558ae468befc220",
+  "dshArtifactManifestSha256": "4f8cb4e8e17b8da39a817460c5201bd6982b7b968ac6ed4b494da4382d4feadf",
   "dshEngineVersion": "0.1.1-rc.2.myagents.b150a551b8d4.1104f84a3f49",
-  "fixturesSha256": "0c81156ae2510deaa37353055ff582b3597e0eff27dab2b7da0f7be77ef5d51c",
+  "fixturesSha256": "7c5fe39382bef6fb3d34e7d3b2ccde739026cf13cae31b76343fc82d0d752874",
   "hostMethods": [
     "initialize",
     "runtime/status",
@@ -40,6 +40,7 @@
     "session/compact",
     "session/delete/prepare",
     "session/delete/commit",
+    "session/delete/purge",
     "session/delete/rollback",
     "session/delete/status",
     "session/fork/prepare",
@@ -83,6 +84,6 @@
     "host/attachment/release"
   ],
   "runtimeVersion": "0.0.0",
-  "schemaSha256": "6c10c17bf16e272cd694667fee2655d17b687aff1bad0e49bfdd9450a4f58af7",
+  "schemaSha256": "44996aba8afa131ead844f9dde4962bac22c81eb58aa4431036f6996e0b36580",
   "sessionFormat": "dsh-session-events-v1"
 }

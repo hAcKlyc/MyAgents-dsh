@@ -89,6 +89,7 @@ const runtimeCompositionSourcePaths = [
   "packages/operation-runtime/src/service.ts",
   "packages/operation-runtime/src/terminal.ts",
   "packages/persistence-product/src/delete.ts",
+  "packages/persistence-product/src/compaction.ts",
   "packages/persistence-product/src/fork.ts",
   "packages/persistence-product/src/index.ts",
   "packages/persistence-product/src/known-events.ts",
@@ -286,7 +287,10 @@ const collectDshVersions = (tree: JsonObject): Map<string, Set<string>> => {
     for (const [name, childValue] of Object.entries(dependencies as JsonObject)) {
       const child = exactObject(childValue, `npm ls dependency ${name}`);
       if (name.startsWith("@deepseek-ai/dsh-")) {
-        if (typeof child.version !== "string") throw new TypeError(`${name} lacks a resolved version`);
+        if (typeof child.version !== "string") {
+          if (Object.keys(child).length === 0) continue;
+          throw new TypeError(`${name} lacks a resolved version`);
+        }
         const observed = versions.get(name) ?? new Set<string>();
         observed.add(child.version);
         versions.set(name, observed);
@@ -847,7 +851,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w4-a9"
+    || selfCheckProfile.stage !== "batch-1-w4-a10"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -1140,6 +1144,8 @@ const main = (): void => {
       || evidence.productPersistenceVerified !== true
       || evidence.checkpointJournalVerified !== true
       || evidence.deleteTransactionVerified !== true
+      || evidence.deletePurgeVerified !== true
+      || evidence.compactionVerified !== true
       || evidence.forkTransactionVerified !== true
       || evidence.rewindTransactionVerified !== true
       || evidence.sessionReadVerified !== true
@@ -1230,6 +1236,38 @@ const main = (): void => {
       || deleteEvidence.sessionStateAfterRollback !== "active") {
       throw new Error("Session delete evidence differs from the exact W4-A7 contract");
     }
+    const compactionEvidence = exactObject(
+      evidence.compactionEvidence,
+      "manual long-Session compaction evidence",
+    );
+    if (compactionEvidence.acceptedState !== "accepted"
+      || JSON.stringify(compactionEvidence.durableEventTypes) !== JSON.stringify([
+        "compaction/start",
+        "compaction/summary",
+        "user/message",
+        "compaction/end",
+        "myagents/session/compaction",
+      ])
+      || compactionEvidence.eventCountAdded !== 5
+      || !Number.isSafeInteger(compactionEvidence.longSessionTurnCount)
+      || (compactionEvidence.longSessionTurnCount as number) < 10
+      || compactionEvidence.summaryRequests !== 1) {
+      throw new Error("manual compaction evidence differs from the exact W4-A10 contract");
+    }
+    const deletePurgeEvidence = exactObject(
+      evidence.deletePurgeEvidence,
+      "irreversible Session purge evidence",
+    );
+    if (deletePurgeEvidence.committedState !== "committed"
+      || deletePurgeEvidence.journalState !== "purged"
+      || deletePurgeEvidence.purged !== true
+      || !Number.isSafeInteger(deletePurgeEvidence.collectedCheckpointBlobs)
+      || (deletePurgeEvidence.collectedCheckpointBlobs as number) < 0
+      || deletePurgeEvidence.sessionRowsAfterPurge !== 0
+      || deletePurgeEvidence.generationRowsAfterPurge !== 0
+      || deletePurgeEvidence.eventRowsAfterPurge !== 0) {
+      throw new Error("irreversible Session purge evidence differs from the exact W4-A10 contract");
+    }
     const forkEvidence = exactObject(
       evidence.forkTransactionEvidence,
       "Session fork transaction evidence",
@@ -1254,7 +1292,9 @@ const main = (): void => {
       || persistenceEvidence.format !== "myagents-sqlite-session-v1"
       || persistenceEvidence.generationCount !== 2
       || persistenceEvidence.productEventReloaded !== true
-      || persistenceEvidence.resumedEventCount !== persistenceEvidence.eventCount + 2
+      || persistenceEvidence.resumedAddedEventCount !== 7
+      || persistenceEvidence.resumedEventCount
+        !== persistenceEvidence.eventCount + (persistenceEvidence.resumedAddedEventCount as number)
       || persistenceEvidence.resumedDurableSequence !== persistenceEvidence.resumedEventCount
       || persistenceEvidence.resumedSourcePrefixByteEquivalent !== true
       || persistenceEvidence.resumedWithoutModelReplay !== true
@@ -1273,7 +1313,9 @@ const main = (): void => {
       || !Number.isSafeInteger(persistenceEvidence.revision)
       || persistenceEvidence.revision < 1
       || persistenceEvidence.schemaVersion !== PRODUCT_PERSISTENCE_SCHEMA_VERSION) {
-      throw new Error("product SQLite persistence/read evidence differs from the exact W4-A3 contract");
+      throw new Error(
+        `product SQLite persistence/read evidence differs from the exact W4-A3 contract: ${JSON.stringify(persistenceEvidence)}`,
+      );
     }
     const hostAttachmentEvidence = exactObject(
       evidence.hostAttachmentEvidence,

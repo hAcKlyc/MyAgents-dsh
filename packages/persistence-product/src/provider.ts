@@ -332,6 +332,10 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
     return stateOf(this).store.commitDelete(token, clientMutationId, signal);
   }
 
+  purgeDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord> {
+    return stateOf(this).store.purgeDelete(token, clientMutationId, signal);
+  }
+
   rollbackDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord> {
     return stateOf(this).store.rollbackDelete(token, clientMutationId, signal);
   }
