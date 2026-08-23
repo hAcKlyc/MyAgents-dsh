@@ -290,6 +290,70 @@ describe("durable product-operation fold", () => {
     } as never], "operation-proxy-test")).toThrow("must not be a Proxy");
   });
 
+  it("resets inherited operation idempotency only at an exact settled fork receipt", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params("fork-reused-operation"));
+    const queued = findProductOperation(
+      foldProductOperations(fixture.agent.session.events, fixture.agent.id),
+      "fork-reused-operation",
+    );
+    const message = fixture.inbox.nextTurn[0];
+    if (queued === undefined || message === undefined) throw new Error("fork source operation was not queued");
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    fixture.agent.session.append("myagents/operation/terminal", {
+      clientOperationId: queued.clientOperationId,
+      productTurnId: queued.productTurnId,
+      terminal: {
+        kind: "failed",
+        code: "no_final_assistant",
+        message: "Final DSH turn completed without a durable non-empty assistant and usage anchor",
+        retryable: false,
+      },
+      finalDshTurn: 1,
+      terminalAt: 1_800_000_000_100,
+    });
+    const inherited = fixture.agent.session.events;
+    const receipt = {
+      type: "myagents/session/fork",
+      seq: inherited.length,
+      time: 1_800_000_000_101,
+      data: {
+        clientMutationId: "fork-client-1",
+        sourceGenerationId: "source-generation-1",
+        sourceRuntimeSessionId: "source-session-1",
+        sourceStableBoundaryId: "source-boundary-1",
+        targetGenerationId: "target-generation-1",
+        targetPersistenceRef: "target-persistence-1",
+        targetRuntimeSessionId: fixture.agent.id,
+        targetWorkspaceIdentity: "target-workspace-1",
+        token: "fork-token-1",
+      },
+    } as unknown as SessionEvent;
+    const afterReceipt = [...inherited, receipt];
+    expect(foldProductOperations(afterReceipt, fixture.agent.id).operations).toEqual([]);
+    const accepted = inherited.find((event) => event.type === "myagents/operation/accepted");
+    if (accepted?.type !== "myagents/operation/accepted") {
+      throw new Error("fork source acceptance event is unavailable");
+    }
+    const reused = {
+      ...accepted,
+      seq: afterReceipt.length,
+      time: 1_800_000_000_102,
+    } as SessionEvent;
+    expect(findProductOperation(
+      foldProductOperations([...afterReceipt, reused], fixture.agent.id),
+      "fork-reused-operation",
+    )?.state).toBe("accepted_undelivered");
+    const unsettledPrefix = inherited.slice(0, -1);
+    expect(() => foldProductOperations([
+      ...unsettledPrefix,
+      { ...receipt, seq: unsettledPrefix.length },
+    ], fixture.agent.id))
+      .toThrow("fork receipt follows an unsettled source operation boundary");
+  });
+
   it("fails closed across impossible turn claims and the durable Inbox-delete crash gap", async () => {
     const fixture = await mountService();
     await fixture.service.start(params());

@@ -1,5 +1,5 @@
 export const PRODUCT_PERSISTENCE_FORMAT = "myagents-sqlite-session-v1" as const;
-export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 4 as const;
+export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 5 as const;
 export const PRODUCT_PERSISTENCE_APPLICATION_ID = 0x4d594147 as const;
 
 export const PRODUCT_PERSISTENCE_SCHEMA_V1_SQL = `
@@ -160,14 +160,45 @@ CREATE TABLE rewind_child_plans (
 ) STRICT;
 ` as const;
 
-export const PRODUCT_PERSISTENCE_SCHEMA_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V3_SQL.trim()}
+export const PRODUCT_PERSISTENCE_SCHEMA_V4_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V3_SQL.trim()}
 
 ${PRODUCT_REWIND_CHILD_SCHEMA_SQL.trim()}
+` as const;
+
+export const PRODUCT_FORK_SCHEMA_SQL = `
+CREATE TABLE fork_journals (
+  token                       TEXT PRIMARY KEY,
+  client_mutation_id          TEXT NOT NULL,
+  request_fingerprint         TEXT NOT NULL,
+  source_session_id           TEXT NOT NULL,
+  source_generation_id        TEXT NOT NULL,
+  source_revision             TEXT NOT NULL,
+  source_boundary_id          TEXT NOT NULL REFERENCES stable_boundaries(boundary_id) ON DELETE RESTRICT,
+  target_runtime_home         TEXT NOT NULL,
+  target_persistence_ref      TEXT NOT NULL,
+  target_workspace_identity   TEXT NOT NULL,
+  target_session_id           TEXT NOT NULL,
+  target_generation_id        TEXT NOT NULL,
+  phase                       TEXT NOT NULL CHECK (phase IN ('prepared', 'committing', 'committed', 'aborting', 'aborted', 'recovery_required')),
+  attempt                     INTEGER NOT NULL CHECK (attempt >= 0),
+  receipt_json                TEXT,
+  created_at                  INTEGER NOT NULL,
+  updated_at                  INTEGER NOT NULL,
+  UNIQUE (source_session_id, client_mutation_id),
+  FOREIGN KEY (source_session_id, source_generation_id)
+    REFERENCES session_generations(session_id, generation_id) ON DELETE RESTRICT
+) STRICT;
+` as const;
+
+export const PRODUCT_PERSISTENCE_SCHEMA_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V4_SQL.trim()}
+
+${PRODUCT_FORK_SCHEMA_SQL.trim()}
 ` as const;
 
 export const PRODUCT_PERSISTENCE_TABLES = Object.freeze([
   "checkpoint_blobs",
   "checkpoint_records",
+  "fork_journals",
   "mutation_journals",
   "rewind_child_plans",
   "rewind_file_plans",

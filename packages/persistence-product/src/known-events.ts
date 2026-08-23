@@ -8,9 +8,11 @@ import { PRODUCT_WORK_EVENT_TYPES } from "@myagents-dsh/tools-agent";
 import { PRODUCT_PLAN_EVENT_TYPES } from "@myagents-dsh/tools-interaction";
 
 import { PRODUCT_REWIND_EVENT_TYPES } from "./rewind.js";
+import { PRODUCT_FORK_EVENT_TYPES } from "./fork.js";
 
 export const PRODUCT_REQUIRED_SESSION_EVENT_TYPES = Object.freeze([
   ...PRODUCT_CHECKPOINT_EVENT_TYPES,
+  ...PRODUCT_FORK_EVENT_TYPES,
   ...PRODUCT_OPERATION_EVENT_TYPES,
   ...PRODUCT_PERMISSION_EVENT_TYPES,
   ...PRODUCT_PLAN_EVENT_TYPES,

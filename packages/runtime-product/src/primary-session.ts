@@ -11,6 +11,8 @@ import {
   type MethodResult,
 } from "@myagents-dsh/protocol";
 import type {
+  ProductForkRecord,
+  ProductForkStore,
   ProductRewindRecord,
   ProductRewindStore,
   ProductSessionReadRequest,
@@ -1473,6 +1475,7 @@ export interface ProductSessionServiceConfig {
   readonly readSession?: (
     request: ProductSessionReadRequest,
   ) => Promise<MethodResult<"session/read">>;
+  readonly forkStore?: () => ProductForkStore | undefined;
   readonly rewindStore?: () => ProductRewindStore | undefined;
   readonly reconcileResume?: (agent: Agent) => Promise<void>;
   readonly validateResume?: (agent: Agent) => Promise<void>;
@@ -1482,6 +1485,7 @@ export class ProductSessionService extends Service {
   static inject = ["agents", "sessions"];
   private readonly backendValue: PrimarySessionBackend;
   private readonly childPublicationAuthorityValue: object | undefined;
+  private readonly forkStoreValue: ProductSessionServiceConfig["forkStore"];
   private readonly providerAdmissionGuardValue: PrimarySessionProviderAdmissionGuard | undefined;
   private readonly readSessionValue: ProductSessionServiceConfig["readSession"];
   private readonly rewindStoreValue: ProductSessionServiceConfig["rewindStore"];
@@ -1504,6 +1508,7 @@ export class ProductSessionService extends Service {
         "assertPublicationCurrent",
         "backend",
         "childPublicationAuthority",
+        "forkStore",
         "providerAdmissionGuard",
         "quiescenceGraceMs",
         "readSession",
@@ -1562,6 +1567,13 @@ export class ProductSessionService extends Service {
       throw new TypeError("ProductSession read projection must be a non-proxy function");
     }
     this.readSessionValue = readSession;
+    const forkStore = Object.hasOwn(normalized, "forkStore")
+      ? normalized.forkStore as ProductSessionServiceConfig["forkStore"]
+      : undefined;
+    if (forkStore !== undefined && (typeof forkStore !== "function" || utilTypes.isProxy(forkStore))) {
+      throw new TypeError("ProductSession fork Store authority must be a non-proxy function");
+    }
+    this.forkStoreValue = forkStore;
     const rewindStore = Object.hasOwn(normalized, "rewindStore")
       ? normalized.rewindStore as ProductSessionServiceConfig["rewindStore"]
       : undefined;
@@ -1723,6 +1735,96 @@ export class ProductSessionService extends Service {
     }), signal).then((record) => this.#projectRewind(record));
   }
 
+  forkPrepare(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/fork/prepare">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.forkPrepare(value, signal);
+    const params = validateMethodParams("session/fork/prepare", value);
+    const snapshot = this.snapshot();
+    if (snapshot.state !== "ready" || snapshot.runtimeSessionId === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session is not ready for fork prepare");
+    }
+    const workspace = this.workspaceValue;
+    if (workspace?.identity !== params.targetWorkspaceIdentity) {
+      throw new ProtocolError(
+        "protocol_environment_mismatch",
+        "fork target workspace identity differs from the initialized primary Session workspace",
+      );
+    }
+    return this.#requireForkStore().prepareFork(Object.freeze({
+      clientMutationId: params.clientMutationId,
+      runtimeSessionId: snapshot.runtimeSessionId,
+      sourceStableBoundaryId: params.sourceStableBoundaryId,
+      targetPersistenceRef: params.targetPersistenceRef,
+      targetRuntimeHome: params.targetRuntimeHome,
+      ...(params.targetRuntimeSessionId === undefined
+        ? {} : { targetRuntimeSessionId: params.targetRuntimeSessionId }),
+      targetWorkspaceIdentity: params.targetWorkspaceIdentity,
+    }), signal).then((record) => this.#projectFork(record));
+  }
+
+  forkCommit(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/fork/commit">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.forkCommit(value, signal);
+    const params = validateMethodParams("session/fork/commit", value);
+    const store = this.#requireForkStore();
+    const snapshot = this.snapshot();
+    return store.getFork(params.token, signal).then(async (record) => {
+      if (record === undefined || snapshot.runtimeSessionId !== record.runtimeSessionId) {
+        throw new ProtocolError("session_mutation_not_found", "fork token is unavailable for the primary Session");
+      }
+      if (record.phase === "committed") return this.#projectFork(record);
+      await this.requireAgent().whenIdle();
+      signal?.throwIfAborted();
+      const current = this.snapshot();
+      if (current.state !== "ready" || current.runtimeSessionId !== record.runtimeSessionId) {
+        throw new ProtocolError(
+          "primary_session_not_ready",
+          "primary Session changed while fork commit waited for quiescence",
+        );
+      }
+      return this.#projectFork(await store.commitFork(params.token, params.clientMutationId, signal));
+    });
+  }
+
+  forkAbort(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/fork/abort">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.forkAbort(value, signal);
+    const params = validateMethodParams("session/fork/abort", value);
+    const store = this.#requireForkStore();
+    const snapshot = this.snapshot();
+    return store.getFork(params.token, signal).then(async (record) => {
+      if (record === undefined || snapshot.runtimeSessionId !== record.runtimeSessionId) {
+        throw new ProtocolError("session_mutation_not_found", "fork token is unavailable for the primary Session");
+      }
+      return this.#projectFork(await store.abortFork(params.token, params.clientMutationId, signal));
+    });
+  }
+
+  forkStatus(
+    value: unknown,
+    signal?: AbortSignal,
+  ): Promise<MethodResult<"session/fork/status">> {
+    const owner = productSessionServiceOwner(this);
+    if (owner !== this) return owner.forkStatus(value, signal);
+    const params = validateMethodParams("session/fork/status", value);
+    const snapshot = this.snapshot();
+    return this.#requireForkStore().getFork(params.token, signal).then((record) => {
+      if (record === undefined || snapshot.runtimeSessionId !== record.runtimeSessionId) {
+        throw new ProtocolError("session_mutation_not_found", "fork token is unavailable for the primary Session");
+      }
+      return this.#projectFork(record);
+    });
+  }
+
   rewindCommit(
     value: unknown,
     signal?: AbortSignal,
@@ -1863,6 +1965,25 @@ export class ProductSessionService extends Service {
       throw new ProtocolError("primary_session_not_ready", "primary Session rewind persistence is not installed");
     }
     return store;
+  }
+
+  #requireForkStore(): ProductForkStore {
+    const store = this.forkStoreValue?.();
+    if (store === undefined) {
+      throw new ProtocolError("primary_session_not_ready", "primary Session fork persistence is not installed");
+    }
+    return store;
+  }
+
+  #projectFork(record: ProductForkRecord): MethodResult<"session/fork/status"> {
+    const state = record.phase === "committing" || record.phase === "aborting"
+      ? "prepared"
+      : record.phase;
+    return Object.freeze({
+      token: record.token,
+      state,
+      ...(record.receipt === undefined ? {} : { receipt: record.receipt }),
+    });
   }
 
   #projectRewind(record: ProductRewindRecord): MethodResult<"session/rewind/status"> {

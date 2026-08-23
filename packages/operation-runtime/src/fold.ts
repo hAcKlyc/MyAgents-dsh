@@ -163,6 +163,27 @@ const positiveTurn = (value: unknown, description: string): number => {
   return value as number;
 };
 
+const validateForkReceipt = (value: unknown, runtimeSessionId: string): void => {
+  const event = exactOwnDataObject(value, [
+    "clientMutationId",
+    "sourceGenerationId",
+    "sourceRuntimeSessionId",
+    "sourceStableBoundaryId",
+    "targetGenerationId",
+    "targetPersistenceRef",
+    "targetRuntimeSessionId",
+    "targetWorkspaceIdentity",
+    "token",
+  ], [], "fork receipt");
+  for (const [key, candidate] of Object.entries(event)) {
+    boundedIdentifier(candidate, `fork receipt ${key}`);
+  }
+  if (event.targetRuntimeSessionId !== runtimeSessionId
+    || event.sourceRuntimeSessionId === runtimeSessionId) {
+    return fail("fork receipt differs from the folded Session identity");
+  }
+};
+
 export const validateOperationBirthSnapshot = (value: unknown): OperationBirthSnapshot => {
   const birth = exactOwnDataObject(value, [
     "configRevision",
@@ -459,6 +480,19 @@ const foldProductOperationsValue = (
     if (event === undefined) return fail("operation fold encountered a sparse event sequence");
     if (event.seq !== index) return fail("operation fold requires contiguous Session sequence numbers");
     const runtimeType: string = event.type;
+    if (runtimeType === "myagents/session/fork") {
+      validateForkReceipt((event as unknown as { data: unknown }).data, runtimeSessionId);
+      if (openTurn !== undefined || inbox["next-step"].length !== 0
+        || inbox["next-turn"].length !== 0
+        || removedClaimCandidates.size !== 0 || removedDiscardCandidates.size !== 0
+        || [...operations.values()].some((operation) => !operation.terminalSeen)) {
+        return fail("fork receipt follows an unsettled source operation boundary");
+      }
+      operations.clear();
+      messageOwners.clear();
+      dshTurnOwners.clear();
+      continue;
+    }
 
     switch (event.type) {
       case "myagents/operation/accepted": {

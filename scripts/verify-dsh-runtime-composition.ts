@@ -89,6 +89,7 @@ const runtimeCompositionSourcePaths = [
   "packages/operation-runtime/src/service.ts",
   "packages/operation-runtime/src/terminal.ts",
   "packages/persistence-product/src/index.ts",
+  "packages/persistence-product/src/fork.ts",
   "packages/persistence-product/src/known-events.ts",
   "packages/persistence-product/src/provider.ts",
   "packages/persistence-product/src/read.ts",
@@ -845,7 +846,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w4-a5"
+    || selfCheckProfile.stage !== "batch-1-w4-a6"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -1137,6 +1138,7 @@ const main = (): void => {
       || evidence.nativeRpcStopped !== true
       || evidence.productPersistenceVerified !== true
       || evidence.checkpointJournalVerified !== true
+      || evidence.forkTransactionVerified !== true
       || evidence.rewindTransactionVerified !== true
       || evidence.sessionReadVerified !== true
       || evidence.failedResumePublicationRejected !== true
@@ -1212,6 +1214,20 @@ const main = (): void => {
       || !Number.isSafeInteger(rewindEvidence.sourceMessageCount)
       || rewindEvidence.sourceMessageCount <= rewindEvidence.selectedMessageCount) {
       throw new Error("Session rewind evidence differs from the exact W4-A5 contract");
+    }
+    const forkEvidence = exactObject(
+      evidence.forkTransactionEvidence,
+      "Session fork transaction evidence",
+    );
+    if (forkEvidence.abortedState !== "aborted"
+      || forkEvidence.committedState !== "committed"
+      || typeof forkEvidence.sourceBoundaryId !== "string"
+      || !forkEvidence.sourceBoundaryId.startsWith("b_")
+      || !Number.isSafeInteger(forkEvidence.sourceEventCount)
+      || (forkEvidence.sourceEventCount as number) < 1
+      || forkEvidence.targetEventCount !== (forkEvidence.sourceEventCount as number) + 1
+      || forkEvidence.targetRuntimeSessionId !== "artifact-forked-session") {
+      throw new Error("Session fork evidence differs from the exact W4-A6 contract");
     }
     const persistenceEvidence = exactObject(
       evidence.productPersistenceEvidence,

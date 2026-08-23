@@ -316,6 +316,8 @@ assert.throws(() => validateEffectiveToolCatalog({
 const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "myagents-dsh-w2-a2-artifact-")));
 const fixtureWorkspace = join(fixtureRoot, "workspace");
 const fixtureRuntimeHome = join(fixtureRoot, "runtime-home");
+const fixtureForkRuntimeHome = join(fixtureRoot, "fork-runtime-home");
+const fixtureAbortedForkRuntimeHome = join(fixtureRoot, "fork-aborted-runtime-home");
 const fixtureAttachmentStaging = join(fixtureRoot, "attachments");
 const fixtureTemporaryRoot = join(fixtureRoot, "temporary");
 const fixtureFile = join(fixtureWorkspace, "governed.txt");
@@ -353,6 +355,8 @@ const fixturePlanPath = join(
 await Promise.all([
   mkdir(fixtureWorkspace),
   mkdir(fixtureRuntimeHome),
+  mkdir(fixtureForkRuntimeHome),
+  mkdir(fixtureAbortedForkRuntimeHome),
   mkdir(fixtureTemporaryRoot),
   mkdir(fixtureAttachmentStaging),
   mkdir(fixtureSkillRoot, { recursive: true }),
@@ -2541,6 +2545,150 @@ assert.equal(rewindTargetRead.durableHead.sequence, rewindTargetEvents.length);
 const rewindTargetStableBoundaryId = rewindTargetRead.durableHead.stableBoundaryId;
 assert.ok(rewindTargetStableBoundaryId !== undefined);
 
+await assert.rejects(hostClient.sessionForkPrepare({
+  clientMutationId: "artifact-fork-workspace-mismatch",
+  sourceStableBoundaryId: rewindTargetStableBoundaryId,
+  targetPersistenceRef: "artifact-fork-workspace-mismatch",
+  targetRuntimeHome: fixtureForkRuntimeHome,
+  targetWorkspaceIdentity: "different-workspace-authority",
+}), /workspace identity differs/u);
+const forkPrepared = await hostClient.sessionForkPrepare({
+  clientMutationId: "artifact-fork-1",
+  sourceStableBoundaryId: rewindTargetStableBoundaryId,
+  targetPersistenceRef: "artifact-fork-persistence",
+  targetRuntimeHome: fixtureForkRuntimeHome,
+  targetRuntimeSessionId: "artifact-forked-session",
+  targetWorkspaceIdentity: initializeRequest.workspace.identity,
+}).catch((error: unknown) => {
+  throw new Error("repository-external fork prepare failed", { cause: error });
+});
+assert.equal(forkPrepared.state, "prepared");
+assert.deepEqual(await hostClient.sessionForkStatus({ token: forkPrepared.token }), forkPrepared);
+const forkCommitted = await hostClient.sessionForkCommit({
+  clientMutationId: "artifact-fork-1",
+  token: forkPrepared.token,
+}).catch((error: unknown) => {
+  throw new Error("repository-external fork commit failed", { cause: error });
+});
+assert.equal(forkCommitted.state, "committed");
+assert.deepEqual(await hostClient.sessionForkCommit({
+  clientMutationId: "artifact-fork-1",
+  token: forkPrepared.token,
+}), forkCommitted);
+assert.deepEqual(primaryAgent.session.events, rewindTargetEvents);
+const forkDatabase = new DatabaseSync(productSessionDatabasePath(
+  selectPlatformAdapter("darwin-arm64"),
+  fixtureForkRuntimeHome,
+), { readOnly: true });
+const forkSession = forkDatabase.prepare(`
+  SELECT s.state, s.event_count, g.state AS generation_state, g.origin, g.header_json
+    FROM sessions AS s JOIN session_generations AS g
+      ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+   WHERE s.id = ?
+`).get("artifact-forked-session") as {
+  event_count: number;
+  generation_state: string;
+  header_json: string;
+  origin: string;
+  state: string;
+};
+assert.deepEqual({
+  eventCount: forkSession.event_count,
+  generationState: forkSession.generation_state,
+  origin: forkSession.origin,
+  state: forkSession.state,
+}, {
+  eventCount: rewindTargetEvents.length + 1,
+  generationState: "active",
+  origin: "fork",
+  state: "active",
+});
+const forkHeader: unknown = JSON.parse(forkSession.header_json);
+assert.ok(forkHeader !== null && typeof forkHeader === "object" && !Array.isArray(forkHeader));
+const forkHeaderRecord = forkHeader as Record<string, unknown>;
+assert.equal(forkHeaderRecord.id, "artifact-forked-session");
+assert.equal(forkHeaderRecord.cwd, fixtureWorkspace);
+assert.equal(forkHeaderRecord.parentSession, "dsh-artifact-primary");
+assert.equal(forkHeaderRecord.seedLength, rewindTargetEvents.length);
+const forkTail = forkDatabase.prepare(`
+  SELECT envelope_json FROM session_events WHERE session_id = ? ORDER BY seq DESC LIMIT 1
+`).get("artifact-forked-session") as { envelope_json: string };
+const forkTailEvent: unknown = JSON.parse(forkTail.envelope_json);
+assert.ok(forkTailEvent !== null && typeof forkTailEvent === "object" && !Array.isArray(forkTailEvent));
+assert.deepEqual(forkTailEvent, {
+  data: {
+    clientMutationId: "artifact-fork-1",
+    sourceGenerationId: forkCommitted.receipt?.sourceGenerationId,
+    sourceRuntimeSessionId: "dsh-artifact-primary",
+    sourceStableBoundaryId: rewindTargetStableBoundaryId,
+    targetGenerationId: forkCommitted.receipt?.targetGenerationId,
+    targetPersistenceRef: "artifact-fork-persistence",
+    targetRuntimeSessionId: "artifact-forked-session",
+    targetWorkspaceIdentity: initializeRequest.workspace.identity,
+    token: forkPrepared.token,
+  },
+  seq: rewindTargetEvents.length,
+  time: (forkTailEvent as Record<string, unknown>).time,
+  type: "myagents/session/fork",
+});
+forkDatabase.close();
+const forkReloadContext = new Context();
+await forkReloadContext.plugin(SessionStore);
+const forkPlatform = selectPlatformAdapter("darwin-arm64");
+await forkReloadContext.plugin(ProductSqliteSessionPersistence, {
+  durability: forkPlatform.sqliteDurabilityPlan(productSessionDatabasePath(
+    forkPlatform,
+    fixtureForkRuntimeHome,
+  )),
+  platform: forkPlatform,
+  runtimeHome: fixtureForkRuntimeHome,
+  writeBatchMaxDelayMs: 1,
+});
+const forkPreparation = await forkReloadContext.sessionPersistence.prepare(
+  SessionId("artifact-forked-session"),
+);
+assert.deepEqual(forkPreparation.session.deriveMessages(), rewindTargetDerivedMessages);
+assert.equal(
+  forkPreparation.session.events.some(
+    (event) => (event as { readonly type: string }).type === "myagents/session/fork",
+  ),
+  true,
+);
+assert.equal(forkPreparation.session.events.at(-1)?.type, "session/end-seed");
+forkPreparation[Symbol.dispose]();
+await forkReloadContext.fiber.dispose();
+
+const forkAbortPrepared = await hostClient.sessionForkPrepare({
+  clientMutationId: "artifact-fork-abort",
+  sourceStableBoundaryId: rewindTargetStableBoundaryId,
+  targetPersistenceRef: "artifact-fork-abort-persistence",
+  targetRuntimeHome: fixtureAbortedForkRuntimeHome,
+  targetRuntimeSessionId: "artifact-fork-aborted-session",
+  targetWorkspaceIdentity: initializeRequest.workspace.identity,
+});
+const forkAborted = await hostClient.sessionForkAbort({
+  clientMutationId: "artifact-fork-abort",
+  token: forkAbortPrepared.token,
+});
+assert.equal(forkAborted.state, "aborted");
+assert.deepEqual(await hostClient.sessionForkAbort({
+  clientMutationId: "artifact-fork-abort",
+  token: forkAbortPrepared.token,
+}), forkAborted);
+const abortedForkDatabase = new DatabaseSync(productSessionDatabasePath(
+  selectPlatformAdapter("darwin-arm64"),
+  fixtureAbortedForkRuntimeHome,
+), { readOnly: true });
+assert.equal(
+  (
+    abortedForkDatabase.prepare("SELECT count(*) AS count FROM sessions").get() as {
+      readonly count: number;
+    }
+  ).count,
+  0,
+);
+abortedForkDatabase.close();
+
 const governedFileEvidenceStart = fileToolEvidence.length;
 await composition.context.sdkOperations.start({
   ...turnStartParams,
@@ -4086,6 +4234,15 @@ process.stdout.write(`${JSON.stringify({
   productPersistenceVerified: true,
   checkpointJournalVerified: true,
   rewindTransactionVerified: true,
+  forkTransactionVerified: true,
+  forkTransactionEvidence: {
+    abortedState: forkAborted.state,
+    committedState: forkCommitted.state,
+    sourceBoundaryId: rewindTargetStableBoundaryId,
+    sourceEventCount: rewindTargetEvents.length,
+    targetEventCount: forkSession.event_count,
+    targetRuntimeSessionId: forkCommitted.receipt?.targetRuntimeSessionId,
+  },
   rewindTransactionEvidence: {
     committedGenerationId: rewindCommitted.receipt?.targetGenerationId,
     receiptEvent: "myagents/session/rewind",

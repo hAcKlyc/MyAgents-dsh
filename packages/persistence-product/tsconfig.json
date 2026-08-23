@@ -7,6 +7,7 @@
   },
   "files": [
     "src/index.ts",
+    "src/fork.ts",
     "src/known-events.ts",
     "src/provider.ts",
     "src/read.ts",

@@ -123,11 +123,13 @@ describe("Runtime artifact self-check", () => {
         requiredNodeVersion: "24.13.1",
         actualNodeVersion: "24.13.1",
       });
-      expect(report.profile.stage).toBe("batch-1-w4-a5");
+      expect(report.profile.stage).toBe("batch-1-w4-a6");
       expect(report.dsh.packageCount).toBe(52);
       expect(report.protocol.availableHostMethods).toEqual([
         "initialize", "runtime/status", "runtime/shutdown", "interaction/respond",
         "session/create", "session/resume", "session/read", "session/close",
+        "session/fork/prepare", "session/fork/commit", "session/fork/abort",
+        "session/fork/status",
         "session/rewind/prepare", "session/rewind/commit", "session/rewind/rollback",
         "session/rewind/status",
       ]);

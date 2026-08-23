@@ -112,6 +112,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     allowedFiles: [
       "package.json",
       "src/index.ts",
+      "src/fork.ts",
       "src/known-events.ts",
       "src/provider.ts",
       "src/read.ts",

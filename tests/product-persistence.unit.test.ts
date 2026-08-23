@@ -6,6 +6,7 @@ import {
   type SessionEvent,
   type SessionHeader,
 } from "@deepseek-ai/dsh-session";
+import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, realpath, rm, symlink, link, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -92,8 +93,8 @@ afterEach(async () => {
 describe("ProductSqliteSessionPersistence", () => {
   it("owns the exact immutable product event registry", () => {
     expect(Object.isFrozen(PRODUCT_REQUIRED_SESSION_EVENT_TYPES)).toBe(true);
-    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(18);
-    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(18);
+    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(19);
+    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(19);
     for (const type of PRODUCT_REQUIRED_SESSION_EVENT_TYPES) {
       expect(isProductKnownSessionEventType(type)).toBe(true);
     }
@@ -144,6 +145,7 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_blobs")).toBe(0);
     expect(scalar(probe, "SELECT count(*) AS value FROM stable_boundaries")).toBe(0);
     expect(scalar(probe, "SELECT count(*) AS value FROM rewind_child_plans")).toBe(0);
+    expect(scalar(probe, "SELECT count(*) AS value FROM fork_journals")).toBe(0);
     probe.close();
     await context.fiber.dispose();
   });
@@ -300,6 +302,209 @@ describe("ProductSqliteSessionPersistence", () => {
     expect((await persistence.readFrom(id, 0)).events).toEqual(allEvents);
     expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId)).sort())
       .toEqual([String(excludedChildId), String(id)].sort());
+    await context.fiber.dispose();
+  });
+
+  it("stages, commits, retries, and aborts an independent stable-prefix fork", async () => {
+    const sourceRuntimeHome = await makeRuntimeHome();
+    const committedTargetHome = await makeRuntimeHome();
+    const abortedTargetHome = await makeRuntimeHome();
+    const occupiedTargetHome = await makeRuntimeHome();
+    const staleTargetHome = await makeRuntimeHome();
+    const context = await mount(sourceRuntimeHome);
+    const sourceId = SessionId("product-persistence-fork-source");
+    const sourceHeader = header(sourceId);
+    const firstTurn = turn(0, 1);
+    await context.sessionPersistence.create(sourceHeader);
+    await context.sessionPersistence.append(sourceId, firstTurn);
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("test did not install product persistence");
+    }
+    const persistence = context.sessionPersistence;
+    const sourceRead = await persistence.readSession({
+      maxResultBytes: 65_536,
+      runtimeGeneration: "fork-generation",
+      runtimeSessionId: sourceId,
+    });
+    const boundaryId = sourceRead.durableHead.stableBoundaryId;
+    if (boundaryId === undefined) throw new Error("fork source boundary is unavailable");
+    const sourceDatabasePath = productSessionDatabasePath(
+      selectPlatformAdapter("darwin-arm64"),
+      sourceRuntimeHome,
+    );
+    let probe = new DatabaseSync(sourceDatabasePath);
+    const sourceGeneration = probe.prepare(
+      "SELECT active_generation_id FROM sessions WHERE id = ?",
+    ).get(sourceId) as { active_generation_id: string };
+    const priorBytes = Buffer.from("fork checkpoint preimage", "utf8");
+    const priorSha256 = createHash("sha256").update(priorBytes).digest("hex");
+    const expectedSha256 = createHash("sha256").update("fork checkpoint target").digest("hex");
+    probe.prepare(
+      "INSERT INTO checkpoint_blobs(sha256, size, bytes, created_at) VALUES (?, ?, ?, ?)",
+    ).run(priorSha256, priorBytes.byteLength, priorBytes, 1_001);
+    probe.prepare(`
+      INSERT INTO checkpoint_records(
+        checkpoint_id, session_id, generation_id, product_turn_id,
+        client_operation_id, dsh_turn, call_id, path, tool, prior_sha256,
+        expected_sha256, actual_sha256, state, policy_revision,
+        last_event_phase, last_event_seq, prepared_at, settled_at
+      ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, 'Write', ?, ?, ?, 'settled', ?, 'settled', 1, ?, ?)
+    `).run(
+      "fork-checkpoint-1", sourceId, sourceGeneration.active_generation_id,
+      "fork-product-turn-1", "fork-operation-1", "fork-call-1",
+      "/fixture/workspace/file.txt", priorSha256, expectedSha256, expectedSha256,
+      "fork-checkpoint-policy-1", 1_001, 1_002,
+    );
+    probe.close();
+
+    const overlappingTargetHome = join(sourceRuntimeHome, "fork-target");
+    await mkdir(overlappingTargetHome, { mode: 0o700 });
+    await expect(persistence.prepareFork({
+      clientMutationId: "fork-client-overlap",
+      runtimeSessionId: sourceId,
+      sourceStableBoundaryId: boundaryId,
+      targetPersistenceRef: "fork-target-overlap",
+      targetRuntimeHome: overlappingTargetHome,
+      targetWorkspaceIdentity: "fork-target-workspace-1",
+    })).rejects.toThrow(/must not overlap/u);
+
+    const occupied = await mount(occupiedTargetHome);
+    const occupiedId = SessionId("product-persistence-fork-occupied");
+    await occupied.sessionPersistence.create(header(occupiedId));
+    await occupied.sessionPersistence.append(occupiedId, turn(0, 1));
+    await occupied.fiber.dispose();
+    await expect(persistence.prepareFork({
+      clientMutationId: "fork-client-occupied",
+      runtimeSessionId: sourceId,
+      sourceStableBoundaryId: boundaryId,
+      targetPersistenceRef: "fork-target-occupied",
+      targetRuntimeHome: occupiedTargetHome,
+      targetWorkspaceIdentity: "fork-target-workspace-1",
+    })).rejects.toThrow(/already owns another Session/u);
+
+    const prepared = await persistence.prepareFork({
+      clientMutationId: "fork-client-1",
+      runtimeSessionId: sourceId,
+      sourceStableBoundaryId: boundaryId,
+      targetPersistenceRef: "fork-target-persistence-1",
+      targetRuntimeHome: committedTargetHome,
+      targetRuntimeSessionId: "product-persistence-fork-target",
+      targetWorkspaceIdentity: "fork-target-workspace-1",
+    });
+    expect(prepared).toMatchObject({
+      attempt: 0,
+      clientMutationId: "fork-client-1",
+      phase: "prepared",
+      runtimeSessionId: sourceId,
+      sourceStableBoundaryId: boundaryId,
+      targetRuntimeSessionId: "product-persistence-fork-target",
+    });
+    expect(await persistence.prepareFork({
+      clientMutationId: "fork-client-1",
+      runtimeSessionId: sourceId,
+      sourceStableBoundaryId: boundaryId,
+      targetPersistenceRef: "fork-target-persistence-1",
+      targetRuntimeHome: committedTargetHome,
+      targetRuntimeSessionId: "product-persistence-fork-target",
+      targetWorkspaceIdentity: "fork-target-workspace-1",
+    })).toEqual(prepared);
+
+    const targetDatabasePath = productSessionDatabasePath(
+      selectPlatformAdapter("darwin-arm64"),
+      committedTargetHome,
+    );
+    probe = new DatabaseSync(targetDatabasePath, { readOnly: true });
+    expect(probe.prepare("SELECT state FROM sessions WHERE id = ?")
+      .get(prepared.targetRuntimeSessionId)).toEqual({ state: "tombstoned" });
+    expect(probe.prepare(`
+      SELECT state, origin FROM session_generations
+       WHERE session_id = ? AND generation_id = ?
+    `).get(prepared.targetRuntimeSessionId, prepared.targetGenerationId)).toEqual({
+      origin: "fork",
+      state: "staging",
+    });
+    probe.close();
+
+    const committed = await persistence.commitFork(prepared.token, "fork-client-1");
+    expect(committed).toMatchObject({
+      attempt: 1,
+      phase: "committed",
+      receipt: {
+        durableSequence: 3,
+        sourceRuntimeSessionId: sourceId,
+        sourceStableBoundaryId: boundaryId,
+        targetGenerationId: prepared.targetGenerationId,
+        targetRuntimeSessionId: prepared.targetRuntimeSessionId,
+      },
+    });
+    expect(await persistence.commitFork(prepared.token, "fork-client-1")).toEqual(committed);
+    expect((await persistence.readFrom(sourceId, 0)).events).toEqual(firstTurn);
+    probe = new DatabaseSync(targetDatabasePath, { readOnly: true });
+    const target = probe.prepare(`
+      SELECT s.state, s.event_count, g.state AS generation_state, g.header_json
+        FROM sessions AS s JOIN session_generations AS g
+          ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+       WHERE s.id = ?
+    `).get(prepared.targetRuntimeSessionId) as {
+      event_count: number;
+      generation_state: string;
+      header_json: string;
+      state: string;
+    };
+    expect(target).toMatchObject({ event_count: 3, generation_state: "active", state: "active" });
+    expect(JSON.parse(target.header_json)).toMatchObject({
+      id: prepared.targetRuntimeSessionId,
+      parentSession: sourceId,
+      seedLength: 2,
+    });
+    expect(JSON.parse((probe.prepare(`
+      SELECT envelope_json FROM session_events
+       WHERE session_id = ? AND generation_id = ? ORDER BY seq DESC LIMIT 1
+    `).get(prepared.targetRuntimeSessionId, prepared.targetGenerationId) as {
+      envelope_json: string;
+    }).envelope_json)).toMatchObject({
+      data: { token: prepared.token },
+      seq: 2,
+      type: "myagents/session/fork",
+    });
+    expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_records")).toBe(1);
+    expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_blobs")).toBe(1);
+    probe.close();
+
+    const stalePrepared = await persistence.prepareFork({
+      clientMutationId: "fork-client-stale-source",
+      runtimeSessionId: sourceId,
+      sourceStableBoundaryId: boundaryId,
+      targetPersistenceRef: "fork-target-stale-source",
+      targetRuntimeHome: staleTargetHome,
+      targetWorkspaceIdentity: "fork-target-workspace-1",
+    });
+    await persistence.append(sourceId, turn(2, 2));
+    await expect(persistence.commitFork(stalePrepared.token, "fork-client-stale-source"))
+      .rejects.toThrow(/source locator, revision, or boundary changed/u);
+    expect((await persistence.abortFork(stalePrepared.token, "fork-client-stale-source")).phase)
+      .toBe("aborted");
+
+    const abortPrepared = await persistence.prepareFork({
+      clientMutationId: "fork-client-abort",
+      runtimeSessionId: sourceId,
+      sourceStableBoundaryId: boundaryId,
+      targetPersistenceRef: "fork-target-persistence-abort",
+      targetRuntimeHome: abortedTargetHome,
+      targetRuntimeSessionId: "product-persistence-fork-aborted",
+      targetWorkspaceIdentity: "fork-target-workspace-abort",
+    });
+    const aborted = await persistence.abortFork(abortPrepared.token, "fork-client-abort");
+    expect(aborted.phase).toBe("aborted");
+    expect(await persistence.abortFork(abortPrepared.token, "fork-client-abort")).toEqual(aborted);
+    probe = new DatabaseSync(productSessionDatabasePath(
+      selectPlatformAdapter("darwin-arm64"),
+      abortedTargetHome,
+    ), { readOnly: true });
+    expect(scalar(probe, "SELECT count(*) AS value FROM sessions")).toBe(0);
+    expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_records")).toBe(0);
+    expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_blobs")).toBe(0);
+    probe.close();
     await context.fiber.dispose();
   });
 

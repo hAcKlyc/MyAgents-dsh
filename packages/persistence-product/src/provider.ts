@@ -35,6 +35,11 @@ import { ProductSqliteStore } from "./sqlite-store.js";
 import type { MethodResult } from "@myagents-dsh/protocol";
 import type { ProductCheckpointStore } from "@myagents-dsh/checkpoint";
 import type {
+  ProductForkPrepareInput,
+  ProductForkRecord,
+  ProductForkStore,
+} from "./fork.js";
+import type {
   ProductRewindPrepareInput,
   ProductRewindRecord,
   ProductRewindStore,
@@ -299,6 +304,33 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
 
   readSession(request: ProductSessionReadRequest): Promise<MethodResult<"session/read">> {
     return stateOf(this).reader.read(request);
+  }
+
+  prepareFork(
+    input: ProductForkPrepareInput,
+    signal?: AbortSignal,
+  ): Promise<ProductForkRecord> {
+    return stateOf(this).store.prepareFork(input, signal);
+  }
+
+  commitFork(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductForkRecord> {
+    return stateOf(this).store.commitFork(token, clientMutationId, signal);
+  }
+
+  abortFork(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductForkRecord> {
+    return stateOf(this).store.abortFork(token, clientMutationId, signal);
+  }
+
+  getFork(token: string, signal?: AbortSignal): ReturnType<ProductForkStore["getFork"]> {
+    return stateOf(this).store.getFork(token, signal);
   }
 
   prepareRewind(

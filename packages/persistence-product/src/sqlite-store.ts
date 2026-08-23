@@ -7,7 +7,7 @@ import {
   realpath,
   type FileHandle,
 } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
@@ -36,6 +36,13 @@ import type {
 } from "@myagents-dsh/checkpoint";
 
 import {
+  createProductForkReceiptEvent,
+  type ProductForkPhase,
+  type ProductForkPrepareInput,
+  type ProductForkRecord,
+  type ProductForkStore,
+} from "./fork.js";
+import {
   createProductRewindReceiptEvent,
   productTranscriptPostcondition,
   type ProductRewindPhase,
@@ -47,11 +54,13 @@ import {
 import {
   PRODUCT_PERSISTENCE_APPLICATION_ID,
   PRODUCT_CHECKPOINT_SCHEMA_SQL,
+  PRODUCT_FORK_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V2_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V3_SQL,
+  PRODUCT_PERSISTENCE_SCHEMA_V4_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   PRODUCT_PERSISTENCE_TABLES,
   PRODUCT_REWIND_CHILD_SCHEMA_SQL,
@@ -121,6 +130,21 @@ interface RewindChildPlanRow {
   readonly state: "prepared" | "tombstoned" | "restored";
 }
 
+interface ForkCheckpointCopy {
+  readonly priorBytes?: Uint8Array;
+  readonly record: ProductCheckpointRecord;
+}
+
+interface ForkTargetStageInput {
+  readonly checkpoints: readonly ForkCheckpointCopy[];
+  readonly createdAt: number;
+  readonly events: readonly SessionEvent[];
+  readonly generationId: string;
+  readonly header: SessionHeader;
+  readonly headHash: string;
+  readonly sessionId: string;
+}
+
 const EMPTY_HEAD_HASH = createHash("sha256").digest("hex");
 const HASH_PATTERN = /^[a-f0-9]{64}$/u;
 // The durable identifier authority explicitly excludes every C0/DEL control byte.
@@ -148,6 +172,25 @@ const EXPECTED_COLUMNS = Object.freeze({
     "last_event_seq",
     "prepared_at",
     "settled_at",
+  ],
+  fork_journals: [
+    "token",
+    "client_mutation_id",
+    "request_fingerprint",
+    "source_session_id",
+    "source_generation_id",
+    "source_revision",
+    "source_boundary_id",
+    "target_runtime_home",
+    "target_persistence_ref",
+    "target_workspace_identity",
+    "target_session_id",
+    "target_generation_id",
+    "phase",
+    "attempt",
+    "receipt_json",
+    "created_at",
+    "updated_at",
   ],
   mutation_journals: [
     "token",
@@ -265,6 +308,17 @@ const EXPECTED_V3_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V3_SQL
   })
   .sort((left, right) => compareCodePoints(left.name, right.name)));
 
+const EXPECTED_V4_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V4_SQL
+  .trim()
+  .split(/;\s*/u)
+  .filter((statement) => statement.length > 0)
+  .map((sql) => {
+    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
+    if (match?.[1] === undefined) throw new Error("product persistence v4 DDL contains an unknown statement");
+    return Object.freeze({ name: match[1], sql });
+  })
+  .sort((left, right) => compareCodePoints(left.name, right.name)));
+
 const canonicalJson = (value: JsonValue): string => {
   if (value === null || typeof value === "boolean" || typeof value === "number"
     || typeof value === "string") {
@@ -339,7 +393,8 @@ const aggregateFailure = (primary: unknown, cleanup: unknown, description: strin
 };
 
 /** Product SQLite implementation of the public DSH backend hooks. */
-export class ProductSqliteStore implements PersistenceBackend<never>, ProductCheckpointStore, ProductRewindStore {
+export class ProductSqliteStore implements PersistenceBackend<never>, ProductCheckpointStore,
+  ProductForkStore, ProductRewindStore {
   readonly name = "product-session-persistence-sqlite";
 
   readonly #locks = new ProductSessionLockTable();
@@ -347,6 +402,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
   #closePromise: Promise<void> | undefined;
   #database: DatabaseSync | undefined;
   #databaseIdentity: FileIdentity | undefined;
+  readonly #forkTargetStores = new Map<string, ProductSqliteStore>();
   #initializePromise: Promise<void> | undefined;
   #storeId: string | undefined;
 
@@ -711,6 +767,180 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       if (updated === undefined) throw new Error("rewind file transition lost its row");
       return updated;
     });
+  }
+
+  prepareFork(
+    input: ProductForkPrepareInput,
+    signal?: AbortSignal,
+  ): Promise<ProductForkRecord> {
+    this.#validateForkPrepareInput(input);
+    return this.#locks.run(input.runtimeSessionId as SessionId, signal, async () => {
+      signal?.throwIfAborted();
+      this.#assertSchema();
+      const active = this.#readActiveSession(input.runtimeSessionId as SessionId, false);
+      if (active === undefined) throw new Error("fork source Session is unavailable");
+      const boundary = this.#readStableBoundary(input.sourceStableBoundaryId);
+      if (boundary?.sessionId !== active.sessionId
+        || boundary.generationId !== active.activeGenerationId
+        || boundary.seqExclusive > active.eventCount
+        || boundary.prefixHash !== this.#prefixHashAt(active, boundary.seqExclusive)) {
+        throw new Error("fork stable boundary is unavailable or changed");
+      }
+      const fingerprint = createHash("sha256")
+        .update("myagents-fork-request-v1\0", "utf8")
+        .update(input.clientMutationId).update("\0")
+        .update(input.runtimeSessionId).update("\0")
+        .update(input.sourceStableBoundaryId).update("\0")
+        .update(input.targetRuntimeHome).update("\0")
+        .update(input.targetPersistenceRef).update("\0")
+        .update(input.targetWorkspaceIdentity).update("\0")
+        .update(input.targetRuntimeSessionId ?? "")
+        .digest("hex");
+      const existing = this.#readForkByClientMutation(input.runtimeSessionId, input.clientMutationId);
+      if (existing !== undefined) {
+        if (existing.requestFingerprint !== fingerprint) {
+          throw new Error("fork client mutation identity was reused with different input");
+        }
+        if (existing.phase === "prepared") await this.#ensureForkTargetStaging(existing, boundary, active);
+        return existing;
+      }
+      const unsettled = asRecord(this.#requireDatabase().prepare(`
+        SELECT count(*) AS count FROM checkpoint_records
+         WHERE session_id = ? AND generation_id = ?
+           AND (state NOT IN ('settled', 'aborted')
+             OR last_event_phase IS NULL OR last_event_phase <> state)
+      `).get(active.sessionId, active.activeGenerationId), "fork checkpoint aggregate");
+      if (rowInteger(unsettled, "count", "fork checkpoint aggregate") !== 0) {
+        throw new Error("fork source contains an unsettled managed checkpoint");
+      }
+      const now = Date.now();
+      const recordIdentity = Object.freeze({
+        generationId: randomUUID(),
+        sessionId: input.targetRuntimeSessionId ?? randomUUID(),
+        token: `fk_${randomUUID()}`,
+      });
+      const database = this.#requireDatabase();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.prepare(`
+          INSERT INTO fork_journals(
+            token, client_mutation_id, request_fingerprint, source_session_id,
+            source_generation_id, source_revision, source_boundary_id,
+            target_runtime_home, target_persistence_ref, target_workspace_identity,
+            target_session_id, target_generation_id, phase, attempt,
+            receipt_json, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared', 0, NULL, ?, ?)
+        `).run(
+          recordIdentity.token,
+          input.clientMutationId,
+          fingerprint,
+          active.sessionId,
+          active.activeGenerationId,
+          String(this.#revision(active)),
+          boundary.boundaryId,
+          input.targetRuntimeHome,
+          input.targetPersistenceRef,
+          input.targetWorkspaceIdentity,
+          recordIdentity.sessionId,
+          recordIdentity.generationId,
+          now,
+          now,
+        );
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "fork prepare journal");
+      }
+      const prepared = this.#readFork(recordIdentity.token);
+      if (prepared === undefined) throw new Error("fork prepare did not publish its journal");
+      await this.#ensureForkTargetStaging(prepared, boundary, active);
+      return this.#readFork(prepared.token) ?? prepared;
+    });
+  }
+
+  commitFork(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductForkRecord> {
+    this.#validateForkSettlementIdentity(token, clientMutationId);
+    const known = this.#readFork(token);
+    if (known === undefined) return Promise.reject(new Error("fork token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, async () => {
+      signal?.throwIfAborted();
+      let record = this.#requireForkIdentity(token, clientMutationId);
+      if (record.phase === "committed") return record;
+      if (record.phase !== "prepared" && record.phase !== "committing") {
+        throw new Error(`fork cannot commit from ${record.phase}`);
+      }
+      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      const boundary = this.#readStableBoundary(record.sourceStableBoundaryId);
+      if (active?.activeGenerationId !== record.sourceGenerationId
+        || String(this.#revision(active)) !== record.sourceRevision
+        || boundary?.generationId !== record.sourceGenerationId
+        || boundary.sessionId !== record.runtimeSessionId
+        || boundary.prefixHash !== this.#prefixHashAt(active, boundary.seqExclusive)) {
+        throw new Error("fork source locator, revision, or boundary changed before commit");
+      }
+      if (record.phase === "prepared") {
+        const outcome = this.#requireDatabase().prepare(`
+          UPDATE fork_journals SET phase = 'committing', attempt = attempt + 1, updated_at = ?
+           WHERE token = ? AND phase = 'prepared'
+        `).run(Date.now(), token);
+        if (Number(outcome.changes) !== 1) throw new Error("fork commit lost its journal authority");
+        record = this.#requireForkIdentity(token, clientMutationId);
+      }
+      const targetStore = await this.#forkTargetStore(record.targetRuntimeHome);
+      const receipt = await targetStore.#commitForkTarget(record, signal);
+      const receiptJson = snapshotCanonicalJson(receipt, "fork receipt");
+      const outcome = this.#requireDatabase().prepare(`
+        UPDATE fork_journals SET phase = 'committed', receipt_json = ?, updated_at = ?
+         WHERE token = ? AND phase = 'committing'
+      `).run(receiptJson, Date.now(), token);
+      if (Number(outcome.changes) !== 1) throw new Error("fork commit lost its terminal journal authority");
+      return this.#requireForkIdentity(token, clientMutationId);
+    });
+  }
+
+  abortFork(
+    token: string,
+    clientMutationId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductForkRecord> {
+    this.#validateForkSettlementIdentity(token, clientMutationId);
+    const known = this.#readFork(token);
+    if (known === undefined) return Promise.reject(new Error("fork token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, async () => {
+      signal?.throwIfAborted();
+      let record = this.#requireForkIdentity(token, clientMutationId);
+      if (record.phase === "aborted") return record;
+      if (record.phase !== "prepared" && record.phase !== "aborting") {
+        throw new Error(`fork cannot abort from ${record.phase}`);
+      }
+      if (record.phase === "prepared") {
+        const outcome = this.#requireDatabase().prepare(`
+          UPDATE fork_journals SET phase = 'aborting', attempt = attempt + 1, updated_at = ?
+           WHERE token = ? AND phase = 'prepared'
+        `).run(Date.now(), token);
+        if (Number(outcome.changes) !== 1) throw new Error("fork abort lost its journal authority");
+        record = this.#requireForkIdentity(token, clientMutationId);
+      }
+      const targetStore = await this.#forkTargetStore(record.targetRuntimeHome);
+      await targetStore.#abortForkTarget(record, signal);
+      const outcome = this.#requireDatabase().prepare(`
+        UPDATE fork_journals SET phase = 'aborted', updated_at = ?
+         WHERE token = ? AND phase = 'aborting'
+      `).run(Date.now(), token);
+      if (Number(outcome.changes) !== 1) throw new Error("fork abort lost its terminal journal authority");
+      return this.#requireForkIdentity(token, clientMutationId);
+    });
+  }
+
+  getFork(token: string, signal?: AbortSignal): Promise<ProductForkRecord | undefined> {
+    if (!IDENTIFIER_PATTERN.test(token)) return Promise.reject(new TypeError("fork token is invalid"));
+    signal?.throwIfAborted();
+    const known = this.#readFork(token);
+    if (known === undefined) return Promise.resolve(undefined);
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => this.#readFork(token));
   }
 
   prepareRewind(
@@ -1324,6 +1554,8 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
   close(): Promise<void> {
     this.#closePromise ??= (async () => {
       await this.#locks.close();
+      await Promise.all([...this.#forkTargetStores.values()].map((store) => store.close()));
+      this.#forkTargetStores.clear();
       if (this.#initializePromise !== undefined) {
         await this.#initializePromise.catch(() => undefined);
       }
@@ -1459,6 +1691,21 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       } catch (error) {
         this.#rollback(error, "v3 rewind-child schema migration");
       }
+      version = 4;
+    }
+    if (version === 4) {
+      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V4_SCHEMA_ROWS)) {
+        throw new Error("product SQLite persistence v4 schema authority is incompatible");
+      }
+      this.#assertMigrationMetadata(4);
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.exec(PRODUCT_FORK_SCHEMA_SQL);
+        database.prepare("UPDATE store_meta SET schema_version = 5 WHERE singleton = 1").run();
+        database.exec("PRAGMA user_version = 5; COMMIT");
+      } catch (error) {
+        this.#rollback(error, "v4 fork schema migration");
+      }
     }
   }
 
@@ -1490,13 +1737,13 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     });
     if (JSON.stringify(schemaRows) !== JSON.stringify(EXPECTED_SCHEMA_ROWS)
       || JSON.stringify(schemaRows.map(({ name }) => name)) !== JSON.stringify(PRODUCT_PERSISTENCE_TABLES)) {
-      throw new Error("product SQLite persistence table authority differs from schema v3");
+      throw new Error("product SQLite persistence table authority differs from schema v5");
     }
     for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
       const columns = (database.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all() as unknown[])
         .map((row) => rowString(asRecord(row, `${table} column`), "name", `${table} column`));
       if (JSON.stringify(columns) !== JSON.stringify(expected)) {
-        throw new Error(`product SQLite persistence ${table} columns differ from schema v3`);
+        throw new Error(`product SQLite persistence ${table} columns differ from schema v5`);
       }
     }
     const meta = asRecord(database.prepare(
@@ -2045,6 +2292,435 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       throw new Error("rewind journal identity is invalid");
     }
     return record;
+  }
+
+  #validateForkPrepareInput(input: ProductForkPrepareInput): void {
+    for (const value of [
+      input.clientMutationId,
+      input.runtimeSessionId,
+      input.sourceStableBoundaryId,
+      input.targetPersistenceRef,
+      input.targetWorkspaceIdentity,
+      ...(input.targetRuntimeSessionId === undefined ? [] : [input.targetRuntimeSessionId]),
+    ]) {
+      if (typeof value !== "string" || !IDENTIFIER_PATTERN.test(value)) {
+        throw new TypeError("fork prepare identity is invalid");
+      }
+    }
+    if (typeof input.targetRuntimeHome !== "string" || input.targetRuntimeHome.length < 1
+      || input.targetRuntimeHome.length > 8_192 || resolve(input.targetRuntimeHome) !== input.targetRuntimeHome) {
+      throw new TypeError("fork target Runtime home is invalid");
+    }
+  }
+
+  #validateForkSettlementIdentity(token: string, clientMutationId: string): void {
+    if (!IDENTIFIER_PATTERN.test(token) || !IDENTIFIER_PATTERN.test(clientMutationId)) {
+      throw new TypeError("fork settlement identity is invalid");
+    }
+  }
+
+  #readFork(token: string): ProductForkRecord | undefined {
+    if (this.#database === undefined) return undefined;
+    const value = this.#requireDatabase().prepare(
+      "SELECT * FROM fork_journals WHERE token = ?",
+    ).get(token);
+    return value === undefined ? undefined : this.#decodeFork(value);
+  }
+
+  #readForkByClientMutation(
+    sessionId: string,
+    clientMutationId: string,
+  ): ProductForkRecord | undefined {
+    const value = this.#requireDatabase().prepare(`
+      SELECT * FROM fork_journals
+       WHERE source_session_id = ? AND client_mutation_id = ?
+    `).get(sessionId, clientMutationId);
+    return value === undefined ? undefined : this.#decodeFork(value);
+  }
+
+  #decodeFork(value: unknown): ProductForkRecord {
+    const row = asRecord(value, "fork journal");
+    const phase = rowString(row, "phase", "fork journal") as ProductForkPhase;
+    const receiptJson = rowNullableString(row, "receipt_json", "fork journal");
+    if (!["prepared", "committing", "committed", "aborting", "aborted", "recovery_required"]
+      .includes(phase)) {
+      throw new Error("fork journal phase is invalid");
+    }
+    let receipt: Readonly<Record<string, unknown>> | undefined;
+    if (receiptJson !== null) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(receiptJson);
+      } catch (error) {
+        throw new Error("fork receipt is invalid JSON", { cause: error });
+      }
+      const snapshot = snapshotJsonValue(parsed);
+      if (snapshot === undefined || canonicalJson(snapshot as JsonValue) !== receiptJson
+        || snapshot === null || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+        throw new Error("fork receipt is not canonical JSON data");
+      }
+      receipt = Object.freeze(snapshot as Record<string, unknown>);
+    }
+    const record = Object.freeze({
+      attempt: rowInteger(row, "attempt", "fork journal"),
+      clientMutationId: rowString(row, "client_mutation_id", "fork journal"),
+      createdAt: rowInteger(row, "created_at", "fork journal"),
+      phase,
+      ...(receipt === undefined ? {} : { receipt }),
+      requestFingerprint: rowString(row, "request_fingerprint", "fork journal"),
+      runtimeSessionId: rowString(row, "source_session_id", "fork journal"),
+      sourceGenerationId: rowString(row, "source_generation_id", "fork journal"),
+      sourceRevision: rowString(row, "source_revision", "fork journal"),
+      sourceStableBoundaryId: rowString(row, "source_boundary_id", "fork journal"),
+      targetGenerationId: rowString(row, "target_generation_id", "fork journal"),
+      targetPersistenceRef: rowString(row, "target_persistence_ref", "fork journal"),
+      targetRuntimeHome: rowString(row, "target_runtime_home", "fork journal"),
+      targetRuntimeSessionId: rowString(row, "target_session_id", "fork journal"),
+      targetWorkspaceIdentity: rowString(row, "target_workspace_identity", "fork journal"),
+      token: rowString(row, "token", "fork journal"),
+    });
+    if (![record.clientMutationId, record.runtimeSessionId, record.sourceGenerationId,
+      record.sourceStableBoundaryId, record.targetGenerationId, record.targetPersistenceRef,
+      record.targetRuntimeSessionId, record.targetWorkspaceIdentity, record.token]
+      .every((entry) => IDENTIFIER_PATTERN.test(entry))
+      || record.targetRuntimeHome.length < 1 || record.targetRuntimeHome.length > 8_192
+      || !HASH_PATTERN.test(record.requestFingerprint)
+      || record.sourceRevision.length < 1 || record.sourceRevision.length > 2_048) {
+      throw new Error("fork journal identity is invalid");
+    }
+    return record;
+  }
+
+  #requireForkIdentity(token: string, clientMutationId: string): ProductForkRecord {
+    const record = this.#readFork(token);
+    if (record === undefined) throw new Error("fork token is unavailable");
+    if (record.clientMutationId !== clientMutationId) {
+      throw new Error("fork client mutation identity differs from its prepared journal");
+    }
+    return record;
+  }
+
+  async #forkTargetStore(targetRuntimeHome: string): Promise<ProductSqliteStore> {
+    await this.#validateDirectory(targetRuntimeHome, "fork target Runtime home");
+    const canonicalSource = await realpath(this.#options.runtimeHome);
+    const sourceToTarget = relative(canonicalSource, targetRuntimeHome);
+    const targetToSource = relative(targetRuntimeHome, canonicalSource);
+    const isContained = (candidate: string): boolean => candidate.length === 0
+      || (!isAbsolute(candidate) && candidate !== ".." && !candidate.startsWith(`..${sep}`));
+    if (isContained(sourceToTarget) || isContained(targetToSource)) {
+      throw new Error("fork target Runtime home must not overlap its source Runtime home");
+    }
+    const suffix = relative(this.#options.runtimeHome, this.#options.durability.databasePath);
+    if (suffix.length === 0 || suffix.split(/[\\/]/u).includes("..")
+      || resolve(this.#options.runtimeHome, suffix) !== this.#options.durability.databasePath) {
+      throw new Error("fork source persistence path is outside its Runtime home");
+    }
+    let store = this.#forkTargetStores.get(targetRuntimeHome);
+    if (store === undefined) {
+      const databasePath = resolve(targetRuntimeHome, suffix);
+      store = new ProductSqliteStore({
+        durability: Object.freeze({ ...this.#options.durability, databasePath }),
+        runtimeHome: targetRuntimeHome,
+      });
+      this.#forkTargetStores.set(targetRuntimeHome, store);
+    }
+    try {
+      await store.initialize();
+    } catch (error) {
+      if (this.#forkTargetStores.get(targetRuntimeHome) === store) {
+        this.#forkTargetStores.delete(targetRuntimeHome);
+      }
+      throw error;
+    }
+    return store;
+  }
+
+  async #ensureForkTargetStaging(
+    record: ProductForkRecord,
+    boundary: StableBoundaryRow,
+    source: ActiveSessionRow,
+  ): Promise<void> {
+    const sourceEvents = this.#readAndValidateEvents(source).slice(0, boundary.seqExclusive);
+    if (sourceEvents.length !== boundary.seqExclusive
+      || sourceEvents.at(-1)?.seq !== boundary.seqExclusive - 1) {
+      throw new Error("fork source prefix is not exact and contiguous");
+    }
+    const targetHeader = Object.freeze({
+      ...this.#decodeHeader(source),
+      createdAt: record.createdAt,
+      id: record.targetRuntimeSessionId as SessionId,
+      parentSession: source.sessionId as SessionId,
+      seedLength: boundary.seqExclusive,
+    }) as SessionHeader;
+    const receiptEvent = createProductForkReceiptEvent(boundary.seqExclusive, record.createdAt, {
+      clientMutationId: record.clientMutationId,
+      sourceGenerationId: record.sourceGenerationId,
+      sourceRuntimeSessionId: record.runtimeSessionId,
+      sourceStableBoundaryId: record.sourceStableBoundaryId,
+      targetGenerationId: record.targetGenerationId,
+      targetPersistenceRef: record.targetPersistenceRef,
+      targetRuntimeSessionId: record.targetRuntimeSessionId,
+      targetWorkspaceIdentity: record.targetWorkspaceIdentity,
+      token: record.token,
+    });
+    const events = Object.freeze([...sourceEvents, receiptEvent]);
+    let headHash = EMPTY_HEAD_HASH;
+    for (const event of events) {
+      headHash = chainHash(headHash, snapshotCanonicalJson(event, "fork target event"));
+    }
+    const checkpointRows = this.#requireDatabase().prepare(`
+      SELECT * FROM checkpoint_records
+       WHERE session_id = ? AND generation_id = ? AND dsh_turn <= ?
+         AND state = 'settled' AND last_event_phase = 'settled'
+       ORDER BY prepared_at, checkpoint_id
+    `).all(source.sessionId, source.activeGenerationId, boundary.turn) as unknown[];
+    const checkpoints = checkpointRows.map((value): ForkCheckpointCopy => {
+      const checkpoint = this.#decodeCheckpoint(value);
+      let priorBytes: Uint8Array | undefined;
+      if (checkpoint.priorSha256 !== null) {
+        const blob = asRecord(this.#requireDatabase().prepare(
+          "SELECT size, bytes FROM checkpoint_blobs WHERE sha256 = ?",
+        ).get(checkpoint.priorSha256), "fork checkpoint blob");
+        if (!(blob.bytes instanceof Uint8Array)
+          || blob.size !== blob.bytes.byteLength
+          || createHash("sha256").update(blob.bytes).digest("hex") !== checkpoint.priorSha256) {
+          throw new Error("fork checkpoint blob identity is invalid");
+        }
+        priorBytes = Uint8Array.from(blob.bytes);
+      }
+      return Object.freeze({ ...(priorBytes === undefined ? {} : { priorBytes }), record: checkpoint });
+    });
+    const targetStore = await this.#forkTargetStore(record.targetRuntimeHome);
+    await targetStore.#stageForkTarget(Object.freeze({
+      checkpoints: Object.freeze(checkpoints),
+      createdAt: record.createdAt,
+      events,
+      generationId: record.targetGenerationId,
+      header: targetHeader,
+      headHash,
+      sessionId: record.targetRuntimeSessionId,
+    }));
+  }
+
+  async #stageForkTarget(stage: ForkTargetStageInput): Promise<void> {
+    await this.#locks.run(stage.sessionId as SessionId, undefined, () => {
+      this.#assertSchema();
+      const database = this.#requireDatabase();
+      const existing = database.prepare(`
+        SELECT s.state AS session_state, s.active_generation_id, s.event_count, s.head_hash,
+               g.state AS generation_state, g.header_json
+          FROM sessions AS s JOIN session_generations AS g
+            ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+         WHERE s.id = ?
+      `).get(stage.sessionId);
+      if (existing !== undefined) {
+        const row = asRecord(existing, "fork target staging");
+        if (row.session_state !== "tombstoned" || row.generation_state !== "staging"
+          || row.active_generation_id !== stage.generationId
+          || row.event_count !== stage.events.length || row.head_hash !== stage.headHash
+          || row.header_json !== snapshotCanonicalJson(stage.header, "fork target header")) {
+          throw new Error("fork target Session identity is already occupied");
+        }
+        const sessionCount = rowInteger(asRecord(database.prepare(
+          "SELECT count(*) AS count FROM sessions",
+        ).get(), "fork target Session aggregate"), "count", "fork target Session aggregate");
+        if (sessionCount !== 1) {
+          throw new Error("fork target Runtime home already owns another Session");
+        }
+        return;
+      }
+      const sessionCount = rowInteger(asRecord(database.prepare(
+        "SELECT count(*) AS count FROM sessions",
+      ).get(), "fork target Session aggregate"), "count", "fork target Session aggregate");
+      if (sessionCount !== 0) {
+        throw new Error("fork target Runtime home already owns another Session");
+      }
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const headerJson = snapshotCanonicalJson(stage.header, "fork target header");
+        database.prepare(`
+          INSERT INTO sessions(id, active_generation_id, state, revision, event_count, head_hash, created_at)
+          VALUES (?, ?, 'tombstoned', 0, ?, ?, ?)
+        `).run(stage.sessionId, stage.generationId, stage.events.length, stage.headHash, stage.createdAt);
+        database.prepare(`
+          INSERT INTO session_generations(
+            session_id, generation_id, header_json, origin, state,
+            revision, event_count, head_hash, created_at
+          ) VALUES (?, ?, ?, 'fork', 'staging', 0, ?, ?, ?)
+        `).run(stage.sessionId, stage.generationId, headerJson, stage.events.length, stage.headHash, stage.createdAt);
+        const insertEvent = database.prepare(`
+          INSERT INTO session_events(session_id, generation_id, seq, type, time, envelope_json, chain_hash)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        let previous = EMPTY_HEAD_HASH;
+        for (const event of stage.events) {
+          const envelope = snapshotCanonicalJson(event, "fork target event");
+          previous = chainHash(previous, envelope);
+          insertEvent.run(stage.sessionId, stage.generationId, event.seq, event.type, event.time, envelope, previous);
+        }
+        if (previous !== stage.headHash) throw new Error("fork target event head differs from its plan");
+        const boundarySeq = stage.events.length - 1;
+        const prefixHash = boundarySeq === 0 ? EMPTY_HEAD_HASH : rowString(asRecord(database.prepare(`
+          SELECT chain_hash FROM session_events
+           WHERE session_id = ? AND generation_id = ? AND seq = ?
+        `).get(stage.sessionId, stage.generationId, boundarySeq - 1), "fork target prefix"),
+        "chain_hash", "fork target prefix");
+        database.prepare(`
+          INSERT INTO stable_boundaries(
+            boundary_id, session_id, generation_id, seq_exclusive,
+            turn, prefix_hash, policy_version, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, 'stable-boundary-v1', ?)
+        `).run(`b_${randomUUID()}`, stage.sessionId, stage.generationId, boundarySeq,
+          this.#readStableBoundaryTurnFromEvents(stage.events.slice(0, boundarySeq)), prefixHash, stage.createdAt);
+        const insertBlob = database.prepare(`
+          INSERT OR IGNORE INTO checkpoint_blobs(sha256, size, bytes, created_at) VALUES (?, ?, ?, ?)
+        `);
+        const insertCheckpoint = database.prepare(`
+          INSERT INTO checkpoint_records(
+            checkpoint_id, session_id, generation_id, product_turn_id,
+            client_operation_id, dsh_turn, call_id, path, tool, prior_sha256,
+            expected_sha256, actual_sha256, state, policy_revision,
+            last_event_phase, last_event_seq, prepared_at, settled_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'settled', ?, 'settled', ?, ?, ?)
+        `);
+        for (const copy of stage.checkpoints) {
+          const checkpoint = copy.record;
+          if (copy.priorBytes !== undefined && checkpoint.priorSha256 !== null) {
+            insertBlob.run(checkpoint.priorSha256, copy.priorBytes.byteLength,
+              Buffer.from(copy.priorBytes), stage.createdAt);
+          }
+          insertCheckpoint.run(
+            checkpoint.checkpointId, stage.sessionId, stage.generationId,
+            checkpoint.productTurnId, checkpoint.clientOperationId, checkpoint.dshTurn,
+            checkpoint.callId, checkpoint.path, checkpoint.tool, checkpoint.priorSha256,
+            checkpoint.expectedSha256, checkpoint.actualSha256 ?? checkpoint.expectedSha256,
+            checkpoint.policyRevision, checkpoint.lastEventSeq ?? 0,
+            checkpoint.preparedAt, checkpoint.settledAt ?? stage.createdAt,
+          );
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "fork target staging");
+      }
+    });
+  }
+
+  #readStableBoundaryTurnFromEvents(events: readonly SessionEvent[]): number {
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event === undefined) throw new Error("fork target prefix contains a sparse event sequence");
+      if (event.type !== "turn/end") continue;
+      const turn = event.data.turn;
+      if (Number.isSafeInteger(turn) && turn >= 1) return turn;
+    }
+    throw new Error("fork target prefix lacks its stable turn identity");
+  }
+
+  #commitForkTarget(
+    record: ProductForkRecord,
+    signal?: AbortSignal,
+  ): Promise<Readonly<Record<string, unknown>>> {
+    return this.#locks.run(record.targetRuntimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const database = this.#requireDatabase();
+      const raw = database.prepare(`
+        SELECT s.state AS session_state, s.active_generation_id, s.event_count, s.head_hash,
+               g.state AS generation_state
+          FROM sessions AS s JOIN session_generations AS g
+            ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+         WHERE s.id = ?
+      `).get(record.targetRuntimeSessionId);
+      if (raw === undefined) throw new Error("fork target staging is unavailable");
+      const row = asRecord(raw, "fork target commit");
+      if (row.active_generation_id !== record.targetGenerationId) {
+        throw new Error("fork target generation identity changed before commit");
+      }
+      if (row.session_state === "active" && row.generation_state === "active") {
+        return this.#forkReceipt(record, rowInteger(row, "event_count", "fork target commit"));
+      }
+      if (row.session_state !== "tombstoned" || row.generation_state !== "staging") {
+        throw new Error("fork target staging was adopted or replaced before commit");
+      }
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const session = database.prepare(`
+          UPDATE sessions SET state = 'active', revision = revision + 1
+           WHERE id = ? AND active_generation_id = ? AND state = 'tombstoned'
+        `).run(record.targetRuntimeSessionId, record.targetGenerationId);
+        const generation = database.prepare(`
+          UPDATE session_generations SET state = 'active', revision = revision + 1
+           WHERE session_id = ? AND generation_id = ? AND state = 'staging'
+        `).run(record.targetRuntimeSessionId, record.targetGenerationId);
+        if (Number(session.changes) !== 1 || Number(generation.changes) !== 1) {
+          throw new Error("fork target commit lost its locator authority");
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "fork target commit");
+      }
+      return this.#forkReceipt(record, rowInteger(row, "event_count", "fork target commit"));
+    });
+  }
+
+  #abortForkTarget(record: ProductForkRecord, signal?: AbortSignal): Promise<void> {
+    return this.#locks.run(record.targetRuntimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      const database = this.#requireDatabase();
+      const raw = database.prepare(`
+        SELECT s.state AS session_state, s.active_generation_id, g.state AS generation_state
+          FROM sessions AS s JOIN session_generations AS g
+            ON g.session_id = s.id AND g.generation_id = s.active_generation_id
+         WHERE s.id = ?
+      `).get(record.targetRuntimeSessionId);
+      if (raw === undefined) return;
+      const row = asRecord(raw, "fork target abort");
+      if (row.active_generation_id !== record.targetGenerationId
+        || row.session_state !== "tombstoned" || row.generation_state !== "staging") {
+        throw new Error("fork target staging was adopted or replaced before abort");
+      }
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.prepare(`
+          DELETE FROM checkpoint_records WHERE session_id = ? AND generation_id = ?
+        `).run(record.targetRuntimeSessionId, record.targetGenerationId);
+        database.exec(`
+          DELETE FROM checkpoint_blobs
+           WHERE NOT EXISTS (
+             SELECT 1 FROM checkpoint_records AS c WHERE c.prior_sha256 = checkpoint_blobs.sha256
+           ) AND NOT EXISTS (
+             SELECT 1 FROM rewind_file_plans AS r
+              WHERE r.target_blob_sha256 = checkpoint_blobs.sha256
+                 OR r.rollback_blob_sha256 = checkpoint_blobs.sha256
+           )
+        `);
+        database.prepare(`
+          DELETE FROM stable_boundaries WHERE session_id = ? AND generation_id = ?
+        `).run(record.targetRuntimeSessionId, record.targetGenerationId);
+        const outcome = database.prepare(`
+          DELETE FROM sessions WHERE id = ? AND active_generation_id = ? AND state = 'tombstoned'
+        `).run(record.targetRuntimeSessionId, record.targetGenerationId);
+        if (Number(outcome.changes) !== 1) throw new Error("fork target abort lost its locator authority");
+        database.exec("COMMIT");
+      } catch (error) {
+        this.#rollback(error, "fork target abort");
+      }
+    });
+  }
+
+  #forkReceipt(
+    record: ProductForkRecord,
+    durableSequence: number,
+  ): Readonly<Record<string, unknown>> {
+    return Object.freeze({
+      durableSequence,
+      sourceGenerationId: record.sourceGenerationId,
+      sourceRuntimeSessionId: record.runtimeSessionId,
+      sourceStableBoundaryId: record.sourceStableBoundaryId,
+      targetGenerationId: record.targetGenerationId,
+      targetPersistenceRef: record.targetPersistenceRef,
+      targetRuntimeSessionId: record.targetRuntimeSessionId,
+      targetWorkspaceIdentity: record.targetWorkspaceIdentity,
+    });
   }
 
   #readActiveSession(id: SessionId, validateSchema = true): ActiveSessionRow | undefined {
