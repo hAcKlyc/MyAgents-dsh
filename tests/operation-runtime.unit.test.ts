@@ -1800,6 +1800,55 @@ describe("SdkOperationService admission and idempotency", () => {
     expect(fixture.inbox.nextTurn).toEqual([]);
   });
 
+  it("cancels a prepared follow-up when turn/end races past the stopping marker", async () => {
+    const limits = { maxTurns: 1, maxDurationMs: 60_000 };
+    const preparedFollowUp = Promise.withResolvers<readonly [{ readonly type: "text"; readonly text: string }]>();
+    let prepareCalls = 0;
+    const fixture = await mountService(
+      Object.freeze({ capture: () => ({ ...birth(), limits }) }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      Object.freeze({
+        prepare: () => ++prepareCalls === 1
+          ? Promise.resolve(Object.freeze([Object.freeze({ type: "text" as const, text: "start" })]))
+          : preparedFollowUp.promise,
+      }),
+    );
+    await fixture.service.start({ ...params(), limits });
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    const followUp = fixture.service.followUp({
+      clientOperationId: "operation-1",
+      messageId: "prepared-late-boundary-follow-up",
+      input: { parts: [{ kind: "text", text: "prepared too late" }] },
+    });
+    await vi.waitFor(() => expect(prepareCalls).toBe(2));
+    const stopping = fixture.context.serial("agent/turn-stopping", {
+      agent: fixture.agent,
+      turn: 1,
+      signal: new AbortController().signal,
+    });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    preparedFollowUp.resolve(Object.freeze([
+      Object.freeze({ type: "text" as const, text: "prepared too late" }),
+    ]));
+
+    await expect(followUp).resolves.toEqual({
+      messageId: "prepared-late-boundary-follow-up",
+      state: "cancelled",
+    });
+    await stopping;
+    await vi.waitFor(() => expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "max_turns", limit: 1 },
+      messages: [{ state: "claimed" }, { state: "cancelled", cancellationReason: "limit" }],
+    }));
+    expect(fixture.inbox.nextTurn).toEqual([]);
+  });
+
   it("expires queued work by durable acceptedAt across the wall-clock duration boundary", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_800_000_000_000);

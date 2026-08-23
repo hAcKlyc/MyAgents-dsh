@@ -1065,7 +1065,11 @@ export class SdkOperationService extends Service {
         content,
       ));
       const stoppingTurn = current.dshTurns.at(-1);
-      if (stoppingTurn !== undefined && this.stoppingTurnsValue.has(stoppingTurn)) {
+      const stoppingTurnEnded = stoppingTurn !== undefined && agent.session.events.some(
+        (event) => event.type === "turn/end" && event.data.turn === stoppingTurn,
+      );
+      if (stoppingTurn !== undefined
+        && (this.stoppingTurnsValue.has(stoppingTurn) || stoppingTurnEnded)) {
         await this.enforceTurnBoundaryLimits(agent, stoppingTurn);
       }
       await this.flush(agent);
