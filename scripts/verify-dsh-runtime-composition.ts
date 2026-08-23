@@ -45,6 +45,7 @@ import {
   createBundleIdentityGuard,
   verifyExistingBundle,
 } from "./build-patched-dsh-artifact.js";
+import { readDshSeamPatchSet } from "./dsh-seam-decisions.js";
 import { evaluateToolchain } from "./toolchain-policy.mjs";
 
 type JsonObject = Record<string, unknown>;
@@ -832,6 +833,11 @@ const assertRuntimeProcessEvidence = (
   const selfCheckDsh = exactObject(selfCheck.dsh, "Runtime self-check DSH identity");
   const selfCheckProtocol = exactObject(selfCheck.protocol, "Runtime self-check protocol identity");
   const selfCheckProfile = exactObject(selfCheck.profile, "Runtime self-check profile identity");
+  const expectedDshPatches = readDshSeamPatchSet().map(({ order, path, sha256 }) => ({
+    order,
+    path,
+    sha256,
+  }));
   const processFaults = exactObject(processEvidence.faults, "Runtime process fault evidence");
   const transportClosures = exactObject(
     processEvidence.transportClosures,
@@ -874,8 +880,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckDsh.artifactManifestSha256 !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
     || typeof selfCheckDsh.sourceCommit !== "string"
     || typeof selfCheckDsh.patchSeriesSha256 !== "string"
-    || !Array.isArray(selfCheckDsh.patches)
-    || selfCheckDsh.patches.length !== 5
+    || JSON.stringify(selfCheckDsh.patches) !== JSON.stringify(expectedDshPatches)
     || selfCheckDsh.packageCount !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount
     || selfCheckProtocol.version !== protocolMetaJson.protocolVersion
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
