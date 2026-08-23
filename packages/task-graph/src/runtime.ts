@@ -163,6 +163,17 @@ export class ProductTaskGraphFoldError extends Error {
   }
 }
 
+const causedProductToolError = (value: unknown): ProductToolError | undefined => {
+  const seen = new Set<unknown>();
+  let current = value;
+  while (current instanceof Error && !seen.has(current)) {
+    if (current instanceof ProductToolError) return current;
+    seen.add(current);
+    current = current.cause;
+  }
+  return undefined;
+};
+
 const MAX_TASKS = 256;
 const MAX_LISTED_TASKS = 200;
 const MAX_METADATA_BYTES = 65_536;
@@ -1080,7 +1091,8 @@ export class ProductTaskGraphService extends Service {
         );
         project(candidate, plan.revision, plan);
       } catch (error) {
-        if (error instanceof ProductToolError) throw error;
+        const productError = causedProductToolError(error);
+        if (productError !== undefined) throw productError;
         throw new ProductToolError("task_graph_conflict", "TaskGraph mutation violates its current revision", { cause: error });
       }
       context.signal.throwIfAborted();

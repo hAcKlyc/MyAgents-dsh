@@ -1185,7 +1185,10 @@ export class ProductWorkService extends Service {
       revision: authority.birth.componentRevision,
     }))?.get(type);
     if (registration === undefined) {
-      throw new ProductToolError("agent_unavailable", "requested child descriptor is unavailable");
+      throw new ProductToolError(
+        "agent_unavailable",
+        "requested child descriptor is unavailable; omit subagent_type to use the built-in general descriptor",
+      );
     }
     return Object.freeze({
       allowedTools: registration.tools,

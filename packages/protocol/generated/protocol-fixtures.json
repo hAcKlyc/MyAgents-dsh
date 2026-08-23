@@ -289,7 +289,7 @@
         },
         "runtimeGeneration": "generation-1",
         "runtimeVersion": "0.0.0",
-        "schemaSha256": "67ea3b82594ce90253cebec54cd95f806b03b0c2eac12f2753df583c05e567eb",
+        "schemaSha256": "473cbaed28ee671bfd07293c60233ad4438cab92a495cef7d269d57c0d135936",
         "sessionFormat": "dsh-session-events-v1"
       }
     },
@@ -318,7 +318,7 @@
         "runtimeSessionId": "runtime-session-1",
         "state": "ready",
         "toolCatalog": {
-          "contractSha256": "64cb973113a855f35f883211aab170c836ca6d6d9cc079d33ebd1c88bf51335c",
+          "contractSha256": "b150cf36eed203391a99d5c12d9fbd4dd09ff2bb4400ab635bee95ccb3302092",
           "diagnostics": [
             {
               "available": true,
@@ -401,7 +401,7 @@
               "tool": "TaskUpdate"
             }
           ],
-          "digest": "9b958ca012abd3f24446de288fc032f92c894c15fb5b7822a7105d0611fbee5e",
+          "digest": "eb81e11e2a1a24e1d8531b184c30442e7ecac92a6f865aea1cd886c8a515fac9",
           "effectiveTools": [
             "Read",
             "Write",
@@ -1073,7 +1073,7 @@
     }
   ],
   "protocolVersion": "2.0.0-draft.1",
-  "schemaSha256": "67ea3b82594ce90253cebec54cd95f806b03b0c2eac12f2753df583c05e567eb",
+  "schemaSha256": "473cbaed28ee671bfd07293c60233ad4438cab92a495cef7d269d57c0d135936",
   "valid": [
     {
       "frame": {
@@ -1268,7 +1268,7 @@
           },
           "runtimeGeneration": "generation-1",
           "runtimeVersion": "0.0.0",
-          "schemaSha256": "67ea3b82594ce90253cebec54cd95f806b03b0c2eac12f2753df583c05e567eb",
+          "schemaSha256": "473cbaed28ee671bfd07293c60233ad4438cab92a495cef7d269d57c0d135936",
           "sessionFormat": "dsh-session-events-v1"
         }
       },

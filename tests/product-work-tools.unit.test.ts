@@ -801,6 +801,21 @@ const seedSettledForegroundWork = (
 };
 
 describe("canonical Agent Work projection", () => {
+  it("makes the built-in general descriptor recoverable after an unknown type", async () => {
+    const state = await harness();
+    const result = await state.execute("Agent", {
+      description: "Review unknown descriptor",
+      prompt: "Confirm that an unavailable descriptor yields an actionable fallback.",
+      subagent_type: "audit",
+    });
+    expect(result).toMatchObject({ isError: true });
+    expect((result as { content: unknown }).content).toEqual([{
+      type: "text",
+      text: "Error: requested child descriptor is unavailable; omit subagent_type to use the built-in general descriptor",
+    }]);
+    expect(state.subagents.childIds()).toEqual([]);
+  });
+
   it("derives child model requests from exact ProductWork and parent-operation lineage", async () => {
     const state = await harness();
     const args = {

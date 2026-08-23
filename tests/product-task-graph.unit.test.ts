@@ -198,7 +198,12 @@ describe("durable Session-local product TaskGraph", () => {
     expect((await successful(state, "TaskGet", { taskId: "task-1" })).task)
       .toMatchObject({ id: "task-1", updatedSequence: 3 });
     expect((await state.execute("TaskUpdate", { taskId: "task-1", addBlockedBy: ["task-2"] })).isError).toBe(true);
-    expect((await state.execute("TaskUpdate", { taskId: "task-2", status: "in_progress" })).isError).toBe(true);
+    const unowned = await state.execute("TaskUpdate", { taskId: "task-1", status: "in_progress" });
+    expect(unowned).toMatchObject({ isError: true });
+    expect(unowned.content).toEqual([{
+      type: "text",
+      text: "Error: An in-progress task must be owned by root",
+    }]);
     expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: "outside" })).isError).toBe(true);
 
     await successful(state, "TaskUpdate", { taskId: "task-1", owner: "root", status: "completed" });

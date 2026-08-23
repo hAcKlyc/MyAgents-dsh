@@ -687,7 +687,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Agent: contract({
     name: "Agent",
-    description: "Starts a supervised local child Agent with a fresh DSH context and the current bounded workspace/component snapshot. Background returns a retained work handle; foreground waits for the child terminal.",
+    description: "Starts a supervised local child Agent with a fresh DSH context and the current bounded workspace/component snapshot. Omit subagent_type to use the built-in general descriptor. General children have coordination tools but no direct filesystem authority, so include the material to review in the prompt. Background returns a retained work handle; foreground waits for the child terminal.",
     inputSchema: strictObject({
       description: Type.String({ minLength: 1, maxLength: 80, pattern: "^(?:\\S+)(?:\\s+\\S+){2,4}$" }),
       prompt: Type.String({ minLength: 1, maxLength: 1_000_000 }),
@@ -834,7 +834,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskUpdate: contract({
     name: "TaskUpdate",
-    description: "Atomically updates one Session-local task, including status, ownership, dependencies, text, and bounded metadata. Dependencies must remain acyclic.",
+    description: "Atomically updates one Session-local task, including status, ownership, dependencies, text, and bounded metadata. Set owner to root in the same update (or earlier) before status can become in_progress. Dependencies must remain acyclic.",
     inputSchema: strictObject({
       taskId: boundedIdentifier,
       status: Type.Optional(Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed"), Type.Literal("cancelled")])),
