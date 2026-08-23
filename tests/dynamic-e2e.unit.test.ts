@@ -165,6 +165,16 @@ describe("dynamic E2E harness", () => {
       privatePaths: {},
       secretCanaries: [],
     })).toThrow(/aliased/u);
+    expect(sanitizeEvidence(Array.from({ length: 16_385 }, (_value, index) => index), {
+      privatePaths: {},
+      secretCanaries: [],
+      maxNodes: 20_000,
+    })).toHaveLength(16_385);
+    expect(() => sanitizeEvidence(Array.from({ length: 100_001 }, () => 0), {
+      privatePaths: {},
+      secretCanaries: [],
+      maxNodes: 1_000_000,
+    })).toThrow(/bounded ordinary arrays/u);
   });
 
   it("loads an approved route without placing credential material in its config bytes", async () => {

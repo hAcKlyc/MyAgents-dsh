@@ -16,6 +16,8 @@ export interface EvidenceRedactionPolicy {
   readonly maxStringLength?: number;
 }
 
+export const MAX_EVIDENCE_ARRAY_LENGTH = 100_000;
+
 const compareCodePoint = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 
 export class SecretCanaryByteScanner {
@@ -98,7 +100,8 @@ export const sanitizeEvidence = (
     if (seen.has(candidate)) throw new TypeError("evidence must not be cyclic or aliased");
     seen.add(candidate);
     if (Array.isArray(candidate)) {
-        if (Object.getPrototypeOf(candidate) !== Array.prototype || candidate.length > 16_384) {
+        if (Object.getPrototypeOf(candidate) !== Array.prototype
+          || candidate.length > MAX_EVIDENCE_ARRAY_LENGTH) {
           throw new TypeError("evidence arrays must be bounded ordinary arrays");
         }
         const descriptors = Object.getOwnPropertyDescriptors(candidate);

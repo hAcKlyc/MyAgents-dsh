@@ -2,7 +2,14 @@ import { createHash } from "node:crypto";
 import { chmod, lstat, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { assertSanitizedBytes, canonicalJsonText, sanitizeEvidence, type CanonicalJson, type EvidenceRedactionPolicy } from "./redaction.js";
+import {
+  assertSanitizedBytes,
+  canonicalJsonText,
+  MAX_EVIDENCE_ARRAY_LENGTH,
+  sanitizeEvidence,
+  type CanonicalJson,
+  type EvidenceRedactionPolicy,
+} from "./redaction.js";
 import { createBlankExperienceReport } from "./reporter.js";
 
 export interface DynamicEvidenceInput {
@@ -39,13 +46,17 @@ export class DynamicEvidenceRecorder {
 
   recordPublicEvent(event: unknown): void {
     if (this.#phase !== "black_box") throw new Error("public events are closed after black-box terminal");
-    if (this.#publicEvents.length >= 100_000) throw new Error("public event evidence exceeded its bound");
+    if (this.#publicEvents.length >= MAX_EVIDENCE_ARRAY_LENGTH) {
+      throw new Error("public event evidence exceeded its bound");
+    }
     this.#publicEvents.push(event);
   }
 
   recordDiagnosticFact(fact: unknown): void {
     if (this.#phase === "sealed") throw new Error("diagnostic facts are closed after sealing");
-    if (this.#diagnosticFacts.length >= 100_000) throw new Error("diagnostic evidence exceeded its bound");
+    if (this.#diagnosticFacts.length >= MAX_EVIDENCE_ARRAY_LENGTH) {
+      throw new Error("diagnostic evidence exceeded its bound");
+    }
     this.#diagnosticFacts.push(fact);
   }
 

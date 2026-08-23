@@ -557,6 +557,7 @@ export const runDynamicScenario = async (options: Readonly<{
   recorder.markTerminal();
   const recorded = recorder.consumeForSeal();
   const redaction: EvidenceRedactionPolicy = Object.freeze({
+    maxNodes: 1_000_000,
     privatePaths: Object.freeze({
       [options.repositoryRoot]: "$REPOSITORY",
       [workspace.root]: "$RUN_ROOT",
