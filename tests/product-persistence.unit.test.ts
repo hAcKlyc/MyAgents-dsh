@@ -206,13 +206,15 @@ describe("ProductSqliteSessionPersistence", () => {
       retryable: false,
       unsettledMutations: [],
     });
-    await expect(persistence.inspectRecovery(id)).resolves.toMatchObject({
+    const resumable = await persistence.inspectRecovery(id);
+    expect(resumable).toMatchObject({
       state: "resume_candidate",
       durableSequence: 2,
-      headSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
       storageState: "active",
       unsettledMutations: [],
     });
+    expect(resumable.state === "resume_candidate" && resumable.headSha256)
+      .toMatch(/^[a-f0-9]{64}$/u);
     const abandoned = await persistence.prepareDelete({
       clientMutationId: "delete-client-abandoned",
       runtimeSessionId: id,

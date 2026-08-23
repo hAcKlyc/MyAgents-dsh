@@ -4012,8 +4012,10 @@ const recoveryResults = failedResumeResults.map((result) => {
   if (result.status !== "fulfilled") throw result.reason;
   return result.value;
 });
+const firstRecoveryResult = recoveryResults[0];
+if (firstRecoveryResult === undefined) throw new Error("missing first recovery result");
 assert.deepEqual(recoveryResults[1], recoveryResults[0]);
-assert.deepEqual(recoveryResults[0], {
+assert.deepEqual(firstRecoveryResult, {
   state: "recovery_required",
   runtimeSessionId: invalidResumeSessionId,
   persistenceRef: invalidResumeParams.persistenceRef,
@@ -4021,14 +4023,14 @@ assert.deepEqual(recoveryResults[0], {
   retryable: false,
   unsettledMutations: [],
 });
-assert.equal("toolCatalog" in recoveryResults[0]!, false);
+assert.equal("toolCatalog" in firstRecoveryResult, false);
 assert.deepEqual(await failedResumeHostClient.runtimeStatus({}), {
   runtimeGeneration: "artifact-failed-resume-generation",
   initialized: true,
   primarySessionState: "recovery_required",
   runtimeSessionId: invalidResumeSessionId,
   desiredConfigRevision: invalidResumeParams.configRevision,
-  recovery: recoveryResults[0],
+  recovery: firstRecoveryResult,
   active: {
     rootTurns: 0,
     queuedInputs: 0,

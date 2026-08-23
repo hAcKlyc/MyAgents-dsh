@@ -1569,20 +1569,33 @@ export const composeDshRootServices = async (
             SessionId(request.runtimeSessionId),
             request.signal,
           );
+          if (inspection.state === "resume_candidate") {
+            const generation = Object.freeze({
+              generationId: inspection.generationId,
+              persistenceRevision: inspection.persistenceRevision,
+              durableHead: Object.freeze({
+                sequence: inspection.durableSequence,
+                headSha256: inspection.headSha256,
+              }),
+              storageState: inspection.storageState,
+            });
+            return Object.freeze({ state: "resume_candidate" as const, generation });
+          }
           const generation = inspection.generationId === undefined
+            || inspection.persistenceRevision === undefined
+            || inspection.durableSequence === undefined
+            || inspection.headSha256 === undefined
+            || inspection.storageState === undefined
             ? undefined
             : Object.freeze({
               generationId: inspection.generationId,
-              persistenceRevision: inspection.persistenceRevision as string,
+              persistenceRevision: inspection.persistenceRevision,
               durableHead: Object.freeze({
-                sequence: inspection.durableSequence as number,
-                headSha256: inspection.headSha256 as string,
+                sequence: inspection.durableSequence,
+                headSha256: inspection.headSha256,
               }),
-              storageState: inspection.storageState as "active" | "tombstoned",
+              storageState: inspection.storageState,
             });
-          if (inspection.state === "resume_candidate") {
-            return Object.freeze({ state: "resume_candidate" as const, generation: generation! });
-          }
           return Object.freeze({
             state: "recovery_required" as const,
             runtimeSessionId: request.runtimeSessionId,
@@ -1592,7 +1605,7 @@ export const composeDshRootServices = async (
             ...(generation === undefined ? {} : { generation }),
             unsettledMutations: inspection.unsettledMutations,
           });
-        } catch (error) {
+        } catch {
           request.signal.throwIfAborted();
           return Object.freeze({
             state: "recovery_required" as const,
