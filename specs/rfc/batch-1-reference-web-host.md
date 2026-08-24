@@ -16,6 +16,8 @@ DSH WebUI is MIT-licensed and is used as a visual/interaction reference for conv
 
 MyAgents is AGPL-3.0-only with a separate commercial license. W5 uses its workspace/Tab, attachment, model/permission selector, MCP/Skill, file-preview, diagnostics, and responsive-layout behavior as product research. No MyAgents code or asset is copied unless the distribution deliberately adopts a compatible license and records that decision. Initial implementation is clean-room.
 
+The private sibling MyAgents-Pi debug console at fixed revision `9ab2ec4806628d837521f2a758345ddc9a4b173e` is an authorized interaction-behavior reference for ordering text, thinking, and tool blocks inside one assistant Turn, folding one tool lifecycle by `toolCallId`, following streaming output, and sanitizing Markdown. Its Pi bridge, Session/runtime ownership, DOM implementation, CSS, and assets are not copied. Exact inspected blobs and zero-copy disposition are recorded in the UI provenance contract.
+
 ## 3. Process and trust topology
 
 ```text
