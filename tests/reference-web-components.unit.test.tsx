@@ -87,6 +87,7 @@ describe("Reference Web React shell", () => {
     const unselected: Bootstrap = { ...source, snapshot: {
       sessions: source.snapshot.sessions,
     } };
+    const commands: BrowserCommand[] = [];
     const client = {
       bootstrap: vi.fn(() => Promise.resolve(unselected)),
       events: async function* (options: { signal?: AbortSignal }) {
@@ -94,7 +95,10 @@ describe("Reference Web React shell", () => {
           "abort", () => resolveAbort(), { once: true },
         ));
       },
-      command: vi.fn(() => Promise.resolve({ commandId: "select", accepted: true as const })),
+      command: vi.fn((command: BrowserCommand) => {
+        commands.push(command);
+        return Promise.resolve({ commandId: command.commandId, accepted: true as const });
+      }),
       respond: vi.fn(),
     } as unknown as WebHostClient;
     const store = new ReferenceWebStore({ client, idFactory: () => "fixture-id", now: () => now });
@@ -105,13 +109,18 @@ describe("Reference Web React shell", () => {
     expect(document.activeElement).toBe(composer);
     fireEvent.change(composer, { target: { value: "Draft while the Runtime starts" } });
     expect(composer.value).toBe("Draft while the Runtime starts");
-    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send message" }).disabled).toBe(true);
+    const send = screen.getByRole<HTMLButtonElement>("button", { name: "Send message" });
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    await waitFor(() => expect(commands[0]?.kind).toBe("session.create"));
+    expect(composer.closest(".composer")?.getAttribute("aria-busy")).toBe("true");
 
     const session = screen.getByRole("button", { name: "First Session，就绪" });
     expect(session.querySelector(".session-title")?.textContent).toBe("First Session");
     expect(session.querySelector(".status-dot")?.getAttribute("title")).toBe("就绪");
     expect(view.container.querySelector(".session-meta")).toBeNull();
     store.stop();
+    await screen.findByRole("alert");
   });
 
   it("exposes steer, follow-up, interrupt, and queued-message cancellation while a Turn is active", async () => {

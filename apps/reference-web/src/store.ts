@@ -72,6 +72,10 @@ export class ReferenceWebStore {
   readonly #now: () => string;
   readonly #listeners = new Set<() => void>();
   readonly #commandInputs = new Map<string, string>();
+  readonly #commandWaiters = new Map<string, Readonly<{
+    resolve: () => void;
+    reject: (error: Error) => void;
+  }>>();
   readonly #historyRequests = new Map<string, Readonly<{ webSessionId: string; cursor?: string }>>();
   #state: ReferenceWebState = Object.freeze({
     connection: "idle",
@@ -108,6 +112,7 @@ export class ReferenceWebStore {
     this.#abort?.abort();
     this.#abort = undefined;
     this.#startPromise = undefined;
+    this.#rejectCommandWaiters("The local Web Host was stopped");
     this.#update({ connection: "idle" });
   }
 
@@ -145,12 +150,12 @@ export class ReferenceWebStore {
     attachments: readonly AttachmentSummary[],
     delivery: InputDelivery,
   ): Promise<void> {
-    const webSessionId = this.#selectedSessionId();
     const trimmed = text.trim();
     if (trimmed === "") return;
     if (delivery === "steer" && attachments.length > 0) {
       throw new Error("Steering input cannot include attachments");
     }
+    const webSessionId = this.#state.snapshot.selectedWebSessionId ?? await this.#createSessionForInput();
     const commandId = this.#idFactory();
     const localId = this.#idFactory();
     this.#commandInputs.set(commandId, localId);
@@ -366,6 +371,37 @@ export class ReferenceWebStore {
         message: `Command failed: ${event.payload.error?.code ?? "unknown"}`,
       }].slice(-8) } : {}),
     });
+    const waiter = this.#commandWaiters.get(event.payload.commandId);
+    if (waiter === undefined) return;
+    this.#commandWaiters.delete(event.payload.commandId);
+    if (event.payload.state === "succeeded") waiter.resolve();
+    else waiter.reject(new Error(`Command failed: ${event.payload.error?.code ?? "unknown"}`));
+  }
+
+  async #commandAndWait(command: BrowserCommand): Promise<void> {
+    const settled = new Promise<void>((resolveSettled, rejectSettled) => {
+      this.#commandWaiters.set(command.commandId, {
+        resolve: resolveSettled,
+        reject: rejectSettled,
+      });
+    });
+    try {
+      await this.#command(command);
+    } catch {
+      // Transport failures are projected through #settleCommand, which rejects settled.
+    }
+    return settled;
+  }
+
+  async #createSessionForInput(): Promise<string> {
+    await this.#commandAndWait({
+      commandId: this.#idFactory(),
+      kind: "session.create",
+      payload: {},
+    });
+    const webSessionId = this.#state.snapshot.selectedWebSessionId;
+    if (webSessionId === undefined) throw new Error("Created Session was not selected by the Host");
+    return webSessionId;
   }
 
   async #command(command: BrowserCommand): Promise<void> {
@@ -463,6 +499,7 @@ export class ReferenceWebStore {
   }
 
   #connectionFailure(): void {
+    this.#rejectCommandWaiters("The local Web Host connection was interrupted");
     this.#update({
       connection: "offline",
       notices: [...this.#state.notices, {
@@ -471,6 +508,12 @@ export class ReferenceWebStore {
         message: "The local Web Host connection was interrupted.",
       }].slice(-8),
     });
+  }
+
+  #rejectCommandWaiters(message: string): void {
+    const error = new Error(message);
+    for (const waiter of this.#commandWaiters.values()) waiter.reject(error);
+    this.#commandWaiters.clear();
   }
 
   #update(patch: Partial<ReferenceWebState>): void {

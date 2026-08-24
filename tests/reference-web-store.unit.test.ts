@@ -135,4 +135,59 @@ describe("Reference Web React store", () => {
     ]);
     store.stop();
   });
+
+  it("creates and selects a Session before sending the first message from a blank conversation", async () => {
+    const queue = new EventQueue();
+    const commands: BrowserCommand[] = [];
+    let sequence = 0;
+    const blank: Bootstrap = { ...bootstrap, snapshot: { sessions: [] } };
+    const createdSnapshot = bootstrap.snapshot;
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve(blank)),
+      events: (options: { signal?: AbortSignal }) => queue.events(options.signal ?? new AbortController().signal),
+      command: vi.fn((command: BrowserCommand) => {
+        commands.push(command);
+        if (command.kind === "session.create") {
+          sequence += 1;
+          queue.push({
+            epoch: "epoch-1", sequence, emittedAt: now, kind: "host.snapshot", payload: createdSnapshot,
+          });
+        }
+        sequence += 1;
+        queue.push({
+          epoch: "epoch-1",
+          sequence,
+          emittedAt: now,
+          kind: "host.commandSettled",
+          payload: {
+            commandId: command.commandId,
+            ...(command.kind === "session.create" ? { result: { webSessionId: "web-session-1" } }
+              : command.kind === "history.read" ? { result: {
+                runtimeSessionId: "runtime-session-1",
+                historyFormat: "dsh-session-events-v1" as const,
+                durableHead: { sequence: 0 },
+                records: [],
+              } } : { result: null }),
+            state: "succeeded",
+          },
+        });
+        return Promise.resolve({ commandId: command.commandId, accepted: true as const });
+      }),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    let nextId = 0;
+    const store = new ReferenceWebStore({ client, idFactory: () => `blank-${nextId += 1}`, now: () => now });
+    await store.start();
+
+    await store.submitTurn("First message", []);
+    await vi.waitFor(() => expect(commands.some(({ kind }) => kind === "turn.start")).toBe(true));
+    expect(commands.filter(({ kind }) => kind !== "history.read").map(({ kind }) => kind)).toEqual([
+      "session.create", "turn.start",
+    ]);
+    expect(commands.find(({ kind }) => kind === "turn.start")).toMatchObject({
+      webSessionId: "web-session-1",
+      payload: { text: "First message" },
+    });
+    store.stop();
+  });
 });

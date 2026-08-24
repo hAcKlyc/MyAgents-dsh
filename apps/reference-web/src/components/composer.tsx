@@ -5,6 +5,7 @@ import type { AttachmentSummary, BrowserAttachmentPreview } from "@myagents-dsh/
 import type { InputDelivery } from "../store.js";
 
 export function Composer(props: Readonly<{
+  attachmentDisabled: boolean;
   inputDisabled: boolean;
   sendDisabled: boolean;
   busy: boolean;
@@ -22,6 +23,7 @@ export function Composer(props: Readonly<{
   const [text, setText] = useState("");
   const [uploads, setUploads] = useState<readonly AttachmentSummary[]>([]);
   const [busyDelivery, setBusyDelivery] = useState<Extract<InputDelivery, "steer" | "follow_up">>("steer");
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const [preview, setPreview] = useState<Readonly<{ name: string; url: string }>>();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -32,14 +34,17 @@ export function Composer(props: Readonly<{
   }, [preview]);
 
   const submit = async (): Promise<void> => {
-    if (props.sendDisabled || text.trim() === "") return;
+    if (props.sendDisabled || submitting || text.trim() === "") return;
     setError(undefined);
+    setSubmitting(true);
     try {
       await props.onSubmit(text, uploads, props.busy ? busyDelivery : "turn");
       setText("");
       setUploads([]);
     } catch {
       setError("The message could not be submitted.");
+    } finally {
+      setSubmitting(false);
     }
   };
   const addFile = async (file: File | undefined): Promise<void> => {
@@ -82,7 +87,7 @@ export function Composer(props: Readonly<{
         <button type="button" onClick={() => void remove(attachment)} aria-label={`Remove ${attachment.name}`}>×</button>
       </span>)}
     </div>}
-    <div className="composer" data-disabled={props.inputDisabled}>
+    <div className="composer" data-disabled={props.inputDisabled} aria-busy={submitting}>
       <textarea
         aria-label="Message the agent"
         autoFocus
@@ -100,7 +105,8 @@ export function Composer(props: Readonly<{
       />
       <div className="composer-actions">
         <div>
-          <button className="attach-button" type="button" disabled={props.sendDisabled || (props.busy && busyDelivery === "steer")}
+          <button className="attach-button" type="button"
+            disabled={props.attachmentDisabled || (props.busy && busyDelivery === "steer")}
             onClick={() => fileRef.current?.click()} aria-label="Attach file" title="添加图片">＋</button>
           <input ref={fileRef} className="sr-only" type="file"
             accept="image/jpeg,image/png,image/gif,image/webp"
@@ -117,7 +123,7 @@ export function Composer(props: Readonly<{
           {props.busy && <button className="stop-button" type="button" aria-label="Stop"
             onClick={() => void props.onInterrupt()}>停止</button>}
           <button className="send-button" type="button"
-            disabled={props.sendDisabled || text.trim() === "" || steerHasAttachments}
+            disabled={props.sendDisabled || submitting || text.trim() === "" || steerHasAttachments}
             onClick={() => void submit()} aria-label={props.busy
               ? busyDelivery === "steer" ? "Send steering message" : "Queue follow-up"
               : "Send message"}>↑</button>
