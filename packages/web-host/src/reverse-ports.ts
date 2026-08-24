@@ -15,6 +15,7 @@ import {
   canonicalBrowserJson,
   validateInteractionResponse,
   type InteractionResponse,
+  type OpenInteraction as BrowserOpenInteraction,
 } from "@myagents-dsh/web-host-contract";
 
 import type { HostEventHub } from "./event-hub.js";
@@ -50,6 +51,7 @@ type OpenInteraction = Readonly<{
   desiredPolicyRevision: string;
   runtimeGeneration: string;
   runtimeSessionId: string;
+  browser: BrowserOpenInteraction;
 }>;
 
 const unavailableCredential: CredentialResolver = (params) => ({
@@ -113,26 +115,28 @@ export class ReversePortRegistry {
         if (runtimeSessionId === undefined) {
           throw new ProtocolError("host_interaction_authority", "Interaction lacks a Runtime Session identity");
         }
+        const browser = Object.freeze({
+          interactionId: params.interactionId,
+          webSessionId: options.webSessionId,
+          kind: params.kind,
+          schema: canonicalBrowserJson(params.schema),
+          ...(params.permissionAction === undefined ? {} : {
+            permissionAction: params.permissionAction,
+          }),
+          desiredPolicyRevision: params.desiredPolicyRevision,
+          scenario: params.scenario,
+          openedAt: new Date().toISOString(),
+          deadlineAt: new Date(Date.now() + params.authority.deadlineMs).toISOString(),
+        } satisfies BrowserOpenInteraction);
         this.#interactions.set(params.interactionId, Object.freeze({
           desiredPolicyRevision: params.desiredPolicyRevision,
           runtimeGeneration: params.authority.runtimeGeneration,
           runtimeSessionId,
+          browser,
         }));
         options.eventHub.publish({
           kind: "host.interactionOpened",
-          payload: {
-            interactionId: params.interactionId,
-            webSessionId: options.webSessionId,
-            kind: params.kind,
-            schema: canonicalBrowserJson(params.schema),
-            ...(params.permissionAction === undefined ? {} : {
-              permissionAction: params.permissionAction,
-            }),
-            desiredPolicyRevision: params.desiredPolicyRevision,
-            scenario: params.scenario,
-            openedAt: new Date().toISOString(),
-            deadlineAt: new Date(Date.now() + params.authority.deadlineMs).toISOString(),
-          },
+          payload: browser,
         });
         return { registered: true };
       },
@@ -206,6 +210,10 @@ export class ReversePortRegistry {
   }
 
   get openInteractionCount(): number { return this.#interactions.size; }
+  hasInteraction(interactionId: string): boolean { return this.#interactions.has(interactionId); }
+  interactions(): readonly BrowserOpenInteraction[] {
+    return Object.freeze([...this.#interactions.values()].map(({ browser }) => browser));
+  }
 
   async close(): Promise<void> {
     if (this.#closed) return;

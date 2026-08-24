@@ -229,6 +229,7 @@ const expectedWorkspaceFiles = new Map([
     "src/validation.ts",
   ]],
   ["packages/web-host", [
+    "src/application.ts",
     "src/attachment-store.ts",
     "src/auth.ts",
     "src/browser-server.ts",

@@ -281,6 +281,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     relativeDirectory: "packages/web-host",
     allowedFiles: [
       "package.json",
+      "src/application.ts",
       "src/attachment-store.ts",
       "src/auth.ts",
       "src/browser-server.ts",

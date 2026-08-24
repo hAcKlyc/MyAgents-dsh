@@ -1,5 +1,6 @@
 export * from "./auth.js";
 export * from "./attachment-store.js";
+export * from "./application.js";
 export * from "./browser-server.js";
 export * from "./catalog.js";
 export * from "./errors.js";

@@ -7,6 +7,7 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"]
   },
   "files": [
+    "src/application.ts",
     "src/attachment-store.ts",
     "src/auth.ts",
     "src/browser-server.ts",
