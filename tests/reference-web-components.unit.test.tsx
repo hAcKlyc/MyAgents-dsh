@@ -82,6 +82,38 @@ describe("Reference Web React shell", () => {
     store.stop();
   });
 
+  it("keeps an unselected conversation draft editable and renders one-line Session status", async () => {
+    const source = fixture();
+    const unselected: Bootstrap = { ...source, snapshot: {
+      sessions: source.snapshot.sessions,
+    } };
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve(unselected)),
+      events: async function* (options: { signal?: AbortSignal }) {
+        await new Promise<void>((resolveAbort) => options.signal?.addEventListener(
+          "abort", () => resolveAbort(), { once: true },
+        ));
+      },
+      command: vi.fn(() => Promise.resolve({ commandId: "select", accepted: true as const })),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    const store = new ReferenceWebStore({ client, idFactory: () => "fixture-id", now: () => now });
+    const view = render(<App store={store} />);
+
+    const composer = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" });
+    expect(composer.disabled).toBe(false);
+    expect(document.activeElement).toBe(composer);
+    fireEvent.change(composer, { target: { value: "Draft while the Runtime starts" } });
+    expect(composer.value).toBe("Draft while the Runtime starts");
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send message" }).disabled).toBe(true);
+
+    const session = screen.getByRole("button", { name: "First Session，就绪" });
+    expect(session.querySelector(".session-title")?.textContent).toBe("First Session");
+    expect(session.querySelector(".status-dot")?.getAttribute("title")).toBe("就绪");
+    expect(view.container.querySelector(".session-meta")).toBeNull();
+    store.stop();
+  });
+
   it("exposes steer, follow-up, interrupt, and queued-message cancellation while a Turn is active", async () => {
     const source = fixture();
     if (source.snapshot.projection === undefined) throw new Error("fixture projection is missing");

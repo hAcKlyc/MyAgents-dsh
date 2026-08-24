@@ -234,8 +234,14 @@ describe("Reference Web Host application owner", () => {
     const application = await ReferenceWebHostApplication.open(fixture.value);
     const auth = application.authenticator.exchange(application.authenticator.launchCapability);
     expect(application.bootstrap(auth).snapshot.sessions).toEqual([]);
+    let selectedBeforeRuntimeReady = false;
     const settled = new Promise<void>((resolveSettled) => {
       const subscription = application.eventHub.subscribe(undefined, ({ event }) => {
+        if (event.kind === "host.snapshot"
+          && event.payload.selectedWebSessionId !== undefined
+          && event.payload.sessions.some(({ lifecycle }) => lifecycle !== "ready")) {
+          selectedBeforeRuntimeReady = true;
+        }
         if (event.kind === "host.commandSettled" && event.payload.commandId === "command-1") {
           subscription.unsubscribe();
           resolveSettled();
@@ -246,6 +252,7 @@ describe("Reference Web Host application owner", () => {
     await application.accept(command);
     await application.accept(command);
     await settled;
+    expect(selectedBeforeRuntimeReady).toBe(true);
     expect(fixture.creations).toHaveLength(1);
     const snapshot = application.snapshot();
     expect(snapshot).toMatchObject({

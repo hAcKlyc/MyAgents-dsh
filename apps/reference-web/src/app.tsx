@@ -54,7 +54,8 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
             ? Promise.resolve() : props.store.cancelQueued(selectedId, messageId)} />
         <Composer
           attachments={projection?.attachments ?? []}
-          disabled={selectedId === undefined || selected?.lifecycle !== "ready"}
+          inputDisabled={state.connection === "offline"}
+          sendDisabled={selectedId === undefined || selected?.lifecycle !== "ready"}
           busy={busy}
           onSubmit={(text, attachments, delivery) => props.store.submitInput(text, attachments, delivery)}
           onUpload={(file) => props.store.upload(file)}

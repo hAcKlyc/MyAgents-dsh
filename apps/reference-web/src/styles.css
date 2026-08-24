@@ -47,11 +47,10 @@ h1, h2, h3, p { margin-top: 0; }
 .icon-button { display: grid; width: 31px; height: 31px; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-strong); cursor: pointer; font-size: 17px; }
 .icon-button:hover { border-color: var(--line-strong); background: var(--surface); }
 .session-list { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 4px; overflow-y: auto; }
-.session-item { display: flex; flex-direction: column; gap: 7px; padding: 12px; border: 1px solid transparent; border-radius: 11px; background: transparent; cursor: pointer; text-align: left; }
+.session-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid transparent; border-radius: 11px; background: transparent; cursor: pointer; text-align: left; }
 .session-item:hover { background: color-mix(in srgb, var(--surface) 70%, transparent); }
 .session-item[data-selected="true"] { border-color: var(--line); background: var(--surface-strong); box-shadow: 0 5px 18px rgb(30 28 24 / 5%); }
 .session-title { overflow: hidden; font-size: 13px; font-weight: 630; text-overflow: ellipsis; white-space: nowrap; }
-.session-meta { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; text-transform: capitalize; }
 .status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 999px; background: #aaa; }
 .status-ready, .connection-pill[data-state="online"] .status-dot { background: var(--green); }
 .status-starting, .status-initializing, .connection-pill[data-state="connecting"] .status-dot { background: #d39d32; }
@@ -209,12 +208,11 @@ h1, h2, h3, p { margin-top: 0; }
 @media (max-width: 640px) {
   .app-shell { grid-template-columns: 76px minmax(0, 1fr); }
   .session-sidebar { padding-inline: 8px; }
-  .workspace-switcher-wrap .eyebrow, .workspace-switcher > span:not(.workspace-glyph), .sidebar-heading h1, .session-title, .session-meta { display: none; }
+  .workspace-switcher-wrap .eyebrow, .workspace-switcher > span:not(.workspace-glyph), .sidebar-heading h1, .session-title { display: none; }
   .workspace-switcher { display: grid; place-items: center; padding: 8px; }
   .sidebar-heading { justify-content: center; padding-inline: 0; }
   .session-item { min-height: 47px; align-items: center; justify-content: center; }
-  .session-item::before { content: "●"; color: var(--quiet); font-size: 12px; }
-  .session-item[data-selected="true"]::before { color: var(--accent); }
+  .session-item .status-dot { justify-self: center; }
   .workspace-header { min-height: 61px; padding-inline: 13px; }
   .workspace-identity strong, .header-slash { display: none; }
   .conversation-list, .composer-wrap { width: calc(100% - 20px); }

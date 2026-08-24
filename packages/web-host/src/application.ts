@@ -270,6 +270,9 @@ export class ReferenceWebHostApplication {
         });
         publishSession(this.eventHub, row);
         this.#selectedWebSessionId = row.webSessionId;
+        // Selection is Host UI state and must not wait for Runtime startup. Publishing
+        // it now lets the composer retain focus and a draft while the Session starts.
+        this.#publishSnapshot();
         await this.supervisor.activate(row.webSessionId);
         this.#publishSnapshot();
         return { webSessionId: row.webSessionId };

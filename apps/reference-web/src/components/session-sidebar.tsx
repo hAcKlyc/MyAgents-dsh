@@ -8,6 +8,12 @@ export function SessionSidebar(props: Readonly<{
   onCreate: () => void;
   onSelect: (webSessionId: string) => void;
 }>): React.JSX.Element {
+  const lifecycleLabel = (lifecycle: WebSessionSummary["lifecycle"]): string => lifecycle === "ready"
+    ? "就绪"
+    : lifecycle === "cold"
+      ? "未启动"
+      : lifecycle.replaceAll("_", " ");
+
   return <aside className="session-sidebar" aria-label="Sessions">
     <div className="workspace-switcher-wrap">
       <span className="eyebrow">当前工作区</span>
@@ -25,6 +31,7 @@ export function SessionSidebar(props: Readonly<{
       {props.sessions.length === 0
         ? <p className="empty-copy">Start a Session to work with the verified DSH Runtime.</p>
         : props.sessions.map((session) => <button
+            aria-label={`${session.title}，${lifecycleLabel(session.lifecycle)}`}
             className="session-item"
             data-selected={session.webSessionId === props.selectedWebSessionId}
             key={session.webSessionId}
@@ -32,10 +39,8 @@ export function SessionSidebar(props: Readonly<{
             type="button"
           >
             <span className="session-title">{session.title}</span>
-            <span className="session-meta">
-              <span className={`status-dot status-${session.lifecycle}`} aria-hidden="true" />
-              {session.lifecycle === "ready" ? "就绪" : session.lifecycle === "cold" ? "未启动" : session.lifecycle.replaceAll("_", " ")}
-            </span>
+            <span className={`status-dot status-${session.lifecycle}`} aria-hidden="true"
+              title={lifecycleLabel(session.lifecycle)} />
           </button>)}
     </nav>
   </aside>;
