@@ -10,6 +10,7 @@ import {
   REFERENCE_WEB_EXTENSION_REVISION,
   REFERENCE_WEB_HOST_VERSION,
   REFERENCE_WEB_PROVIDER,
+  ReferenceWebDiagnosticLog,
   ReferenceWebHostApplication,
   createReferenceWebComposition,
   createReferenceWebCredentialResolver,
@@ -262,14 +263,23 @@ export const runReferenceWebHost = async (arguments_: readonly string[]): Promis
     nativeCommand: composition.nativeCommand,
     staticAsset: (path) => assets.get(path),
   });
+  const diagnosticLog = await ReferenceWebDiagnosticLog.open(resolve(options.hostHome, "logs", "host-events.jsonl"));
+  const diagnosticSubscription = application.eventHub.subscribe(undefined, ({ event }) => diagnosticLog.append(event));
   let closePromise: Promise<void> | undefined;
   const close = (): Promise<void> => {
-    closePromise ??= application.close();
+    closePromise ??= (async () => {
+      try {
+        await application.close();
+      } finally {
+        diagnosticSubscription.unsubscribe();
+        await diagnosticLog.close();
+      }
+    })();
     return closePromise;
   };
   try {
     const address = await application.listen();
-    process.stdout.write(`MyAgents-dsh Reference Web Host is ready.\n${address.launchUrl}\n`);
+    process.stdout.write(`MyAgents-dsh Reference Web Host is ready.\n${address.launchUrl}\nDiagnostic log: ${diagnosticLog.path}\n`);
     if (options.openBrowser) openSystemBrowser(address.launchUrl);
     await new Promise<void>((resolveStop) => {
       const stop = (): void => { void close().finally(resolveStop); };

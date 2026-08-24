@@ -70,6 +70,7 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
       session={selected}
       projection={projection}
       history={state.history?.webSessionId === selectedId ? state.history : undefined}
+      trace={state.trace}
       onClose={() => props.store.toggleInspector()}
       onRestart={() => selectedId === undefined ? undefined : void props.store.restartRuntime(selectedId)}
       onColdStop={() => selectedId === undefined ? undefined : void props.store.coldStop(selectedId)}

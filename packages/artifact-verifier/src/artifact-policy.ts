@@ -307,6 +307,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/browser-server.ts",
       "src/catalog.ts",
       "src/command-router.ts",
+      "src/diagnostic-log.ts",
       "src/errors.ts",
       "src/event-hub.ts",
       "src/index.ts",

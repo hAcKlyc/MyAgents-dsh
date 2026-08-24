@@ -78,7 +78,7 @@ describe("Reference Web React shell", () => {
       .toMatchObject({ kind: "turn.start", payload: { text: "Hello" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Runtime" }));
-    expect(screen.getByRole("complementary", { name: "Runtime inspector" })).not.toBeNull();
+    expect(await screen.findByRole("complementary", { name: "Runtime inspector" })).not.toBeNull();
     store.stop();
   });
 
@@ -91,6 +91,8 @@ describe("Reference Web React shell", () => {
     const client = {
       bootstrap: vi.fn(() => Promise.resolve(unselected)),
       events: async function* (options: { signal?: AbortSignal }) {
+        const noEvents: HostEvent[] = [];
+        for (const event of noEvents) yield event;
         await new Promise<void>((resolveAbort) => options.signal?.addEventListener(
           "abort", () => resolveAbort(), { once: true },
         ));
@@ -110,7 +112,7 @@ describe("Reference Web React shell", () => {
     fireEvent.change(composer, { target: { value: "Draft while the Runtime starts" } });
     expect(composer.value).toBe("Draft while the Runtime starts");
     const send = screen.getByRole<HTMLButtonElement>("button", { name: "Send message" });
-    expect(send.disabled).toBe(false);
+    await waitFor(() => expect(send.disabled).toBe(false));
     fireEvent.click(send);
     await waitFor(() => expect(commands[0]?.kind).toBe("session.create"));
     expect(composer.closest(".composer")?.getAttribute("aria-busy")).toBe("true");

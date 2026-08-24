@@ -33,6 +33,13 @@ export type UiNotice = Readonly<{
   level: "info" | "error";
   message: string;
 }>;
+export type HostTraceEntry = Readonly<{
+  id: string;
+  emittedAt: string;
+  kind: string;
+  detail: string;
+  count: number;
+}>;
 export type ReferenceWebState = Readonly<{
   connection: ConnectionState;
   bootstrap?: Bootstrap;
@@ -40,6 +47,7 @@ export type ReferenceWebState = Readonly<{
   pendingCommandIds: readonly string[];
   localInputs: readonly LocalInput[];
   notices: readonly UiNotice[];
+  trace: readonly HostTraceEntry[];
   inspectorOpen: boolean;
   history?: BrowserHistorySnapshot;
 }>;
@@ -65,6 +73,26 @@ const removeInteraction = (projection: RuntimeProjection, interactionId: string)
   ...projection,
   openInteractions: projection.openInteractions.filter((item) => item.interactionId !== interactionId),
 });
+const MAX_MERGED_DELTA_LENGTH = 262_144;
+const appendVisibleRuntimeEvent = (
+  events: RuntimeProjection["events"],
+  next: RuntimeProjection["events"][number],
+): RuntimeProjection["events"] => {
+  const previous = events.at(-1);
+  const nextEvent = next.event;
+  const previousEvent = previous?.event;
+  if ((nextEvent.kind === "assistant_delta" || nextEvent.kind === "thinking_delta")
+    && previousEvent?.kind === nextEvent.kind
+    && previous?.runtimeGeneration === next.runtimeGeneration
+    && previous.turnId === next.turnId
+    && previousEvent.delta.length + nextEvent.delta.length <= MAX_MERGED_DELTA_LENGTH) {
+    return [...events.slice(0, -1), {
+      ...next,
+      event: { ...nextEvent, delta: `${previousEvent.delta}${nextEvent.delta}` },
+    }];
+  }
+  return [...events, next].slice(-2_000);
+};
 
 export class ReferenceWebStore {
   readonly #client: WebHostClient;
@@ -83,12 +111,14 @@ export class ReferenceWebStore {
     pendingCommandIds: [],
     localInputs: [],
     notices: [],
+    trace: [],
     inspectorOpen: false,
   });
   #abort: AbortController | undefined;
   #historyAssembler: BrowserHistoryAssembler | undefined;
   #historyPages = 0;
   #historyWebSessionId: string | undefined;
+  #notifyScheduled = false;
   #startPromise: Promise<void> | undefined;
 
   constructor(options: ReferenceWebStoreOptions = {}) {
@@ -272,6 +302,7 @@ export class ReferenceWebStore {
   }
 
   async #applyEvent(event: HostEvent, signal: AbortSignal): Promise<void> {
+    this.#recordTrace(event);
     const current = this.#state.snapshot;
     switch (event.kind) {
       case "host.snapshot":
@@ -303,7 +334,7 @@ export class ReferenceWebStore {
           ...current.projection,
           runtimeGeneration: runtimeEvent.runtimeGeneration,
           runtimeSessionId: runtimeEvent.runtimeSessionId,
-          events: [...current.projection.events, runtimeEvent].slice(-2_000),
+          events: appendVisibleRuntimeEvent(current.projection.events, runtimeEvent),
           activeOperationIds,
         } } });
         return;
@@ -516,8 +547,50 @@ export class ReferenceWebStore {
     this.#commandWaiters.clear();
   }
 
+  #recordTrace(event: HostEvent): void {
+    const kind = event.kind === "runtime.event"
+      ? `${event.kind}:${event.payload.event.event.kind}`
+      : event.kind;
+    const detail = (() => {
+      switch (event.kind) {
+        case "host.snapshot": return `sessions=${event.payload.sessions.length} selected=${event.payload.selectedWebSessionId === undefined ? "none" : "yes"}`;
+        case "host.sessionChanged": return `lifecycle=${event.payload.lifecycle}`;
+        case "host.commandSettled": return `${event.payload.state}${event.payload.error === undefined ? "" : ` code=${event.payload.error.code}`}`;
+        case "host.interactionOpened": return `kind=${event.payload.kind}${event.payload.permissionAction === undefined ? "" : ` action=${event.payload.permissionAction}`}`;
+        case "host.interactionClosed": return "closed";
+        case "host.attachmentChanged": return `state=${event.payload.attachment.state}`;
+        case "runtime.event": return `turn=${event.payload.event.turnId ?? "none"}`;
+        case "runtime.stateChanged": return `lifecycle=${event.payload.lifecycle}`;
+        case "runtime.fatal": return `code=${event.payload.diagnostic.code}`;
+        case "host.resyncRequired": return `reason=${event.payload.reason}`;
+      }
+    })();
+    const current = this.#state.trace;
+    const previous = current.at(-1);
+    const next = previous?.kind === kind && (kind.endsWith(":assistant_delta") || kind.endsWith(":thinking_delta"))
+      ? [...current.slice(0, -1), { ...previous, emittedAt: event.emittedAt, count: previous.count + 1 }]
+      : [...current, {
+          id: `${event.epoch}:${event.sequence}`,
+          emittedAt: event.emittedAt,
+          kind,
+          detail,
+          count: 1,
+        }].slice(-256);
+    this.#update({ trace: next });
+  }
+
   #update(patch: Partial<ReferenceWebState>): void {
     this.#state = Object.freeze({ ...this.#state, ...patch });
-    for (const listener of this.#listeners) listener();
+    if (this.#notifyScheduled) return;
+    this.#notifyScheduled = true;
+    const notify = (): void => {
+      this.#notifyScheduled = false;
+      for (const listener of this.#listeners) listener();
+    };
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      globalThis.requestAnimationFrame(notify);
+    } else {
+      setTimeout(notify, 0);
+    }
   }
 }

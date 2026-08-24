@@ -63,6 +63,8 @@ Put `DEEPSEEK_API_KEY` in the repository-local ignored `.env`, then run:
 
 The script builds the production browser assets, verifies the frozen Runtime artifact, starts the authenticated loopback Host on an ephemeral port, and opens the browser. `start-web-preview.sh` is retained as an alias to the same real Host so an old shortcut cannot accidentally open the visual fixture.
 
+The startup output prints the exact diagnostic-log path. The bounded `0600` JSONL log records only Host/Runtime event types, lifecycle transitions, command states, error codes, Session/Turn identifiers, and timestamps; it never records credentials, prompts, model text, tool arguments, or interaction values. The WebUI **Logs** panel also shows the browser-received event trace, with consecutive streaming deltas coalesced.
+
 The current development checkout expects the frozen Runtime and exact Node 24.13.1 toolchain at their installed MyAgents-dsh cache locations. Override them with `MYAGENTS_DSH_RUNTIME_ARTIFACT=/absolute/path` and `MYAGENTS_DSH_NODE=/absolute/path/to/node`, or pass `--runtime /absolute/path`. Use `--workspace /absolute/path` to select a different workspace and `--no-open` to print the one-use URL without opening the browser.
 
 `npm run preview:web` remains a synthetic visual-test fixture. It does not call DSH or DeepSeek and is not a user product entry point.

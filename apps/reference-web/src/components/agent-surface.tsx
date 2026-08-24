@@ -159,35 +159,75 @@ const foldRuntimeTurns = (events: readonly RuntimeEnvelope[]): AssistantTurn[] =
   });
 };
 
-const historyTimeline = (events: readonly BrowserHistoryEvent[]): TimelineItem[] => events.flatMap<TimelineItem>((event): TimelineItem[] => {
-  const data = record(event.data);
-  const at = `0000:${String(event.sequence).padStart(12, "0")}`;
-  const id = `history:${event.sequence}:${event.eventSha256}`;
-  if (event.eventType === "user/message") {
-    return [{ kind: "user" as const, id, at, text: messageText(data) ?? detailText(event.data), attachmentNames: [] }];
+const historyTimeline = (events: readonly BrowserHistoryEvent[]): TimelineItem[] => {
+  const timeline: TimelineItem[] = [];
+  const turns = new Map<number, { item: Extract<TimelineItem, { kind: "turn" }>; blocks: FlowBlock[] }>();
+  const turnFor = (event: BrowserHistoryEvent, data: Readonly<Record<string, unknown>>) => {
+    if (!Number.isSafeInteger(data.turn) || (data.turn as number) < 1) return undefined;
+    const turn = data.turn as number;
+    const known = turns.get(turn);
+    if (known !== undefined) return known;
+    const id = `history:turn:${turn}`;
+    const at = `0000:${String(event.sequence).padStart(12, "0")}`;
+    const blocks: FlowBlock[] = [];
+    const item = { kind: "turn" as const, id, at, turn: { id, at, blocks } };
+    const created = { item, blocks };
+    turns.set(turn, created);
+    timeline.push(item);
+    return created;
+  };
+  for (const event of events) {
+    const data = record(event.data);
+    const at = `0000:${String(event.sequence).padStart(12, "0")}`;
+    const id = `history:${event.sequence}:${event.eventSha256}`;
+    if (event.eventType === "user/message") {
+      timeline.push({ kind: "user", id, at, text: messageText(data) ?? detailText(event.data), attachmentNames: [] });
+      continue;
+    }
+    if (data === undefined) continue;
+    const turn = turnFor(event, data);
+    if (turn === undefined) continue;
+    if (event.eventType === "assistant/chunk") {
+      const chunk = record(data.chunk);
+      if (typeof chunk?.text !== "string") continue;
+      const kind = chunk.type === "reasoning-delta" ? "thinking" as const : "text" as const;
+      const previous = turn.blocks.at(-1);
+      if (previous?.kind === kind) {
+        turn.blocks[turn.blocks.length - 1] = { ...previous, source: `${previous.source}${chunk.text}` };
+      } else if (kind === "thinking") {
+        turn.blocks.push({ kind, id: `${id}:thinking`, source: chunk.text, complete: true });
+      } else {
+        turn.blocks.push({ kind, id: `${id}:text`, source: chunk.text });
+      }
+      continue;
+    }
+    if (event.eventType === "assistant/message") {
+      const text = messageText(data.message);
+      if (text !== undefined && !turn.blocks.some((block) => block.kind === "text")) {
+        turn.blocks.push({ kind: "text", id: `${id}:text`, source: text });
+      }
+      continue;
+    }
+    if (event.eventType === "tool/call") {
+      turn.blocks.push({
+        kind: "tool",
+        id: typeof data.callId === "string" ? data.callId : `${id}:tool`,
+        name: typeof data.name === "string" ? data.name : "Tool",
+        state: "running",
+        input: data.arguments,
+      });
+      continue;
+    }
+    if (event.eventType === "tool/result") {
+      const index = turn.blocks.findLastIndex((block) => block.kind === "tool" && block.state === "running");
+      if (index >= 0) {
+        const previous = turn.blocks[index];
+        if (previous?.kind === "tool") turn.blocks[index] = { ...previous, state: data.error === undefined ? "succeeded" : "failed", output: event.data };
+      }
+    }
   }
-  if (event.eventType === "assistant/message") {
-    return [{ kind: "turn" as const, id, at, turn: {
-      id, at, blocks: [{ kind: "text" as const, id: `${id}:text`, source: messageText(data?.message) ?? detailText(event.data) }],
-    } }];
-  }
-  if (event.eventType === "assistant/chunk") {
-    const chunk = record(data?.chunk);
-    if (typeof chunk?.text !== "string") return [];
-    const thinking = chunk.type === "reasoning-delta";
-    return [{ kind: "turn" as const, id, at, turn: {
-      id, at, blocks: [thinking
-        ? { kind: "thinking" as const, id: `${id}:thinking`, source: chunk.text, complete: true }
-        : { kind: "text" as const, id: `${id}:text`, source: chunk.text }],
-    } }];
-  }
-  if (event.eventType.includes("tool")) {
-    return [{ kind: "turn" as const, id, at, turn: {
-      id, at, blocks: [{ kind: "tool" as const, id: `${id}:tool`, name: event.eventType, state: "succeeded" as const, output: event.data }],
-    } }];
-  }
-  return [];
-});
+  return timeline.filter((item) => item.kind === "user" || item.turn.blocks.length > 0);
+};
 
 const toolHint = (block: Extract<FlowBlock, { kind: "tool" }>): string | undefined => {
   const input = record(block.input);

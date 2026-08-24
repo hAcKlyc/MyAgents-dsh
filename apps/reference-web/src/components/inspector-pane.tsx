@@ -1,11 +1,13 @@
 import type { RuntimeProjection, WebSessionSummary } from "@myagents-dsh/web-host-contract";
 
 import type { BrowserHistorySnapshot } from "../history.js";
+import type { HostTraceEntry } from "../store.js";
 
 export function InspectorPane(props: Readonly<{
   session: WebSessionSummary | undefined;
   projection: RuntimeProjection | undefined;
   history: BrowserHistorySnapshot | undefined;
+  trace: readonly HostTraceEntry[];
   onClose: () => void;
   onRestart: () => void;
   onColdStop: () => void;
@@ -44,6 +46,16 @@ export function InspectorPane(props: Readonly<{
       <p className="metric-line"><span>Open interactions</span><strong>{props.projection?.openInteractions.length ?? 0}</strong></p>
       <p className="metric-line"><span>Attachments</span><strong>{props.projection?.attachments.length ?? 0}</strong></p>
       <p className="metric-line"><span>Active operations</span><strong>{props.projection?.activeOperationIds.length ?? 0}</strong></p>
+    </section>
+    <section className="inspector-section">
+      <h3>Event trace</h3>
+      {props.trace.length === 0
+        ? <p className="muted-copy">No Host events received.</p>
+        : <ol className="trace-list">{[...props.trace].reverse().map((entry) => <li key={entry.id}>
+            <time dateTime={entry.emittedAt}>{entry.emittedAt.slice(11, 23)}</time>
+            <strong>{entry.kind}{entry.count > 1 ? ` ×${entry.count}` : ""}</strong>
+            <span>{entry.detail}</span>
+          </li>)}</ol>}
     </section>
   </aside>;
 }

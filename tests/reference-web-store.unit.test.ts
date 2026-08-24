@@ -190,4 +190,50 @@ describe("Reference Web React store", () => {
     });
     store.stop();
   });
+
+  it("coalesces burst deltas and browser notifications before rendering", async () => {
+    const queue = new EventQueue();
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve(bootstrap)),
+      events: (options: { signal?: AbortSignal }) => queue.events(options.signal ?? new AbortController().signal),
+      command: vi.fn((command: BrowserCommand) => Promise.resolve({ commandId: command.commandId, accepted: true as const })),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    const store = new ReferenceWebStore({ client, idFactory: () => "burst-id", now: () => now });
+    await store.start();
+    await new Promise((resolveWait) => setTimeout(resolveWait, 5));
+    const listener = vi.fn();
+    const unsubscribe = store.subscribe(listener);
+
+    for (let sequence = 1; sequence <= 500; sequence += 1) {
+      queue.push({
+        epoch: "epoch-1",
+        sequence,
+        emittedAt: now,
+        kind: "runtime.event",
+        payload: {
+          webSessionId: "web-session-1",
+          event: {
+            runtimeGeneration: "generation-1",
+            productSessionId: "web-session-1",
+            runtimeSessionId: "runtime-session-1",
+            sequence,
+            emittedAt: now,
+            turnId: "turn-1",
+            event: { kind: "thinking_delta", delta: "x" },
+          },
+        },
+      });
+    }
+    await vi.waitFor(() => expect(store.getSnapshot().snapshot.projection?.events.at(-1)?.sequence).toBe(500));
+    await new Promise((resolveWait) => setTimeout(resolveWait, 10));
+
+    const state = store.getSnapshot();
+    expect(state.snapshot.projection?.events).toHaveLength(1);
+    expect(state.snapshot.projection?.events[0]?.event).toEqual({ kind: "thinking_delta", delta: "x".repeat(500) });
+    expect(state.trace.at(-1)).toMatchObject({ kind: "runtime.event:thinking_delta", count: 500 });
+    expect(listener.mock.calls.length).toBeLessThan(20);
+    unsubscribe();
+    store.stop();
+  });
 });
