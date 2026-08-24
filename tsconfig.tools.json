@@ -14,6 +14,7 @@
     { "path": "./packages/protocol" },
     { "path": "./packages/tool-contracts" },
     { "path": "./packages/compatibility" },
-    { "path": "./packages/product-profile" }
+    { "path": "./packages/product-profile" },
+    { "path": "./packages/web-host-contract" }
   ]
 }

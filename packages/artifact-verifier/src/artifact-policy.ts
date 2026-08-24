@@ -260,6 +260,22 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     relativeDirectory: "packages/tools-web",
     allowedFiles: ["package.json", "src/index.ts", "src/runtime.ts", "src/safe-http.ts"],
   },
+  {
+    packageName: "@myagents-dsh/web-host-contract",
+    relativeDirectory: "packages/web-host-contract",
+    allowedFiles: [
+      "generated/browser-contract-meta.json",
+      "generated/browser-contract.schema.json",
+      "package.json",
+      "src/canonical-json.ts",
+      "src/client.ts",
+      "src/errors.ts",
+      "src/index.ts",
+      "src/schemas.ts",
+      "src/sse.ts",
+      "src/validation.ts",
+    ],
+  },
 ]);
 
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;

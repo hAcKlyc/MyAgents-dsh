@@ -1,0 +1,51 @@
+{
+  "formatVersion": 1,
+  "contractVersion": "1.0.0-draft.1",
+  "schemaSha256": "2b8998f39047cbda1b1d2e23660d60542197f48e19bd75f0f8857ed52b39b9dd",
+  "commandKinds": [
+    "session.create",
+    "session.select",
+    "session.rename",
+    "session.coldStop",
+    "session.close",
+    "runtime.status",
+    "runtime.restart",
+    "runtime.shutdown",
+    "history.read",
+    "session.compact",
+    "turn.start",
+    "turn.steer",
+    "turn.followUp",
+    "turn.cancelQueued",
+    "turn.interrupt",
+    "command.invoke",
+    "config.apply",
+    "components.inspect",
+    "components.replace",
+    "components.reload",
+    "mutation.prepare",
+    "mutation.commit",
+    "mutation.rollback",
+    "mutation.status",
+    "mutation.purge",
+    "utility.run"
+  ],
+  "eventKinds": [
+    "host.snapshot",
+    "host.sessionChanged",
+    "host.commandSettled",
+    "host.interactionOpened",
+    "host.interactionClosed",
+    "host.attachmentChanged",
+    "runtime.event",
+    "runtime.stateChanged",
+    "runtime.fatal",
+    "host.resyncRequired"
+  ],
+  "limits": {
+    "maxActiveRuntimeChildren": 4,
+    "maxBodyBytes": 1048576,
+    "maxSseEventBytes": 1048576,
+    "maxWebSessions": 128
+  }
+}

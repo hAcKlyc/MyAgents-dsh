@@ -29,6 +29,7 @@
     { "path": "./packages/test-host" },
     { "path": "./packages/dynamic-e2e" },
     { "path": "./packages/artifact-verifier" },
+    { "path": "./packages/web-host-contract" },
     { "path": "./apps/runtime-server" },
     { "path": "./tests" },
     { "path": "./tsconfig.tools.json" }

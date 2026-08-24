@@ -38,6 +38,7 @@ const workspacePackages = new Map([
   ["packages/tools-interaction", "@myagents-dsh/tools-interaction"],
   ["packages/tools-process", "@myagents-dsh/tools-process"],
   ["packages/tools-web", "@myagents-dsh/tools-web"],
+  ["packages/web-host-contract", "@myagents-dsh/web-host-contract"],
 ]);
 
 const expectedScripts = new Map([
@@ -57,11 +58,14 @@ const expectedScripts = new Map([
   ["check:dsh-seams-source", "tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test"],
   ["generate:protocol", "tsx scripts/generate-protocol.ts"],
   ["check:protocol", "tsx scripts/generate-protocol.ts --check"],
+  ["generate:web-host-contract", "tsx scripts/generate-web-host-contract.ts"],
+  ["check:web-host-contract", "tsx scripts/generate-web-host-contract.ts --check"],
+  ["check:web-host-foundation", "tsx scripts/verify-reference-web-host-foundation.ts"],
   ["check:compatibility", "tsx scripts/verify-compatibility.ts"],
   ["generate:profile", "tsx scripts/generate-product-profile.ts"],
   ["check:profile", "tsx scripts/generate-product-profile.ts --check"],
   ["check:security", "tsx scripts/verify-repository-security.ts"],
-  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:dsh-seams && npm run check:tool-contracts && npm run check:protocol && npm run check:compatibility && npm run check:profile && npm run check:security"],
+  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:dsh-seams && npm run check:tool-contracts && npm run check:protocol && npm run check:web-host-contract && npm run check:web-host-foundation && npm run check:compatibility && npm run check:profile && npm run check:security"],
   ["typecheck", "npm run check:foundation && tsc -b --pretty false"],
   ["lint", "eslint . --max-warnings 0"],
   ["test", "npm run check:foundation && vitest run"],
@@ -213,6 +217,15 @@ const expectedWorkspaceFiles = new Map([
     "src/windows-job-subprocess.ts",
   ]],
   ["packages/tools-web", ["src/index.ts", "src/runtime.ts", "src/safe-http.ts"]],
+  ["packages/web-host-contract", [
+    "src/canonical-json.ts",
+    "src/client.ts",
+    "src/errors.ts",
+    "src/index.ts",
+    "src/schemas.ts",
+    "src/sse.ts",
+    "src/validation.ts",
+  ]],
 ]);
 
 const readJson = async (path: string): Promise<JsonObject> => {

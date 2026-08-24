@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "policy": "clean-room-unless-explicitly-recorded",
+  "sources": [
+    {
+      "id": "deepseek-harness-webui",
+      "repository": "https://github.com/deepseek-ai/deepseek-harness",
+      "revision": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+      "license": "MIT",
+      "licenseBlob": "c1f7a78e89e4e4dc7b86664c3b3c76eb5eee1785",
+      "surfaces": [
+        { "path": "apps/web", "tree": "fb73f27630f01f52808b170032a6cdb0b096c7f4" },
+        { "path": "packages/bundle/web-app", "tree": "16917ad6372bfb2b8e2c0460b6f9fcec9ed61be3" }
+      ],
+      "use": "visual-and-interaction-reference",
+      "copiedFiles": [],
+      "copiedAssets": []
+    },
+    {
+      "id": "myagents-client",
+      "repository": "https://github.com/hAcKlyc/MyAgents",
+      "revision": "e444872834fbf7ec2869d7bad6aa718c290e522a",
+      "license": "AGPL-3.0-only-with-separate-commercial-license",
+      "licenseBlob": "be3f7b28e564e7dd05eaf59d64adba1a4065ac0e",
+      "surfaces": [
+        { "path": "src/renderer", "tree": "58ca3c26afb2869e1ec6803b89e682352f2ab49a" }
+      ],
+      "use": "product-interaction-research-only",
+      "copiedFiles": [],
+      "copiedAssets": []
+    }
+  ]
+}
