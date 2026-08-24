@@ -1,6 +1,6 @@
 # Batch 1 Reference Web Host and WebUI RFC
 
-Status: `accepted design; B1-W5-A1 in progress`
+Status: `accepted design; B1-W5-A1 complete; B1-W5-A2 in progress`
 
 ## 1. Purpose
 
@@ -51,7 +51,7 @@ Owns the loopback HTTP/SSE server, bootstrap authentication, Session catalog, Ru
 
 ### 4.3 `apps/reference-web`
 
-Owns the React 19/Vite browser client, static build, direct-open CLI entry, visual tokens, accessibility, localization-ready strings, and browser E2E fixtures. Production UI code talks only to the generated browser client.
+Owns the React 19/Vite browser client, static build, direct-open CLI entry, visual tokens, accessibility, localization-ready strings, and browser E2E fixtures. Production UI code talks only to the typed browser client projected from the generated contract.
 
 No package imports DSH, Cordis, `packages/runtime-*`, `packages/rpc-server`, persistence implementation, or source-private paths.
 
