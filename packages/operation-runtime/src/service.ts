@@ -1057,20 +1057,32 @@ export class SdkOperationService extends Service {
           inputFingerprint: fingerprint,
         });
       }
-      agent.followup(continuationMessage(
+      agent.send(continuationMessage(
         current,
         "follow_up",
         params.messageId,
         params.messageId,
         content,
-      ));
+      ), "next-turn", false);
       const stoppingTurn = current.dshTurns.at(-1);
       const stoppingTurnEnded = stoppingTurn !== undefined && agent.session.events.some(
         (event) => event.type === "turn/end" && event.data.turn === stoppingTurn,
       );
-      if (stoppingTurn !== undefined
+      const duration = current.birth.limits.maxDurationMs;
+      if (duration !== undefined && this.operationClock() - current.acceptedAt >= duration) {
+        await this.enforceDurationLimit(
+          agent,
+          current.clientOperationId,
+          current.acceptedAt + duration,
+        );
+      } else if (stoppingTurn !== undefined
         && (this.stoppingTurnsValue.has(stoppingTurn) || stoppingTurnEnded)) {
         await this.enforceTurnBoundaryLimits(agent, stoppingTurn);
+      }
+      const pending = findProductOperation(this.foldValue(agent), params.clientOperationId)
+        ?.messages.find(({ messageId }) => messageId === params.messageId);
+      if (pending?.state === "queued" && !this.wakeExactPending(agent, pending.messageId)) {
+        throw this.fence(new Error("admitted follow-up lost its exact pending wake identity"));
       }
       await this.flush(agent);
     } catch (error) {
@@ -1676,10 +1688,6 @@ export class SdkOperationService extends Service {
       throw this.fence(new Error("resumed operation Agent differs from the prepared generation"));
     }
     this.primaryAgentValue = agent;
-    const wakePending = (agent as WakePendingAgent).wakePending;
-    if (typeof wakePending !== "function" || utilTypes.isProxy(wakePending)) {
-      throw this.fence(new Error("accepted DSH Agent.wakePending seam is unavailable"));
-    }
     this.foldValue(agent);
     const incomplete = incompleteRecoveryWakes(agent.session.events);
     const wake = async (candidate: IncompleteRecoveryWake, hasIntent: boolean): Promise<void> => {
@@ -1690,10 +1698,7 @@ export class SdkOperationService extends Service {
           recordedAt: this.operationClock(),
         });
       }
-      const woke = Reflect.apply(wakePending, agent, [MessageId(candidate.messageId)]) as unknown;
-      if (typeof woke !== "boolean") {
-        throw this.fence(new Error("DSH Agent.wakePending returned an invalid result"));
-      }
+      const woke = this.wakeExactPending(agent, candidate.messageId);
       agent.session.append("myagents/operation/recovery-wake", {
         ...candidate,
         phase: "completed",
@@ -1752,6 +1757,18 @@ export class SdkOperationService extends Service {
     for (const operation of this.foldValue(agent).operations) {
       if (operation.state !== "terminal") this.armDurationTimer(agent, operation);
     }
+  }
+
+  private wakeExactPending(agent: Agent, messageId: string): boolean {
+    const wakePending = (agent as WakePendingAgent).wakePending;
+    if (typeof wakePending !== "function" || utilTypes.isProxy(wakePending)) {
+      throw this.fence(new Error("accepted DSH Agent.wakePending seam is unavailable"));
+    }
+    const woke = Reflect.apply(wakePending, agent, [MessageId(messageId)]) as unknown;
+    if (typeof woke !== "boolean") {
+      throw this.fence(new Error("DSH Agent.wakePending returned an invalid result"));
+    }
+    return woke;
   }
 
   private removePendingMessage(

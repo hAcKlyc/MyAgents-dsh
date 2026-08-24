@@ -128,7 +128,9 @@ const mountService = async (
     whenIdle: () => Promise.resolve(),
     runMaintenance: <T>(task: (signal: AbortSignal) => Promise<T>) =>
       task(new AbortController().signal),
-    send: () => undefined,
+    send: (message: Parameters<Agent["send"]>[0], target: Parameters<Agent["send"]>[1]) => {
+      inbox.append(target, message);
+    },
     followup: (message: Parameters<Agent["followup"]>[0]) => {
       if (state.failFollowup) throw new Error("synthetic followup failure");
       inbox.append("next-turn", message);
@@ -1162,6 +1164,7 @@ describe("SdkOperationService admission and idempotency", () => {
     expect(operation?.messages.filter(({ kind }) => kind === "steer")).toHaveLength(1);
     expect(fixture.inbox.nextTurn.map(({ id }) => id)).toEqual([followUp.messageId]);
     expect(fixture.inbox.nextStep).toHaveLength(1);
+    expect(fixture.wakePendingCalls).toEqual([followUp.messageId]);
   });
 
   it("does not acknowledge a claimed delivery before its correlation flush is durable", async () => {
@@ -1820,6 +1823,14 @@ describe("SdkOperationService admission and idempotency", () => {
     await fixture.service.start({ ...params(), limits });
     fixture.agent.session.append("turn/start", { turn: 1 });
     fixture.inbox.claim("next-turn", 1);
+    let legacyFollowupWakeCalls = 0;
+    fixture.agent.followup = (message: Parameters<Agent["followup"]>[0]) => {
+      legacyFollowupWakeCalls += 1;
+      fixture.inbox.append("next-turn", message);
+      fixture.agent.session.append("turn/start", { turn: 2 });
+      fixture.inbox.claim("next-turn", 2);
+      fixture.agent.session.append("turn/end", { turn: 2, reason: { kind: "completed" } });
+    };
     const followUp = fixture.service.followUp({
       clientOperationId: "operation-1",
       messageId: "prepared-late-boundary-follow-up",
@@ -1846,6 +1857,10 @@ describe("SdkOperationService admission and idempotency", () => {
       terminal: { kind: "max_turns", limit: 1 },
       messages: [{ state: "claimed" }, { state: "cancelled", cancellationReason: "limit" }],
     }));
+    expect(legacyFollowupWakeCalls).toBe(0);
+    expect(fixture.wakePendingCalls).toEqual([]);
+    expect(fixture.agent.session.events.filter((event) => event.type === "turn/start"))
+      .toHaveLength(1);
     expect(fixture.inbox.nextTurn).toEqual([]);
   });
 
