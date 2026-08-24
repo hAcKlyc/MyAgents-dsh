@@ -124,6 +124,9 @@ const fakeFactory = (options: Readonly<{
   const client = {
     initialize: vi.fn(() => Promise.resolve({ runtimeGeneration: "generation-1" })),
     initialized: vi.fn(() => Promise.resolve()),
+    extensionCatalog: vi.fn(() => Promise.resolve({
+      revision: "extensions-v1", digest, tools: [], commands: [], skills: [], agents: [], mcpServers: [],
+    })),
     sessionCreate: vi.fn(() => Promise.resolve({
       state: "ready",
       runtimeSessionId: `runtime-${options.creations.length}`,

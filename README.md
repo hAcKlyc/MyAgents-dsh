@@ -6,9 +6,10 @@ Its goal is to turn DSH's composable Agent framework into a complete distributio
 
 ## Product surfaces
 
-The same verified Runtime artifact supports two entry points:
+The same verified Runtime artifact supports three Host entry points:
 
 - **MyAgents native integration:** MyAgents is the first-party Host and uses the complete bidirectional stdio JSON-RPC protocol.
+- **Reference Web Host:** a loopback-only local Host provides a directly usable browser conversation and verification surface.
 - **Agent SDK compatibility:** third-party Node.js applications use `@myagents-dsh/agent-sdk`, which starts the same Runtime and provides a local default Host.
 
 The Agent SDK is an API facade and process manager. It does not contain another AgentLoop, tool runtime, or transcript store.
@@ -44,13 +45,27 @@ The planned distribution includes:
 
 ## Current status
 
-The repository is in the **Pre-Batch Foundation — Contracts and foundation** stage. Architecture, native RPC protocol, the three-Batch development plan, detailed PRDs, and the initial Batch 1 technical design set are drafted. Runtime implementation and public package publication have not started.
+The repository is in **Batch 1 — Runtime plus Reference Web Host**. The frozen Runtime is implemented and independently verified; the Reference Web Host is active work. Component/mutation UI, browser/native packaging evidence, independent reviews, and the final combined distribution handoff are not yet complete.
 
 The repository is private during incubation. Package names, license, compatibility promises, and release channels remain provisional until their owning Batch is accepted.
 
 Batch 1 targets macOS arm64, Windows x64, and Linux x64 in one implementation. The initial acceptance fully verifies macOS arm64; Windows and Linux production adapters and packaging are developed in the same Batch and remain explicitly pending native-platform validation until their artifact campaigns run. One approved DeepSeek route is the initial real-provider acceptance path; deterministic fake-provider gates remain the default.
 
 Batch 1 also includes an “Agent tests Agent” release gate. Codex acts as the Development Main Agent and dispatches fresh-context external Tester Agents against the packed Runtime's DSH Root Agent using varied natural prompts. Tester Agents report trace-backed usability and risk findings; Runtime child/subagents are capabilities under test, and Codex retains finding adjudication and final release recommendation authority.
+
+## Use the Reference Web Host on macOS
+
+Put `DEEPSEEK_API_KEY` in the repository-local ignored `.env`, then run:
+
+```bash
+./start-web.sh
+```
+
+The script builds the production browser assets, verifies the frozen Runtime artifact, starts the authenticated loopback Host on an ephemeral port, and opens the browser. `start-web-preview.sh` is retained as an alias to the same real Host so an old shortcut cannot accidentally open the visual fixture.
+
+The current development checkout expects the frozen Runtime and exact Node 24.13.1 toolchain at their installed MyAgents-dsh cache locations. Override them with `MYAGENTS_DSH_RUNTIME_ARTIFACT=/absolute/path` and `MYAGENTS_DSH_NODE=/absolute/path/to/node`, or pass `--runtime /absolute/path`. Use `--workspace /absolute/path` to select a different workspace and `--no-open` to print the one-use URL without opening the browser.
+
+`npm run preview:web` remains a synthetic visual-test fixture. It does not call DSH or DeepSeek and is not a user product entry point.
 
 ## Delivery Batches
 

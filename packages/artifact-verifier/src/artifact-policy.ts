@@ -310,6 +310,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/errors.ts",
       "src/event-hub.ts",
       "src/index.ts",
+      "src/reference-profile.ts",
       "src/reverse-ports.ts",
       "src/runtime-process.ts",
       "src/supervisor.ts",

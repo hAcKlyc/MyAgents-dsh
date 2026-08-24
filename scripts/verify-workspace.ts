@@ -73,6 +73,7 @@ const expectedScripts = new Map([
   ["test", "npm run check:foundation && vitest run"],
   ["test:web-host-process", "vitest run --config vitest.web-host-process.config.ts --maxWorkers=1 --no-file-parallelism"],
   ["build:web", "npm run build --workspace @myagents-dsh/reference-web"],
+  ["web", "npm run build:web && tsx scripts/run-reference-web-host.ts"],
   ["preview:web", "npm run build:web && tsx scripts/run-reference-web-visual-fixture.ts"],
   ["build", "npm run check:foundation && npm run build:web && tsc -b --pretty false"],
 ]);
@@ -254,6 +255,7 @@ const expectedWorkspaceFiles = new Map([
     "src/errors.ts",
     "src/event-hub.ts",
     "src/index.ts",
+    "src/reference-profile.ts",
     "src/reverse-ports.ts",
     "src/runtime-process.ts",
     "src/supervisor.ts",

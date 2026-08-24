@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import type { MethodParams } from "@myagents-dsh/protocol";
+import { ProtocolError, type MethodParams, type MethodResult } from "@myagents-dsh/protocol";
 import type { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
 import { MAX_ACTIVE_RUNTIME_CHILDREN, type WebSessionLifecycle } from "@myagents-dsh/web-host-contract";
 
@@ -29,6 +29,9 @@ import {
 export type RuntimeBinding =
   | Readonly<{ mode: "create"; params: MethodParams<"session/create"> }>
   | Readonly<{ mode: "resume"; params: MethodParams<"session/resume"> }>;
+export type RuntimeBindingAuthority = Readonly<{
+  extensionCatalog: MethodResult<"extension/catalog">;
+}>;
 export type RuntimeChild = Readonly<{
   client: GeneratedHostClient;
   pid: number | undefined;
@@ -55,7 +58,7 @@ export type RuntimeSupervisorOptions = Readonly<{
       workspacePath: string;
     }>,
   ) => MethodParams<"initialize">;
-  buildBinding: (row: WebSessionCatalogRow) => RuntimeBinding;
+  buildBinding: (row: WebSessionCatalogRow, authority: RuntimeBindingAuthority) => RuntimeBinding;
   resolveCredential?: CredentialResolver;
   executeHostTool?: HostToolExecutor;
   executeHook?: HostHookExecutor;
@@ -236,7 +239,8 @@ export class RuntimeSupervisor {
       const initialized = await child.client.initialize(initialize);
       reversePorts.bindInitialized(initialized.runtimeGeneration);
       await child.client.initialized();
-      const binding = this.#options.buildBinding(row);
+      const extensionCatalog = await child.client.extensionCatalog({});
+      const binding = this.#options.buildBinding(row, { extensionCatalog });
       if (binding.params.persistenceRef !== row.persistenceRef) {
         throw new WebHostError("persistence_identity_mismatch", "Runtime binding persistence identity differs from the catalog");
       }
@@ -255,7 +259,9 @@ export class RuntimeSupervisor {
       this.#active.delete(webSessionId);
       if (active !== undefined) await active.child.close().catch(() => undefined);
       else await Promise.allSettled([attachments.close(), reversePorts.close()]);
-      const code = error instanceof WebHostError ? error.code : "runtime_start_failed";
+      const code = error instanceof WebHostError || error instanceof ProtocolError
+        ? error.code
+        : "runtime_start_failed";
       await this.#setLifecycle(webSessionId, "fatal", { failureCode: code });
       this.#options.eventHub.publish({
         kind: "runtime.fatal",

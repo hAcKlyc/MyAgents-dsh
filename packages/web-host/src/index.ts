@@ -7,5 +7,6 @@ export * from "./command-router.js";
 export * from "./errors.js";
 export * from "./event-hub.js";
 export * from "./reverse-ports.js";
+export * from "./reference-profile.js";
 export * from "./runtime-process.js";
 export * from "./supervisor.js";
