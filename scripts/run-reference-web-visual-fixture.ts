@@ -109,7 +109,12 @@ const server = new LoopbackBrowserServer({
         commandId: command.commandId,
         ...("webSessionId" in command ? { webSessionId: command.webSessionId } : {}),
         state: "succeeded",
-        result: { fixture: true },
+        result: command.kind === "history.read" ? {
+          runtimeSessionId: "fixture-runtime-session",
+          historyFormat: "dsh-session-events-v1",
+          durableHead: { sequence: 0 },
+          records: [],
+        } : { fixture: true },
       },
     });
     return Promise.resolve();
