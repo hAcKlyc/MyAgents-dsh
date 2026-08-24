@@ -15,6 +15,7 @@ import {
   type BrowserCommand,
   type HostSnapshot,
   type InteractionResponse,
+  type RuntimeProjection,
 } from "@myagents-dsh/web-host-contract";
 
 import { LaunchAuthenticator, type BrowserAuth } from "./auth.js";
@@ -83,6 +84,11 @@ type CommandRecord = {
   readonly fingerprint: string;
   settled: boolean;
 };
+type CachedProjection = {
+  events: RuntimeProjection["events"];
+  activeOperationIds: RuntimeProjection["activeOperationIds"];
+  diagnostics: RuntimeProjection["diagnostics"];
+};
 
 const publishSession = (eventHub: HostEventHub, row: WebSessionCatalogRow): void => {
   eventHub.publish({ kind: "host.sessionChanged", payload: {
@@ -105,6 +111,8 @@ export class ReferenceWebHostApplication {
   readonly server: LoopbackBrowserServer;
   readonly #options: ReferenceWebHostApplicationOptions;
   readonly #commands = new Map<string, CommandRecord>();
+  readonly #projections = new Map<string, CachedProjection>();
+  readonly #unsubscribeProjection: () => void;
   #selectedWebSessionId: string | undefined;
   #closed = false;
 
@@ -119,6 +127,7 @@ export class ReferenceWebHostApplication {
     this.eventHub = eventHub;
     this.supervisor = supervisor;
     this.authenticator = new LaunchAuthenticator();
+    this.#unsubscribeProjection = eventHub.subscribe(undefined, ({ event }) => this.#foldProjection(event)).unsubscribe;
     this.server = new LoopbackBrowserServer({
       authenticator: this.authenticator,
       eventHub,
@@ -190,22 +199,23 @@ export class ReferenceWebHostApplication {
     const selected = this.#selectedWebSessionId;
     const row = selected === undefined ? undefined : this.catalog.get(selected);
     const active = selected === undefined ? undefined : this.supervisor.get(selected);
+    const cached = selected === undefined ? undefined : this.#projections.get(selected);
     return Object.freeze({
       sessions: [...this.catalog.summaries()],
       ...(row === undefined ? {} : { selectedWebSessionId: row.webSessionId }),
       ...(row === undefined ? {} : { projection: {
         webSessionId: row.webSessionId,
         ...(row.runtimeSessionId === undefined ? {} : { runtimeSessionId: row.runtimeSessionId }),
-        events: [],
-        activeOperationIds: [],
+        events: cached?.events ?? [],
+        activeOperationIds: cached?.activeOperationIds ?? [],
         openInteractions: [...(active?.reversePorts.interactions() ?? [])],
         attachments: [...(active?.attachments.list() ?? [])],
-        diagnostics: row.failureCode === undefined ? [] : [{
+        diagnostics: cached?.diagnostics ?? (row.failureCode === undefined ? [] : [{
           code: row.failureCode,
           level: "error" as const,
           message: "Runtime Session requires attention",
           retryable: true,
-        }],
+        }]),
       } }),
     });
   }
@@ -244,6 +254,7 @@ export class ReferenceWebHostApplication {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    this.#unsubscribeProjection();
     await this.server.close();
     await this.supervisor.close();
   }
@@ -311,27 +322,86 @@ export class ReferenceWebHostApplication {
     result?: unknown,
     error?: unknown,
   ): void {
-    record.settled = true;
     const hostError = error instanceof WebHostError ? error : undefined;
-    this.eventHub.publish({
-      kind: "host.commandSettled",
-      payload: {
-        commandId: command.commandId,
-        ...("webSessionId" in command ? { webSessionId: command.webSessionId } : {}),
-        state,
-        ...(state === "succeeded" ? { result: canonicalBrowserJson(result ?? null) } : {
+    let projected: ReturnType<typeof canonicalBrowserJson> | undefined;
+    let settledState = state;
+    let settledError = hostError;
+    if (state === "succeeded") {
+      try {
+        projected = canonicalBrowserJson(result ?? null);
+      } catch {
+        settledState = "failed";
+        settledError = new WebHostError(
+          "browser_result_projection_failed",
+          "Runtime result cannot cross the bounded browser contract",
+        );
+      }
+    }
+    const payload = {
+      commandId: command.commandId,
+      ...("webSessionId" in command ? { webSessionId: command.webSessionId } : {}),
+      state: settledState,
+      ...(settledState === "succeeded" ? { result: projected ?? null } : {
+        error: {
+          code: settledError?.code ?? "runtime_command_failed",
+          message: "Command failed",
+          retryable: settledError?.retryable ?? false,
+        },
+      }),
+    } as const;
+    try {
+      this.eventHub.publish({ kind: "host.commandSettled", payload });
+    } catch {
+      if (settledState === "failed") throw new WebHostError(
+        "browser_command_settlement_failed",
+        "Failed command settlement could not be published",
+      );
+      this.eventHub.publish({
+        kind: "host.commandSettled",
+        payload: {
+          commandId: command.commandId,
+          ...("webSessionId" in command ? { webSessionId: command.webSessionId } : {}),
+          state: "failed",
           error: {
-            code: hostError?.code ?? "runtime_command_failed",
-            message: "Command failed",
-            retryable: hostError?.retryable ?? false,
+            code: "browser_result_projection_failed",
+            message: "Command result unavailable",
+            retryable: false,
           },
-        }),
-      },
-    });
+        },
+      });
+    }
+    record.settled = true;
   }
 
   #publishSnapshot(): void {
     this.eventHub.publish({ kind: "host.snapshot", payload: this.snapshot() });
+  }
+
+  #foldProjection(event: ReturnType<HostEventHub["publish"]>): void {
+    if (event.kind === "runtime.event") {
+      const current = this.#projections.get(event.payload.webSessionId) ?? {
+        events: [], activeOperationIds: [], diagnostics: [],
+      };
+      const runtimeEvent = event.payload.event;
+      const activeOperationIds = runtimeEvent.event.kind === "turn_admitted"
+        ? [...new Set([...current.activeOperationIds, runtimeEvent.event.admission.turnId])]
+        : runtimeEvent.event.kind === "turn_terminal" && runtimeEvent.turnId !== undefined
+          ? current.activeOperationIds.filter((id) => id !== runtimeEvent.turnId)
+          : current.activeOperationIds;
+      this.#projections.set(event.payload.webSessionId, {
+        events: [...current.events, runtimeEvent].slice(-2_000),
+        activeOperationIds,
+        diagnostics: current.diagnostics,
+      });
+    } else if (event.kind === "runtime.fatal") {
+      const current = this.#projections.get(event.payload.webSessionId) ?? {
+        events: [], activeOperationIds: [], diagnostics: [],
+      };
+      this.#projections.set(event.payload.webSessionId, {
+        ...current,
+        diagnostics: [...current.diagnostics, event.payload.diagnostic].slice(-256),
+      });
+    }
   }
 
   #trimCommands(): void {

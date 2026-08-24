@@ -64,6 +64,35 @@ describe("web Host browser contract", () => {
     )).toThrow(/does not match/u);
   });
 
+  it("uses credentialed EventSource for browser SSE and validates event identity", async () => {
+    class FixtureEventSource extends EventTarget {
+      readonly url = "/api/v1/events";
+      readonly withCredentials = true;
+      readyState = 1;
+      onerror = null;
+      onmessage = null;
+      onopen = null;
+      close(): void { this.readyState = 2; }
+    }
+    const source = new FixtureEventSource();
+    const eventSource = vi.fn(() => source as unknown as EventSource);
+    const client = new WebHostClient({ eventSource });
+    const abort = new AbortController();
+    const events = client.events({ signal: abort.signal });
+    const next = events.next();
+    await Promise.resolve();
+    const event = snapshotEvent();
+    source.dispatchEvent(new MessageEvent("host.snapshot", {
+      data: JSON.stringify(event),
+      lastEventId: "epoch-1:1",
+    }));
+    await expect(next).resolves.toEqual({ done: false, value: event });
+    expect(eventSource).toHaveBeenCalledWith("/api/v1/events", { withCredentials: true });
+    abort.abort();
+    await events.return(undefined);
+    expect(source.readyState).toBe(2);
+  });
+
   it("requires bootstrap before a mutation and sends same-origin credentials and CSRF", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({

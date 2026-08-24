@@ -1,0 +1,137 @@
+// @vitest-environment jsdom
+
+import type { Bootstrap, BrowserCommand, HostEvent, InteractionResponse, WebHostClient } from "@myagents-dsh/web-host-contract";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { App } from "@myagents-dsh/reference-web/app";
+import { ReferenceWebStore } from "@myagents-dsh/reference-web/store";
+
+const now = "2026-08-24T00:00:00.000Z";
+const fixture = (): Bootstrap => ({
+  contractVersion: "1.0.0-draft.1",
+  hostVersion: "0.0.0",
+  csrfToken: "a".repeat(32),
+  workspace: { identity: "workspace-1", displayName: "Fixture Workspace", canonicalRoot: "/fixture" },
+  platform: { os: "darwin", arch: "arm64", validation: "verified" },
+  limits: { maxActiveRuntimeChildren: 4, maxWebSessions: 128, maxUploadBytes: 1_024, maxSseEventBytes: 1_048_576 },
+  snapshot: {
+    sessions: [{
+      webSessionId: "web-session-1", runtimeSessionId: "runtime-session-1", title: "First Session",
+      lifecycle: "ready", createdAt: now, updatedAt: now, lastOpenedAt: now,
+    }],
+    selectedWebSessionId: "web-session-1",
+    projection: {
+      webSessionId: "web-session-1",
+      runtimeSessionId: "runtime-session-1",
+      events: [], activeOperationIds: [], attachments: [], diagnostics: [],
+      openInteractions: [{
+        interactionId: "interaction-1",
+        webSessionId: "web-session-1",
+        kind: "permission",
+        schema: { action: "write" },
+        permissionAction: "Write workspace file",
+        desiredPolicyRevision: "policy-v1",
+        scenario: "interactive",
+        openedAt: now,
+      }],
+    },
+  },
+});
+
+afterEach(() => cleanup());
+
+describe("Reference Web React shell", () => {
+  it("renders Sessions, composer, diagnostics, and accessible interaction controls", async () => {
+    const responses: InteractionResponse[] = [];
+    const commands: BrowserCommand[] = [];
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve(fixture())),
+      events: async function* (options: { signal?: AbortSignal }) {
+        const noEvents: HostEvent[] = [];
+        for (const event of noEvents) yield event;
+        await new Promise<void>((resolveAbort) => options.signal?.addEventListener("abort", () => resolveAbort(), { once: true }));
+      },
+      command: vi.fn((command: BrowserCommand) => {
+        commands.push(command);
+        return Promise.resolve({ commandId: command.commandId, accepted: true as const });
+      }),
+      respond: vi.fn((response: InteractionResponse) => {
+        responses.push(response);
+        return Promise.resolve({ interactionId: response.interactionId, accepted: true as const });
+      }),
+    } as unknown as WebHostClient;
+    const store = new ReferenceWebStore({ client, idFactory: () => "fixture-id", now: () => now });
+    render(<App store={store} />);
+
+    expect(await screen.findByRole("heading", { name: "First Session" })).not.toBeNull();
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" }).disabled).toBe(false);
+    expect(screen.getByRole("dialog", { name: "permission" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Allow once" }));
+    await waitFor(() => expect(responses).toHaveLength(1));
+    expect(responses[0]).toMatchObject({ interactionId: "interaction-1", decision: "allow_once" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message the agent" }), { target: { value: "Hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(commands.some(({ kind }) => kind === "turn.start")).toBe(true));
+    expect(commands.find(({ kind }) => kind === "turn.start"))
+      .toMatchObject({ kind: "turn.start", payload: { text: "Hello" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Runtime" }));
+    expect(screen.getByRole("complementary", { name: "Runtime inspector" })).not.toBeNull();
+    store.stop();
+  });
+
+  it("exposes steer, follow-up, interrupt, and queued-message cancellation while a Turn is active", async () => {
+    const source = fixture();
+    if (source.snapshot.projection === undefined) throw new Error("fixture projection is missing");
+    const active: Bootstrap = { ...source, snapshot: {
+      ...source.snapshot,
+      projection: {
+        ...source.snapshot.projection,
+        activeOperationIds: ["turn-1"],
+        openInteractions: [],
+        events: [{
+          runtimeGeneration: "generation-1",
+          productSessionId: "web-session-1",
+          runtimeSessionId: "runtime-session-1",
+          sequence: 1,
+          emittedAt: now,
+          turnId: "turn-1",
+          event: { kind: "queued_message", messageId: "message-1", state: "queued" },
+        }],
+      },
+    } };
+    const commands: BrowserCommand[] = [];
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve(active)),
+      events: async function* (options: { signal?: AbortSignal }) {
+        const noEvents: HostEvent[] = [];
+        for (const event of noEvents) yield event;
+        await new Promise<void>((resolveAbort) => options.signal?.addEventListener(
+          "abort", () => resolveAbort(), { once: true },
+        ));
+      },
+      command: vi.fn((command: BrowserCommand) => {
+        commands.push(command);
+        return Promise.resolve({ commandId: command.commandId, accepted: true as const });
+      }),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    let nextId = 0;
+    const store = new ReferenceWebStore({ client, idFactory: () => `id-${nextId += 1}`, now: () => now });
+    render(<App store={store} />);
+
+    const composer = await screen.findByRole("textbox", { name: "Message the agent" });
+    expect(screen.getByRole("combobox", { name: "Delivery mode" })).not.toBeNull();
+    fireEvent.change(composer, { target: { value: "Use the existing API" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send steering message" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel queued message" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(commands.filter(({ kind }) => kind !== "history.read")).toHaveLength(3));
+    expect(commands.filter(({ kind }) => kind !== "history.read").map(({ kind }) => kind)).toEqual([
+      "turn.steer", "turn.cancelQueued", "turn.interrupt",
+    ]);
+    store.stop();
+  });
+});

@@ -14,6 +14,25 @@ export interface PackedWorkspacePolicy {
 
 export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Object.freeze([
   {
+    packageName: "@myagents-dsh/reference-web",
+    relativeDirectory: "apps/reference-web",
+    allowedFiles: [
+      "index.html",
+      "package.json",
+      "src/app.tsx",
+      "src/components/agent-surface.tsx",
+      "src/components/composer.tsx",
+      "src/components/inspector-pane.tsx",
+      "src/components/interaction-tray.tsx",
+      "src/components/session-sidebar.tsx",
+      "src/history.ts",
+      "src/main.tsx",
+      "src/store.ts",
+      "src/styles.css",
+      "vite.config.ts",
+    ],
+  },
+  {
     packageName: "@myagents-dsh/runtime-server",
     relativeDirectory: "apps/runtime-server",
     allowedFiles: [
@@ -286,6 +305,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/auth.ts",
       "src/browser-server.ts",
       "src/catalog.ts",
+      "src/command-router.ts",
       "src/errors.ts",
       "src/event-hub.ts",
       "src/index.ts",

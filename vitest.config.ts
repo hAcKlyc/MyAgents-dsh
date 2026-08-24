@@ -8,6 +8,10 @@ export default defineConfig({
     unstubGlobals: true,
     setupFiles: ["./tests/setup/default-isolation.ts"],
     testTimeout: 10_000,
-    include: ["packages/**/*.unit.test.ts", "apps/**/*.unit.test.ts", "tests/**/*.unit.test.ts"],
+    include: [
+      "packages/**/*.unit.test.{ts,tsx}",
+      "apps/**/*.unit.test.{ts,tsx}",
+      "tests/**/*.unit.test.{ts,tsx}",
+    ],
   },
 });

@@ -9,6 +9,7 @@ type JsonObject = Record<string, unknown>;
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const workspacePackages = new Map([
+  ["apps/reference-web", "@myagents-dsh/reference-web"],
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
   ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
   ["packages/checkpoint", "@myagents-dsh/checkpoint"],
@@ -71,7 +72,8 @@ const expectedScripts = new Map([
   ["lint", "eslint . --max-warnings 0"],
   ["test", "npm run check:foundation && vitest run"],
   ["test:web-host-process", "vitest run --config vitest.web-host-process.config.ts --maxWorkers=1 --no-file-parallelism"],
-  ["build", "npm run check:foundation && tsc -b --pretty false"],
+  ["build:web", "npm run build --workspace @myagents-dsh/reference-web"],
+  ["build", "npm run check:foundation && npm run build:web && tsc -b --pretty false"],
 ]);
 const expectedDevelopmentDependencies = new Map([
   ["@anthropic-ai/claude-agent-sdk", "0.3.220"],
@@ -84,6 +86,18 @@ const expectedDevelopmentDependencies = new Map([
   ["vitest", "4.1.10"],
 ]);
 const expectedWorkspaceFiles = new Map([
+  ["apps/reference-web", [
+    "vite.config.ts",
+    "src/app.tsx",
+    "src/components/agent-surface.tsx",
+    "src/components/composer.tsx",
+    "src/components/inspector-pane.tsx",
+    "src/components/interaction-tray.tsx",
+    "src/components/session-sidebar.tsx",
+    "src/history.ts",
+    "src/main.tsx",
+    "src/store.ts",
+  ]],
   ["apps/runtime-server", [
     "src/index.ts",
     "src/lifecycle.ts",
@@ -234,6 +248,7 @@ const expectedWorkspaceFiles = new Map([
     "src/auth.ts",
     "src/browser-server.ts",
     "src/catalog.ts",
+    "src/command-router.ts",
     "src/errors.ts",
     "src/event-hub.ts",
     "src/index.ts",

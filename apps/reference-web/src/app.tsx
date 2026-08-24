@@ -1,0 +1,82 @@
+import { useEffect, useSyncExternalStore } from "react";
+
+import { Composer } from "./components/composer.js";
+import { ConversationSurface } from "./components/agent-surface.js";
+import { InspectorPane } from "./components/inspector-pane.js";
+import { InteractionTray } from "./components/interaction-tray.js";
+import { SessionSidebar } from "./components/session-sidebar.js";
+import type { ReferenceWebStore } from "./store.js";
+
+export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.Element {
+  const state = useSyncExternalStore(props.store.subscribe, props.store.getSnapshot, props.store.getSnapshot);
+  const selectedId = state.snapshot.selectedWebSessionId;
+  const selected = state.snapshot.sessions.find(({ webSessionId }) => webSessionId === selectedId);
+  const projection = state.snapshot.projection?.webSessionId === selectedId
+    ? state.snapshot.projection : undefined;
+  const busy = (projection?.activeOperationIds.length ?? 0) > 0;
+
+  useEffect(() => {
+    void props.store.start();
+    return () => props.store.stop();
+  }, [props.store]);
+
+  return <div className="app-shell">
+    <SessionSidebar
+      sessions={state.snapshot.sessions}
+      {...(selectedId === undefined ? {} : { selectedWebSessionId: selectedId })}
+      onCreate={() => void props.store.createSession()}
+      onSelect={(webSessionId) => void props.store.selectSession(webSessionId)}
+    />
+    <main className="workspace-main">
+      <header className="workspace-header">
+        <div className="workspace-identity">
+          <span className="brand-mark" aria-hidden="true">M</span>
+          <div>
+            <span className="eyebrow">{state.bootstrap?.workspace.displayName ?? "MyAgents DSH"}</span>
+            <h2>{selected?.title ?? "Reference Web Host"}</h2>
+          </div>
+        </div>
+        <div className="header-actions">
+          <span className="connection-pill" data-state={state.connection}>
+            <span className="status-dot" aria-hidden="true" />{state.connection}
+          </span>
+          <button className="header-button" type="button" onClick={() => props.store.toggleInspector()}
+            aria-expanded={state.inspectorOpen}>Runtime</button>
+        </div>
+      </header>
+      <div className="workspace-content">
+        <ConversationSurface projection={projection}
+          history={state.history?.webSessionId === selectedId ? state.history : undefined}
+          localInputs={state.localInputs.filter(({ webSessionId }) => webSessionId === selectedId)}
+          onCancelQueued={(messageId) => selectedId === undefined
+            ? Promise.resolve() : props.store.cancelQueued(selectedId, messageId)} />
+        <Composer
+          attachments={projection?.attachments ?? []}
+          disabled={selectedId === undefined || selected?.lifecycle !== "ready"}
+          busy={busy}
+          onSubmit={(text, attachments, delivery) => props.store.submitInput(text, attachments, delivery)}
+          onUpload={(file) => props.store.upload(file)}
+          onPreview={(attachmentId) => props.store.previewAttachment(attachmentId)}
+          onRelease={(attachmentId) => props.store.releaseAttachment(attachmentId)}
+          onInterrupt={() => selectedId === undefined ? Promise.resolve() : props.store.interrupt(selectedId)}
+        />
+      </div>
+    </main>
+    {state.inspectorOpen && <InspectorPane
+      session={selected}
+      projection={projection}
+      history={state.history?.webSessionId === selectedId ? state.history : undefined}
+      onClose={() => props.store.toggleInspector()}
+      onRestart={() => selectedId === undefined ? undefined : void props.store.restartRuntime(selectedId)}
+      onColdStop={() => selectedId === undefined ? undefined : void props.store.coldStop(selectedId)}
+    />}
+    <InteractionTray interactions={projection?.openInteractions ?? []}
+      onRespond={(response) => props.store.respond(response)} />
+    <div className="notice-stack" aria-label="Notifications">
+      {state.notices.map((notice) => <div className="notice" data-level={notice.level} key={notice.id} role="status">
+        <span>{notice.message}</span>
+        <button type="button" onClick={() => props.store.dismissNotice(notice.id)} aria-label="Dismiss notification">×</button>
+      </div>)}
+    </div>
+  </div>;
+}

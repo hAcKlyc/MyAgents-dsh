@@ -250,6 +250,39 @@ describe("Reference Web Host application owner", () => {
       projection: { events: [], openInteractions: [], attachments: [] },
     });
     expect(snapshot.selectedWebSessionId).toBeTypeOf("string");
+    const webSessionId = snapshot.selectedWebSessionId;
+    const runtimeSessionId = snapshot.projection?.runtimeSessionId;
+    if (webSessionId === undefined || runtimeSessionId === undefined) {
+      throw new Error("active Session identities are missing");
+    }
+    const active = application.supervisor.get(webSessionId);
+    if (active === undefined) throw new Error("active Runtime child is missing");
+    await active.reversePorts.notifications["runtime/event"]({
+      runtimeGeneration: "generation-1",
+      productSessionId: webSessionId,
+      runtimeSessionId,
+      sequence: 1,
+      emittedAt: "2026-08-24T00:00:00.000Z",
+      turnId: "turn-1",
+      event: {
+        kind: "turn_admitted",
+        admission: { turnId: "turn-1", admittedAt: "2026-08-24T00:00:00.000Z" },
+      },
+    });
+    expect(application.bootstrap(auth).snapshot.projection).toMatchObject({
+      events: [{ sequence: 1, event: { kind: "turn_admitted" } }],
+      activeOperationIds: ["turn-1"],
+    });
+    await active.reversePorts.notifications["runtime/event"]({
+      runtimeGeneration: "generation-1",
+      productSessionId: webSessionId,
+      runtimeSessionId,
+      sequence: 2,
+      emittedAt: "2026-08-24T00:00:01.000Z",
+      turnId: "turn-1",
+      event: { kind: "turn_terminal", terminal: { kind: "aborted", reason: "user" } },
+    });
+    expect(application.snapshot().projection?.activeOperationIds).toEqual([]);
     await expect(application.accept({
       ...command,
       payload: { title: "Conflicting" },

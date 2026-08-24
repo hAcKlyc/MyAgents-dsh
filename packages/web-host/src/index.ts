@@ -3,6 +3,7 @@ export * from "./attachment-store.js";
 export * from "./application.js";
 export * from "./browser-server.js";
 export * from "./catalog.js";
+export * from "./command-router.js";
 export * from "./errors.js";
 export * from "./event-hub.js";
 export * from "./reverse-ports.js";

@@ -18,12 +18,14 @@ import {
   validateBrowserCommand,
   validateCommandAccepted,
   validateHealth,
+  validateHostEvent,
   validateInteractionAccepted,
   validateInteractionResponse,
 } from "./validation.js";
 
 export type WebHostClientOptions = Readonly<{
   fetch?: typeof globalThis.fetch;
+  eventSource?: (url: string, init: EventSourceInit) => EventSource;
 }>;
 export type BrowserAttachmentUpload = Readonly<{
   webSessionId: string;
@@ -51,10 +53,12 @@ const utf8Base64url = (value: string): string => {
 
 export class WebHostClient {
   readonly #fetch: typeof globalThis.fetch;
+  readonly #eventSource: (url: string, init: EventSourceInit) => EventSource;
   #csrfToken: string | undefined;
 
   constructor(options: WebHostClientOptions = {}) {
     this.#fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
+    this.#eventSource = options.eventSource ?? ((url, init) => new EventSource(url, init));
   }
 
   async bootstrap(signal?: AbortSignal): Promise<Bootstrap> {
@@ -168,8 +172,12 @@ export class WebHostClient {
     lastEventId?: string;
     signal?: AbortSignal;
   }> = {}): AsyncGenerator<HostEvent> {
+    if (options.lastEventId === undefined) {
+      yield* this.#eventSourceEvents(options.signal);
+      return;
+    }
     const headers = new Headers({ Accept: "text/event-stream" });
-    if (options.lastEventId !== undefined) headers.set("Last-Event-ID", options.lastEventId);
+    headers.set("Last-Event-ID", options.lastEventId);
     const response = await this.#fetch("/api/v1/events", {
       credentials: "same-origin",
       headers,
@@ -199,6 +207,50 @@ export class WebHostClient {
       decoder.finish();
     } finally {
       reader.releaseLock();
+    }
+  }
+
+  async *#eventSourceEvents(signal?: AbortSignal): AsyncGenerator<HostEvent> {
+    const source = this.#eventSource("/api/v1/events", { withCredentials: true });
+    const queued: HostEvent[] = [];
+    let wake: (() => void) | undefined;
+    const eventKinds = [
+      "host.snapshot", "host.sessionChanged", "host.commandSettled", "host.interactionOpened",
+      "host.interactionClosed", "host.attachmentChanged", "runtime.event", "runtime.stateChanged",
+      "runtime.fatal", "host.resyncRequired",
+    ] as const;
+    const receive = (raw: Event): void => {
+      if (!(raw instanceof MessageEvent) || typeof raw.data !== "string") return;
+      let parsed: HostEvent;
+      try {
+        parsed = validateHostEvent(JSON.parse(raw.data) as unknown);
+      } catch {
+        source.close();
+        wake?.();
+        return;
+      }
+      if (parsed.kind !== raw.type || raw.lastEventId !== `${parsed.epoch}:${parsed.sequence}`) {
+        source.close();
+        wake?.();
+        return;
+      }
+      queued.push(parsed);
+      wake?.();
+      wake = undefined;
+    };
+    for (const kind of eventKinds) source.addEventListener(kind, receive);
+    const abort = (): void => { source.close(); wake?.(); };
+    signal?.addEventListener("abort", abort, { once: true });
+    try {
+      while (source.readyState !== 2 && signal?.aborted !== true) {
+        const event = queued.shift();
+        if (event !== undefined) yield event;
+        else await new Promise<void>((resolveWake) => { wake = resolveWake; });
+      }
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      for (const kind of eventKinds) source.removeEventListener(kind, receive);
+      source.close();
     }
   }
 

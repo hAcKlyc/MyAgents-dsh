@@ -12,6 +12,7 @@
     "src/auth.ts",
     "src/browser-server.ts",
     "src/catalog.ts",
+    "src/command-router.ts",
     "src/errors.ts",
     "src/event-hub.ts",
     "src/index.ts",

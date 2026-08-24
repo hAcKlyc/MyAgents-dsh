@@ -1,12 +1,13 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2024", "DOM"],
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "rootDir": "..",
     "outDir": "../dist/tests",
     "tsBuildInfoFile": "../dist/tests/.tsbuildinfo"
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "**/*.tsx"],
   "references": [
     { "path": "../packages/artifact-verifier" },
     { "path": "../packages/component-runtime" },
