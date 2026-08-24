@@ -1,6 +1,6 @@
 # Batch 1 Reference Web Host and WebUI RFC
 
-Status: `accepted design; B1-W5-A1/A2 complete; B1-W5-A3 in progress`
+Status: `accepted design; B1-W5-A1/A2/A3 complete; B1-W5-A4 in progress`
 
 ## 1. Purpose
 
