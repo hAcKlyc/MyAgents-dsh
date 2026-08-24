@@ -1,122 +1,258 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import type { RuntimeProjection } from "@myagents-dsh/web-host-contract";
 
 import type { BrowserHistoryEvent, BrowserHistorySnapshot } from "../history.js";
 import type { LocalInput } from "../store.js";
+import { SafeMarkdown } from "./safe-markdown.js";
 
 type RuntimeEnvelope = RuntimeProjection["events"][number];
-type ConversationRow = Readonly<{
+type ToolState = "running" | "succeeded" | "failed";
+type FlowBlock =
+  | Readonly<{ kind: "text"; id: string; source: string }>
+  | Readonly<{ kind: "thinking"; id: string; source: string; complete: boolean }>
+  | Readonly<{
+      kind: "tool";
+      id: string;
+      name: string;
+      state: ToolState;
+      input?: unknown;
+      output?: unknown;
+    }>
+  | Readonly<{
+      kind: "activity";
+      id: string;
+      label: string;
+      title: string;
+      detail?: unknown;
+      tone?: "warning";
+      queuedMessageId?: string;
+      cancellable?: boolean;
+    }>;
+type AssistantTurn = Readonly<{
   id: string;
   at: string;
-  tone: "user" | "assistant" | "thinking" | "tool" | "system";
-  label: string;
-  title?: string;
-  body: string;
-  queuedMessageId?: string;
-  queuedState?: "queued" | "admitted" | "delivered" | "cancelled";
+  blocks: readonly FlowBlock[];
+  terminal?: Readonly<Record<string, unknown>>;
+  usage?: Readonly<{ totalTokens: number; costUsd: number | null }>;
 }>;
+type TimelineItem =
+  | Readonly<{ kind: "turn"; id: string; at: string; turn: AssistantTurn }>
+  | Readonly<{ kind: "user"; id: string; at: string; text: string; attachmentNames: readonly string[]; state?: LocalInput["state"] }>;
 
-const detail = (value: unknown): string => {
+const detailText = (value: unknown): string => {
   if (value === undefined) return "";
   const text = JSON.stringify(value, null, 2);
   return text.length > 12_000 ? `${text.slice(0, 12_000)}\n…` : text;
 };
-const rowForEvent = (envelope: RuntimeEnvelope): ConversationRow => {
-  const event = envelope.event;
-  const base = { id: `${envelope.runtimeGeneration}:${envelope.sequence}`, at: envelope.emittedAt };
-  switch (event.kind) {
-    case "assistant_delta": return { ...base, tone: "assistant", label: "Assistant", body: event.delta };
-    case "thinking_delta": return { ...base, tone: "thinking", label: "Reasoning", body: event.delta };
-    case "tool": return {
-      ...base, tone: "tool", label: "Tool", title: `${event.name} · ${event.phase}`, body: detail(event.detail),
-    };
-    case "usage": return {
-      ...base, tone: "system", label: "Usage", title: `${event.usage.totalTokens.toLocaleString()} tokens`,
-      body: event.usage.costUsd === null ? "Cost unavailable" : `$${event.usage.costUsd.toFixed(4)}`,
-    };
-    case "context": return {
-      ...base, tone: "system", label: "Context", title: event.modelProfileRevision,
-      body: event.contextOccupiedTokens === null
-        ? `Window ${event.runtimeContextWindow.toLocaleString()}`
-        : `${event.contextOccupiedTokens.toLocaleString()} / ${event.runtimeContextWindow.toLocaleString()} tokens`,
-    };
-    case "warning": return { ...base, tone: "system", label: "Warning", title: event.code, body: event.message };
-    case "turn_terminal": return {
-      ...base, tone: "system", label: "Turn", title: event.terminal.kind.replaceAll("_", " "), body: detail(event.terminal),
-    };
-    case "queued_message": return {
-      ...base,
-      tone: "system",
-      label: "Queue",
-      title: event.state,
-      body: `Message ${event.messageId}`,
-      queuedMessageId: event.messageId,
-      queuedState: event.state,
-    };
-    case "plan": return { ...base, tone: "system", label: "Plan", title: event.revision, body: detail(event.detail) };
-    case "task_graph": return { ...base, tone: "system", label: "Tasks", title: event.revision, body: detail(event.detail) };
-    case "work": return { ...base, tone: "system", label: "Subagent", title: event.phase, body: detail(event.detail) };
-    case "component": return {
-      ...base, tone: "system", label: "Component", title: event.component.key,
-      body: `${event.component.state}${event.component.reason === undefined ? "" : ` · ${event.component.reason}`}`,
-    };
-    default: return { ...base, tone: "system", label: "Runtime", title: event.kind.replaceAll("_", " "), body: detail(event) };
-  }
-};
-const foldRows = (events: readonly RuntimeEnvelope[]): ConversationRow[] => {
-  const rows: ConversationRow[] = [];
-  for (const envelope of events) {
-    const next = rowForEvent(envelope);
-    const previous = rows.at(-1);
-    if (previous?.tone === next.tone
-      && (next.tone === "assistant" || next.tone === "thinking") && previous.label === next.label) {
-      rows[rows.length - 1] = { ...previous, body: `${previous.body}${next.body}`, at: next.at };
-    } else rows.push(next);
-  }
-  return rows;
-};
-const jsonRecord = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
+const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Readonly<Record<string, unknown>> : undefined;
 const messageText = (value: unknown): string | undefined => {
-  const message = jsonRecord(value);
+  const message = record(value);
   if (!Array.isArray(message?.content)) return undefined;
   const parts = message.content.flatMap((candidate) => {
-    const block = jsonRecord(candidate);
+    const block = record(candidate);
     if (block?.type === "text" && typeof block.text === "string") return [block.text];
-    if (block?.type === "image") return ["[image]"];
+    if (block?.type === "image") return ["[图片]"];
     return [];
   });
   return parts.length === 0 ? undefined : parts.join("\n");
 };
-const rowForHistory = (event: BrowserHistoryEvent): ConversationRow | undefined => {
-  const data = jsonRecord(event.data);
-  const base = { id: `history:${event.sequence}:${event.eventSha256}`, at: `0000:${String(event.sequence).padStart(12, "0")}` };
+const turnIdFor = (envelope: RuntimeEnvelope): string | undefined => envelope.turnId
+  ?? (envelope.event.kind === "turn_admitted" ? envelope.event.admission.turnId : undefined);
+const activityFor = (envelope: RuntimeEnvelope): Extract<FlowBlock, { kind: "activity" }> | undefined => {
+  const event = envelope.event;
+  const id = `${envelope.runtimeGeneration}:${envelope.sequence}`;
+  switch (event.kind) {
+    case "plan": return { kind: "activity", id, label: "计划", title: `计划已更新 · ${event.revision}`, detail: event.detail };
+    case "task_graph": return { kind: "activity", id, label: "任务", title: `任务图已更新 · ${event.revision}`, detail: event.detail };
+    case "work": return { kind: "activity", id, label: "协作", title: `${event.taskId} · ${event.phase}`, detail: event.detail };
+    case "warning": return { kind: "activity", id, label: "警告", title: event.message, detail: { code: event.code }, tone: "warning" };
+    case "compaction": return { kind: "activity", id, label: "上下文", title: `压缩${event.phase.replaceAll("_", " ")}`, detail: event.detail };
+    case "retry": return { kind: "activity", id, label: "重试", title: event.phase, detail: event.detail };
+    case "queued_message": return {
+      kind: "activity",
+      id,
+      label: "队列",
+      title: event.state === "queued" ? "消息正在等待当前任务完成" : `排队消息 · ${event.state}`,
+      queuedMessageId: event.messageId,
+      cancellable: event.state === "queued" || event.state === "admitted",
+    };
+    default: return undefined;
+  }
+};
+
+const foldRuntimeTurns = (events: readonly RuntimeEnvelope[]): AssistantTurn[] => {
+  const mutable = new Map<string, {
+    id: string;
+    at: string;
+    blocks: FlowBlock[];
+    terminal?: Readonly<Record<string, unknown>>;
+    usage?: Readonly<{ totalTokens: number; costUsd: number | null }>;
+  }>();
+  const order: string[] = [];
+  let latestTurnId: string | undefined;
+  const ensure = (envelope: RuntimeEnvelope): ReturnType<typeof mutable.get> => {
+    const id = turnIdFor(envelope) ?? latestTurnId;
+    if (id === undefined) return undefined;
+    latestTurnId = id;
+    let turn = mutable.get(id);
+    if (turn === undefined) {
+      turn = { id, at: envelope.emittedAt, blocks: [] };
+      mutable.set(id, turn);
+      order.push(id);
+    }
+    return turn;
+  };
+
+  for (const envelope of events) {
+    const turn = ensure(envelope);
+    if (turn === undefined) continue;
+    const event = envelope.event;
+    const eventId = `${envelope.runtimeGeneration}:${envelope.sequence}`;
+    if (event.kind === "assistant_delta") {
+      const previous = turn.blocks.at(-1);
+      if (previous?.kind === "text") turn.blocks[turn.blocks.length - 1] = { ...previous, source: `${previous.source}${event.delta}` };
+      else turn.blocks.push({ kind: "text", id: eventId, source: event.delta });
+      continue;
+    }
+    if (event.kind === "thinking_delta") {
+      const previous = turn.blocks.at(-1);
+      if (previous?.kind === "thinking") turn.blocks[turn.blocks.length - 1] = { ...previous, source: `${previous.source}${event.delta}`, complete: false };
+      else turn.blocks.push({ kind: "thinking", id: eventId, source: event.delta, complete: false });
+      continue;
+    }
+    if (event.kind === "tool") {
+      const id = envelope.toolCallId ?? `${event.name}:${eventId}`;
+      const index = turn.blocks.findIndex((block) => block.kind === "tool" && block.id === id);
+      const prior = index < 0 ? undefined : turn.blocks[index];
+      const isError = record(event.detail)?.isError === true || record(event.detail)?.state === "failed";
+      const next: FlowBlock = {
+        kind: "tool",
+        id,
+        name: event.name,
+        state: event.phase === "end" ? (isError ? "failed" : "succeeded") : "running",
+        ...(event.phase === "start" ? { input: event.detail } : prior?.kind === "tool" && prior.input !== undefined ? { input: prior.input } : {}),
+        ...(event.phase === "start" ? {} : { output: event.detail }),
+      };
+      if (index < 0) turn.blocks.push(next);
+      else turn.blocks[index] = next;
+      continue;
+    }
+    if (event.kind === "turn_terminal") {
+      const terminal = record(event.terminal);
+      if (terminal !== undefined) turn.terminal = terminal;
+      turn.blocks = turn.blocks.map((block) => block.kind === "thinking" ? { ...block, complete: true } : block);
+      continue;
+    }
+    if (event.kind === "usage") {
+      turn.usage = { totalTokens: event.usage.totalTokens, costUsd: event.usage.costUsd };
+      continue;
+    }
+    const activity = activityFor(envelope);
+    if (activity !== undefined) turn.blocks.push(activity);
+  }
+  return order.flatMap((id) => {
+    const turn = mutable.get(id);
+    return turn === undefined || turn.blocks.length === 0 ? [] : [turn];
+  });
+};
+
+const historyTimeline = (events: readonly BrowserHistoryEvent[]): TimelineItem[] => events.flatMap<TimelineItem>((event): TimelineItem[] => {
+  const data = record(event.data);
+  const at = `0000:${String(event.sequence).padStart(12, "0")}`;
+  const id = `history:${event.sequence}:${event.eventSha256}`;
   if (event.eventType === "user/message") {
-    return { ...base, tone: "user", label: "You", body: messageText(data) ?? detail(event.data) };
+    return [{ kind: "user" as const, id, at, text: messageText(data) ?? detailText(event.data), attachmentNames: [] }];
   }
   if (event.eventType === "assistant/message") {
-    return { ...base, tone: "assistant", label: "Assistant", body: messageText(data?.message) ?? detail(event.data) };
+    return [{ kind: "turn" as const, id, at, turn: {
+      id, at, blocks: [{ kind: "text" as const, id: `${id}:text`, source: messageText(data?.message) ?? detailText(event.data) }],
+    } }];
   }
   if (event.eventType === "assistant/chunk") {
-    const chunk = jsonRecord(data?.chunk);
-    if (typeof chunk?.text !== "string") return undefined;
-    return {
-      ...base,
-      tone: chunk.type === "reasoning-delta" ? "thinking" : "assistant",
-      label: chunk.type === "reasoning-delta" ? "Reasoning" : "Assistant",
-      body: chunk.text,
-    };
+    const chunk = record(data?.chunk);
+    if (typeof chunk?.text !== "string") return [];
+    const thinking = chunk.type === "reasoning-delta";
+    return [{ kind: "turn" as const, id, at, turn: {
+      id, at, blocks: [thinking
+        ? { kind: "thinking" as const, id: `${id}:thinking`, source: chunk.text, complete: true }
+        : { kind: "text" as const, id: `${id}:text`, source: chunk.text }],
+    } }];
   }
   if (event.eventType.includes("tool")) {
-    return { ...base, tone: "tool", label: "Tool", title: event.eventType, body: detail(event.data) };
+    return [{ kind: "turn" as const, id, at, turn: {
+      id, at, blocks: [{ kind: "tool" as const, id: `${id}:tool`, name: event.eventType, state: "succeeded" as const, output: event.data }],
+    } }];
   }
-  if (event.eventType === "myagents/operation/terminal") {
-    return { ...base, tone: "system", label: "Turn", title: "durable terminal", body: detail(event.data) };
+  return [];
+});
+
+const toolHint = (block: Extract<FlowBlock, { kind: "tool" }>): string | undefined => {
+  const input = record(block.input);
+  for (const key of ["path", "command", "query", "url", "description", "task"]) {
+    if (typeof input?.[key] === "string") return input[key].slice(0, 110);
   }
   return undefined;
 };
+const statusLabel = (state: ToolState): string => state === "running" ? "运行中" : state === "failed" ? "失败" : "完成";
+
+function ToolBlock(props: Readonly<{ block: Extract<FlowBlock, { kind: "tool" }> }>): React.JSX.Element {
+  const hint = toolHint(props.block);
+  return <details className="flow-block tool-block" data-state={props.block.state}>
+    <summary>
+      <span className="flow-status-dot" aria-hidden="true" />
+      <span className="flow-title"><strong>{props.block.name}</strong>{hint === undefined ? "" : ` · ${hint}`}</span>
+      <span className="flow-state">{statusLabel(props.block.state)}</span>
+    </summary>
+    <div className="flow-detail">
+      {props.block.input !== undefined && <><span>输入</span><pre>{detailText(props.block.input)}</pre></>}
+      {props.block.output !== undefined && <><span>结果</span><pre>{detailText(props.block.output)}</pre></>}
+    </div>
+  </details>;
+}
+
+function AssistantTurnView(props: Readonly<{
+  turn: AssistantTurn;
+  onCancelQueued: (messageId: string) => Promise<void>;
+}>): React.JSX.Element {
+  const cancelQueued = (messageId: string | undefined): void => {
+    if (messageId !== undefined) void props.onCancelQueued(messageId);
+  };
+  const assistantText = props.turn.blocks.filter((block): block is Extract<FlowBlock, { kind: "text" }> => block.kind === "text")
+    .map((block) => block.source).join("\n\n");
+  const terminalKind = typeof props.turn.terminal?.kind === "string"
+    ? props.turn.terminal.kind === "succeeded" ? "已完成" : props.turn.terminal.kind.replaceAll("_", " ")
+    : undefined;
+  return <article className="assistant-turn conversation-entry">
+    <div className="assistant-avatar" aria-hidden="true">M</div>
+    <div className="assistant-content">
+      <div className="assistant-flow">
+        {props.turn.blocks.map((block) => {
+          if (block.kind === "text") return <SafeMarkdown key={block.id} source={block.source} />;
+          if (block.kind === "thinking") return <details className="flow-block thinking-block" open={!block.complete} key={block.id}>
+            <summary><span className="thinking-icon" aria-hidden="true">✦</span><span>{block.complete ? "思考过程" : "正在思考…"}</span><span className="flow-state">{block.complete ? "展开" : "生成中"}</span></summary>
+            <SafeMarkdown className="thinking-content" source={block.source} />
+          </details>;
+          if (block.kind === "tool") return <ToolBlock block={block} key={block.id} />;
+          return <details className="flow-block activity-block" data-tone={block.tone} key={block.id}>
+            <summary><span className="activity-icon" aria-hidden="true">◇</span><span className="flow-title">{block.title}</span><span className="flow-state">{block.label}</span></summary>
+            {block.detail !== undefined && <pre className="activity-detail">{detailText(block.detail)}</pre>}
+            {block.cancellable === true && block.queuedMessageId !== undefined && <button className="queued-cancel" type="button"
+              aria-label="Cancel queued message" onClick={() => cancelQueued(block.queuedMessageId)}>取消排队消息</button>}
+          </details>;
+        })}
+      </div>
+      <div className="turn-actions">
+        <button type="button" aria-label="复制回答" disabled={assistantText === ""}
+          onClick={() => void navigator.clipboard.writeText(assistantText)}>▢</button>
+        {terminalKind !== undefined && <span>{terminalKind}</span>}
+        {props.turn.usage !== undefined && <span>{props.turn.usage.totalTokens.toLocaleString()} tokens</span>}
+      </div>
+    </div>
+  </article>;
+}
 
 export function ConversationSurface(props: Readonly<{
   projection: RuntimeProjection | undefined;
@@ -124,63 +260,65 @@ export function ConversationSurface(props: Readonly<{
   localInputs: readonly LocalInput[];
   onCancelQueued: (messageId: string) => Promise<void>;
 }>): React.JSX.Element {
-  const runtimeRows = useMemo(() => foldRows(props.projection?.events ?? []), [props.projection?.events]);
-  const historyRows = useMemo(() => runtimeRows.length > 0 ? []
-    : (props.history?.events ?? []).flatMap((event) => {
-      const row = rowForHistory(event);
-      return row === undefined ? [] : [row];
-    }), [props.history?.events, runtimeRows.length]);
-  const timeline = useMemo(() => [
-    ...historyRows.map((row) => ({ kind: "runtime" as const, id: row.id, at: row.at, row })),
-    ...props.localInputs.map((input) => ({ kind: "local" as const, id: input.id, at: input.createdAt, input })),
-    ...runtimeRows.map((row) => ({ kind: "runtime" as const, id: row.id, at: row.at, row })),
-  ].sort((left, right) => left.at.localeCompare(right.at)), [historyRows, props.localInputs, runtimeRows]);
-  if (runtimeRows.length === 0 && historyRows.length === 0 && props.localInputs.length === 0) {
-    return <section className="conversation empty-conversation" aria-label="Conversation">
-      <div className="empty-mark" aria-hidden="true">⌁</div>
-      <h2>What are we building?</h2>
-      <p>Ask the DSH Root Agent to inspect, change, or explain the selected workspace.</p>
+  const scrollRoot = useRef<HTMLElement>(null);
+  const followsOutput = useRef(true);
+  const runtimeTurns = useMemo(() => foldRuntimeTurns(props.projection?.events ?? []), [props.projection?.events]);
+  const restored = useMemo(() => runtimeTurns.length > 0 ? [] : historyTimeline(props.history?.events ?? []), [props.history?.events, runtimeTurns.length]);
+  const timeline = useMemo<TimelineItem[]>(() => [
+    ...restored,
+    ...props.localInputs.map((input) => ({
+      kind: "user" as const,
+      id: input.id,
+      at: input.createdAt,
+      text: input.text,
+      attachmentNames: input.attachmentNames,
+      state: input.state,
+    })),
+    ...runtimeTurns.map((turn) => ({ kind: "turn" as const, id: turn.id, at: turn.at, turn })),
+  ].sort((left, right) => left.at.localeCompare(right.at)), [props.localInputs, restored, runtimeTurns]);
+  const latestRevision = props.projection?.events.at(-1)?.sequence
+    ?? props.history?.durableSequence
+    ?? props.localInputs.length;
+
+  useEffect(() => {
+    if (!followsOutput.current) return;
+    const frame = requestAnimationFrame(() => {
+      const root = scrollRoot.current;
+      if (root !== null) root.scrollTop = root.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [latestRevision]);
+
+  if (timeline.length === 0) {
+    return <section ref={scrollRoot} className="conversation empty-conversation" aria-label="Conversation">
+      <div className="empty-mark" aria-hidden="true">✦</div>
+      <h2>今天想一起做什么？</h2>
+      <p>向 DSH Agent 提问，或让它检查、修改和验证当前工作区。</p>
     </section>;
   }
-  return <section className="conversation" aria-label="Conversation" aria-live="off">
-    {props.history !== undefined && props.history.status !== "complete" && <div className="history-status" role="status">
-      {props.history.status === "loading" && "Restoring durable DSH history…"}
-      {props.history.status === "truncated" && "Visible durable history reached its browser bound; Runtime truth is unchanged."}
-      {props.history.status === "failed" && "Durable history could not be verified. Live Runtime events remain visible."}
+  return <section ref={scrollRoot} className="conversation" aria-label="Conversation" aria-live="off"
+    onScroll={(event) => {
+      const root = event.currentTarget;
+      followsOutput.current = root.scrollHeight - root.scrollTop - root.clientHeight <= 80;
+    }}>
+    {runtimeTurns.length === 0 && props.history !== undefined && props.history.status !== "complete" && <div className="history-status" role="status">
+      {props.history.status === "loading" && "正在恢复 DSH 持久会话…"}
+      {props.history.status === "truncated" && "较早的会话内容未完全加载。"}
+      {props.history.status === "failed" && "历史记录暂时无法加载，仍可继续当前对话。"}
     </div>}
     <div className="conversation-list">
-      {timeline.map((item) => item.kind === "local"
-        ? <article className="conversation-row user-row" key={item.id}>
-            <div className="row-label">You</div>
-            <div className="message-card user-card">
-              <p>{item.input.text}</p>
-              {item.input.attachmentNames.length > 0 && <div className="attachment-chips">
-                {item.input.attachmentNames.map((name) => <span key={name}>⌕ {name}</span>)}
+      {timeline.map((item) => item.kind === "user"
+        ? <article className="user-turn conversation-entry" key={item.id}>
+            <div className="user-message">
+              <p>{item.text}</p>
+              {item.attachmentNames.length > 0 && <div className="attachment-chips">
+                {item.attachmentNames.map((name) => <span key={name}>▧ {name}</span>)}
               </div>}
-              <span className={`delivery-state delivery-${item.input.state}`}>{item.input.state}</span>
             </div>
+            {item.state !== undefined && <span className={`delivery-state delivery-${item.state}`}>{item.state}</span>}
           </article>
-        : <article className={`conversation-row ${item.row.tone}-row`} key={item.id}>
-            <div className="row-label">{item.row.label}</div>
-            <div className={`message-card ${item.row.tone}-card`}>
-              {item.row.title !== undefined && <strong>{item.row.title}</strong>}
-              {item.row.tone === "thinking"
-                ? <details open><summary>Reasoning trace</summary><p>{item.row.body}</p></details>
-                : item.row.body.startsWith("{") || item.row.body.includes("\n")
-                  ? <pre>{item.row.body}</pre>
-                  : <p>{item.row.body}</p>}
-              {item.row.queuedMessageId !== undefined
-                && (item.row.queuedState === "queued" || item.row.queuedState === "admitted")
-                && <button className="row-action" type="button"
-                  onClick={() => {
-                    const messageId = item.row.queuedMessageId;
-                    if (messageId !== undefined) void props.onCancelQueued(messageId);
-                  }}>
-                  Cancel queued message
-                </button>}
-            </div>
-          </article>)}
+        : <AssistantTurnView key={item.id} turn={item.turn} onCancelQueued={props.onCancelQueued} />)}
     </div>
-    <div className="sr-only" aria-live="polite">{runtimeRows.at(-1)?.label ?? "Conversation ready"}</div>
+    <div className="sr-only" aria-live="polite">{runtimeTurns.length > 0 ? "Agent 回复已更新" : "对话已就绪"}</div>
   </section>;
 }

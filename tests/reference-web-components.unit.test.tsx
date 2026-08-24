@@ -134,4 +134,65 @@ describe("Reference Web React shell", () => {
     ]);
     store.stop();
   });
+
+  it("projects one assistant Turn with safe markdown and one folded tool lifecycle", async () => {
+    const source = fixture();
+    if (source.snapshot.projection === undefined) throw new Error("fixture projection is missing");
+    const rendered: Bootstrap = { ...source, snapshot: {
+      ...source.snapshot,
+      projection: {
+        ...source.snapshot.projection,
+        openInteractions: [],
+        events: [
+          {
+            runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
+            sequence: 1, emittedAt: now, event: { kind: "turn_admitted", admission: { turnId: "turn-1", admittedAt: now } },
+          },
+          {
+            runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
+            sequence: 2, emittedAt: now, turnId: "turn-1", event: { kind: "thinking_delta", delta: "Checking the workspace." },
+          },
+          {
+            runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
+            sequence: 3, emittedAt: now, turnId: "turn-1", toolCallId: "tool-1",
+            event: { kind: "tool", phase: "start", name: "Read", detail: { path: "README.md" } },
+          },
+          {
+            runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
+            sequence: 4, emittedAt: now, turnId: "turn-1", toolCallId: "tool-1",
+            event: { kind: "tool", phase: "end", name: "Read", detail: { state: "succeeded", lines: 12 } },
+          },
+          {
+            runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
+            sequence: 5, emittedAt: now, turnId: "turn-1",
+            event: { kind: "assistant_delta", delta: "## 结果摘要\n\n- 已读取工作区\n\n```text\nverified\n```\n\n<img src=x onerror=alert(1)>" },
+          },
+          {
+            runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
+            sequence: 6, emittedAt: now, turnId: "turn-1", event: { kind: "turn_terminal", terminal: { kind: "aborted", reason: "user" } },
+          },
+        ],
+      },
+    } };
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve(rendered)),
+      events: async function* (options: { signal?: AbortSignal }) {
+        const noEvents: HostEvent[] = [];
+        for (const event of noEvents) yield event;
+        await new Promise<void>((resolveAbort) => options.signal?.addEventListener("abort", () => resolveAbort(), { once: true }));
+      },
+      command: vi.fn(() => Promise.resolve({ commandId: "history", accepted: true as const })),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    const store = new ReferenceWebStore({ client, idFactory: () => "fixture-id", now: () => now });
+    const view = render(<App store={store} />);
+
+    expect(await screen.findByRole("heading", { name: "结果摘要" })).not.toBeNull();
+    expect(view.container.querySelectorAll(".tool-block")).toHaveLength(1);
+    expect(screen.getByText("Read", { selector: "strong" })).not.toBeNull();
+    expect(screen.getByText("verified")).not.toBeNull();
+    expect(view.container.querySelector("img")).toBeNull();
+    expect(screen.queryByText("turn admitted", { exact: false })).toBeNull();
+    store.stop();
+  });
 });

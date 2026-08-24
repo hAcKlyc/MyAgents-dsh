@@ -95,7 +95,7 @@ assert(exactKeys(provenance, ["formatVersion", "policy", "sources"]), "UI proven
 assert(provenance.formatVersion === 1, "UI provenance formatVersion must be 1");
 assert(provenance.policy === "clean-room-unless-explicitly-recorded", "UI provenance policy must remain clean-room");
 const sources = Array.isArray(provenance.sources) ? provenance.sources : [];
-assert(sources.length === 2, "UI provenance must bind exactly DSH and MyAgents references");
+assert(sources.length === 3, "UI provenance must bind exactly DSH, MyAgents, and MyAgents-Pi references");
 const expectedSources = new Map([
   ["deepseek-harness-webui", {
     revision: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
@@ -106,6 +106,11 @@ const expectedSources = new Map([
     revision: "e444872834fbf7ec2869d7bad6aa718c290e522a",
     licenseBlob: "be3f7b28e564e7dd05eaf59d64adba1a4065ac0e",
     use: "product-interaction-research-only",
+  }],
+  ["myagents-pi-debug-console", {
+    revision: "9ab2ec4806628d837521f2a758345ddc9a4b173e",
+    licenseBlob: "0f5d4420d8930bd8593e8fd6e6948486b9c98aa6",
+    use: "interaction-behavior-reference-only",
   }],
 ]);
 for (const [index, value] of sources.entries()) {

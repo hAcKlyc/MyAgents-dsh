@@ -94,6 +94,7 @@ const expectedWorkspaceFiles = new Map([
     "src/components/composer.tsx",
     "src/components/inspector-pane.tsx",
     "src/components/interaction-tray.tsx",
+    "src/components/safe-markdown.tsx",
     "src/components/session-sidebar.tsx",
     "src/history.ts",
     "src/main.tsx",

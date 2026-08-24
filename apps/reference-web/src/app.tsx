@@ -22,6 +22,8 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
 
   return <div className="app-shell">
     <SessionSidebar
+      workspaceName={state.bootstrap?.workspace.displayName ?? "MyAgents DSH"}
+      workspaceRoot={state.bootstrap?.workspace.canonicalRoot ?? ""}
       sessions={state.snapshot.sessions}
       {...(selectedId === undefined ? {} : { selectedWebSessionId: selectedId })}
       onCreate={() => void props.store.createSession()}
@@ -30,18 +32,18 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
     <main className="workspace-main">
       <header className="workspace-header">
         <div className="workspace-identity">
-          <span className="brand-mark" aria-hidden="true">M</span>
-          <div>
-            <span className="eyebrow">{state.bootstrap?.workspace.displayName ?? "MyAgents DSH"}</span>
-            <h2>{selected?.title ?? "Reference Web Host"}</h2>
-          </div>
+          <span className="agent-mark" aria-hidden="true">ϟ</span>
+          <strong>{state.bootstrap?.workspace.displayName ?? "MyAgents DSH"}</strong>
+          <span className="header-slash">/</span>
+          <h2>{selected?.title ?? "新对话"}</h2>
         </div>
         <div className="header-actions">
           <span className="connection-pill" data-state={state.connection}>
             <span className="status-dot" aria-hidden="true" />{state.connection}
           </span>
+          <button className="header-button new-chat-button" type="button" onClick={() => void props.store.createSession()}>＋ 新对话</button>
           <button className="header-button" type="button" onClick={() => props.store.toggleInspector()}
-            aria-expanded={state.inspectorOpen}>Runtime</button>
+            aria-expanded={state.inspectorOpen} aria-label="Runtime">Logs</button>
         </div>
       </header>
       <div className="workspace-content">

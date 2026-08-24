@@ -92,26 +92,28 @@ export function Composer(props: Readonly<{
             void submit();
           }
         }}
-        placeholder={props.disabled ? "Select or create a Session" : "Message the agent…"}
+        placeholder={props.disabled ? "请选择或新建一个对话" : "输入消息，使用 @ 引用文件，/ 使用技能…"}
         rows={3}
         value={text}
       />
       <div className="composer-actions">
         <div>
-          <button className="ghost-button" type="button" disabled={props.disabled || (props.busy && busyDelivery === "steer")}
-            onClick={() => fileRef.current?.click()} aria-label="Attach file">＋ Attach</button>
+          <button className="attach-button" type="button" disabled={props.disabled || (props.busy && busyDelivery === "steer")}
+            onClick={() => fileRef.current?.click()} aria-label="Attach file" title="添加图片">＋</button>
           <input ref={fileRef} className="sr-only" type="file"
             accept="image/jpeg,image/png,image/gif,image/webp"
             onChange={(event) => void addFile(event.target.files?.[0])} tabIndex={-1} />
           {props.busy && <select aria-label="Delivery mode" value={busyDelivery}
             onChange={(event) => setBusyDelivery(event.target.value as typeof busyDelivery)}>
-            <option value="steer">Steer now</option>
-            <option value="follow_up">Queue follow-up</option>
+            <option value="steer">立即补充</option>
+            <option value="follow_up">排队发送</option>
           </select>}
-          <span className="composer-hint">↵ send · ⇧↵ newline</span>
+          <span className="composer-mode">⌁ 自主行动</span>
+          <span className="composer-hint">↵ 发送 · ⇧↵ 换行</span>
         </div>
         <div>
-          {props.busy && <button className="stop-button" type="button" onClick={() => void props.onInterrupt()}>Stop</button>}
+          {props.busy && <button className="stop-button" type="button" aria-label="Stop"
+            onClick={() => void props.onInterrupt()}>停止</button>}
           <button className="send-button" type="button"
             disabled={props.disabled || text.trim() === "" || steerHasAttachments}
             onClick={() => void submit()} aria-label={props.busy

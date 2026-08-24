@@ -28,6 +28,21 @@
       "use": "product-interaction-research-only",
       "copiedFiles": [],
       "copiedAssets": []
+    },
+    {
+      "id": "myagents-pi-debug-console",
+      "repository": "../MyAgents-Pi",
+      "revision": "9ab2ec4806628d837521f2a758345ddc9a4b173e",
+      "license": "private-proprietary-internal-reference",
+      "licenseBlob": "0f5d4420d8930bd8593e8fd6e6948486b9c98aa6",
+      "surfaces": [
+        { "path": "apps/runtime-debug-console/public/assets/app.js", "blob": "2c8b06eb0687f7b50576df52c8d2c6c3e615f131" },
+        { "path": "apps/runtime-debug-console/public/assets/app.css", "blob": "ad349ccbd32949ca901fc3d8410855b94e4a5e87" },
+        { "path": "apps/runtime-debug-console/public/index.html", "blob": "16b86d9e900ac831d91830c26e10504ed755dcad" }
+      ],
+      "use": "interaction-behavior-reference-only",
+      "copiedFiles": [],
+      "copiedAssets": []
     }
   ]
 }

@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "description": "React browser client for the Batch 1 Reference Web Host",
-  "files": ["index.html", "src", "vite.config.ts"],
+  "files": [
+    "index.html",
+    "src",
+    "vite.config.ts"
+  ],
   "exports": {
     "./app": "./src/app.tsx",
     "./history": "./src/history.ts",
@@ -15,6 +19,7 @@
   },
   "dependencies": {
     "@myagents-dsh/web-host-contract": "0.0.0",
+    "marked": "18.0.5",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
