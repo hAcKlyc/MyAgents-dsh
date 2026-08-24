@@ -37,6 +37,7 @@
     { "path": "../packages/test-host" },
     { "path": "../packages/dynamic-e2e" },
     { "path": "../packages/web-host-contract" },
+    { "path": "../packages/web-host" },
     { "path": "../apps/runtime-server" },
     { "path": "../tsconfig.tools.json" }
   ]

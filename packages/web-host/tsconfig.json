@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/web-host",
+    "tsBuildInfoFile": "../../dist/packages/web-host/.tsbuildinfo",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+  },
+  "files": [
+    "src/attachment-store.ts",
+    "src/auth.ts",
+    "src/browser-server.ts",
+    "src/catalog.ts",
+    "src/errors.ts",
+    "src/event-hub.ts",
+    "src/index.ts",
+    "src/reverse-ports.ts",
+    "src/runtime-process.ts",
+    "src/supervisor.ts"
+  ],
+  "references": [
+    { "path": "../artifact-verifier" },
+    { "path": "../protocol" },
+    { "path": "../web-host-contract" }
+  ]
+}

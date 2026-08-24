@@ -16,8 +16,12 @@ import {
 import {
   ARTIFACT_LAUNCHER_PATH,
   PRODUCT_NETWORK_TRANSPORT_PATH,
+  WEB_HOST_RUNTIME_PROCESS_PATH,
+  WEB_HOST_BROWSER_SERVER_PATH,
   isExactArtifactLauncherChildProcessSource,
   isExactProductNetworkTransportSource,
+  isExactWebHostRuntimeProcessSource,
+  isExactWebHostBrowserServerSource,
 } from "../scripts/repository-security-policy.js";
 
 describe("repository and packed-artifact forbidden-content policy", () => {
@@ -74,6 +78,46 @@ describe("repository and packed-artifact forbidden-content policy", () => {
       PRODUCT_NETWORK_TRANSPORT_PATH,
       "node:child_process",
       `${exact}\nimport { spawn } from "node:child_process";`,
+    )).toBe(false);
+  });
+
+  it("recognizes only the Web Host Runtime process owner", () => {
+    const exact = 'import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";';
+    expect(isExactWebHostRuntimeProcessSource(
+      WEB_HOST_RUNTIME_PROCESS_PATH,
+      "node:child_process",
+      exact,
+    )).toBe(true);
+    expect(isExactWebHostRuntimeProcessSource(
+      WEB_HOST_RUNTIME_PROCESS_PATH,
+      "node:child_process",
+      `${exact}\nimport { exec } from "node:child_process";`,
+    )).toBe(false);
+    expect(isExactWebHostRuntimeProcessSource(
+      "packages/runtime-product/src/escape.ts",
+      "node:child_process",
+      exact,
+    )).toBe(false);
+  });
+
+  it("recognizes only the loopback Web Host HTTP owner", () => {
+    const exact = [
+      "import {",
+      "  createServer,",
+      "  type IncomingMessage,",
+      "  type Server,",
+      "  type ServerResponse,",
+      '} from "node:http";',
+    ].join("\n");
+    expect(isExactWebHostBrowserServerSource(
+      WEB_HOST_BROWSER_SERVER_PATH,
+      "node:http",
+      exact,
+    )).toBe(true);
+    expect(isExactWebHostBrowserServerSource(
+      WEB_HOST_BROWSER_SERVER_PATH,
+      "node:https",
+      `${exact}\nimport { request } from "node:https";`,
     )).toBe(false);
   });
 

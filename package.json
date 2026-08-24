@@ -71,6 +71,7 @@
     "typecheck": "npm run check:foundation && tsc -b --pretty false",
     "lint": "eslint . --max-warnings 0",
     "test": "npm run check:foundation && vitest run",
+    "test:web-host-process": "vitest run --config vitest.web-host-process.config.ts --maxWorkers=1 --no-file-parallelism",
     "build": "npm run check:foundation && tsc -b --pretty false"
   },
   "devDependencies": {

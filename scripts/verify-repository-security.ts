@@ -21,6 +21,8 @@ import {
   isExactDynamicE2eChildProcessSource,
   isExactArtifactLauncherChildProcessSource,
   isExactProductNetworkTransportSource,
+  isExactWebHostRuntimeProcessSource,
+  isExactWebHostBrowserServerSource,
 } from "./repository-security-policy.js";
 
 type PackResult = {
@@ -138,7 +140,9 @@ for (const relativePath of repositoryPaths) {
       if (isNetworkCapableModule(specifier)
         && !isExactArtifactLauncherChildProcessSource(relativePath, specifier, source)
         && !isExactDynamicE2eChildProcessSource(relativePath, specifier, source)
-        && !isExactProductNetworkTransportSource(relativePath, specifier, source)) {
+        && !isExactProductNetworkTransportSource(relativePath, specifier, source)
+        && !isExactWebHostRuntimeProcessSource(relativePath, specifier, source)
+        && !isExactWebHostBrowserServerSource(relativePath, specifier, source)) {
         failures.push(`${relativePath} imports network-capable module ${specifier} outside the isolation/composition owner`);
       }
     }

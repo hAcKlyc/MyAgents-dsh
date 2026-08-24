@@ -39,6 +39,7 @@ const workspacePackages = new Map([
   ["packages/tools-process", "@myagents-dsh/tools-process"],
   ["packages/tools-web", "@myagents-dsh/tools-web"],
   ["packages/web-host-contract", "@myagents-dsh/web-host-contract"],
+  ["packages/web-host", "@myagents-dsh/web-host"],
 ]);
 
 const expectedScripts = new Map([
@@ -69,6 +70,7 @@ const expectedScripts = new Map([
   ["typecheck", "npm run check:foundation && tsc -b --pretty false"],
   ["lint", "eslint . --max-warnings 0"],
   ["test", "npm run check:foundation && vitest run"],
+  ["test:web-host-process", "vitest run --config vitest.web-host-process.config.ts --maxWorkers=1 --no-file-parallelism"],
   ["build", "npm run check:foundation && tsc -b --pretty false"],
 ]);
 const expectedDevelopmentDependencies = new Map([
@@ -225,6 +227,18 @@ const expectedWorkspaceFiles = new Map([
     "src/schemas.ts",
     "src/sse.ts",
     "src/validation.ts",
+  ]],
+  ["packages/web-host", [
+    "src/attachment-store.ts",
+    "src/auth.ts",
+    "src/browser-server.ts",
+    "src/catalog.ts",
+    "src/errors.ts",
+    "src/event-hub.ts",
+    "src/index.ts",
+    "src/reverse-ports.ts",
+    "src/runtime-process.ts",
+    "src/supervisor.ts",
   ]],
 ]);
 

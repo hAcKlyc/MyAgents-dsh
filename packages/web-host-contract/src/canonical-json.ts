@@ -5,8 +5,8 @@ const MAX_NODES = 50_000;
 const MAX_KEY_LENGTH = 4_096;
 
 export type CanonicalJson = null | boolean | number | string
-  | readonly CanonicalJson[]
-  | Readonly<{ [key: string]: CanonicalJson }>;
+  | CanonicalJson[]
+  | { [key: string]: CanonicalJson };
 
 export const canonicalBrowserJson = (value: unknown): CanonicalJson => {
   const seen = new WeakSet<object>();
@@ -60,7 +60,8 @@ export const canonicalBrowserJson = (value: unknown): CanonicalJson => {
         }
         result.push(visit(descriptor.value, depth + 1));
       }
-      return Object.freeze(result);
+      Object.freeze(result);
+      return result;
     }
 
     const prototype = Object.getPrototypeOf(item) as unknown;
@@ -99,7 +100,8 @@ export const canonicalBrowserJson = (value: unknown): CanonicalJson => {
         writable: false,
       });
     }
-    return Object.freeze(result);
+    Object.freeze(result);
+    return result;
   };
 
   return visit(value, 0);

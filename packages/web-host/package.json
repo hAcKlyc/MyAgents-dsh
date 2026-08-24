@@ -1,0 +1,18 @@
+{
+  "name": "@myagents-dsh/web-host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Loopback Reference Web Host for the exact Batch 1 Runtime",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts",
+    "./catalog": "./src/catalog.ts",
+    "./event-hub": "./src/event-hub.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/artifact-verifier": "0.0.0",
+    "@myagents-dsh/protocol": "0.0.0",
+    "@myagents-dsh/web-host-contract": "0.0.0"
+  }
+}

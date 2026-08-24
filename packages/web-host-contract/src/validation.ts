@@ -4,6 +4,7 @@ import type { Static, TSchema } from "typebox";
 import { canonicalBrowserJson } from "./canonical-json.js";
 import { WebHostContractError } from "./errors.js";
 import {
+  AttachmentSummarySchema,
   BootstrapSchema,
   BrowserCommandSchema,
   CommandAcceptedSchema,
@@ -11,6 +12,7 @@ import {
   HostEventSchema,
   InteractionAcceptedSchema,
   InteractionResponseSchema,
+  type AttachmentSummary,
   type Bootstrap,
   type BrowserCommand,
   type CommandAccepted,
@@ -33,6 +35,8 @@ const validate = <Schema extends TSchema>(
   return canonical;
 };
 
+export const validateAttachmentSummary = (value: unknown): AttachmentSummary =>
+  validate(AttachmentSummarySchema, value, "browser_invalid_attachment");
 export const validateBootstrap = (value: unknown): Bootstrap =>
   validate(BootstrapSchema, value, "browser_invalid_bootstrap");
 export const validateBrowserCommand = (value: unknown): BrowserCommand =>

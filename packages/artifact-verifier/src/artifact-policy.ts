@@ -276,6 +276,23 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/validation.ts",
     ],
   },
+  {
+    packageName: "@myagents-dsh/web-host",
+    relativeDirectory: "packages/web-host",
+    allowedFiles: [
+      "package.json",
+      "src/attachment-store.ts",
+      "src/auth.ts",
+      "src/browser-server.ts",
+      "src/catalog.ts",
+      "src/errors.ts",
+      "src/event-hub.ts",
+      "src/index.ts",
+      "src/reverse-ports.ts",
+      "src/runtime-process.ts",
+      "src/supervisor.ts",
+    ],
+  },
 ]);
 
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;

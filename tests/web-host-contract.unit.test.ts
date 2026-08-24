@@ -103,6 +103,60 @@ describe("web Host browser contract", () => {
     expect(new Headers(mutation?.headers).get("x-myagents-csrf")).toBe("a".repeat(32));
   });
 
+  it("owns attachment upload, preview, and release requests in the typed client", async () => {
+    const attachment = {
+      attachmentId: "attachment-1",
+      name: "预览.txt",
+      mimeType: "text/plain",
+      sizeBytes: 4,
+      sha256: "b".repeat(64),
+      state: "staged",
+    } as const;
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        contractVersion: WEB_HOST_CONTRACT_VERSION,
+        hostVersion: "0.0.0",
+        csrfToken: "a".repeat(32),
+        workspace: { identity: "workspace-1", displayName: "Fixture", canonicalRoot: "/fixture" },
+        platform: { os: "darwin", arch: "arm64", validation: "verified" },
+        limits: {
+          maxActiveRuntimeChildren: 4,
+          maxWebSessions: 128,
+          maxUploadBytes: 1024,
+          maxSseEventBytes: 1_048_576,
+        },
+        snapshot: { sessions: [] },
+      }), { headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(attachment), {
+        headers: { "content-type": "application/json" },
+        status: 201,
+      }))
+      .mockResolvedValueOnce(new Response(Uint8Array.from([1, 2, 3, 4]), {
+        headers: { "content-length": "4", "content-type": "text/plain" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+      }));
+    const client = new WebHostClient({ fetch: fetchMock });
+    await client.bootstrap();
+    await expect(client.uploadAttachment({
+      webSessionId: "web-session-1",
+      name: "预览.txt",
+      mimeType: "text/plain",
+      bytes: Uint8Array.from([1, 2, 3, 4]),
+      sha256: "b".repeat(64),
+    })).resolves.toEqual(attachment);
+    await expect(client.previewAttachment("web-session-1", "attachment-1"))
+      .resolves.toMatchObject({ mimeType: "text/plain", bytes: Uint8Array.from([1, 2, 3, 4]) });
+    await expect(client.releaseAttachment("web-session-1", "attachment-1")).resolves.toBeUndefined();
+
+    const upload = fetchMock.mock.calls[1]?.[1];
+    const headers = new Headers(upload?.headers);
+    expect(headers.get("x-myagents-attachment-name")).toBe("6aKE6KeILnR4dA");
+    expect(headers.get("x-myagents-csrf")).toBe("a".repeat(32));
+    expect(upload?.credentials).toBe("same-origin");
+  });
+
   it("rejects extra event fields", () => {
     expect(() => validateHostEvent({ ...snapshotEvent(), credential: "must-not-pass" })).toThrow();
   });
