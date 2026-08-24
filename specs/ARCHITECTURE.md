@@ -30,6 +30,7 @@ These rows record the initial design evidence, not the current package lock. Bat
 
 - A reproducible official DSH product profile for MyAgents.
 - One native stdio JSON-RPC runtime artifact used by both MyAgents and the standalone Agent SDK.
+- A separately packaged local Reference Web Host that drives that exact artifact through the generated native client and provides a directly usable browser UI.
 - Agent SDK-compatible Node.js APIs and messages over that artifact.
 - Canonical coding tools, permissions, interaction, Hooks, MCP, Skills, child/background work, TaskGraph, usage/context, and session operations.
 - Host-owned credentials, product interaction, Host tools, Hooks, and attachment bytes through reverse RPC ports.
@@ -39,7 +40,7 @@ These rows record the initial design evidence, not the current package lock. Bat
 ### 2.2 Out of scope for v1
 
 - A second AgentLoop, Pi compatibility kernel, or second conversation store.
-- A global daemon, TCP listener, HTTP control plane, or one process serving unrelated product sessions.
+- A global or remotely exposed daemon, a Runtime-owned TCP listener or HTTP control plane, or one Runtime process serving unrelated product sessions.
 - Arbitrary JavaScript supplied in a `query()` call or RPC extension snapshot.
 - Credential storage, account login, OAuth ownership, or keychain ownership in the runtime.
 - Claiming rollback coverage for shell commands, child agents, external processes, or edits outside governed file tools.
@@ -79,12 +80,15 @@ MyAgents application                         Third-party Node application
 
 MyAgents and the standalone SDK are two Hosts of the same runtime contract. The SDK embeds a default Host implementation; it does not bypass or replace the native protocol.
 
+The Reference Web Host is a third Host of the same contract. It may expose an ephemeral loopback-only browser carrier, but the carrier terminates in the Host process: the Runtime remains an unchanged stdio child with one primary root Session. Multiple browser-visible Sessions map to separate Runtime processes while active and to Host-owned routing metadata while cold.
+
 ## 4. Layer model
 
 ### 4.1 Consumer surfaces
 
 - MyAgents uses the complete native RPC and may consume every supported product capability.
 - `@myagents-dsh/agent-sdk` exposes a stable compatibility projection and process-lifecycle facade.
+- `@myagents-dsh/web-host` and the packaged Reference WebUI expose the complete native surface for direct local use, manual verification, and browser E2E without becoming a second Runtime.
 - Trusted harness builders may compose exported plugin packages into a custom runtime artifact.
 
 Consumer surfaces are outside the runtime's Cordis context.
@@ -194,6 +198,8 @@ Shared conformance suites run against every platform adapter. A target that has 
 | Managed file checkpoints | MyAgents checkpoint plugin | Runtime-home journal and content-addressed preimages |
 | Attachment bytes | Host | Runtime owns only leases and verified read-only paths |
 | Runtime event sequence | RPC event projector | Generation-local FIFO; Host deduplicates durable effects |
+| Reference Web Host Session catalog | Reference Web Host | Persists only bounded launch/routing metadata and exact Runtime/persistence identities; never message or tool history |
+| Reference WebUI projection and drafts | Browser client | Rebuilt from bounded Host snapshots plus Runtime events; disposable and never durable conversation authority |
 
 ## 6. Official product profile
 
@@ -354,6 +360,16 @@ Host ports are Service Definitions consumed by runtime plugins and provided by t
 The runtime may execute model network requests through selected DSH LLM adapters, but the Host remains the authority for the route, profile, credential reference, and secret material. Secret material is resolved only for one model request or MCP connection attempt.
 
 Reverse requests carry runtime generation, session, operation, turn, tool, and component identities sufficient to reject stale responses. Cancellation is explicit and settles exactly once.
+
+### 12.1 Reference Web Host boundary
+
+The Reference Web Host is an external consumer of the generated protocol client. It owns one verified Runtime child per active primary Session, a bounded cold-Session routing catalog, reverse-port implementations, browser interaction delivery, and the loopback HTTP/SSE carrier. It does not import Runtime packages, DSH packages, Cordis services, persistence internals, or product plugin implementations.
+
+The browser never receives provider or MCP secret material, arbitrary local paths outside an explicitly selected workspace, raw attachment backing paths, Runtime stderr, or unsanitized process diagnostics. Credential resolution occurs in the Host for one exact reverse request. Attachment bytes cross a separately bounded Host endpoint and are leased to the Runtime through the existing reverse port.
+
+The browser carrier binds an ephemeral loopback address only, requires an unguessable launch capability on the first navigation, upgrades it to an HttpOnly same-site Session cookie, rejects foreign Origin/Host values and cross-site writes, applies a restrictive CSP, and has no remote-listen option in Batch 1. Browser disconnect does not imply Runtime success or cancellation; the Host retains exact operation state until the user reconnects or an explicit bounded lifecycle policy retires the Session.
+
+For multiple browser-visible conversations, the Host follows `Session : Runtime process = 1 : 1`. It may keep a bounded number active and cold-stop idle Sessions after quiescence. Resume always starts a fresh verified Runtime process over the durable DSH Session identity. The catalog stores routing and display metadata only; history is reconstructed with `session/read`, so the Web Host cannot become a second transcript.
 
 ## 13. Managed files and session mutations
 

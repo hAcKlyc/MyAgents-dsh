@@ -298,6 +298,14 @@ The focused dynamic acceptance RFC is the sole authority for the scenario matrix
 
 A dynamic campaign may start only after clean installation verifies the exact candidate artifact. Any production or artifact change invalidates affected evidence and returns the release sequence to artifact build and verification before a Tester Agent is dispatched again.
 
+### 12.3 Reference Web Host browser campaign
+
+The Reference Web Host is tested as an external Host over the frozen packed Runtime. Its default campaign uses the production static frontend, production loopback server, generated browser contract, generated native Runtime client, a temporary Host home/workspace, and a fake model route. No browser test may import Host or Runtime implementation modules to synthesize state.
+
+The browser matrix covers direct-open bootstrap, consumed launch token, cookie/CSRF/Origin/Host/CSP fences, Session create/resume/switch/cold-stop, reconnect and SSE replay, streaming conversation/tool/reasoning/usage projections, queued input and all turn controls, reverse interactions, attachments, declarative components, Session read and mutations, Runtime crash/restart, stale/duplicate replies, slow browser consumers, multiple tabs, accessibility keyboard/focus/live-region behavior, responsive layout, secret canaries, and quiescent browser/Host/Runtime cleanup.
+
+One installed-artifact campaign replaces the fake peer with the exact frozen Runtime and proves browser-driven initialize/create/turn/reverse-port/read/mutation/close/shutdown without source-tree Runtime imports. macOS receives native direct-open evidence. Windows/Linux package and launcher implementations use the same reusable campaign and retain pending-native-validation labels until run natively.
+
 ## 13. Bounded soak
 
 Soak runs repeated create/prompt/follow-up/tool/close/resume/component reload and mutation cycles under fixed time/event/byte/resource budgets. It records high-water marks and end-state deltas for memory, handles, SQLite/blob size, queues, timers, children and leases.
@@ -343,7 +351,7 @@ Other adapters are exercised with generated interfaces and deterministic fake co
 
 ## 15. Evidence schema
 
-One `batch-1-handoff.json` contains:
+The frozen Runtime `batch-1-handoff.json` contains:
 
 ```ts
 type Batch1Handoff = {
@@ -366,21 +374,27 @@ type Batch1Handoff = {
 }
 ```
 
+The final `batch-1-distribution-handoff.json` references the Runtime handoff digest and adds exact Web Host source/artifact/static-asset identities, browser contract/client digest, UI provenance/license digest, direct-open command, supported-platform claims, browser/exact-Runtime evidence, independent Web Host reviews, and bounded limitations. Its subject is a deterministic digest over both immutable handoff subjects; neither artifact may be replaced by an unbound path or mutable tag.
+
 Each evidence report records command, exact subject digest, start/end, platform, seed, scenario/fixture versions, pass/fail/skip counts, bounded failure summaries, and referenced sanitized artifacts. Reports do not embed full transcripts, private prompts, user files, credentials, or uncontrolled Provider content.
 
 ## 16. Release gate sequence
 
 ```text
 workstream-local targeted tests
-  -> all four workstream acceptance suites
+  -> all five workstream acceptance suites
   -> repository-wide typecheck/lint/test/build
   -> generated drift + dependency/export/security audit
   -> build and clean-install the exact candidate artifact
   -> process/fault/resource campaign against that artifact
   -> Standard Host complete lifecycle + bounded soak
   -> independent Tester Agent dynamic campaign against the same artifact
-  -> independent reviews
-  -> immutable handoff record
+  -> independent Runtime reviews
+  -> immutable Runtime handoff record
+  -> build and clean-install the Reference Web Host/static artifact
+  -> browser/reverse-port/security/accessibility/direct-open/exact-Runtime campaigns
+  -> independent Reference Web Host reviews
+  -> immutable distribution handoff record
   -> explicit user Batch 1 acceptance
 ```
 
@@ -398,6 +412,8 @@ Required reviews are separately recorded:
 - security: secrets, permissions, extensions, attachments, network and process boundaries;
 - artifact/supply chain: lock, files, provenance, patch inventory and clean install.
 
+The Reference Web Host adds separately recorded reviews for Host/process/session ownership, browser protocol and replay, UX/accessibility, reverse-port/resource lifecycle, loopback/browser security, and Web artifact/license provenance. Runtime review approval is an input and is not silently broadened to cover the Host.
+
 A blocking finding must be closed with code/test/doc evidence. Review prose alone does not mark an implementation ledger item complete.
 
 ## 18. Rejected alternatives
@@ -409,6 +425,8 @@ A blocking finding must be closed with code/test/doc evidence. Review prose alon
 - Sleep-based race tests: do not enumerate or control critical interleavings.
 - One aggregate green badge without evidence identities: cannot prove what artifact/contracts ran.
 - Letting dynamic model quality waive hard safety/conformance failures.
+- Reusing DSH WebUI's ApiProxy/session stores against the native Runtime: creates a second incompatible Host protocol and hides missing reverse-port semantics.
+- Serving the browser from inside the Runtime process: violates stdio purity, one-generation lifecycle, and the external Host boundary.
 
 ## 19. Acceptance conditions
 
@@ -425,4 +443,6 @@ This RFC is accepted when:
 - macOS arm64 has complete native artifact evidence and the sanctioned DeepSeek route passes;
 - Windows x64 and Linux x64 have complete production adapters, package paths, platform-contract evidence, and runnable native campaigns, with unrun campaigns labeled pending rather than verified or unsupported;
 - independent reviews have no unresolved blocker;
+- the packaged Reference Web Host directly opens the exact Runtime and passes the complete browser, reverse-port, security, accessibility, artifact/license, platform, and process-cleanup matrix;
+- the immutable distribution handoff binds both frozen artifacts and their evidence without treating UI state or Host catalog metadata as conversation authority;
 - Batch 1 remains `not_started`/in progress until implementation evidence exists and the user explicitly accepts it.
