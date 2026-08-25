@@ -38,36 +38,35 @@ const domAccessibilityAudit = (page: Page): Promise<Readonly<{
 }>> => page.evaluate(() => {
   const ids = Array.from(document.querySelectorAll<HTMLElement>("[id]")).map(({ id }) => id);
   const duplicates = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
-  const visible = (element: HTMLElement): boolean => {
-    const style = getComputedStyle(element);
-    return style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length > 0;
-  };
-  const accessibleName = (element: HTMLElement): string => {
-    const label = element.getAttribute("aria-label") ?? element.getAttribute("title");
-    if (label !== null && label.trim() !== "") return label.trim();
-    const labelledBy = element.getAttribute("aria-labelledby");
-    if (labelledBy !== null) {
-      const text = labelledBy.split(/\s+/u).map((id) => document.getElementById(id)?.textContent ?? "").join(" ").trim();
-      if (text !== "") return text;
-    }
-    if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement
-      || element instanceof HTMLTextAreaElement) {
-      const explicitLabels = element.id === "" ? [] : Array.from(document.querySelectorAll<HTMLLabelElement>(
-        `label[for="${CSS.escape(element.id)}"]`,
-      ));
-      const wrappingLabel = element.closest("label");
-      const associated = [...explicitLabels, ...(wrappingLabel === null ? [] : [wrappingLabel])]
-        .map((candidate) => candidate.textContent).join(" ").trim();
-      if (associated !== "") return associated;
-    }
-    return element.textContent.trim();
-  };
   const interactive = Array.from(document.querySelectorAll<HTMLElement>(
     "button, a[href], input:not([type='hidden']), select, textarea, [role='button'], [role='dialog']",
-  )).filter(visible);
+  )).filter((element) => {
+    const style = getComputedStyle(element);
+    return style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length > 0;
+  });
   return {
     duplicateIds: duplicates,
-    unnamedInteractiveCount: interactive.filter((element) => accessibleName(element) === "").length,
+    unnamedInteractiveCount: interactive.filter((element) => {
+      const direct = element.getAttribute("aria-label") ?? element.getAttribute("title");
+      if (direct !== null && direct.trim() !== "") return false;
+      const labelledBy = element.getAttribute("aria-labelledby");
+      if (labelledBy !== null) {
+        const text = labelledBy.split(/\s+/u)
+          .map((id) => document.getElementById(id)?.textContent ?? "").join(" ").trim();
+        if (text !== "") return false;
+      }
+      if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement
+        || element instanceof HTMLTextAreaElement) {
+        const explicitLabels = element.id === "" ? [] : Array.from(document.querySelectorAll<HTMLLabelElement>(
+          `label[for="${CSS.escape(element.id)}"]`,
+        ));
+        const wrappingLabel = element.closest("label");
+        const associated = [...explicitLabels, ...(wrappingLabel === null ? [] : [wrappingLabel])]
+          .map((candidate) => candidate.textContent).join(" ").trim();
+        if (associated !== "") return false;
+      }
+      return element.textContent.trim() === "";
+    }).length,
     landmarks: Array.from(document.querySelectorAll("main, aside, nav, header, section[aria-label]"))
       .map((element) => `${element.tagName.toLowerCase()}:${element.getAttribute("aria-label") ?? ""}`),
     horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
