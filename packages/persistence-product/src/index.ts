@@ -7,18 +7,16 @@ export {
   type ProductCompactionReceiptEventData,
 } from "./compaction.js";
 export {
-  PRODUCT_CONFIGURATION_EVENT_TYPES,
-  type ProductConfigurationAnchorEventData,
-} from "./configuration.js";
-export {
   type ProductDeletePhase,
   type ProductDeletePrepareInput,
   type ProductDeleteRecord,
   type ProductDeleteStore,
 } from "./delete.js";
 export {
+  PRODUCT_CONFIGURATION_EVENT_TYPES,
   PRODUCT_REQUIRED_SESSION_EVENT_TYPES,
   isProductKnownSessionEventType,
+  type ProductConfigurationAnchorEventData,
 } from "./known-events.js";
 export {
   ProductSqliteSessionPersistence,

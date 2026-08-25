@@ -165,7 +165,6 @@ const expectedWorkspaceFiles = new Map([
   ]],
   ["packages/persistence-product", [
     "src/compaction.ts",
-    "src/configuration.ts",
     "src/delete.ts",
     "src/index.ts",
     "src/fork.ts",

@@ -97,7 +97,6 @@ const runtimeCompositionSourcePaths = [
   "packages/operation-runtime/src/terminal.ts",
   "packages/persistence-product/src/delete.ts",
   "packages/persistence-product/src/compaction.ts",
-  "packages/persistence-product/src/configuration.ts",
   "packages/persistence-product/src/fork.ts",
   "packages/persistence-product/src/index.ts",
   "packages/persistence-product/src/known-events.ts",
