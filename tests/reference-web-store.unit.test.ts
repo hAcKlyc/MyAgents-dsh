@@ -100,6 +100,40 @@ describe("Reference Web React store", () => {
     }
   });
 
+  it("detects a silent local-Host partition through bounded health checks", async () => {
+    vi.useFakeTimers();
+    const queue = new EventQueue();
+    const health = vi.fn()
+      .mockRejectedValueOnce(new Error("synthetic silent partition"))
+      .mockResolvedValue({ ok: true, hostVersion: "0.0.0" });
+    const bootstrapCall = vi.fn(() => Promise.resolve({ ...bootstrap, snapshot: { sessions: [] } }));
+    const client = {
+      bootstrap: bootstrapCall,
+      health,
+      events: ({ signal }: { signal?: AbortSignal }) => queue.events(signal ?? new AbortController().signal),
+      command: vi.fn(),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    const store = new ReferenceWebStore({
+      client,
+      healthCheckDelayMs: 1_000,
+      reconnectDelayMs: () => 1_000,
+    });
+    try {
+      await store.start();
+      expect(store.getSnapshot().connection).toBe("online");
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(store.getSnapshot().connection).toBe("offline");
+      expect(health).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(store.getSnapshot().connection).toBe("online");
+      expect(bootstrapCall).toHaveBeenCalledTimes(2);
+    } finally {
+      store.stop();
+      vi.useRealTimers();
+    }
+  });
+
   it("drives configuration, component inspection, and mutation commands from Runtime results", async () => {
     const queue = new EventQueue();
     const commands: BrowserCommand[] = [];

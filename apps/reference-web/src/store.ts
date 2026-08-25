@@ -91,6 +91,7 @@ export type ReferenceWebStoreOptions = Readonly<{
   idFactory?: () => string;
   now?: () => string;
   reconnectDelayMs?: (attempt: number) => number;
+  healthCheckDelayMs?: number;
 }>;
 
 const emptySnapshot: HostSnapshot = Object.freeze({ sessions: [] });
@@ -134,6 +135,7 @@ export class ReferenceWebStore {
   readonly #idFactory: () => string;
   readonly #now: () => string;
   readonly #reconnectDelayMs: (attempt: number) => number;
+  readonly #healthCheckDelayMs: number;
   readonly #listeners = new Set<() => void>();
   readonly #commandInputs = new Map<string, string>();
   readonly #commandWaiters = new Map<string, Readonly<{
@@ -162,6 +164,7 @@ export class ReferenceWebStore {
   #notifyScheduled = false;
   #startPromise: Promise<void> | undefined;
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  #healthTimer: ReturnType<typeof setTimeout> | undefined;
   #reconnectAttempt = 0;
   #stopped = true;
   #hadConnectionFailure = false;
@@ -171,6 +174,11 @@ export class ReferenceWebStore {
     this.#idFactory = options.idFactory ?? (() => crypto.randomUUID());
     this.#now = options.now ?? (() => new Date().toISOString());
     this.#reconnectDelayMs = options.reconnectDelayMs ?? ((attempt) => Math.min(5_000, 250 * (2 ** (attempt - 1))));
+    this.#healthCheckDelayMs = options.healthCheckDelayMs ?? 2_000;
+    if (!Number.isSafeInteger(this.#healthCheckDelayMs)
+      || this.#healthCheckDelayMs < 250 || this.#healthCheckDelayMs > 60_000) {
+      throw new TypeError("Reference Web health-check delay must be between 250 and 60000 milliseconds");
+    }
   }
 
   getSnapshot = (): ReferenceWebState => this.#state;
@@ -191,6 +199,7 @@ export class ReferenceWebStore {
 
   stop(): void {
     this.#stopped = true;
+    this.#clearHealthCheck();
     if (this.#reconnectTimer !== undefined) clearTimeout(this.#reconnectTimer);
     this.#reconnectTimer = undefined;
     this.#reconnectAttempt = 0;
@@ -541,6 +550,7 @@ export class ReferenceWebStore {
           message: "The local Web Host connection was restored.",
         }].slice(-8) } : {}),
       });
+      this.#scheduleHealthCheck(abort);
       this.#ensureHistory(bootstrap.snapshot);
     } catch {
       if (!abort.signal.aborted) this.#connectionFailure(abort);
@@ -825,6 +835,7 @@ export class ReferenceWebStore {
 
   #connectionFailure(owner: AbortController): void {
     if (this.#stopped || this.#abort !== owner) return;
+    this.#clearHealthCheck();
     owner.abort();
     this.#abort = undefined;
     this.#startPromise = undefined;
@@ -854,6 +865,23 @@ export class ReferenceWebStore {
       if (this.#stopped) return;
       this.#startPromise ??= this.#startOwned();
     }, delay);
+  }
+
+  #clearHealthCheck(): void {
+    if (this.#healthTimer !== undefined) clearTimeout(this.#healthTimer);
+    this.#healthTimer = undefined;
+  }
+
+  #scheduleHealthCheck(owner: AbortController): void {
+    if (this.#stopped || this.#abort !== owner || this.#healthTimer !== undefined) return;
+    this.#healthTimer = setTimeout(() => {
+      this.#healthTimer = undefined;
+      if (this.#stopped || this.#abort !== owner || owner.signal.aborted) return;
+      void this.#client.health(owner.signal).then(
+        () => this.#scheduleHealthCheck(owner),
+        () => this.#connectionFailure(owner),
+      );
+    }, this.#healthCheckDelayMs);
   }
 
   #record(value: unknown, label: string): Readonly<Record<string, unknown>> {
