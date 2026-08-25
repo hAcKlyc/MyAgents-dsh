@@ -158,6 +158,7 @@ import {
   type HostInteractionResponseController,
 } from "./host-interaction.js";
 import { createHostDeepSeekWebSearchConfig } from "./host-web-search.js";
+import { createHostDeepSeekWebFetchConfig } from "./host-web-fetch.js";
 
 export type { HostBackedInteractionProviderConfig } from "./host-interaction.js";
 
@@ -1820,6 +1821,23 @@ export const createHostDeepSeekWebSearchPlaneConfig = (
   }
   composition.snapshot();
   return createHostDeepSeekWebSearchConfig(root, authority.hostModelAuthority, policyRef);
+};
+
+export const createHostDeepSeekWebFetchPlaneConfig = (
+  composition: DshRootComposition,
+  policyRef: string,
+): NonNullable<CanonicalWebToolsConfig["fetch"]> => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.hostModelPlane !== "installed" || authority.hostModelAuthority === undefined
+    || authority.canonicalToolPlane !== "absent") {
+    throw new Error(
+      "Host DeepSeek WebFetch config requires the exact unclaimed composition after model installation",
+    );
+  }
+  composition.snapshot();
+  return createHostDeepSeekWebFetchConfig(root, policyRef);
 };
 
 Object.freeze(DshRootComposition.prototype);

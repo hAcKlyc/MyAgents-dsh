@@ -302,9 +302,9 @@ describe("Runtime artifact self-check", () => {
     expect(OFFICIAL_HOST_INTERACTION_REVISION).toBe("host-interaction-v1");
     expect(OFFICIAL_EXTENSION_SNAPSHOT.components).toEqual([]);
     expect(OFFICIAL_STATIC_SKILL_CATALOG.skills).toEqual([]);
-    expect(OFFICIAL_TOOL_CATALOG.effectiveTools).not.toContain("WebFetch");
+    expect(OFFICIAL_TOOL_CATALOG.effectiveTools).toContain("WebFetch");
     expect(OFFICIAL_TOOL_CATALOG.effectiveTools).toContain("WebSearch");
-    expect(OFFICIAL_TOOL_CATALOG.effectiveTools).toHaveLength(19);
+    expect(OFFICIAL_TOOL_CATALOG.effectiveTools).toHaveLength(20);
   });
 
   it("rejects reflective process and Tester-launch configuration before side effects", async () => {

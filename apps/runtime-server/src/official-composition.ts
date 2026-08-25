@@ -16,6 +16,7 @@ import {
 } from "@myagents-dsh/product-profile";
 import {
   composeDshRootServices,
+  createHostDeepSeekWebFetchPlaneConfig,
   createHostDeepSeekWebSearchPlaneConfig,
   createHostBackedInteractionProvider,
   createProductAgentComponentCompiler,
@@ -39,12 +40,12 @@ import { delimiter, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 export const OFFICIAL_HOST_INTERACTION_REVISION = "host-interaction-v1" as const;
-export const OFFICIAL_TOOL_CATALOG_REVISION = "official-canonical-tools-v2" as const;
+export const OFFICIAL_TOOL_CATALOG_REVISION = "official-canonical-tools-v3" as const;
 export const OFFICIAL_EXTENSION_REVISION = "official-empty-extensions-v1" as const;
 export const OFFICIAL_PLAN_REVISION = "official-plan-v1" as const;
 export const OFFICIAL_ORIGIN_REVISION = "official-root-origin-v1" as const;
 
-const unavailableWebTools = new Set<string>(["WebFetch"]);
+const unavailableWebTools = new Set<string>();
 const effectiveTools = Object.freeze(CANONICAL_TOOL_NAMES.filter((tool) => !unavailableWebTools.has(tool)));
 const toolCatalogAuthority = Object.freeze({
   formatVersion: 1 as const,
@@ -239,6 +240,10 @@ export const composeOfficialRuntimeServices = async (
       skills: OFFICIAL_STATIC_SKILL_CATALOG,
       temporaryRoot: await realpath(process.env.TMPDIR ?? tmpdir()),
       web: Object.freeze({
+        fetch: createHostDeepSeekWebFetchPlaneConfig(
+          configured,
+          DEEPSEEK_WEB_SEARCH_POLICY_REF,
+        ),
         search: createHostDeepSeekWebSearchPlaneConfig(
           configured,
           DEEPSEEK_WEB_SEARCH_POLICY_REF,

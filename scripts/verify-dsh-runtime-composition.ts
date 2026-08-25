@@ -130,6 +130,7 @@ const runtimeCompositionSourcePaths = [
   "packages/runtime-product/src/composition.ts",
   "packages/runtime-product/src/host-interaction.ts",
   "packages/runtime-product/src/host-model.ts",
+  "packages/runtime-product/src/host-web-fetch.ts",
   "packages/runtime-product/src/host-web-search.ts",
   "packages/runtime-product/src/index.ts",
   "packages/runtime-product/src/primary-session.ts",

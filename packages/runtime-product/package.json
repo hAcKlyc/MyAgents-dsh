@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@napi-rs/canvas": "1.0.8",
     "@myagents-dsh/checkpoint": "0.0.0",
     "@myagents-dsh/component-runtime": "0.0.0",
     "@myagents-dsh/components-agents": "0.0.0",
@@ -28,7 +29,12 @@
     "@myagents-dsh/tools-fs": "0.0.0",
     "@myagents-dsh/tools-interaction": "0.0.0",
     "@myagents-dsh/tools-process": "0.0.0",
-    "@myagents-dsh/tools-web": "0.0.0"
+    "@myagents-dsh/tools-web": "0.0.0",
+    "pdfjs-dist": "6.2.108",
+    "turndown": "7.2.4"
+  },
+  "devDependencies": {
+    "@types/turndown": "5.0.6"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.1",
