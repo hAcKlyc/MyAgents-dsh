@@ -77,7 +77,7 @@ const domAccessibilityAudit = (page: Page): Promise<Readonly<{
 const verifyControls = async (page: Page): Promise<Readonly<{ tools: number; skills: number }>> => {
   await page.getByRole("button", { name: "Controls" }).click();
   await page.getByRole("complementary", { name: "Session control center" }).waitFor({ timeout: 20_000 });
-  const model = page.getByRole("combobox", { name: "模型", exact: true });
+  const model = page.locator(".control-section label.field select").first();
   await model.waitFor({ state: "visible", timeout: 20_000 });
   assert(await model.inputValue() === "deepseek-v4-flash", "control center model differs from the production profile");
   const tools = await page.locator(".tool-policy input[type='checkbox']").count();
