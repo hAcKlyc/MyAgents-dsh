@@ -312,7 +312,7 @@ describe("Reference Web React store", () => {
           event: {
             kind: "turn_terminal",
             clientOperationId: "operation-1",
-            terminal: { kind: "succeeded" },
+            terminal: { kind: "aborted", reason: "user" },
           },
         },
       },
