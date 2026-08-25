@@ -117,6 +117,8 @@ const binding = (row: WebSessionCatalogRow): MethodParams<"session/create"> => (
 const fakeFactory = (options: Readonly<{
   busy?: boolean;
   creations: string[];
+  sessionCreateGate?: Promise<void>;
+  sessionCreateStarted?: () => void;
 }>): RuntimeChildFactory => (runtimeOptions) => {
   let closed = false;
   let resolveExit: ((exit: RuntimeProcessExit) => void) | undefined;
@@ -127,10 +129,14 @@ const fakeFactory = (options: Readonly<{
     extensionCatalog: vi.fn(() => Promise.resolve({
       revision: "extensions-v1", digest, tools: [], commands: [], skills: [], agents: [], mcpServers: [],
     })),
-    sessionCreate: vi.fn(() => Promise.resolve({
-      state: "ready",
-      runtimeSessionId: `runtime-${options.creations.length}`,
-    })),
+    sessionCreate: vi.fn(async () => {
+      options.sessionCreateStarted?.();
+      await options.sessionCreateGate;
+      return {
+        state: "ready" as const,
+        runtimeSessionId: `runtime-${options.creations.length}`,
+      };
+    }),
     sessionResume: vi.fn((params: MethodParams<"session/resume">) => Promise.resolve({
       state: "ready",
       runtimeSessionId: params.runtimeSessionId,
@@ -160,7 +166,10 @@ const fakeFactory = (options: Readonly<{
   };
 };
 
-const fixture = async (busy = false) => {
+const fixture = async (busy = false, activation?: Readonly<{
+  sessionCreateGate: Promise<void>;
+  sessionCreateStarted: () => void;
+}>) => {
   const root = await mkdtemp(resolve(tmpdir(), "myagents-web-supervisor-"));
   roots.push(root);
   const workspace = resolve(root, "workspace");
@@ -180,7 +189,7 @@ const fixture = async (busy = false) => {
     buildBinding: (row) => row.runtimeSessionId === undefined
       ? { mode: "create", params: binding(row) }
       : { mode: "resume", params: { ...binding(row), runtimeSessionId: row.runtimeSessionId } },
-    childFactory: fakeFactory({ busy, creations }),
+    childFactory: fakeFactory({ busy, creations, ...activation }),
     maxActiveChildren: 1,
   });
   return { root, workspace, catalog, creations, supervisor };
@@ -204,6 +213,33 @@ describe("Reference Web Host Runtime supervisor", () => {
     expect(catalog.get(row.webSessionId)).toMatchObject({ lifecycle: "ready", runtimeSessionId: "runtime-1" });
     await supervisor.close();
     expect(supervisor.activeCount()).toBe(0);
+  });
+
+  it("does not expose the active child before its primary Session binding is ready", async () => {
+    let releaseSessionCreate: (() => void) | undefined;
+    let reportSessionCreate: (() => void) | undefined;
+    const sessionCreateGate = new Promise<void>((resolveGate) => { releaseSessionCreate = resolveGate; });
+    const sessionCreateStarted = new Promise<void>((resolveStarted) => { reportSessionCreate = resolveStarted; });
+    const { catalog, supervisor } = await fixture(false, {
+      sessionCreateGate,
+      sessionCreateStarted: () => reportSessionCreate?.(),
+    });
+    const row = await catalog.create({
+      workspaceIdentity: "workspace-1",
+      desiredProfileRef: "profile-v1",
+      desiredComponentRef: "components-v1",
+    });
+    const first = supervisor.activate(row.webSessionId);
+    await sessionCreateStarted;
+    let secondSettled = false;
+    const second = supervisor.activate(row.webSessionId).finally(() => { secondSettled = true; });
+    await Promise.resolve();
+    expect(secondSettled).toBe(false);
+    releaseSessionCreate?.();
+    const [firstActive, secondActive] = await Promise.all([first, second]);
+    expect(secondActive).toBe(firstActive);
+    expect(catalog.get(row.webSessionId)?.lifecycle).toBe("ready");
+    await supervisor.close();
   });
 
   it("cold-stops the least recently opened idle Session before opening another", async () => {

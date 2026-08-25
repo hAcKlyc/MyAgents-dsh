@@ -129,10 +129,10 @@ export class RuntimeSupervisor {
 
   activate(webSessionId: string): Promise<ActiveRuntime> {
     if (this.#closed) return Promise.reject(new WebHostError("supervisor_closed", "Runtime supervisor is closed"));
-    const current = this.#active.get(webSessionId);
-    if (current !== undefined) return Promise.resolve(current);
     const pending = this.#transitions.get(webSessionId);
     if (pending !== undefined) return pending;
+    const current = this.#active.get(webSessionId);
+    if (current !== undefined) return Promise.resolve(current);
     const operation = this.#activateOwned(webSessionId).finally(() => {
       this.#transitions.delete(webSessionId);
     });
