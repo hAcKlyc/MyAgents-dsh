@@ -196,6 +196,7 @@ export interface ExactPackageAuthority {
 const readExactPackageAuthorities = (): {
   readonly compileTooling: readonly ExactPackageAuthority[];
   readonly external: readonly ExactPackageAuthority[];
+  readonly optionalExternalNames: readonly string[];
 } => {
   const baseline = exactObject(
     JSON.parse(readFileSync(resolve(repositoryRoot, dshBaselinePath), "utf8")) as unknown,
@@ -210,6 +211,7 @@ const readExactPackageAuthorities = (): {
   );
   const lockedPackages = exactObject(rootLock.packages, `${packageLockPath} packages`);
   const external: ExactPackageAuthority[] = [];
+  const optionalExternalNames = new Set<string>();
   for (const [index, value] of baseline.productionPackages.entries()) {
     const row = exactObject(value, `${dshBaselinePath} productionPackages[${String(index)}]`);
     const name = exactString(row.name, `${dshBaselinePath} productionPackages[${String(index)}].name`);
@@ -217,6 +219,10 @@ const readExactPackageAuthorities = (): {
     const path = exactString(row.path, `${dshBaselinePath} productionPackages[${String(index)}].path`);
     const version = exactString(row.version, `${dshBaselinePath} productionPackages[${String(index)}].version`);
     const integrity = exactString(row.integrity, `${dshBaselinePath} productionPackages[${String(index)}].integrity`);
+    if (row.optional === true) optionalExternalNames.add(name);
+    else if (row.optional !== false) {
+      throw new TypeError(`${dshBaselinePath} productionPackages[${String(index)}].optional must be boolean`);
+    }
     const locked = exactObject(lockedPackages[path], `${packageLockPath} ${path}`);
     if (locked.version !== version || locked.integrity !== integrity) {
       throw new Error(`${path} differs between the DSH baseline and root lock`);
@@ -236,12 +242,14 @@ const readExactPackageAuthorities = (): {
   return Object.freeze({
     compileTooling: Object.freeze(compileTooling),
     external: Object.freeze(external.sort((left, right) => compareCodePoints(left.path, right.path))),
+    optionalExternalNames: Object.freeze([...optionalExternalNames].sort(compareCodePoints)),
   });
 };
 
 const exactPackageAuthorities = readExactPackageAuthorities();
 export const PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY = exactPackageAuthorities.external;
 export const PATCHED_DSH_COMPILE_TOOLING_AUTHORITY = exactPackageAuthorities.compileTooling;
+export const PATCHED_DSH_OPTIONAL_EXTERNAL_PACKAGES = exactPackageAuthorities.optionalExternalNames;
 const typescriptAuthority = PATCHED_DSH_COMPILE_TOOLING_AUTHORITY.find(({ name }) => name === "typescript");
 if (typescriptAuthority === undefined) throw new Error("root lock lacks the TypeScript compile authority");
 export const PATCHED_DSH_TOOLCHAIN: Readonly<PatchedDshArtifactToolchain> = Object.freeze({

@@ -20,6 +20,7 @@ import {
   PATCHED_DSH_ACCEPTED_EXTERNAL_PACKAGES,
   PATCHED_DSH_COMPILE_FIXTURES,
   PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
+  PATCHED_DSH_OPTIONAL_EXTERNAL_PACKAGES,
   buildPatchedDshArtifactAuthority,
   buildPatchedDshArtifactManifest,
   buildPatchedDshArtifactPlan,
@@ -258,6 +259,13 @@ describe("patched DSH artifact build hardening", () => {
       "content-type": "1.0.5",
       "fast-uri": "3.1.5",
     });
+    expect(buildExactExternalOverrides([
+      { name: "fast-uri", path: "node_modules/fast-uri", version: "3.1.5" },
+      { name: "koffi", path: "node_modules/koffi", version: "3.1.6" },
+    ], new Set(["koffi"]))).toEqual({ "fast-uri": "3.1.5" });
+    expect(PATCHED_DSH_OPTIONAL_EXTERNAL_PACKAGES).toContain(
+      "@koromix/koffi-darwin-arm64",
+    );
   });
 
   it("fails closed when a multi-version override has no exact parent authority", () => {

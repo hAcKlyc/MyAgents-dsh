@@ -36,6 +36,7 @@ import {
   PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
   PATCHED_DSH_EXTERNAL_ROOT_COMPATIBILITY_PACKAGES,
   PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
+  PATCHED_DSH_OPTIONAL_EXTERNAL_PACKAGES,
   PATCHED_DSH_ARTIFACT_PACKAGE_COUNT,
   PATCHED_DSH_ARTIFACT_SCHEMA_VERSION,
   PATCHED_DSH_ROOT_PACKAGES,
@@ -542,6 +543,7 @@ const packageNameFromLockPath = (path: string): string => {
 
 export const buildExactExternalOverrides = (
   authority: readonly { readonly name: string; readonly path: string; readonly version: string }[],
+  excludedNames: ReadonlySet<string> = new Set(),
 ): Readonly<Record<string, NpmOverride>> => {
   const rowsByName = new Map<string, typeof authority>();
   for (const row of authority) {
@@ -551,6 +553,7 @@ export const buildExactExternalOverrides = (
   const authorityByPath = new Map(authority.map((row) => [row.path, row]));
   const overrides: Record<string, NpmOverride> = {};
   for (const [name, rows] of [...rowsByName].sort(([left], [right]) => compareCodePoints(left, right))) {
+    if (excludedNames.has(name)) continue;
     const versions = new Set(rows.map(({ version }) => version));
     if (versions.size === 1) {
       const [version] = versions;
@@ -723,10 +726,15 @@ const verifyArtifactCompile = (
   const typescript = compileToolingByName.get("typescript");
   if (nodeTypes === undefined || typescript === undefined) throw new Error("compile tooling authority is incomplete");
   const consumerPackagePath = resolve(compileRoot, "package.json");
+  const overrideExclusions = new Set([
+    ...plan.externalRootPackages.map(({ name }) => name),
+    ...PATCHED_DSH_COMPILE_TOOLING_AUTHORITY.map(({ name }) => name),
+    ...PATCHED_DSH_OPTIONAL_EXTERNAL_PACKAGES,
+  ]);
   const overrides = buildExactExternalOverrides([
     ...PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
     ...PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
-  ]);
+  ], overrideExclusions);
   writeFileSync(consumerPackagePath, `${JSON.stringify({
     name: "@myagents-dsh/patched-dsh-consumer",
     version: "0.0.0",
