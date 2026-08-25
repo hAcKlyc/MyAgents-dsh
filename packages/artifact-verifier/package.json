@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./batch-1-handoff": "./src/batch-1-handoff.ts",
+    "./batch-1-distribution-handoff": "./src/batch-1-distribution-handoff.ts",
     "./reference-web-artifact": "./src/reference-web-artifact.ts",
     "./runtime-artifact": "./src/runtime-artifact.ts",
     "./self-check": "./src/self-check.ts"

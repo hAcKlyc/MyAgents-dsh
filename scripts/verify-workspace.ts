@@ -56,6 +56,7 @@ const expectedScripts = new Map([
   ["e2e:native", "tsx scripts/run-batch-1-native-campaign.ts"],
   ["e2e:web", "tsx scripts/run-reference-web-browser-campaign.ts"],
   ["build:batch-1-handoff", "tsx scripts/build-batch-1-handoff.ts"],
+  ["build:batch-1-distribution-handoff", "tsx scripts/build-batch-1-distribution-handoff.ts"],
   ["build:web-artifact", "npm run build && tsx scripts/build-reference-web-artifact.ts"],
   ["generate:tool-contracts", "tsx scripts/generate-tool-contracts.ts"],
   ["check:tool-contracts", "tsx scripts/generate-tool-contracts.ts --check"],
@@ -114,6 +115,7 @@ const expectedWorkspaceFiles = new Map([
   ]],
   ["packages/artifact-verifier", [
     "src/artifact-policy.ts",
+    "src/batch-1-distribution-handoff.ts",
     "src/batch-1-handoff.ts",
     "src/forbidden-content.ts",
     "src/index.ts",
