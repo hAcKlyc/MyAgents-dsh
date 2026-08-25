@@ -648,7 +648,11 @@ export const validateConsumerLock = (
       const version = typeof row.version === "string" ? row.version : "";
       const integrity = typeof row.integrity === "string" ? row.integrity : "";
       if (!acceptedExternalTuples.has(`${name}\0${version}\0${integrity}`)) {
-        throw new Error(`consumer lock contains package outside exact authority: ${path}`);
+        throw new Error(`consumer lock contains package outside exact authority: ${path} ${JSON.stringify({
+          integrity,
+          name,
+          version,
+        })}`);
       }
     }
   }
