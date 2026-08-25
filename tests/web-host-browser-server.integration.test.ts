@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import {
+  type BrowserTransportDiagnostic,
   HostAttachmentStore,
   HostEventHub,
   LaunchAuthenticator,
@@ -27,10 +28,11 @@ const cookieValue = (response: Response): string => {
 };
 
 describe("Reference Web Host loopback browser carrier", () => {
-  it("binds both loopbacks and enforces launch, cookie, CSRF, Origin, CSP, and SSE", async () => {
+  it("binds both loopbacks and enforces launch, cookie, CSRF, browser-compatible SSE, and CSP", async () => {
     const authenticator = new LaunchAuthenticator();
     const hub = new HostEventHub();
     const commands: BrowserCommand[] = [];
+    const diagnostics: BrowserTransportDiagnostic[] = [];
     const server = new LoopbackBrowserServer({
       authenticator,
       eventHub: hub,
@@ -57,6 +59,7 @@ describe("Reference Web Host loopback browser carrier", () => {
         etag: '"fixture"',
         immutable: false,
       } : undefined,
+      diagnostic: (event) => diagnostics.push(event),
     });
     servers.push(server);
     const address = await server.listen();
@@ -117,9 +120,21 @@ describe("Reference Web Host loopback browser carrier", () => {
     expect(accepted.status).toBe(202);
     expect(commands).toEqual([command]);
 
+    const foreignEvents = await fetch(`${address.ipv4Origin}/api/v1/events`, {
+      headers: { Cookie: cookie, Origin: "https://foreign.invalid" },
+    });
+    expect(foreignEvents.status).toBe(403);
+    const crossSiteEvents = await fetch(`${address.ipv4Origin}/api/v1/events`, {
+      headers: { Cookie: cookie, "sec-fetch-site": "cross-site" },
+    });
+    expect(crossSiteEvents.status).toBe(403);
+
     const abort = new AbortController();
     const events = await fetch(`${address.ipv4Origin}/api/v1/events`, {
-      headers: { Cookie: cookie, Origin: address.ipv4Origin },
+      // Chromium omits Origin for a same-origin EventSource GET. The HttpOnly
+      // SameSite cookie remains mandatory and a supplied Origin/fetch-site is
+      // still validated above.
+      headers: { Cookie: cookie },
       signal: abort.signal,
     });
     expect(events.status).toBe(200);
@@ -127,6 +142,21 @@ describe("Reference Web Host loopback browser carrier", () => {
     const reader = events.body?.getReader();
     const chunk = await reader?.read();
     expect(new TextDecoder().decode(chunk?.value)).toContain("event: host.resyncRequired");
+    for (let index = 0; index < 400; index += 1) {
+      hub.publish({ kind: "runtime.fatal", payload: {
+        webSessionId: "web-session-1",
+        diagnostic: { code: `fixture_${index}`, level: "error", message: "x".repeat(4_096) },
+      } });
+    }
+    hub.publish({ kind: "host.resyncRequired", payload: { reason: "backpressure_finished" } });
+    let drained = "";
+    for (let reads = 0; reads < 1_000 && !drained.includes("backpressure_finished"); reads += 1) {
+      const next = await reader?.read();
+      if (next?.done !== false) break;
+      drained += new TextDecoder().decode(next.value);
+    }
+    expect(drained).toContain("backpressure_finished");
+    expect(diagnostics.some(({ kind }) => kind === "sse_backpressure")).toBe(true);
     abort.abort();
     await reader?.cancel().catch(() => undefined);
   });

@@ -241,6 +241,7 @@ export const runReferenceWebHost = async (arguments_: readonly string[]): Promis
   const selectedPlatform = platform();
   const composition = createReferenceWebComposition(selectedPlatform);
   const workspaceIdentity = createHash("sha256").update(options.workspacePath).digest("hex").slice(0, 24);
+  const diagnosticLog = await ReferenceWebDiagnosticLog.open(resolve(options.hostHome, "logs", "host-events.jsonl"));
   const application = await ReferenceWebHostApplication.open({
     hostVersion: REFERENCE_WEB_HOST_VERSION,
     hostHome: options.hostHome,
@@ -262,8 +263,11 @@ export const runReferenceWebHost = async (arguments_: readonly string[]): Promis
     resolveCredential: createReferenceWebCredentialResolver(apiKey),
     nativeCommand: composition.nativeCommand,
     staticAsset: (path) => assets.get(path),
+    browserDiagnostic: (event) => diagnosticLog.appendBrowser(event),
+  }).catch(async (error: unknown) => {
+    await diagnosticLog.close();
+    throw error;
   });
-  const diagnosticLog = await ReferenceWebDiagnosticLog.open(resolve(options.hostHome, "logs", "host-events.jsonl"));
   const diagnosticSubscription = application.eventHub.subscribe(undefined, ({ event }) => diagnosticLog.append(event));
   let closePromise: Promise<void> | undefined;
   const close = (): Promise<void> => {

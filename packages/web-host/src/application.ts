@@ -6,6 +6,7 @@ import {
   GENERATED_SCHEMA_SHA256,
 } from "@myagents-dsh/protocol/generated/host-client";
 import type { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
+import { ProtocolError } from "@myagents-dsh/protocol";
 import {
   WEB_HOST_CONTRACT_VERSION,
   canonicalBrowserJson,
@@ -22,6 +23,7 @@ import { LaunchAuthenticator, type BrowserAuth } from "./auth.js";
 import {
   LoopbackBrowserServer,
   type BrowserServerAddress,
+  type BrowserTransportDiagnostic,
   type StaticAsset,
 } from "./browser-server.js";
 import { WebSessionCatalog, type WebSessionCatalogRow } from "./catalog.js";
@@ -78,6 +80,7 @@ export type ReferenceWebHostApplicationOptions = Readonly<{
   nativeCommand: NativeBrowserCommandHandler;
   staticAsset: (path: string) => Promise<StaticAsset | undefined> | StaticAsset | undefined;
   maxUploadBytes?: number;
+  browserDiagnostic?: (event: BrowserTransportDiagnostic) => void;
 }>;
 
 type CommandRecord = {
@@ -137,6 +140,7 @@ export class ReferenceWebHostApplication {
       attachmentStore: (webSessionId) => supervisor.get(webSessionId)?.attachments,
       staticAsset: options.staticAsset,
       ...(options.maxUploadBytes === undefined ? {} : { maxUploadBytes: options.maxUploadBytes }),
+      ...(options.browserDiagnostic === undefined ? {} : { diagnostic: options.browserDiagnostic }),
     });
   }
 
@@ -325,7 +329,11 @@ export class ReferenceWebHostApplication {
     result?: unknown,
     error?: unknown,
   ): void {
-    const hostError = error instanceof WebHostError ? error : undefined;
+    const hostError = error instanceof WebHostError
+      ? error
+      : error instanceof ProtocolError
+        ? new WebHostError(error.code, "Runtime command failed", error.retryable)
+        : undefined;
     let projected: ReturnType<typeof canonicalBrowserJson> | undefined;
     let settledState = state;
     let settledError = hostError;

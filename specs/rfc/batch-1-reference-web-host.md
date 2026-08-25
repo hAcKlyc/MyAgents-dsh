@@ -120,7 +120,7 @@ Every request validates:
 
 1. local socket address and exact loopback Host header;
 2. authenticated cookie where required;
-3. exact Origin for browser writes and SSE;
+3. exact Origin for browser writes; authenticated SSE accepts the browser-standard omitted same-origin `Origin`, rejects any foreign supplied Origin/fetch-site, and remains protected by the HttpOnly `SameSite=Strict` launch cookie and same-origin response policy;
 4. CSRF header for every mutation;
 5. allowed method and exact content type;
 6. header, path, query, body, concurrency, and deadline bounds;

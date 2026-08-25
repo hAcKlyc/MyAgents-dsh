@@ -191,6 +191,62 @@ describe("Reference Web React store", () => {
     store.stop();
   });
 
+  it("waits for the authoritative ready snapshot before reading durable history", async () => {
+    const queue = new EventQueue();
+    const commands: BrowserCommand[] = [];
+    const starting: Bootstrap = {
+      ...bootstrap,
+      snapshot: {
+        ...bootstrap.snapshot,
+        sessions: bootstrap.snapshot.sessions.map((session) => ({ ...session, lifecycle: "starting" as const })),
+      },
+    };
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve(starting)),
+      events: (options: { signal?: AbortSignal }) => queue.events(options.signal ?? new AbortController().signal),
+      command: vi.fn((command: BrowserCommand) => {
+        commands.push(command);
+        return Promise.resolve({ commandId: command.commandId, accepted: true as const });
+      }),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    const store = new ReferenceWebStore({ client, idFactory: () => "history-race", now: () => now });
+    await store.start();
+    queue.push({
+      epoch: "epoch-1",
+      sequence: 1,
+      emittedAt: now,
+      kind: "runtime.stateChanged",
+      payload: { webSessionId: "web-session-1", lifecycle: "ready", runtimeGeneration: "generation-1" },
+    });
+    await vi.waitFor(() => expect(store.getSnapshot().snapshot.sessions[0]?.lifecycle).toBe("ready"));
+    expect(commands).toEqual([]);
+
+    queue.push({
+      epoch: "epoch-1",
+      sequence: 2,
+      emittedAt: now,
+      kind: "host.snapshot",
+      payload: bootstrap.snapshot,
+    });
+    await vi.waitFor(() => expect(commands.map(({ kind }) => kind)).toEqual(["history.read"]));
+    queue.push({
+      epoch: "epoch-1",
+      sequence: 3,
+      emittedAt: now,
+      kind: "host.commandSettled",
+      payload: {
+        commandId: "history-race",
+        webSessionId: "web-session-1",
+        state: "failed",
+        error: { code: "primary_session_not_ready", message: "Command failed", retryable: false },
+      },
+    });
+    await vi.waitFor(() => expect(store.getSnapshot().history?.status).toBe("complete"));
+    expect(store.getSnapshot().notices).toEqual([]);
+    store.stop();
+  });
+
   it("coalesces burst deltas and browser notifications before rendering", async () => {
     const queue = new EventQueue();
     const client = {

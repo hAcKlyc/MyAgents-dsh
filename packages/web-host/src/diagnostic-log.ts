@@ -3,6 +3,8 @@ import { dirname, resolve } from "node:path";
 
 import type { HostEvent } from "@myagents-dsh/web-host-contract";
 
+import type { BrowserTransportDiagnostic } from "./browser-server.js";
+
 const MAX_LOG_BYTES = 8 * 1_048_576;
 
 type DiagnosticRecord = Readonly<{
@@ -16,6 +18,8 @@ type DiagnosticRecord = Readonly<{
   code?: string;
   runtimeEventKind?: string;
   turnId?: string;
+  pendingBytes?: number;
+  resumed?: boolean;
 }>;
 
 const recordFor = (event: HostEvent): DiagnosticRecord => {
@@ -99,8 +103,24 @@ export class ReferenceWebDiagnosticLog {
   }
 
   append(event: HostEvent): void {
+    this.#append(recordFor(event));
+  }
+
+  appendBrowser(event: BrowserTransportDiagnostic): void {
+    this.#append({
+      at: new Date().toISOString(),
+      epoch: "browser",
+      sequence: 0,
+      kind: `browser.${event.kind}`,
+      ...(event.code === undefined ? {} : { code: event.code }),
+      ...(event.pendingBytes === undefined ? {} : { pendingBytes: event.pendingBytes }),
+      ...(event.resumed === undefined ? {} : { resumed: event.resumed }),
+    });
+  }
+
+  #append(record: DiagnosticRecord): void {
     if (this.#closed) return;
-    const bytes = Buffer.from(`${JSON.stringify(recordFor(event))}\n`, "utf8");
+    const bytes = Buffer.from(`${JSON.stringify(record)}\n`, "utf8");
     if (this.#bytes + bytes.byteLength > MAX_LOG_BYTES) return;
     this.#bytes += bytes.byteLength;
     this.#tail = this.#tail.then(async () => {

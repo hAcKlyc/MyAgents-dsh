@@ -36,12 +36,15 @@ describe("Reference Web diagnostic log", () => {
         },
       },
     } satisfies HostEvent);
+    log.appendBrowser({ kind: "sse_backpressure", pendingBytes: 4096 });
     await log.close();
 
     const bytes = await readFile(path, "utf8");
     expect(bytes).toContain('"runtimeEventKind":"assistant_delta"');
     expect(bytes).toContain('"turnId":"turn-1"');
     expect(bytes).not.toContain("SECRET_CONVERSATION_CANARY");
+    expect(bytes).toContain('"kind":"browser.sse_backpressure"');
+    expect(bytes).toContain('"pendingBytes":4096');
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 });

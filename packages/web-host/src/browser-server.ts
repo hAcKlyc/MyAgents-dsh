@@ -50,6 +50,13 @@ export type BrowserServerOptions = Readonly<{
   attachmentStore: (webSessionId: string) => HostAttachmentStore | undefined;
   staticAsset: (path: string) => Promise<StaticAsset | undefined> | StaticAsset | undefined;
   maxUploadBytes?: number;
+  diagnostic?: (event: BrowserTransportDiagnostic) => void;
+}>;
+export type BrowserTransportDiagnostic = Readonly<{
+  kind: "request_rejected" | "sse_opened" | "sse_backpressure" | "sse_closed";
+  code?: string;
+  pendingBytes?: number;
+  resumed?: boolean;
 }>;
 export type BrowserServerAddress = Readonly<{
   port: number;
@@ -89,6 +96,7 @@ const sendError = (response: ServerResponse, error: unknown): void => {
 };
 const oneHeader = (value: string | string[] | undefined): string | undefined =>
   typeof value === "string" ? value : undefined;
+const MAX_PENDING_SSE_BYTES = 8 * 1_048_576;
 const hasAsciiControl = (value: string): boolean => {
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
@@ -207,6 +215,10 @@ export class LoopbackBrowserServer {
       requireHostHeader: true,
     }, (request, response) => {
       void this.#handle(request, response).catch((error: unknown) => {
+        this.#options.diagnostic?.({
+          kind: "request_rejected",
+          code: error instanceof WebHostError ? error.code : "web_host_internal_error",
+        });
         if (!response.headersSent) sendError(response, error);
         else response.destroy();
       });
@@ -280,7 +292,7 @@ export class LoopbackBrowserServer {
     }
     if (url.pathname === "/api/v1/events") {
       if (request.method !== "GET") return this.#methodNotAllowed(response, "GET");
-      this.#assertOrigin(request, origin);
+      this.#assertEventStreamRequest(request, origin);
       this.#events(request, response);
       return;
     }
@@ -371,6 +383,17 @@ export class LoopbackBrowserServer {
     }
   }
 
+  #assertEventStreamRequest(request: IncomingMessage, origin: string): void {
+    const requestOrigin = oneHeader(request.headers.origin);
+    if (requestOrigin !== undefined && requestOrigin !== origin) {
+      throw new WebHostError("browser_origin_invalid", "Origin is invalid");
+    }
+    const fetchSite = oneHeader(request.headers["sec-fetch-site"]);
+    if (fetchSite !== undefined && fetchSite !== "same-origin") {
+      throw new WebHostError("browser_origin_invalid", "Event stream is not same-origin");
+    }
+  }
+
   #assertMutation(
     request: IncomingMessage,
     auth: BrowserAuth,
@@ -392,24 +415,67 @@ export class LoopbackBrowserServer {
       connection: "keep-alive",
     });
     response.flushHeaders();
+    const resumed = oneHeader(request.headers["last-event-id"]) !== undefined;
+    this.#options.diagnostic?.({ kind: "sse_opened", resumed });
     let stopped = false;
-    const stop = (): void => {
+    let waitingForDrain = false;
+    let pendingBytes = 0;
+    const pending: string[] = [];
+    let unsubscribe = (): void => undefined;
+    const stop = (code: string): void => {
       if (stopped) return;
       stopped = true;
-      subscription.unsubscribe();
-      response.end();
+      unsubscribe();
+      pending.length = 0;
+      pendingBytes = 0;
+      response.removeListener("drain", flush);
+      this.#options.diagnostic?.({ kind: "sse_closed", code });
+      if (!response.writableEnded && !response.destroyed) response.end();
     };
-    const subscription = this.#options.eventHub.subscribe(
-      oneHeader(request.headers["last-event-id"]),
-      ({ frame }) => { if (!response.write(frame)) stop(); },
-    );
-    request.once("close", stop);
-    for (const { frame } of subscription.replay) {
-      if (!response.write(frame)) {
-        stop();
-        break;
+
+    function flush(): void {
+      if (stopped) return;
+      waitingForDrain = false;
+      for (;;) {
+        const frame = pending.shift();
+        if (frame === undefined) return;
+        pendingBytes -= Buffer.byteLength(frame);
+        if (!response.write(frame)) {
+          waitingForDrain = true;
+          response.once("drain", flush);
+          return;
+        }
       }
     }
+
+    const deliver = (frame: string): void => {
+      if (stopped) return;
+      if (!waitingForDrain && pending.length === 0) {
+        if (!response.write(frame)) {
+          waitingForDrain = true;
+          this.#options.diagnostic?.({ kind: "sse_backpressure", pendingBytes: 0 });
+          response.once("drain", flush);
+        }
+        return;
+      }
+      const frameBytes = Buffer.byteLength(frame);
+      if (pendingBytes + frameBytes > MAX_PENDING_SSE_BYTES) {
+        stop("backpressure_limit");
+        return;
+      }
+      pending.push(frame);
+      pendingBytes += frameBytes;
+    };
+
+    const subscription = this.#options.eventHub.subscribe(
+      oneHeader(request.headers["last-event-id"]),
+      ({ frame }) => deliver(frame),
+    );
+    unsubscribe = subscription.unsubscribe;
+    request.once("aborted", () => stop("request_aborted"));
+    response.once("close", () => stop("response_closed"));
+    response.once("error", () => stop("response_error"));
+    for (const { frame } of subscription.replay) deliver(frame);
   }
 
   #methodNotAllowed(response: ServerResponse, allow: string): void {

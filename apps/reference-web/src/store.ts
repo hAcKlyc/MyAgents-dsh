@@ -319,7 +319,6 @@ export class ReferenceWebStore {
           ...current,
           sessions: replaceSession(current.sessions, { ...session, lifecycle: event.payload.lifecycle }),
         } });
-        if (event.payload.lifecycle === "ready") this.#ensureHistory(this.#state.snapshot);
         return;
       }
       case "runtime.event": {
@@ -377,7 +376,7 @@ export class ReferenceWebStore {
         return;
       }
       case "host.commandSettled":
-        this.#settleCommand(event);
+        this.#settleCommand(event, !this.#historyRequests.has(event.payload.commandId));
         await this.#settleHistory(event);
         return;
       case "host.resyncRequired": {
@@ -389,14 +388,17 @@ export class ReferenceWebStore {
     }
   }
 
-  #settleCommand(event: Extract<HostEvent, { kind: "host.commandSettled" }>): void {
+  #settleCommand(
+    event: Extract<HostEvent, { kind: "host.commandSettled" }>,
+    reportFailure = true,
+  ): void {
     const localId = this.#commandInputs.get(event.payload.commandId);
     if (localId !== undefined) this.#commandInputs.delete(event.payload.commandId);
     this.#update({
       pendingCommandIds: this.#state.pendingCommandIds.filter((id) => id !== event.payload.commandId),
       localInputs: localId === undefined ? this.#state.localInputs : this.#state.localInputs.map((input) =>
         input.id === localId ? { ...input, state: event.payload.state === "succeeded" ? "accepted" : "failed" } : input),
-      ...(event.payload.state === "failed" ? { notices: [...this.#state.notices, {
+      ...(event.payload.state === "failed" && reportFailure ? { notices: [...this.#state.notices, {
         id: this.#idFactory(),
         level: "error" as const,
         message: `Command failed: ${event.payload.error?.code ?? "unknown"}`,
@@ -510,7 +512,15 @@ export class ReferenceWebStore {
     this.#historyRequests.delete(event.payload.commandId);
     if (request.webSessionId !== this.#historyWebSessionId || this.#historyAssembler === undefined) return;
     if (event.payload.state === "failed" || event.payload.result === undefined) {
-      if (this.#state.history !== undefined) this.#update({ history: { ...this.#state.history, status: "failed" } });
+      const projection = this.#state.snapshot.projection;
+      const freshEmptySession = event.payload.error?.code === "primary_session_not_ready"
+        && projection?.webSessionId === request.webSessionId
+        && projection.events.length === 0;
+      if (this.#state.history !== undefined) this.#update({
+        history: freshEmptySession
+          ? { ...this.#state.history, status: "complete" }
+          : { ...this.#state.history, status: "failed" },
+      });
       return;
     }
     try {
