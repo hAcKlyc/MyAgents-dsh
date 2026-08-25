@@ -1,6 +1,6 @@
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent, AgentHandle } from "@deepseek-ai/dsh-agent";
-import { SessionId } from "@deepseek-ai/dsh-session";
+import { Session, SessionId } from "@deepseek-ai/dsh-session";
 import type { MethodParams } from "@myagents-dsh/protocol";
 import {
   PrimarySessionAdmission,
@@ -88,7 +88,8 @@ const fakeHandle = (id: string) => {
   const dispose = vi.fn(() => Promise.resolve());
   const cancel = vi.fn();
   const whenIdle = vi.fn(() => Promise.resolve());
-  const agent = { cancel, id: SessionId(id), whenIdle } as unknown as Agent;
+  const session = Session.create(SessionId(id));
+  const agent = { cancel, id: SessionId(id), session, whenIdle } as unknown as Agent;
   return {
     cancel,
     dispose,
@@ -851,6 +852,73 @@ describe("one-primary-session admission", () => {
         identity: "different-workspace",
       },
     })).toThrow("differs from the primary Session workspace");
+    await service.retire();
+    await context.fiber.dispose();
+  });
+
+  it("persists a configuration anchor before replacing an otherwise empty Session", async () => {
+    const context = new Context();
+    const source = fakeHandle("runtime-primary");
+    const replacement = fakeHandle("runtime-primary");
+    const flush = vi.fn(() => Promise.resolve(true));
+    context.provide("agents", {
+      roots: () => [],
+      setPublicationGuard: () => () => undefined,
+    } as never);
+    context.provide("sessions", {
+      flush,
+      setPublicationGuard: () => () => undefined,
+    } as never);
+    const service = new ProductSessionService(context, {
+      backend: backendWith(
+        () => Promise.resolve(readyResult(source.handle, "runtime-primary", 0, "config-v1")),
+        (request) => Promise.resolve(readyResult(
+          replacement.handle,
+          request.runtimeSessionId,
+          1,
+          request.params.configRevision,
+        )),
+      ),
+    });
+    service.bindWorkspace(workspace);
+    service.bindExecutionEnvironment({
+      ...processEnvironmentFields(),
+      attachmentStagingRoot: "/fixture/attachments",
+      digest,
+      platformTarget: "darwin-arm64",
+      revision: "environment-v1",
+      runtimeHome: "/fixture/runtime",
+      workspace: {
+        allowedReadRoots: [workspace.path],
+        allowedWriteRoots: [workspace.path],
+        canonicalRoot: workspace.path,
+        identity: workspace.identity,
+      },
+    });
+    await service.bindCreate(createParams());
+    const candidate = await service.prepareConfiguration({
+      revision: "config-v2",
+      provider: { ...createParams().provider, revision: "provider-v2" },
+      permissionMode: "default",
+      toolPolicy: { builtinTools: [], autoAllowTools: [], disallowedTools: [] },
+      interactionScenario: "deterministic-headless",
+      systemPrompt: "Replacement primary Session prompt.",
+      executionEnvironmentRevision: "environment-v1",
+      executionEnvironmentDigest: digest,
+    }, new AbortController().signal);
+
+    await service.replaceConfiguration(candidate, () => Promise.resolve());
+
+    expect(source.handle.agent.session.events).toEqual([
+      expect.objectContaining({
+        type: "myagents/session/configuration",
+        data: { revision: "config-v2" },
+      }),
+    ]);
+    expect(flush).toHaveBeenCalledOnce();
+    expect(flush).toHaveBeenCalledWith(source.handle.agent.session);
+    expect(service.requireOperationConfigRevision()).toBe("config-v2");
+    expect(service.requireOperationModelProfileRevision()).toBe("provider-v2");
     await service.retire();
     await context.fiber.dispose();
   });

@@ -869,7 +869,11 @@ export const createReferenceWebComposition = (
           permissionMode: "default",
         }),
       });
-      return createReferenceWebBinding(row, bindingAuthority, bootstrapControls);
+      return createReferenceWebBinding(
+        row,
+        bindingAuthority,
+        row.runtimeSessionId === undefined ? controls : bootstrapControls,
+      );
     },
     buildExtensionSnapshot: (row) => {
       const controls = controlStore.get(row.webSessionId);

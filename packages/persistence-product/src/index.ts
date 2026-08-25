@@ -7,6 +7,10 @@ export {
   type ProductCompactionReceiptEventData,
 } from "./compaction.js";
 export {
+  PRODUCT_CONFIGURATION_EVENT_TYPES,
+  type ProductConfigurationAnchorEventData,
+} from "./configuration.js";
+export {
   type ProductDeletePhase,
   type ProductDeletePrepareInput,
   type ProductDeleteRecord,

@@ -15,6 +15,7 @@ import {
 } from "@myagents-dsh/protocol";
 import {
   foldProductCompactions,
+  PRODUCT_CONFIGURATION_EVENT_TYPES,
   productCompactionSummarySha256,
   type ProductDeleteRecord,
   type ProductDeleteStore,
@@ -1950,6 +1951,17 @@ export class ProductSessionService extends Service {
       () => Promise.resolve(),
       async (agent) => {
         await applyAuthorities(agent);
+        if (agent.session.seq === 0) {
+          agent.session.append(PRODUCT_CONFIGURATION_EVENT_TYPES[0], {
+            revision: candidate.params.configRevision,
+          });
+          if (!await this.ctx.sessions.flush(agent.session)) {
+            throw new ProtocolError(
+              "session_durability_unavailable",
+              "empty Session configuration anchor did not reach durable storage",
+            );
+          }
+        }
         await retirementGuard?.(agent);
       },
       candidate.params,

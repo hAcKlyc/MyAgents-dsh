@@ -94,11 +94,29 @@ describe("Reference Web Host production profile", () => {
         extensionDigest: extensionCatalog.digest,
       },
     });
-    expect(binding.params.configRevision).toMatch(/^reference-web-bootstrap-/u);
+    expect(binding.params.configRevision).toBe(REFERENCE_WEB_CONFIG_REVISION);
     expect(binding.params.provider).toEqual({
       ...REFERENCE_WEB_PROVIDER,
       revision: "reference-deepseek-deepseek-v4-flash-high-v1",
     });
+  });
+
+  it("uses a restricted bootstrap only while resuming durable Session state", () => {
+    const composition = createReferenceWebComposition({ os: "darwin", arch: "arm64", validation: "verified" });
+    const resumedRow: WebSessionCatalogRow = Object.freeze({
+      ...row,
+      runtimeSessionId: row.webSessionId,
+      lifecycle: "cold",
+    });
+    composition.buildInitialize(resumedRow, {
+      runtimeHome: "/tmp/reference-runtime-home",
+      attachmentStagingRoot: "/tmp/reference-attachments",
+      workspacePath: "/tmp/reference-workspace",
+    });
+    const binding = composition.buildBinding(resumedRow, { extensionCatalog });
+    expect(binding.mode).toBe("resume");
+    expect(binding.params.configRevision).toMatch(/^reference-web-bootstrap-/u);
+    expect(binding.params.permissionMode).toBe("default");
   });
 
   it("routes browser turns with the exact initialized environment authority", async () => {
