@@ -432,4 +432,33 @@ describe("patched DSH artifact build hardening", () => {
       "unapproved external package link",
     );
   });
+
+  it("accepts only empty optional placeholders for accepted external package names", () => {
+    const plan = buildPatchedDshArtifactPlan(completeSourceGraph());
+    const evidence = completeEvidence(plan);
+    const packages: Record<string, unknown> = { "": {} };
+    for (const row of evidence) {
+      packages[`node_modules/${row.name}`] = {
+        version: plan.artifactVersion,
+        integrity: row.integrity,
+        resolved: `file:../${row.tarball}`,
+      };
+    }
+    for (const row of PATCHED_DSH_COMPILE_TOOLING_AUTHORITY) {
+      packages[row.path] = { version: row.version, integrity: row.integrity };
+    }
+    for (const row of plan.externalRootPackages) {
+      packages[row.path] = { version: row.version, integrity: row.integrity };
+    }
+    packages["node_modules/koffi/node_modules/@koromix/koffi-darwin-arm64"] = {
+      optional: true,
+    };
+    expect(() => validateConsumerLock({ packages }, plan, evidence)).not.toThrow();
+    packages["node_modules/koffi/node_modules/unapproved-native-package"] = {
+      optional: true,
+    };
+    expect(() => validateConsumerLock({ packages }, plan, evidence)).toThrow(
+      "unknown optional placeholder",
+    );
+  });
 });

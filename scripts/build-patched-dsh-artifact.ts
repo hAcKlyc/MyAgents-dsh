@@ -622,6 +622,10 @@ export const validateConsumerLock = (
     ...PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
     ...PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
   ].map(({ integrity, name, version }) => `${name}\0${version}\0${integrity}`));
+  const acceptedExternalNames = new Set([
+    ...PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
+    ...PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
+  ].map(({ name }) => name));
   for (const [path, value] of Object.entries(packages)) {
     if (path === "") continue;
     const row = exactJsonObject(value, `consumer lock ${path}`);
@@ -632,6 +636,12 @@ export const validateConsumerLock = (
       throw new Error(`consumer lock contains unapproved DSH package at ${path}`);
     }
     if (!isDshFamilyPackage(name)) {
+      if (row.optional === true && Object.keys(row).length === 1) {
+        if (!acceptedExternalNames.has(name)) {
+          throw new Error(`consumer lock contains an unknown optional placeholder: ${path}`);
+        }
+        continue;
+      }
       if (row.link === true) {
         const targetPath = row.resolved;
         if (typeof targetPath !== "string" || targetPath !== `node_modules/${name}`) {
