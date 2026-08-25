@@ -132,7 +132,7 @@ describe("Runtime artifact self-check", () => {
       expect(report.dsh.packageCount).toBe(54);
       expect(report.contracts).toEqual({
         canonicalToolsSha256: "b150cf36eed203391a99d5c12d9fbd4dd09ff2bb4400ab635bee95ccb3302092",
-        eventsSha256: "9ca291edb0fff6c331628be64d5add80120f2aafb1a1c3e07a8bc721c0a535a0",
+        eventsSha256: "2996feb8aeb3dc2ff9503d2a13e895ecf88713001160474e0d6601c94f3d497a",
         sessionFormat: "dsh-session-events-v1",
         persistenceFormat: "myagents-sqlite-session-v1",
         persistenceSchemaVersion: 7,

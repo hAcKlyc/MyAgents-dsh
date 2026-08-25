@@ -24,7 +24,7 @@ const sanitizeUrl = (value: string): string => {
   return url.toString();
 };
 
-const assert = (condition: boolean, message: string): void => {
+const assert: (condition: boolean, message: string) => asserts condition = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
@@ -214,9 +214,9 @@ const main = async (): Promise<void> => {
   let evidence: Record<string, unknown>;
   try {
     const response = await page.goto(launchUrl.toString(), { waitUntil: "domcontentloaded", timeout: 20_000 });
-    if (response === null || response.status() !== 200) throw new Error("launch navigation did not return HTTP 200");
+    assert(response?.status() === 200, "launch navigation did not return HTTP 200");
     const indexEntry = artifact.manifest.files.find(({ path }) => path === "apps/reference-web/dist/index.html");
-    if (indexEntry === undefined) throw new Error("verified Web artifact has no production index");
+    assert(indexEntry !== undefined, "verified Web artifact has no production index");
     assert(digest(await response.body()) === indexEntry.sha256, "served browser shell differs from the verified Web artifact");
     await waitOnline(page);
     const cleanUrl = sanitizeUrl(page.url());

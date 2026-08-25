@@ -1,6 +1,6 @@
 # Batch 1 Reference Web Host and WebUI RFC
 
-Status: `accepted design; B1-W5-A1/A2/A3 complete; B1-W5-A4 in progress`
+Status: `accepted design; B1-W5-A1/A2/A3/A4 complete; B1-W5-A5 in progress`
 
 ## 1. Purpose
 
@@ -243,6 +243,8 @@ W5 produces a content-addressed Web Host artifact and static asset manifest. The
 - exact limitations and the user acceptance state.
 
 A blocker in W5 does not invalidate frozen Runtime evidence unless it proves a Runtime defect. A Host/UI fix invalidates only evidence bound to the changed Web Host subject. Batch 1 cannot be accepted from the Runtime-only handoff after the user-approved scope expansion.
+
+Implementation status on 2026-08-26: A4 is complete. The exact Web artifact manifest is `d947f60188b27001052ab5b002220d72aef7dca589c0b18d0657922b824159e6`, bound to Runtime `ddd6052efbceb0a323bf0942ba709aa78885a98ea49c03186d79751da224cdb1`. Exact-browser report `1c581ea8f86157a0e9e1c752098502b0f3d648be864291a5ed390e73f7c712ca` and macOS native real-provider report `af3c3160856fe2f3c66027e6d54400a36a33312d78eb16a3bc951bfa2451aea7` pass. The distribution-handoff schema/builder is executable and deliberately refuses readiness until all six fresh independent W5 review subjects are present.
 
 ## 13. Rejected alternatives
 

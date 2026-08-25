@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: draft
-updated: 2026-08-15
+updated: 2026-08-26
 project: MyAgents-dsh
 ---
 
@@ -369,7 +369,11 @@ The browser never receives provider or MCP secret material, arbitrary local path
 
 The browser carrier binds an ephemeral loopback address only, requires an unguessable launch capability on the first navigation, upgrades it to an HttpOnly same-site Session cookie, rejects foreign Origin/Host values and cross-site writes, applies a restrictive CSP, and has no remote-listen option in Batch 1. Browser disconnect does not imply Runtime success or cancellation; the Host retains exact operation state until the user reconnects or an explicit bounded lifecycle policy retires the Session.
 
+The browser store detects both explicit SSE failure and silent local network partition through a bounded authenticated health probe. Reconnect performs authoritative bootstrap/resync; it never guesses that a Turn or mutation succeeded. Concurrent tabs share Host truth but retain tab-local command and notification ownership, so one tab cannot surface another tab's command failure as a local action. Live and durable projections retain bounded tails, coalesce adjacent streaming deltas, and use `content-visibility` for long conversations.
+
 For multiple browser-visible conversations, the Host follows `Session : Runtime process = 1 : 1`. It may keep a bounded number active and cold-stop idle Sessions after quiescence. Resume always starts a fresh verified Runtime process over the durable DSH Session identity. The catalog stores routing and display metadata only; history is reconstructed with `session/read`, so the Web Host cannot become a second transcript.
+
+Non-secret desired configuration and declarative component snapshots are stored in separate Host-owned control records and applied through the native configuration/component ports. Prepared mutation tokens are stored in a bounded crash-recovery journal so reload can resume or abort the exact operation. Neither store contains messages, reasoning, tool payloads, credentials, system prompts, attachment bytes, or a shadow transcript. Rewind is offered only for a stable boundary that precedes the current durable head; the current head remains valid for Fork.
 
 ## 13. Managed files and session mutations
 
