@@ -6,11 +6,13 @@ import { parseArgs } from "node:util";
 
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 
+import { verifyInstalledReferenceWebArtifact } from "@myagents-dsh/artifact-verifier/reference-web-artifact";
+
 import { resolveExternalOutputRoot } from "./run-batch-1-pre-artifact-gate.js";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const chromeDefault = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const digest = (bytes: string): string => createHash("sha256").update(bytes).digest("hex");
+const digest = (bytes: string | Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
 const safeError = (error: unknown): string => (error instanceof Error ? error.message : String(error))
   .replace(/([?&]launch=)[^&\s)]+/gu, "$1[redacted]")
@@ -153,11 +155,21 @@ const main = async (): Promise<void> => {
       url: { type: "string" },
       out: { type: "string" },
       chrome: { type: "string" },
+      artifact: { type: "string" },
+      "expected-manifest-sha256": { type: "string" },
       "skip-real-turn": { type: "boolean", default: false },
     },
   });
   if (values.url === undefined) throw new TypeError("--url is required");
   if (values.out === undefined || !isAbsolute(values.out)) throw new TypeError("--out must be absolute");
+  if (values.artifact === undefined) throw new TypeError("--artifact is required");
+  if (values["expected-manifest-sha256"] === undefined) {
+    throw new TypeError("--expected-manifest-sha256 is required");
+  }
+  const artifact = verifyInstalledReferenceWebArtifact(
+    resolve(values.artifact),
+    values["expected-manifest-sha256"],
+  );
   const launchUrl = new URL(values.url);
   if (launchUrl.protocol !== "http:" || (launchUrl.hostname !== "127.0.0.1" && launchUrl.hostname !== "localhost")) {
     throw new TypeError("--url must be one loopback Reference Web launch URL");
@@ -202,7 +214,10 @@ const main = async (): Promise<void> => {
   let evidence: Record<string, unknown>;
   try {
     const response = await page.goto(launchUrl.toString(), { waitUntil: "domcontentloaded", timeout: 20_000 });
-    assert(response?.status() === 200, "launch navigation did not return HTTP 200");
+    if (response === null || response.status() !== 200) throw new Error("launch navigation did not return HTTP 200");
+    const indexEntry = artifact.manifest.files.find(({ path }) => path === "apps/reference-web/dist/index.html");
+    if (indexEntry === undefined) throw new Error("verified Web artifact has no production index");
+    assert(digest(await response.body()) === indexEntry.sha256, "served browser shell differs from the verified Web artifact");
     await waitOnline(page);
     const cleanUrl = sanitizeUrl(page.url());
     assert(!page.url().includes("launch="), "one-time launch authority remained in the visible URL");
@@ -219,11 +234,34 @@ const main = async (): Promise<void> => {
     assert(accessibility.unnamedInteractiveCount === 0, "page contains unnamed interactive controls");
     assert(accessibility.landmarks.some((landmark) => landmark.startsWith("main:")), "page is missing its main landmark");
     await verifyConcurrentTab(context, cleanUrl);
+    const partitionOffsets = {
+      console: consoleErrors.length,
+      page: pageErrors.length,
+      request: requestFailures.length,
+      http: httpErrors.length,
+      external: externalRequests.length,
+    };
     await context.setOffline(true);
     await page.locator('.connection-pill[data-state="offline"]').waitFor({ timeout: 10_000 });
     await context.setOffline(false);
     await waitOnline(page);
-    let realTurn = "skipped";
+    await page.waitForTimeout(250);
+    const controlledPartition = {
+      consoleErrors: consoleErrors.splice(partitionOffsets.console),
+      pageErrors: pageErrors.splice(partitionOffsets.page),
+      requestFailures: requestFailures.splice(partitionOffsets.request),
+      httpErrors: httpErrors.splice(partitionOffsets.http),
+      externalRequests: externalRequests.splice(partitionOffsets.external),
+    };
+    assert(controlledPartition.pageErrors.length === 0, "controlled offline transition emitted a page error");
+    assert(controlledPartition.httpErrors.length === 0, "controlled offline transition received an HTTP error");
+    assert(controlledPartition.externalRequests.length === 0, "controlled offline transition attempted external network access");
+    assert(controlledPartition.consoleErrors.every((message) => message.includes("ERR_INTERNET_DISCONNECTED")),
+      "controlled offline transition emitted an unexpected console error");
+    assert(controlledPartition.requestFailures.every((message) =>
+      message.includes("ERR_INTERNET_DISCONNECTED") || message.includes("ERR_ABORTED")),
+    "controlled offline transition emitted an unexpected request failure");
+    let realTurns: readonly string[] | "skipped" = "skipped";
     if (!values["skip-real-turn"]) {
       const sentinel = `B1_A5_BROWSER_OK_${Date.now().toString(36).toUpperCase()}`;
       await textarea.fill(`Reply with exactly ${sentinel} and do not use tools.`);
@@ -231,7 +269,13 @@ const main = async (): Promise<void> => {
       await page.locator(".user-message", { hasText: sentinel }).waitFor({ timeout: 20_000 });
       await page.locator(".assistant-turn", { hasText: sentinel }).waitFor({ timeout: 180_000 });
       await page.locator(".assistant-turn .turn-actions", { hasText: "已完成" }).waitFor({ timeout: 20_000 });
-      realTurn = sentinel;
+      const rewindSource = `B1_A5_REWIND_SOURCE_${Date.now().toString(36).toUpperCase()}`;
+      await textarea.fill(`Reply with exactly ${rewindSource} and do not use tools.`);
+      await page.getByRole("button", { name: "Send message" }).click();
+      await page.locator(".user-message", { hasText: rewindSource }).waitFor({ timeout: 20_000 });
+      await page.locator(".assistant-turn", { hasText: rewindSource }).waitFor({ timeout: 180_000 });
+      await page.locator(".assistant-turn .turn-actions", { hasText: "已完成" }).last().waitFor({ timeout: 20_000 });
+      realTurns = [sentinel, rewindSource];
       await verifyMutationRecovery(page);
     }
     await page.screenshot({ path: resolve(outputRoot, "desktop.png"), fullPage: true });
@@ -262,10 +306,19 @@ const main = async (): Promise<void> => {
       accessibility,
       media,
       performance: performanceEvidence,
+      artifact: {
+        manifestSha256: artifact.manifestSha256,
+        repositoryHead: artifact.manifest.build.repositoryHead,
+        runtimeManifestSha256: artifact.manifest.runtime.manifestSha256,
+        fileCount: artifact.fileCount,
+        totalBytes: artifact.totalBytes,
+        servedIndexSha256: indexEntry.sha256,
+      },
       reconnect: "passed",
       concurrentTab: "passed",
       mutationRecovery: values["skip-real-turn"] ? "skipped" : "passed",
-      realTurn,
+      realTurns,
+      controlledPartition,
       consoleErrors,
       pageErrors,
       requestFailures,

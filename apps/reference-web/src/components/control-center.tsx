@@ -262,10 +262,16 @@ function SessionPanel(props: Readonly<{
   const confirmationRef = useRef<HTMLInputElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const previousMutationToken = useRef<string | undefined>(undefined);
+  const selectedBoundary = boundaries.find((boundary) => boundary.stableBoundaryId === boundaryId);
+  const rewindEligible = selectedBoundary !== undefined
+    && selectedBoundary.sequence < (props.history?.durableSequence ?? 0);
   useEffect(() => {
     if (boundaries.some((boundary) => boundary.stableBoundaryId === boundaryId)) return;
-    setBoundaryId(boundaries.at(-1)?.stableBoundaryId ?? "");
-  }, [boundaries, boundaryId]);
+    const latestRewindable = boundaries.findLast(
+      (boundary) => boundary.sequence < (props.history?.durableSequence ?? 0),
+    );
+    setBoundaryId((latestRewindable ?? boundaries.at(-1))?.stableBoundaryId ?? "");
+  }, [boundaries, boundaryId, props.history?.durableSequence]);
   useEffect(() => {
     const token = props.mutation?.token;
     if (token === previousMutationToken.current) return;
@@ -323,14 +329,15 @@ function SessionPanel(props: Readonly<{
         {props.history?.status === "loading" ? "正在刷新稳定边界…" : "尚无稳定边界"}
       </option>}
       {boundaries.map((boundary) => <option key={boundary.stableBoundaryId} value={boundary.stableBoundaryId}>
-        Turn {boundary.turn} · event {boundary.sequence}</option>)}
+        Turn {boundary.turn} · event {boundary.sequence}
+        {boundary.sequence >= (props.history?.durableSequence ?? 0) ? " · 当前头（仅 Fork）" : ""}</option>)}
     </select></label>
     <article className="session-operation"><div><h4>Fork</h4><p>在所选稳定边界创建独立 Runtime home 与 Session。</p>
       <input value={forkTitle} onChange={(event) => setForkTitle(event.target.value)} aria-label="Fork Session title" /></div>
       <button type="button" disabled={props.disabled || boundaryId === ""}
         onClick={(event) => prepare(event, "fork", { boundaryId, forkTitle })}>Prepare</button></article>
-    <article className="session-operation danger-soft"><div><h4>Rewind</h4><p>切换到所选不可变前缀；可使用同一 token 回滚。</p></div>
-      <button type="button" disabled={props.disabled || boundaryId === ""}
+    <article className="session-operation danger-soft"><div><h4>Rewind</h4><p>切换到早于当前头的所选不可变前缀；可使用同一 token 回滚。</p></div>
+      <button type="button" disabled={props.disabled || !rewindEligible}
         onClick={(event) => prepare(event, "rewind", { boundaryId })}>Prepare</button></article>
     <article className="session-operation danger"><div><h4>删除 Session</h4><p>先 tombstone；确认后仍可回滚，物理 purge 不可恢复。</p></div>
       <button type="button" disabled={props.disabled} onClick={(event) => prepare(event, "delete")}>Prepare</button></article>

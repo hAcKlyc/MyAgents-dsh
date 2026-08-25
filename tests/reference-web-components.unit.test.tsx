@@ -81,7 +81,7 @@ describe("Reference Web React shell", () => {
     };
     const complete: BrowserHistorySnapshot = {
       ...loading,
-      durableSequence: 10,
+      durableSequence: 11,
       mutationBoundaries: [{
         stableBoundaryId: "boundary-late",
         sequence: 10,
