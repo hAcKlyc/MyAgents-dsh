@@ -51,6 +51,7 @@
     "e2e:dynamic": "tsx packages/dynamic-e2e/src/cli.ts",
     "e2e:native": "tsx scripts/run-batch-1-native-campaign.ts",
     "build:batch-1-handoff": "tsx scripts/build-batch-1-handoff.ts",
+    "build:web-artifact": "npm run build && tsx scripts/build-reference-web-artifact.ts",
     "generate:tool-contracts": "tsx scripts/generate-tool-contracts.ts",
     "check:tool-contracts": "tsx scripts/generate-tool-contracts.ts --check",
     "generate:protocol": "tsx scripts/generate-protocol.ts",

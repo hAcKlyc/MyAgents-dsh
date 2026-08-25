@@ -11,6 +11,7 @@
     "src/forbidden-content.ts",
     "src/index.ts",
     "src/repository-entry.ts",
+    "src/reference-web-artifact.ts",
     "src/runtime-artifact.ts",
     "src/self-check.ts"
   ],

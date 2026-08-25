@@ -1,4 +1,5 @@
-import { link, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, link, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -14,6 +15,13 @@ import {
   scanForbiddenContent,
 } from "../packages/artifact-verifier/src/index.js";
 import {
+  REFERENCE_WEB_ARTIFACT_MANIFEST_FILENAME,
+  createReferenceWebArtifactManifest,
+  serializeReferenceWebArtifactManifest,
+  verifyInstalledReferenceWebArtifact,
+  type ReferenceWebArtifactAuthority,
+} from "../packages/artifact-verifier/src/reference-web-artifact.js";
+import {
   ARTIFACT_LAUNCHER_PATH,
   PRODUCT_NETWORK_TRANSPORT_PATH,
   WEB_HOST_RUNTIME_PROCESS_PATH,
@@ -25,6 +33,69 @@ import {
 } from "../scripts/repository-security-policy.js";
 
 describe("repository and packed-artifact forbidden-content policy", () => {
+  it("creates, verifies, and detects tampering in a Reference Web distribution", async () => {
+    const root = await realpath(await mkdtemp(resolve(tmpdir(), "myagents-dsh-reference-web-artifact-")));
+    await chmod(root, 0o755);
+    const put = async (path: string, bytes: string, mode = 0o644): Promise<void> => {
+      const absolute = resolve(root, path);
+      await mkdir(resolve(absolute, ".."), { recursive: true, mode: 0o755 });
+      await writeFile(absolute, bytes, { mode });
+      await chmod(absolute, mode);
+    };
+    try {
+      await put("scripts/run-reference-web-host.js", "export const run = true;\n");
+      await put("start-web.sh", "#!/bin/bash\nexit 0\n", 0o755);
+      await put("start-web.ps1", "exit 0\n");
+      await put("apps/reference-web/dist/index.html", "<!doctype html><title>Reference Web</title>\n");
+      await put("apps/reference-web/dist/assets/app.js", "globalThis.__REFERENCE_WEB__ = true;\n");
+      await put("licenses/example.txt", "Synthetic MIT license fixture.\n");
+      await put("specs/contracts/provenance.json", "{\"fixture\":true}\n");
+      const digest = (value: string): string => createHash("sha256").update(value).digest("hex");
+      const inputs = Object.freeze([{ path: "fixture/input.json", sha256: digest("input") }]);
+      const authority = Object.freeze({
+        artifactKind: "myagents-dsh-reference-web-host",
+        activation: "batch-1-reference-host",
+        hostVersion: "0.1.0",
+        entrypoint: "scripts/run-reference-web-host.js",
+        launchers: Object.freeze({ posix: "start-web.sh", windows: "start-web.ps1" }),
+        runtime: Object.freeze({ manifestSha256: digest("runtime"), acquisition: "external-content-addressed" }),
+        protocol: Object.freeze({ version: "2.0.0-draft.1", schemaSha256: digest("protocol") }),
+        browser: Object.freeze({ contractVersion: "1.0.0-draft.1", schemaSha256: digest("browser") }),
+        platformClaims: Object.freeze([
+          Object.freeze({ os: "darwin", arch: "arm64", state: "verified" }),
+          Object.freeze({ os: "linux", arch: "x64", state: "implementation-complete_pending-native-validation" }),
+          Object.freeze({ os: "win32", arch: "x64", state: "implementation-complete_pending-native-validation" }),
+        ]),
+        thirdParty: Object.freeze([
+          Object.freeze({ name: "example", version: "1.0.0", license: "MIT", licensePath: "licenses/example.txt" }),
+        ]),
+        provenance: Object.freeze([
+          Object.freeze({ path: "specs/contracts/provenance.json", sha256: digest("{\"fixture\":true}\n") }),
+        ]),
+        build: Object.freeze({
+          repositoryHead: "a".repeat(40),
+          rootLockSha256: digest("lock"),
+          builderAuthoritySha256: digest(JSON.stringify(inputs)),
+          toolchain: Object.freeze({ node: "24.13.1", npm: "11.8.0", typescript: "5.9.3", vite: "8.2.2" }),
+          inputs,
+        }),
+      }) satisfies ReferenceWebArtifactAuthority;
+      const manifest = createReferenceWebArtifactManifest(root, authority);
+      const bytes = serializeReferenceWebArtifactManifest(manifest);
+      await put(REFERENCE_WEB_ARTIFACT_MANIFEST_FILENAME, bytes);
+      expect(verifyInstalledReferenceWebArtifact(root, digest(bytes))).toMatchObject({
+        fileCount: 7,
+        manifestSha256: digest(bytes),
+        manifest: { runtime: authority.runtime },
+      });
+      await put("apps/reference-web/dist/assets/app.js", "globalThis.__REFERENCE_WEB__ = false;\n");
+      expect(() => verifyInstalledReferenceWebArtifact(root, digest(bytes)))
+        .toThrow("bytes differ from their content manifest");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("recognizes only the exact AST-bound child-process launcher import", () => {
     const exact = [
       "import {",

@@ -6,6 +6,11 @@ import { basename, extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  REFERENCE_WEB_ARTIFACT_MANIFEST_FILENAME,
+  verifyInstalledReferenceWebArtifact,
+} from "@myagents-dsh/artifact-verifier/reference-web-artifact";
+
+import {
   FROZEN_BATCH_1_RUNTIME_MANIFEST_SHA256,
   REFERENCE_WEB_EXTENSION_REVISION,
   REFERENCE_WEB_DEFAULT_CONTROLS,
@@ -236,6 +241,15 @@ const openSystemBrowser = (url: string): void => {
 };
 
 export const runReferenceWebHost = async (arguments_: readonly string[]): Promise<void> => {
+  const packagedManifest = resolve(repositoryRoot, REFERENCE_WEB_ARTIFACT_MANIFEST_FILENAME);
+  await lstat(packagedManifest).then(() => {
+    const artifact = verifyInstalledReferenceWebArtifact(repositoryRoot);
+    if (artifact.manifest.runtime.manifestSha256 !== FROZEN_BATCH_1_RUNTIME_MANIFEST_SHA256) {
+      throw new Error("Reference Web artifact and frozen Runtime authority differ");
+    }
+  }).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  });
   const [options, apiKey, assets] = await Promise.all([
     resolveLaunchOptions(arguments_),
     loadDeepSeekApiKey(process.env, resolve(repositoryRoot, ".env")),
