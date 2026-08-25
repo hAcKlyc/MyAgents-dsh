@@ -658,7 +658,11 @@ export class ReferenceWebStore {
         return;
       }
       case "host.commandSettled":
-        this.#settleCommand(event, !this.#historyRequests.has(event.payload.commandId));
+        this.#settleCommand(
+          event,
+          this.#state.pendingCommandIds.includes(event.payload.commandId)
+            && !this.#historyRequests.has(event.payload.commandId),
+        );
         await this.#settleHistory(event);
         return;
       case "host.resyncRequired": {

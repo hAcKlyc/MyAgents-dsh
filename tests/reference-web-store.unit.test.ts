@@ -134,6 +134,32 @@ describe("Reference Web React store", () => {
     }
   });
 
+  it("does not surface command failures owned by another browser tab", async () => {
+    const queue = new EventQueue();
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve({ ...bootstrap, snapshot: { sessions: [] } })),
+      events: ({ signal }: { signal?: AbortSignal }) => queue.events(signal ?? new AbortController().signal),
+      command: vi.fn(),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    const store = new ReferenceWebStore({ client, idFactory: () => "local-tab", now: () => now });
+    await store.start();
+    queue.push({
+      epoch: "shared-host",
+      sequence: 1,
+      emittedAt: now,
+      kind: "host.commandSettled",
+      payload: {
+        commandId: "other-tab-command",
+        state: "failed",
+        error: { code: "primary_session_not_ready", message: "Foreign tab failure", retryable: true },
+      },
+    });
+    await new Promise((resolveWait) => setTimeout(resolveWait, 5));
+    expect(store.getSnapshot().notices).toEqual([]);
+    store.stop();
+  });
+
   it("drives configuration, component inspection, and mutation commands from Runtime results", async () => {
     const queue = new EventQueue();
     const commands: BrowserCommand[] = [];

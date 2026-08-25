@@ -270,9 +270,9 @@ h1, h2, h3, p { margin-top: 0; }
 .interaction-card button:disabled { cursor: default; opacity: .45; }
 .interaction-state { margin: 8px 0 0; color: var(--muted); font-size: 10px; text-align: right; }
 .dialog-queue { margin: 12px 0 0; color: var(--muted); font-size: 10px; text-align: right; }
-.notice-stack { position: fixed; z-index: 30; display: grid; right: 18px; bottom: 18px; gap: 8px; width: min(360px, calc(100vw - 36px)); }
-.notice { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 13px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--surface-strong); box-shadow: var(--shadow); font-size: 11px; }
-.notice button { border: 0; background: transparent; cursor: pointer; }
+.notice-stack { position: fixed; z-index: 30; display: grid; right: 18px; top: 82px; gap: 8px; width: min(360px, calc(100vw - 36px)); pointer-events: none; }
+.notice { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 13px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--surface-strong); box-shadow: var(--shadow); font-size: 11px; pointer-events: none; }
+.notice button { border: 0; background: transparent; cursor: pointer; pointer-events: auto; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; white-space: nowrap; }
 
 @media (max-width: 900px) {
