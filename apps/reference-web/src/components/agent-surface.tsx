@@ -62,6 +62,14 @@ const messageText = (value: unknown): string | undefined => {
 };
 const turnIdFor = (envelope: RuntimeEnvelope): string | undefined => envelope.turnId
   ?? (envelope.event.kind === "turn_admitted" ? envelope.event.admission.turnId : undefined);
+const queuedMessageTitle = (state: "queued" | "admitted" | "delivered" | "cancelled"): string => {
+  switch (state) {
+    case "queued": return "消息正在等待当前任务完成";
+    case "admitted": return "排队消息已进入处理";
+    case "delivered": return "排队消息已送达 Agent";
+    case "cancelled": return "排队消息已取消";
+  }
+};
 const activityFor = (envelope: RuntimeEnvelope): Extract<FlowBlock, { kind: "activity" }> | undefined => {
   const event = envelope.event;
   const id = `${envelope.runtimeGeneration}:${envelope.sequence}`;
@@ -76,7 +84,7 @@ const activityFor = (envelope: RuntimeEnvelope): Extract<FlowBlock, { kind: "act
       kind: "activity",
       id,
       label: "队列",
-      title: event.state === "queued" ? "消息正在等待当前任务完成" : `排队消息 · ${event.state}`,
+      title: queuedMessageTitle(event.state),
       queuedMessageId: event.messageId,
       cancellable: event.state === "queued" || event.state === "admitted",
     };
@@ -152,7 +160,13 @@ const foldRuntimeTurns = (events: readonly RuntimeEnvelope[]): AssistantTurn[] =
       continue;
     }
     const activity = activityFor(envelope);
-    if (activity !== undefined) turn.blocks.push(activity);
+    if (activity !== undefined) {
+      if (activity.queuedMessageId !== undefined) {
+        turn.blocks = turn.blocks.filter((block) => block.kind !== "activity"
+          || block.queuedMessageId !== activity.queuedMessageId);
+      }
+      turn.blocks.push(activity);
+    }
   }
   return order.flatMap((id) => {
     const turn = mutable.get(id);

@@ -187,6 +187,53 @@ describe("Reference Web React shell", () => {
     store.stop();
   });
 
+  it("replaces queued-message activity with its latest terminal state", async () => {
+    const source = fixture();
+    if (source.snapshot.projection === undefined) throw new Error("fixture projection is missing");
+    const projection = source.snapshot.projection;
+    const queuedEvent = {
+      runtimeGeneration: "generation-1",
+      productSessionId: "web-session-1",
+      runtimeSessionId: "runtime-session-1",
+      emittedAt: now,
+      turnId: "turn-1",
+    } as const;
+    const settled: Bootstrap = { ...source, snapshot: {
+      ...source.snapshot,
+      projection: {
+        ...projection,
+        openInteractions: [],
+        events: [
+          { ...queuedEvent, sequence: 1, event: {
+            kind: "queued_message" as const, messageId: "message-1", state: "queued" as const,
+          } },
+          { ...queuedEvent, sequence: 2, event: {
+            kind: "queued_message" as const, messageId: "message-1", state: "cancelled" as const,
+          } },
+        ],
+      },
+    } };
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve(settled)),
+      events: async function* (options: { signal?: AbortSignal }) {
+        const noEvents: HostEvent[] = [];
+        for (const event of noEvents) yield event;
+        await new Promise<void>((resolveAbort) => options.signal?.addEventListener(
+          "abort", () => resolveAbort(), { once: true },
+        ));
+      },
+      command: vi.fn(),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    const store = new ReferenceWebStore({ client, idFactory: () => "fixture-id", now: () => now });
+    render(<App store={store} />);
+
+    expect(await screen.findByText("排队消息已取消")).not.toBeNull();
+    expect(screen.queryByText("消息正在等待当前任务完成")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel queued message" })).toBeNull();
+    store.stop();
+  });
+
   it("projects one assistant Turn with safe markdown and one folded tool lifecycle", async () => {
     const source = fixture();
     if (source.snapshot.projection === undefined) throw new Error("fixture projection is missing");
