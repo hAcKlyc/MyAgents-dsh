@@ -611,13 +611,15 @@ export class ReferenceWebStore {
           : terminalOperationId !== undefined
             ? current.projection.activeOperationIds.filter((id) => id !== terminalOperationId)
             : current.projection.activeOperationIds;
-        this.#update({ snapshot: { ...current, projection: {
+        const nextSnapshot: HostSnapshot = { ...current, projection: {
           ...current.projection,
           runtimeGeneration: runtimeEvent.runtimeGeneration,
           runtimeSessionId: runtimeEvent.runtimeSessionId,
           events: appendVisibleRuntimeEvent(current.projection.events, runtimeEvent),
           activeOperationIds,
-        } } });
+        } };
+        this.#update({ snapshot: nextSnapshot });
+        if (runtimeEvent.event.kind === "turn_terminal") this.#reloadHistory(nextSnapshot);
         return;
       }
       case "host.interactionOpened": {
@@ -781,6 +783,11 @@ export class ReferenceWebStore {
       status: "loading" as const,
     }) });
     void this.#requestHistoryPage(webSessionId);
+  }
+
+  #reloadHistory(snapshot: HostSnapshot): void {
+    this.#historyWebSessionId = undefined;
+    this.#ensureHistory(snapshot);
   }
 
   async #requestHistoryPage(webSessionId: string, cursor?: string): Promise<void> {

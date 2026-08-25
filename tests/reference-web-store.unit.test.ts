@@ -295,6 +295,29 @@ describe("Reference Web React store", () => {
       },
     });
     await vi.waitFor(() => expect(store.getSnapshot().snapshot.projection?.events).toHaveLength(1));
+    queue.push({
+      epoch: "epoch-1",
+      sequence: 11,
+      emittedAt: now,
+      kind: "runtime.event",
+      payload: {
+        webSessionId: "web-session-1",
+        event: {
+          runtimeGeneration: "generation-1",
+          productSessionId: "web-session-1",
+          runtimeSessionId: "runtime-session-1",
+          sequence: 2,
+          emittedAt: now,
+          turnId: "turn-1",
+          event: {
+            kind: "turn_terminal",
+            clientOperationId: "operation-1",
+            terminal: { kind: "succeeded" },
+          },
+        },
+      },
+    });
+    await vi.waitFor(() => expect(commands.filter(({ kind }) => kind === "history.read")).toHaveLength(2));
     await store.submitTurn("Build it", []);
     await vi.waitFor(() => expect(store.getSnapshot().localInputs[0]?.state).toBe("accepted"));
     const userCommands = commands.filter(({ kind }) => kind !== "history.read");
