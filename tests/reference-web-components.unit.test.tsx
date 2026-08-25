@@ -52,6 +52,76 @@ const fixture = (): Bootstrap => ({
 afterEach(() => cleanup());
 
 describe("Reference Web React shell", () => {
+  it("selects a durable boundary when asynchronous history loading completes", async () => {
+    const inspection: ControlInspection = {
+      controls: {
+        configuration: {
+          revision: "config-v1",
+          providerRouteId: "deepseek-official",
+          modelId: "deepseek-v4-flash",
+          reasoningEffort: "high",
+          permissionMode: "default",
+          interactionScenario: "host-interaction-v1",
+          systemPrompt: "You are a workspace Agent.",
+        },
+        components: { revision: "components-v1", digest: "d".repeat(64), components: [] },
+      },
+      runtime: { primarySessionState: "ready" },
+      catalog: { revision: "components-v1", digest: "d".repeat(64), tools: [], commands: [], skills: [], agents: [], mcpServers: [] },
+      status: { state: "applied" },
+      mutations: [],
+    };
+    const loading: BrowserHistorySnapshot = {
+      webSessionId: "web-session-1",
+      runtimeSessionId: "runtime-session-1",
+      durableSequence: 0,
+      events: [],
+      mutationBoundaries: [],
+      status: "loading",
+    };
+    const complete: BrowserHistorySnapshot = {
+      ...loading,
+      durableSequence: 10,
+      mutationBoundaries: [{
+        stableBoundaryId: "boundary-late",
+        sequence: 10,
+        turn: 1,
+        transcriptPostcondition: "a".repeat(64),
+      }],
+      transcriptPostcondition: "b".repeat(64),
+      status: "complete",
+    };
+    const inert = vi.fn(() => Promise.resolve());
+    const props = {
+      open: true,
+      tab: "session" as const,
+      loading: false,
+      inspection,
+      mutation: undefined,
+      sessionTitle: "First Session",
+      onClose: vi.fn(),
+      onTab: vi.fn(),
+      onRefresh: inert,
+      onApplyConfiguration: inert,
+      onReplaceComponents: inert,
+      onCompact: inert,
+      onPrepareMutation: inert,
+      onCommitMutation: inert,
+      onRollbackMutation: inert,
+      onPurge: inert,
+    };
+    const view = render(<ControlCenter {...props} history={loading} />);
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "稳定边界" }).disabled).toBe(true);
+    expect(screen.getByRole("option", { name: "正在刷新稳定边界…" })).not.toBeNull();
+
+    view.rerender(<ControlCenter {...props} history={complete} />);
+    const selector = screen.getByRole<HTMLSelectElement>("combobox", { name: "稳定边界" });
+    await waitFor(() => expect(selector.value).toBe("boundary-late"));
+    const rewind = screen.getByRole("heading", { name: "Rewind" }).closest("article")
+      ?.querySelector<HTMLButtonElement>("button");
+    expect(rewind?.disabled).toBe(false);
+  });
+
   it("submits the latest component JSON and keeps destructive confirmation keyboard-contained", async () => {
     const starter: BrowserComponentDefinition = {
       id: "workspace-review",

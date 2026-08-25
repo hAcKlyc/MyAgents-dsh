@@ -96,6 +96,10 @@ const verifyMutationRecovery = async (page: Page): Promise<void> => {
   const rewind = page.locator("article.session-operation").filter({ hasText: "Rewind" });
   const prepare = rewind.getByRole("button", { name: "Prepare" });
   await prepare.waitFor({ state: "visible", timeout: 20_000 });
+  const boundaryDeadline = Date.now() + 20_000;
+  while (await prepare.isDisabled() && Date.now() < boundaryDeadline) {
+    await page.waitForTimeout(100);
+  }
   assert(!(await prepare.isDisabled()), "rewind requires one durable stable boundary");
   await prepare.click();
   await page.getByRole("dialog", { name: /确认 rewind/u }).waitFor({ timeout: 20_000 });

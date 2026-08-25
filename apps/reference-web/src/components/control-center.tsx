@@ -263,6 +263,10 @@ function SessionPanel(props: Readonly<{
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const previousMutationToken = useRef<string | undefined>(undefined);
   useEffect(() => {
+    if (boundaries.some((boundary) => boundary.stableBoundaryId === boundaryId)) return;
+    setBoundaryId(boundaries.at(-1)?.stableBoundaryId ?? "");
+  }, [boundaries, boundaryId]);
+  useEffect(() => {
     const token = props.mutation?.token;
     if (token === previousMutationToken.current) return;
     if (token === undefined) {
@@ -313,8 +317,11 @@ function SessionPanel(props: Readonly<{
       <span className="revision-chip">{props.history?.durableSequence ?? 0} events</span></div>
     <article className="session-operation"><div><h4>压缩上下文</h4><p>请求 Runtime 在空闲边界执行 durable compaction。</p></div>
       <button type="button" disabled={props.disabled} onClick={() => void props.onCompact()}>Compact</button></article>
-    <label className="field"><span>稳定边界</span><select value={boundaryId} onChange={(event) => setBoundaryId(event.target.value)}>
-      {boundaries.length === 0 && <option value="">尚无稳定边界</option>}
+    <label className="field"><span>稳定边界</span><select value={boundaryId} onChange={(event) => setBoundaryId(event.target.value)}
+      disabled={props.history?.status === "loading"}>
+      {boundaries.length === 0 && <option value="">
+        {props.history?.status === "loading" ? "正在刷新稳定边界…" : "尚无稳定边界"}
+      </option>}
       {boundaries.map((boundary) => <option key={boundary.stableBoundaryId} value={boundary.stableBoundaryId}>
         Turn {boundary.turn} · event {boundary.sequence}</option>)}
     </select></label>
