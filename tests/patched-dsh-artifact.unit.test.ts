@@ -9,6 +9,7 @@ import {
   canonicalTarGzip,
   assertContainedNodeModules,
   assertNoAncestorNodeModules,
+  buildExactExternalOverrides,
   createBundleIdentityGuard,
   resolveNewOutputRoot,
   validateConsumerLock,
@@ -241,6 +242,35 @@ describe("patched DSH package staging and packed evidence", () => {
 });
 
 describe("patched DSH artifact build hardening", () => {
+  it("pins fresh npm resolution to exact root and parent-scoped external authorities", () => {
+    expect(buildExactExternalOverrides([
+      { name: "fast-uri", path: "node_modules/fast-uri", version: "3.1.5" },
+      { name: "content-type", path: "node_modules/content-type", version: "1.0.5" },
+      { name: "body-parser", path: "node_modules/body-parser", version: "2.3.0" },
+      {
+        name: "content-type",
+        path: "node_modules/body-parser/node_modules/content-type",
+        version: "2.1.0",
+      },
+    ])).toEqual({
+      "body-parser": "2.3.0",
+      "body-parser@2.3.0": { "content-type": "2.1.0" },
+      "content-type": "1.0.5",
+      "fast-uri": "3.1.5",
+    });
+  });
+
+  it("fails closed when a multi-version override has no exact parent authority", () => {
+    expect(() => buildExactExternalOverrides([
+      { name: "content-type", path: "node_modules/content-type", version: "1.0.5" },
+      {
+        name: "content-type",
+        path: "node_modules/missing/node_modules/content-type",
+        version: "2.1.0",
+      },
+    ])).toThrow("no exact parent");
+  });
+
   it("emits the same canonical tar bytes for semantically identical package manifests", () => {
     const first = canonicalPackedMember(
       "package/package.json",

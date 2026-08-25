@@ -531,6 +531,65 @@ const exactJsonObject = (value: unknown, context: string): Record<string, unknow
   return value as Record<string, unknown>;
 };
 
+type NpmOverride = string | Record<string, string>;
+
+const packageNameFromLockPath = (path: string): string => {
+  const marker = "node_modules/";
+  const index = path.lastIndexOf(marker);
+  if (index < 0) throw new Error(`external authority has an invalid lock path: ${path}`);
+  return path.slice(index + marker.length);
+};
+
+export const buildExactExternalOverrides = (
+  authority: readonly { readonly name: string; readonly path: string; readonly version: string }[],
+): Readonly<Record<string, NpmOverride>> => {
+  const rowsByName = new Map<string, typeof authority>();
+  for (const row of authority) {
+    const rows = rowsByName.get(row.name) ?? [];
+    rowsByName.set(row.name, [...rows, row]);
+  }
+  const authorityByPath = new Map(authority.map((row) => [row.path, row]));
+  const overrides: Record<string, NpmOverride> = {};
+  for (const [name, rows] of [...rowsByName].sort(([left], [right]) => compareCodePoints(left, right))) {
+    const versions = new Set(rows.map(({ version }) => version));
+    if (versions.size === 1) {
+      const [version] = versions;
+      if (version === undefined) throw new Error(`external authority is empty for ${name}`);
+      overrides[name] = version;
+      continue;
+    }
+    const root = rows.find(({ path }) => path === `node_modules/${name}`);
+    if (root === undefined) {
+      throw new Error(`multi-version external authority has no root package: ${name}`);
+    }
+    overrides[name] = root.version;
+    for (const row of rows) {
+      if (row === root) continue;
+      const parentPath = row.path.slice(0, row.path.lastIndexOf("/node_modules/"));
+      const parent = authorityByPath.get(parentPath);
+      if (parent === undefined) {
+        throw new Error(`external authority has no exact parent for ${row.path}`);
+      }
+      const parentName = packageNameFromLockPath(parent.path);
+      const parentKey = `${parentName}@${parent.version}`;
+      const nested = overrides[parentKey];
+      if (typeof nested === "string") {
+        throw new Error(`external override parent collides with a direct authority: ${parentKey}`);
+      }
+      const children = nested ?? {};
+      const existing = children[name];
+      if (existing !== undefined && existing !== row.version) {
+        throw new Error(`external override parent requires conflicting ${name} versions: ${parentKey}`);
+      }
+      overrides[parentKey] = { ...children, [name]: row.version };
+    }
+  }
+  return Object.freeze(Object.fromEntries(Object.entries(overrides).map(([name, value]) => [
+    name,
+    typeof value === "string" ? value : Object.freeze(value),
+  ])));
+};
+
 export const validateConsumerLock = (
   consumerLock: Record<string, unknown>,
   plan: PatchedDshArtifactPlan,
@@ -637,6 +696,10 @@ const verifyArtifactCompile = (
   const typescript = compileToolingByName.get("typescript");
   if (nodeTypes === undefined || typescript === undefined) throw new Error("compile tooling authority is incomplete");
   const consumerPackagePath = resolve(compileRoot, "package.json");
+  const overrides = buildExactExternalOverrides([
+    ...PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
+    ...PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
+  ]);
   writeFileSync(consumerPackagePath, `${JSON.stringify({
     name: "@myagents-dsh/patched-dsh-consumer",
     version: "0.0.0",
@@ -649,6 +712,7 @@ const verifyArtifactCompile = (
       "@types/node": nodeTypes.version,
       typescript: typescript.version,
     },
+    overrides,
   }, null, 2)}\n`);
   const npmEnvironment = {
     ...environment,
