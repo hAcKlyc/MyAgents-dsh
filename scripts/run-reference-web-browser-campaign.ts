@@ -52,7 +52,12 @@ const domAccessibilityAudit = (page: Page): Promise<Readonly<{
     }
     if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement
       || element instanceof HTMLTextAreaElement) {
-      const associated = Array.from(element.labels).map((candidate) => candidate.textContent).join(" ").trim();
+      const explicitLabels = element.id === "" ? [] : Array.from(document.querySelectorAll<HTMLLabelElement>(
+        `label[for="${CSS.escape(element.id)}"]`,
+      ));
+      const wrappingLabel = element.closest("label");
+      const associated = [...explicitLabels, ...(wrappingLabel === null ? [] : [wrappingLabel])]
+        .map((candidate) => candidate.textContent).join(" ").trim();
       if (associated !== "") return associated;
     }
     return element.textContent.trim();
