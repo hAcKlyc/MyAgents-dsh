@@ -276,12 +276,16 @@ describe("Reference Web Host application owner", () => {
       turnId: "turn-1",
       event: {
         kind: "turn_admitted",
-        admission: { turnId: "turn-1", admittedAt: "2026-08-24T00:00:00.000Z" },
+        admission: {
+          clientOperationId: "operation-1",
+          turnId: "turn-1",
+          admittedAt: "2026-08-24T00:00:00.000Z",
+        },
       },
     });
     expect(application.bootstrap(auth).snapshot.projection).toMatchObject({
       events: [{ sequence: 1, event: { kind: "turn_admitted" } }],
-      activeOperationIds: ["turn-1"],
+      activeOperationIds: ["operation-1"],
     });
     await active.reversePorts.notifications["runtime/event"]({
       runtimeGeneration: "generation-1",
@@ -290,7 +294,11 @@ describe("Reference Web Host application owner", () => {
       sequence: 2,
       emittedAt: "2026-08-24T00:00:01.000Z",
       turnId: "turn-1",
-      event: { kind: "turn_terminal", terminal: { kind: "aborted", reason: "user" } },
+      event: {
+        kind: "turn_terminal",
+        clientOperationId: "operation-1",
+        terminal: { kind: "aborted", reason: "user" },
+      },
     });
     expect(application.snapshot().projection?.activeOperationIds).toEqual([]);
     await expect(application.accept({

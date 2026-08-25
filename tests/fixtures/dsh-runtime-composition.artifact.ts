@@ -1168,6 +1168,8 @@ await assert.rejects(
 );
 const noSearchWebConfig = canonicalToolPlaneConfig.web;
 assert.ok(noSearchWebConfig !== undefined);
+const noSearchFetchConfig = noSearchWebConfig.fetch;
+assert.ok(noSearchFetchConfig !== undefined);
 const noSearchComposition = await composeDshRootServices({
   adapter: new ScriptedFakeLlmAdapter(),
   providers: ["fixture"],
@@ -1178,7 +1180,7 @@ try {
   const noSearchToolPlaneConfig = bindCanonicalToolPlaneConfig(noSearchComposition);
   await installCanonicalToolPlane(noSearchComposition, Object.freeze({
     ...noSearchToolPlaneConfig,
-    web: Object.freeze({ fetch: noSearchWebConfig.fetch }),
+    web: Object.freeze({ fetch: noSearchFetchConfig }),
   }));
 } finally {
   if (previousAmbientSearchProvider === undefined) delete process.env.DSH_WEB_SEARCH_PROVIDER;

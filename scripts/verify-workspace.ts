@@ -202,6 +202,7 @@ const expectedWorkspaceFiles = new Map([
     "src/composition.ts",
     "src/host-interaction.ts",
     "src/host-model.ts",
+    "src/host-web-search.ts",
     "src/index.ts",
     "src/primary-session.ts",
     "src/utility.ts",

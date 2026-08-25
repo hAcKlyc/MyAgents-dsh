@@ -14,6 +14,8 @@ export const PROTOCOL_VERSION = "2.0.0-draft.1" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.fc0096a8d5bc" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
+export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
+export const DEEPSEEK_WEB_SEARCH_POLICY_REF = "deepseek-official-web-search-v1" as const;
 export const MAX_FRAME_BYTES = 1_048_576;
 export const MIN_FRAME_BYTES = 4_096;
 export const MAX_IDENTIFIER_LENGTH = 256;
@@ -414,7 +416,11 @@ const turnStartParams = strictObject({
   limits: operationLimits,
   origin: turnOrigin,
 });
-const turnAdmission = strictObject({ turnId: identifier, admittedAt: Type.String({ format: "date-time" }) });
+const turnAdmission = strictObject({
+  clientOperationId: identifier,
+  turnId: identifier,
+  admittedAt: Type.String({ format: "date-time" }),
+});
 const turnStartResult = Type.Union([
   strictObject({ state: Type.Literal("accepted"), clientOperationId: identifier }),
   strictObject({ state: Type.Literal("already_known"), admission: Type.Optional(turnAdmission), terminal: Type.Optional(TurnTerminalSchema) }),
@@ -644,7 +650,7 @@ export const RuntimeEventSchema = Type.Union([
   strictObject({ kind: Type.Literal("session"), phase: identifier, detail: Type.Optional(jsonRecord) }),
   strictObject({ kind: Type.Literal("turn_admitted"), admission: turnAdmission }),
   strictObject({ kind: Type.Literal("turn_started") }),
-  strictObject({ kind: Type.Literal("turn_terminal"), terminal: TurnTerminalSchema }),
+  strictObject({ kind: Type.Literal("turn_terminal"), clientOperationId: identifier, terminal: TurnTerminalSchema }),
   strictObject({ kind: Type.Literal("assistant_delta"), delta: Type.String({ maxLength: 262_144 }) }),
   strictObject({ kind: Type.Literal("thinking_delta"), delta: Type.String({ maxLength: 262_144 }) }),
   strictObject({ kind: Type.Literal("message_event"), role: Type.Union([Type.Literal("assistant"), Type.Literal("user"), Type.Literal("tool_result")]), eventId: identifier, messageId: Type.Optional(identifier) }),

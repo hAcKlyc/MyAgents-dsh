@@ -138,7 +138,7 @@ describe("Reference Web React shell", () => {
       ...source.snapshot,
       projection: {
         ...source.snapshot.projection,
-        activeOperationIds: ["turn-1"],
+        activeOperationIds: ["operation-1"],
         openInteractions: [],
         events: [{
           runtimeGeneration: "generation-1",
@@ -173,14 +173,16 @@ describe("Reference Web React shell", () => {
 
     await screen.findByRole("heading", { name: "First Session" });
     const composer = await screen.findByRole("textbox", { name: "Message the agent" });
-    expect(screen.getByRole("combobox", { name: "Delivery mode" })).not.toBeNull();
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Delivery mode" }).value).toBe("follow_up");
     fireEvent.change(composer, { target: { value: "Use the existing API" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send steering message" }));
+    fireEvent.click(screen.getByRole("button", { name: "Queue follow-up" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel queued message" }));
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(commands.filter(({ kind }) => kind !== "history.read")).toHaveLength(3));
-    expect(commands.filter(({ kind }) => kind !== "history.read").map(({ kind }) => kind)).toEqual([
-      "turn.steer", "turn.cancelQueued", "turn.interrupt",
+    expect(commands.filter(({ kind }) => kind !== "history.read")).toMatchObject([
+      { kind: "turn.followUp", payload: { clientOperationId: "operation-1" } },
+      { kind: "turn.cancelQueued", payload: { clientOperationId: "operation-1" } },
+      { kind: "turn.interrupt", payload: { clientOperationId: "operation-1", cancelQueued: true } },
     ]);
     store.stop();
   });
@@ -196,7 +198,9 @@ describe("Reference Web React shell", () => {
         events: [
           {
             runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
-            sequence: 1, emittedAt: now, event: { kind: "turn_admitted", admission: { turnId: "turn-1", admittedAt: now } },
+            sequence: 1, emittedAt: now, event: { kind: "turn_admitted", admission: {
+              clientOperationId: "operation-1", turnId: "turn-1", admittedAt: now,
+            } },
           },
           {
             runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
@@ -219,7 +223,9 @@ describe("Reference Web React shell", () => {
           },
           {
             runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
-            sequence: 6, emittedAt: now, turnId: "turn-1", event: { kind: "turn_terminal", terminal: { kind: "aborted", reason: "user" } },
+            sequence: 6, emittedAt: now, turnId: "turn-1", event: {
+              kind: "turn_terminal", clientOperationId: "operation-1", terminal: { kind: "aborted", reason: "user" },
+            },
           },
         ],
       },

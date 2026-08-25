@@ -164,6 +164,7 @@ export const projectSessionEvent = (
         event: Object.freeze({
           kind: "turn_admitted",
           admission: Object.freeze({
+            clientOperationId: source.data.clientOperationId,
             turnId: source.data.productTurnId,
             admittedAt: new Date(source.data.acceptedAt).toISOString(),
           }),
@@ -373,7 +374,11 @@ export const projectSessionEvent = (
       return Object.freeze([Object.freeze({
         turnId: source.data.productTurnId,
         terminalReservationId: source.data.clientOperationId,
-        event: Object.freeze({ kind: "turn_terminal", terminal: operation.terminal }),
+        event: Object.freeze({
+          kind: "turn_terminal",
+          clientOperationId: source.data.clientOperationId,
+          terminal: operation.terminal,
+        }),
       })]);
     }
     default:

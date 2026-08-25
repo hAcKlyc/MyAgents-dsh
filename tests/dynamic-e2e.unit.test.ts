@@ -364,8 +364,10 @@ describe("dynamic E2E harness", () => {
         reasoning: true,
         effort: "high",
       });
+      expect(route.networkPolicyRef).toBe("deepseek-official-web-search-v1");
+      expect(route.webSearchAdapters).toEqual(["deepseek-official-native-web-search"]);
       expect(route.routeConfigSha256).toBe(
-        "c83f8ebea7345eb486f827ad22a6d5b114b68ae103b7a4501193164c5d43604d",
+        "59a300e6cf244890fb5731117856daede308aa42eec99c84beebae6fc532a62e",
       );
       expect(await readFile(path, "utf8")).not.toContain(material);
     } finally {

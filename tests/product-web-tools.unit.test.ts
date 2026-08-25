@@ -110,7 +110,7 @@ const response = (
   statusCode,
 });
 
-const defaultContent: CanonicalWebToolsConfig["fetch"]["content"] = Object.freeze({
+const defaultContent: NonNullable<CanonicalWebToolsConfig["fetch"]>["content"] = Object.freeze({
   convert: (request: ProductWebContentRequest) => Promise.resolve(Object.freeze({
     content: Buffer.from(request.bytes).toString("utf8"),
     kind: "text" as const,
@@ -118,7 +118,7 @@ const defaultContent: CanonicalWebToolsConfig["fetch"]["content"] = Object.freez
   })),
 });
 
-const defaultUtility: CanonicalWebToolsConfig["fetch"]["utility"] = Object.freeze({
+const defaultUtility: NonNullable<CanonicalWebToolsConfig["fetch"]>["utility"] = Object.freeze({
   run: (request: ProductWebUtilityRequest) => Promise.resolve(Object.freeze({
     answer: `${request.prompt}: ${request.source}`,
     citations: Object.freeze([{ title: "Fixture", url: request.finalUrl }]),
@@ -134,11 +134,11 @@ const defaultUtility: CanonicalWebToolsConfig["fetch"]["utility"] = Object.freez
 });
 
 const createWebHarness = async (options: Readonly<{
-  content?: CanonicalWebToolsConfig["fetch"]["content"];
+  content?: NonNullable<CanonicalWebToolsConfig["fetch"]>["content"];
   product?: ProductToolContext;
   search?: CanonicalWebToolsConfig["search"];
   transport?: ProductHttpTransport;
-  utility?: CanonicalWebToolsConfig["fetch"]["utility"];
+  utility?: NonNullable<CanonicalWebToolsConfig["fetch"]>["utility"];
 }> = {}) => {
   const context = new Context();
   let currentProduct = options.product ?? productContext();
@@ -966,6 +966,46 @@ describe("safe Web Providers and canonical Web tools", () => {
       }),
     });
     expect(context.tools.schemas().map(({ name }) => name)).toEqual(["WebFetch"]);
+    await context.fiber.dispose();
+  });
+
+  it("installs an approved WebSearch adapter without exposing an unconfigured WebFetch", async () => {
+    const context = new Context();
+    const product = productContext();
+    context.provide("productTools", { authorize: () => Promise.resolve(), resolve: () => product } as never);
+    await context.plugin(SystemPrompt);
+    await context.plugin(ToolRuntime, { mode: "native" });
+    await context.plugin(WebRuntime, {
+      fetchProvider: "disabled-fetch",
+      searchProvider: "approved-search",
+    });
+    await context.plugin(CanonicalWebTools, {
+      search: Object.freeze({
+        available: () => true,
+        credentialRef: "credential-ref-v1",
+        policyRef: policy.policyRef,
+        providerId: "approved-search",
+        run: () => Promise.resolve(Object.freeze({
+          citations: Object.freeze([{ title: "Fixture", url: "https://example.com/result" }]),
+          durationMs: 1,
+          results: Object.freeze([{
+            snippet: "fixture",
+            title: "Fixture",
+            url: "https://example.com/result",
+          }]),
+          searchCount: 1,
+          truncated: false,
+          usage: Object.freeze({
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            inputTokens: 1,
+            outputTokens: 1,
+            totalTokens: 2,
+          }),
+        })),
+      }),
+    });
+    expect(context.tools.schemas().map(({ name }) => name)).toEqual(["WebSearch"]);
     await context.fiber.dispose();
   });
 

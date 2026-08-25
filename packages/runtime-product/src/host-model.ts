@@ -39,6 +39,7 @@ import type {
   HostProviderRequestScope,
 } from "@myagents-dsh/host-ports";
 import { ProtocolError, type MethodParams } from "@myagents-dsh/protocol";
+import type { ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -526,6 +527,55 @@ export class HostDeepSeekModelAuthority {
       token: Object.freeze({}),
     });
     return this.#auxiliaryRequest.run(request, action);
+  }
+
+  runWebSearchRequest<T>(
+    context: ProductToolContext,
+    action: (profile: ProviderProfile) => Promise<T>,
+  ): Promise<T> {
+    if (!(context.signal instanceof AbortSignal) || isProxy(context.signal)
+      || typeof action !== "function" || isProxy(action)) {
+      return Promise.reject(new TypeError("WebSearch Provider request requires exact tool authority"));
+    }
+    const binding = this.requireBinding();
+    const runtimeSessionId = String(context.agent.id);
+    if (runtimeSessionId !== binding.runtimeSessionId
+      || context.birth.modelProfileRevision !== binding.profile.revision) {
+      return Promise.reject(new ProtocolError(
+        "provider_request_stale",
+        "WebSearch Provider request differs from the admitted Provider binding",
+        true,
+      ));
+    }
+    const digest = createHash("sha256").update(JSON.stringify([
+      "myagents-dsh-web-search-request-v1",
+      context.clientOperationId,
+      context.callId,
+      context.dshTurn,
+    ])).digest("hex").slice(0, 48);
+    const assertCurrent = (): void => {
+      if (this.#binding !== binding || context.signal.aborted
+        || String(context.agent.id) !== binding.runtimeSessionId) {
+        throw new ProtocolError(
+          "provider_request_stale",
+          "WebSearch Provider request authority is stale",
+          true,
+        );
+      }
+    };
+    const scope = this.#credentials.createProviderRequestScope({
+      assertCurrent,
+      binding,
+      callId: context.callId,
+      clientOperationId: context.clientOperationId,
+      deadlineMs: this.#config.requestDeadlineMs,
+      dshTurn: context.dshTurn,
+      modelRequestId: `web-search-model-${digest}`,
+      rootCallId: context.rootCallId,
+      signal: context.signal,
+      turnId: context.productTurnId,
+    });
+    return this.#credentials.runWithProviderRequestScope(scope, () => action(binding.profile));
   }
 
   resolveAttachments() {

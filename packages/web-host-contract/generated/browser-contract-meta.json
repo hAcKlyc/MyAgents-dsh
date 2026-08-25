@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "contractVersion": "1.0.0-draft.1",
-  "schemaSha256": "2b8998f39047cbda1b1d2e23660d60542197f48e19bd75f0f8857ed52b39b9dd",
+  "schemaSha256": "5a7799d90f4a071484aaacbb4489953f045213e0a3ecd724b9c880397947c01b",
   "commandKinds": [
     "session.create",
     "session.select",

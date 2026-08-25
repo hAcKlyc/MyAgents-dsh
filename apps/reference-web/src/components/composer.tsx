@@ -22,7 +22,7 @@ export function Composer(props: Readonly<{
 }>): React.JSX.Element {
   const [text, setText] = useState("");
   const [uploads, setUploads] = useState<readonly AttachmentSummary[]>([]);
-  const [busyDelivery, setBusyDelivery] = useState<Extract<InputDelivery, "steer" | "follow_up">>("steer");
+  const [busyDelivery, setBusyDelivery] = useState<Extract<InputDelivery, "steer" | "follow_up">>("follow_up");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const [preview, setPreview] = useState<Readonly<{ name: string; url: string }>>();

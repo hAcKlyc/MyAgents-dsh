@@ -157,6 +157,7 @@ import {
   type HostBackedInteractionProviderConfig,
   type HostInteractionResponseController,
 } from "./host-interaction.js";
+import { createHostDeepSeekWebSearchConfig } from "./host-web-search.js";
 
 export type { HostBackedInteractionProviderConfig } from "./host-interaction.js";
 
@@ -400,6 +401,7 @@ type CompositionAuthorityState = {
   readonly hostPorts: HostPortServiceController;
   hostAttachments: HostAttachmentStoreController | undefined;
   hostCredentials: HostCredentialProviderController | undefined;
+  hostModelAuthority: HostDeepSeekModelAuthority | undefined;
   readonly installHostModelGuards: (authority: HostDeepSeekModelAuthority) => void;
   readonly snapshot: () => DshRootCompositionSnapshot;
   claimed: boolean;
@@ -939,6 +941,7 @@ export interface CanonicalToolPlaneConfig {
 }
 
 const DISABLED_WEB_SEARCH_PROVIDER_ID = "myagents-web-search-disabled";
+const DISABLED_WEB_FETCH_PROVIDER_ID = "myagents-web-fetch-disabled";
 
 export const installCanonicalToolPlane = async (
   composition: DshRootComposition,
@@ -1324,7 +1327,9 @@ export const installCanonicalToolPlane = async (
     }));
     if (webConfig !== undefined) {
       fibers.push(await root.plugin(WebRuntime, {
-        fetchProvider: "myagents-safe-fetch",
+        fetchProvider: webConfig.fetch === undefined
+          ? DISABLED_WEB_FETCH_PROVIDER_ID
+          : "myagents-safe-fetch",
         searchProvider: webConfig.search?.providerId ?? DISABLED_WEB_SEARCH_PROVIDER_ID,
       }));
       fibers.push(await root.plugin(CanonicalWebTools, webConfig));
@@ -1790,6 +1795,7 @@ export const installHostDeepSeekModelPlane = async (
     ));
     await root.plugin(ProductUtilityService, { authority: modelAuthority });
     authority.hostCredentials = credentialController;
+    authority.hostModelAuthority = modelAuthority;
     authority.hostModelProviderRoute = HOST_DEEPSEEK_PROVIDER_ROUTE;
     authority.hostModelPlane = "installed";
     composition.snapshot();
@@ -1797,6 +1803,23 @@ export const installHostDeepSeekModelPlane = async (
     authority.hostModelPlane = "failed";
     throw error;
   }
+};
+
+export const createHostDeepSeekWebSearchPlaneConfig = (
+  composition: DshRootComposition,
+  policyRef: string,
+): NonNullable<CanonicalWebToolsConfig["search"]> => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (root !== root.root || authority?.composition !== composition || authority.claimed
+    || authority.hostModelPlane !== "installed" || authority.hostModelAuthority === undefined
+    || authority.canonicalToolPlane !== "absent") {
+    throw new Error(
+      "Host DeepSeek WebSearch config requires the exact unclaimed composition after model installation",
+    );
+  }
+  composition.snapshot();
+  return createHostDeepSeekWebSearchConfig(root, authority.hostModelAuthority, policyRef);
 };
 
 Object.freeze(DshRootComposition.prototype);
@@ -2225,6 +2248,7 @@ export const composeDshRootServices = async (
       hostPorts: hostPortController,
       hostAttachments: undefined,
       hostCredentials: undefined,
+      hostModelAuthority: undefined,
       hostModelPlane: "absent",
       hostModelProviderRoute: undefined,
       checkpointStore: undefined,

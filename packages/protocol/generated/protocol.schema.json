@@ -154,6 +154,12 @@
                     "format": "date-time",
                     "type": "string"
                   },
+                  "clientOperationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
                   "turnId": {
                     "maxLength": 256,
                     "minLength": 1,
@@ -162,6 +168,7 @@
                   }
                 },
                 "required": [
+                  "clientOperationId",
                   "turnId",
                   "admittedAt"
                 ],
@@ -11963,6 +11970,12 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "clientOperationId": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
               "turnId": {
                 "maxLength": 256,
                 "minLength": 1,
@@ -11971,6 +11984,7 @@
               }
             },
             "required": [
+              "clientOperationId",
               "turnId",
               "admittedAt"
             ],
@@ -13167,6 +13181,12 @@
                     "format": "date-time",
                     "type": "string"
                   },
+                  "clientOperationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
                   "turnId": {
                     "maxLength": 256,
                     "minLength": 1,
@@ -13175,6 +13195,7 @@
                   }
                 },
                 "required": [
+                  "clientOperationId",
                   "turnId",
                   "admittedAt"
                 ],
@@ -14375,6 +14396,12 @@
                         "format": "date-time",
                         "type": "string"
                       },
+                      "clientOperationId": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                        "type": "string"
+                      },
                       "turnId": {
                         "maxLength": 256,
                         "minLength": 1,
@@ -14383,6 +14410,7 @@
                       }
                     },
                     "required": [
+                      "clientOperationId",
                       "turnId",
                       "admittedAt"
                     ],
@@ -14415,6 +14443,12 @@
               {
                 "additionalProperties": false,
                 "properties": {
+                  "clientOperationId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
                   "kind": {
                     "const": "turn_terminal",
                     "type": "string"
@@ -15250,6 +15284,7 @@
                 },
                 "required": [
                   "kind",
+                  "clientOperationId",
                   "terminal"
                 ],
                 "type": "object"

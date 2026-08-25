@@ -127,11 +127,58 @@ describe("Reference Web React store", () => {
       webSessionId: "web-session-1",
       payload: { text: "Build it", attachmentIds: [] },
     });
+    queue.push({
+      epoch: "epoch-1",
+      sequence: 11,
+      emittedAt: now,
+      kind: "runtime.event",
+      payload: {
+        webSessionId: "web-session-1",
+        event: {
+          runtimeGeneration: "generation-1",
+          productSessionId: "web-session-1",
+          runtimeSessionId: "runtime-session-1",
+          sequence: 2,
+          emittedAt: now,
+          turnId: "turn-1",
+          event: {
+            kind: "turn_admitted",
+            admission: {
+              clientOperationId: "active-operation-1",
+              turnId: "turn-1",
+              admittedAt: now,
+            },
+          },
+        },
+      },
+    });
+    await vi.waitFor(() => expect(store.getSnapshot().snapshot.projection?.activeOperationIds)
+      .toEqual(["active-operation-1"]));
     await store.submitInput("Take this path", [], "steer");
     await store.submitInput("Then summarize", [], "follow_up");
+    await store.cancelQueued("web-session-1", "message-1");
+    await store.interrupt("web-session-1");
     expect(commands.filter(({ kind }) => kind !== "history.read").slice(1)).toMatchObject([
-      { kind: "turn.steer", payload: { text: "Take this path" } },
-      { kind: "turn.followUp", payload: { text: "Then summarize", attachmentIds: [] } },
+      {
+        kind: "turn.steer",
+        payload: { clientOperationId: "active-operation-1", text: "Take this path" },
+      },
+      {
+        kind: "turn.followUp",
+        payload: {
+          clientOperationId: "active-operation-1",
+          text: "Then summarize",
+          attachmentIds: [],
+        },
+      },
+      {
+        kind: "turn.cancelQueued",
+        payload: { clientOperationId: "active-operation-1", messageId: "message-1" },
+      },
+      {
+        kind: "turn.interrupt",
+        payload: { clientOperationId: "active-operation-1", cancelQueued: true },
+      },
     ]);
     store.stop();
   });

@@ -48,16 +48,18 @@ const birth: OperationBirthSnapshot = Object.freeze({
 });
 
 interface OperationFixture {
+  readonly clientOperationId: string;
   readonly inbox: Inbox;
   readonly session: Session;
   readonly productTurnId: string;
 }
 
 const appendAcceptedOperation = (session: Session): OperationFixture => {
+  const clientOperationId = "operation-1";
   const productTurnId = "product-turn-1";
   const rootMessageId = MessageId("root-message-1");
   session.append("myagents/operation/accepted", {
-    clientOperationId: "operation-1",
+    clientOperationId,
     clientUserMessageId: "client-message-1",
     fingerprint: digest("d"),
     productTurnId,
@@ -68,7 +70,7 @@ const appendAcceptedOperation = (session: Session): OperationFixture => {
   const inbox = new Inbox(session, {
     claimed: (message, turn) => {
       session.append("myagents/operation/claimed", {
-        clientOperationId: "operation-1",
+        clientOperationId,
         messageId: message.id,
         dshTurn: turn,
       });
@@ -82,12 +84,12 @@ const appendAcceptedOperation = (session: Session): OperationFixture => {
     content: [{ type: "text", text: "project this operation" }],
     source: {
       kind: "myagents-operation",
-      clientOperationId: "operation-1",
+      clientOperationId,
       clientMessageId: "client-message-1",
       delivery: "root",
     },
   }));
-  return { inbox, productTurnId, session };
+  return { clientOperationId, inbox, productTurnId, session };
 };
 
 const appendCompletedTurn = (fixture: OperationFixture): void => {
@@ -178,7 +180,13 @@ describe("Runtime event projection", () => {
     }
 
     expect(projectSessionEvent(session, accepted)).toMatchObject([
-      { turnId: fixture.productTurnId, event: { kind: "turn_admitted" } },
+      {
+        turnId: fixture.productTurnId,
+        event: {
+          kind: "turn_admitted",
+          admission: { clientOperationId: fixture.clientOperationId },
+        },
+      },
     ]);
     expect(projectSessionEvent(session, claimed)).toMatchObject([
       { turnId: fixture.productTurnId, event: { kind: "turn_started" } },
@@ -210,7 +218,14 @@ describe("Runtime event projection", () => {
       },
     ]);
     expect(projectSessionEvent(session, terminal)).toMatchObject([
-      { turnId: fixture.productTurnId, event: { kind: "turn_terminal", terminal: { kind: "succeeded" } } },
+      {
+        turnId: fixture.productTurnId,
+        event: {
+          kind: "turn_terminal",
+          clientOperationId: fixture.clientOperationId,
+          terminal: { kind: "succeeded" },
+        },
+      },
     ]);
   });
 

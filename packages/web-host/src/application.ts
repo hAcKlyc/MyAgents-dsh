@@ -394,10 +394,13 @@ export class ReferenceWebHostApplication {
         events: [], activeOperationIds: [], diagnostics: [],
       };
       const runtimeEvent = event.payload.event;
+      const terminalOperationId = runtimeEvent.event.kind === "turn_terminal"
+        ? runtimeEvent.event.clientOperationId
+        : undefined;
       const activeOperationIds = runtimeEvent.event.kind === "turn_admitted"
-        ? [...new Set([...current.activeOperationIds, runtimeEvent.event.admission.turnId])]
-        : runtimeEvent.event.kind === "turn_terminal" && runtimeEvent.turnId !== undefined
-          ? current.activeOperationIds.filter((id) => id !== runtimeEvent.turnId)
+        ? [...new Set([...current.activeOperationIds, runtimeEvent.event.admission.clientOperationId])]
+        : terminalOperationId !== undefined
+          ? current.activeOperationIds.filter((id) => id !== terminalOperationId)
           : current.activeOperationIds;
       this.#projections.set(event.payload.webSessionId, {
         events: [...current.events, runtimeEvent].slice(-2_000),

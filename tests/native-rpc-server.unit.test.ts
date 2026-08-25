@@ -281,6 +281,7 @@ const createRoot = (
   } as unknown as ProductSessionService);
   const syntheticOperations = new Map<string, Readonly<{
     admittedAt: string;
+    clientOperationId: string;
     turnId: string;
   }>>();
   root.provide("sdkOperations", {
@@ -307,6 +308,7 @@ const createRoot = (
       control.signal.throwIfAborted();
       const admission = Object.freeze({
         admittedAt: "2026-08-23T00:00:00.000Z",
+        clientOperationId: params.clientOperationId,
         turnId: `turn-${params.clientOperationId}`,
       });
       syntheticOperations.set(params.clientOperationId, admission);
@@ -548,6 +550,7 @@ describe("native RPC Cordis service", () => {
           clientOperationId: input.clientOperationId,
           admission: {
             admittedAt: "2026-08-23T00:00:00.000Z",
+            clientOperationId: input.clientOperationId,
             turnId: `turn-${input.clientOperationId}`,
           },
         });

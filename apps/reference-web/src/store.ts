@@ -201,7 +201,9 @@ export class ReferenceWebStore {
         state: "submitting" as const,
       })].slice(-512),
     });
-    const clientOperationId = this.#idFactory();
+    const clientOperationId = delivery === "turn"
+      ? this.#idFactory()
+      : this.#activeOperationId(webSessionId);
     if (delivery === "steer") {
       await this.#command({
         commandId, kind: "turn.steer", webSessionId,
@@ -235,7 +237,7 @@ export class ReferenceWebStore {
       commandId: this.#idFactory(),
       kind: "turn.interrupt",
       webSessionId,
-      payload: { clientOperationId: this.#idFactory(), cancelQueued: false },
+      payload: { clientOperationId: this.#activeOperationId(webSessionId), cancelQueued: true },
     });
   }
 
@@ -244,7 +246,7 @@ export class ReferenceWebStore {
       commandId: this.#idFactory(),
       kind: "turn.cancelQueued",
       webSessionId,
-      payload: { clientOperationId: this.#idFactory(), messageId },
+      payload: { clientOperationId: this.#activeOperationId(webSessionId), messageId },
     });
   }
 
@@ -324,10 +326,13 @@ export class ReferenceWebStore {
       case "runtime.event": {
         if (current.projection?.webSessionId !== event.payload.webSessionId) return;
         const runtimeEvent = event.payload.event;
+        const terminalOperationId = runtimeEvent.event.kind === "turn_terminal"
+          ? runtimeEvent.event.clientOperationId
+          : undefined;
         const activeOperationIds = runtimeEvent.event.kind === "turn_admitted"
-          ? [...new Set([...current.projection.activeOperationIds, runtimeEvent.event.admission.turnId])]
-          : runtimeEvent.event.kind === "turn_terminal" && runtimeEvent.turnId !== undefined
-            ? current.projection.activeOperationIds.filter((id) => id !== runtimeEvent.turnId)
+          ? [...new Set([...current.projection.activeOperationIds, runtimeEvent.event.admission.clientOperationId])]
+          : terminalOperationId !== undefined
+            ? current.projection.activeOperationIds.filter((id) => id !== terminalOperationId)
             : current.projection.activeOperationIds;
         this.#update({ snapshot: { ...current, projection: {
           ...current.projection,
@@ -435,6 +440,17 @@ export class ReferenceWebStore {
     const webSessionId = this.#state.snapshot.selectedWebSessionId;
     if (webSessionId === undefined) throw new Error("Created Session was not selected by the Host");
     return webSessionId;
+  }
+
+  #activeOperationId(webSessionId: string): string {
+    const projection = this.#state.snapshot.projection;
+    const clientOperationId = projection?.webSessionId === webSessionId
+      ? projection.activeOperationIds.at(-1)
+      : undefined;
+    if (clientOperationId === undefined) {
+      throw new Error("The selected Session has no active operation");
+    }
+    return clientOperationId;
   }
 
   async #command(command: BrowserCommand): Promise<void> {

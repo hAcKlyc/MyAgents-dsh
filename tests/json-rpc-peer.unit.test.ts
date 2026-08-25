@@ -677,11 +677,13 @@ describe("strict bidirectional JSON-RPC peer", () => {
       .toThrow(expect.objectContaining({ code: "protocol_overloaded" }));
     const terminal = terminalReservation.deliver(eventEnvelope({
       kind: "turn_terminal",
+      clientOperationId: "operation-terminal-1",
       terminal: { kind: "failed", code: "synthetic", message: "synthetic", retryable: false },
     })).catch((error: unknown) => error);
     await tick();
     await expect(peer.notify("runtime/event", eventEnvelope({
       kind: "turn_terminal",
+      clientOperationId: "operation-terminal-2",
       terminal: { kind: "failed", code: "second", message: "synthetic", retryable: false },
     }))).rejects.toMatchObject({ code: "protocol_overloaded" });
 
@@ -698,6 +700,7 @@ describe("strict bidirectional JSON-RPC peer", () => {
     await Promise.all([normal, terminal]);
     await expect(terminalReservation.deliver(eventEnvelope({
       kind: "turn_terminal",
+      clientOperationId: "operation-terminal-1",
       terminal: { kind: "failed", code: "replay", message: "synthetic", retryable: false },
     }))).rejects.toMatchObject({ code: "protocol_reservation_invalid" });
     unusedReservation.release();

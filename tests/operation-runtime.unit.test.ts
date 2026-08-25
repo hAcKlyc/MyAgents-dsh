@@ -681,6 +681,7 @@ describe("SdkOperationService admission and idempotency", () => {
       clientOperationId: "operation-1",
       admission: {
         admittedAt: "2027-01-15T08:00:00.000Z",
+        clientOperationId: "operation-1",
         turnId: accepted.productTurnId,
       },
     });
@@ -689,6 +690,7 @@ describe("SdkOperationService admission and idempotency", () => {
       state: "already_known",
       admission: {
         admittedAt: "2027-01-15T08:00:00.000Z",
+        clientOperationId: "operation-1",
       },
     });
     expect(fixture.agent.session.events).toHaveLength(eventCount);

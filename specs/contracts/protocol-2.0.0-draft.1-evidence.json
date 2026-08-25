@@ -3,7 +3,7 @@
   "authority": "packages/protocol/src/contract-source.ts",
   "canonicalToolContractSha256": "b150cf36eed203391a99d5c12d9fbd4dd09ff2bb4400ab635bee95ccb3302092",
   "capabilityProfileDigest": "80d3f130738d75c57caa6ad6d233b6f2cfc57a7ad3a786985d985445c7177d02",
-  "contractSourceSha256": "52743f02ae210a0245969400bb40b3207066b0c3c4eec224da25f85bbce67175",
+  "contractSourceSha256": "86faa0de0324fba89f2ba396c89747bf977d3c95df3c4ea8fde36be058f87429",
   "generator": "scripts/generate-protocol.ts",
   "inventory": {
     "canonicalToolCount": 20,
@@ -12,10 +12,10 @@
     "reverseMethodCount": 7
   },
   "outputs": {
-    "host-client.generated.ts": "42a9b7eff6f7fe79abb6487e7150c4039c2c30e50f42f317acd0932e498ea89c",
-    "protocol-fixtures.json": "2a25708a5488e0ad65324d5cf14a16e889d2b68b1e6f01afca3a46183abac404",
-    "protocol-meta.json": "5c8b28d51ff25fafb1cac0d431ee89244e9a5d51f32172ce0df9c8f2dc95e909",
-    "protocol.schema.json": "b4579b2880b641c3c2331b60b58e8433c794bd48ea8606a13f667a5b37122976"
+    "host-client.generated.ts": "5b2e68a141601ab5032dd77bdf817744b17519acf775b67ad7d953c5680ee326",
+    "protocol-fixtures.json": "3b9a61a0d5cd61f93db4a4e9458c01ccb3c0b63a4fed546f3d280f9bb1c742cc",
+    "protocol-meta.json": "ba7b7fdf269c356e438d4497db1e98d4ea8f97fd8bc303ec9e90f64efd6a0043",
+    "protocol.schema.json": "d4de4eb6709680e1fcde78a656b42c5c0e8285cbb6f41a028774b21df2565eb2"
   },
   "protocolVersion": "2.0.0-draft.1"
 }

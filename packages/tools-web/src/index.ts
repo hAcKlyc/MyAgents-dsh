@@ -3,6 +3,8 @@ export {
   validateCanonicalWebToolsConfig,
 } from "./runtime.js";
 export type {
+  CanonicalWebFetchToolsConfig,
+  CanonicalWebSearchToolsConfig,
   CanonicalWebToolsConfig,
   ProductWebContentRequest,
   ProductWebSearchRequest,

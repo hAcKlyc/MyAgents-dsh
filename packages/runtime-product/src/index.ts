@@ -1,5 +1,6 @@
 export * from "./composition.js";
 export * from "./host-model.js";
+export * from "./host-web-search.js";
 export * from "./primary-session.js";
 export * from "./utility.js";
 export { assertAcceptedDshRuntimeGraph } from "@myagents-dsh/product-profile";

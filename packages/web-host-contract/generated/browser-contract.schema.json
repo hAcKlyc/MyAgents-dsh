@@ -358,10 +358,17 @@
                               "admission": {
                                 "type": "object",
                                 "required": [
+                                  "clientOperationId",
                                   "turnId",
                                   "admittedAt"
                                 ],
                                 "properties": {
+                                  "clientOperationId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
                                   "turnId": {
                                     "type": "string",
                                     "minLength": 1,
@@ -395,12 +402,19 @@
                             "type": "object",
                             "required": [
                               "kind",
+                              "clientOperationId",
                               "terminal"
                             ],
                             "properties": {
                               "kind": {
                                 "type": "string",
                                 "const": "turn_terminal"
+                              },
+                              "clientOperationId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
                               },
                               "terminal": {
                                 "anyOf": [
@@ -4026,10 +4040,17 @@
                                   "admission": {
                                     "type": "object",
                                     "required": [
+                                      "clientOperationId",
                                       "turnId",
                                       "admittedAt"
                                     ],
                                     "properties": {
+                                      "clientOperationId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
                                       "turnId": {
                                         "type": "string",
                                         "minLength": 1,
@@ -4063,12 +4084,19 @@
                                 "type": "object",
                                 "required": [
                                   "kind",
+                                  "clientOperationId",
                                   "terminal"
                                 ],
                                 "properties": {
                                   "kind": {
                                     "type": "string",
                                     "const": "turn_terminal"
+                                  },
+                                  "clientOperationId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
                                   },
                                   "terminal": {
                                     "anyOf": [
@@ -6654,10 +6682,17 @@
                             "admission": {
                               "type": "object",
                               "required": [
+                                "clientOperationId",
                                 "turnId",
                                 "admittedAt"
                               ],
                               "properties": {
+                                "clientOperationId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256,
+                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                },
                                 "turnId": {
                                   "type": "string",
                                   "minLength": 1,
@@ -6691,12 +6726,19 @@
                           "type": "object",
                           "required": [
                             "kind",
+                            "clientOperationId",
                             "terminal"
                           ],
                           "properties": {
                             "kind": {
                               "type": "string",
                               "const": "turn_terminal"
+                            },
+                            "clientOperationId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
                             },
                             "terminal": {
                               "anyOf": [

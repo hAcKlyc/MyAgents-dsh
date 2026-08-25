@@ -357,6 +357,7 @@ const continuationMessage = (
 const knownResult = (operation: ProductOperationRecord): MethodResult<"turn/start"> => Object.freeze({
   state: "already_known",
   admission: Object.freeze({
+    clientOperationId: operation.clientOperationId,
     turnId: operation.productTurnId,
     admittedAt: new Date(operation.acceptedAt).toISOString(),
   }),
@@ -640,6 +641,7 @@ export class SdkOperationService extends Service {
     return Object.freeze({
       clientOperationId: operation.clientOperationId,
       admission: Object.freeze({
+        clientOperationId: operation.clientOperationId,
         turnId: operation.productTurnId,
         admittedAt: new Date(operation.acceptedAt).toISOString(),
       }),

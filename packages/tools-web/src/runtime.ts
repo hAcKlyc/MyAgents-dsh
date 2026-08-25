@@ -61,48 +61,21 @@ export interface ProductWebSearchRequest {
   readonly signal: AbortSignal;
 }
 
-export interface CanonicalWebToolsConfig {
-  readonly fetch: Readonly<{
-    readonly client: ProductSafeHttpClient;
-    readonly content: Readonly<{
-      /** Reject only after abort has made conversion work quiescent. */
-      convert(request: ProductWebContentRequest): Promise<Readonly<{
-        readonly content: string;
-        readonly kind: "html" | "text";
-        readonly truncated: boolean;
-      }>>;
-    }>;
-    readonly utility: Readonly<{
-      /** Reject only after abort has made the utility call quiescent. */
-      run(request: ProductWebUtilityRequest): Promise<Readonly<{
-        readonly answer: string;
-        readonly citations: readonly Readonly<{ readonly title: string; readonly url: string }>[];
-        readonly truncated: boolean;
-        readonly usage: Readonly<{
-          readonly inputTokens: number;
-          readonly outputTokens: number;
-          readonly cacheReadTokens: number;
-          readonly cacheWriteTokens: number;
-          readonly totalTokens: number;
-        }>;
-      }>>;
-    }>;
+export interface CanonicalWebFetchToolsConfig {
+  readonly client: ProductSafeHttpClient;
+  readonly content: Readonly<{
+    /** Reject only after abort has made conversion work quiescent. */
+    convert(request: ProductWebContentRequest): Promise<Readonly<{
+      readonly content: string;
+      readonly kind: "html" | "text";
+      readonly truncated: boolean;
+    }>>;
   }>;
-  readonly search?: Readonly<{
-    readonly available: () => boolean;
-    readonly credentialRef: string;
-    readonly policyRef: string;
-    readonly providerId: string;
-    /** Reject only after abort has made Provider work quiescent. */
-    readonly run: (request: ProductWebSearchRequest) => Promise<Readonly<{
+  readonly utility: Readonly<{
+    /** Reject only after abort has made the utility call quiescent. */
+    run(request: ProductWebUtilityRequest): Promise<Readonly<{
+      readonly answer: string;
       readonly citations: readonly Readonly<{ readonly title: string; readonly url: string }>[];
-      readonly durationMs: number;
-      readonly results: readonly Readonly<{
-        readonly snippet: string;
-        readonly title: string;
-        readonly url: string;
-      }>[];
-      readonly searchCount: number;
       readonly truncated: boolean;
       readonly usage: Readonly<{
         readonly inputTokens: number;
@@ -113,6 +86,37 @@ export interface CanonicalWebToolsConfig {
       }>;
     }>>;
   }>;
+}
+
+export interface CanonicalWebSearchToolsConfig {
+  readonly available: () => boolean;
+  readonly credentialRef: string;
+  readonly policyRef: string;
+  readonly providerId: string;
+  /** Reject only after abort has made Provider work quiescent. */
+  readonly run: (request: ProductWebSearchRequest) => Promise<Readonly<{
+    readonly citations: readonly Readonly<{ readonly title: string; readonly url: string }>[];
+    readonly durationMs: number;
+    readonly results: readonly Readonly<{
+      readonly snippet: string;
+      readonly title: string;
+      readonly url: string;
+    }>[];
+    readonly searchCount: number;
+    readonly truncated: boolean;
+    readonly usage: Readonly<{
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+      readonly cacheReadTokens: number;
+      readonly cacheWriteTokens: number;
+      readonly totalTokens: number;
+    }>;
+  }>>;
+}
+
+export interface CanonicalWebToolsConfig {
+  readonly fetch?: CanonicalWebFetchToolsConfig;
+  readonly search?: CanonicalWebSearchToolsConfig;
 }
 
 type FetchExecutionStore = {
@@ -182,13 +186,18 @@ const exactOwnDataObject = (
 };
 
 export const validateCanonicalWebToolsConfig = (value: unknown): CanonicalWebToolsConfig => {
-  const candidate = exactOwnDataObject(value, ["fetch"], ["search"], "canonical Web tools config");
-  const fetch = exactOwnDataObject(
-    candidate.fetch,
-    ["client", "content", "utility"],
-    [],
-    "canonical WebFetch config",
-  );
+  const candidate = exactOwnDataObject(value, [], ["fetch", "search"], "canonical Web tools config");
+  if (!Object.hasOwn(candidate, "fetch") && !Object.hasOwn(candidate, "search")) {
+    throw new TypeError("canonical Web tools config must enable WebFetch or WebSearch");
+  }
+  const fetch = Object.hasOwn(candidate, "fetch")
+    ? exactOwnDataObject(
+        candidate.fetch,
+        ["client", "content", "utility"],
+        [],
+        "canonical WebFetch config",
+      )
+    : undefined;
   let search: JsonObject | undefined;
   if (Object.hasOwn(candidate, "search")) {
     search = exactOwnDataObject(
@@ -199,11 +208,11 @@ export const validateCanonicalWebToolsConfig = (value: unknown): CanonicalWebToo
     );
   }
   return Object.freeze({
-    fetch: Object.freeze({
+    ...(fetch === undefined ? {} : { fetch: Object.freeze({
       client: fetch.client as ProductSafeHttpClient,
-      content: fetch.content as CanonicalWebToolsConfig["fetch"]["content"],
-      utility: fetch.utility as CanonicalWebToolsConfig["fetch"]["utility"],
-    }),
+      content: fetch.content as CanonicalWebFetchToolsConfig["content"],
+      utility: fetch.utility as CanonicalWebFetchToolsConfig["utility"],
+    }) }),
     ...(search === undefined ? {} : {
       search: Object.freeze({
         available: search.available as () => boolean,
@@ -557,30 +566,33 @@ export class CanonicalWebTools extends Service {
   static inject = ["productTools", "tools", "web"];
   readonly #fetchStorage = new AsyncLocalStorage<FetchExecutionStore>();
   readonly #searchStorage = new AsyncLocalStorage<SearchExecutionStore>();
-  readonly #utility: (request: ProductWebUtilityRequest) => Promise<unknown>;
+  readonly #utility: ((request: ProductWebUtilityRequest) => Promise<unknown>) | undefined;
   readonly #searchConfigured: boolean;
 
   constructor(ctx: Context, config: CanonicalWebToolsConfig) {
     super(ctx, "canonicalWebTools");
     const normalized = validateCanonicalWebToolsConfig(config);
     const fetch = normalized.fetch;
-    if (!(fetch.client instanceof ProductSafeHttpClient)) {
-      throw new TypeError("canonical WebFetch requires a ProductSafeHttpClient");
+    const disposers: Array<() => void> = [];
+    if (fetch !== undefined) {
+      if (!(fetch.client instanceof ProductSafeHttpClient)) {
+        throw new TypeError("canonical WebFetch requires a ProductSafeHttpClient");
+      }
+      const content = dataMethod(fetch.content, "convert", "WebFetch content converter");
+      const utility = dataMethod(fetch.utility, "run", "WebFetch utility model");
+      this.#utility = (request) => Reflect.apply(utility.invoke, utility.owner, [request]) as Promise<unknown>;
+      const fetchProvider = new ProductFetchProvider(
+        fetch.client,
+        ctx,
+        this.#fetchStorage,
+        (request) => Reflect.apply(content.invoke, content.owner, [request]) as Promise<Readonly<{
+          content: string;
+          kind: "html" | "text";
+          truncated: boolean;
+        }>>,
+      );
+      disposers.push(ctx.web.registerFetchProvider(fetchProvider));
     }
-    const content = dataMethod(fetch.content, "convert", "WebFetch content converter");
-    const utility = dataMethod(fetch.utility, "run", "WebFetch utility model");
-    this.#utility = (request) => Reflect.apply(utility.invoke, utility.owner, [request]) as Promise<unknown>;
-    const fetchProvider = new ProductFetchProvider(
-      fetch.client,
-      ctx,
-      this.#fetchStorage,
-      (request) => Reflect.apply(content.invoke, content.owner, [request]) as Promise<Readonly<{
-        content: string;
-        kind: "html" | "text";
-        truncated: boolean;
-      }>>,
-    );
-    const disposers = [ctx.web.registerFetchProvider(fetchProvider)];
     let searchProvider: ProductSearchProvider | undefined;
     if (normalized.search !== undefined) {
       const search = normalized.search;
@@ -612,13 +624,15 @@ export class CanonicalWebTools extends Service {
       }
     }
     this.#searchConfigured = searchProvider !== undefined;
-    disposers.push(ctx.tools.register(this.#fetchDefinition(ctx)));
+    if (fetch !== undefined) disposers.push(ctx.tools.register(this.#fetchDefinition(ctx)));
     if (searchProvider !== undefined) disposers.push(ctx.tools.register(this.#searchDefinition(ctx, searchProvider)));
     ctx.effect(() => () => { for (const dispose of disposers.reverse()) dispose(); }, "canonical-web-tools");
   }
 
   #fetchDefinition(ctx: Context): ToolDefinition {
     const contract = CANONICAL_TOOL_CONTRACTS.WebFetch;
+    const runUtility = this.#utility;
+    if (runUtility === undefined) throw new Error("WebFetch utility authority is unavailable");
     return Object.freeze({
       description: contract.description,
       execute: async (raw: unknown, exec: ToolRunContext) => {
@@ -636,7 +650,7 @@ export class CanonicalWebTools extends Service {
         const source = truncateUtf8(fetched.body.content, 1_000_000);
         try {
           product.signal.throwIfAborted();
-          const utilityResult = await nativePromise<unknown>(this.#utility(Object.freeze({
+          const utilityResult = await nativePromise<unknown>(runUtility(Object.freeze({
             context: product,
             finalUrl: redactUrl(fetched.url),
             prompt: args.prompt as string,

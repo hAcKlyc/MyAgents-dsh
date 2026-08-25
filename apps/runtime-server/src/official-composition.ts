@@ -1,6 +1,7 @@
 import {
   CANONICAL_TOOL_NAMES,
   CANONICAL_TOOL_CONTRACT_SHA256,
+  DEEPSEEK_WEB_SEARCH_POLICY_REF,
   effectiveToolCatalogDigest,
   extensionSnapshotDigest,
   validateNormalizedEffectiveToolCatalog,
@@ -15,6 +16,7 @@ import {
 } from "@myagents-dsh/product-profile";
 import {
   composeDshRootServices,
+  createHostDeepSeekWebSearchPlaneConfig,
   createHostBackedInteractionProvider,
   createProductAgentComponentCompiler,
   createProductCommandComponentCompiler,
@@ -37,12 +39,12 @@ import { delimiter, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 export const OFFICIAL_HOST_INTERACTION_REVISION = "host-interaction-v1" as const;
-export const OFFICIAL_TOOL_CATALOG_REVISION = "official-canonical-tools-v1" as const;
+export const OFFICIAL_TOOL_CATALOG_REVISION = "official-canonical-tools-v2" as const;
 export const OFFICIAL_EXTENSION_REVISION = "official-empty-extensions-v1" as const;
 export const OFFICIAL_PLAN_REVISION = "official-plan-v1" as const;
 export const OFFICIAL_ORIGIN_REVISION = "official-root-origin-v1" as const;
 
-const unavailableWebTools = new Set<string>(["WebFetch", "WebSearch"]);
+const unavailableWebTools = new Set<string>(["WebFetch"]);
 const effectiveTools = Object.freeze(CANONICAL_TOOL_NAMES.filter((tool) => !unavailableWebTools.has(tool)));
 const toolCatalogAuthority = Object.freeze({
   formatVersion: 1 as const,
@@ -236,6 +238,12 @@ export const composeOfficialRuntimeServices = async (
       process: await processAuthority(target),
       skills: OFFICIAL_STATIC_SKILL_CATALOG,
       temporaryRoot: await realpath(process.env.TMPDIR ?? tmpdir()),
+      web: Object.freeze({
+        search: createHostDeepSeekWebSearchPlaneConfig(
+          configured,
+          DEEPSEEK_WEB_SEARCH_POLICY_REF,
+        ),
+      }),
     }));
     const componentConfig = Object.freeze({
       catalog: OFFICIAL_TOOL_CATALOG,

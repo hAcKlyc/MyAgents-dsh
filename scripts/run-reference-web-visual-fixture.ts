@@ -87,14 +87,17 @@ const server = new LoopbackBrowserServer({
         runtimeGeneration: "fixture-generation",
         runtimeSessionId: "fixture-runtime-session",
         events: [
-          { ...runtimeBase, sequence: 1, event: { kind: "turn_admitted", admission: { turnId: "turn-1", admittedAt: emittedAt } } },
+          { ...runtimeBase, sequence: 1, event: { kind: "turn_admitted", admission: {
+            clientOperationId: "operation-1", turnId: "turn-1", admittedAt: emittedAt,
+          } } },
           { ...runtimeBase, sequence: 2, turnId: "turn-1", event: { kind: "thinking_delta", delta: "I’ll inspect the host boundaries and verify that the UI remains a projection rather than a second transcript." } },
           { ...runtimeBase, sequence: 3, turnId: "turn-1", toolCallId: "tool-1", event: { kind: "tool", phase: "start", name: "Read", detail: { path: "specs/ARCHITECTURE.md" } } },
           { ...runtimeBase, sequence: 4, turnId: "turn-1", toolCallId: "tool-1", event: { kind: "tool", phase: "end", name: "Read", detail: { lines: 214, state: "succeeded" } } },
           { ...runtimeBase, sequence: 5, turnId: "turn-1", event: { kind: "plan", revision: "plan-v2", detail: { completed: 2, active: "React conversation", pending: 3 } } },
           { ...runtimeBase, sequence: 6, turnId: "turn-1", event: { kind: "assistant_delta", delta: "## 对话页已经接入 Runtime\n\n现在这个页面遵循标准 AI 对话的结构：\n\n- 左侧展示当前工作区和该工作区的 Session；\n- 右侧按一个完整 Turn 聚合思考、工具与最终回答；\n- `tool start / update / end` 不再拆成协议卡片。\n\n```text\nDSH durable Session → Host projection → Conversation UI\n```\n\nWebUI 不保存第二份 transcript，DSH 仍然是唯一的持久会话权威。" } },
           { ...runtimeBase, sequence: 7, turnId: "turn-1", event: { kind: "usage", usageRecordId: "usage-1", turnId: "turn-1", meteringScopeId: "operation-1", semantics: "last_request", usage: { inputTokens: 2841, outputTokens: 319, cacheReadTokens: 1024, cacheWriteTokens: 0, totalTokens: 4184, costUsd: 0.0021 }, contextOccupiedTokens: 4184, runtimeContextWindow: 65536, modelProfileRevision: "deepseek-v1" } },
-          { ...runtimeBase, sequence: 8, turnId: "turn-1", event: { kind: "turn_terminal", terminal: {
+          { ...runtimeBase, sequence: 8, turnId: "turn-1", event: {
+            kind: "turn_terminal", clientOperationId: "operation-1", terminal: {
             kind: "succeeded",
             assistantEventId: "assistant-event-1",
             usage: {

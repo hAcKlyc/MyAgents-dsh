@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import {
   PROTOCOL_VERSION,
   REFERENCE_PROTOCOL_LIMITS,
+  DEEPSEEK_WEB_SEARCH_ADAPTER_ID,
+  DEEPSEEK_WEB_SEARCH_POLICY_REF,
   extensionSnapshotDigest,
   type InitializeParams,
   type MethodParams,
@@ -25,7 +27,7 @@ export const REFERENCE_WEB_CONFIG_REVISION = "reference-web-config-v1" as const;
 export const REFERENCE_WEB_ENVIRONMENT_REVISION = "reference-web-environment-v1" as const;
 export const REFERENCE_WEB_INTERACTION_SCENARIO = "host-interaction-v1" as const;
 export const REFERENCE_WEB_CREDENTIAL_REVISION = "deepseek-official-credential-v1" as const;
-export const REFERENCE_WEB_NETWORK_POLICY_REVISION = "reference-web-network-v1" as const;
+export const REFERENCE_WEB_NETWORK_POLICY_REVISION = DEEPSEEK_WEB_SEARCH_POLICY_REF;
 export const REFERENCE_WEB_EXTENSION_REVISION = "official-empty-extensions-v1" as const;
 
 export const REFERENCE_WEB_PROVIDER = Object.freeze({
@@ -145,7 +147,7 @@ export const createReferenceWebInitialize = (
     attachments: "generation-leases-v1",
     productProjection: "transactional-postconditions-v1",
     credentialAuthority: "revisioned-reverse-port-v1",
-    webSearchAdapters: [],
+    webSearchAdapters: [DEEPSEEK_WEB_SEARCH_ADAPTER_ID],
   },
   limits: REFERENCE_PROTOCOL_LIMITS,
 });

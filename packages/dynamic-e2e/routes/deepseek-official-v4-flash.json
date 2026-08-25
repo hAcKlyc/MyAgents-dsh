@@ -18,6 +18,6 @@
   "systemPrompt": "Operate only within the synthetic dynamic acceptance fixture. Follow Runtime permissions, report uncertainty truthfully, and leave every owned resource quiescent.",
   "permissionMode": "default",
   "interactionScenario": "host-interaction-v1",
-  "networkPolicyRef": "dynamic-network-v1",
-  "webSearchAdapters": []
+  "networkPolicyRef": "deepseek-official-web-search-v1",
+  "webSearchAdapters": ["deepseek-official-native-web-search"]
 }
