@@ -3085,7 +3085,8 @@
                 "providerRouteId",
                 "modelId",
                 "permissionMode",
-                "interactionScenario"
+                "interactionScenario",
+                "systemPrompt"
               ],
               "properties": {
                 "revision": {
@@ -3142,6 +3143,10 @@
                   "maxLength": 256,
                   "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
                 },
+                "systemPrompt": {
+                  "type": "string",
+                  "maxLength": 1000000
+                },
                 "visibleTools": {
                   "type": "array",
                   "items": {
@@ -3154,6 +3159,39 @@
                   "uniqueItems": true
                 }
               },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "commandId",
+            "kind",
+            "webSessionId",
+            "payload"
+          ],
+          "properties": {
+            "commandId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+            },
+            "kind": {
+              "type": "string",
+              "const": "controls.inspect"
+            },
+            "webSessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {},
               "additionalProperties": false
             }
           },
@@ -3328,7 +3366,7 @@
                     },
                     "additionalProperties": false
                   },
-                  "maxItems": 2048
+                  "maxItems": 1024
                 }
               },
               "additionalProperties": false
@@ -3487,6 +3525,7 @@
               "type": "object",
               "required": [
                 "mutation",
+                "clientMutationId",
                 "token",
                 "confirmation"
               ],
@@ -3506,6 +3545,12 @@
                       "const": "rewind"
                     }
                   ]
+                },
+                "clientMutationId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
                 },
                 "token": {
                   "type": "string",
@@ -3553,6 +3598,7 @@
               "type": "object",
               "required": [
                 "mutation",
+                "clientMutationId",
                 "token"
               ],
               "properties": {
@@ -3571,6 +3617,12 @@
                       "const": "rewind"
                     }
                   ]
+                },
+                "clientMutationId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
                 },
                 "token": {
                   "type": "string",
@@ -3673,6 +3725,7 @@
               "type": "object",
               "required": [
                 "mutation",
+                "clientMutationId",
                 "token",
                 "confirmation"
               ],
@@ -3680,6 +3733,12 @@
                 "mutation": {
                   "type": "string",
                   "const": "delete"
+                },
+                "clientMutationId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
                 },
                 "token": {
                   "type": "string",

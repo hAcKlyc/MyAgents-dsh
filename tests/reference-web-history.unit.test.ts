@@ -15,6 +15,13 @@ describe("Reference Web durable history assembler", () => {
       runtimeSessionId: "runtime-session-1",
       historyFormat: "dsh-session-events-v1",
       durableHead: { sequence: 2 },
+      mutationBoundaries: [{
+        stableBoundaryId: "boundary-1",
+        sequence: 1,
+        turn: 1,
+        transcriptPostcondition: "b".repeat(64),
+      }],
+      transcriptPostcondition: "c".repeat(64),
       records: [
         {
           kind: "event", sequence: 0, eventType: "user/message", eventSha256: hash(firstData),
@@ -44,6 +51,8 @@ describe("Reference Web durable history assembler", () => {
       status: "complete",
       durableSequence: 2,
       events: [{ sequence: 1, eventType: "assistant/message" }],
+      mutationBoundaries: [{ stableBoundaryId: "boundary-1", sequence: 1, turn: 1 }],
+      transcriptPostcondition: "c".repeat(64),
     });
   });
 

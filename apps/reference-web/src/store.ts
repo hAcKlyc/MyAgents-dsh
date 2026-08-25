@@ -8,6 +8,9 @@ import {
   type HostSnapshot,
   type InteractionResponse,
   type RuntimeProjection,
+  type BrowserComponentDefinition,
+  type BrowserComponentSnapshot,
+  type SessionConfiguration,
   type WebSessionSummary,
 } from "@myagents-dsh/web-host-contract";
 
@@ -40,6 +43,31 @@ export type HostTraceEntry = Readonly<{
   detail: string;
   count: number;
 }>;
+export type ControlTab = "settings" | "components" | "session" | "runtime";
+export type ControlInspection = Readonly<{
+  controls: Readonly<{
+    configuration: SessionConfiguration;
+    components: BrowserComponentSnapshot;
+  }>;
+  runtime: Readonly<Record<string, unknown>>;
+  catalog: Readonly<{
+    revision: string;
+    digest: string;
+    tools: readonly string[];
+    commands: readonly Readonly<Record<string, unknown>>[];
+    skills: readonly Readonly<Record<string, unknown>>[];
+    agents: readonly string[];
+    mcpServers: readonly Readonly<Record<string, unknown>>[];
+  }>;
+  status: Readonly<Record<string, unknown>>;
+}>;
+export type MutationDraft = Readonly<{
+  mutation: "delete" | "fork" | "rewind";
+  clientMutationId: string;
+  token: string;
+  state: string;
+  targetWebSessionId?: string;
+}>;
 export type ReferenceWebState = Readonly<{
   connection: ConnectionState;
   bootstrap?: Bootstrap;
@@ -49,6 +77,11 @@ export type ReferenceWebState = Readonly<{
   notices: readonly UiNotice[];
   trace: readonly HostTraceEntry[];
   inspectorOpen: boolean;
+  controlsOpen: boolean;
+  controlTab: ControlTab;
+  controlsLoading: boolean;
+  controlInspection: ControlInspection | undefined;
+  mutation: MutationDraft | undefined;
   history?: BrowserHistorySnapshot;
 }>;
 
@@ -101,7 +134,7 @@ export class ReferenceWebStore {
   readonly #listeners = new Set<() => void>();
   readonly #commandInputs = new Map<string, string>();
   readonly #commandWaiters = new Map<string, Readonly<{
-    resolve: () => void;
+    resolve: (result: unknown) => void;
     reject: (error: Error) => void;
   }>>();
   readonly #historyRequests = new Map<string, Readonly<{ webSessionId: string; cursor?: string }>>();
@@ -113,6 +146,11 @@ export class ReferenceWebStore {
     notices: [],
     trace: [],
     inspectorOpen: false,
+    controlsOpen: false,
+    controlTab: "settings",
+    controlsLoading: false,
+    controlInspection: undefined,
+    mutation: undefined,
   });
   #abort: AbortController | undefined;
   #historyAssembler: BrowserHistoryAssembler | undefined;
@@ -147,6 +185,12 @@ export class ReferenceWebStore {
   }
 
   toggleInspector(): void { this.#update({ inspectorOpen: !this.#state.inspectorOpen }); }
+  openControls(tab: ControlTab = "settings"): void {
+    this.#update({ controlsOpen: true, controlTab: tab });
+    void this.refreshControls();
+  }
+  closeControls(): void { this.#update({ controlsOpen: false }); }
+  selectControlTab(tab: ControlTab): void { this.#update({ controlTab: tab }); }
   dismissNotice(id: string): void {
     this.#update({ notices: this.#state.notices.filter((notice) => notice.id !== id) });
   }
@@ -169,6 +213,186 @@ export class ReferenceWebStore {
 
   coldStop(webSessionId: string): Promise<void> {
     return this.#command({ commandId: this.#idFactory(), kind: "session.coldStop", webSessionId, payload: {} });
+  }
+
+  async refreshControls(): Promise<void> {
+    const webSessionId = this.#state.snapshot.selectedWebSessionId;
+    if (webSessionId === undefined || this.#state.controlsLoading) return;
+    this.#update({ controlsLoading: true });
+    try {
+      const result = await this.#commandAndWait({
+        commandId: this.#idFactory(),
+        kind: "controls.inspect",
+        webSessionId,
+        payload: {},
+      });
+      this.#update({ controlInspection: this.#controlInspection(result) });
+    } finally {
+      this.#update({ controlsLoading: false });
+    }
+  }
+
+  async applyConfiguration(configuration: SessionConfiguration): Promise<void> {
+    const webSessionId = this.#selectedSessionId();
+    await this.#commandAndWait({
+      commandId: this.#idFactory(),
+      kind: "config.apply",
+      webSessionId,
+      payload: configuration,
+    });
+    await this.refreshControls();
+    this.#notice("Configuration applied to the selected Session.", "info");
+  }
+
+  async replaceComponents(
+    revision: string,
+    components: readonly BrowserComponentDefinition[],
+  ): Promise<void> {
+    const webSessionId = this.#selectedSessionId();
+    await this.#commandAndWait({
+      commandId: this.#idFactory(),
+      kind: "components.replace",
+      webSessionId,
+      payload: {
+        revision,
+        ...(this.#state.controlInspection?.controls.components.digest === undefined ? {} : {
+          expectedDigest: this.#state.controlInspection.controls.components.digest,
+        }),
+        components: [...components],
+      },
+    });
+    await this.refreshControls();
+    this.#notice("Component generation accepted by the Runtime.", "info");
+  }
+
+  async compactSession(): Promise<void> {
+    const webSessionId = this.#selectedSessionId();
+    await this.#commandAndWait({
+      commandId: this.#idFactory(),
+      kind: "session.compact",
+      webSessionId,
+      payload: { clientOperationId: this.#idFactory() },
+    });
+    this.#notice("Compaction was accepted.", "info");
+  }
+
+  async prepareMutation(
+    mutation: MutationDraft["mutation"],
+    options: Readonly<{ boundaryId?: string; forkTitle?: string }> = {},
+  ): Promise<void> {
+    const webSessionId = this.#selectedSessionId();
+    const history = this.#state.history;
+    const clientMutationId = this.#idFactory();
+    const boundary = mutation === "delete" ? undefined : history?.mutationBoundaries.find(
+      ({ stableBoundaryId }) => stableBoundaryId === options.boundaryId,
+    ) ?? history?.mutationBoundaries.at(-1);
+    if (mutation !== "delete" && boundary === undefined) {
+      throw new Error("No stable Session boundary is available yet");
+    }
+    const sourceTranscriptPostcondition = history?.transcriptPostcondition;
+    if (mutation === "rewind" && sourceTranscriptPostcondition === undefined) {
+      throw new Error("The complete transcript postcondition is unavailable");
+    }
+    const rewindAuthority = mutation === "rewind"
+      ? (() => {
+          if (boundary === undefined || sourceTranscriptPostcondition === undefined) {
+            throw new Error("The rewind authority is unavailable");
+          }
+          return {
+            sourceTranscriptPostcondition,
+            targetTranscriptPostcondition: boundary.transcriptPostcondition,
+          };
+        })()
+      : {};
+    const result = await this.#commandAndWait({
+      commandId: this.#idFactory(),
+      kind: "mutation.prepare",
+      webSessionId,
+      payload: {
+        mutation,
+        clientMutationId,
+        ...(boundary === undefined ? {} : { stableBoundaryId: boundary.stableBoundaryId }),
+        ...rewindAuthority,
+        ...(options.forkTitle === undefined || options.forkTitle.trim() === ""
+          ? {} : { forkTitle: options.forkTitle.trim() }),
+      },
+    });
+    const record = this.#record(result, "mutation result");
+    const token = this.#string(record.token, "mutation token");
+    const state = this.#string(record.state, "mutation state");
+    const targetWebSessionId = typeof record.targetWebSessionId === "string"
+      ? record.targetWebSessionId : undefined;
+    this.#update({ mutation: Object.freeze({
+      mutation,
+      clientMutationId,
+      token,
+      state,
+      ...(targetWebSessionId === undefined ? {} : { targetWebSessionId }),
+    }) });
+  }
+
+  async commitMutation(confirmation: string): Promise<void> {
+    const webSessionId = this.#selectedSessionId();
+    const mutation = this.#state.mutation;
+    if (mutation === undefined) throw new Error("Prepare a mutation first");
+    const result = await this.#commandAndWait({
+      commandId: this.#idFactory(),
+      kind: "mutation.commit",
+      webSessionId,
+      payload: {
+        mutation: mutation.mutation,
+        clientMutationId: mutation.clientMutationId,
+        token: mutation.token,
+        confirmation,
+      },
+    });
+    const state = this.#mutationState(result);
+    if (mutation.mutation === "delete") {
+      this.#update({ mutation: Object.freeze({ ...mutation, state }) });
+      this.#notice("Session deletion committed. Roll back or explicitly purge it.", "info");
+    } else {
+      this.#update({ mutation: undefined });
+      this.#notice(`${mutation.mutation === "fork" ? "Fork" : "Rewind"} committed.`, "info");
+    }
+  }
+
+  async rollbackMutation(): Promise<void> {
+    const webSessionId = this.#selectedSessionId();
+    const mutation = this.#state.mutation;
+    if (mutation === undefined) throw new Error("Prepare a mutation first");
+    const result = await this.#commandAndWait({
+      commandId: this.#idFactory(),
+      kind: "mutation.rollback",
+      webSessionId,
+      payload: {
+        mutation: mutation.mutation,
+        clientMutationId: mutation.clientMutationId,
+        token: mutation.token,
+      },
+    });
+    this.#mutationState(result);
+    this.#update({ mutation: undefined });
+    this.#notice("Prepared Session mutation was rolled back.", "info");
+  }
+
+  async purgeDeletedSession(confirmation: string): Promise<void> {
+    const webSessionId = this.#selectedSessionId();
+    const mutation = this.#state.mutation;
+    if (mutation?.mutation !== "delete") throw new Error("Prepare Session deletion first");
+    const result = await this.#commandAndWait({
+      commandId: this.#idFactory(),
+      kind: "mutation.purge",
+      webSessionId,
+      payload: {
+        mutation: "delete",
+        clientMutationId: mutation.clientMutationId,
+        token: mutation.token,
+        confirmation,
+      },
+    });
+    this.#mutationState(result);
+    this.#update({ mutation: undefined, controlsOpen: false, controlInspection: undefined });
+    this.#notice("Session was permanently purged.", "info");
   }
 
   submitTurn(text: string, attachments: readonly AttachmentSummary[]): Promise<void> {
@@ -307,10 +531,20 @@ export class ReferenceWebStore {
     this.#recordTrace(event);
     const current = this.#state.snapshot;
     switch (event.kind) {
-      case "host.snapshot":
-        this.#update({ snapshot: event.payload, connection: "online" });
+      case "host.snapshot": {
+        const selectedChanged = current.selectedWebSessionId !== event.payload.selectedWebSessionId;
+        this.#update({
+          snapshot: event.payload,
+          connection: "online",
+          ...(selectedChanged ? {
+            controlInspection: undefined,
+            mutation: undefined,
+            ...(event.payload.selectedWebSessionId === undefined ? { controlsOpen: false } : {}),
+          } : {}),
+        });
         this.#ensureHistory(event.payload);
         return;
+      }
       case "host.sessionChanged":
         this.#update({ snapshot: { ...current, sessions: replaceSession(current.sessions, event.payload) } });
         return;
@@ -412,12 +646,12 @@ export class ReferenceWebStore {
     const waiter = this.#commandWaiters.get(event.payload.commandId);
     if (waiter === undefined) return;
     this.#commandWaiters.delete(event.payload.commandId);
-    if (event.payload.state === "succeeded") waiter.resolve();
+    if (event.payload.state === "succeeded") waiter.resolve(event.payload.result);
     else waiter.reject(new Error(`Command failed: ${event.payload.error?.code ?? "unknown"}`));
   }
 
-  async #commandAndWait(command: BrowserCommand): Promise<void> {
-    const settled = new Promise<void>((resolveSettled, rejectSettled) => {
+  async #commandAndWait(command: BrowserCommand): Promise<unknown> {
+    const settled = new Promise<unknown>((resolveSettled, rejectSettled) => {
       this.#commandWaiters.set(command.commandId, {
         resolve: resolveSettled,
         reject: rejectSettled,
@@ -496,6 +730,7 @@ export class ReferenceWebStore {
       runtimeSessionId,
       durableSequence: 0,
       events: [],
+      mutationBoundaries: [],
       status: "loading" as const,
     }) });
     void this.#requestHistoryPage(webSessionId);
@@ -565,6 +800,60 @@ export class ReferenceWebStore {
         message: "The local Web Host connection was interrupted.",
       }].slice(-8),
     });
+  }
+
+  #record(value: unknown, label: string): Readonly<Record<string, unknown>> {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      throw new TypeError(`${label} is unavailable`);
+    }
+    return value as Readonly<Record<string, unknown>>;
+  }
+
+  #string(value: unknown, label: string): string {
+    if (typeof value !== "string" || value.length < 1 || value.length > 4_096) {
+      throw new TypeError(`${label} is unavailable`);
+    }
+    return value;
+  }
+
+  #controlInspection(value: unknown): ControlInspection {
+    const result = this.#record(value, "control inspection");
+    const controls = this.#record(result.controls, "Session controls");
+    const configuration = this.#record(controls.configuration, "Session configuration") as SessionConfiguration;
+    const components = this.#record(controls.components, "component snapshot") as BrowserComponentSnapshot;
+    const catalog = this.#record(result.catalog, "component catalog");
+    if (!Array.isArray(catalog.tools) || !Array.isArray(catalog.commands)
+      || !Array.isArray(catalog.skills) || !Array.isArray(catalog.agents)
+      || !Array.isArray(catalog.mcpServers)) {
+      throw new TypeError("component catalog is unavailable");
+    }
+    return Object.freeze({
+      controls: Object.freeze({ configuration, components }),
+      runtime: this.#record(result.runtime, "Runtime status"),
+      catalog: Object.freeze({
+        revision: this.#string(catalog.revision, "component catalog revision"),
+        digest: this.#string(catalog.digest, "component catalog digest"),
+        tools: catalog.tools.filter((item): item is string => typeof item === "string"),
+        commands: catalog.commands.map((item) => this.#record(item, "command catalog item")),
+        skills: catalog.skills.map((item) => this.#record(item, "Skill catalog item")),
+        agents: catalog.agents.filter((item): item is string => typeof item === "string"),
+        mcpServers: catalog.mcpServers.map((item) => this.#record(item, "MCP catalog item")),
+      }),
+      status: this.#record(result.status, "component status"),
+    });
+  }
+
+  #mutationState(value: unknown): string {
+    const result = this.#record(value, "mutation result");
+    return this.#string(result.state, "mutation state");
+  }
+
+  #notice(message: string, level: UiNotice["level"]): void {
+    this.#update({ notices: [...this.#state.notices, {
+      id: this.#idFactory(),
+      level,
+      message,
+    }].slice(-8) });
   }
 
   #rejectCommandWaiters(message: string): void {

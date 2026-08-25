@@ -10,6 +10,7 @@ import { WebHostError } from "./errors.js";
 
 type Command<Kind extends BrowserCommand["kind"]> = Extract<BrowserCommand, { kind: Kind }>;
 type AdvancedCommand = Extract<NativeBrowserCommand,
+  | { kind: "controls.inspect" }
   | { kind: "components.replace" }
   | { kind: "mutation.prepare" | "mutation.commit" | "mutation.rollback" | "mutation.status" | "mutation.purge" }
 >;
@@ -28,7 +29,7 @@ export type BrowserCommandRouterOptions = Readonly<{
   configApply: (
     command: Command<"config.apply">,
     context: NativeBrowserCommandContext,
-  ) => MethodParams<"config/apply">;
+  ) => Promise<unknown>;
   advanced: (command: AdvancedCommand, context: NativeBrowserCommandContext) => Promise<unknown>;
 }>;
 type ImageMimeType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
@@ -123,7 +124,7 @@ export class BrowserNativeCommandRouter {
           origin: authority.origin,
         });
       case "config.apply":
-        return context.client.configApply(this.#options.configApply(command, context));
+        return this.#options.configApply(command, context);
       case "components.inspect":
         return context.client.extensionCatalog({});
       case "components.reload":
@@ -136,6 +137,7 @@ export class BrowserNativeCommandRouter {
           modelProfileRevision: authority.modelProfileRevision,
           maxTokens: command.payload.maxTokens,
         });
+      case "controls.inspect":
       case "components.replace":
       case "mutation.prepare":
       case "mutation.commit":

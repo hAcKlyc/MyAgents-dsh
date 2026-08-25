@@ -34,6 +34,7 @@ import {
   type StoredSuffix,
 } from "@deepseek-ai/dsh-session-persistence";
 import type { SqliteDurabilityPlan } from "@myagents-dsh/product-profile";
+import { canonicalSessionReadData } from "@myagents-dsh/protocol";
 import type {
   ProductCheckpointPhase,
   ProductCheckpointPrepareInput,
@@ -128,6 +129,16 @@ export interface ProductSqliteReadSnapshot {
   readonly header: SessionHeader;
   readonly revision: PersistenceRevision;
   readonly stableBoundaryId?: string;
+}
+
+export interface ProductSqliteMutationBoundaryAuthority {
+  readonly mutationBoundaries: readonly Readonly<{
+    stableBoundaryId: string;
+    sequence: number;
+    turn: number;
+    transcriptPostcondition: string;
+  }>[];
+  readonly transcriptPostcondition: string;
 }
 
 export type ProductPersistedRecoveryInspection = Readonly<
@@ -615,6 +626,59 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         header: this.#decodeHeader(row),
         revision: this.#revision(row),
         ...(stableBoundaryId === undefined ? {} : { stableBoundaryId }),
+      });
+    });
+  }
+
+  readMutationBoundaries(
+    id: SessionId,
+    signal?: AbortSignal,
+  ): Promise<ProductSqliteMutationBoundaryAuthority> {
+    return this.#locks.run(id, signal, () => {
+      signal?.throwIfAborted();
+      const row = this.#readActiveSession(id);
+      if (row === undefined) throw new Error("Session mutation boundary source is unavailable");
+      const events = this.#readAndValidateEvents(row);
+      const boundaryValues = this.#requireDatabase().prepare(`
+        SELECT boundary_id, seq_exclusive, turn
+          FROM stable_boundaries
+         WHERE session_id = ? AND generation_id = ? AND seq_exclusive <= ?
+         ORDER BY seq_exclusive DESC LIMIT 256
+      `).all(row.sessionId, row.activeGenerationId, row.eventCount) as unknown[];
+      const boundaries = boundaryValues.map((value) => {
+        const boundary = asRecord(value, "Session mutation boundary");
+        return Object.freeze({
+          stableBoundaryId: rowString(boundary, "boundary_id", "Session mutation boundary"),
+          sequence: rowInteger(boundary, "seq_exclusive", "Session mutation boundary"),
+          turn: rowInteger(boundary, "turn", "Session mutation boundary"),
+        });
+      }).reverse();
+      const boundaryBySequence = new Map(boundaries.map((boundary) => [boundary.sequence, boundary]));
+      const transcript = createHash("sha256");
+      transcript.update("myagents-transcript-postcondition-v1\0", "utf8");
+      const projected: Array<(typeof boundaries)[number] & { transcriptPostcondition: string }> = [];
+      for (const event of events) {
+        const data = canonicalSessionReadData(event.data, "session_recovery_required");
+        transcript.update(String(event.seq), "utf8");
+        transcript.update("\0", "utf8");
+        transcript.update(event.type, "utf8");
+        transcript.update("\0", "utf8");
+        transcript.update(data.sha256, "utf8");
+        transcript.update("\0", "utf8");
+        const boundary = boundaryBySequence.get(event.seq + 1);
+        if (boundary !== undefined) {
+          projected.push(Object.freeze({
+            ...boundary,
+            transcriptPostcondition: transcript.copy().digest("hex"),
+          }));
+        }
+      }
+      if (projected.length !== boundaries.length) {
+        throw new Error("Session mutation boundary sequence is outside durable history");
+      }
+      return Object.freeze({
+        mutationBoundaries: Object.freeze(projected),
+        transcriptPostcondition: transcript.digest("hex"),
       });
     });
   }

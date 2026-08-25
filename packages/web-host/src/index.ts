@@ -4,6 +4,7 @@ export * from "./application.js";
 export * from "./browser-server.js";
 export * from "./catalog.js";
 export * from "./command-router.js";
+export * from "./configuration-store.js";
 export * from "./diagnostic-log.js";
 export * from "./errors.js";
 export * from "./event-hub.js";

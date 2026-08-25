@@ -1,10 +1,15 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { lazy, startTransition, Suspense, useEffect, useSyncExternalStore } from "react";
 
 import { Composer } from "./components/composer.js";
 import { ConversationSurface } from "./components/agent-surface.js";
 import { InspectorPane } from "./components/inspector-pane.js";
 import { SessionSidebar } from "./components/session-sidebar.js";
 import type { ReferenceWebStore } from "./store.js";
+
+const ControlCenter = lazy(async () => {
+  const module = await import("./components/control-center.js");
+  return { default: module.ControlCenter };
+});
 
 export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.Element {
   const state = useSyncExternalStore(props.store.subscribe, props.store.getSnapshot, props.store.getSnapshot);
@@ -41,6 +46,9 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
             <span className="status-dot" aria-hidden="true" />{state.connection}
           </span>
           <button className="header-button new-chat-button" type="button" onClick={() => void props.store.createSession()}>＋ 新对话</button>
+          <button className="header-button" type="button" disabled={selectedId === undefined}
+            onClick={() => startTransition(() => props.store.openControls("settings"))}
+            aria-expanded={state.controlsOpen}>Controls</button>
           <button className="header-button" type="button" onClick={() => props.store.toggleInspector()}
             aria-expanded={state.inspectorOpen} aria-label="Runtime">Logs</button>
         </div>
@@ -75,6 +83,27 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
       onRestart={() => selectedId === undefined ? undefined : void props.store.restartRuntime(selectedId)}
       onColdStop={() => selectedId === undefined ? undefined : void props.store.coldStop(selectedId)}
     />}
+    <Suspense fallback={<aside className="control-center control-loading" aria-label="Loading control center">正在加载控制中心…</aside>}>
+      <ControlCenter
+        open={state.controlsOpen}
+        tab={state.controlTab}
+        loading={state.controlsLoading}
+        inspection={state.controlInspection}
+        mutation={state.mutation}
+        sessionTitle={selected?.title ?? "Session"}
+        history={state.history?.webSessionId === selectedId ? state.history : undefined}
+        onClose={() => props.store.closeControls()}
+        onTab={(tab) => startTransition(() => props.store.selectControlTab(tab))}
+        onRefresh={() => props.store.refreshControls()}
+        onApplyConfiguration={(configuration) => props.store.applyConfiguration(configuration)}
+        onReplaceComponents={(revision, components) => props.store.replaceComponents(revision, components)}
+        onCompact={() => props.store.compactSession()}
+        onPrepareMutation={(mutation, options) => props.store.prepareMutation(mutation, options)}
+        onCommitMutation={(confirmation) => props.store.commitMutation(confirmation)}
+        onRollbackMutation={() => props.store.rollbackMutation()}
+        onPurge={(confirmation) => props.store.purgeDeletedSession(confirmation)}
+      />
+    </Suspense>
     <div className="notice-stack" aria-label="Notifications">
       {state.notices.map((notice) => <div className="notice" data-level={notice.level} key={notice.id} role="status">
         <span>{notice.message}</span>

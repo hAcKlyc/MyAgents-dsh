@@ -13,6 +13,7 @@
     "src/browser-server.ts",
     "src/catalog.ts",
     "src/command-router.ts",
+    "src/configuration-store.ts",
     "src/diagnostic-log.ts",
     "src/errors.ts",
     "src/event-hub.ts",

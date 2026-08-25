@@ -59,6 +59,11 @@ export type RuntimeSupervisorOptions = Readonly<{
     }>,
   ) => MethodParams<"initialize">;
   buildBinding: (row: WebSessionCatalogRow, authority: RuntimeBindingAuthority) => RuntimeBinding;
+  buildExtensionSnapshot?: (row: WebSessionCatalogRow) => MethodParams<"extension/replace">;
+  applyStoredConfiguration?: (
+    row: WebSessionCatalogRow,
+    client: GeneratedHostClient,
+  ) => Promise<void>;
   resolveCredential?: CredentialResolver;
   executeHostTool?: HostToolExecutor;
   executeHook?: HostHookExecutor;
@@ -126,6 +131,15 @@ export class RuntimeSupervisor {
   activeCount(): number { return this.#active.size; }
   activeSessionIds(): readonly string[] { return Object.freeze([...this.#active.keys()].sort()); }
   get(webSessionId: string): ActiveRuntime | undefined { return this.#active.get(webSessionId); }
+
+  async prepareRuntimeHome(webSessionId: string): Promise<string> {
+    if (this.#options.catalog.get(webSessionId) === undefined) {
+      throw new WebHostError("session_unknown", "Web Session is unknown");
+    }
+    const runtimeHome = resolve(this.#hostHome, "sessions", webSessionId, "runtime-home");
+    await mkdir(runtimeHome, { recursive: true, mode: 0o700 });
+    return realpath(runtimeHome);
+  }
 
   activate(webSessionId: string): Promise<ActiveRuntime> {
     if (this.#closed) return Promise.reject(new WebHostError("supervisor_closed", "Runtime supervisor is closed"));
@@ -239,6 +253,13 @@ export class RuntimeSupervisor {
       const initialized = await child.client.initialize(initialize);
       reversePorts.bindInitialized(initialized.runtimeGeneration);
       await child.client.initialized();
+      const desiredExtensions = this.#options.buildExtensionSnapshot?.(row);
+      if (desiredExtensions !== undefined) {
+        const applied = await child.client.extensionReplace(desiredExtensions);
+        if (applied.state === "failed") {
+          throw new WebHostError("extension_apply_failed", "Configured component generation failed during startup");
+        }
+      }
       const extensionCatalog = await child.client.extensionCatalog({});
       const binding = this.#options.buildBinding(row, { extensionCatalog });
       if (binding.params.persistenceRef !== row.persistenceRef) {
@@ -248,6 +269,9 @@ export class RuntimeSupervisor {
         ? await child.client.sessionCreate(binding.params)
         : await child.client.sessionResume(binding.params);
       reversePorts.bindRuntimeSession(result.runtimeSessionId);
+      if (result.state === "ready") {
+        await this.#options.applyStoredConfiguration?.(row, child.client);
+      }
       const lifecycle = result.state === "ready" ? "ready" : "recovery_required";
       await this.#setLifecycle(webSessionId, lifecycle, {
         runtimeSessionId: result.runtimeSessionId,

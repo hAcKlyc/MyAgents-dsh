@@ -65,7 +65,7 @@ const router = () => new BrowserNativeCommandRouter({
     systemPrompt: "",
     modelProfileRevision: "provider-v1",
   }),
-  configApply,
+  configApply: (command, context) => context.client.configApply(configApply(command)),
   advanced: () => Promise.resolve({ delegated: true }),
 });
 
@@ -119,7 +119,7 @@ describe("Reference Web Host explicit browser command router", () => {
       { commandId: "5", kind: "turn.cancelQueued", webSessionId: row.webSessionId, payload: { clientOperationId: "op-5", messageId: "m-5" } },
       { commandId: "6", kind: "turn.interrupt", webSessionId: row.webSessionId, payload: { clientOperationId: "op-6", cancelQueued: true } },
       { commandId: "7", kind: "command.invoke", webSessionId: row.webSessionId, payload: { clientOperationId: "op-7", clientUserMessageId: "m-7", commandId: "help", arguments: [] } },
-      { commandId: "8", kind: "config.apply", webSessionId: row.webSessionId, payload: { revision: "config-v2", providerRouteId: "route-1", modelId: "deepseek-chat", permissionMode: "default", interactionScenario: "interactive" } },
+      { commandId: "8", kind: "config.apply", webSessionId: row.webSessionId, payload: { revision: "config-v2", providerRouteId: "route-1", modelId: "deepseek-chat", permissionMode: "default", interactionScenario: "interactive", systemPrompt: "" } },
       { commandId: "9", kind: "components.inspect", webSessionId: row.webSessionId, payload: {} },
       { commandId: "10", kind: "components.reload", webSessionId: row.webSessionId, payload: { clientOperationId: "op-10" } },
       { commandId: "11", kind: "utility.run", webSessionId: row.webSessionId, payload: { clientOperationId: "op-11", prompt: "title", maxTokens: 32 } },

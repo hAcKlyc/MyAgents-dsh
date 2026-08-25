@@ -9601,6 +9601,40 @@
             "const": "dsh-session-events-v1",
             "type": "string"
           },
+          "mutationBoundaries": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "sequence": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "stableBoundaryId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "transcriptPostcondition": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "turn": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "stableBoundaryId",
+                "sequence",
+                "turn",
+                "transcriptPostcondition"
+              ],
+              "type": "object"
+            },
+            "maxItems": 256,
+            "type": "array"
+          },
           "nextCursor": {
             "maxLength": 256,
             "minLength": 1,
@@ -9708,6 +9742,10 @@
             "maxLength": 256,
             "minLength": 1,
             "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "transcriptPostcondition": {
+            "pattern": "^[a-f0-9]{64}$",
             "type": "string"
           }
         },

@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "contractVersion": "1.0.0-draft.1",
-  "schemaSha256": "5a7799d90f4a071484aaacbb4489953f045213e0a3ecd724b9c880397947c01b",
+  "schemaSha256": "635d166c1f10a544e9a26d520e1b8094e1729848476ff28f8922777346787b0d",
   "commandKinds": [
     "session.create",
     "session.select",
@@ -20,6 +20,7 @@
     "turn.interrupt",
     "command.invoke",
     "config.apply",
+    "controls.inspect",
     "components.inspect",
     "components.replace",
     "components.reload",

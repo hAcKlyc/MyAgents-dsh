@@ -5,6 +5,8 @@ import {
   REFERENCE_WEB_CREDENTIAL_REVISION,
   REFERENCE_WEB_ENVIRONMENT_REVISION,
   REFERENCE_WEB_PROVIDER,
+  REFERENCE_WEB_STARTER_COMPONENTS,
+  compileReferenceWebComponents,
   createReferenceWebComposition,
   createReferenceWebCredentialResolver,
   type NativeBrowserCommandContext,
@@ -89,10 +91,13 @@ describe("Reference Web Host production profile", () => {
       mode: "create",
       params: {
         runtimeSessionId: row.webSessionId,
-        configRevision: REFERENCE_WEB_CONFIG_REVISION,
         extensionDigest: extensionCatalog.digest,
-        provider: REFERENCE_WEB_PROVIDER,
       },
+    });
+    expect(binding.params.configRevision).toMatch(/^reference-web-bootstrap-/u);
+    expect(binding.params.provider).toEqual({
+      ...REFERENCE_WEB_PROVIDER,
+      revision: "reference-deepseek-deepseek-v4-flash-high-v1",
     });
   });
 
@@ -135,6 +140,71 @@ describe("Reference Web Host production profile", () => {
       executionEnvironmentDigest: initialize.executionEnvironment.digest,
       origin: { kind: "desktop" },
     } satisfies Partial<MethodParams<"turn/start">>));
+  });
+
+  it("ships real starter Skills and routes configuration, component, and mutation controls", async () => {
+    const composition = createReferenceWebComposition({ os: "darwin", arch: "arm64", validation: "verified" });
+    composition.buildInitialize(row, {
+      runtimeHome: "/tmp/reference-runtime-home",
+      attachmentStagingRoot: "/tmp/reference-attachments",
+      workspacePath: "/tmp/reference-workspace",
+    });
+    composition.buildBinding(row, { extensionCatalog });
+    const starter = compileReferenceWebComponents("starter-v1", REFERENCE_WEB_STARTER_COMPONENTS);
+    expect(starter.components.map(({ id, kind }) => ({ id, kind }))).toEqual([
+      { id: "workspace-review", kind: "skill" },
+      { id: "verify-changes", kind: "skill" },
+    ]);
+    expect(starter.resources).toHaveLength(2);
+
+    const configApply = vi.fn(() => Promise.resolve({
+      desiredRevision: "config-v2", effectiveRevision: "config-v2", state: "applied" as const, components: [],
+    }));
+    const sessionDeletePrepare = vi.fn(() => Promise.resolve({ token: "delete-token", state: "prepared" as const }));
+    const sessionDeleteCommit = vi.fn(() => Promise.resolve({ token: "delete-token", state: "committed" as const }));
+    const context: NativeBrowserCommandContext = {
+      row,
+      client: { configApply, sessionDeletePrepare, sessionDeleteCommit } as unknown as GeneratedHostClient,
+      attachments: [],
+      resync: vi.fn(),
+    };
+    await composition.nativeCommand({
+      commandId: "config-command",
+      kind: "config.apply",
+      webSessionId: row.webSessionId,
+      payload: {
+        revision: "config-v2",
+        providerRouteId: REFERENCE_WEB_PROVIDER.providerRouteId,
+        modelId: REFERENCE_WEB_PROVIDER.modelId,
+        reasoningEffort: "medium",
+        permissionMode: "default",
+        interactionScenario: "host-interaction-v2",
+        systemPrompt: "Updated public prompt",
+        visibleTools: ["Read"],
+      },
+    }, context);
+    expect(configApply).toHaveBeenCalledWith(expect.objectContaining({
+      revision: "config-v2",
+      systemPrompt: "Updated public prompt",
+      toolPolicy: { autoAllowTools: ["Read"] },
+    } satisfies Partial<MethodParams<"config/apply">>));
+    const prepared = await composition.nativeCommand({
+      commandId: "delete-prepare",
+      kind: "mutation.prepare",
+      webSessionId: row.webSessionId,
+      payload: { mutation: "delete", clientMutationId: "delete-1" },
+    }, context);
+    expect(prepared).toEqual({ token: "delete-token", state: "prepared" });
+    await composition.nativeCommand({
+      commandId: "delete-commit",
+      kind: "mutation.commit",
+      webSessionId: row.webSessionId,
+      payload: {
+        mutation: "delete", clientMutationId: "delete-1", token: "delete-token",
+        confirmation: `DELETE ${row.title}`,
+      },
+    }, context);
+    expect(sessionDeleteCommit).toHaveBeenCalledWith({ clientMutationId: "delete-1", token: "delete-token" });
   });
 });
 

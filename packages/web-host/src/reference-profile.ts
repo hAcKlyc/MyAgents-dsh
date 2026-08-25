@@ -1,17 +1,28 @@
 import { createHash } from "node:crypto";
 
 import {
+  CANONICAL_TOOL_NAMES,
   PROTOCOL_VERSION,
   REFERENCE_PROTOCOL_LIMITS,
   DEEPSEEK_WEB_SEARCH_ADAPTER_ID,
   DEEPSEEK_WEB_SEARCH_POLICY_REF,
   extensionSnapshotDigest,
+  validateMethodParams,
   type InitializeParams,
   type MethodParams,
 } from "@myagents-dsh/protocol";
+import type {
+  BrowserComponentDefinition,
+  BrowserComponentSnapshot,
+  SessionConfiguration,
+} from "@myagents-dsh/web-host-contract";
 
 import type { NativeBrowserCommandHandler } from "./application.js";
 import type { WebSessionCatalogRow } from "./catalog.js";
+import type {
+  ReferenceWebConfigurationStore,
+  ReferenceSessionControls,
+} from "./configuration-store.js";
 import {
   BrowserNativeCommandRouter,
   type SessionOperationAuthority,
@@ -28,7 +39,7 @@ export const REFERENCE_WEB_ENVIRONMENT_REVISION = "reference-web-environment-v1"
 export const REFERENCE_WEB_INTERACTION_SCENARIO = "host-interaction-v1" as const;
 export const REFERENCE_WEB_CREDENTIAL_REVISION = "deepseek-official-credential-v1" as const;
 export const REFERENCE_WEB_NETWORK_POLICY_REVISION = DEEPSEEK_WEB_SEARCH_POLICY_REF;
-export const REFERENCE_WEB_EXTENSION_REVISION = "official-empty-extensions-v1" as const;
+export const REFERENCE_WEB_EXTENSION_REVISION = "reference-web-starter-components-v1" as const;
 
 export const REFERENCE_WEB_PROVIDER = Object.freeze({
   revision: "deepseek-official-v4-flash-v2",
@@ -44,23 +55,152 @@ export const REFERENCE_WEB_PROVIDER = Object.freeze({
   effort: "high",
 } satisfies MethodParams<"session/create">["provider"]);
 
-const extensionAuthority: Omit<MethodParams<"extension/replace">, "digest"> = {
-  formatVersion: 1 as const,
-  revision: REFERENCE_WEB_EXTENSION_REVISION,
-  components: [],
-  resources: [],
-  skillSourcePolicy: {
-    revision: "official-skill-source-policy-v1",
-    roots: [],
-  },
-};
-
-export const REFERENCE_WEB_COMPONENT_SNAPSHOT_DIGEST = extensionSnapshotDigest(extensionAuthority);
 export const REFERENCE_WEB_SYSTEM_PROMPT = [
   "You are the MyAgents-dsh Root Agent running in the user's selected workspace.",
   "Use the available governed tools when they materially help, ask before actions that require Host approval,",
   "and report results, uncertainty, and failures truthfully.",
 ].join(" ");
+
+export const REFERENCE_WEB_DEFAULT_CONFIGURATION: SessionConfiguration = Object.freeze({
+  revision: REFERENCE_WEB_CONFIG_REVISION,
+  providerRouteId: REFERENCE_WEB_PROVIDER.providerRouteId,
+  modelId: REFERENCE_WEB_PROVIDER.modelId,
+  reasoningEffort: "high",
+  permissionMode: "default",
+  interactionScenario: REFERENCE_WEB_INTERACTION_SCENARIO,
+  systemPrompt: REFERENCE_WEB_SYSTEM_PROMPT,
+});
+
+const reviewSkill = [
+  "# Workspace review",
+  "",
+  "Inspect the requested workspace area before proposing changes.",
+  "Use repository sources of truth, distinguish evidence from inference, and report concrete file references.",
+  "When changes are requested, preserve unrelated work and verify the narrowest relevant behavior.",
+].join("\n");
+const verificationSkill = [
+  "# Verify changes",
+  "",
+  "Verify a completed change in proportion to its risk.",
+  "Start with focused checks, then run the repository-defined gates that cover the modified boundary.",
+  "Report exact failures without hiding skipped or unavailable evidence.",
+].join("\n");
+
+export const REFERENCE_WEB_STARTER_COMPONENTS: readonly BrowserComponentDefinition[] = Object.freeze([
+  Object.freeze({
+    id: "workspace-review",
+    kind: "skill" as const,
+    enabled: true,
+    configuration: Object.freeze({
+      descriptor: Object.freeze({
+        description: "Review a workspace area using repository evidence",
+        whenToUse: "When inspecting, diagnosing, or planning a repository change",
+        invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
+        rank: 20,
+        resourceId: "workspace-review-document",
+      }),
+      resource: Object.freeze({ content: reviewSkill }),
+    }),
+  }),
+  Object.freeze({
+    id: "verify-changes",
+    kind: "skill" as const,
+    enabled: true,
+    configuration: Object.freeze({
+      descriptor: Object.freeze({
+        description: "Run focused and repository-defined verification",
+        whenToUse: "After implementing or repairing code",
+        invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
+        rank: 30,
+        resourceId: "verify-changes-document",
+      }),
+      resource: Object.freeze({ content: verificationSkill }),
+    }),
+  }),
+]);
+
+const plainRecord = (value: unknown, label: string): Readonly<Record<string, unknown>> => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new WebHostError("component_configuration_invalid", `${label} must be an object`);
+  }
+  return value as Readonly<Record<string, unknown>>;
+};
+const exactKeys = (
+  value: Readonly<Record<string, unknown>>,
+  allowed: readonly string[],
+  label: string,
+): void => {
+  if (Object.keys(value).some((key) => !allowed.includes(key))) {
+    throw new WebHostError("component_configuration_invalid", `${label} contains an unknown field`);
+  }
+};
+
+export const compileReferenceWebComponents = (
+  revision: string,
+  components: readonly BrowserComponentDefinition[],
+): MethodParams<"extension/replace"> => {
+  const nativeComponents: MethodParams<"extension/replace">["components"][number][] = [];
+  const resources: MethodParams<"extension/replace">["resources"][number][] = [];
+  for (const component of components) {
+    const configuration = plainRecord(component.configuration, `${component.kind} component configuration`);
+    exactKeys(configuration, component.kind === "skill" || component.kind === "command"
+      ? ["descriptor", "resource"] : ["descriptor"], `${component.kind} component configuration`);
+    const descriptor = plainRecord(configuration.descriptor, `${component.kind} descriptor`);
+    nativeComponents.push({
+      id: component.id,
+      kind: component.kind,
+      enabled: component.enabled,
+      descriptor,
+    } as MethodParams<"extension/replace">["components"][number]);
+    if (component.kind === "skill" || component.kind === "command") {
+      const resource = plainRecord(configuration.resource, `${component.kind} resource`);
+      exactKeys(resource, ["content"], `${component.kind} resource`);
+      if (typeof resource.content !== "string" || resource.content.length < 1) {
+        throw new WebHostError("component_configuration_invalid", `${component.kind} resource content is empty`);
+      }
+      const resourceId = descriptor.resourceId;
+      if (typeof resourceId !== "string") {
+        throw new WebHostError("component_configuration_invalid", `${component.kind} resource id is unavailable`);
+      }
+      resources.push({
+        id: resourceId,
+        kind: component.kind === "skill" ? "skill_document" : "command_template",
+        mediaType: "text/markdown",
+        content: resource.content,
+        sha256: createHash("sha256").update(resource.content).digest("hex"),
+      });
+    }
+  }
+  const authority: Omit<MethodParams<"extension/replace">, "digest"> = {
+    formatVersion: 1,
+    revision,
+    components: nativeComponents,
+    resources,
+    skillSourcePolicy: {
+      revision: `${revision}-skill-policy`,
+      roots: [],
+    },
+  };
+  return validateMethodParams("extension/replace", {
+    ...authority,
+    digest: extensionSnapshotDigest(authority),
+  });
+};
+
+const defaultNativeExtensions = compileReferenceWebComponents(
+  REFERENCE_WEB_EXTENSION_REVISION,
+  REFERENCE_WEB_STARTER_COMPONENTS,
+);
+export const REFERENCE_WEB_COMPONENT_SNAPSHOT_DIGEST = defaultNativeExtensions.digest;
+export const REFERENCE_WEB_DEFAULT_COMPONENT_SNAPSHOT: BrowserComponentSnapshot = Object.freeze({
+  revision: REFERENCE_WEB_EXTENSION_REVISION,
+  digest: defaultNativeExtensions.digest,
+  components: [...REFERENCE_WEB_STARTER_COMPONENTS],
+});
+export const REFERENCE_WEB_DEFAULT_CONTROLS: ReferenceSessionControls = Object.freeze({
+  configuration: REFERENCE_WEB_DEFAULT_CONFIGURATION,
+  components: REFERENCE_WEB_DEFAULT_COMPONENT_SNAPSHOT,
+});
 
 export type ReferenceWebPlatform = Readonly<{
   os: "darwin" | "win32" | "linux";
@@ -152,22 +292,37 @@ export const createReferenceWebInitialize = (
   limits: REFERENCE_PROTOCOL_LIMITS,
 });
 
-const sessionBindingParams = (row: WebSessionCatalogRow, extensionDigest: string) => ({
+const providerFor = (configuration: SessionConfiguration): MethodParams<"session/create">["provider"] => ({
+  ...REFERENCE_WEB_PROVIDER,
+  revision: `reference-deepseek-${configuration.modelId}-${configuration.reasoningEffort ?? "default"}-v1`,
+  modelId: configuration.modelId,
+  ...(configuration.reasoningEffort === undefined ? {} : { effort: configuration.reasoningEffort }),
+});
+
+const sessionBindingParams = (
+  row: WebSessionCatalogRow,
+  controls: ReferenceSessionControls,
+  extensionDigest: string,
+) => ({
   clientOperationId: `${row.runtimeSessionId === undefined ? "create" : "resume"}:${row.webSessionId}`,
   persistenceRef: row.persistenceRef,
-  provider: REFERENCE_WEB_PROVIDER,
-  configRevision: REFERENCE_WEB_CONFIG_REVISION,
+  provider: providerFor(controls.configuration),
+  configRevision: controls.configuration.revision,
   extensionDigest,
-  systemPrompt: REFERENCE_WEB_SYSTEM_PROMPT,
-  permissionMode: "default",
-  interactionScenario: REFERENCE_WEB_INTERACTION_SCENARIO,
+  systemPrompt: controls.configuration.systemPrompt,
+  permissionMode: controls.configuration.permissionMode,
+  ...(controls.configuration.visibleTools === undefined ? {} : {
+    toolPolicy: { autoAllowTools: controls.configuration.visibleTools },
+  }),
+  interactionScenario: controls.configuration.interactionScenario,
 });
 
 export const createReferenceWebBinding = (
   row: WebSessionCatalogRow,
   authority: RuntimeBindingAuthority,
+  controls: ReferenceSessionControls = REFERENCE_WEB_DEFAULT_CONTROLS,
 ): RuntimeBinding => {
-  const params = sessionBindingParams(row, authority.extensionCatalog.digest);
+  const params = sessionBindingParams(row, controls, authority.extensionCatalog.digest);
   return row.runtimeSessionId === undefined
     ? { mode: "create", params: { ...params, runtimeSessionId: row.webSessionId } }
     : { mode: "resume", params: { ...params, runtimeSessionId: row.runtimeSessionId } };
@@ -181,7 +336,8 @@ export const createReferenceWebCredentialResolver = (apiKey: string): Credential
     if (params.subject !== "provider"
       || params.credentialRef !== REFERENCE_WEB_PROVIDER.credentialRef
       || params.providerRouteId !== REFERENCE_WEB_PROVIDER.providerRouteId
-      || params.profileRevision !== REFERENCE_WEB_PROVIDER.revision) {
+      || (!params.profileRevision.startsWith("reference-deepseek-")
+        && params.profileRevision !== REFERENCE_WEB_PROVIDER.revision)) {
       return {
         kind: "availability",
         available: false,
@@ -211,17 +367,105 @@ export type ReferenceWebComposition = Readonly<{
     paths: ReferenceWebRuntimePaths,
   ) => InitializeParams;
   buildBinding: (row: WebSessionCatalogRow, authority: RuntimeBindingAuthority) => RuntimeBinding;
+  buildExtensionSnapshot: (row: WebSessionCatalogRow) => MethodParams<"extension/replace">;
+  applyStoredConfiguration: (
+    row: WebSessionCatalogRow,
+    client: Parameters<NativeBrowserCommandHandler>[1]["client"],
+  ) => Promise<void>;
   nativeCommand: NativeBrowserCommandHandler;
 }>;
 
+type ReferenceControlStore = Pick<
+  ReferenceWebConfigurationStore,
+  "get" | "setConfiguration" | "setComponents" | "clone" | "remove"
+>;
+
+const memoryControlStore = (): ReferenceControlStore => {
+  const controls = new Map<string, ReferenceSessionControls>();
+  return {
+    get: (webSessionId) => controls.get(webSessionId) ?? REFERENCE_WEB_DEFAULT_CONTROLS,
+    setConfiguration: (webSessionId, configuration) => {
+      const current = controls.get(webSessionId) ?? REFERENCE_WEB_DEFAULT_CONTROLS;
+      controls.set(webSessionId, Object.freeze({ ...current, configuration }));
+      return Promise.resolve();
+    },
+    setComponents: (webSessionId, components) => {
+      const current = controls.get(webSessionId) ?? REFERENCE_WEB_DEFAULT_CONTROLS;
+      controls.set(webSessionId, Object.freeze({ ...current, components }));
+      return Promise.resolve();
+    },
+    clone: (sourceWebSessionId, targetWebSessionId) => {
+      controls.set(targetWebSessionId, controls.get(sourceWebSessionId) ?? REFERENCE_WEB_DEFAULT_CONTROLS);
+      return Promise.resolve();
+    },
+    remove: (webSessionId) => {
+      controls.delete(webSessionId);
+      return Promise.resolve();
+    },
+  };
+};
+
+const allowedTools = new Set<string>(CANONICAL_TOOL_NAMES);
+const validateConfiguration = (value: SessionConfiguration): void => {
+  if (value.providerRouteId !== REFERENCE_WEB_PROVIDER.providerRouteId
+    || value.modelId !== REFERENCE_WEB_PROVIDER.modelId) {
+    throw new WebHostError("reference_web_model_unavailable", "The selected model route is not installed");
+  }
+  if (!["default", "acceptEdits", "bypassPermissions", "dontAsk"].includes(value.permissionMode)) {
+    throw new WebHostError("reference_web_permission_mode_invalid", "The selected permission mode is invalid");
+  }
+  if (value.visibleTools?.some((tool) => !allowedTools.has(tool))) {
+    throw new WebHostError("reference_web_tool_policy_invalid", "The tool policy contains an unknown canonical tool");
+  }
+};
+
 export const createReferenceWebComposition = (
   platform: ReferenceWebPlatform,
+  controlStore: ReferenceControlStore = memoryControlStore(),
 ): ReferenceWebComposition => {
   const authorities = new Map<string, SessionOperationAuthority>();
+  const forkTargets = new Map<string, string>();
   const environments = new Map<string, Readonly<{
     revision: string;
     digest: string;
   }>>();
+  const applyConfiguration = async (
+    row: WebSessionCatalogRow,
+    client: Parameters<NativeBrowserCommandHandler>[1]["client"],
+    configuration: SessionConfiguration,
+    persist: boolean,
+  ): Promise<unknown> => {
+    validateConfiguration(configuration);
+    const environment = environments.get(row.webSessionId);
+    if (environment === undefined) {
+      throw new WebHostError("reference_web_authority_unavailable", "Session environment authority is unavailable");
+    }
+    const params: MethodParams<"config/apply"> = {
+      revision: configuration.revision,
+      provider: providerFor(configuration),
+      permissionMode: configuration.permissionMode,
+      ...(configuration.visibleTools === undefined ? {} : {
+        toolPolicy: { autoAllowTools: configuration.visibleTools },
+      }),
+      interactionScenario: configuration.interactionScenario,
+      systemPrompt: configuration.systemPrompt,
+      executionEnvironmentRevision: environment.revision,
+      executionEnvironmentDigest: environment.digest,
+    };
+    const result = await client.configApply(params);
+    if (result.state === "failed") {
+      throw new WebHostError("reference_web_config_apply_failed", "Runtime rejected the selected Session configuration");
+    }
+    if (persist) await controlStore.setConfiguration(row.webSessionId, configuration);
+    const current = authorities.get(row.webSessionId);
+    if (current !== undefined) authorities.set(row.webSessionId, Object.freeze({
+      ...current,
+      configRevision: configuration.revision,
+      systemPrompt: configuration.systemPrompt,
+      modelProfileRevision: params.provider.revision,
+    }));
+    return result;
+  };
   const router = new BrowserNativeCommandRouter({
     authority: (context) => {
       const authority = authorities.get(context.row.webSessionId);
@@ -230,13 +474,166 @@ export const createReferenceWebComposition = (
       }
       return authority;
     },
-    configApply: () => {
-      throw new WebHostError("reference_web_config_fixed", "The minimal Reference Host uses one fixed model route");
+    configApply: (command, context) => applyConfiguration(
+      context.row,
+      context.client,
+      command.payload,
+      true,
+    ),
+    advanced: async (command, context) => {
+      if (command.kind === "controls.inspect") {
+        const [runtime, catalog, status] = await Promise.all([
+          context.client.runtimeStatus({}),
+          context.client.extensionCatalog({}),
+          context.client.extensionStatus({}),
+        ]);
+        return { controls: controlStore.get(context.row.webSessionId), runtime, catalog, status };
+      }
+      if (command.kind === "components.replace") {
+        const current = controlStore.get(context.row.webSessionId);
+        if (command.payload.expectedDigest !== undefined
+          && command.payload.expectedDigest !== current.components.digest) {
+          throw new WebHostError("component_digest_conflict", "The component generation changed before replacement", true);
+        }
+        const native = compileReferenceWebComponents(command.payload.revision, command.payload.components);
+        const result = await context.client.extensionReplace(native);
+        if (result.state !== "failed") {
+          const snapshot: BrowserComponentSnapshot = Object.freeze({
+            revision: command.payload.revision,
+            digest: native.digest,
+            components: [...command.payload.components],
+          });
+          await controlStore.setComponents(context.row.webSessionId, snapshot);
+          const currentAuthority = authorities.get(context.row.webSessionId);
+          if (currentAuthority !== undefined) authorities.set(context.row.webSessionId, Object.freeze({
+            ...currentAuthority,
+            extensionDigest: native.digest,
+          }));
+        }
+        return result;
+      }
+      if (command.kind === "mutation.prepare") {
+        if (command.payload.mutation === "delete") {
+          return context.client.sessionDeletePrepare({
+            clientMutationId: command.payload.clientMutationId,
+          });
+        }
+        if (command.payload.mutation === "rewind") {
+          if (command.payload.stableBoundaryId === undefined
+            || command.payload.sourceTranscriptPostcondition === undefined
+            || command.payload.targetTranscriptPostcondition === undefined) {
+            throw new WebHostError("rewind_authority_incomplete", "Rewind requires an exact boundary and transcript postconditions");
+          }
+          return context.client.sessionRewindPrepare({
+            clientMutationId: command.payload.clientMutationId,
+            targetStableBoundaryId: command.payload.stableBoundaryId,
+            sourceTranscriptPostcondition: command.payload.sourceTranscriptPostcondition,
+            targetTranscriptPostcondition: command.payload.targetTranscriptPostcondition,
+          });
+        }
+        if (command.payload.stableBoundaryId === undefined) {
+          throw new WebHostError("fork_boundary_unavailable", "Fork requires one stable Session boundary");
+        }
+        if (context.createForkTarget === undefined || context.removeHostSession === undefined) {
+          throw new WebHostError("fork_host_authority_unavailable", "Fork target authority is unavailable");
+        }
+        const target = await context.createForkTarget(command.payload.forkTitle ?? `${context.row.title} · Fork`);
+        await controlStore.clone(context.row.webSessionId, target.row.webSessionId);
+        try {
+          const result = await context.client.sessionForkPrepare({
+            clientMutationId: command.payload.clientMutationId,
+            sourceStableBoundaryId: command.payload.stableBoundaryId,
+            targetRuntimeHome: target.runtimeHome,
+            targetPersistenceRef: target.row.persistenceRef,
+            targetWorkspaceIdentity: target.row.workspaceIdentity,
+            ...(target.row.runtimeSessionId === undefined ? {} : {
+              targetRuntimeSessionId: target.row.runtimeSessionId,
+            }),
+          });
+          forkTargets.set(result.token, target.row.webSessionId);
+          return { ...result, targetWebSessionId: target.row.webSessionId };
+        } catch (error) {
+          await Promise.allSettled([
+            context.removeHostSession(target.row.webSessionId),
+            controlStore.remove(target.row.webSessionId),
+          ]);
+          throw error;
+        }
+      }
+      if (command.kind === "mutation.status") {
+        const result = command.payload.mutation === "delete"
+          ? await context.client.sessionDeleteStatus({ token: command.payload.token })
+          : command.payload.mutation === "fork"
+            ? await context.client.sessionForkStatus({ token: command.payload.token })
+            : await context.client.sessionRewindStatus({ token: command.payload.token });
+        const targetWebSessionId = forkTargets.get(command.payload.token);
+        return targetWebSessionId === undefined ? result : { ...result, targetWebSessionId };
+      }
+      if (command.kind === "mutation.commit") {
+        const expected = command.payload.mutation === "delete"
+          ? `DELETE ${context.row.title}`
+          : command.payload.mutation === "fork" ? "FORK" : "REWIND";
+        if (command.payload.confirmation !== expected) {
+          throw new WebHostError("mutation_confirmation_invalid", "Mutation confirmation does not match its exact scope");
+        }
+        const result = command.payload.mutation === "delete"
+          ? await context.client.sessionDeleteCommit({
+              clientMutationId: command.payload.clientMutationId,
+              token: command.payload.token,
+            })
+          : command.payload.mutation === "fork"
+            ? await context.client.sessionForkCommit({
+                clientMutationId: command.payload.clientMutationId,
+                token: command.payload.token,
+              })
+            : await context.client.sessionRewindCommit({
+                clientMutationId: command.payload.clientMutationId,
+                token: command.payload.token,
+              });
+        context.resync?.(`${command.payload.mutation}_committed`);
+        return result;
+      }
+      if (command.kind === "mutation.rollback") {
+        const result = command.payload.mutation === "delete"
+          ? await context.client.sessionDeleteRollback({
+              clientMutationId: command.payload.clientMutationId,
+              token: command.payload.token,
+            })
+          : command.payload.mutation === "fork"
+            ? await context.client.sessionForkAbort({
+                clientMutationId: command.payload.clientMutationId,
+                token: command.payload.token,
+              })
+            : await context.client.sessionRewindRollback({
+                clientMutationId: command.payload.clientMutationId,
+                token: command.payload.token,
+              });
+        if (command.payload.mutation === "fork") {
+          const targetWebSessionId = forkTargets.get(command.payload.token);
+          if (targetWebSessionId !== undefined && context.removeHostSession !== undefined) {
+            await Promise.allSettled([
+              context.removeHostSession(targetWebSessionId),
+              controlStore.remove(targetWebSessionId),
+            ]);
+            forkTargets.delete(command.payload.token);
+          }
+        }
+        context.resync?.(`${command.payload.mutation}_rolled_back`);
+        return result;
+      }
+      if (command.payload.confirmation !== `PURGE ${context.row.title}`) {
+        throw new WebHostError("mutation_confirmation_invalid", "Purge confirmation does not match its exact scope");
+      }
+      const result = await context.client.sessionDeletePurge({
+        clientMutationId: command.payload.clientMutationId,
+        token: command.payload.token,
+      });
+      if (result.state === "purged" && context.removeHostSession !== undefined) {
+        await context.removeHostSession(context.row.webSessionId);
+        await controlStore.remove(context.row.webSessionId);
+      }
+      return result;
     },
-    advanced: () => Promise.reject(new WebHostError(
-      "reference_web_advanced_unavailable",
-      "Advanced component and mutation controls are not available in the minimal Host",
-    )),
   });
   return Object.freeze({
     buildInitialize: (row, paths) => {
@@ -252,18 +649,54 @@ export const createReferenceWebComposition = (
       if (environment === undefined) {
         throw new WebHostError("reference_web_authority_unavailable", "Session environment authority is unavailable");
       }
+      const controls = controlStore.get(row.webSessionId);
+      validateConfiguration(controls.configuration);
       const authority: SessionOperationAuthority = Object.freeze({
-        configRevision: REFERENCE_WEB_CONFIG_REVISION,
+        configRevision: controls.configuration.revision,
         extensionDigest: bindingAuthority.extensionCatalog.digest,
         executionEnvironmentRevision: environment.revision,
         executionEnvironmentDigest: environment.digest,
         limits: { maxTurns: 128, maxDurationMs: 30 * 60 * 1_000 },
         origin: { kind: "desktop" as const },
-        systemPrompt: REFERENCE_WEB_SYSTEM_PROMPT,
-        modelProfileRevision: REFERENCE_WEB_PROVIDER.revision,
+        systemPrompt: controls.configuration.systemPrompt,
+        modelProfileRevision: providerFor(controls.configuration).revision,
       });
       authorities.set(row.webSessionId, authority);
-      return createReferenceWebBinding(row, bindingAuthority);
+      const bootstrapConfiguration: SessionConfiguration = {
+        revision: controls.configuration.revision,
+        providerRouteId: controls.configuration.providerRouteId,
+        modelId: controls.configuration.modelId,
+        ...(controls.configuration.reasoningEffort === undefined ? {} : {
+          reasoningEffort: controls.configuration.reasoningEffort,
+        }),
+        permissionMode: controls.configuration.permissionMode,
+        interactionScenario: controls.configuration.interactionScenario,
+        systemPrompt: controls.configuration.systemPrompt,
+      };
+      const bootstrapControls: ReferenceSessionControls = Object.freeze({
+        ...controls,
+        configuration: Object.freeze({
+          ...bootstrapConfiguration,
+          revision: `reference-web-bootstrap-${createHash("sha256")
+            .update(JSON.stringify(controls.configuration)).digest("hex").slice(0, 16)}`,
+          permissionMode: "default",
+        }),
+      });
+      return createReferenceWebBinding(row, bindingAuthority, bootstrapControls);
+    },
+    buildExtensionSnapshot: (row) => {
+      const controls = controlStore.get(row.webSessionId);
+      const native = compileReferenceWebComponents(
+        controls.components.revision,
+        controls.components.components,
+      );
+      if (native.digest !== controls.components.digest) {
+        throw new WebHostError("component_digest_conflict", "Stored component generation digest differs from its contents");
+      }
+      return native;
+    },
+    applyStoredConfiguration: async (row, client) => {
+      await applyConfiguration(row, client, controlStore.get(row.webSessionId).configuration, false);
     },
     nativeCommand: router.handle,
   });

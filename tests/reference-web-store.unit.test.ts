@@ -65,6 +65,86 @@ class EventQueue {
 }
 
 describe("Reference Web React store", () => {
+  it("drives configuration, component inspection, and mutation commands from Runtime results", async () => {
+    const queue = new EventQueue();
+    const commands: BrowserCommand[] = [];
+    let sequence = 0;
+    const controls = {
+      configuration: {
+        revision: "config-v1",
+        providerRouteId: "deepseek-official",
+        modelId: "deepseek-v4-flash",
+        reasoningEffort: "high" as const,
+        permissionMode: "default",
+        interactionScenario: "host-interaction-v1",
+        systemPrompt: "Fixture prompt",
+      },
+      components: { revision: "components-v1", digest: "d".repeat(64), components: [] },
+    };
+    const inspectResult = {
+      controls,
+      runtime: { primarySessionState: "ready" },
+      catalog: {
+        revision: "components-v1", digest: "d".repeat(64), tools: ["Read"], commands: [],
+        skills: [], agents: [], mcpServers: [],
+      },
+      status: { desiredRevision: "components-v1", effectiveRevision: "components-v1", state: "applied", components: [] },
+    };
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve(bootstrap)),
+      events: (options: { signal?: AbortSignal }) => queue.events(options.signal ?? new AbortController().signal),
+      command: vi.fn((command: BrowserCommand) => {
+        commands.push(command);
+        sequence += 1;
+        const result = command.kind === "history.read" ? {
+          runtimeSessionId: "runtime-session-1",
+          historyFormat: "dsh-session-events-v1" as const,
+          durableHead: { sequence: 1, stableBoundaryId: "boundary-1" },
+          mutationBoundaries: [{
+            stableBoundaryId: "boundary-1", sequence: 1, turn: 1,
+            transcriptPostcondition: "a".repeat(64),
+          }],
+          transcriptPostcondition: "b".repeat(64),
+          records: [{
+            kind: "event" as const,
+            sequence: 0,
+            eventType: "fixture",
+            eventSha256: "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            data: {},
+          }],
+        } : command.kind === "controls.inspect" ? inspectResult
+          : command.kind === "mutation.prepare" ? { token: "mutation-token", state: "prepared", targetWebSessionId: "fork-1" }
+            : command.kind === "mutation.commit" ? { token: "mutation-token", state: "committed" }
+              : { state: "applied" };
+        queue.push({
+          epoch: "epoch-controls", sequence, emittedAt: now, kind: "host.commandSettled",
+          payload: { commandId: command.commandId, state: "succeeded", result },
+        });
+        return Promise.resolve({ commandId: command.commandId, accepted: true as const });
+      }),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    let nextId = 0;
+    const store = new ReferenceWebStore({ client, idFactory: () => `control-${nextId += 1}`, now: () => now });
+    await store.start();
+    await vi.waitFor(() => expect(store.getSnapshot().history?.status).toBe("complete"));
+    store.openControls();
+    await vi.waitFor(() => expect(store.getSnapshot().controlInspection?.catalog.tools).toEqual(["Read"]));
+    await store.applyConfiguration({ ...controls.configuration, revision: "config-v2", reasoningEffort: "medium" });
+    await store.prepareMutation("fork", { boundaryId: "boundary-1", forkTitle: "Forked" });
+    await store.commitMutation("FORK");
+    expect(commands.find(({ kind }) => kind === "config.apply")).toMatchObject({
+      payload: { revision: "config-v2", systemPrompt: "Fixture prompt" },
+    });
+    expect(commands.find(({ kind }) => kind === "mutation.prepare")).toMatchObject({
+      payload: { mutation: "fork", stableBoundaryId: "boundary-1", forkTitle: "Forked" },
+    });
+    expect(commands.find(({ kind }) => kind === "mutation.commit")).toMatchObject({
+      payload: { mutation: "fork", confirmation: "FORK", token: "mutation-token" },
+    });
+    store.stop();
+  });
+
   it("folds typed Host events and preserves browser command identity", async () => {
     const queue = new EventQueue();
     let sequence = 0;

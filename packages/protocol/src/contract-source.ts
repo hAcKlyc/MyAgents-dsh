@@ -356,11 +356,19 @@ const sessionReadRecord = Type.Union([
   strictObject({ kind: Type.Literal("event"), sequence: nonNegativeInteger, eventType: identifier, eventSha256: sha256, data: Type.Unknown() }),
   strictObject({ kind: Type.Literal("event_chunk"), sequence: nonNegativeInteger, eventType: identifier, eventSha256: sha256, chunkIndex: nonNegativeInteger, chunkCount: Type.Integer({ minimum: 1 }), offsetBytes: nonNegativeInteger, totalBytes: Type.Integer({ minimum: 1 }), dataBase64: Type.String({ minLength: 4, maxLength: MAX_FRAME_BYTES, pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" }) }),
 ]);
+const sessionMutationBoundary = strictObject({
+  stableBoundaryId: identifier,
+  sequence: Type.Integer({ minimum: 1 }),
+  turn: Type.Integer({ minimum: 1 }),
+  transcriptPostcondition: sha256,
+});
 export const SessionReadResultSchema = strictObject({
   runtimeSessionId: identifier,
   historyFormat: Type.Literal(SESSION_FORMAT),
   durableHead,
   records: Type.Array(sessionReadRecord, { maxItems: 16_384 }),
+  mutationBoundaries: Type.Optional(Type.Array(sessionMutationBoundary, { maxItems: 256 })),
+  transcriptPostcondition: Type.Optional(sha256),
   nextCursor: Type.Optional(identifier),
 });
 

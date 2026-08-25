@@ -170,6 +170,44 @@ const mutationKind = Type.Union([
   Type.Literal("fork"),
   Type.Literal("rewind"),
 ]);
+const reasoningEffort = Type.Union([
+  Type.Literal("low"),
+  Type.Literal("medium"),
+  Type.Literal("high"),
+  Type.Literal("xhigh"),
+  Type.Literal("max"),
+]);
+
+export const SessionConfigurationSchema = strictObject({
+  revision: identifier,
+  providerRouteId: identifier,
+  modelId: identifier,
+  reasoningEffort: Type.Optional(reasoningEffort),
+  permissionMode: identifier,
+  interactionScenario: identifier,
+  systemPrompt: Type.String({ maxLength: 1_000_000 }),
+  visibleTools: Type.Optional(Type.Array(identifier, { maxItems: 512, uniqueItems: true })),
+});
+
+export const BrowserComponentDefinitionSchema = strictObject({
+  id: identifier,
+  kind: Type.Union([
+    Type.Literal("mcp"),
+    Type.Literal("skill"),
+    Type.Literal("agent"),
+    Type.Literal("command"),
+    Type.Literal("hook"),
+    Type.Literal("host_tool"),
+  ]),
+  enabled: Type.Boolean(),
+  configuration: JsonValueSchema,
+});
+
+export const BrowserComponentSnapshotSchema = strictObject({
+  revision: identifier,
+  digest: sha256,
+  components: Type.Array(BrowserComponentDefinitionSchema, { maxItems: 1_024 }),
+});
 
 export const BrowserCommandSchema = Type.Union([
   hostCommand("session.create", strictObject({ title: Type.Optional(title) })),
@@ -212,38 +250,13 @@ export const BrowserCommandSchema = Type.Union([
     commandId: identifier,
     arguments: Type.Array(shortText, { maxItems: 256 }),
   }), "required"),
-  commandBase("config.apply", strictObject({
-    revision: identifier,
-    providerRouteId: identifier,
-    modelId: identifier,
-    reasoningEffort: Type.Optional(Type.Union([
-      Type.Literal("low"),
-      Type.Literal("medium"),
-      Type.Literal("high"),
-      Type.Literal("xhigh"),
-      Type.Literal("max"),
-    ])),
-    permissionMode: identifier,
-    interactionScenario: identifier,
-    visibleTools: Type.Optional(Type.Array(identifier, { maxItems: 512, uniqueItems: true })),
-  }), "required"),
+  commandBase("config.apply", SessionConfigurationSchema, "required"),
+  commandBase("controls.inspect", emptyPayload, "required"),
   commandBase("components.inspect", emptyPayload, "required"),
   commandBase("components.replace", strictObject({
     revision: identifier,
     expectedDigest: Type.Optional(sha256),
-    components: Type.Array(strictObject({
-      id: identifier,
-      kind: Type.Union([
-        Type.Literal("mcp"),
-        Type.Literal("skill"),
-        Type.Literal("agent"),
-        Type.Literal("command"),
-        Type.Literal("hook"),
-        Type.Literal("host_tool"),
-      ]),
-      enabled: Type.Boolean(),
-      configuration: JsonValueSchema,
-    }), { maxItems: 2_048 }),
+    components: Type.Array(BrowserComponentDefinitionSchema, { maxItems: 1_024 }),
   }), "required"),
   commandBase("components.reload", operationId, "required"),
   commandBase("mutation.prepare", strictObject({
@@ -256,13 +269,15 @@ export const BrowserCommandSchema = Type.Union([
   }), "required"),
   commandBase("mutation.commit", strictObject({
     mutation: mutationKind,
+    clientMutationId: identifier,
     token: identifier,
     confirmation: Type.String({ minLength: 1, maxLength: 256 }),
   }), "required"),
-  commandBase("mutation.rollback", strictObject({ mutation: mutationKind, token: identifier }), "required"),
+  commandBase("mutation.rollback", strictObject({ mutation: mutationKind, clientMutationId: identifier, token: identifier }), "required"),
   commandBase("mutation.status", strictObject({ mutation: mutationKind, token: identifier }), "required"),
   commandBase("mutation.purge", strictObject({
     mutation: Type.Literal("delete"),
+    clientMutationId: identifier,
     token: identifier,
     confirmation: Type.String({ minLength: 1, maxLength: 256 }),
   }), "required"),
@@ -338,6 +353,8 @@ export const HealthSchema = strictObject({
 });
 
 export type AttachmentSummary = Static<typeof AttachmentSummarySchema>;
+export type BrowserComponentDefinition = Static<typeof BrowserComponentDefinitionSchema>;
+export type BrowserComponentSnapshot = Static<typeof BrowserComponentSnapshotSchema>;
 export type Bootstrap = Static<typeof BootstrapSchema>;
 export type BrowserCommand = Static<typeof BrowserCommandSchema>;
 export type CommandAccepted = Static<typeof CommandAcceptedSchema>;
@@ -349,5 +366,6 @@ export type InteractionAccepted = Static<typeof InteractionAcceptedSchema>;
 export type InteractionResponse = Static<typeof InteractionResponseSchema>;
 export type OpenInteraction = Static<typeof OpenInteractionSchema>;
 export type RuntimeProjection = Static<typeof RuntimeProjectionSchema>;
+export type SessionConfiguration = Static<typeof SessionConfigurationSchema>;
 export type WebSessionLifecycle = Static<typeof WebSessionLifecycleSchema>;
 export type WebSessionSummary = Static<typeof WebSessionSummarySchema>;

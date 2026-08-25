@@ -27,6 +27,18 @@ export interface ProductSessionReadSource {
     id: SessionId,
     signal?: AbortSignal,
   ) => Promise<ProductSessionReadSnapshot | undefined>;
+  readonly mutationBoundaries: (
+    id: SessionId,
+    signal?: AbortSignal,
+  ) => Promise<Readonly<{
+    mutationBoundaries: readonly Readonly<{
+      stableBoundaryId: string;
+      sequence: number;
+      turn: number;
+      transcriptPostcondition: string;
+    }>[];
+    transcriptPostcondition: string;
+  }>>;
 }
 
 export interface ProductSessionReadRequest {
@@ -51,6 +63,7 @@ type CursorState = Readonly<{
 type StableRead = Readonly<{
   events: readonly SessionEvent[];
   snapshot: ProductSessionReadSnapshot;
+  mutationAuthority?: Awaited<ReturnType<ProductSessionReadSource["mutationBoundaries"]>>;
 }>;
 
 const CURSOR_PREFIX = "sr1_";
@@ -110,6 +123,7 @@ const resultByteLength = (
   stableBoundaryId: string | undefined,
   records: readonly ReadRecord[],
   includeCursor: boolean,
+  mutationAuthority?: Awaited<ReturnType<ProductSessionReadSource["mutationBoundaries"]>>,
 ): number => Buffer.byteLength(JSON.stringify({
   runtimeSessionId,
   historyFormat: SESSION_FORMAT,
@@ -118,6 +132,10 @@ const resultByteLength = (
     ...(stableBoundaryId === undefined ? {} : { stableBoundaryId }),
   },
   records,
+  ...(mutationAuthority === undefined ? {} : {
+    mutationBoundaries: mutationAuthority.mutationBoundaries,
+    transcriptPostcondition: mutationAuthority.transcriptPostcondition,
+  }),
   ...(includeCursor ? { nextCursor: CURSOR_PLACEHOLDER } : {}),
 }), "utf8");
 
@@ -126,6 +144,7 @@ const maxChunkBytes = (
   durableSequence: number,
   stableBoundaryId: string | undefined,
   maxResultBytes: number,
+  mutationAuthority?: Awaited<ReturnType<ProductSessionReadSource["mutationBoundaries"]>>,
 ): number => {
   let low = 0;
   let high = Math.floor(maxResultBytes * 3 / 4);
@@ -149,6 +168,7 @@ const maxChunkBytes = (
       stableBoundaryId,
       [record],
       true,
+      mutationAuthority,
     ) <= maxResultBytes) {
       low = candidate;
     } else {
@@ -185,6 +205,7 @@ export class ProductSessionReadProjector {
       cursorMac: source.cursorMac.bind(source),
       readFrom: source.readFrom.bind(source),
       snapshot: source.snapshot.bind(source),
+      mutationBoundaries: source.mutationBoundaries.bind(source),
     });
   }
 
@@ -266,9 +287,14 @@ export class ProductSessionReadProjector {
         throw new ProtocolError("primary_session_not_ready", "Primary Session has no durable history");
       }
       const read = await this.#source.readFrom(id, 0, signal);
+      const mutationAuthority = await this.#source.mutationBoundaries(id, signal);
       const after = await this.#source.snapshot(id, signal);
       if (after !== undefined && snapshotMatches(before, after) && read.meta.id === id) {
-        return Object.freeze({ events: Object.freeze([...read.events]), snapshot: after });
+        return Object.freeze({
+          events: Object.freeze([...read.events]),
+          snapshot: after,
+          mutationAuthority,
+        });
       }
     }
     throw new ProtocolError(
@@ -310,6 +336,7 @@ export class ProductSessionReadProjector {
       durableSequence,
       stable.snapshot.stableBoundaryId,
       request.maxResultBytes,
+      stable.mutationAuthority,
     );
     if (cursor.chunkOffset > 0 && cursor.chunkOffset % chunkBytes !== 0) {
       throw new ProtocolError("cursor_invalid", "Session read cursor chunk offset is not canonical");
@@ -345,6 +372,7 @@ export class ProductSessionReadProjector {
           stable.snapshot.stableBoundaryId,
           [...records, whole],
           !wholeCompletesRead,
+          stable.mutationAuthority,
         ) <= request.maxResultBytes) {
         records.push(whole);
         nextSequence += 1;
@@ -406,6 +434,10 @@ export class ProductSessionReadProjector {
           : { stableBoundaryId: stable.snapshot.stableBoundaryId }),
       },
       records,
+      ...(stable.mutationAuthority === undefined ? {} : {
+        mutationBoundaries: [...stable.mutationAuthority.mutationBoundaries],
+        transcriptPostcondition: stable.mutationAuthority.transcriptPostcondition,
+      }),
       ...(nextCursor === undefined ? {} : { nextCursor }),
     };
     if (Buffer.byteLength(JSON.stringify(result), "utf8") > request.maxResultBytes) {

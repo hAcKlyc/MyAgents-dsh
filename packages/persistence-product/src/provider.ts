@@ -246,6 +246,7 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
         cursorMac: (payload, signal) => store.cursorMac(payload, signal),
         readFrom: (id, fromSeq, signal) => coordinator.readFrom(id, fromSeq, signal),
         snapshot: (id, signal) => store.readProductSnapshot(id, signal),
+        mutationBoundaries: (id, signal) => store.readMutationBoundaries(id, signal),
       }),
       store,
     }));

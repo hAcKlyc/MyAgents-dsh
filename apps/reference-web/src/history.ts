@@ -15,6 +15,13 @@ export type BrowserHistorySnapshot = Readonly<{
   runtimeSessionId: string;
   durableSequence: number;
   events: readonly BrowserHistoryEvent[];
+  mutationBoundaries: readonly Readonly<{
+    stableBoundaryId: string;
+    sequence: number;
+    turn: number;
+    transcriptPostcondition: string;
+  }>[];
+  transcriptPostcondition?: string;
   status: "loading" | "complete" | "truncated" | "failed";
 }>;
 
@@ -40,6 +47,8 @@ type HistoryPage = Readonly<{
   runtimeSessionId: string;
   durableSequence: number;
   records: readonly (WholeRecord | ChunkRecord)[];
+  mutationBoundaries?: BrowserHistorySnapshot["mutationBoundaries"];
+  transcriptPostcondition?: string;
   nextCursor?: string;
 }>;
 type PendingChunk = {
@@ -105,7 +114,10 @@ const verify = async (bytes: Uint8Array, expected: string): Promise<void> => {
 
 const parsePage = (value: unknown): HistoryPage => {
   const page = ownRecord(value, "history page");
-  exactKeys(page, ["runtimeSessionId", "historyFormat", "durableHead", "records", "nextCursor"], "history page");
+  exactKeys(page, [
+    "runtimeSessionId", "historyFormat", "durableHead", "records", "mutationBoundaries",
+    "transcriptPostcondition", "nextCursor",
+  ], "history page");
   if (page.historyFormat !== "dsh-session-events-v1") throw new TypeError("history format is unsupported");
   const head = ownRecord(page.durableHead, "durable head");
   exactKeys(head, ["sequence", "stableBoundaryId"], "durable head");
@@ -143,10 +155,35 @@ const parsePage = (value: unknown): HistoryPage => {
     };
   });
   const nextCursor = page.nextCursor === undefined ? undefined : string(page.nextCursor, "history cursor");
+  const mutationBoundaries = page.mutationBoundaries === undefined
+    ? undefined
+    : (() => {
+        if (!Array.isArray(page.mutationBoundaries) || page.mutationBoundaries.length > 256) {
+          throw new TypeError("history mutation boundaries are not bounded");
+        }
+        return page.mutationBoundaries.map((candidate) => {
+          const boundary = ownRecord(candidate, "history mutation boundary");
+          exactKeys(boundary, ["stableBoundaryId", "sequence", "turn", "transcriptPostcondition"], "history mutation boundary");
+          const parsed = Object.freeze({
+            stableBoundaryId: string(boundary.stableBoundaryId, "stable boundary id"),
+            sequence: integer(boundary.sequence, "stable boundary sequence"),
+            turn: integer(boundary.turn, "stable boundary turn"),
+            transcriptPostcondition: digest(boundary.transcriptPostcondition, "stable boundary transcript postcondition"),
+          });
+          if (parsed.sequence > integer(head.sequence, "durable sequence")) {
+            throw new TypeError("history mutation boundary is beyond the durable head");
+          }
+          return parsed;
+        });
+      })();
+  const transcriptPostcondition = page.transcriptPostcondition === undefined
+    ? undefined : digest(page.transcriptPostcondition, "history transcript postcondition");
   return {
     runtimeSessionId: string(page.runtimeSessionId, "history Runtime Session id"),
     durableSequence: integer(head.sequence, "durable sequence"),
     records,
+    ...(mutationBoundaries === undefined ? {} : { mutationBoundaries }),
+    ...(transcriptPostcondition === undefined ? {} : { transcriptPostcondition }),
     ...(nextCursor === undefined ? {} : { nextCursor }),
   };
 };
@@ -160,6 +197,8 @@ export class BrowserHistoryAssembler {
   #nextSequence = 0;
   #pending: PendingChunk | undefined;
   #runtimeSessionId: string | undefined;
+  #mutationBoundaries: BrowserHistorySnapshot["mutationBoundaries"] = [];
+  #transcriptPostcondition: string | undefined;
   #complete = false;
 
   constructor(webSessionId: string, maximumVisibleEvents = 2_000) {
@@ -177,6 +216,8 @@ export class BrowserHistoryAssembler {
     if (this.#runtimeSessionId === undefined) {
       this.#runtimeSessionId = page.runtimeSessionId;
       this.#durableSequence = page.durableSequence;
+      this.#mutationBoundaries = page.mutationBoundaries ?? [];
+      this.#transcriptPostcondition = page.transcriptPostcondition;
     } else if (page.runtimeSessionId !== this.#runtimeSessionId || page.durableSequence !== this.#durableSequence) {
       throw new TypeError("history identity changed during pagination");
     }
@@ -199,6 +240,10 @@ export class BrowserHistoryAssembler {
       runtimeSessionId: this.#runtimeSessionId,
       durableSequence: this.#durableSequence,
       events: Object.freeze([...this.#events]),
+      mutationBoundaries: this.#mutationBoundaries,
+      ...(this.#transcriptPostcondition === undefined ? {} : {
+        transcriptPostcondition: this.#transcriptPostcondition,
+      }),
       status,
     });
   }

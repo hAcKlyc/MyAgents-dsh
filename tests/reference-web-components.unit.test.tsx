@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
 
-import type { Bootstrap, BrowserCommand, HostEvent, InteractionResponse, WebHostClient } from "@myagents-dsh/web-host-contract";
+import type {
+  Bootstrap,
+  BrowserCommand,
+  BrowserComponentDefinition,
+  HostEvent,
+  InteractionResponse,
+  WebHostClient,
+} from "@myagents-dsh/web-host-contract";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@myagents-dsh/reference-web/app";
+import { ControlCenter } from "@myagents-dsh/reference-web/components/control-center";
+import type { BrowserHistorySnapshot } from "@myagents-dsh/reference-web/history";
+import type { ControlInspection, MutationDraft } from "@myagents-dsh/reference-web/store";
 import { ReferenceWebStore } from "@myagents-dsh/reference-web/store";
 
 const now = "2026-08-24T00:00:00.000Z";
@@ -42,6 +52,123 @@ const fixture = (): Bootstrap => ({
 afterEach(() => cleanup());
 
 describe("Reference Web React shell", () => {
+  it("submits the latest component JSON and keeps destructive confirmation keyboard-contained", async () => {
+    const starter: BrowserComponentDefinition = {
+      id: "workspace-review",
+      kind: "skill",
+      enabled: true,
+      configuration: {
+        descriptor: {
+          description: "Review the workspace",
+          whenToUse: "When reviewing a workspace",
+          invocation: { modelInvocable: true, userInvocable: true },
+          rank: 50,
+          resourceId: "workspace-review-document",
+        },
+        resource: { content: "# Workspace Review" },
+      },
+    };
+    const inspection: ControlInspection = {
+      controls: {
+        configuration: {
+          revision: "config-v1",
+          providerRouteId: "deepseek-official",
+          modelId: "deepseek-v4-flash",
+          reasoningEffort: "high",
+          permissionMode: "default",
+          interactionScenario: "host-interaction-v1",
+          systemPrompt: "You are a workspace Agent.",
+        },
+        components: { revision: "components-v1", digest: "d".repeat(64), components: [starter] },
+      },
+      runtime: { primarySessionState: "ready" },
+      catalog: {
+        revision: "components-v1", digest: "d".repeat(64), tools: ["Read"], commands: [],
+        skills: [{ id: "workspace-review" }], agents: [], mcpServers: [],
+      },
+      status: { state: "applied" },
+    };
+    const history: BrowserHistorySnapshot = {
+      webSessionId: "web-session-1",
+      runtimeSessionId: "runtime-session-1",
+      durableSequence: 1,
+      events: [],
+      mutationBoundaries: [{
+        stableBoundaryId: "boundary-1",
+        sequence: 1,
+        turn: 1,
+        transcriptPostcondition: "a".repeat(64),
+      }],
+      transcriptPostcondition: "b".repeat(64),
+      status: "complete",
+    };
+    const onReplace = vi.fn<(
+      revision: string,
+      components: readonly BrowserComponentDefinition[],
+    ) => Promise<void>>(() => Promise.resolve());
+    const onPrepare = vi.fn<(
+      mutation: MutationDraft["mutation"],
+      options?: Readonly<{ boundaryId?: string; forkTitle?: string }>,
+    ) => Promise<void>>(() => Promise.resolve());
+    const onRollback = vi.fn(() => Promise.resolve());
+    const inert = vi.fn(() => Promise.resolve());
+    const baseProps = {
+      open: true,
+      loading: false,
+      inspection,
+      sessionTitle: "First Session",
+      history,
+      onClose: vi.fn(),
+      onRefresh: inert,
+      onApplyConfiguration: inert,
+      onReplaceComponents: onReplace,
+      onCompact: inert,
+      onPrepareMutation: onPrepare,
+      onCommitMutation: inert,
+      onRollbackMutation: onRollback,
+      onPurge: inert,
+    } as const;
+    const view = render(<ControlCenter {...baseProps} tab="components" mutation={undefined} onTab={vi.fn()} />);
+
+    const editor = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "skill 配置" });
+    const latest = JSON.stringify({
+      ...(starter.configuration as Record<string, unknown>),
+      resource: { content: "# Updated immediately before submit" },
+    });
+    fireEvent.change(editor, { target: { value: latest } });
+    fireEvent.click(screen.getByRole("button", { name: "校验并替换组件代次" }));
+    await waitFor(() => expect(onReplace).toHaveBeenCalledOnce());
+    expect(onReplace.mock.calls[0]?.[1][0]).toMatchObject({
+      id: "workspace-review",
+      configuration: { resource: { content: "# Updated immediately before submit" } },
+    });
+
+    view.rerender(<ControlCenter {...baseProps} tab="session" mutation={undefined} onTab={vi.fn()} />);
+    const deletePrepare = screen.getByRole("heading", { name: "删除 Session" }).closest("article")
+      ?.querySelector<HTMLButtonElement>("button");
+    if (deletePrepare === undefined || deletePrepare === null) throw new Error("delete prepare button is missing");
+    fireEvent.click(deletePrepare);
+    await waitFor(() => expect(onPrepare).toHaveBeenCalledWith("delete", undefined));
+    const mutation: MutationDraft = {
+      mutation: "delete",
+      clientMutationId: "mutation-1",
+      token: "mutation-token-1234567890",
+      state: "prepared",
+    };
+    view.rerender(<ControlCenter {...baseProps} tab="session" mutation={mutation} onTab={vi.fn()} />);
+    const confirmation = await screen.findByRole<HTMLInputElement>("textbox", { name: "Mutation confirmation" });
+    await waitFor(() => expect(document.activeElement).toBe(confirmation));
+    fireEvent.keyDown(confirmation, { key: "Tab", shiftKey: true });
+    const rollback = screen.getByRole("button", { name: "回滚 / Abort" });
+    expect(document.activeElement).toBe(rollback);
+    fireEvent.keyDown(rollback, { key: "Tab" });
+    expect(document.activeElement).toBe(confirmation);
+    fireEvent.keyDown(confirmation, { key: "Escape" });
+    await waitFor(() => expect(onRollback).toHaveBeenCalledOnce());
+    view.rerender(<ControlCenter {...baseProps} tab="session" mutation={undefined} onTab={vi.fn()} />);
+    await waitFor(() => expect(document.activeElement).toBe(deletePrepare));
+  });
+
   it("renders Sessions, composer, diagnostics, and accessible interaction controls", async () => {
     const responses: InteractionResponse[] = [];
     const commands: BrowserCommand[] = [];

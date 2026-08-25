@@ -48,6 +48,12 @@ export type NativeBrowserCommandContext = Readonly<{
   row: WebSessionCatalogRow;
   client: GeneratedHostClient;
   attachments: readonly AttachmentSummary[];
+  createForkTarget?: (title: string) => Promise<Readonly<{
+    row: WebSessionCatalogRow;
+    runtimeHome: string;
+  }>>;
+  removeHostSession?: (webSessionId: string) => Promise<void>;
+  resync?: (reason: string) => void;
 }>;
 export type NativeBrowserCommandHandler = (
   command: NativeBrowserCommand,
@@ -73,6 +79,8 @@ export type ReferenceWebHostApplicationOptions = Readonly<{
   desiredComponentRef: string;
   buildInitialize: RuntimeSupervisorOptions["buildInitialize"];
   buildBinding: RuntimeSupervisorOptions["buildBinding"];
+  buildExtensionSnapshot?: RuntimeSupervisorOptions["buildExtensionSnapshot"];
+  applyStoredConfiguration?: RuntimeSupervisorOptions["applyStoredConfiguration"];
   resolveCredential?: RuntimeSupervisorOptions["resolveCredential"];
   executeHostTool?: RuntimeSupervisorOptions["executeHostTool"];
   executeHook?: RuntimeSupervisorOptions["executeHook"];
@@ -167,6 +175,12 @@ export class ReferenceWebHostApplication {
       runtimeEnvironment: options.runtimeEnvironment,
       buildInitialize: options.buildInitialize,
       buildBinding: options.buildBinding,
+      ...(options.buildExtensionSnapshot === undefined ? {} : {
+        buildExtensionSnapshot: options.buildExtensionSnapshot,
+      }),
+      ...(options.applyStoredConfiguration === undefined ? {} : {
+        applyStoredConfiguration: options.applyStoredConfiguration,
+      }),
       ...(options.resolveCredential === undefined ? {} : { resolveCredential: options.resolveCredential }),
       ...(options.executeHostTool === undefined ? {} : { executeHostTool: options.executeHostTool }),
       ...(options.executeHook === undefined ? {} : { executeHook: options.executeHook }),
@@ -317,9 +331,48 @@ export class ReferenceWebHostApplication {
           row,
           client: active.child.client,
           attachments: active.attachments.list(),
+          createForkTarget: (title) => this.#createForkTarget(row, title),
+          removeHostSession: (webSessionId) => this.#removeHostSession(webSessionId),
+          resync: (reason) => {
+            this.#projections.delete(row.webSessionId);
+            this.eventHub.publish({ kind: "host.resyncRequired", payload: { reason } });
+          },
         });
       }
     }
+  }
+
+  async #createForkTarget(source: WebSessionCatalogRow, title: string): Promise<Readonly<{
+    row: WebSessionCatalogRow;
+    runtimeHome: string;
+  }>> {
+    const created = await this.catalog.create({
+      workspaceIdentity: source.workspaceIdentity,
+      title,
+      desiredProfileRef: source.desiredProfileRef,
+      desiredComponentRef: source.desiredComponentRef,
+    });
+    const row = await this.catalog.update(created.webSessionId, {
+      runtimeSessionId: created.webSessionId,
+      updatedAt: new Date().toISOString(),
+    });
+    try {
+      const runtimeHome = await this.supervisor.prepareRuntimeHome(row.webSessionId);
+      publishSession(this.eventHub, row);
+      this.#publishSnapshot();
+      return Object.freeze({ row, runtimeHome });
+    } catch (error) {
+      await this.catalog.remove(row.webSessionId).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async #removeHostSession(webSessionId: string): Promise<void> {
+    await this.supervisor.coldStop(webSessionId, true).catch(() => undefined);
+    await this.catalog.remove(webSessionId);
+    this.#projections.delete(webSessionId);
+    if (this.#selectedWebSessionId === webSessionId) this.#selectedWebSessionId = undefined;
+    this.#publishSnapshot();
   }
 
   #settle(

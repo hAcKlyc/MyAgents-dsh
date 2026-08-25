@@ -13,6 +13,7 @@
     "src/app.tsx",
     "src/components/agent-surface.tsx",
     "src/components/composer.tsx",
+    "src/components/control-center.tsx",
     "src/components/inspector-pane.tsx",
     "src/components/interaction-tray.tsx",
     "src/components/safe-markdown.tsx",

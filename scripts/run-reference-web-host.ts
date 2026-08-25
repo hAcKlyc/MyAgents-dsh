@@ -8,9 +8,11 @@ import { pathToFileURL } from "node:url";
 import {
   FROZEN_BATCH_1_RUNTIME_MANIFEST_SHA256,
   REFERENCE_WEB_EXTENSION_REVISION,
+  REFERENCE_WEB_DEFAULT_CONTROLS,
   REFERENCE_WEB_HOST_VERSION,
   REFERENCE_WEB_PROVIDER,
   ReferenceWebDiagnosticLog,
+  ReferenceWebConfigurationStore,
   ReferenceWebHostApplication,
   createReferenceWebComposition,
   createReferenceWebCredentialResolver,
@@ -239,7 +241,11 @@ export const runReferenceWebHost = async (arguments_: readonly string[]): Promis
     loadStaticAssets(),
   ]);
   const selectedPlatform = platform();
-  const composition = createReferenceWebComposition(selectedPlatform);
+  const controlStore = await ReferenceWebConfigurationStore.open(
+    resolve(options.hostHome, "web-session-configurations.json"),
+    REFERENCE_WEB_DEFAULT_CONTROLS,
+  );
+  const composition = createReferenceWebComposition(selectedPlatform, controlStore);
   const workspaceIdentity = createHash("sha256").update(options.workspacePath).digest("hex").slice(0, 24);
   const diagnosticLog = await ReferenceWebDiagnosticLog.open(resolve(options.hostHome, "logs", "host-events.jsonl"));
   const application = await ReferenceWebHostApplication.open({
@@ -260,6 +266,8 @@ export const runReferenceWebHost = async (arguments_: readonly string[]): Promis
     desiredComponentRef: REFERENCE_WEB_EXTENSION_REVISION,
     buildInitialize: composition.buildInitialize,
     buildBinding: composition.buildBinding,
+    buildExtensionSnapshot: composition.buildExtensionSnapshot,
+    applyStoredConfiguration: composition.applyStoredConfiguration,
     resolveCredential: createReferenceWebCredentialResolver(apiKey),
     nativeCommand: composition.nativeCommand,
     staticAsset: (path) => assets.get(path),
