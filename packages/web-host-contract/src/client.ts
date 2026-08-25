@@ -239,6 +239,12 @@ export class WebHostClient {
       wake = undefined;
     };
     for (const kind of eventKinds) source.addEventListener(kind, receive);
+    const fail = (): void => {
+      const resolveWake = wake;
+      wake = undefined;
+      resolveWake?.();
+    };
+    source.addEventListener("error", fail);
     const abort = (): void => { source.close(); wake?.(); };
     signal?.addEventListener("abort", abort, { once: true });
     try {
@@ -249,6 +255,7 @@ export class WebHostClient {
       }
     } finally {
       signal?.removeEventListener("abort", abort);
+      source.removeEventListener("error", fail);
       for (const kind of eventKinds) source.removeEventListener(kind, receive);
       source.close();
     }

@@ -93,6 +93,28 @@ describe("web Host browser contract", () => {
     expect(source.readyState).toBe(2);
   });
 
+  it("settles the event iterator when EventSource reports a closed connection", async () => {
+    class FixtureEventSource extends EventTarget {
+      readonly url = "/api/v1/events";
+      readonly withCredentials = true;
+      readyState = 1;
+      onerror = null;
+      onmessage = null;
+      onopen = null;
+      close(): void { this.readyState = 2; }
+    }
+    const source = new FixtureEventSource();
+    const client = new WebHostClient({
+      eventSource: () => source as unknown as EventSource,
+    });
+    const events = client.events();
+    const pending = events.next();
+    await Promise.resolve();
+    source.readyState = 2;
+    source.dispatchEvent(new Event("error"));
+    await expect(pending).resolves.toEqual({ done: true, value: undefined });
+  });
+
   it("requires bootstrap before a mutation and sends same-origin credentials and CSRF", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({
