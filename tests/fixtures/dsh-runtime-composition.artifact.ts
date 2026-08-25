@@ -2408,6 +2408,7 @@ assert.ok(durableOperationEvents.some((event) => event.type === "myagents/operat
 assert.deepEqual(await composition.context.sdkOperations.start(structuredClone(turnStartParams)), {
   state: "already_known",
   admission: {
+    clientOperationId: "artifact-operation-1",
     turnId: operationSnapshot.productTurnId,
     admittedAt: new Date(operationSnapshot.acceptedAt).toISOString(),
   },
@@ -2418,6 +2419,7 @@ assert.ok(queriedOperation);
 assert.deepEqual({
   clientOperationId: queriedOperation.clientOperationId,
   admission: {
+    clientOperationId: queriedOperation.clientOperationId,
     turnId: queriedOperation.productTurnId,
     admittedAt: new Date(queriedOperation.acceptedAt).toISOString(),
   },
@@ -2425,6 +2427,7 @@ assert.deepEqual({
 }, {
   clientOperationId: "artifact-operation-1",
   admission: {
+    clientOperationId: "artifact-operation-1",
     turnId: operationSnapshot.productTurnId,
     admittedAt: new Date(operationSnapshot.acceptedAt).toISOString(),
   },
