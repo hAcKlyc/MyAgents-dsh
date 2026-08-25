@@ -108,7 +108,7 @@ export function Composer(props: Readonly<{
           <button className="attach-button" type="button"
             disabled={props.attachmentDisabled || (props.busy && busyDelivery === "steer")}
             onClick={() => fileRef.current?.click()} aria-label="Attach file" title="添加图片">＋</button>
-          <input ref={fileRef} className="sr-only" type="file"
+          <input ref={fileRef} className="sr-only" type="file" aria-label="Upload attachment"
             accept="image/jpeg,image/png,image/gif,image/webp"
             onChange={(event) => void addFile(event.target.files?.[0])} tabIndex={-1} />
           {props.busy && <select aria-label="Delivery mode" value={busyDelivery}
