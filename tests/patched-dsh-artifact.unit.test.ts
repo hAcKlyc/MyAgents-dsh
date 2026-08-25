@@ -401,4 +401,35 @@ describe("patched DSH artifact build hardening", () => {
       "outside exact authority",
     );
   });
+
+  it("accepts only npm links that resolve to the exact root external authority", () => {
+    const plan = buildPatchedDshArtifactPlan(completeSourceGraph());
+    const evidence = completeEvidence(plan);
+    const packages: Record<string, unknown> = { "": {} };
+    for (const row of evidence) {
+      packages[`node_modules/${row.name}`] = {
+        version: plan.artifactVersion,
+        integrity: row.integrity,
+        resolved: `file:../${row.tarball}`,
+      };
+    }
+    for (const row of PATCHED_DSH_COMPILE_TOOLING_AUTHORITY) {
+      packages[row.path] = { version: row.version, integrity: row.integrity };
+    }
+    for (const row of plan.externalRootPackages) {
+      packages[row.path] = { version: row.version, integrity: row.integrity };
+    }
+    packages["node_modules/fixture/node_modules/typescript"] = {
+      link: true,
+      resolved: "node_modules/typescript",
+    };
+    expect(() => validateConsumerLock({ packages }, plan, evidence)).not.toThrow();
+    packages["node_modules/fixture/node_modules/typescript"] = {
+      link: true,
+      resolved: "node_modules/outside",
+    };
+    expect(() => validateConsumerLock({ packages }, plan, evidence)).toThrow(
+      "unapproved external package link",
+    );
+  });
 });

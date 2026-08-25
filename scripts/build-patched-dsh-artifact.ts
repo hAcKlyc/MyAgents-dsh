@@ -632,6 +632,19 @@ export const validateConsumerLock = (
       throw new Error(`consumer lock contains unapproved DSH package at ${path}`);
     }
     if (!isDshFamilyPackage(name)) {
+      if (row.link === true) {
+        const targetPath = row.resolved;
+        if (typeof targetPath !== "string" || targetPath !== `node_modules/${name}`) {
+          throw new Error(`consumer lock contains an unapproved external package link: ${path}`);
+        }
+        const target = exactJsonObject(packages[targetPath], `consumer lock link target ${targetPath}`);
+        const targetVersion = typeof target.version === "string" ? target.version : "";
+        const targetIntegrity = typeof target.integrity === "string" ? target.integrity : "";
+        if (!acceptedExternalTuples.has(`${name}\0${targetVersion}\0${targetIntegrity}`)) {
+          throw new Error(`consumer lock external package link has no exact authority: ${path}`);
+        }
+        continue;
+      }
       const version = typeof row.version === "string" ? row.version : "";
       const integrity = typeof row.integrity === "string" ? row.integrity : "";
       if (!acceptedExternalTuples.has(`${name}\0${version}\0${integrity}`)) {
