@@ -33,7 +33,7 @@ import type { RuntimeBinding, RuntimeBindingAuthority } from "./supervisor.js";
 
 export const REFERENCE_WEB_HOST_VERSION = "0.1.0" as const;
 export const FROZEN_BATCH_1_RUNTIME_MANIFEST_SHA256 =
-  "80fce5fa0bd71d828ffc68670bcf7c94d67641f9f550fbe53dd5042ef36da141" as const;
+  "35507546fbbe9db1533e9e3d9c852b0707323b83bdab6a7878ffa2fdd0528b0f" as const;
 export const REFERENCE_WEB_CONFIG_REVISION = "reference-web-config-v1" as const;
 export const REFERENCE_WEB_ENVIRONMENT_REVISION = "reference-web-environment-v1" as const;
 export const REFERENCE_WEB_INTERACTION_SCENARIO = "host-interaction-v1" as const;
