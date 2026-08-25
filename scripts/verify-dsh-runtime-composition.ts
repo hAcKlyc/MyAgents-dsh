@@ -1766,18 +1766,64 @@ const main = (): void => {
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
     ];
     const actualEventKinds = projectedEvents.map(({ kind }) => kind);
-    if (JSON.stringify(actualEventKinds) !== JSON.stringify(expectedEventKinds)) {
+    const nonToolEventKinds = actualEventKinds.filter((kind) => kind !== "tool");
+    if (JSON.stringify(nonToolEventKinds) !== JSON.stringify(expectedEventKinds)) {
       const firstDifference = Array.from(
-        { length: Math.max(actualEventKinds.length, expectedEventKinds.length) },
+        { length: Math.max(nonToolEventKinds.length, expectedEventKinds.length) },
         (_, index) => index,
-      ).find((index) => actualEventKinds[index] !== expectedEventKinds[index]);
+      ).find((index) => nonToolEventKinds[index] !== expectedEventKinds[index]);
       const contextStart = Math.max(0, (firstDifference ?? 0) - 5);
       const contextEnd = (firstDifference ?? 0) + 8;
       throw new Error(
-        `Runtime workstream event sequence differs from exact evidence at ${String(firstDifference)}: `
+        `Runtime non-tool workstream event sequence differs from exact evidence at ${String(firstDifference)}: `
         + `expected=${JSON.stringify(expectedEventKinds.slice(contextStart, contextEnd))}, `
-        + `actual=${JSON.stringify(actualEventKinds.slice(contextStart, contextEnd))}, `
-        + `lengths=${String(expectedEventKinds.length)}/${String(actualEventKinds.length)}`,
+        + `actual=${JSON.stringify(nonToolEventKinds.slice(contextStart, contextEnd))}, `
+        + `lengths=${String(expectedEventKinds.length)}/${String(nonToolEventKinds.length)}`,
+      );
+    }
+    const toolLifecycles = new Map<string, {
+      readonly name: string;
+      readonly startIndex: number;
+      readonly turnId: string;
+      endIndex?: number;
+    }>();
+    for (const [index, event] of projectedEvents.entries()) {
+      if (event.kind !== "tool") continue;
+      const envelope = eventEnvelopes[index];
+      if (envelope === undefined || typeof envelope.toolCallId !== "string"
+        || typeof envelope.turnId !== "string" || typeof envelope.itemId !== "string"
+        || typeof event.name !== "string" || event.name.length === 0) {
+        throw new Error(`Runtime tool event ${String(index)} lacks exact correlation authority`);
+      }
+      const detail = exactObject(event.detail, `observed Runtime tool detail ${String(index)}`);
+      const known = toolLifecycles.get(envelope.toolCallId);
+      if (event.phase === "start") {
+        if (known !== undefined) {
+          throw new Error(`Runtime tool call ${envelope.toolCallId} has duplicate start evidence`);
+        }
+        toolLifecycles.set(envelope.toolCallId, {
+          name: event.name,
+          startIndex: index,
+          turnId: envelope.turnId,
+        });
+        continue;
+      }
+      if (event.phase !== "end" || known === undefined || known.endIndex !== undefined
+        || known.name !== event.name || known.turnId !== envelope.turnId
+        || detail.state !== (detail.isError === true ? "failed" : "succeeded")) {
+        throw new Error(`Runtime tool call ${envelope.toolCallId} has an invalid terminal projection`);
+      }
+      known.endIndex = index;
+    }
+    const incompleteToolLifecycle = [...toolLifecycles.entries()].find(
+      ([, lifecycle]) => lifecycle.endIndex === undefined || lifecycle.endIndex <= lifecycle.startIndex,
+    );
+    if (toolLifecycles.size !== 38 || incompleteToolLifecycle !== undefined
+      || actualEventKinds.length !== expectedEventKinds.length + toolLifecycles.size * 2) {
+      throw new Error(
+        `Runtime tool lifecycle evidence differs: calls=${String(toolLifecycles.size)}, `
+        + `events=${String(actualEventKinds.length - nonToolEventKinds.length)}, `
+        + `incomplete=${incompleteToolLifecycle?.[0] ?? "none"}`,
       );
     }
     const terminalOutcomes = projectedEvents
