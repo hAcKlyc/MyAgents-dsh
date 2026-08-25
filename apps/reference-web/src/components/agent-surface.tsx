@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
 
-import type { RuntimeProjection } from "@myagents-dsh/web-host-contract";
+import type { InteractionResponse, RuntimeProjection } from "@myagents-dsh/web-host-contract";
 
 import type { BrowserHistoryEvent, BrowserHistorySnapshot } from "../history.js";
 import type { LocalInput } from "../store.js";
+import { ConversationInteractionCard } from "./interaction-tray.js";
 import { SafeMarkdown } from "./safe-markdown.js";
 
 type RuntimeEnvelope = RuntimeProjection["events"][number];
@@ -299,6 +300,7 @@ export function ConversationSurface(props: Readonly<{
   history: BrowserHistorySnapshot | undefined;
   localInputs: readonly LocalInput[];
   onCancelQueued: (messageId: string) => Promise<void>;
+  onRespond: (response: InteractionResponse) => Promise<void>;
 }>): React.JSX.Element {
   const scrollRoot = useRef<HTMLElement>(null);
   const followsOutput = useRef(true);
@@ -319,6 +321,8 @@ export function ConversationSurface(props: Readonly<{
   const latestRevision = props.projection?.events.at(-1)?.sequence
     ?? props.history?.durableSequence
     ?? props.localInputs.length;
+  const interactions = props.projection?.openInteractions ?? [];
+  const interactionRevision = `${interactions[0]?.interactionId ?? "none"}:${interactions.length}`;
 
   useEffect(() => {
     if (!followsOutput.current) return;
@@ -327,9 +331,9 @@ export function ConversationSurface(props: Readonly<{
       if (root !== null) root.scrollTop = root.scrollHeight;
     });
     return () => cancelAnimationFrame(frame);
-  }, [latestRevision]);
+  }, [interactionRevision, latestRevision]);
 
-  if (timeline.length === 0) {
+  if (timeline.length === 0 && interactions.length === 0) {
     return <section ref={scrollRoot} className="conversation empty-conversation" aria-label="Conversation">
       <div className="empty-mark" aria-hidden="true">✦</div>
       <h2>今天想一起做什么？</h2>
@@ -358,6 +362,12 @@ export function ConversationSurface(props: Readonly<{
             {item.state !== undefined && <span className={`delivery-state delivery-${item.state}`}>{item.state}</span>}
           </article>
         : <AssistantTurnView key={item.id} turn={item.turn} onCancelQueued={props.onCancelQueued} />)}
+      {interactions[0] !== undefined && <ConversationInteractionCard
+        interaction={interactions[0]}
+        key={interactions[0].interactionId}
+        waitingCount={interactions.length - 1}
+        onRespond={props.onRespond}
+      />}
     </div>
     <div className="sr-only" aria-live="polite">{runtimeTurns.length > 0 ? "Agent 回复已更新" : "对话已就绪"}</div>
   </section>;

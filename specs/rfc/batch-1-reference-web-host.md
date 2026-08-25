@@ -184,9 +184,9 @@ AppShell
   WorkspaceHeader
   ConversationSurface
     VirtualizedMessageList
+    ConversationInteractionCard
     OperationComposer
     QueuedInputDock
-  InteractionTray
   InspectorPane
     RuntimeDiagnostics
     ComponentsPanel
@@ -197,7 +197,7 @@ AppShell
 
 The store keeps normalized maps and bounded page references rather than one ever-growing event array. Frequently changing stream tails update the owning row only. Derived state is computed during render/selectors, not synchronized through effects. User actions own their async work; effects only bind external subscriptions/lifecycle. Static JSX and immutable defaults are hoisted. Long lists use virtualization or `content-visibility` with stable keys.
 
-Keyboard, focus, and live-region behavior is contract tested. All controls have accessible names; interaction dialogs trap and restore focus; streaming uses a throttled polite live region; destructive mutations require explicit typed confirmation and present exact scope/irreversibility. Reduced motion, light/dark themes, 320px responsive width, zoom to 200%, and CJK text are supported.
+Keyboard, focus, and live-region behavior is contract tested. All controls have accessible names. Permission, question, and plan interactions render as disposable cards after the latest conversation item without taking focus; an accepted response removes its card while the Host remains the settlement authority. Only true mutation dialogs trap and restore focus. Streaming uses a throttled polite live region; destructive mutations require explicit typed confirmation and present exact scope/irreversibility. Reduced motion, light/dark themes, 320px responsive width, zoom to 200%, and CJK text are supported.
 
 ## 10. Direct-open and platform packaging
 

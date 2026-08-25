@@ -1,28 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import type { InteractionResponse, OpenInteraction } from "@myagents-dsh/web-host-contract";
 
-export function InteractionTray(props: Readonly<{
-  interactions: readonly OpenInteraction[];
+export function ConversationInteractionCard(props: Readonly<{
+  interaction: OpenInteraction;
+  waitingCount: number;
   onRespond: (response: InteractionResponse) => Promise<void>;
 }>): React.JSX.Element | null {
-  const interaction = props.interactions[0];
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState<string>();
-  const dialog = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const restore = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
-    setAnswer("");
-    setError(undefined);
-    const first = dialog.current?.querySelector<HTMLElement>("button, input, textarea");
-    first?.focus();
-    return () => restore?.focus();
-  }, [interaction?.interactionId]);
-
-  if (interaction === undefined) return null;
+  const [settled, setSettled] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const interaction = props.interaction;
   const settle = async (decision: InteractionResponse["decision"]): Promise<void> => {
+    if (submitting) return;
     setError(undefined);
+    setSubmitting(true);
     try {
       await props.onRespond({
         interactionId: interaction.interactionId,
@@ -30,53 +23,51 @@ export function InteractionTray(props: Readonly<{
         decision,
         ...(decision === "answered" ? { value: { answer } } : {}),
       });
+      setSettled(true);
     } catch {
-      setError("This interaction is stale or could not be settled.");
+      setError("请求已失效或暂时无法处理，请重试。");
+      setSubmitting(false);
     }
   };
-  return <div className="interaction-backdrop">
-    <div className="interaction-dialog" ref={dialog} role="dialog" aria-modal="true"
-      aria-labelledby="interaction-title" onKeyDown={(event) => {
-        if (event.key === "Escape") void settle("cancelled");
-        if (event.key === "Tab") {
-          const focusable = dialog.current === null ? [] : [...dialog.current.querySelectorAll<HTMLElement>(
-            "button:not([disabled]), input:not([disabled]), textarea:not([disabled])",
-          )];
-          const first = focusable[0];
-          const last = focusable.at(-1);
-          if (first !== undefined && last !== undefined
-            && ((!event.shiftKey && document.activeElement === last)
-              || (event.shiftKey && document.activeElement === first))) {
-            event.preventDefault();
-            (event.shiftKey ? last : first).focus();
-          }
-        }
-      }}>
-      <span className="eyebrow">Runtime request</span>
-      <h2 id="interaction-title">{interaction.kind.replaceAll("_", " ")}</h2>
-      {interaction.permissionAction !== undefined && <p className="interaction-action">{interaction.permissionAction}</p>}
-      <pre className="interaction-schema">{JSON.stringify(interaction.schema, null, 2)}</pre>
+  if (settled) return null;
+  const title = interaction.kind === "permission"
+    ? "需要你的允许"
+    : interaction.kind === "plan_approval" ? "请确认执行计划" : "Agent 需要补充信息";
+  return <article className="interaction-card conversation-entry" aria-labelledby={`interaction-title-${interaction.interactionId}`}>
+    <div className="interaction-card-header">
+      <span className="interaction-icon" aria-hidden="true">◇</span>
+      <div>
+        <span className="interaction-kicker">Runtime 请求</span>
+        <h3 id={`interaction-title-${interaction.interactionId}`}>{title}</h3>
+      </div>
+    </div>
+    {interaction.permissionAction !== undefined && <p className="interaction-action">{interaction.permissionAction}</p>}
+    <details className="interaction-schema">
+      <summary>查看请求详情</summary>
+      <pre>{JSON.stringify(interaction.schema, null, 2)}</pre>
+    </details>
       {interaction.kind === "ask_user" && <textarea
-        aria-label="Answer"
+        aria-label="回答 Agent"
+        disabled={submitting}
         onChange={(event) => setAnswer(event.target.value)}
-        placeholder="Type your answer"
+        placeholder="输入你的回答"
         rows={3}
         value={answer}
       />}
       {error !== undefined && <p className="inline-error" role="alert">{error}</p>}
       <div className="dialog-actions">
-        <button className="ghost-button" type="button" onClick={() => void settle("deny")}>
-          {interaction.kind === "permission" ? "Deny" : "Cancel"}
+        <button className="ghost-button" disabled={submitting} type="button" onClick={() => void settle("deny")}>
+          {interaction.kind === "permission" ? "拒绝" : "取消"}
         </button>
         {interaction.kind === "permission" && <button className="ghost-button" type="button"
-          onClick={() => void settle("always_allow")}>Always allow</button>}
+          disabled={submitting} onClick={() => void settle("always_allow")}>总是允许</button>}
         <button className="primary-button" type="button"
-          disabled={interaction.kind === "ask_user" && answer.trim() === ""}
+          disabled={submitting || (interaction.kind === "ask_user" && answer.trim() === "")}
           onClick={() => void settle(interaction.kind === "ask_user" ? "answered" : "allow_once")}>
-          {interaction.kind === "ask_user" ? "Submit answer" : "Allow once"}
+          {interaction.kind === "ask_user" ? "提交回答" : "仅允许一次"}
         </button>
       </div>
-      {props.interactions.length > 1 && <p className="dialog-queue">+{props.interactions.length - 1} waiting</p>}
-    </div>
-  </div>;
+      {submitting && <p className="interaction-state" role="status">正在处理…</p>}
+      {props.waitingCount > 0 && <p className="dialog-queue">另有 {props.waitingCount} 项等待处理</p>}
+  </article>;
 }

@@ -65,13 +65,19 @@ describe("Reference Web React shell", () => {
     render(<App store={store} />);
 
     expect(await screen.findByRole("heading", { name: "First Session" })).not.toBeNull();
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" }).disabled).toBe(false);
-    expect(screen.getByRole("dialog", { name: "permission" })).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Allow once" }));
+    const composer = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message the agent" });
+    expect(composer.disabled).toBe(false);
+    expect(document.activeElement).toBe(composer);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("heading", { name: "需要你的允许" })).not.toBeNull();
+    const conversation = screen.getByRole("region", { name: "Conversation" });
+    expect(conversation.querySelector(".conversation-list")?.lastElementChild?.classList.contains("interaction-card")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "仅允许一次" }));
     await waitFor(() => expect(responses).toHaveLength(1));
     expect(responses[0]).toMatchObject({ interactionId: "interaction-1", decision: "allow_once" });
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "需要你的允许" })).toBeNull());
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Message the agent" }), { target: { value: "Hello" } });
+    fireEvent.change(composer, { target: { value: "Hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() => expect(commands.some(({ kind }) => kind === "turn.start")).toBe(true));
     expect(commands.find(({ kind }) => kind === "turn.start"))
@@ -165,6 +171,7 @@ describe("Reference Web React shell", () => {
     const store = new ReferenceWebStore({ client, idFactory: () => `id-${nextId += 1}`, now: () => now });
     render(<App store={store} />);
 
+    await screen.findByRole("heading", { name: "First Session" });
     const composer = await screen.findByRole("textbox", { name: "Message the agent" });
     expect(screen.getByRole("combobox", { name: "Delivery mode" })).not.toBeNull();
     fireEvent.change(composer, { target: { value: "Use the existing API" } });

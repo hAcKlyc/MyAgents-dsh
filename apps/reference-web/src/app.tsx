@@ -3,7 +3,6 @@ import { useEffect, useSyncExternalStore } from "react";
 import { Composer } from "./components/composer.js";
 import { ConversationSurface } from "./components/agent-surface.js";
 import { InspectorPane } from "./components/inspector-pane.js";
-import { InteractionTray } from "./components/interaction-tray.js";
 import { SessionSidebar } from "./components/session-sidebar.js";
 import type { ReferenceWebStore } from "./store.js";
 
@@ -51,7 +50,8 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
           history={state.history?.webSessionId === selectedId ? state.history : undefined}
           localInputs={state.localInputs.filter(({ webSessionId }) => webSessionId === selectedId)}
           onCancelQueued={(messageId) => selectedId === undefined
-            ? Promise.resolve() : props.store.cancelQueued(selectedId, messageId)} />
+            ? Promise.resolve() : props.store.cancelQueued(selectedId, messageId)}
+          onRespond={(response) => props.store.respond(response)} />
         <Composer
           attachments={projection?.attachments ?? []}
           attachmentDisabled={selectedId === undefined || selected?.lifecycle !== "ready"}
@@ -75,8 +75,6 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
       onRestart={() => selectedId === undefined ? undefined : void props.store.restartRuntime(selectedId)}
       onColdStop={() => selectedId === undefined ? undefined : void props.store.coldStop(selectedId)}
     />}
-    <InteractionTray interactions={projection?.openInteractions ?? []}
-      onRespond={(response) => props.store.respond(response)} />
     <div className="notice-stack" aria-label="Notifications">
       {state.notices.map((notice) => <div className="notice" data-level={notice.level} key={notice.id} role="status">
         <span>{notice.message}</span>

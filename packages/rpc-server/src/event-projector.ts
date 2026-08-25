@@ -24,6 +24,7 @@ export interface RuntimeEventProjection {
   readonly event: RuntimeEvent;
   readonly itemId?: string;
   readonly terminalReservationId?: string;
+  readonly toolCallId?: string;
   readonly turnId?: string;
 }
 
@@ -62,6 +63,47 @@ const openTurnAt = (events: readonly SessionEvent[], sequence: number): number |
     else if (event.type === "turn/end" && event.data.turn === open) open = undefined;
   }
   return open;
+};
+
+const toolInputDetail = (rawArguments: string): Readonly<Record<string, unknown>> => {
+  try {
+    const parsed: unknown = JSON.parse(rawArguments);
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return Object.freeze({ ...parsed as Readonly<Record<string, unknown>> });
+    }
+    return Object.freeze({ arguments: parsed });
+  } catch {
+    return Object.freeze({ rawArguments });
+  }
+};
+
+const protocolToolName = (name: string): string => {
+  if (name.length === 0 || name.length > 256) return "Tool";
+  for (let index = 0; index < name.length; index += 1) {
+    const codeUnit = name.charCodeAt(index);
+    if (codeUnit <= 0x1f || codeUnit === 0x7f) return "Tool";
+  }
+  return name;
+};
+
+const toolNameForCall = (
+  events: readonly SessionEvent[],
+  callId: string,
+  beforeSequence: number,
+): string => {
+  for (let sequence = beforeSequence - 1; sequence >= 0; sequence -= 1) {
+    const event = events[sequence];
+    if (event?.type === "tool/call" && event.data.callId === callId) {
+      return protocolToolName(event.data.name);
+    }
+    if (event?.type === "assistant/message") {
+      const call = event.data.message.content.find(
+        (block) => block.type === "tool-call" && block.id === callId,
+      );
+      if (call?.type === "tool-call") return protocolToolName(call.name);
+    }
+  }
+  return "Tool";
 };
 
 const contextAt = (
@@ -212,6 +254,55 @@ export const projectSessionEvent = (
         }),
       })];
       return Object.freeze(projected);
+    }
+    case "tool/call": {
+      const operation = operationForTurn(session, source.data.turn, source.seq);
+      if (operation === undefined) return Object.freeze([]);
+      const boundary = operationTurnBoundary(events, operation, source.data.turn);
+      if (source.seq <= boundary.start.seq
+        || (boundary.end !== undefined && source.seq >= boundary.end.seq)) {
+        throw new TypeError("tool call is outside its owned DSH turn boundary");
+      }
+      return Object.freeze([Object.freeze({
+        turnId: operation.productTurnId,
+        itemId: durableSessionEventId(session.id, source.seq),
+        toolCallId: source.data.callId,
+        event: Object.freeze({
+          kind: "tool",
+          phase: "start",
+          name: protocolToolName(source.data.name),
+          detail: toolInputDetail(source.data.arguments),
+        }),
+      })]);
+    }
+    case "tool/result": {
+      const operation = operationForTurn(session, source.data.turn, source.seq);
+      if (operation === undefined) return Object.freeze([]);
+      const boundary = operationTurnBoundary(events, operation, source.data.turn);
+      if (source.seq <= boundary.start.seq
+        || (boundary.end !== undefined && source.seq >= boundary.end.seq)) {
+        throw new TypeError("tool result is outside its owned DSH turn boundary");
+      }
+      const result = source.data.message.content[0];
+      const failed = source.data.error !== undefined || result.isError === true;
+      const detail = Object.freeze({
+        state: failed ? "failed" : "succeeded",
+        isError: failed,
+        content: result.content,
+        ...(source.data.error === undefined ? {} : { error: source.data.error }),
+        ...(source.data.meta === undefined ? {} : { meta: source.data.meta }),
+      });
+      return Object.freeze([Object.freeze({
+        turnId: operation.productTurnId,
+        itemId: durableSessionEventId(session.id, source.seq),
+        toolCallId: result.toolCallId,
+        event: Object.freeze({
+          kind: "tool",
+          phase: "end",
+          name: toolNameForCall(events, result.toolCallId, source.seq),
+          detail,
+        }),
+      })]);
     }
     case "myagents/operation/request-context": {
       const operation = findProductOperation(
@@ -493,6 +584,7 @@ export class RuntimeEventProjector {
         event: projection.event,
         ...(projection.turnId === undefined ? {} : { turnId: projection.turnId }),
         ...(projection.itemId === undefined ? {} : { itemId: projection.itemId }),
+        ...(projection.toolCallId === undefined ? {} : { toolCallId: projection.toolCallId }),
       };
       if (projection.event.kind === "turn_terminal") {
         const reservationId = projection.terminalReservationId;

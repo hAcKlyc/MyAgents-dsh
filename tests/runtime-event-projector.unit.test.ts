@@ -1,6 +1,11 @@
 import { Context } from "@deepseek-ai/cordis";
 import { Inbox } from "@deepseek-ai/dsh-agent";
-import { freezeMessage, MessageId } from "@deepseek-ai/dsh-llm";
+import {
+  CallId,
+  createToolResultMessage,
+  freezeMessage,
+  MessageId,
+} from "@deepseek-ai/dsh-llm";
 import { Session, SessionId } from "@deepseek-ai/dsh-session";
 import SessionStore from "@deepseek-ai/dsh-session";
 import type { OperationBirthSnapshot } from "@myagents-dsh/operation-runtime";
@@ -207,6 +212,60 @@ describe("Runtime event projection", () => {
     expect(projectSessionEvent(session, terminal)).toMatchObject([
       { turnId: fixture.productTurnId, event: { kind: "turn_terminal", terminal: { kind: "succeeded" } } },
     ]);
+  });
+
+  it("projects one correlated Runtime tool lifecycle from durable DSH call and result facts", () => {
+    const session = Session.create(SessionId("projection-tool-lifecycle"));
+    const fixture = appendAcceptedOperation(session);
+    session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    session.append("step/start", { turn: 1, step: 1 });
+    const callId = CallId("tool-call-1");
+    const call = session.append("tool/call", {
+      turn: 1,
+      step: 1,
+      callId,
+      name: "Read",
+      arguments: JSON.stringify({ path: "README.md" }),
+    });
+    const result = session.append("tool/result", {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId,
+        content: [{ type: "text", text: "12 lines" }],
+        isError: false,
+      }),
+      meta: { lines: 12 },
+    }, { sourceEventSeqs: [call.seq], surfaceOp: "append" });
+
+    expect(projectSessionEvent(session, call)).toEqual([{
+      turnId: fixture.productTurnId,
+      itemId: durableSessionEventId(session.id, call.seq),
+      toolCallId: callId,
+      event: {
+        kind: "tool",
+        phase: "start",
+        name: "Read",
+        detail: { path: "README.md" },
+      },
+    }]);
+    expect(projectSessionEvent(session, result)).toEqual([{
+      turnId: fixture.productTurnId,
+      itemId: durableSessionEventId(session.id, result.seq),
+      toolCallId: callId,
+      event: {
+        kind: "tool",
+        phase: "end",
+        name: "Read",
+        detail: {
+          state: "succeeded",
+          isError: false,
+          content: [{ type: "text", text: "12 lines" }],
+          meta: { lines: 12 },
+        },
+      },
+    }]);
   });
 
   it("projects usage only after the durable request-context anchor arrives", async () => {

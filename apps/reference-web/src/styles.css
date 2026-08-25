@@ -174,7 +174,7 @@ h1, h2, h3, p { margin-top: 0; }
 .attachment-preview button { border: 0; background: transparent; cursor: pointer; font-size: 20px; }
 .attachment-preview img { display: block; max-width: 100%; max-height: calc(88vh - 70px); margin: auto; object-fit: contain; }
 
-/* Runtime inspector and Host interactions stay outside the conversation projection. */
+/* The Runtime inspector stays outside the conversation; Host interactions are disposable flow projections. */
 .inspector { width: 320px; overflow-y: auto; padding: 20px; border-left: 1px solid var(--line); background: var(--sidebar); }
 .inspector-section { padding: 20px 0; border-bottom: 1px solid var(--line); }
 .inspector-section h3 { margin-bottom: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
@@ -191,14 +191,20 @@ h1, h2, h3, p { margin-top: 0; }
 .trace-list time { color: var(--quiet); }
 .trace-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trace-list span { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
-.interaction-backdrop { position: fixed; z-index: 20; display: grid; inset: 0; place-items: center; padding: 20px; background: rgb(15 16 14 / 42%); backdrop-filter: blur(5px); }
-.interaction-dialog { width: min(560px, 100%); max-height: min(720px, 90vh); overflow-y: auto; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface-strong); box-shadow: 0 26px 80px rgb(0 0 0 / 22%); }
-.interaction-dialog h2 { margin-bottom: 14px; text-transform: capitalize; }
-.interaction-action { padding: 10px; border-left: 3px solid var(--accent); background: var(--accent-soft); }
-.interaction-schema { max-height: 230px; overflow: auto; padding: 12px; border-radius: 10px; background: var(--sidebar); font-size: 11px; white-space: pre-wrap; }
-.interaction-dialog textarea { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; }
+.interaction-card { width: calc(100% - 43px); margin: -8px 0 31px 43px; padding: 15px 16px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line)); border-radius: 13px; background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-strong)); box-shadow: 0 10px 28px rgb(50 36 27 / 7%); }
+.interaction-card-header { display: flex; align-items: center; gap: 10px; }
+.interaction-icon { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border-radius: 8px; background: var(--accent); color: white; font-size: 13px; }
+.interaction-kicker { color: var(--accent); font-size: 9px; font-weight: 720; letter-spacing: .08em; text-transform: uppercase; }
+.interaction-card h3 { margin: 2px 0 0; font-size: 14px; }
+.interaction-action { margin: 13px 0 10px 35px; color: #5d5049; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.interaction-schema { margin-left: 35px; color: var(--muted); font-size: 10px; }
+.interaction-schema summary { width: fit-content; cursor: pointer; }
+.interaction-schema pre { max-height: 190px; margin: 8px 0 0; overflow: auto; padding: 10px; border-radius: 9px; background: color-mix(in srgb, var(--sidebar) 72%, transparent); font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.interaction-card textarea { width: calc(100% - 35px); margin: 12px 0 0 35px; padding: 10px; resize: vertical; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .primary-button { border-color: var(--ink); background: var(--ink); color: var(--surface); }
+.interaction-card button:disabled { cursor: default; opacity: .45; }
+.interaction-state { margin: 8px 0 0; color: var(--muted); font-size: 10px; text-align: right; }
 .dialog-queue { margin: 12px 0 0; color: var(--muted); font-size: 10px; text-align: right; }
 .notice-stack { position: fixed; z-index: 30; display: grid; right: 18px; bottom: 18px; gap: 8px; width: min(360px, calc(100vw - 36px)); }
 .notice { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 13px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--surface-strong); box-shadow: var(--shadow); font-size: 11px; }
