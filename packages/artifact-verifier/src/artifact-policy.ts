@@ -26,6 +26,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/components/interaction-tray.tsx",
       "src/components/safe-markdown.tsx",
       "src/components/session-sidebar.tsx",
+      "src/favicon.svg",
       "src/history.ts",
       "src/main.tsx",
       "src/store.ts",
