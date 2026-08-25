@@ -54,6 +54,7 @@ const expectedScripts = new Map([
   ["check:dsh-runtime-composition", "tsx scripts/verify-dsh-runtime-composition.ts"],
   ["e2e:dynamic", "tsx packages/dynamic-e2e/src/cli.ts"],
   ["e2e:native", "tsx scripts/run-batch-1-native-campaign.ts"],
+  ["e2e:web", "tsx scripts/run-reference-web-browser-campaign.ts"],
   ["build:batch-1-handoff", "tsx scripts/build-batch-1-handoff.ts"],
   ["build:web-artifact", "npm run build && tsx scripts/build-reference-web-artifact.ts"],
   ["generate:tool-contracts", "tsx scripts/generate-tool-contracts.ts"],
@@ -87,6 +88,7 @@ const expectedDevelopmentDependencies = new Map([
   ["typescript", "5.9.3"],
   ["typescript-eslint", "8.66.0"],
   ["vitest", "4.1.10"],
+  ["playwright-core", "1.62.1"],
 ]);
 const expectedWorkspaceFiles = new Map([
   ["apps/reference-web", [

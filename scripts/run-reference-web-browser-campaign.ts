@@ -1,0 +1,303 @@
+import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
+
+import { chromium, type BrowserContext, type Page } from "playwright-core";
+
+import { resolveExternalOutputRoot } from "./run-batch-1-pre-artifact-gate.js";
+
+const repositoryRoot = resolve(import.meta.dirname, "..");
+const chromeDefault = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const digest = (bytes: string): string => createHash("sha256").update(bytes).digest("hex");
+
+const safeError = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+  .replace(/([?&]launch=)[^&\s)]+/gu, "$1[redacted]")
+  .slice(0, 4_096);
+
+const sanitizeUrl = (value: string): string => {
+  const url = new URL(value);
+  url.searchParams.delete("launch");
+  return url.toString();
+};
+
+const assert = (condition: boolean, message: string): void => {
+  if (!condition) throw new Error(message);
+};
+
+const waitOnline = async (page: Page): Promise<void> => {
+  await page.locator('.connection-pill[data-state="online"]').waitFor({ state: "visible", timeout: 20_000 });
+};
+
+const domAccessibilityAudit = (page: Page): Promise<Readonly<{
+  duplicateIds: readonly string[];
+  unnamedInteractiveCount: number;
+  landmarks: readonly string[];
+  horizontalOverflow: number;
+}>> => page.evaluate(() => {
+  const ids = Array.from(document.querySelectorAll<HTMLElement>("[id]")).map(({ id }) => id);
+  const duplicates = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
+  const visible = (element: HTMLElement): boolean => {
+    const style = getComputedStyle(element);
+    return style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length > 0;
+  };
+  const accessibleName = (element: HTMLElement): string => {
+    const label = element.getAttribute("aria-label") ?? element.getAttribute("title");
+    if (label !== null && label.trim() !== "") return label.trim();
+    const labelledBy = element.getAttribute("aria-labelledby");
+    if (labelledBy !== null) {
+      const text = labelledBy.split(/\s+/u).map((id) => document.getElementById(id)?.textContent ?? "").join(" ").trim();
+      if (text !== "") return text;
+    }
+    if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement
+      || element instanceof HTMLTextAreaElement) {
+      const associated = Array.from(element.labels).map((candidate) => candidate.textContent).join(" ").trim();
+      if (associated !== "") return associated;
+    }
+    return element.textContent.trim();
+  };
+  const interactive = Array.from(document.querySelectorAll<HTMLElement>(
+    "button, a[href], input:not([type='hidden']), select, textarea, [role='button'], [role='dialog']",
+  )).filter(visible);
+  return {
+    duplicateIds: duplicates,
+    unnamedInteractiveCount: interactive.filter((element) => accessibleName(element) === "").length,
+    landmarks: Array.from(document.querySelectorAll("main, aside, nav, header, section[aria-label]"))
+      .map((element) => `${element.tagName.toLowerCase()}:${element.getAttribute("aria-label") ?? ""}`),
+    horizontalOverflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
+  };
+});
+
+const verifyControls = async (page: Page): Promise<Readonly<{ tools: number; skills: number }>> => {
+  await page.getByRole("button", { name: "Controls" }).click();
+  await page.getByRole("complementary", { name: "Session control center" }).waitFor({ timeout: 20_000 });
+  await page.getByText("deepseek-v4-flash", { exact: true }).waitFor({ timeout: 20_000 });
+  const tools = await page.locator(".tool-policy input[type='checkbox']").count();
+  await page.getByRole("button", { name: "组件", exact: true }).click();
+  await page.locator(".component-health").waitFor({ timeout: 20_000 });
+  const skillText = await page.locator(".component-health").locator("span").filter({ hasText: "Skills" }).innerText();
+  const skills = Number.parseInt(skillText, 10);
+  assert(tools === 20, `expected 20 visible canonical tools, observed ${String(tools)}`);
+  assert(Number.isSafeInteger(skills) && skills >= 2, "expected both production starter Skills");
+  await page.getByRole("button", { name: "关闭控制中心" }).click();
+  return { tools, skills };
+};
+
+const verifyMutationRecovery = async (page: Page): Promise<void> => {
+  await page.getByRole("button", { name: "Controls" }).click();
+  await page.getByRole("button", { name: "会话", exact: true }).click();
+  const rewind = page.locator("article.session-operation").filter({ hasText: "Rewind" });
+  const prepare = rewind.getByRole("button", { name: "Prepare" });
+  await prepare.waitFor({ state: "visible", timeout: 20_000 });
+  assert(!(await prepare.isDisabled()), "rewind requires one durable stable boundary");
+  await prepare.click();
+  await page.getByRole("dialog", { name: /确认 rewind/u }).waitFor({ timeout: 20_000 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitOnline(page);
+  await page.getByRole("button", { name: "Controls" }).click();
+  await page.getByRole("button", { name: "会话", exact: true }).click();
+  const recovered = page.getByRole("dialog", { name: /确认 rewind/u });
+  await recovered.waitFor({ timeout: 20_000 });
+  await recovered.getByRole("button", { name: "回滚 / Abort" }).click();
+  await recovered.waitFor({ state: "detached", timeout: 20_000 });
+  await page.getByRole("button", { name: "关闭控制中心" }).click();
+};
+
+const verifyResponsiveAndMedia = async (page: Page, outputRoot: string): Promise<Readonly<{
+  mobileOverflow: number;
+  dark: boolean;
+  reducedMotion: boolean;
+}>> => {
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 320, height: 800 });
+  const audit = await domAccessibilityAudit(page);
+  const media = await page.evaluate(() => ({
+    dark: matchMedia("(prefers-color-scheme: dark)").matches,
+    reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+  }));
+  await page.screenshot({ path: resolve(outputRoot, "mobile-dark.png"), fullPage: true });
+  assert(audit.horizontalOverflow <= 1, `mobile layout overflows by ${String(audit.horizontalOverflow)}px`);
+  assert(media.dark && media.reducedMotion, "browser media preferences were not applied");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "no-preference" });
+  return { mobileOverflow: audit.horizontalOverflow, ...media };
+};
+
+const verifyConcurrentTab = async (context: BrowserContext, cleanUrl: string): Promise<void> => {
+  const page = await context.newPage();
+  try {
+    const response = await page.goto(cleanUrl, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    assert(response?.status() === 200, "concurrent tab did not receive the authenticated application shell");
+    await waitOnline(page);
+    await page.locator(".session-item").first().waitFor({ timeout: 20_000 });
+  } finally {
+    await page.close();
+  }
+};
+
+const main = async (): Promise<void> => {
+  const { values } = parseArgs({
+    allowPositionals: false,
+    options: {
+      url: { type: "string" },
+      out: { type: "string" },
+      chrome: { type: "string" },
+      "skip-real-turn": { type: "boolean", default: false },
+    },
+  });
+  if (values.url === undefined) throw new TypeError("--url is required");
+  if (values.out === undefined || !isAbsolute(values.out)) throw new TypeError("--out must be absolute");
+  const launchUrl = new URL(values.url);
+  if (launchUrl.protocol !== "http:" || (launchUrl.hostname !== "127.0.0.1" && launchUrl.hostname !== "localhost")) {
+    throw new TypeError("--url must be one loopback Reference Web launch URL");
+  }
+  const outputRoot = resolveExternalOutputRoot(values.out, repositoryRoot);
+  mkdirSync(outputRoot, { mode: 0o700 });
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  const requestFailures: string[] = [];
+  const httpErrors: string[] = [];
+  const externalRequests: string[] = [];
+  const startedAt = new Date().toISOString();
+  const browser = await chromium.launch({
+    executablePath: resolve(values.chrome ?? chromeDefault),
+    headless: true,
+    args: ["--disable-background-networking", "--disable-component-update", "--no-default-browser-check"],
+  });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
+  const page = await context.newPage();
+  const observe = (candidate: Page): void => {
+    candidate.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(safeError(message.text()));
+    });
+    candidate.on("pageerror", (error) => pageErrors.push(safeError(error)));
+    candidate.on("requestfailed", (request) => requestFailures.push(
+      `${request.method()} ${sanitizeUrl(request.url())} ${request.failure()?.errorText ?? "failed"}`,
+    ));
+    candidate.on("response", (response) => {
+      if (response.status() >= 400) httpErrors.push(`${String(response.status())} ${sanitizeUrl(response.url())}`);
+    });
+    candidate.on("request", (request) => {
+      const url = new URL(request.url());
+      if ((url.protocol === "http:" || url.protocol === "https:")
+        && url.hostname !== "127.0.0.1" && url.hostname !== "localhost") {
+        externalRequests.push(`${request.method()} ${sanitizeUrl(request.url())}`);
+      }
+    });
+  };
+  context.on("page", observe);
+  observe(page);
+  let evidence: Record<string, unknown>;
+  try {
+    const response = await page.goto(launchUrl.toString(), { waitUntil: "domcontentloaded", timeout: 20_000 });
+    assert(response?.status() === 200, "launch navigation did not return HTTP 200");
+    await waitOnline(page);
+    const cleanUrl = sanitizeUrl(page.url());
+    assert(!page.url().includes("launch="), "one-time launch authority remained in the visible URL");
+    await page.getByRole("button", { name: "Create Session" }).click();
+    await page.locator(".session-item .status-ready").first().waitFor({ timeout: 30_000 });
+    const textarea = page.getByRole("textbox", { name: "Message the agent" });
+    await textarea.focus();
+    await textarea.fill("可访问性键盘输入检查");
+    assert(await page.getByRole("button", { name: "Send message" }).isEnabled(), "send button did not follow the editable draft");
+    await textarea.fill("");
+    const controls = await verifyControls(page);
+    const accessibility = await domAccessibilityAudit(page);
+    assert(accessibility.duplicateIds.length === 0, "page contains duplicate element identifiers");
+    assert(accessibility.unnamedInteractiveCount === 0, "page contains unnamed interactive controls");
+    assert(accessibility.landmarks.some((landmark) => landmark.startsWith("main:")), "page is missing its main landmark");
+    await verifyConcurrentTab(context, cleanUrl);
+    await context.setOffline(true);
+    await page.locator('.connection-pill[data-state="offline"]').waitFor({ timeout: 10_000 });
+    await context.setOffline(false);
+    await waitOnline(page);
+    let realTurn = "skipped";
+    if (!values["skip-real-turn"]) {
+      const sentinel = `B1_A5_BROWSER_OK_${Date.now().toString(36).toUpperCase()}`;
+      await textarea.fill(`Reply with exactly ${sentinel} and do not use tools.`);
+      await page.getByRole("button", { name: "Send message" }).click();
+      await page.locator(".user-message", { hasText: sentinel }).waitFor({ timeout: 20_000 });
+      await page.locator(".assistant-turn", { hasText: sentinel }).waitFor({ timeout: 180_000 });
+      await page.locator(".assistant-turn .turn-actions", { hasText: "已完成" }).waitFor({ timeout: 20_000 });
+      realTurn = sentinel;
+      await verifyMutationRecovery(page);
+    }
+    await page.screenshot({ path: resolve(outputRoot, "desktop.png"), fullPage: true });
+    const media = await verifyResponsiveAndMedia(page, outputRoot);
+    const performanceEvidence = await page.evaluate(() => {
+      const navigation = window.performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      return {
+        domContentLoadedMs: navigation?.domContentLoadedEventEnd ?? 0,
+        loadMs: navigation?.loadEventEnd ?? 0,
+        resourceCount: window.performance.getEntriesByType("resource").length,
+        conversationEntries: document.querySelectorAll(".conversation-entry").length,
+      };
+    });
+    assert(consoleErrors.length === 0, "browser console contains errors");
+    assert(pageErrors.length === 0, "browser emitted uncaught page errors");
+    assert(requestFailures.length === 0, "browser emitted failed requests");
+    assert(httpErrors.length === 0, "browser received HTTP error responses");
+    assert(externalRequests.length === 0, "browser attempted an external network request");
+    evidence = {
+      schemaVersion: 1,
+      campaign: "reference-web-exact-runtime-browser",
+      status: "passed",
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      cleanUrl,
+      browserVersion: browser.version(),
+      controls,
+      accessibility,
+      media,
+      performance: performanceEvidence,
+      reconnect: "passed",
+      concurrentTab: "passed",
+      mutationRecovery: values["skip-real-turn"] ? "skipped" : "passed",
+      realTurn,
+      consoleErrors,
+      pageErrors,
+      requestFailures,
+      httpErrors,
+      externalRequests,
+    };
+  } catch (error) {
+    await page.screenshot({ path: resolve(outputRoot, "failure.png"), fullPage: true }).catch(() => undefined);
+    evidence = {
+      schemaVersion: 1,
+      campaign: "reference-web-exact-runtime-browser",
+      status: "failed",
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      error: safeError(error),
+      consoleErrors,
+      pageErrors,
+      requestFailures,
+      httpErrors,
+      externalRequests,
+    };
+  } finally {
+    await context.tracing.stop({ path: resolve(outputRoot, "trace.zip") }).catch(() => undefined);
+    await context.close();
+    await browser.close();
+  }
+  const bytes = `${JSON.stringify(evidence, null, 2)}\n`;
+  writeFileSync(resolve(outputRoot, "browser-campaign-v1.json"), bytes, { flag: "wx", mode: 0o400 });
+  const summary = { status: evidence.status, outputRoot, evidenceSha256: digest(bytes) };
+  process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+  if (evidence.status !== "passed") throw new Error(requiredString(evidence.error, "browser campaign failure"));
+};
+
+const requiredString = (value: unknown, description: string): string => {
+  if (typeof value !== "string" || value.length === 0) throw new TypeError(`${description} is unavailable`);
+  return value;
+};
+
+const entrypoint = process.argv[1];
+if (entrypoint !== undefined && import.meta.url === pathToFileURL(resolve(entrypoint)).href) {
+  void main().catch((error: unknown) => {
+    process.stderr.write(`${safeError(error)}\n`);
+    process.exitCode = 1;
+  });
+}

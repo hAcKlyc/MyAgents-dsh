@@ -65,6 +65,41 @@ class EventQueue {
 }
 
 describe("Reference Web React store", () => {
+  it("reconnects after an event-stream failure and restores the authoritative snapshot", async () => {
+    vi.useFakeTimers();
+    const queue = new EventQueue();
+    const emptyBootstrap: Bootstrap = { ...bootstrap, snapshot: { sessions: [] } };
+    let streams = 0;
+    const bootstrapCall = vi.fn(() => Promise.resolve(emptyBootstrap));
+    const client = {
+      bootstrap: bootstrapCall,
+      events: ({ signal }: { signal?: AbortSignal }) => {
+        streams += 1;
+        if (streams === 1) return (async function* fail(): AsyncGenerator<HostEvent> {
+          await Promise.reject(new Error("synthetic disconnect"));
+          yield undefined as never;
+        })();
+        return queue.events(signal ?? new AbortController().signal);
+      },
+      command: vi.fn(),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    const store = new ReferenceWebStore({ client, reconnectDelayMs: () => 10_000 });
+    try {
+      await store.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.getSnapshot().connection).toBe("offline");
+      expect(store.getSnapshot().notices.at(-1)?.message).toContain("reconnecting automatically");
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(store.getSnapshot().connection).toBe("online");
+      expect(bootstrapCall).toHaveBeenCalledTimes(2);
+      expect(store.getSnapshot().notices.at(-1)?.message).toContain("connection was restored");
+    } finally {
+      store.stop();
+      vi.useRealTimers();
+    }
+  });
+
   it("drives configuration, component inspection, and mutation commands from Runtime results", async () => {
     const queue = new EventQueue();
     const commands: BrowserCommand[] = [];

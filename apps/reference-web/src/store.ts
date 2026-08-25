@@ -90,6 +90,7 @@ export type ReferenceWebStoreOptions = Readonly<{
   client?: WebHostClient;
   idFactory?: () => string;
   now?: () => string;
+  reconnectDelayMs?: (attempt: number) => number;
 }>;
 
 const emptySnapshot: HostSnapshot = Object.freeze({ sessions: [] });
@@ -132,6 +133,7 @@ export class ReferenceWebStore {
   readonly #client: WebHostClient;
   readonly #idFactory: () => string;
   readonly #now: () => string;
+  readonly #reconnectDelayMs: (attempt: number) => number;
   readonly #listeners = new Set<() => void>();
   readonly #commandInputs = new Map<string, string>();
   readonly #commandWaiters = new Map<string, Readonly<{
@@ -159,11 +161,16 @@ export class ReferenceWebStore {
   #historyWebSessionId: string | undefined;
   #notifyScheduled = false;
   #startPromise: Promise<void> | undefined;
+  #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  #reconnectAttempt = 0;
+  #stopped = true;
+  #hadConnectionFailure = false;
 
   constructor(options: ReferenceWebStoreOptions = {}) {
     this.#client = options.client ?? new WebHostClient();
     this.#idFactory = options.idFactory ?? (() => crypto.randomUUID());
     this.#now = options.now ?? (() => new Date().toISOString());
+    this.#reconnectDelayMs = options.reconnectDelayMs ?? ((attempt) => Math.min(5_000, 250 * (2 ** (attempt - 1))));
   }
 
   getSnapshot = (): ReferenceWebState => this.#state;
@@ -173,11 +180,20 @@ export class ReferenceWebStore {
   };
 
   start(): Promise<void> {
+    this.#stopped = false;
+    if (this.#reconnectTimer !== undefined) {
+      clearTimeout(this.#reconnectTimer);
+      this.#reconnectTimer = undefined;
+    }
     this.#startPromise ??= this.#startOwned();
     return this.#startPromise;
   }
 
   stop(): void {
+    this.#stopped = true;
+    if (this.#reconnectTimer !== undefined) clearTimeout(this.#reconnectTimer);
+    this.#reconnectTimer = undefined;
+    this.#reconnectAttempt = 0;
     this.#abort?.abort();
     this.#abort = undefined;
     this.#startPromise = undefined;
@@ -508,26 +524,39 @@ export class ReferenceWebStore {
     const abort = new AbortController();
     this.#abort = abort;
     this.#update({ connection: "connecting" });
-    void this.#consumeEvents(abort.signal);
+    void this.#consumeEvents(abort);
     try {
       const bootstrap = await this.#client.bootstrap(abort.signal);
-      if (abort.signal.aborted) return;
-      this.#update({ bootstrap, snapshot: bootstrap.snapshot, connection: "online" });
+      if (abort.signal.aborted || this.#abort !== abort) return;
+      const restored = this.#hadConnectionFailure;
+      this.#reconnectAttempt = 0;
+      this.#hadConnectionFailure = false;
+      this.#update({
+        bootstrap,
+        snapshot: bootstrap.snapshot,
+        connection: "online",
+        ...(restored ? { notices: [...this.#state.notices, {
+          id: this.#idFactory(),
+          level: "info" as const,
+          message: "The local Web Host connection was restored.",
+        }].slice(-8) } : {}),
+      });
       this.#ensureHistory(bootstrap.snapshot);
     } catch {
-      if (!abort.signal.aborted) this.#connectionFailure();
+      if (!abort.signal.aborted) this.#connectionFailure(abort);
     }
   }
 
-  async #consumeEvents(signal: AbortSignal): Promise<void> {
+  async #consumeEvents(owner: AbortController): Promise<void> {
+    const { signal } = owner;
     try {
       for await (const event of this.#client.events({ signal })) {
         if (signal.aborted) return;
         await this.#applyEvent(event, signal);
       }
-      if (!signal.aborted) this.#connectionFailure();
+      if (!signal.aborted) this.#connectionFailure(owner);
     } catch {
-      if (!signal.aborted) this.#connectionFailure();
+      if (!signal.aborted) this.#connectionFailure(owner);
     }
   }
 
@@ -794,16 +823,37 @@ export class ReferenceWebStore {
     }
   }
 
-  #connectionFailure(): void {
+  #connectionFailure(owner: AbortController): void {
+    if (this.#stopped || this.#abort !== owner) return;
+    owner.abort();
+    this.#abort = undefined;
+    this.#startPromise = undefined;
     this.#rejectCommandWaiters("The local Web Host connection was interrupted");
+    const firstFailure = !this.#hadConnectionFailure;
+    this.#hadConnectionFailure = true;
     this.#update({
       connection: "offline",
-      notices: [...this.#state.notices, {
+      ...(firstFailure ? { notices: [...this.#state.notices, {
         id: this.#idFactory(),
         level: "error" as const,
-        message: "The local Web Host connection was interrupted.",
-      }].slice(-8),
+        message: "The local Web Host connection was interrupted; reconnecting automatically.",
+      }].slice(-8) } : {}),
     });
+    this.#scheduleReconnect();
+  }
+
+  #scheduleReconnect(): void {
+    if (this.#stopped || this.#reconnectTimer !== undefined) return;
+    this.#reconnectAttempt += 1;
+    const delay = this.#reconnectDelayMs(this.#reconnectAttempt);
+    if (!Number.isFinite(delay) || delay < 0 || delay > 60_000) {
+      throw new TypeError("Reference Web reconnect delay must be between 0 and 60000 milliseconds");
+    }
+    this.#reconnectTimer = setTimeout(() => {
+      this.#reconnectTimer = undefined;
+      if (this.#stopped) return;
+      this.#startPromise ??= this.#startOwned();
+    }, delay);
   }
 
   #record(value: unknown, label: string): Readonly<Record<string, unknown>> {
