@@ -18,6 +18,7 @@
     "src/errors.ts",
     "src/event-hub.ts",
     "src/index.ts",
+    "src/mutation-store.ts",
     "src/reference-profile.ts",
     "src/reverse-ports.ts",
     "src/runtime-process.ts",

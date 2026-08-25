@@ -89,6 +89,7 @@ describe("Reference Web React store", () => {
         skills: [], agents: [], mcpServers: [],
       },
       status: { desiredRevision: "components-v1", effectiveRevision: "components-v1", state: "applied", components: [] },
+      mutations: [],
     };
     const client = {
       bootstrap: vi.fn(() => Promise.resolve(bootstrap)),

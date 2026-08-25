@@ -28,6 +28,10 @@ import {
   type SessionOperationAuthority,
 } from "./command-router.js";
 import { WebHostError } from "./errors.js";
+import type {
+  ReferenceWebMutationRecord,
+  ReferenceWebMutationStore,
+} from "./mutation-store.js";
 import type { CredentialResolver } from "./reverse-ports.js";
 import type { RuntimeBinding, RuntimeBindingAuthority } from "./supervisor.js";
 
@@ -380,6 +384,11 @@ type ReferenceControlStore = Pick<
   "get" | "setConfiguration" | "setComponents" | "clone" | "remove"
 >;
 
+type ReferenceMutationStore = Pick<
+  ReferenceWebMutationStore,
+  "get" | "list" | "put" | "setState" | "remove" | "removeSession"
+>;
+
 const memoryControlStore = (): ReferenceControlStore => {
   const controls = new Map<string, ReferenceSessionControls>();
   return {
@@ -405,6 +414,51 @@ const memoryControlStore = (): ReferenceControlStore => {
   };
 };
 
+const memoryMutationStore = (): ReferenceMutationStore => {
+  const rows = new Map<string, ReferenceWebMutationRecord>();
+  return {
+    get: (operationToken) => rows.get(operationToken),
+    list: (sourceWebSessionId) => [...rows.values()].filter(
+      (candidate) => candidate.sourceWebSessionId === sourceWebSessionId,
+    ),
+    put: (value) => {
+      const conflict = [...rows.values()].find((candidate) =>
+        candidate.sourceWebSessionId === value.sourceWebSessionId
+        && candidate.operationToken !== value.operationToken);
+      if (conflict !== undefined) {
+        return Promise.reject(new WebHostError(
+          "mutation_recovery_required",
+          "Settle the existing Session mutation before preparing another",
+          true,
+        ));
+      }
+      rows.set(value.operationToken, Object.freeze({ ...value }));
+      return Promise.resolve();
+    },
+    setState: (operationToken, state) => {
+      const current = rows.get(operationToken);
+      if (current === undefined) return Promise.reject(new WebHostError(
+        "mutation_recovery_unknown",
+        "Mutation recovery authority is unavailable",
+      ));
+      rows.set(operationToken, Object.freeze({ ...current, state }));
+      return Promise.resolve();
+    },
+    remove: (operationToken) => {
+      rows.delete(operationToken);
+      return Promise.resolve();
+    },
+    removeSession: (webSessionId) => {
+      for (const [operationToken, value] of rows) {
+        if (value.sourceWebSessionId === webSessionId || value.targetWebSessionId === webSessionId) {
+          rows.delete(operationToken);
+        }
+      }
+      return Promise.resolve();
+    },
+  };
+};
+
 const allowedTools = new Set<string>(CANONICAL_TOOL_NAMES);
 const validateConfiguration = (value: SessionConfiguration): void => {
   if (value.providerRouteId !== REFERENCE_WEB_PROVIDER.providerRouteId
@@ -422,9 +476,9 @@ const validateConfiguration = (value: SessionConfiguration): void => {
 export const createReferenceWebComposition = (
   platform: ReferenceWebPlatform,
   controlStore: ReferenceControlStore = memoryControlStore(),
+  mutationStore: ReferenceMutationStore = memoryMutationStore(),
 ): ReferenceWebComposition => {
   const authorities = new Map<string, SessionOperationAuthority>();
-  const forkTargets = new Map<string, string>();
   const environments = new Map<string, Readonly<{
     revision: string;
     digest: string;
@@ -466,6 +520,23 @@ export const createReferenceWebComposition = (
     }));
     return result;
   };
+  const requireStoredMutation = (
+    sourceWebSessionId: string,
+    operationToken: string,
+    mutation: ReferenceWebMutationRecord["mutation"],
+    clientMutationId?: string,
+  ): ReferenceWebMutationRecord => {
+    const stored = mutationStore.get(operationToken);
+    if (stored?.sourceWebSessionId !== sourceWebSessionId
+      || stored.mutation !== mutation
+      || (clientMutationId !== undefined && stored.clientMutationId !== clientMutationId)) {
+      throw new WebHostError(
+        "mutation_recovery_unknown",
+        "Mutation operation authority does not match the selected Session",
+      );
+    }
+    return stored;
+  };
   const router = new BrowserNativeCommandRouter({
     authority: (context) => {
       const authority = authorities.get(context.row.webSessionId);
@@ -487,7 +558,39 @@ export const createReferenceWebComposition = (
           context.client.extensionCatalog({}),
           context.client.extensionStatus({}),
         ]);
-        return { controls: controlStore.get(context.row.webSessionId), runtime, catalog, status };
+        const mutations = await Promise.all(mutationStore.list(context.row.webSessionId).map(async (stored) => {
+          try {
+            const result = stored.mutation === "delete"
+              ? await context.client.sessionDeleteStatus({ token: stored.operationToken })
+              : stored.mutation === "fork"
+                ? await context.client.sessionForkStatus({ token: stored.operationToken })
+                : await context.client.sessionRewindStatus({ token: stored.operationToken });
+            await mutationStore.setState(stored.operationToken, result.state);
+            return Object.freeze({
+              mutation: stored.mutation,
+              clientMutationId: stored.clientMutationId,
+              token: stored.operationToken,
+              state: result.state,
+              ...(stored.targetWebSessionId === undefined ? {} : {
+                targetWebSessionId: stored.targetWebSessionId,
+              }),
+            });
+          } catch (error) {
+            return Object.freeze({
+              mutation: stored.mutation,
+              clientMutationId: stored.clientMutationId,
+              token: stored.operationToken,
+              state: stored.state,
+              recoveryCode: error instanceof WebHostError ? error.code
+                : error instanceof Error && "code" in error && typeof error.code === "string"
+                  ? error.code : "mutation_status_unavailable",
+              ...(stored.targetWebSessionId === undefined ? {} : {
+                targetWebSessionId: stored.targetWebSessionId,
+              }),
+            });
+          }
+        }));
+        return { controls: controlStore.get(context.row.webSessionId), runtime, catalog, status, mutations };
       }
       if (command.kind === "components.replace") {
         const current = controlStore.get(context.row.webSessionId);
@@ -513,10 +616,33 @@ export const createReferenceWebComposition = (
         return result;
       }
       if (command.kind === "mutation.prepare") {
+        if (mutationStore.list(context.row.webSessionId).length > 0) {
+          throw new WebHostError(
+            "mutation_recovery_required",
+            "Settle the existing Session mutation before preparing another",
+            true,
+          );
+        }
         if (command.payload.mutation === "delete") {
-          return context.client.sessionDeletePrepare({
+          const result = await context.client.sessionDeletePrepare({
             clientMutationId: command.payload.clientMutationId,
           });
+          try {
+            await mutationStore.put({
+              sourceWebSessionId: context.row.webSessionId,
+              mutation: "delete",
+              clientMutationId: command.payload.clientMutationId,
+              operationToken: result.token,
+              state: result.state,
+            });
+          } catch (error) {
+            await context.client.sessionDeleteRollback({
+              clientMutationId: command.payload.clientMutationId,
+              token: result.token,
+            }).catch(() => undefined);
+            throw error;
+          }
+          return result;
         }
         if (command.payload.mutation === "rewind") {
           if (command.payload.stableBoundaryId === undefined
@@ -524,12 +650,28 @@ export const createReferenceWebComposition = (
             || command.payload.targetTranscriptPostcondition === undefined) {
             throw new WebHostError("rewind_authority_incomplete", "Rewind requires an exact boundary and transcript postconditions");
           }
-          return context.client.sessionRewindPrepare({
+          const result = await context.client.sessionRewindPrepare({
             clientMutationId: command.payload.clientMutationId,
             targetStableBoundaryId: command.payload.stableBoundaryId,
             sourceTranscriptPostcondition: command.payload.sourceTranscriptPostcondition,
             targetTranscriptPostcondition: command.payload.targetTranscriptPostcondition,
           });
+          try {
+            await mutationStore.put({
+              sourceWebSessionId: context.row.webSessionId,
+              mutation: "rewind",
+              clientMutationId: command.payload.clientMutationId,
+              operationToken: result.token,
+              state: result.state,
+            });
+          } catch (error) {
+            await context.client.sessionRewindRollback({
+              clientMutationId: command.payload.clientMutationId,
+              token: result.token,
+            }).catch(() => undefined);
+            throw error;
+          }
+          return result;
         }
         if (command.payload.stableBoundaryId === undefined) {
           throw new WebHostError("fork_boundary_unavailable", "Fork requires one stable Session boundary");
@@ -539,6 +681,7 @@ export const createReferenceWebComposition = (
         }
         const target = await context.createForkTarget(command.payload.forkTitle ?? `${context.row.title} · Fork`);
         await controlStore.clone(context.row.webSessionId, target.row.webSessionId);
+        let preparedToken: string | undefined;
         try {
           const result = await context.client.sessionForkPrepare({
             clientMutationId: command.payload.clientMutationId,
@@ -550,9 +693,23 @@ export const createReferenceWebComposition = (
               targetRuntimeSessionId: target.row.runtimeSessionId,
             }),
           });
-          forkTargets.set(result.token, target.row.webSessionId);
+          preparedToken = result.token;
+          await mutationStore.put({
+            sourceWebSessionId: context.row.webSessionId,
+            mutation: "fork",
+            clientMutationId: command.payload.clientMutationId,
+            operationToken: result.token,
+            state: result.state,
+            targetWebSessionId: target.row.webSessionId,
+          });
           return { ...result, targetWebSessionId: target.row.webSessionId };
         } catch (error) {
+          if (preparedToken !== undefined) {
+            await context.client.sessionForkAbort({
+              clientMutationId: command.payload.clientMutationId,
+              token: preparedToken,
+            }).catch(() => undefined);
+          }
           await Promise.allSettled([
             context.removeHostSession(target.row.webSessionId),
             controlStore.remove(target.row.webSessionId),
@@ -561,15 +718,27 @@ export const createReferenceWebComposition = (
         }
       }
       if (command.kind === "mutation.status") {
+        const stored = requireStoredMutation(
+          context.row.webSessionId,
+          command.payload.token,
+          command.payload.mutation,
+        );
         const result = command.payload.mutation === "delete"
           ? await context.client.sessionDeleteStatus({ token: command.payload.token })
           : command.payload.mutation === "fork"
             ? await context.client.sessionForkStatus({ token: command.payload.token })
             : await context.client.sessionRewindStatus({ token: command.payload.token });
-        const targetWebSessionId = forkTargets.get(command.payload.token);
+        await mutationStore.setState(command.payload.token, result.state);
+        const targetWebSessionId = stored.targetWebSessionId;
         return targetWebSessionId === undefined ? result : { ...result, targetWebSessionId };
       }
       if (command.kind === "mutation.commit") {
+        requireStoredMutation(
+          context.row.webSessionId,
+          command.payload.token,
+          command.payload.mutation,
+          command.payload.clientMutationId,
+        );
         const expected = command.payload.mutation === "delete"
           ? `DELETE ${context.row.title}`
           : command.payload.mutation === "fork" ? "FORK" : "REWIND";
@@ -590,10 +759,21 @@ export const createReferenceWebComposition = (
                 clientMutationId: command.payload.clientMutationId,
                 token: command.payload.token,
               });
+        if (command.payload.mutation === "fork" && result.state === "committed") {
+          await mutationStore.remove(command.payload.token);
+        } else {
+          await mutationStore.setState(command.payload.token, result.state);
+        }
         context.resync?.(`${command.payload.mutation}_committed`);
         return result;
       }
       if (command.kind === "mutation.rollback") {
+        const stored = requireStoredMutation(
+          context.row.webSessionId,
+          command.payload.token,
+          command.payload.mutation,
+          command.payload.clientMutationId,
+        );
         const result = command.payload.mutation === "delete"
           ? await context.client.sessionDeleteRollback({
               clientMutationId: command.payload.clientMutationId,
@@ -609,18 +789,24 @@ export const createReferenceWebComposition = (
                 token: command.payload.token,
               });
         if (command.payload.mutation === "fork") {
-          const targetWebSessionId = forkTargets.get(command.payload.token);
+          const targetWebSessionId = stored.targetWebSessionId;
           if (targetWebSessionId !== undefined && context.removeHostSession !== undefined) {
             await Promise.allSettled([
               context.removeHostSession(targetWebSessionId),
               controlStore.remove(targetWebSessionId),
             ]);
-            forkTargets.delete(command.payload.token);
           }
         }
+        await mutationStore.remove(command.payload.token);
         context.resync?.(`${command.payload.mutation}_rolled_back`);
         return result;
       }
+      requireStoredMutation(
+        context.row.webSessionId,
+        command.payload.token,
+        "delete",
+        command.payload.clientMutationId,
+      );
       if (command.payload.confirmation !== `PURGE ${context.row.title}`) {
         throw new WebHostError("mutation_confirmation_invalid", "Purge confirmation does not match its exact scope");
       }
@@ -629,6 +815,7 @@ export const createReferenceWebComposition = (
         token: command.payload.token,
       });
       if (result.state === "purged" && context.removeHostSession !== undefined) {
+        await mutationStore.remove(command.payload.token);
         await context.removeHostSession(context.row.webSessionId);
         await controlStore.remove(context.row.webSessionId);
       }

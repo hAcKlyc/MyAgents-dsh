@@ -87,6 +87,7 @@ describe("Reference Web React shell", () => {
         skills: [{ id: "workspace-review" }], agents: [], mcpServers: [],
       },
       status: { state: "applied" },
+      mutations: [],
     };
     const history: BrowserHistorySnapshot = {
       webSessionId: "web-session-1",

@@ -303,6 +303,8 @@ function SessionPanel(props: Readonly<{
       first.focus();
     }
   };
+  const committedRewind = props.mutation?.mutation === "rewind"
+    && props.mutation.state === "committed";
   const expected = props.mutation?.mutation === "delete"
     ? props.mutation.state === "committed" ? `PURGE ${props.sessionTitle}` : `DELETE ${props.sessionTitle}`
     : props.mutation?.mutation === "fork" ? "FORK" : "REWIND";
@@ -329,14 +331,17 @@ function SessionPanel(props: Readonly<{
       aria-labelledby="mutation-title" onKeyDown={trapDialogFocus}>
       <h4 id="mutation-title">确认 {props.mutation.mutation}</h4>
       <p>Runtime 已准备 token <code>{props.mutation.token.slice(0, 16)}…</code>，当前状态：{props.mutation.state}。</p>
-      <p>输入 <strong>{expected}</strong> 执行下一步。</p>
-      <input ref={confirmationRef} aria-label="Mutation confirmation" value={confirmation}
-        onChange={(event) => setConfirmation(event.target.value)} />
+      {committedRewind
+        ? <p>Rewind 已提交；保留此操作权威，以便确认结果后仍可恢复提交前状态。</p>
+        : <><p>输入 <strong>{expected}</strong> 执行下一步。</p>
+          <input ref={confirmationRef} aria-label="Mutation confirmation" value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)} /></>}
       <div><button type="button" onClick={() => void props.onRollback()}>回滚 / Abort</button>
         {props.mutation.mutation === "delete" && props.mutation.state === "committed"
           ? <button className="danger-button" type="button" disabled={confirmation !== expected}
               onClick={() => void props.onPurge(confirmation)}>永久 Purge</button>
-          : <button className="danger-button" type="button" disabled={confirmation !== expected}
+          : committedRewind ? null
+            : <button className="danger-button" type="button" disabled={confirmation !== expected}
               onClick={() => void props.onCommit(confirmation)}>确认执行</button>}</div>
     </div>}
   </section>;

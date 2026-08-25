@@ -13,6 +13,7 @@ import {
   REFERENCE_WEB_PROVIDER,
   ReferenceWebDiagnosticLog,
   ReferenceWebConfigurationStore,
+  ReferenceWebMutationStore,
   ReferenceWebHostApplication,
   createReferenceWebComposition,
   createReferenceWebCredentialResolver,
@@ -241,11 +242,14 @@ export const runReferenceWebHost = async (arguments_: readonly string[]): Promis
     loadStaticAssets(),
   ]);
   const selectedPlatform = platform();
-  const controlStore = await ReferenceWebConfigurationStore.open(
-    resolve(options.hostHome, "web-session-configurations.json"),
-    REFERENCE_WEB_DEFAULT_CONTROLS,
-  );
-  const composition = createReferenceWebComposition(selectedPlatform, controlStore);
+  const [controlStore, mutationStore] = await Promise.all([
+    ReferenceWebConfigurationStore.open(
+      resolve(options.hostHome, "web-session-configurations.json"),
+      REFERENCE_WEB_DEFAULT_CONTROLS,
+    ),
+    ReferenceWebMutationStore.open(resolve(options.hostHome, "web-session-mutations.json")),
+  ]);
+  const composition = createReferenceWebComposition(selectedPlatform, controlStore, mutationStore);
   const workspaceIdentity = createHash("sha256").update(options.workspacePath).digest("hex").slice(0, 24);
   const diagnosticLog = await ReferenceWebDiagnosticLog.open(resolve(options.hostHome, "logs", "host-events.jsonl"));
   const application = await ReferenceWebHostApplication.open({

@@ -8,6 +8,7 @@ export * from "./configuration-store.js";
 export * from "./diagnostic-log.js";
 export * from "./errors.js";
 export * from "./event-hub.js";
+export * from "./mutation-store.js";
 export * from "./reverse-ports.js";
 export * from "./reference-profile.js";
 export * from "./runtime-process.js";

@@ -60,6 +60,7 @@ export type ControlInspection = Readonly<{
     mcpServers: readonly Readonly<Record<string, unknown>>[];
   }>;
   status: Readonly<Record<string, unknown>>;
+  mutations: readonly MutationDraft[];
 }>;
 export type MutationDraft = Readonly<{
   mutation: "delete" | "fork" | "rewind";
@@ -226,7 +227,8 @@ export class ReferenceWebStore {
         webSessionId,
         payload: {},
       });
-      this.#update({ controlInspection: this.#controlInspection(result) });
+      const inspection = this.#controlInspection(result);
+      this.#update({ controlInspection: inspection, mutation: inspection.mutations[0] });
     } finally {
       this.#update({ controlsLoading: false });
     }
@@ -347,12 +349,14 @@ export class ReferenceWebStore {
       },
     });
     const state = this.#mutationState(result);
-    if (mutation.mutation === "delete") {
+    if (mutation.mutation === "delete" || mutation.mutation === "rewind") {
       this.#update({ mutation: Object.freeze({ ...mutation, state }) });
-      this.#notice("Session deletion committed. Roll back or explicitly purge it.", "info");
+      this.#notice(mutation.mutation === "delete"
+        ? "Session deletion committed. Roll back or explicitly purge it."
+        : "Session rewind committed. The same operation can still be rolled back.", "info");
     } else {
       this.#update({ mutation: undefined });
-      this.#notice(`${mutation.mutation === "fork" ? "Fork" : "Rewind"} committed.`, "info");
+      this.#notice("Fork committed.", "info");
     }
   }
 
@@ -827,6 +831,24 @@ export class ReferenceWebStore {
       || !Array.isArray(catalog.mcpServers)) {
       throw new TypeError("component catalog is unavailable");
     }
+    if (!Array.isArray(result.mutations) || result.mutations.length > 1) {
+      throw new TypeError("mutation recovery state is unavailable");
+    }
+    const mutations = result.mutations.map((value) => {
+      const mutation = this.#record(value, "mutation recovery item");
+      if (mutation.mutation !== "delete" && mutation.mutation !== "fork" && mutation.mutation !== "rewind") {
+        throw new TypeError("mutation recovery kind is unavailable");
+      }
+      const targetWebSessionId = mutation.targetWebSessionId === undefined
+        ? undefined : this.#string(mutation.targetWebSessionId, "fork target Web Session id");
+      return Object.freeze({
+        mutation: mutation.mutation,
+        clientMutationId: this.#string(mutation.clientMutationId, "client mutation id"),
+        token: this.#string(mutation.token, "mutation token"),
+        state: this.#string(mutation.state, "mutation state"),
+        ...(targetWebSessionId === undefined ? {} : { targetWebSessionId }),
+      });
+    });
     return Object.freeze({
       controls: Object.freeze({ configuration, components }),
       runtime: this.#record(result.runtime, "Runtime status"),
@@ -840,6 +862,7 @@ export class ReferenceWebStore {
         mcpServers: catalog.mcpServers.map((item) => this.#record(item, "MCP catalog item")),
       }),
       status: this.#record(result.status, "component status"),
+      mutations,
     });
   }
 
