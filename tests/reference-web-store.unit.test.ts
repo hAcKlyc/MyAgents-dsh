@@ -538,4 +538,44 @@ describe("Reference Web React store", () => {
     unsubscribe();
     store.stop();
   });
+
+  it("retains only the bounded visible tail of a long live conversation", async () => {
+    const queue = new EventQueue();
+    const client = {
+      bootstrap: vi.fn(() => Promise.resolve(bootstrap)),
+      events: (options: { signal?: AbortSignal }) => queue.events(options.signal ?? new AbortController().signal),
+      command: vi.fn((command: BrowserCommand) => Promise.resolve({ commandId: command.commandId, accepted: true as const })),
+      respond: vi.fn(),
+    } as unknown as WebHostClient;
+    const store = new ReferenceWebStore({ client, idFactory: () => "long-id", now: () => now });
+    await store.start();
+
+    for (let sequence = 1; sequence <= 2_100; sequence += 1) {
+      queue.push({
+        epoch: "epoch-1",
+        sequence,
+        emittedAt: now,
+        kind: "runtime.event",
+        payload: {
+          webSessionId: "web-session-1",
+          event: {
+            runtimeGeneration: "generation-1",
+            productSessionId: "web-session-1",
+            runtimeSessionId: "runtime-session-1",
+            sequence,
+            emittedAt: now,
+            turnId: `turn-${String(sequence)}`,
+            event: { kind: "thinking_delta", delta: "x" },
+          },
+        },
+      });
+    }
+    await vi.waitFor(() => expect(store.getSnapshot().snapshot.projection?.events.at(-1)?.sequence).toBe(2_100));
+
+    const events = store.getSnapshot().snapshot.projection?.events ?? [];
+    expect(events).toHaveLength(2_000);
+    expect(events[0]?.sequence).toBe(101);
+    expect(events.at(-1)?.sequence).toBe(2_100);
+    store.stop();
+  });
 });
