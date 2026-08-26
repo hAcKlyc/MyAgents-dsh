@@ -10,6 +10,7 @@ This directory contains the product, architecture, protocol, and delivery author
 | Native Host ↔ Runtime wire contract | [protocol/runtime-rpc-v2.md](./protocol/runtime-rpc-v2.md) |
 | Development entrypoint, background, repository relationships, migration policy, status, Batch dependencies, and acceptance | [prd/plan.md](./prd/plan.md) |
 | Batch-specific product scope and internal workstreams | The corresponding document under `prd/` |
+| Reference Web usable-product features and browser acceptance journeys | [prd/batch-1-reference-web-product.md](./prd/batch-1-reference-web-product.md) |
 | Implementation design over pinned DSH public seams | [rfc/README.md](./rfc/README.md) |
 | Accepted irreversible decisions and evidence state | [adr/README.md](./adr/README.md) |
 
