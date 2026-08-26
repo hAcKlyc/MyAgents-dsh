@@ -205,7 +205,11 @@ describe("Reference Web Host production profile", () => {
     }, context);
     expect(configApply.mock.calls[0]?.[0]).toMatchObject({
       revision: "config-v2",
-      provider: { effort: "max" },
+      provider: {
+        ...REFERENCE_WEB_PROVIDER,
+        revision: "reference-deepseek-deepseek-v4-flash-max-v1",
+        effort: "max",
+      },
       systemPrompt: "Updated public prompt",
       toolPolicy: { autoAllowTools: ["Read"] },
     } satisfies Partial<MethodParams<"config/apply">>);
