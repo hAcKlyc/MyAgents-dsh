@@ -175,7 +175,9 @@ describe("Reference Web Host production profile", () => {
     ]);
     expect(starter.resources).toHaveLength(2);
 
-    const configApply = vi.fn(() => Promise.resolve({
+    const configApply = vi.fn<(
+      params: MethodParams<"config/apply">,
+    ) => Promise<MethodResult<"config/apply">>>(() => Promise.resolve({
       desiredRevision: "config-v2", effectiveRevision: "config-v2", state: "applied" as const, components: [],
     }));
     const sessionDeletePrepare = vi.fn(() => Promise.resolve({ token: "delete-token", state: "prepared" as const }));
@@ -194,18 +196,33 @@ describe("Reference Web Host production profile", () => {
         revision: "config-v2",
         providerRouteId: REFERENCE_WEB_PROVIDER.providerRouteId,
         modelId: REFERENCE_WEB_PROVIDER.modelId,
-        reasoningEffort: "medium",
+        reasoningEffort: "max",
         permissionMode: "default",
         interactionScenario: "host-interaction-v2",
         systemPrompt: "Updated public prompt",
         visibleTools: ["Read"],
       },
     }, context);
-    expect(configApply).toHaveBeenCalledWith(expect.objectContaining({
+    expect(configApply.mock.calls[0]?.[0]).toMatchObject({
       revision: "config-v2",
+      provider: { effort: "max" },
       systemPrompt: "Updated public prompt",
       toolPolicy: { autoAllowTools: ["Read"] },
-    } satisfies Partial<MethodParams<"config/apply">>));
+    } satisfies Partial<MethodParams<"config/apply">>);
+    await expect(composition.nativeCommand({
+      commandId: "invalid-effort-command",
+      kind: "config.apply",
+      webSessionId: row.webSessionId,
+      payload: {
+        revision: "config-invalid-effort",
+        providerRouteId: REFERENCE_WEB_PROVIDER.providerRouteId,
+        modelId: REFERENCE_WEB_PROVIDER.modelId,
+        reasoningEffort: "medium",
+        permissionMode: "default",
+        interactionScenario: "host-interaction-v2",
+        systemPrompt: "Unsupported effort",
+      },
+    }, context)).rejects.toMatchObject({ code: "reference_web_reasoning_effort_invalid" });
     const prepared = await composition.nativeCommand({
       commandId: "delete-prepare",
       kind: "mutation.prepare",

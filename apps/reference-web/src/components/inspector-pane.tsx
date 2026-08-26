@@ -22,7 +22,7 @@ export function InspectorPane(props: Readonly<{
       <dl className="fact-grid">
         <div><dt>Lifecycle</dt><dd>{props.session?.lifecycle ?? "none"}</dd></div>
         <div><dt>Runtime Session</dt><dd>{props.projection?.runtimeSessionId ?? "not bound"}</dd></div>
-        <div><dt>Generation</dt><dd>{props.projection?.runtimeGeneration ?? "cold"}</dd></div>
+        <div><dt>Generation</dt><dd>{props.projection?.runtimeGeneration ?? "awaiting first event"}</dd></div>
         <div><dt>Visible events</dt><dd>{props.projection?.events.length ?? 0}</dd></div>
         <div><dt>Durable history</dt><dd>{props.history === undefined
           ? "not loaded" : `${props.history.events.length} / ${props.history.durableSequence} · ${props.history.status}`}</dd></div>

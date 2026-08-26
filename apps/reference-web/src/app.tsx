@@ -23,6 +23,10 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
     void props.store.start();
     return () => props.store.stop();
   }, [props.store]);
+  useEffect(() => {
+    if (state.connection === "online" && selectedId !== undefined && selected?.lifecycle === "ready"
+      && state.controlInspection === undefined) void props.store.refreshControls().catch(() => undefined);
+  }, [props.store, selectedId, selected?.lifecycle, state.connection, state.controlInspection]);
 
   return <div className="app-shell">
     <SessionSidebar
@@ -66,11 +70,17 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
           inputDisabled={state.connection === "offline"}
           sendDisabled={state.connection !== "online"}
           busy={busy}
+          permissionScope={selectedId}
+          permissionMode={state.controlInspection?.controls.configuration.permissionMode as
+            | "default" | "acceptEdits" | "dontAsk" | "bypassPermissions" | undefined}
+          permissionDisabled={selectedId === undefined || selected?.lifecycle !== "ready"
+            || state.connection !== "online" || state.controlInspection === undefined}
           onSubmit={(text, attachments, delivery) => props.store.submitInput(text, attachments, delivery)}
           onUpload={(file) => props.store.upload(file)}
           onPreview={(attachmentId) => props.store.previewAttachment(attachmentId)}
           onRelease={(attachmentId) => props.store.releaseAttachment(attachmentId)}
           onInterrupt={() => selectedId === undefined ? Promise.resolve() : props.store.interrupt(selectedId)}
+          onPermissionModeChange={(permissionMode) => props.store.applyPermissionMode(permissionMode)}
         />
       </div>
     </main>

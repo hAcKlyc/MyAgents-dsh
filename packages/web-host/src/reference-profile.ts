@@ -468,6 +468,13 @@ const validateConfiguration = (value: SessionConfiguration): void => {
   if (!["default", "acceptEdits", "bypassPermissions", "dontAsk"].includes(value.permissionMode)) {
     throw new WebHostError("reference_web_permission_mode_invalid", "The selected permission mode is invalid");
   }
+  if (value.reasoningEffort !== undefined
+    && value.reasoningEffort !== "high" && value.reasoningEffort !== "max") {
+    throw new WebHostError(
+      "reference_web_reasoning_effort_invalid",
+      "The approved DeepSeek route supports only high or max reasoning effort",
+    );
+  }
   if (value.visibleTools?.some((tool) => !allowedTools.has(tool))) {
     throw new WebHostError("reference_web_tool_policy_invalid", "The tool policy contains an unknown canonical tool");
   }

@@ -7,6 +7,7 @@ import {
 
 import type { BrowserHistorySnapshot } from "../history.js";
 import type {
+  ConfigurationApplyOutcome,
   ControlInspection,
   ControlTab,
   MutationDraft,
@@ -63,7 +64,7 @@ export function ControlCenter(props: Readonly<{
   onClose: () => void;
   onTab: (tab: ControlTab) => void;
   onRefresh: () => Promise<void>;
-  onApplyConfiguration: (configuration: SessionConfiguration) => Promise<void>;
+  onApplyConfiguration: (configuration: SessionConfiguration) => Promise<ConfigurationApplyOutcome>;
   onReplaceComponents: (revision: string, components: readonly BrowserComponentDefinition[]) => Promise<void>;
   onCompact: () => Promise<void>;
   onPrepareMutation: (
@@ -76,10 +77,15 @@ export function ControlCenter(props: Readonly<{
 }>): React.JSX.Element | null {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string>();
-  const run = async (operation: () => Promise<void>): Promise<void> => {
+  const [feedback, setFeedback] = useState<string>();
+  const run = async <Result,>(operation: () => Promise<Result>, success: string | ((result: Result) => string)): Promise<void> => {
     setWorking(true);
     setError(undefined);
-    try { await operation(); } catch (reason) {
+    setFeedback(undefined);
+    try {
+      const result = await operation();
+      setFeedback(typeof success === "function" ? success(result) : success);
+    } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The operation failed.");
     } finally { setWorking(false); }
   };
@@ -101,23 +107,26 @@ export function ControlCenter(props: Readonly<{
     </nav>
     <div className="control-body" aria-busy={props.loading || working}>
       {(props.loading || props.inspection === undefined) && <div className="control-loading">正在读取 Runtime 权威状态…</div>}
+      {feedback !== undefined && <p className="control-feedback" role="status">✓ {feedback}</p>}
       {props.inspection !== undefined && props.tab === "settings" && <SettingsPanel
         key={props.inspection.controls.configuration.revision}
         inspection={props.inspection} disabled={working}
-        onApply={(configuration) => run(() => props.onApplyConfiguration(configuration))} />}
+        onApply={(configuration) => run(() => props.onApplyConfiguration(configuration), (outcome) => outcome.state === "applied"
+          ? "设置已保存并生效。"
+          : outcome.state === "queued" ? "设置已保存，将在下一轮边界生效。" : "设置已保存，将在 Runtime 空闲后生效。")} />}
       {props.inspection !== undefined && props.tab === "components" && <ComponentsPanel
         key={props.inspection.controls.components.digest}
         inspection={props.inspection} disabled={working}
-        onReplace={(revision, components) => run(() => props.onReplaceComponents(revision, components))} />}
+        onReplace={(revision, components) => run(() => props.onReplaceComponents(revision, components), "组件代次已校验并提交。") } />}
       {props.inspection !== undefined && props.tab === "session" && <SessionPanel
         history={props.history} mutation={props.mutation} sessionTitle={props.sessionTitle} disabled={working}
-        onCompact={() => run(props.onCompact)}
-        onPrepare={(mutation, options) => run(() => props.onPrepareMutation(mutation, options))}
-        onCommit={(confirmation) => run(() => props.onCommitMutation(confirmation))}
-        onRollback={() => run(props.onRollbackMutation)}
-        onPurge={(confirmation) => run(() => props.onPurge(confirmation))} />}
+        onCompact={() => run(props.onCompact, "压缩请求已接受。")}
+        onPrepare={(mutation, options) => run(() => props.onPrepareMutation(mutation, options), "变更已准备，请核对后确认。")}
+        onCommit={(confirmation) => run(() => props.onCommitMutation(confirmation), "会话变更已提交。")}
+        onRollback={() => run(props.onRollbackMutation, "待处理变更已回滚。")}
+        onPurge={(confirmation) => run(() => props.onPurge(confirmation), "Session 已永久清除。") } />}
       {props.inspection !== undefined && props.tab === "runtime" && <RuntimePanel inspection={props.inspection}
-        onRefresh={() => run(props.onRefresh)} disabled={working} />}
+        onRefresh={() => run(props.onRefresh, "已刷新 Runtime 权威状态。") } disabled={working} />}
       {error !== undefined && <p className="control-error" role="alert">{error}</p>}
     </div>
   </aside>;
@@ -134,6 +143,11 @@ function SettingsPanel(props: Readonly<{
   const [scenario, setScenario] = useState(current.interactionScenario);
   const [systemPrompt, setSystemPrompt] = useState(current.systemPrompt);
   const [autoAllow, setAutoAllow] = useState<readonly string[]>(current.visibleTools ?? []);
+  const dirty = effort !== (current.reasoningEffort ?? "high")
+    || permissionMode !== current.permissionMode
+    || scenario !== current.interactionScenario
+    || systemPrompt !== current.systemPrompt
+    || JSON.stringify(autoAllow) !== JSON.stringify(current.visibleTools ?? []);
   const toggleTool = (tool: string): void => setAutoAllow((tools) => tools.includes(tool)
     ? tools.filter((candidate) => candidate !== tool) : [...tools, tool]);
   return <section className="control-section">
@@ -142,7 +156,7 @@ function SettingsPanel(props: Readonly<{
     <label className="field"><span>模型</span><select value={current.modelId} disabled><option>{current.modelId}</option></select>
       <small>Reference Host 当前只安装已验证的 DeepSeek 路由。</small></label>
     <label className="field"><span>推理强度</span><select value={effort} onChange={(event) => setEffort(event.target.value as typeof effort)}>
-      {(["low", "medium", "high", "xhigh", "max"] as const).map((value) => <option key={value}>{value}</option>)}
+      {(["high", "max"] as const).map((value) => <option key={value}>{value}</option>)}
     </select></label>
     <label className="field"><span>权限模式</span><select value={permissionMode} onChange={(event) => setPermissionMode(event.target.value)}>
       <option value="default">默认 · 按需询问</option><option value="acceptEdits">自动接受编辑</option>
@@ -154,9 +168,10 @@ function SettingsPanel(props: Readonly<{
     <fieldset className="tool-policy"><legend>无需逐次询问的工具</legend><p>全部 20 个 Runtime 工具保持可见；这里仅配置自动允许集合。</p>
       <div>{canonicalTools.map((tool) => <label key={tool}><input type="checkbox" checked={autoAllow.includes(tool)}
         onChange={() => toggleTool(tool)} />{tool}</label>)}</div></fieldset>
-    <button className="primary-control" type="button" disabled={props.disabled || systemPrompt.length > 1_000_000}
+    <div className="control-save-row"><span data-dirty={dirty}>{dirty ? "有未保存更改" : "当前设置已保存"}</span>
+    <button className="primary-control" type="button" disabled={props.disabled || !dirty || systemPrompt.length > 1_000_000}
       onClick={() => void props.onApply({
-        revision: `reference-web-config-${Date.now()}`,
+        revision: `reference-web-config-${crypto.randomUUID()}`,
         providerRouteId: current.providerRouteId,
         modelId: current.modelId,
         reasoningEffort: effort,
@@ -164,7 +179,7 @@ function SettingsPanel(props: Readonly<{
         interactionScenario: scenario,
         systemPrompt,
         ...(autoAllow.length === 0 ? {} : { visibleTools: [...autoAllow] }),
-      })}>应用到当前 Session</button>
+      })}>{props.disabled ? "正在应用…" : "保存并应用"}</button></div>
   </section>;
 }
 

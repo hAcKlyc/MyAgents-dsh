@@ -14,6 +14,7 @@ type DiagnosticRecord = Readonly<{
   kind: string;
   webSessionId?: string;
   commandId?: string;
+  commandKind?: string;
   state?: string;
   code?: string;
   runtimeEventKind?: string;
@@ -113,6 +114,9 @@ export class ReferenceWebDiagnosticLog {
       sequence: 0,
       kind: `browser.${event.kind}`,
       ...(event.code === undefined ? {} : { code: event.code }),
+      ...(event.commandId === undefined ? {} : { commandId: event.commandId }),
+      ...(event.commandKind === undefined ? {} : { commandKind: event.commandKind }),
+      ...(event.webSessionId === undefined ? {} : { webSessionId: event.webSessionId }),
       ...(event.pendingBytes === undefined ? {} : { pendingBytes: event.pendingBytes }),
       ...(event.resumed === undefined ? {} : { resumed: event.resumed }),
     });

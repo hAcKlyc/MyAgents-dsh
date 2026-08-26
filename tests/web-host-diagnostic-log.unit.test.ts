@@ -37,6 +37,12 @@ describe("Reference Web diagnostic log", () => {
       },
     } satisfies HostEvent);
     log.appendBrowser({ kind: "sse_backpressure", pendingBytes: 4096 });
+    log.appendBrowser({
+      kind: "command_received",
+      commandId: "command-1",
+      commandKind: "config.apply",
+      webSessionId: "web-session-1",
+    });
     await log.close();
 
     const bytes = await readFile(path, "utf8");
@@ -45,6 +51,8 @@ describe("Reference Web diagnostic log", () => {
     expect(bytes).not.toContain("SECRET_CONVERSATION_CANARY");
     expect(bytes).toContain('"kind":"browser.sse_backpressure"');
     expect(bytes).toContain('"pendingBytes":4096');
+    expect(bytes).toContain('"commandKind":"config.apply"');
+    expect(bytes).toContain('"commandId":"command-1"');
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 });

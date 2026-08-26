@@ -75,13 +75,69 @@ const domAccessibilityAudit = (page: Page): Promise<Readonly<{
   };
 });
 
-const verifyControls = async (page: Page): Promise<Readonly<{ tools: number; skills: number }>> => {
+const verifyComposerHostControls = async (page: Page): Promise<Readonly<{
+  attachmentRoundTrip: boolean;
+  permissionRoundTrip: boolean;
+}>> => {
+  await page.getByRole("button", { name: "Add content" }).click();
+  await page.getByRole("menu", { name: "添加内容" }).waitFor({ timeout: 10_000 });
+  const chooserPromise = page.waitForEvent("filechooser", { timeout: 10_000 });
+  await page.getByRole("menuitem", { name: /添加图片/u }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: "browser-proof.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
+  });
+  const pendingAttachment = page.locator(".composer-attachments > span", { hasText: /browser-proof\.png · staged/u });
+  await pendingAttachment.waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Remove browser-proof.png" }).click();
+  await pendingAttachment.waitFor({ state: "detached", timeout: 20_000 });
+
+  const permission = page.getByRole("combobox", { name: "Permission mode" });
+  await permission.waitFor({ state: "visible", timeout: 20_000 });
+  await permission.selectOption("acceptEdits");
+  await page.locator(".permission-state", { hasText: /已生效|已排队/u }).waitFor({ timeout: 20_000 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitOnline(page);
+  await page.getByRole("combobox", { name: "Permission mode" }).waitFor({ state: "visible", timeout: 20_000 });
+  await page.waitForFunction(() => document.querySelector<HTMLSelectElement>(
+    'select[aria-label="Permission mode"]',
+  )?.value === "acceptEdits", undefined, { timeout: 20_000 });
+  assert(await page.getByRole("combobox", { name: "Permission mode" }).inputValue() === "acceptEdits",
+    "composer permission mode did not survive a browser reload");
+  await page.getByRole("combobox", { name: "Permission mode" }).selectOption("default");
+  await page.locator(".permission-state", { hasText: /已生效|已排队/u }).waitFor({ timeout: 20_000 });
+  return { attachmentRoundTrip: true, permissionRoundTrip: true };
+};
+
+const verifyControls = async (page: Page): Promise<Readonly<{
+  tools: number;
+  skills: number;
+  settingsRoundTrip: boolean;
+}>> => {
   await page.getByRole("button", { name: "Controls" }).click();
   await page.getByRole("complementary", { name: "Session control center" }).waitFor({ timeout: 20_000 });
   const model = page.locator(".control-section label.field select").first();
   await model.waitFor({ state: "visible", timeout: 20_000 });
   assert(await model.inputValue() === "deepseek-v4-flash", "control center model differs from the production profile");
   const tools = await page.locator(".tool-policy input[type='checkbox']").count();
+  const effort = page.getByRole("combobox", { name: "推理强度" });
+  await effort.selectOption("max");
+  const save = page.getByRole("button", { name: "保存并应用" });
+  assert(await save.isEnabled(), "changed Control setting did not enable save");
+  await save.click();
+  await page.locator(".control-feedback", { hasText: /设置已保存/u }).waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "关闭控制中心" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitOnline(page);
+  await page.getByRole("button", { name: "Controls" }).click();
+  await page.getByRole("combobox", { name: "推理强度" }).waitFor({ state: "visible", timeout: 20_000 });
+  assert(await page.getByRole("combobox", { name: "推理强度" }).inputValue() === "max",
+    "Control setting did not survive a browser reload");
+  await page.getByRole("combobox", { name: "推理强度" }).selectOption("high");
+  await page.getByRole("button", { name: "保存并应用" }).click();
+  await page.locator(".control-feedback", { hasText: /设置已保存/u }).waitFor({ timeout: 20_000 });
   await page.getByRole("button", { name: "组件", exact: true }).click();
   await page.locator(".component-health").waitFor({ timeout: 20_000 });
   const skillText = await page.locator(".component-health").locator("span").filter({ hasText: "Skills" }).innerText();
@@ -89,7 +145,7 @@ const verifyControls = async (page: Page): Promise<Readonly<{ tools: number; ski
   assert(tools === 20, `expected 20 visible canonical tools, observed ${String(tools)}`);
   assert(Number.isSafeInteger(skills) && skills >= 2, "expected both production starter Skills");
   await page.getByRole("button", { name: "关闭控制中心" }).click();
-  return { tools, skills };
+  return { tools, skills, settingsRoundTrip: true };
 };
 
 const verifyMutationRecovery = async (page: Page): Promise<void> => {
@@ -228,6 +284,7 @@ const main = async (): Promise<void> => {
     await textarea.fill("可访问性键盘输入检查");
     assert(await page.getByRole("button", { name: "Send message" }).isEnabled(), "send button did not follow the editable draft");
     await textarea.fill("");
+    const composerControls = await verifyComposerHostControls(page);
     const controls = await verifyControls(page);
     const accessibility = await domAccessibilityAudit(page);
     assert(accessibility.duplicateIds.length === 0, "page contains duplicate element identifiers");
@@ -303,6 +360,7 @@ const main = async (): Promise<void> => {
       cleanUrl,
       browserVersion: browser.version(),
       controls,
+      composerControls,
       accessibility,
       media,
       performance: performanceEvidence,

@@ -2,13 +2,27 @@ import { useEffect, useRef, useState } from "react";
 
 import type { AttachmentSummary, BrowserAttachmentPreview } from "@myagents-dsh/web-host-contract";
 
-import type { InputDelivery } from "../store.js";
+import type {
+  ConfigurationApplyOutcome,
+  InputDelivery,
+  ReferencePermissionMode,
+} from "../store.js";
+
+const permissionOptions: readonly Readonly<{ value: ReferencePermissionMode; label: string }>[] = [
+  { value: "default", label: "按需询问" },
+  { value: "acceptEdits", label: "自动允许编辑" },
+  { value: "dontAsk", label: "拒绝且不询问" },
+  { value: "bypassPermissions", label: "完全访问" },
+];
 
 export function Composer(props: Readonly<{
   attachmentDisabled: boolean;
   inputDisabled: boolean;
   sendDisabled: boolean;
   busy: boolean;
+  permissionScope: string | undefined;
+  permissionMode: ReferencePermissionMode | undefined;
+  permissionDisabled: boolean;
   attachments: readonly AttachmentSummary[];
   onSubmit: (
     text: string,
@@ -19,19 +33,39 @@ export function Composer(props: Readonly<{
   onPreview: (attachmentId: string) => Promise<BrowserAttachmentPreview>;
   onRelease: (attachmentId: string) => Promise<void>;
   onInterrupt: () => Promise<void>;
+  onPermissionModeChange: (permissionMode: ReferencePermissionMode) => Promise<ConfigurationApplyOutcome>;
 }>): React.JSX.Element {
   const [text, setText] = useState("");
   const [uploads, setUploads] = useState<readonly AttachmentSummary[]>([]);
   const [busyDelivery, setBusyDelivery] = useState<Extract<InputDelivery, "steer" | "follow_up">>("follow_up");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
+  const [permissionState, setPermissionState] = useState<"idle" | "saving" | "applied" | "queued">("idle");
+  const [selectedPermission, setSelectedPermission] = useState<ReferencePermissionMode | undefined>(props.permissionMode);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [preview, setPreview] = useState<Readonly<{ name: string; url: string }>>();
   const fileRef = useRef<HTMLInputElement>(null);
+  const addMenuRef = useRef<HTMLDivElement>(null);
   const steerHasAttachments = props.busy && busyDelivery === "steer" && uploads.length > 0;
 
   useEffect(() => () => {
     if (preview !== undefined) URL.revokeObjectURL(preview.url);
   }, [preview]);
+  useEffect(() => {
+    setSelectedPermission(props.permissionMode);
+  }, [props.permissionMode]);
+  useEffect(() => {
+    setSelectedPermission(props.permissionMode);
+    setPermissionState("idle");
+  }, [props.permissionScope]);
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const closeOutside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && !addMenuRef.current?.contains(event.target)) setAddMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [addMenuOpen]);
 
   const submit = async (): Promise<void> => {
     if (props.sendDisabled || submitting || text.trim() === "") return;
@@ -47,16 +81,31 @@ export function Composer(props: Readonly<{
       setSubmitting(false);
     }
   };
-  const addFile = async (file: File | undefined): Promise<void> => {
-    if (file === undefined) return;
+  const addFiles = async (files: FileList | null): Promise<void> => {
+    if (files === null || files.length === 0) return;
     setError(undefined);
     try {
-      const attachment = await props.onUpload(file);
-      setUploads((current) => [...current, attachment]);
+      const attachments: AttachmentSummary[] = [];
+      for (const file of Array.from(files)) attachments.push(await props.onUpload(file));
+      setUploads((current) => [...current, ...attachments]);
     } catch {
-      setError("The attachment could not be uploaded.");
+      setError("图片未能上传；请检查格式、大小或 Host 日志。");
     } finally {
       if (fileRef.current !== null) fileRef.current.value = "";
+    }
+  };
+  const changePermission = async (permissionMode: ReferencePermissionMode): Promise<void> => {
+    const previous = props.permissionMode;
+    setSelectedPermission(permissionMode);
+    setPermissionState("saving");
+    setError(undefined);
+    try {
+      const outcome = await props.onPermissionModeChange(permissionMode);
+      setPermissionState(outcome.state === "applied" ? "applied" : "queued");
+    } catch {
+      setSelectedPermission(previous);
+      setPermissionState("idle");
+      setError("权限模式未能应用；当前设置没有改变。");
     }
   };
   const remove = async (attachment: AttachmentSummary): Promise<void> => {
@@ -105,18 +154,42 @@ export function Composer(props: Readonly<{
       />
       <div className="composer-actions">
         <div>
-          <button className="attach-button" type="button"
-            disabled={props.attachmentDisabled || (props.busy && busyDelivery === "steer")}
-            onClick={() => fileRef.current?.click()} aria-label="Attach file" title="添加图片">＋</button>
+          <div className="composer-add" ref={addMenuRef}>
+            <button className="attach-button" type="button"
+              disabled={props.attachmentDisabled || (props.busy && busyDelivery === "steer")}
+              onClick={() => setAddMenuOpen((open) => !open)} aria-label="Add content"
+              aria-expanded={addMenuOpen} aria-haspopup="menu" title="添加内容">＋</button>
+            {addMenuOpen && <div className="composer-add-menu" role="menu" aria-label="添加内容">
+              <button type="button" role="menuitem" onClick={() => {
+                setAddMenuOpen(false);
+                fileRef.current?.click();
+              }}><span className="menu-icon">▧</span><span><strong>添加图片</strong><small>PNG、JPG、GIF 或 WebP</small></span></button>
+              <p>图片由 Host 临时托管，只在当前 Session 中可用。</p>
+            </div>}
+          </div>
           <input ref={fileRef} className="sr-only" type="file" aria-label="Upload attachment"
-            accept="image/jpeg,image/png,image/gif,image/webp"
-            onChange={(event) => void addFile(event.target.files?.[0])} tabIndex={-1} />
+            accept="image/jpeg,image/png,image/gif,image/webp" multiple
+            onChange={(event) => void addFiles(event.target.files)} tabIndex={-1} />
           {props.busy && <select aria-label="Delivery mode" value={busyDelivery}
             onChange={(event) => setBusyDelivery(event.target.value as typeof busyDelivery)}>
             <option value="steer">立即补充</option>
             <option value="follow_up">排队发送</option>
           </select>}
-          <span className="composer-mode">⌁ 自主行动</span>
+          <label className="permission-control" title={selectedPermission === "bypassPermissions"
+            ? "完全访问会绕过交互式权限确认，Runtime 硬策略仍然有效。" : "设置当前 Session 的工具权限策略。"}>
+            <span>权限</span>
+            <select aria-label="Permission mode" data-danger={selectedPermission === "bypassPermissions"}
+              disabled={props.permissionDisabled || permissionState === "saving"}
+              value={selectedPermission ?? ""} onChange={(event) => void changePermission(
+                event.target.value as ReferencePermissionMode,
+              )}>
+              {selectedPermission === undefined && <option value="">读取中…</option>}
+              {permissionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            {permissionState !== "idle" && <small className="permission-state" role="status">{
+              permissionState === "saving" ? "应用中…" : permissionState === "applied" ? "已生效" : "已排队"
+            }</small>}
+          </label>
           <span className="composer-hint">↵ 发送 · ⇧↵ 换行</span>
         </div>
         <div>

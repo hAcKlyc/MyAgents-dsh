@@ -11,6 +11,7 @@
   ],
   "exports": {
     "./app": "./src/app.tsx",
+    "./components/composer": "./src/components/composer.tsx",
     "./components/control-center": "./src/components/control-center.tsx",
     "./history": "./src/history.ts",
     "./store": "./src/store.ts"

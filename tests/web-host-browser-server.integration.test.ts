@@ -119,6 +119,11 @@ describe("Reference Web Host loopback browser carrier", () => {
     });
     expect(accepted.status).toBe(202);
     expect(commands).toEqual([command]);
+    expect(diagnostics).toContainEqual({
+      kind: "command_received",
+      commandId: "command-1",
+      commandKind: "session.create",
+    });
 
     const foreignEvents = await fetch(`${address.ipv4Origin}/api/v1/events`, {
       headers: { Cookie: cookie, Origin: "https://foreign.invalid" },

@@ -211,7 +211,12 @@ describe("Reference Web React store", () => {
         } : command.kind === "controls.inspect" ? inspectResult
           : command.kind === "mutation.prepare" ? { token: "mutation-token", state: "prepared", targetWebSessionId: "fork-1" }
             : command.kind === "mutation.commit" ? { token: "mutation-token", state: "committed" }
-              : { state: "applied" };
+              : command.kind === "config.apply" ? {
+                desiredRevision: command.payload.revision,
+                effectiveRevision: command.payload.revision,
+                state: "applied" as const,
+                components: [],
+              } : { state: "applied" };
         queue.push({
           epoch: "epoch-controls", sequence, emittedAt: now, kind: "host.commandSettled",
           payload: { commandId: command.commandId, state: "succeeded", result },
@@ -226,12 +231,23 @@ describe("Reference Web React store", () => {
     await vi.waitFor(() => expect(store.getSnapshot().history?.status).toBe("complete"));
     store.openControls();
     await vi.waitFor(() => expect(store.getSnapshot().controlInspection?.catalog.tools).toEqual(["Read"]));
-    await store.applyConfiguration({ ...controls.configuration, revision: "config-v2", reasoningEffort: "medium" });
+    const configurationOutcome = await store.applyConfiguration({
+      ...controls.configuration,
+      revision: "config-v2",
+      reasoningEffort: "max",
+    });
     await store.prepareMutation("fork", { boundaryId: "boundary-1", forkTitle: "Forked" });
     await store.commitMutation("FORK");
     expect(commands.find(({ kind }) => kind === "config.apply")).toMatchObject({
       payload: { revision: "config-v2", systemPrompt: "Fixture prompt" },
     });
+    expect(configurationOutcome).toEqual({
+      desiredRevision: "config-v2",
+      effectiveRevision: "config-v2",
+      state: "applied",
+    });
+    expect(store.getSnapshot().trace.some(({ kind, detail }) => kind === "browser.command"
+      && detail.includes("config.apply"))).toBe(true);
     expect(commands.find(({ kind }) => kind === "mutation.prepare")).toMatchObject({
       payload: { mutation: "fork", stableBoundaryId: "boundary-1", forkTitle: "Forked" },
     });

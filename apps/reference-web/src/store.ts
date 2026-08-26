@@ -44,6 +44,12 @@ export type HostTraceEntry = Readonly<{
   count: number;
 }>;
 export type ControlTab = "settings" | "components" | "session" | "runtime";
+export type ReferencePermissionMode = "default" | "acceptEdits" | "dontAsk" | "bypassPermissions";
+export type ConfigurationApplyOutcome = Readonly<{
+  desiredRevision: string;
+  effectiveRevision: string;
+  state: "applied" | "queued" | "restart_when_idle";
+}>;
 export type ControlInspection = Readonly<{
   controls: Readonly<{
     configuration: SessionConfiguration;
@@ -138,6 +144,7 @@ export class ReferenceWebStore {
   readonly #healthCheckDelayMs: number;
   readonly #listeners = new Set<() => void>();
   readonly #commandInputs = new Map<string, string>();
+  readonly #commandKinds = new Map<string, BrowserCommand["kind"]>();
   readonly #commandWaiters = new Map<string, Readonly<{
     resolve: (result: unknown) => void;
     reject: (error: Error) => void;
@@ -213,7 +220,7 @@ export class ReferenceWebStore {
   toggleInspector(): void { this.#update({ inspectorOpen: !this.#state.inspectorOpen }); }
   openControls(tab: ControlTab = "settings"): void {
     this.#update({ controlsOpen: true, controlTab: tab });
-    void this.refreshControls();
+    void this.refreshControls().catch(() => undefined);
   }
   closeControls(): void { this.#update({ controlsOpen: false }); }
   selectControlTab(tab: ControlTab): void { this.#update({ controlTab: tab }); }
@@ -259,16 +266,48 @@ export class ReferenceWebStore {
     }
   }
 
-  async applyConfiguration(configuration: SessionConfiguration): Promise<void> {
+  async applyConfiguration(configuration: SessionConfiguration): Promise<ConfigurationApplyOutcome> {
     const webSessionId = this.#selectedSessionId();
-    await this.#commandAndWait({
+    const resultValue = await this.#commandAndWait({
       commandId: this.#idFactory(),
       kind: "config.apply",
       webSessionId,
       payload: configuration,
     });
+    const result = this.#record(resultValue, "configuration result");
+    const state = this.#string(result.state, "configuration state");
+    if (state !== "applied" && state !== "queued" && state !== "restart_when_idle") {
+      throw new TypeError("configuration state is unavailable");
+    }
+    const outcome = Object.freeze({
+      desiredRevision: this.#string(result.desiredRevision, "desired configuration revision"),
+      effectiveRevision: this.#string(result.effectiveRevision, "effective configuration revision"),
+      state,
+    });
     await this.refreshControls();
-    this.#notice("Configuration applied to the selected Session.", "info");
+    this.#notice(state === "applied"
+      ? "当前 Session 配置已生效。"
+      : state === "queued"
+        ? "配置已保存，将在下一轮边界生效。"
+        : "配置已保存，将在 Runtime 空闲后生效。", "info");
+    return outcome;
+  }
+
+  async applyPermissionMode(permissionMode: ReferencePermissionMode): Promise<ConfigurationApplyOutcome> {
+    const current = this.#state.controlInspection?.controls.configuration;
+    if (current === undefined) throw new Error("Session controls are still loading");
+    if (current.permissionMode === permissionMode) {
+      return Object.freeze({
+        desiredRevision: current.revision,
+        effectiveRevision: current.revision,
+        state: "applied" as const,
+      });
+    }
+    return this.applyConfiguration({
+      ...current,
+      revision: `reference-web-permission-${this.#idFactory()}`,
+      permissionMode,
+    });
   }
 
   async replaceComponents(
@@ -682,6 +721,7 @@ export class ReferenceWebStore {
   ): void {
     const localId = this.#commandInputs.get(event.payload.commandId);
     if (localId !== undefined) this.#commandInputs.delete(event.payload.commandId);
+    this.#commandKinds.delete(event.payload.commandId);
     this.#update({
       pendingCommandIds: this.#state.pendingCommandIds.filter((id) => id !== event.payload.commandId),
       localInputs: localId === undefined ? this.#state.localInputs : this.#state.localInputs.map((input) =>
@@ -737,6 +777,8 @@ export class ReferenceWebStore {
   }
 
   async #command(command: BrowserCommand): Promise<void> {
+    this.#commandKinds.set(command.commandId, command.kind);
+    this.#recordCommandTrace(command);
     this.#update({ pendingCommandIds: [...this.#state.pendingCommandIds, command.commandId].slice(-2_048) });
     try {
       await this.#client.command(command);
@@ -961,7 +1003,7 @@ export class ReferenceWebStore {
   }
 
   #notice(message: string, level: UiNotice["level"]): void {
-    this.#update({ notices: [...this.#state.notices, {
+    this.#update({ notices: [...this.#state.notices.filter((notice) => notice.message !== message), {
       id: this.#idFactory(),
       level,
       message,
@@ -972,6 +1014,7 @@ export class ReferenceWebStore {
     const error = new Error(message);
     for (const waiter of this.#commandWaiters.values()) waiter.reject(error);
     this.#commandWaiters.clear();
+    this.#commandKinds.clear();
   }
 
   #recordTrace(event: HostEvent): void {
@@ -982,7 +1025,7 @@ export class ReferenceWebStore {
       switch (event.kind) {
         case "host.snapshot": return `sessions=${event.payload.sessions.length} selected=${event.payload.selectedWebSessionId === undefined ? "none" : "yes"}`;
         case "host.sessionChanged": return `lifecycle=${event.payload.lifecycle}`;
-        case "host.commandSettled": return `${event.payload.state}${event.payload.error === undefined ? "" : ` code=${event.payload.error.code}`}`;
+        case "host.commandSettled": return `${this.#commandKinds.get(event.payload.commandId) ?? "unknown"} ${event.payload.state}${event.payload.error === undefined ? "" : ` code=${event.payload.error.code}`}`;
         case "host.interactionOpened": return `kind=${event.payload.kind}${event.payload.permissionAction === undefined ? "" : ` action=${event.payload.permissionAction}`}`;
         case "host.interactionClosed": return "closed";
         case "host.attachmentChanged": return `state=${event.payload.attachment.state}`;
@@ -1004,6 +1047,16 @@ export class ReferenceWebStore {
           count: 1,
         }].slice(-256);
     this.#update({ trace: next });
+  }
+
+  #recordCommandTrace(command: BrowserCommand): void {
+    this.#update({ trace: [...this.#state.trace, {
+      id: `browser:${command.commandId}`,
+      emittedAt: this.#now(),
+      kind: "browser.command",
+      detail: `${command.kind} accepted-for-delivery`,
+      count: 1,
+    }].slice(-256) });
   }
 
   #update(patch: Partial<ReferenceWebState>): void {

@@ -12,12 +12,18 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "@myagents-dsh/reference-web/app";
+import { Composer } from "@myagents-dsh/reference-web/components/composer";
 import { ControlCenter } from "@myagents-dsh/reference-web/components/control-center";
 import type { BrowserHistorySnapshot } from "@myagents-dsh/reference-web/history";
 import type { ControlInspection, MutationDraft } from "@myagents-dsh/reference-web/store";
 import { ReferenceWebStore } from "@myagents-dsh/reference-web/store";
 
 const now = "2026-08-24T00:00:00.000Z";
+const appliedConfiguration = () => Promise.resolve({
+  desiredRevision: "config-v2",
+  effectiveRevision: "config-v2",
+  state: "applied" as const,
+});
 const fixture = (): Bootstrap => ({
   contractVersion: "1.0.0-draft.1",
   hostVersion: "0.0.0",
@@ -52,6 +58,96 @@ const fixture = (): Bootstrap => ({
 afterEach(() => cleanup());
 
 describe("Reference Web React shell", () => {
+  it("offers a real attachment menu and applies the selected Session permission mode", async () => {
+    const onUpload = vi.fn(() => Promise.resolve({
+      attachmentId: "attachment-1",
+      name: "proof.png",
+      mimeType: "image/png",
+      sizeBytes: 68,
+      sha256: "a".repeat(64),
+      state: "staged" as const,
+    }));
+    const onPermissionModeChange = vi.fn(() => Promise.resolve({
+      desiredRevision: "permission-v2",
+      effectiveRevision: "permission-v2",
+      state: "applied" as const,
+    }));
+    render(<Composer
+      attachmentDisabled={false}
+      inputDisabled={false}
+      sendDisabled={false}
+      busy={false}
+      permissionScope="web-session-1"
+      permissionMode="default"
+      permissionDisabled={false}
+      attachments={[]}
+      onSubmit={() => Promise.resolve()}
+      onUpload={onUpload}
+      onPreview={() => Promise.reject(new Error("not used"))}
+      onRelease={() => Promise.resolve()}
+      onInterrupt={() => Promise.resolve()}
+      onPermissionModeChange={onPermissionModeChange}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add content" }));
+    expect(screen.getByRole("menu", { name: "添加内容" })).not.toBeNull();
+    expect(screen.getByRole("menuitem", { name: /添加图片/u })).not.toBeNull();
+    const upload = screen.getByLabelText<HTMLInputElement>("Upload attachment");
+    fireEvent.change(upload, { target: { files: [new File(["png"], "proof.png", { type: "image/png" })] } });
+    await waitFor(() => expect(onUpload).toHaveBeenCalledOnce());
+    expect(await screen.findByText(/proof\.png · staged/u)).not.toBeNull();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Permission mode" }), {
+      target: { value: "bypassPermissions" },
+    });
+    await waitFor(() => expect(onPermissionModeChange).toHaveBeenCalledWith("bypassPermissions"));
+    expect((await screen.findByRole("status")).textContent).toContain("已生效");
+  });
+
+  it("makes Control settings explicitly dirty, saves them, and confirms effective state", async () => {
+    const inspection: ControlInspection = {
+      controls: {
+        configuration: {
+          revision: "config-v1",
+          providerRouteId: "deepseek-official",
+          modelId: "deepseek-v4-flash",
+          reasoningEffort: "high",
+          permissionMode: "default",
+          interactionScenario: "host-interaction-v1",
+          systemPrompt: "You are a workspace Agent.",
+        },
+        components: { revision: "components-v1", digest: "d".repeat(64), components: [] },
+      },
+      runtime: { primarySessionState: "ready" },
+      catalog: { revision: "components-v1", digest: "d".repeat(64), tools: [], commands: [], skills: [], agents: [], mcpServers: [] },
+      status: { state: "applied" },
+      mutations: [],
+    };
+    const onApplyConfiguration = vi.fn(appliedConfiguration);
+    const inert = vi.fn(() => Promise.resolve());
+    render(<ControlCenter
+      open tab="settings" loading={false} inspection={inspection} mutation={undefined}
+      sessionTitle="First Session" history={undefined}
+      onClose={vi.fn()} onTab={vi.fn()} onRefresh={inert}
+      onApplyConfiguration={onApplyConfiguration} onReplaceComponents={inert}
+      onCompact={inert} onPrepareMutation={inert} onCommitMutation={inert}
+      onRollbackMutation={inert} onPurge={inert}
+    />);
+
+    const save = screen.getByRole<HTMLButtonElement>("button", { name: "保存并应用" });
+    expect(save.disabled).toBe(true);
+    expect(screen.getByText("当前设置已保存")).not.toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "权限模式" }), {
+      target: { value: "acceptEdits" },
+    });
+    expect(save.disabled).toBe(false);
+    expect(screen.getByText("有未保存更改")).not.toBeNull();
+    fireEvent.click(save);
+    await waitFor(() => expect(onApplyConfiguration).toHaveBeenCalledOnce());
+    expect(onApplyConfiguration).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: "acceptEdits" }));
+    expect(await screen.findByText("✓ 设置已保存并生效。")).not.toBeNull();
+  });
+
   it("selects a durable boundary when asynchronous history loading completes", async () => {
     const inspection: ControlInspection = {
       controls: {
@@ -102,7 +198,7 @@ describe("Reference Web React shell", () => {
       onClose: vi.fn(),
       onTab: vi.fn(),
       onRefresh: inert,
-      onApplyConfiguration: inert,
+      onApplyConfiguration: appliedConfiguration,
       onReplaceComponents: inert,
       onCompact: inert,
       onPrepareMutation: inert,
@@ -191,7 +287,7 @@ describe("Reference Web React shell", () => {
       history,
       onClose: vi.fn(),
       onRefresh: inert,
-      onApplyConfiguration: inert,
+      onApplyConfiguration: appliedConfiguration,
       onReplaceComponents: onReplace,
       onCompact: inert,
       onPrepareMutation: onPrepare,
@@ -376,8 +472,10 @@ describe("Reference Web React shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Queue follow-up" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel queued message" }));
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    await waitFor(() => expect(commands.filter(({ kind }) => kind !== "history.read")).toHaveLength(3));
-    expect(commands.filter(({ kind }) => kind !== "history.read")).toMatchObject([
+    const turnCommands = (): BrowserCommand[] => commands.filter(({ kind }) =>
+      kind !== "history.read" && kind !== "controls.inspect");
+    await waitFor(() => expect(turnCommands()).toHaveLength(3));
+    expect(turnCommands()).toMatchObject([
       { kind: "turn.followUp", payload: { clientOperationId: "operation-1" } },
       { kind: "turn.cancelQueued", payload: { clientOperationId: "operation-1" } },
       { kind: "turn.interrupt", payload: { clientOperationId: "operation-1", cancelQueued: true } },

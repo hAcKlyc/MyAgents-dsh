@@ -53,8 +53,11 @@ export type BrowserServerOptions = Readonly<{
   diagnostic?: (event: BrowserTransportDiagnostic) => void;
 }>;
 export type BrowserTransportDiagnostic = Readonly<{
-  kind: "request_rejected" | "sse_opened" | "sse_backpressure" | "sse_closed";
+  kind: "command_received" | "request_rejected" | "sse_opened" | "sse_backpressure" | "sse_closed";
   code?: string;
+  commandId?: string;
+  commandKind?: BrowserCommand["kind"];
+  webSessionId?: string;
   pendingBytes?: number;
   resumed?: boolean;
 }>;
@@ -300,6 +303,12 @@ export class LoopbackBrowserServer {
       if (request.method !== "POST") return this.#methodNotAllowed(response, "POST");
       this.#assertMutation(request, auth, origin, "application/json");
       const command = validateBrowserCommand(await readJson(request));
+      this.#options.diagnostic?.({
+        kind: "command_received",
+        commandId: command.commandId,
+        commandKind: command.kind,
+        ...("webSessionId" in command ? { webSessionId: command.webSessionId } : {}),
+      });
       await this.#options.command(command, auth);
       sendJson(response, 202, { commandId: command.commandId, accepted: true });
       return;
