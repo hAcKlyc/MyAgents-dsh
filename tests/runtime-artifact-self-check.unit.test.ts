@@ -91,7 +91,7 @@ const createArtifactFixture = (): Readonly<{
       builderAuthoritySha256: createHash("sha256")
         .update(JSON.stringify(buildInputs))
         .digest("hex"),
-      toolchain: { node: "24.13.1", npm: "11.8.0", typescript: "5.9.3" },
+      toolchain: { node: "24.14.0", npm: "11.8.0", typescript: "5.9.3" },
       inputs: buildInputs,
     },
     dsh: {
@@ -121,12 +121,12 @@ afterAll(() => { rmSync(artifactFixture.root, { force: true, recursive: true });
 describe("Runtime artifact self-check", () => {
   it("builds one frozen exact authority for every declared platform target", () => {
     for (const target of ["darwin-arm64", "win32-x64", "linux-x64"] as const) {
-      const report = createRuntimeArtifactSelfCheckReport(target, artifactFixture.integrity, "24.13.1");
+      const report = createRuntimeArtifactSelfCheckReport(target, artifactFixture.integrity, "24.14.0");
       expect(report.platform.target).toBe(target);
       expect(report.runtime).toMatchObject({
         activation: "workstream-evidence-only",
-        requiredNodeVersion: "24.13.1",
-        actualNodeVersion: "24.13.1",
+        requiredNodeVersion: "24.14.0",
+        actualNodeVersion: "24.14.0",
       });
       expect(report.profile.stage).toBe("batch-1-w4-a10");
       expect(report.dsh.packageCount).toBe(54);
@@ -165,26 +165,26 @@ describe("Runtime artifact self-check", () => {
   });
 
   it("fails closed on wrong toolchain, target, tampering, Proxy, and accessor input", () => {
-    expect(assertRuntimeNodeVersion("24.13.1")).toBe("24.13.1");
-    expect(() => assertRuntimeNodeVersion("24.13.2")).toThrow("requires Node 24.13.1");
-    expect(() => assertRuntimeNodeVersion(new String("24.13.1")))
+    expect(assertRuntimeNodeVersion("24.14.0")).toBe("24.14.0");
+    expect(() => assertRuntimeNodeVersion("24.13.2")).toThrow("requires Node 24.14.0");
+    expect(() => assertRuntimeNodeVersion(new String("24.14.0")))
       .toThrow("must be exact semver");
     expect(() => createRuntimeArtifactSelfCheckReport(
       "darwin-arm64",
       artifactFixture.integrity,
       "24.13.2",
     ))
-      .toThrow("requires Node 24.13.1");
+      .toThrow("requires Node 24.14.0");
     expect(() => createRuntimeArtifactSelfCheckReport(
       "freebsd-x64" as never,
       artifactFixture.integrity,
-      "24.13.1",
+      "24.14.0",
     ))
       .toThrow("unsupported platform target");
     const report = structuredClone(createRuntimeArtifactSelfCheckReport(
       "darwin-arm64",
       artifactFixture.integrity,
-      "24.13.1",
+      "24.14.0",
     ));
     (report.profile as unknown as { digest: string }).digest = "f".repeat(64);
     expect(() => assertRuntimeArtifactSelfCheckReport(report, artifactFixture.root))
@@ -192,7 +192,7 @@ describe("Runtime artifact self-check", () => {
     const contractTampered = structuredClone(createRuntimeArtifactSelfCheckReport(
       "darwin-arm64",
       artifactFixture.integrity,
-      "24.13.1",
+      "24.14.0",
     ));
     (contractTampered.contracts as unknown as { eventsSha256: string }).eventsSha256 = "e".repeat(64);
     expect(() => assertRuntimeArtifactSelfCheckReport(contractTampered, artifactFixture.root))

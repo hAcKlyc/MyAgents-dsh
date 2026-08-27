@@ -143,15 +143,15 @@ set -euo pipefail
 
 artifact_root="$(cd "$(dirname "$0")" && pwd -P)"
 runtime_node="\${MYAGENTS_DSH_NODE:-}"
-if [[ -z "$runtime_node" ]] && [[ "$(node --version 2>/dev/null || true)" == "v24.13.1" ]]; then
+if [[ -z "$runtime_node" ]] && [[ "$(node --version 2>/dev/null || true)" == "v24.14.0" ]]; then
   runtime_node="$(command -v node)"
 fi
 if [[ -z "$runtime_node" ]] && [[ "$(uname -s)-$(uname -m)" == "Darwin-arm64" ]]; then
-  cached_node="\${HOME}/Library/Caches/MyAgents-dsh/toolchain/node-v24.13.1-darwin-arm64/bin/node"
+  cached_node="\${HOME}/Library/Caches/MyAgents-dsh/toolchain/node-v24.14.0-darwin-arm64/bin/node"
   if [[ -x "$cached_node" ]]; then runtime_node="$cached_node"; fi
 fi
-if [[ -z "$runtime_node" || ! -x "$runtime_node" || "$("$runtime_node" --version 2>/dev/null || true)" != "v24.13.1" ]]; then
-  echo "MyAgents-dsh Reference Web Host requires exact Node v24.13.1." >&2
+if [[ -z "$runtime_node" || ! -x "$runtime_node" || "$("$runtime_node" --version 2>/dev/null || true)" != "v24.14.0" ]]; then
+  echo "MyAgents-dsh Reference Web Host requires exact Node v24.14.0." >&2
   echo "Set MYAGENTS_DSH_NODE to the absolute Node executable." >&2
   exit 1
 fi
@@ -164,12 +164,12 @@ $ArtifactRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RuntimeNode = $env:MYAGENTS_DSH_NODE
 if ([string]::IsNullOrWhiteSpace($RuntimeNode)) {
   $NodeCommand = Get-Command node -ErrorAction SilentlyContinue
-  if ($null -ne $NodeCommand -and (& $NodeCommand.Source --version) -eq "v24.13.1") {
+  if ($null -ne $NodeCommand -and (& $NodeCommand.Source --version) -eq "v24.14.0") {
     $RuntimeNode = $NodeCommand.Source
   }
 }
-if ([string]::IsNullOrWhiteSpace($RuntimeNode) -or -not (Test-Path -LiteralPath $RuntimeNode -PathType Leaf) -or (& $RuntimeNode --version) -ne "v24.13.1") {
-  throw "MyAgents-dsh Reference Web Host requires exact Node v24.13.1. Set MYAGENTS_DSH_NODE first."
+if ([string]::IsNullOrWhiteSpace($RuntimeNode) -or -not (Test-Path -LiteralPath $RuntimeNode -PathType Leaf) -or (& $RuntimeNode --version) -ne "v24.14.0") {
+  throw "MyAgents-dsh Reference Web Host requires exact Node v24.14.0. Set MYAGENTS_DSH_NODE first."
 }
 & $RuntimeNode (Join-Path $ArtifactRoot "scripts/run-reference-web-host.js") @RemainingArgs
 exit $LASTEXITCODE
@@ -182,7 +182,7 @@ This is the self-contained browser Host for the content-addressed Batch 1 Runtim
 On macOS or Linux, run \`./start-web.sh --workspace /absolute/workspace/path\`.
 On Windows, run \`.\\start-web.ps1 --workspace C:\\absolute\\workspace\\path\`.
 
-The Host requires exact Node v24.13.1 and the Runtime manifest recorded in
+The Host requires exact Node v24.14.0 and the Runtime manifest recorded in
 \`${REFERENCE_WEB_ARTIFACT_MANIFEST_FILENAME}\`. Set \`MYAGENTS_DSH_RUNTIME_ARTIFACT\` when the Runtime is not in
 the platform cache. Provide the DeepSeek key through the \`DEEPSEEK_API_KEY\` environment variable, or place a
 private \`.env\` beside this file. Credentials, conversations, and user files are not included in this artifact.
@@ -201,8 +201,8 @@ const main = (): void => {
   if (runGit(["status", "--porcelain=v1", "--untracked-files=all"]) !== "") {
     throw new Error("Reference Web artifact build requires a clean repository");
   }
-  if (process.versions.node !== "24.13.1" || run("npm", ["--version"]) !== "11.8.0") {
-    throw new Error("Reference Web artifact build requires exact Node 24.13.1 and npm 11.8.0");
+  if (process.versions.node !== "24.14.0" || run("npm", ["--version"]) !== "11.8.0") {
+    throw new Error("Reference Web artifact build requires exact Node 24.14.0 and npm 11.8.0");
   }
   const repositoryHead = runGit(["rev-parse", "HEAD"]);
   const runtimeRoot = resolve(values.runtime ?? defaultRuntimeRoot());

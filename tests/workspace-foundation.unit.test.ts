@@ -14,13 +14,13 @@ describe("workspace foundation", () => {
 
     expect(rootPackage).toMatchObject({
       packageManager: "npm@11.8.0",
-      engines: { node: "24.13.1", npm: "11.8.0" },
+      engines: { node: "24.14.0", npm: "11.8.0" },
       devEngines: {
-        runtime: { name: "node", version: "24.13.1", onFail: "error" },
+        runtime: { name: "node", version: "24.14.0", onFail: "error" },
         packageManager: { name: "npm", version: "11.8.0", onFail: "error" },
       },
     });
-    await expect(readFile(resolve(repositoryRoot, ".nvmrc"), "utf8")).resolves.toBe("24.13.1\n");
+    await expect(readFile(resolve(repositoryRoot, ".nvmrc"), "utf8")).resolves.toBe("24.14.0\n");
   });
 
   it("rejects drifted Node and npm versions before installation", () => {
@@ -30,13 +30,13 @@ describe("workspace foundation", () => {
         npmUserAgent: "npm/11.13.0 node/v24.17.0 darwin arm64",
       }),
     ).toEqual([
-      "Node must be 24.13.1; received v24.17.0",
+      "Node must be 24.14.0; received v24.17.0",
       "npm must be 11.8.0; received 11.13.0",
     ]);
     expect(
       evaluateToolchain({
-        nodeVersion: "v24.13.1",
-        npmUserAgent: "npm/11.8.0 node/v24.13.1 darwin arm64",
+        nodeVersion: "v24.14.0",
+        npmUserAgent: "npm/11.8.0 node/v24.14.0 darwin arm64",
       }),
     ).toEqual([]);
   });
