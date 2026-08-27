@@ -21,6 +21,7 @@ export const expectedDshDependencies = new Map([
   ["@deepseek-ai/dsh-jobs-local", "0.1.1-rc.2"],
   ["@deepseek-ai/dsh-llm", "0.1.1-rc.2"],
   ["@deepseek-ai/dsh-llm-deepseek", "0.1.1-rc.2"],
+  ["@deepseek-ai/dsh-llm-pi-ai", "0.1.1-rc.2"],
   ["@deepseek-ai/dsh-mcp-client", "0.1.1-rc.2"],
   ["@deepseek-ai/dsh-plan-mode", "0.1.1-rc.2"],
   ["@deepseek-ai/dsh-sandbox", "0.1.1-rc.2"],
@@ -62,6 +63,7 @@ export interface PublicSeamEvidence {
   batchUse: string[];
   values: string[];
   types: string[];
+  compileEvidence?: "runtime-package-root" | "typescript-import";
 }
 
 export const publicSeams: PublicSeamEvidence[] = [
@@ -73,6 +75,8 @@ export const publicSeams: PublicSeamEvidence[] = [
   { id: "tools", package: "@deepseek-ai/dsh-tools", importPath: "@deepseek-ai/dsh-tools", classification: "direct", batchUse: ["B1-W1", "B1-W2", "B1-W3"], values: ["ToolRuntime", "defineTool"], types: ["ToolDefinition", "ToolExecution", "ToolExecutionResult", "ToolRunContext"] },
   { id: "llm", package: "@deepseek-ai/dsh-llm", importPath: "@deepseek-ai/dsh-llm", classification: "provider", batchUse: ["B1-W1", "B1-W3"], values: ["LlmAdapter", "LlmError", "LlmRuntime", "assertUsableApiKey", "resolveRetryPolicy"], types: ["GenerateOptions", "LlmModelInfo", "LlmProviderInfo", "LlmResolvedModelInfo", "StreamChunk"] },
   { id: "llm-deepseek", package: "@deepseek-ai/dsh-llm-deepseek", importPath: "@deepseek-ai/dsh-llm-deepseek", classification: "provider", batchUse: ["B1-W3"], values: ["DEFAULT_STREAM_IDLE_TIMEOUT_MS", "DeepSeekAdapter", "PUBLIC_BASE_URL"], types: ["DeepSeekConnectionOptions", "RequestDefaults"] },
+  { id: "llm-pi-ai", package: "@deepseek-ai/dsh-llm-pi-ai", importPath: "@deepseek-ai/dsh-llm-pi-ai", classification: "provider", batchUse: ["B3-W1"], values: ["Config", "PiAiAdapter", "apply", "inject", "name", "recordKeyFor", "supportedProtocols"], types: ["PiAiAdapterOptions", "PiAiCompatProfile", "PiAiModality", "PiAiModelProfile", "PiAiProviderProfile"], compileEvidence: "runtime-package-root" },
+  { id: "settings", package: "@deepseek-ai/dsh-settings", importPath: "@deepseek-ai/dsh-settings", classification: "provider", batchUse: ["B3-W1"], values: ["SettingsProvider", "settingsNamespace"], types: ["SettingsNamespace", "SettingsScope"] },
   { id: "system-prompt", package: "@deepseek-ai/dsh-system-prompt", importPath: "@deepseek-ai/dsh-system-prompt", classification: "direct", batchUse: ["B1-W1", "B1-W3"], values: ["SystemPrompt"], types: ["PromptAssembly", "PromptContext", "PromptSection"] },
   { id: "persistence", package: "@deepseek-ai/dsh-session-persistence", importPath: "@deepseek-ai/dsh-session-persistence", classification: "provider", batchUse: ["B1-W1", "B1-W4"], values: ["PersistenceCoordinator", "SessionPersistence"], types: ["PersistenceBackend", "SessionInspection", "SessionPersistenceSnapshot"] },
   { id: "sqlite-persistence", package: "@deepseek-ai/dsh-session-persistence-sqlite", importPath: "@deepseek-ai/dsh-session-persistence-sqlite", classification: "helper", batchUse: ["B1-W1", "B1-W4"], values: ["SqliteSessionPersistence"], types: ["Config"] },
@@ -406,8 +410,17 @@ export const analyzeModuleLoads = (sourceText: string, filename = "source.ts"): 
   const specifiers: string[] = [];
   const unresolvedDynamicLoads: string[] = [];
   const createRequireNames = new Set(["createRequire"]);
+  const staticModuleSpecifiers = new Map<string, string>();
   const moduleObjectNames = new Set<string>();
   for (const statement of source.statements) {
+    if (ts.isVariableStatement(statement)
+      && (statement.declarationList.flags & ts.NodeFlags.Const) !== 0) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name) || declaration.initializer === undefined) continue;
+        const value = staticStringValue(declaration.initializer);
+        if (value !== undefined) staticModuleSpecifiers.set(declaration.name.text, value);
+      }
+    }
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)
       || (statement.moduleSpecifier.text !== "node:module" && statement.moduleSpecifier.text !== "module")) continue;
     const importClause = statement.importClause;
@@ -469,7 +482,13 @@ export const analyzeModuleLoads = (sourceText: string, filename = "source.ts"): 
   const requireReferences = new Map<number, ts.Identifier>();
   const consumedRequireReferences = new Set<number>();
   const addExpression = (expression: ts.Expression | undefined, node: ts.Node, kind: string): void => {
-    const value = expression === undefined ? undefined : staticStringValue(expression);
+    const unwrapped = expression === undefined ? undefined : unwrapExpression(expression);
+    const value = expression === undefined
+      ? undefined
+      : staticStringValue(expression)
+        ?? (unwrapped !== undefined && ts.isIdentifier(unwrapped)
+          ? staticModuleSpecifiers.get(unwrapped.text)
+          : undefined);
     if (value === undefined) {
       const position = source.getLineAndCharacterOfPosition(node.getStart(source));
       unresolvedDynamicLoads.push(`${kind} at ${filename}:${position.line + 1}:${position.character + 1}`);
@@ -542,6 +561,7 @@ export const missingCompileImports = (sourceText: string): string[] => {
   const imports = namedImports(sourceText);
   const failures: string[] = [];
   for (const seam of publicSeams) {
+    if (seam.compileEvidence === "runtime-package-root") continue;
     const names = imports.get(seam.importPath);
     for (const symbol of [...seam.values, ...seam.types]) {
       if (!names?.has(symbol)) failures.push(`${seam.importPath} must import ${symbol}`);

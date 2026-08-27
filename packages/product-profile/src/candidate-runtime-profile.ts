@@ -72,6 +72,8 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
   "@deepseek-ai/dsh-agent-loop:AgentLoop",
   "@myagents-dsh/host-ports:HostPortService",
   "@myagents-dsh/host-ports:HostCredentialProvider",
+  "@myagents-dsh/runtime-product:HostSettingsProvider",
+  "@deepseek-ai/dsh-llm-pi-ai:llm-pi-ai",
   "@myagents-dsh/runtime-product:ProductSessionService",
   "@myagents-dsh/runtime-product:ProductUtilityService",
   "@myagents-dsh/operation-runtime:SdkOperationService",

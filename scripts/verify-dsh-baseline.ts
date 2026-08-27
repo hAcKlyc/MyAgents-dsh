@@ -16,6 +16,10 @@ type JsonObject = Record<string, unknown>;
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const baselinePath = resolve(repositoryRoot, "specs/dsh/dsh-baseline-v1.json");
+const acceptedPatchedArtifactPath = resolve(
+  repositoryRoot,
+  "packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json",
+);
 const compileFixturePath = resolve(repositoryRoot, "packages/product-profile/src/dsh-public-surface.compile.ts");
 const failures: string[] = [];
 const codeExtensions = new Set([".cjs", ".cts", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx"]);
@@ -36,6 +40,15 @@ const currentBaseline = await readFile(baselinePath, "utf8");
 assert(currentBaseline === expectedBaseline, "checked-in DSH baseline must regenerate byte-identically from package.json and package-lock.json");
 
 const parsedBaseline = JSON.parse(currentBaseline) as JsonObject;
+const acceptedPatchedArtifact = await readJson(acceptedPatchedArtifactPath);
+const acceptedRuntimePackages = acceptedPatchedArtifact.runtimePackages;
+const acceptedArtifactVersion = acceptedPatchedArtifact.artifactVersion;
+assert(typeof acceptedArtifactVersion === "string", "accepted patched DSH artifact must declare artifactVersion");
+assert(
+  typeof acceptedRuntimePackages === "object" && acceptedRuntimePackages !== null
+    && !Array.isArray(acceptedRuntimePackages),
+  "accepted patched DSH artifact must declare runtimePackages",
+);
 const productionPackages = parsedBaseline.productionPackages;
 assert(Array.isArray(productionPackages), "DSH baseline productionPackages must be an array");
 if (Array.isArray(productionPackages)) {
@@ -46,7 +59,15 @@ if (Array.isArray(productionPackages)) {
     if (typeof name !== "string" || !name.startsWith("@deepseek-ai/")) continue;
     const installedPath = resolve(repositoryRoot, "node_modules", name);
     const installed = await readJson(resolve(installedPath, "package.json"));
-    assert(installed.version === entry.version, `${name} installed version must match baseline evidence`);
+    const acceptedPatchedVersion = typeof acceptedRuntimePackages === "object"
+      && acceptedRuntimePackages !== null && !Array.isArray(acceptedRuntimePackages)
+      ? (acceptedRuntimePackages as JsonObject)[name]
+      : undefined;
+    assert(
+      installed.version === entry.version || installed.version === acceptedPatchedVersion
+        || installed.version === acceptedArtifactVersion,
+      `${name} installed version must match baseline or accepted patched-runtime evidence`,
+    );
     assert(installed.license === entry.license, `${name} installed license must match baseline evidence`);
     const repository = installed.repository;
     assert(

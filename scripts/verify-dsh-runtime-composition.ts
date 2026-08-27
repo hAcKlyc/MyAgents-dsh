@@ -65,6 +65,8 @@ const runtimeCompositionSourcePaths = [
   "packages/artifact-verifier/src/batch-1-handoff.ts",
   "packages/artifact-verifier/src/forbidden-content.ts",
   "packages/artifact-verifier/src/index.ts",
+  "packages/artifact-verifier/src/integration-compatibility.ts",
+  "packages/artifact-verifier/src/integration-handoff.ts",
   "packages/artifact-verifier/src/reference-web-artifact.ts",
   "packages/artifact-verifier/src/repository-entry.ts",
   "packages/artifact-verifier/src/runtime-artifact.ts",
@@ -131,6 +133,8 @@ const runtimeCompositionSourcePaths = [
   "packages/runtime-product/src/composition.ts",
   "packages/runtime-product/src/host-interaction.ts",
   "packages/runtime-product/src/host-model.ts",
+  "packages/runtime-product/src/host-settings.ts",
+  "packages/runtime-product/src/host-web-bridge.ts",
   "packages/runtime-product/src/host-web-fetch.ts",
   "packages/runtime-product/src/host-web-search.ts",
   "packages/runtime-product/src/index.ts",
@@ -202,6 +206,14 @@ const runtimePackageWorkspaces = [
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
 ] as const;
 const runtimeVendoredExternalPackages = ["typebox"] as const;
+const officialPiAiAdapterPackage = "@deepseek-ai/dsh-llm-pi-ai" as const;
+const officialPiAiAdapterVersion = "0.1.1-rc.2" as const;
+const officialPiAiCorePackage = "@earendil-works/pi-ai" as const;
+const officialPiAiCoreVersion = "0.82.1" as const;
+const runtimePublicExternalRoots = Object.freeze([
+  `${officialPiAiAdapterPackage}@${officialPiAiAdapterVersion}`,
+  `${officialPiAiCorePackage}@${officialPiAiCoreVersion}`,
+] as const);
 
 const run = (
   command: string,
@@ -290,13 +302,13 @@ const stageVerifiedBundle = (artifactRoot: string, destination: string): void =>
   guard.verify();
 };
 
-const collectDshVersions = (tree: JsonObject): Map<string, Set<string>> => {
+const collectRuntimeProviderVersions = (tree: JsonObject): Map<string, Set<string>> => {
   const versions = new Map<string, Set<string>>();
   const visit = (dependencies: unknown): void => {
     if (dependencies === null || typeof dependencies !== "object" || Array.isArray(dependencies)) return;
     for (const [name, childValue] of Object.entries(dependencies as JsonObject)) {
       const child = exactObject(childValue, `npm ls dependency ${name}`);
-      if (name.startsWith("@deepseek-ai/dsh-")) {
+      if (name.startsWith("@deepseek-ai/dsh-") || name === officialPiAiCorePackage) {
         if (typeof child.version !== "string") {
           if (Object.keys(child).length === 0) continue;
           throw new TypeError(`${name} lacks a resolved version`);
@@ -312,7 +324,37 @@ const collectDshVersions = (tree: JsonObject): Map<string, Set<string>> => {
   return versions;
 };
 
-const runtimeDependencySection = (
+const assertRuntimeDshVersions = (versions: Map<string, Set<string>>): void => {
+  const piAiVersions = versions.get(officialPiAiAdapterPackage);
+  if (piAiVersions?.size !== 1) {
+    throw new Error("installed Runtime lacks the exact public pi-ai adapter authority");
+  }
+  if (!piAiVersions.has(officialPiAiAdapterVersion)) {
+    throw new Error("installed Runtime lacks the exact public pi-ai adapter authority");
+  }
+  const piAiCoreVersions = versions.get(officialPiAiCorePackage);
+  if (piAiCoreVersions?.size !== 1) {
+    throw new Error("installed Runtime lacks the exact public pi-ai core authority");
+  }
+  if (!piAiCoreVersions.has(officialPiAiCoreVersion)) {
+    throw new Error("installed Runtime lacks the exact public pi-ai core authority");
+  }
+  const patchedVersions = new Map(versions);
+  patchedVersions.delete(officialPiAiAdapterPackage);
+  patchedVersions.delete(officialPiAiCorePackage);
+  if (patchedVersions.size !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount) {
+    throw new Error(
+      `installed Runtime resolved ${String(patchedVersions.size)} patched DSH packages; expected ${String(ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount)}`,
+    );
+  }
+  for (const [name, observed] of patchedVersions) {
+    if (observed.size !== 1 || !observed.has(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion)) {
+      throw new Error(`${name} resolved outside the single accepted patched DSH graph`);
+    }
+  }
+};
+
+export const projectRuntimeDependencySection = (
   value: unknown,
   description: string,
 ): Record<string, string> | undefined => {
@@ -324,9 +366,11 @@ const runtimeDependencySection = (
     if (typeof range !== "string") throw new TypeError(`${description}.${name} must be a string`);
     result[name] = name.startsWith("@myagents-dsh/")
       ? "0.0.0"
-      : name.startsWith("@deepseek-ai/dsh-")
-        ? ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
-        : range;
+      : name === officialPiAiAdapterPackage
+        ? officialPiAiAdapterVersion
+        : name.startsWith("@deepseek-ai/dsh-")
+          ? ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
+          : range;
   }
   return result;
 };
@@ -432,11 +476,11 @@ const stageBuiltPackage = (
       throw new Error(`${workspaceDirectory} staged export ${specifier} lacks target ${target}`);
     }
   }
-  const dependencies = runtimeDependencySection(
+  const dependencies = projectRuntimeDependencySection(
     workspaceManifest.dependencies,
     `${workspaceDirectory} dependencies`,
   );
-  const peerDependencies = runtimeDependencySection(
+  const peerDependencies = projectRuntimeDependencySection(
     workspaceManifest.peerDependencies,
     `${workspaceDirectory} peer dependencies`,
   );
@@ -687,17 +731,7 @@ const assertCleanRuntimeDependencyTree = (
   if (Array.isArray(tree.problems) && tree.problems.length > 0) {
     throw new Error(`installed Runtime dependency tree is invalid: ${JSON.stringify(tree.problems)}`);
   }
-  const dshVersions = collectDshVersions(tree);
-  if (dshVersions.size !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount) {
-    throw new Error(
-      `installed Runtime resolved ${String(dshVersions.size)} DSH packages; expected ${String(ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount)}`,
-    );
-  }
-  for (const [name, versions] of dshVersions) {
-    if (versions.size !== 1 || !versions.has(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion)) {
-      throw new Error(`${name} resolved outside the single accepted patched DSH graph`);
-    }
-  }
+  assertRuntimeDshVersions(collectRuntimeProviderVersions(tree));
   const verifierRoot = resolve(candidateRoot, "node_modules/@myagents-dsh/artifact-verifier");
   const verifierManifest = exactObject(JSON.parse(readFileSync(
     resolve(verifierRoot, "package.json"),
@@ -1013,22 +1047,21 @@ const main = (): void => {
     const environment = isolatedEnvironment(temporaryRoot, values["npm-cache"]);
     const buildRoot = cleanBuildRuntimeComposition(temporaryRoot, environment);
     run("npm", ["ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], consumerRoot, environment);
+    run("npm", [
+      "install",
+      "--offline",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--save-exact",
+      ...runtimePublicExternalRoots,
+    ], consumerRoot, environment);
     assertContainedNodeModules(consumerRoot);
     const dependencyTree = exactObject(
       JSON.parse(run("npm", ["ls", "--all", "--json"], consumerRoot, environment)) as unknown,
       "npm ls tree",
     );
-    const dshVersions = collectDshVersions(dependencyTree);
-    if (dshVersions.size !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount) {
-      throw new Error(
-        `runtime consumer resolved ${String(dshVersions.size)} DSH packages; expected ${String(ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount)}`,
-      );
-    }
-    for (const [name, versions] of dshVersions) {
-      if (versions.size !== 1 || !versions.has(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion)) {
-        throw new Error(`${name} resolved outside the single accepted patched DSH graph`);
-      }
-    }
+    assertRuntimeDshVersions(collectRuntimeProviderVersions(dependencyTree));
     stageBuiltPackage(
       consumerRoot,
       buildRoot,

@@ -32,13 +32,19 @@ import {
   type DeepSeekConnectionOptions,
   type RequestDefaults,
 } from "@deepseek-ai/dsh-llm-deepseek";
+import { settingsNamespace } from "@deepseek-ai/dsh-settings";
 import type {
   HostCredentialProviderController,
   HostCredentialProvider,
   HostProviderCredentialBinding,
   HostProviderRequestScope,
 } from "@myagents-dsh/host-ports";
-import { ProtocolError, type MethodParams } from "@myagents-dsh/protocol";
+import {
+  HOST_CANONICAL_WEB_ADAPTER_ID,
+  ProtocolError,
+  type InitializeParams,
+  type MethodParams,
+} from "@myagents-dsh/protocol";
 import type { ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
@@ -47,7 +53,32 @@ import { isProxy } from "node:util/types";
 
 import type { PrimarySessionBackendRequest } from "./primary-session.js";
 
-type ProviderProfile = MethodParams<"session/create">["provider"];
+export type HostProviderProfile = MethodParams<"session/create">["provider"];
+type ProviderProfile = HostProviderProfile;
+type PiAiCompatProfile = NonNullable<NonNullable<ProviderProfile["compatibility"]>["wireCompat"]>;
+type PiAiReasoningEfforts = NonNullable<ProviderProfile["reasoningEffortMap"]>;
+type PiAiModelProfile = Readonly<{
+  id: string;
+  name: string;
+  contextWindow: number;
+  maxTokens: number;
+  input: Array<"text" | "image">;
+  reasoningEfforts: false | PiAiReasoningEfforts;
+}>;
+type PiAiProviderProfile = Readonly<{
+  apiKeyEnv: string;
+  displayName: string;
+  api: ProviderProfile["api"];
+  baseURL: string;
+  models: PiAiModelProfile[];
+  defaultContextWindow: number;
+  defaultMaxTokens: number;
+  defaultInput: Array<"text" | "image">;
+  compat?: PiAiCompatProfile;
+  reasoning?: NonNullable<ProviderProfile["effort"]>;
+  timeoutMs: number;
+  streamIdleTimeoutMs: number;
+}>;
 
 type HostAuxiliaryRequest = Readonly<{
   clientOperationId: string;
@@ -57,18 +88,31 @@ type HostAuxiliaryRequest = Readonly<{
   token: object;
 }>;
 
+type ProviderAdmissionRollback = Readonly<{
+  readonly nextBinding: HostProviderCredentialBinding;
+  readonly nextConfigRevision: string;
+  readonly previousBinding?: HostProviderCredentialBinding;
+  readonly previousPiSettings: Readonly<{
+    providers: Readonly<Record<string, PiAiProviderProfile>>;
+  }>;
+  readonly settingsReplaced: boolean;
+}>;
+
 export const HOST_DEEPSEEK_PROVIDER_ROUTE = "deepseek-official";
 export const HOST_DEEPSEEK_BASE_URL = PUBLIC_BASE_URL;
+export const HOST_PI_AI_SETTINGS_NAMESPACE = settingsNamespace("llm-pi-ai");
 export const HOST_MODEL_REQUEST_DEADLINE_MS = 120_000;
 const HOST_DEEPSEEK_RETRY_POLICY = resolveRetryPolicy(
   undefined,
   "host-deepseek-model-plane.retryPolicy",
 );
 
-export interface HostDeepSeekModelPlaneConfig {
+export interface HostModelPlaneConfig {
   readonly resolveUserId: () => string;
   readonly requestDeadlineMs?: number;
 }
+
+export type HostDeepSeekModelPlaneConfig = HostModelPlaneConfig;
 
 type NormalizedHostDeepSeekModelPlaneConfig = Readonly<{
   requestDeadlineMs: number;
@@ -108,7 +152,7 @@ const exactOwnDataObject = (
 };
 
 const normalizeConfig = (
-  value: HostDeepSeekModelPlaneConfig,
+  value: HostModelPlaneConfig,
 ): NormalizedHostDeepSeekModelPlaneConfig => {
   const config = exactOwnDataObject(
     value,
@@ -156,6 +200,45 @@ const profileDefaults = (profile: ProviderProfile): RequestDefaults => {
   });
 };
 
+const validatePricing = (profile: ProviderProfile): void => {
+  if (profile.pricing === undefined) return;
+  const pricing = exactOwnDataObject(profile.pricing, [
+    "inputUsdPerMillionTokens",
+    "outputUsdPerMillionTokens",
+    "cacheReadUsdPerMillionTokens",
+    "cacheWriteUsdPerMillionTokens",
+  ], [], "Host Provider pricing");
+  for (const value of Object.values(pricing)) {
+    if (typeof value !== "number" || !Number.isFinite(value) || Object.is(value, -0)
+      || value < 0 || value > 1_000_000) {
+      throw new ProtocolError(
+        "provider_profile_invalid",
+        "Provider pricing rates must be bounded finite non-negative numbers",
+      );
+    }
+  }
+};
+
+const validateCredentialRef = (profile: ProviderProfile): void => {
+  try {
+    credentialRef(profile.credentialRef);
+  } catch {
+    throw new ProtocolError(
+      "provider_profile_invalid",
+      "Provider credential reference must be one canonical DSH CredentialRef",
+    );
+  }
+};
+
+const freezeJson = <T>(value: T): T => {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const entry of Object.values(value as Record<string, unknown>)) freezeJson(entry);
+  return Object.freeze(value);
+};
+
+const detachedProfile = (profile: ProviderProfile): ProviderProfile =>
+  freezeJson(structuredClone(profile));
+
 export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderProfile => {
   const record = exactOwnDataObject(
     profile,
@@ -163,7 +246,10 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
       "api", "contextWindow", "credentialRef", "maxTokens", "modelId", "provider",
       "providerRouteId", "revision",
     ],
-    ["baseUrl", "compatibility", "effort", "pricing", "reasoning"],
+    [
+      "baseUrl", "compatibility", "effort", "inputModalities", "pricing", "reasoning",
+      "reasoningEffortMap",
+    ],
     "Host DeepSeek Provider profile",
   );
   const candidate = record as unknown as ProviderProfile;
@@ -175,29 +261,20 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
       "the Runtime supports only the approved DeepSeek chat-completions route",
     );
   }
-  if (Object.hasOwn(record, "compatibility")) {
+  if (Object.hasOwn(record, "compatibility") || Object.hasOwn(record, "reasoningEffortMap")) {
     throw new ProtocolError(
       "provider_compatibility_not_supported",
-      "untyped Provider compatibility overrides are not supported",
+      "the native DeepSeek route does not accept pi-ai compatibility overrides",
     );
   }
-  if (candidate.pricing !== undefined) {
-    const pricing = exactOwnDataObject(candidate.pricing, [
-      "inputUsdPerMillionTokens",
-      "outputUsdPerMillionTokens",
-      "cacheReadUsdPerMillionTokens",
-      "cacheWriteUsdPerMillionTokens",
-    ], [], "Host DeepSeek Provider pricing");
-    for (const value of Object.values(pricing)) {
-      if (typeof value !== "number" || !Number.isFinite(value) || Object.is(value, -0)
-        || value < 0 || value > 1_000_000) {
-        throw new ProtocolError(
-          "provider_profile_invalid",
-          "Provider pricing rates must be bounded finite non-negative numbers",
-        );
-      }
-    }
+  if (candidate.inputModalities !== undefined
+    && JSON.stringify(candidate.inputModalities) !== JSON.stringify(["text", "image"])) {
+    throw new ProtocolError(
+      "provider_profile_unsupported",
+      "the native DeepSeek route has the fixed text and image modality contract",
+    );
   }
+  validatePricing(candidate);
   profileDefaults(candidate);
   if (candidate.baseUrl !== undefined && candidate.baseUrl !== HOST_DEEPSEEK_BASE_URL) {
     throw new ProtocolError(
@@ -205,15 +282,260 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
       "Provider base URL must equal the approved DeepSeek production endpoint",
     );
   }
-  try {
-    credentialRef(candidate.credentialRef);
-  } catch {
+  validateCredentialRef(candidate);
+  return detachedProfile(candidate);
+};
+
+const PI_AI_COMPATIBILITY_FIELDS = Object.freeze({
+  "anthropic-messages": new Set([
+    "supportsTemperature",
+    "supportsStrictTools",
+  ]),
+  "openai-completions": new Set([
+    "supportsDeveloperRole",
+    "supportsReasoningEffort",
+    "supportsUsageInStreaming",
+    "maxTokensField",
+    "requiresToolResultName",
+    "requiresAssistantAfterToolResult",
+    "thinkingFormat",
+    "supportsStrictMode",
+  ]),
+  "openai-responses": new Set([
+    "supportsDeveloperRole",
+    "supportsStrictMode",
+  ]),
+});
+
+const PI_AI_THINKING_FORMATS = new Set([
+  "openai", "deepseek", "openrouter", "together", "zai", "qwen", "chat-template",
+  "qwen-chat-template", "string-thinking", "ant-ling",
+]);
+
+const validatePiAiEndpoint = (value: string | undefined): string => {
+  if (value === undefined) {
     throw new ProtocolError(
       "provider_profile_invalid",
-      "Provider credential reference must be one canonical DSH CredentialRef",
+      "pi-ai Provider profiles require one explicit Host-approved base URL",
     );
   }
-  return Object.freeze({ ...candidate });
+  let endpoint: URL;
+  try { endpoint = new URL(value); } catch {
+    throw new ProtocolError("provider_profile_invalid", "Provider base URL is invalid");
+  }
+  if ((endpoint.protocol !== "https:" && endpoint.protocol !== "http:")
+    || endpoint.hostname.length === 0 || endpoint.username !== "" || endpoint.password !== ""
+    || endpoint.hash !== "" || endpoint.search !== "") {
+    throw new ProtocolError(
+      "provider_base_url_forbidden",
+      "Provider base URL must be an absolute HTTP(S) URL without credentials, query or fragment",
+    );
+  }
+  const normalized = endpoint.toString();
+  if (value !== normalized && `${value}/` !== normalized) {
+    throw new ProtocolError(
+      "provider_profile_invalid",
+      "Provider base URL must use its canonical URL spelling",
+    );
+  }
+  return normalized;
+};
+
+const validatePiAiCompatibility = (
+  profile: ProviderProfile,
+): Readonly<PiAiCompatProfile> | undefined => {
+  const raw = profile.compatibility;
+  if (raw === undefined) {
+    throw new ProtocolError(
+      "provider_compatibility_required",
+      "pi-ai Provider profiles require one versioned compatibility declaration",
+    );
+  }
+  const compatibility = exactOwnDataObject(
+    raw,
+    ["credentialMode", "family", "version"],
+    ["wireCompat"],
+    "Host pi-ai compatibility profile",
+  );
+  if (compatibility.version !== 1 || compatibility.family !== profile.api
+    || compatibility.credentialMode !== "pi-ai-api-key") {
+    throw new ProtocolError(
+      "provider_compatibility_invalid",
+      "Provider compatibility version, family or credential mode is incompatible",
+    );
+  }
+  if (!Object.hasOwn(compatibility, "wireCompat")) return undefined;
+  const wire = exactOwnDataObject(
+    compatibility.wireCompat,
+    [],
+    [
+      "supportsDeveloperRole", "supportsReasoningEffort", "supportsUsageInStreaming",
+      "maxTokensField", "requiresToolResultName", "requiresAssistantAfterToolResult",
+      "thinkingFormat", "supportsStrictMode", "supportsTemperature", "supportsStrictTools",
+    ],
+    "Host pi-ai wire compatibility profile",
+  );
+  const allowed = PI_AI_COMPATIBILITY_FIELDS[profile.api];
+  for (const [field, value] of Object.entries(wire)) {
+    if (!allowed.has(field)) {
+      throw new ProtocolError(
+        "provider_compatibility_unsupported",
+        `Provider compatibility field ${field} is not valid for ${profile.api}`,
+      );
+    }
+    if (field === "maxTokensField") {
+      if (value !== "max_tokens" && value !== "max_completion_tokens") {
+        throw new ProtocolError("provider_compatibility_invalid", "maxTokensField is invalid");
+      }
+    } else if (field === "thinkingFormat") {
+      if (typeof value !== "string" || !PI_AI_THINKING_FORMATS.has(value)) {
+        throw new ProtocolError("provider_compatibility_invalid", "thinkingFormat is invalid");
+      }
+    } else if (typeof value !== "boolean") {
+      throw new ProtocolError(
+        "provider_compatibility_invalid",
+        `Provider compatibility field ${field} must be boolean`,
+      );
+    }
+  }
+  return freezeJson(structuredClone(wire));
+};
+
+const validateReasoningEfforts = (
+  profile: ProviderProfile,
+): false | Readonly<PiAiReasoningEfforts> => {
+  if (profile.reasoning === false) {
+    if (profile.effort !== undefined || profile.reasoningEffortMap !== undefined) {
+      throw new ProtocolError(
+        "provider_profile_invalid",
+        "disabled reasoning cannot declare an effort or effort map",
+      );
+    }
+    return false;
+  }
+  const raw = profile.reasoningEffortMap;
+  if (raw === undefined) {
+    if (profile.reasoning === true || profile.effort !== undefined) {
+      throw new ProtocolError(
+        "provider_profile_invalid",
+        "reasoning-enabled pi-ai profiles require an exact effort map",
+      );
+    }
+    return false;
+  }
+  const map = exactOwnDataObject(
+    raw,
+    [],
+    ["off", "low", "medium", "high", "xhigh", "max"],
+    "Host pi-ai reasoning effort map",
+  );
+  if (Object.keys(map).length === 0) {
+    throw new ProtocolError("provider_profile_invalid", "reasoning effort map cannot be empty");
+  }
+  for (const [effort, value] of Object.entries(map)) {
+    if (effort === "off") {
+      if (value !== null) {
+        throw new ProtocolError("provider_profile_invalid", "off reasoning effort must map to null");
+      }
+      continue;
+    }
+    if (typeof value !== "string" || value.length === 0 || value.length > 128) {
+      throw new ProtocolError(
+        "provider_profile_invalid",
+        "enabled reasoning efforts require bounded non-empty wire values",
+      );
+    }
+  }
+  if (profile.effort !== undefined && !Object.hasOwn(map, profile.effort)) {
+    throw new ProtocolError(
+      "provider_profile_unsupported",
+      "selected reasoning effort is absent from the Provider effort map",
+    );
+  }
+  return freezeJson(structuredClone(map));
+};
+
+export const validateHostPiAiProfile = (profile: ProviderProfile): ProviderProfile => {
+  const record = exactOwnDataObject(
+    profile,
+    [
+      "api", "contextWindow", "credentialRef", "maxTokens", "modelId", "provider",
+      "providerRouteId", "revision",
+    ],
+    [
+      "baseUrl", "compatibility", "effort", "inputModalities", "pricing", "reasoning",
+      "reasoningEffortMap",
+    ],
+    "Host pi-ai Provider profile",
+  );
+  const candidate = record as unknown as ProviderProfile;
+  if (candidate.providerRouteId === HOST_DEEPSEEK_PROVIDER_ROUTE) {
+    throw new ProtocolError(
+      "provider_route_conflict",
+      "the native DeepSeek route cannot be registered through pi-ai",
+    );
+  }
+  validatePricing(candidate);
+  validateCredentialRef(candidate);
+  validatePiAiEndpoint(candidate.baseUrl);
+  validatePiAiCompatibility(candidate);
+  validateReasoningEfforts(candidate);
+  if (candidate.inputModalities === undefined
+    || candidate.inputModalities.length === 0
+    || candidate.inputModalities[0] !== "text"
+    || new Set(candidate.inputModalities).size !== candidate.inputModalities.length) {
+    throw new ProtocolError(
+      "provider_profile_invalid",
+      "pi-ai Provider profiles require an exact text-first modality declaration",
+    );
+  }
+  return detachedProfile(candidate);
+};
+
+export const validateHostProviderProfile = (profile: ProviderProfile): ProviderProfile =>
+  profile.providerRouteId === HOST_DEEPSEEK_PROVIDER_ROUTE
+    ? validateHostDeepSeekProfile(profile)
+    : validateHostPiAiProfile(profile);
+
+export const translateHostPiAiProfile = (
+  profileValue: ProviderProfile,
+  requestDeadlineMs = HOST_MODEL_REQUEST_DEADLINE_MS,
+): Readonly<{ providers: Readonly<Record<string, PiAiProviderProfile>> }> => {
+  const profile = validateHostPiAiProfile(profileValue);
+  const compat = validatePiAiCompatibility(profile);
+  const reasoningEfforts = validateReasoningEfforts(profile);
+  const inputModalities = profile.inputModalities;
+  if (inputModalities === undefined) {
+    throw new ProtocolError(
+      "provider_profile_invalid",
+      "pi-ai Provider profiles require an exact modality declaration",
+    );
+  }
+  const model: PiAiModelProfile = {
+    id: profile.modelId,
+    name: profile.modelId,
+    contextWindow: profile.contextWindow,
+    maxTokens: profile.maxTokens,
+    input: [...inputModalities],
+    reasoningEfforts,
+  };
+  const route: PiAiProviderProfile = {
+    apiKeyEnv: profile.credentialRef,
+    displayName: profile.provider,
+    api: profile.api,
+    baseURL: validatePiAiEndpoint(profile.baseUrl),
+    models: [model],
+    defaultContextWindow: profile.contextWindow,
+    defaultMaxTokens: profile.maxTokens,
+    defaultInput: [...inputModalities],
+    ...(compat === undefined ? {} : { compat: { ...compat } }),
+    ...(reasoningEfforts === false || profile.effort === undefined
+      ? {}
+      : { reasoning: profile.effort }),
+    timeoutMs: requestDeadlineMs,
+    streamIdleTimeoutMs: requestDeadlineMs,
+  };
+  return freezeJson({ providers: { [profile.providerRouteId]: route } });
 };
 
 const connectionFor = (profile: ProviderProfile): DeepSeekConnectionOptions => Object.freeze({
@@ -265,43 +587,92 @@ const SAFE_PROVIDER_ERROR_CODES = new Set([
   "INVALID_REQUEST",
   "MALFORMED_RESPONSE",
   "MISSING_CREDENTIAL",
+  "PROVIDER_FAILURE",
   "QUOTA",
   "RATE_LIMIT",
   "SERVER",
   "STREAM_CLOSED",
   "TIMEOUT",
   "TRANSPORT",
+  "UNKNOWN_MODEL",
+  "UNSUPPORTED_OPTION",
+  "UNSUPPORTED_REASONING_EFFORT",
 ]);
 
-const sanitizeProviderFailure = (error: unknown): LlmError => {
+const safeProviderFailureCode = (value: unknown): string => {
+  if (typeof value !== "string") return "PROVIDER_FAILURE";
+  if (/^HTTP_[1-5][0-9]{2}$/u.test(value)) return value;
+  return SAFE_PROVIDER_ERROR_CODES.has(value) ? value : "PROVIDER_FAILURE";
+};
+
+const sanitizeProviderFailure = (error: unknown, label = "Provider"): LlmError => {
   if (!isProxy(error) && error instanceof LlmError) {
     const code = Object.getOwnPropertyDescriptor(error, "code");
     if (code !== undefined && "value" in code && typeof code.value === "string") {
-      const normalizedCode = /^HTTP_[1-5][0-9]{2}$/u.test(code.value)
-        ? code.value
-        : SAFE_PROVIDER_ERROR_CODES.has(code.value) ? code.value : "PROVIDER_FAILURE";
-      return new LlmError("DeepSeek provider request failed", normalizedCode);
+      return new LlmError(`${label} request failed`, safeProviderFailureCode(code.value));
     }
   }
-  return new LlmError("DeepSeek provider request failed", "PROVIDER_FAILURE");
+  return new LlmError(`${label} request failed`, "PROVIDER_FAILURE");
 };
 
-export class HostDeepSeekModelAuthority {
+const sanitizeProviderChunk = (chunk: StreamChunk, label = "Provider"): StreamChunk => {
+  if (chunk.type !== "finish"
+    || (chunk.reason.kind !== "error" && chunk.reason.kind !== "aborted")) return chunk;
+  return Object.freeze({
+    type: "finish" as const,
+    reason: Object.freeze({
+      kind: chunk.reason.kind,
+      failure: Object.freeze({
+        code: safeProviderFailureCode(chunk.reason.failure.code),
+        message: `${label} request ${chunk.reason.kind === "aborted" ? "cancelled" : "failed"}`,
+      }),
+    }),
+  });
+};
+
+export class HostModelAuthority {
   readonly #config: NormalizedHostDeepSeekModelPlaneConfig;
   readonly #context: Context;
   readonly #credentials: HostCredentialProviderController;
   #binding: HostProviderCredentialBinding | undefined;
   #candidate: PrimarySessionBackendRequest | undefined;
+  #rollback: ProviderAdmissionRollback | undefined;
+  #piSettings: Readonly<{ providers: Readonly<Record<string, PiAiProviderProfile>> }> =
+    Object.freeze({ providers: Object.freeze({}) });
+  #webSearchAdapters: readonly string[] | undefined;
   readonly #auxiliaryRequest = new AsyncLocalStorage<HostAuxiliaryRequest>();
 
   constructor(
     context: Context,
     credentials: HostCredentialProviderController,
-    config: HostDeepSeekModelPlaneConfig,
+    config: HostModelPlaneConfig,
   ) {
     this.#context = context;
     this.#credentials = credentials;
     this.#config = normalizeConfig(config);
+  }
+
+  bindHostCapabilities(capabilities: InitializeParams["hostCapabilities"]): void {
+    const adapters = Object.freeze([...capabilities.webSearchAdapters].sort());
+    if (this.#webSearchAdapters !== undefined) {
+      if (!isDeepStrictEqual(this.#webSearchAdapters, adapters)) {
+        throw new ProtocolError(
+          "host_capability_conflict",
+          "Host web capability authority changed after initialization",
+        );
+      }
+      return;
+    }
+    this.#webSearchAdapters = adapters;
+  }
+
+  hostCanonicalWebAvailable(): boolean {
+    return this.#webSearchAdapters?.includes(HOST_CANONICAL_WEB_ADAPTER_ID) === true;
+  }
+
+  shouldUseHostCanonicalWeb(): boolean {
+    return this.hostCanonicalWebAvailable()
+      && this.#binding?.profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE;
   }
 
   async preflight(request: PrimarySessionBackendRequest): Promise<void> {
@@ -311,7 +682,14 @@ export class HostDeepSeekModelAuthority {
         "another Provider profile admission is already in progress",
       );
     }
-    const profile = validateHostDeepSeekProfile(request.params.provider);
+    const profile = validateHostProviderProfile(request.params.provider);
+    if (profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE
+      && !this.hostCanonicalWebAvailable()) {
+      throw new ProtocolError(
+        "provider_web_backend_unavailable",
+        "non-DeepSeek Provider admission requires the Host canonical web capability",
+      );
+    }
     const current = this.#binding;
     if (current?.runtimeSessionId === request.runtimeSessionId
       && current.configRevision === request.params.configRevision
@@ -337,7 +715,60 @@ export class HostDeepSeekModelAuthority {
         signal: request.signal,
       });
       assertCurrent();
-      this.#binding = binding;
+      const settingsProvider = typeof (this.#context as unknown as { get?: unknown }).get === "function"
+        ? this.#context.get("settings")
+        : undefined;
+      const previousPiSettings = this.#piSettings;
+      const nextPiSettings = profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE
+        ? translateHostPiAiProfile(profile, this.#config.requestDeadlineMs)
+        : Object.freeze({ providers: Object.freeze({}) });
+      let settingsReplaced = false;
+      if (profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE) {
+        if (settingsProvider === undefined) {
+          throw new ProtocolError(
+            "provider_profile_not_ready",
+            "pi-ai Provider admission requires the Host settings Provider",
+            true,
+          );
+        }
+        await settingsProvider.replace(
+          HOST_PI_AI_SETTINGS_NAMESPACE,
+          nextPiSettings,
+        );
+        settingsReplaced = true;
+      } else if (settingsProvider !== undefined) {
+        await settingsProvider.replace(
+          HOST_PI_AI_SETTINGS_NAMESPACE,
+          nextPiSettings,
+        );
+        settingsReplaced = true;
+      }
+      try {
+        assertCurrent();
+        this.#credentials.activateProviderBinding(binding);
+        this.#binding = binding;
+        this.#piSettings = nextPiSettings;
+        this.#rollback = Object.freeze({
+          nextBinding: binding,
+          nextConfigRevision: request.params.configRevision,
+          ...(current === undefined ? {} : { previousBinding: current }),
+          previousPiSettings,
+          settingsReplaced,
+        });
+      } catch (error) {
+        if (settingsReplaced && settingsProvider !== undefined) {
+          try {
+            await settingsProvider.replace(HOST_PI_AI_SETTINGS_NAMESPACE, this.#piSettings);
+          } catch (rollbackError) {
+            throw new AggregateError(
+              [error, rollbackError],
+              "Provider admission and pi-ai settings rollback failed",
+              { cause: rollbackError },
+            );
+          }
+        }
+        throw error;
+      }
     } finally {
       if (this.#candidate === request) this.#candidate = undefined;
     }
@@ -346,7 +777,7 @@ export class HostDeepSeekModelAuthority {
   assertAdmission(request: PrimarySessionBackendRequest): void {
     request.signal.throwIfAborted();
     const binding = this.requireBinding();
-    const profile = validateHostDeepSeekProfile(request.params.provider);
+    const profile = validateHostProviderProfile(request.params.provider);
     if (binding.runtimeSessionId !== request.runtimeSessionId
       || binding.configRevision !== request.params.configRevision
       || !isDeepStrictEqual(binding.profile, profile)) {
@@ -355,6 +786,36 @@ export class HostDeepSeekModelAuthority {
         "Provider profile admission is no longer current",
       );
     }
+    if (this.#rollback?.nextBinding === binding) this.#rollback = undefined;
+  }
+
+  async rollbackAdmission(configRevision: string, runtimeSessionId?: string): Promise<void> {
+    const rollback = this.#rollback;
+    if (rollback?.nextConfigRevision !== configRevision
+      || this.#binding !== rollback.nextBinding
+      || (runtimeSessionId !== undefined
+        && rollback.nextBinding.runtimeSessionId !== runtimeSessionId)) return;
+    const settingsProvider = typeof (this.#context as unknown as { get?: unknown }).get === "function"
+      ? this.#context.get("settings")
+      : undefined;
+    if (rollback.settingsReplaced && settingsProvider === undefined) {
+      throw new ProtocolError(
+        "provider_profile_not_ready",
+        "Provider admission rollback requires the Host settings Provider",
+      );
+    }
+    if (rollback.settingsReplaced && settingsProvider !== undefined) {
+      await settingsProvider.replace(HOST_PI_AI_SETTINGS_NAMESPACE, rollback.previousPiSettings);
+    }
+    if (rollback.previousBinding === undefined) {
+      this.#credentials.deactivateProviderBinding(rollback.nextBinding);
+      this.#binding = undefined;
+    } else {
+      this.#credentials.activateProviderBinding(rollback.previousBinding);
+      this.#binding = rollback.previousBinding;
+    }
+    this.#piSettings = rollback.previousPiSettings;
+    this.#rollback = undefined;
   }
 
   assertBirth(modelProfileRevision: string): void {
@@ -368,7 +829,28 @@ export class HostDeepSeekModelAuthority {
   }
 
   connection(): DeepSeekConnectionOptions {
-    return connectionFor(this.requireBinding().profile);
+    const profile = this.requireBinding().profile;
+    if (profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE) {
+      throw new ProtocolError(
+        "provider_profile_stale",
+        "the native DeepSeek adapter cannot execute the active pi-ai route",
+      );
+    }
+    return connectionFor(profile);
+  }
+
+  activeProviderRoutes(): readonly string[] {
+    const profile = this.#binding?.profile;
+    return Object.freeze([
+      HOST_DEEPSEEK_PROVIDER_ROUTE,
+      ...(profile === undefined || profile.providerRouteId === HOST_DEEPSEEK_PROVIDER_ROUTE
+        ? []
+        : [profile.providerRouteId]),
+    ]);
+  }
+
+  currentProfile(): ProviderProfile {
+    return this.requireBinding().profile;
   }
 
   request(options: GenerateOptions): Readonly<{
@@ -578,6 +1060,41 @@ export class HostDeepSeekModelAuthority {
     return this.#credentials.runWithProviderRequestScope(scope, () => action(binding.profile));
   }
 
+  runHostWebRequest<T>(
+    context: ProductToolContext,
+    action: (
+      profile: ProviderProfile,
+      assertCurrent: () => void,
+    ) => Promise<T>,
+  ): Promise<T> {
+    if (!(context.signal instanceof AbortSignal) || isProxy(context.signal)
+      || typeof action !== "function" || isProxy(action)) {
+      return Promise.reject(new TypeError("Host web request requires exact tool authority"));
+    }
+    const binding = this.requireBinding();
+    if (binding.profile.providerRouteId === HOST_DEEPSEEK_PROVIDER_ROUTE
+      || !this.hostCanonicalWebAvailable()
+      || String(context.agent.id) !== binding.runtimeSessionId
+      || context.birth.modelProfileRevision !== binding.profile.revision) {
+      return Promise.reject(new ProtocolError(
+        "provider_web_backend_unavailable",
+        "Host canonical web backend differs from the operation-frozen Provider authority",
+      ));
+    }
+    const assertCurrent = (): void => {
+      if (this.#binding !== binding || context.signal.aborted
+        || String(context.agent.id) !== binding.runtimeSessionId) {
+        throw new ProtocolError(
+          "provider_request_stale",
+          "Host canonical web request authority is stale",
+          true,
+        );
+      }
+    };
+    assertCurrent();
+    return action(binding.profile, assertCurrent);
+  }
+
   resolveAttachments() {
     return this.#context.get("attachments");
   }
@@ -594,13 +1111,62 @@ export class HostDeepSeekModelAuthority {
   }
 }
 
+export { HostModelAuthority as HostDeepSeekModelAuthority };
+
+const scopedProviderStream = async function* (
+  credentials: HostCredentialProviderController,
+  scope: HostProviderRequestScope,
+  next: () => AsyncIterable<StreamChunk>,
+): AsyncGenerator<StreamChunk> {
+  const iterator = credentials.runWithProviderRequestScope(
+    scope,
+    () => next()[Symbol.asyncIterator](),
+  );
+  let exhausted = false;
+  let failure: LlmError | undefined;
+  try {
+    for (;;) {
+      const result = await credentials.runWithProviderRequestScope(scope, () => iterator.next());
+      if (result.done) {
+        exhausted = true;
+        return;
+      }
+      yield sanitizeProviderChunk(result.value);
+    }
+  } catch (error) {
+    failure = sanitizeProviderFailure(error);
+    throw failure;
+  } finally {
+    const returnIterator = iterator.return?.bind(iterator);
+    if (!exhausted && returnIterator !== undefined) {
+      await credentials.runWithProviderRequestScope(scope, () => returnIterator())
+        .catch((error: unknown) => Promise.reject(failure === undefined
+          ? sanitizeProviderFailure(error)
+          : new LlmError("Provider request and cleanup failed", "PROVIDER_FAILURE")));
+    }
+  }
+};
+
+/** Install the request-scoped Host credential boundary around official pi-ai streams. */
+export const installHostLlmRequestScope = (
+  context: Context,
+  authority: HostModelAuthority,
+  credentials: HostCredentialProviderController,
+): void => {
+  context.on("llm/stream", (options, next) => {
+    if (options.provider === HOST_DEEPSEEK_PROVIDER_ROUTE) return next();
+    const { scope } = authority.request(options);
+    return scopedProviderStream(credentials, scope, next);
+  }, { global: true });
+};
+
 export class HostDeepSeekLlmAdapter extends LlmAdapter {
   readonly #adapter: DeepSeekAdapter;
-  readonly #authority: HostDeepSeekModelAuthority;
+  readonly #authority: HostModelAuthority;
   readonly #credentialController: HostCredentialProviderController;
 
   constructor(
-    authority: HostDeepSeekModelAuthority,
+    authority: HostModelAuthority,
     credentials: HostCredentialProvider,
     credentialController: HostCredentialProviderController,
   ) {
@@ -671,7 +1237,7 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
         yield result.value;
       }
     } catch (error) {
-      failure = sanitizeProviderFailure(error);
+      failure = sanitizeProviderFailure(error, "DeepSeek provider");
       throw failure;
     } finally {
       const returnIterator = iterator.return?.bind(iterator);
@@ -680,7 +1246,7 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
           scope,
           () => returnIterator(),
         ).catch((error: unknown) => Promise.reject(failure === undefined
-          ? sanitizeProviderFailure(error)
+          ? sanitizeProviderFailure(error, "DeepSeek provider")
           : new LlmError(
               "DeepSeek provider request and cleanup failed",
               "PROVIDER_FAILURE",

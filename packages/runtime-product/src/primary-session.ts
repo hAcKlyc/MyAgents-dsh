@@ -135,6 +135,10 @@ export type PrimarySessionProviderAdmissionGuard = (
   request: PrimarySessionBackendRequest,
 ) => Promise<void>;
 
+export type PrimarySessionProviderAdmissionRollback = (
+  request: PrimarySessionBackendRequest,
+) => Promise<void>;
+
 export interface PrimarySessionAdmissionSnapshot {
   readonly state: PrimarySessionState;
   readonly mode?: PrimarySessionMode;
@@ -601,9 +605,11 @@ const modelProfileFingerprint = (
   profile.credentialRef,
   profile.contextWindow,
   profile.maxTokens,
+  stableJson(profile.inputModalities ?? null),
   stableJson(profile.pricing ?? null),
   profile.reasoning ?? null,
   profile.effort ?? null,
+  stableJson(profile.reasoningEffortMap ?? null),
   stableJson(profile.compatibility ?? null),
 ];
 
@@ -922,6 +928,7 @@ export class PrimarySessionAdmission {
     settlementDeadline: SettlementDeadlineAuthority = createRuntimeSettlementDeadlineAuthority(),
     private readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard,
     private readonly providerConfigurationGuard?: PrimarySessionProviderAdmissionGuard,
+    private readonly providerAdmissionRollback?: PrimarySessionProviderAdmissionRollback,
   ) {
     const candidate: unknown = backend;
     if (candidate === null || typeof candidate !== "object" || utilTypes.isProxy(candidate)
@@ -951,6 +958,10 @@ export class PrimarySessionAdmission {
     if (providerConfigurationGuard !== undefined
       && (typeof providerConfigurationGuard !== "function" || utilTypes.isProxy(providerConfigurationGuard))) {
       throw new TypeError("primary Session configuration Provider guard must be a non-proxy function");
+    }
+    if (providerAdmissionRollback !== undefined
+      && (typeof providerAdmissionRollback !== "function" || utilTypes.isProxy(providerAdmissionRollback))) {
+      throw new TypeError("primary Session Provider admission rollback must be a non-proxy function");
     }
   }
 
@@ -1190,17 +1201,19 @@ export class PrimarySessionAdmission {
     const unlink = linkAbortSignal(controller, sourceSignal);
     this.#controller = controller;
     this.#state = mode === "create" ? "creating" : "resuming";
+    const request = Object.freeze({
+      mode,
+      params,
+      runtimeSessionId,
+      signal: controller.signal,
+      workspace: this.#workspace,
+    });
+    let providerPrepared = false;
     const promise = Promise.resolve()
       .then(async () => {
         assertAdmissionNotAborted(controller.signal);
-        const request = Object.freeze({
-          mode,
-          params,
-          runtimeSessionId,
-          signal: controller.signal,
-          workspace: this.#workspace,
-        });
         await this.providerAdmissionGuard?.(request);
+        providerPrepared = this.providerAdmissionGuard !== undefined;
         assertAdmissionNotAborted(controller.signal);
         return this.backend[mode](request);
       })
@@ -1239,7 +1252,19 @@ export class PrimarySessionAdmission {
         this.#state = result.state;
         return binding;
       })
-      .catch((error: unknown) => {
+      .catch(async (error: unknown) => {
+        if (providerPrepared && this.providerAdmissionRollback !== undefined) {
+          try {
+            await this.providerAdmissionRollback(request);
+          } catch (rollbackError) {
+            if (!this.#retiring) this.#state = "recovery_required";
+            throw new AggregateError(
+              [error, rollbackError],
+              "primary Session admission and Provider rollback failed",
+              { cause: rollbackError },
+            );
+          }
+        }
         if (!this.#retiring) this.#state = "recovery_required";
         throw error;
       })
@@ -1320,6 +1345,8 @@ export class PrimarySessionAdmission {
       );
     }
     this.#state = "resuming";
+    let providerRequest: PrimarySessionBackendRequest | undefined;
+    let providerPrepared = false;
     try {
       await mutate();
       const controller = new AbortController();
@@ -1334,7 +1361,9 @@ export class PrimarySessionAdmission {
         signal: controller.signal,
         workspace: this.#workspace,
       });
+      providerRequest = request;
       await this.providerAdmissionGuard?.(request);
+      providerPrepared = this.providerAdmissionGuard !== undefined;
       const candidate = await this.backend.resume(request);
       const cleanup = extractCandidateDisposer(candidate);
       let result: PrimarySessionBackendResult;
@@ -1372,6 +1401,18 @@ export class PrimarySessionAdmission {
       return binding;
     } catch (error) {
       this.#state = "recovery_required";
+      if (providerPrepared && providerRequest !== undefined
+        && this.providerAdmissionRollback !== undefined) {
+        try {
+          await this.providerAdmissionRollback(providerRequest);
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [error, rollbackError],
+            "mutated Session resume and Provider rollback failed",
+            { cause: rollbackError },
+          );
+        }
+      }
       throw error;
     }
   }
@@ -1648,6 +1689,7 @@ export interface ProductSessionServiceConfig {
   ) => Promise<CompactionResult | null>;
   readonly deleteStore?: () => ProductDeleteStore | undefined;
   readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard;
+  readonly providerAdmissionRollback?: PrimarySessionProviderAdmissionRollback;
   readonly providerConfigurationGuard?: PrimarySessionProviderAdmissionGuard;
   readonly quiescenceGraceMs?: number;
   readonly readSession?: (
@@ -1671,6 +1713,7 @@ export class ProductSessionService extends Service {
   private readonly deleteStoreValue: ProductSessionServiceConfig["deleteStore"];
   private readonly forkStoreValue: ProductSessionServiceConfig["forkStore"];
   private readonly providerAdmissionGuardValue: PrimarySessionProviderAdmissionGuard | undefined;
+  private readonly providerAdmissionRollbackValue: PrimarySessionProviderAdmissionRollback | undefined;
   private readonly providerConfigurationGuardValue: PrimarySessionProviderAdmissionGuard | undefined;
   private readonly readSessionValue: ProductSessionServiceConfig["readSession"];
   private readonly rewindStoreValue: ProductSessionServiceConfig["rewindStore"];
@@ -1698,6 +1741,7 @@ export class ProductSessionService extends Service {
         "forkStore",
         "inspectResume",
         "providerAdmissionGuard",
+        "providerAdmissionRollback",
         "providerConfigurationGuard",
         "quiescenceGraceMs",
         "readSession",
@@ -1761,6 +1805,14 @@ export class ProductSessionService extends Service {
       throw new TypeError("ProductSession Provider admission guard must be a non-proxy function");
     }
     this.providerAdmissionGuardValue = providerAdmissionGuard;
+    const providerAdmissionRollback = Object.hasOwn(normalized, "providerAdmissionRollback")
+      ? normalized.providerAdmissionRollback as PrimarySessionProviderAdmissionRollback
+      : undefined;
+    if (providerAdmissionRollback !== undefined
+      && (typeof providerAdmissionRollback !== "function" || utilTypes.isProxy(providerAdmissionRollback))) {
+      throw new TypeError("ProductSession Provider admission rollback must be a non-proxy function");
+    }
+    this.providerAdmissionRollbackValue = providerAdmissionRollback;
     const providerConfigurationGuard = Object.hasOwn(normalized, "providerConfigurationGuard")
       ? normalized.providerConfigurationGuard as PrimarySessionProviderAdmissionGuard
       : undefined;
@@ -1833,6 +1885,7 @@ export class ProductSessionService extends Service {
     }
     this.workspaceValue = workspace;
     const providerAdmissionGuard = this.providerAdmissionGuardValue;
+    const providerAdmissionRollback = this.providerAdmissionRollbackValue;
     const providerConfigurationGuard = this.providerConfigurationGuardValue;
     this.admissionValue = new PrimarySessionAdmission(
       this.backendValue,
@@ -1844,6 +1897,9 @@ export class ProductSessionService extends Service {
       providerConfigurationGuard === undefined
         ? undefined
         : (request) => Reflect.apply(providerConfigurationGuard, undefined, [request]),
+      providerAdmissionRollback === undefined
+        ? undefined
+        : (request) => Reflect.apply(providerAdmissionRollback, undefined, [request]),
     );
     return workspace;
   }

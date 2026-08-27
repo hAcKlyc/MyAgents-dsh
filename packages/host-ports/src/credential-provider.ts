@@ -87,6 +87,12 @@ export interface HostCredentialProviderConfig {
 }
 
 export interface HostCredentialProviderController {
+  readonly activateProviderBinding: (
+    binding: HostProviderCredentialBinding,
+  ) => void;
+  readonly deactivateProviderBinding: (
+    binding: HostProviderCredentialBinding,
+  ) => void;
   readonly createProviderRequestScope: (
     input: HostProviderRequestInput,
   ) => HostProviderRequestScope;
@@ -308,6 +314,8 @@ export class HostCredentialProvider extends CredentialProvider {
   readonly #requestScopes = new WeakMap<object, RequestScopeState>();
   readonly #activeScope = new AsyncLocalStorage<RequestScopeState>();
   readonly #bindingsByRef = new Map<string, HostProviderCredentialBinding>();
+  readonly #preflightedProviderBindings = new WeakSet<object>();
+  #activeProviderBinding: HostProviderCredentialBinding | undefined;
   readonly #mcpBindings = new Map<string, McpBindingState>();
   readonly #mcpBlockedGenerations = new Map<string, Set<string>>();
   readonly #mcpPreflights = new Map<object, McpPreflightState>();
@@ -320,6 +328,10 @@ export class HostCredentialProvider extends CredentialProvider {
     const normalized = normalizeConfig(config);
     this.#authorityFactory = normalized.authorityFactory;
     const controller: HostCredentialProviderController = Object.freeze({
+      activateProviderBinding: (binding: HostProviderCredentialBinding) =>
+        this.#activateProviderBinding(binding),
+      deactivateProviderBinding: (binding: HostProviderCredentialBinding) =>
+        this.#deactivateProviderBinding(binding),
       createProviderRequestScope: (input: HostProviderRequestInput) =>
         this.#createProviderRequestScope(input),
       preflightMcp: (
@@ -378,8 +390,38 @@ export class HostCredentialProvider extends CredentialProvider {
       profile: input.profile,
       runtimeSessionId: input.runtimeSessionId,
     });
-    this.#bindingsByRef.set(input.profile.credentialRef, binding);
+    this.#preflightedProviderBindings.add(binding);
     return binding;
+  }
+
+  #activateProviderBinding(binding: HostProviderCredentialBinding): void {
+    if (!this.#preflightedProviderBindings.has(binding)) {
+      throw fixedCredentialError(
+        "provider_credential_binding_invalid",
+        "Provider credential binding was not produced by this Host credential Provider",
+      );
+    }
+    const previous = this.#activeProviderBinding;
+    if (previous !== undefined
+      && this.#bindingsByRef.get(previous.profile.credentialRef) === previous) {
+      this.#bindingsByRef.delete(previous.profile.credentialRef);
+    }
+    this.#activeProviderBinding = binding;
+    this.#bindingsByRef.set(binding.profile.credentialRef, binding);
+  }
+
+  #deactivateProviderBinding(binding: HostProviderCredentialBinding): void {
+    if (this.#activeProviderBinding !== binding) {
+      throw fixedCredentialError(
+        "provider_credential_binding_stale",
+        "Provider credential binding is no longer active",
+        true,
+      );
+    }
+    if (this.#bindingsByRef.get(binding.profile.credentialRef) === binding) {
+      this.#bindingsByRef.delete(binding.profile.credentialRef);
+    }
+    this.#activeProviderBinding = undefined;
   }
 
   #createProviderRequestScope(value: HostProviderRequestInput): HostProviderRequestScope {

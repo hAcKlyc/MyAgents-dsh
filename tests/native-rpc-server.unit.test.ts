@@ -94,6 +94,7 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
       context: context.root,
       dispose: () => Promise.resolve(),
       bindAttachmentLeaseLimit: hostPortLifecycleState.current.bindAttachmentLeaseLimit,
+      bindHostCapabilities: () => undefined,
       configApply: (params: MethodParams<"config/apply">) => Promise.resolve(Object.freeze({
         desiredRevision: params.revision,
         effectiveRevision: params.revision,

@@ -363,7 +363,8 @@ const packageIndex = (packages: readonly DshWorkspacePackage[]): Map<string, Dsh
 };
 
 const rootDshPackages = (): string[] => [...expectedDshDependencies.keys()]
-  .filter((name) => name.startsWith("@deepseek-ai/dsh-"))
+  .filter((name) => name.startsWith("@deepseek-ai/dsh-")
+    && name !== "@deepseek-ai/dsh-llm-pi-ai")
   .sort(compareCodePoints);
 export const PATCHED_DSH_ROOT_PACKAGES = Object.freeze(rootDshPackages());
 

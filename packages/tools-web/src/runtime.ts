@@ -51,6 +51,13 @@ export interface ProductWebUtilityRequest {
   readonly statusCode: number;
 }
 
+export interface ProductHostWebFetchRequest {
+  readonly context: ProductToolContext;
+  readonly prompt: string;
+  readonly signal: AbortSignal;
+  readonly url: string;
+}
+
 export interface ProductWebSearchRequest {
   readonly allowedDomains?: readonly string[];
   readonly blockedDomains?: readonly string[];
@@ -77,6 +84,24 @@ export interface CanonicalWebFetchToolsConfig {
       readonly answer: string;
       readonly citations: readonly Readonly<{ readonly title: string; readonly url: string }>[];
       readonly truncated: boolean;
+      readonly usage: Readonly<{
+        readonly inputTokens: number;
+        readonly outputTokens: number;
+        readonly cacheReadTokens: number;
+        readonly cacheWriteTokens: number;
+        readonly totalTokens: number;
+      }>;
+    }>>;
+  }>;
+  readonly host?: Readonly<{
+    readonly available: (context: ProductToolContext) => boolean;
+    /** Execute the complete canonical tool through the governed Host reverse port. */
+    readonly run: (request: ProductHostWebFetchRequest) => Promise<Readonly<{
+      readonly answer: string;
+      readonly citations: readonly Readonly<{ readonly title: string; readonly url: string }>[];
+      readonly finalUrl: string;
+      readonly truncated: boolean;
+      readonly url: string;
       readonly usage: Readonly<{
         readonly inputTokens: number;
         readonly outputTokens: number;
@@ -192,9 +217,9 @@ export const validateCanonicalWebToolsConfig = (value: unknown): CanonicalWebToo
   }
   const fetch = Object.hasOwn(candidate, "fetch")
     ? exactOwnDataObject(
-        candidate.fetch,
+      candidate.fetch,
         ["client", "content", "utility"],
-        [],
+        ["host"],
         "canonical WebFetch config",
       )
     : undefined;
@@ -211,6 +236,9 @@ export const validateCanonicalWebToolsConfig = (value: unknown): CanonicalWebToo
     ...(fetch === undefined ? {} : { fetch: Object.freeze({
       client: fetch.client as ProductSafeHttpClient,
       content: fetch.content as CanonicalWebFetchToolsConfig["content"],
+      ...(fetch.host === undefined
+        ? {}
+        : { host: fetch.host as NonNullable<CanonicalWebFetchToolsConfig["host"]> }),
       utility: fetch.utility as CanonicalWebFetchToolsConfig["utility"],
     }) }),
     ...(search === undefined ? {} : {
@@ -567,6 +595,10 @@ export class CanonicalWebTools extends Service {
   readonly #fetchStorage = new AsyncLocalStorage<FetchExecutionStore>();
   readonly #searchStorage = new AsyncLocalStorage<SearchExecutionStore>();
   readonly #utility: ((request: ProductWebUtilityRequest) => Promise<unknown>) | undefined;
+  readonly #hostFetch: Readonly<{
+    available: (context: ProductToolContext) => boolean;
+    run: (request: ProductHostWebFetchRequest) => Promise<unknown>;
+  }> | undefined;
   readonly #searchConfigured: boolean;
 
   constructor(ctx: Context, config: CanonicalWebToolsConfig) {
@@ -581,6 +613,30 @@ export class CanonicalWebTools extends Service {
       const content = dataMethod(fetch.content, "convert", "WebFetch content converter");
       const utility = dataMethod(fetch.utility, "run", "WebFetch utility model");
       this.#utility = (request) => Reflect.apply(utility.invoke, utility.owner, [request]) as Promise<unknown>;
+      if (fetch.host !== undefined) {
+        const host = exactOwnDataObject(
+          fetch.host,
+          ["available", "run"],
+          [],
+          "canonical Host WebFetch capability",
+        );
+        if (typeof host.available !== "function" || isProxy(host.available)
+          || typeof host.run !== "function" || isProxy(host.run)) {
+          throw new TypeError("canonical Host WebFetch capabilities must be own-data functions");
+        }
+        const owner = host;
+        this.#hostFetch = Object.freeze({
+          available: (context: ProductToolContext) => {
+            const available = Reflect.apply(host.available as (context: ProductToolContext) => unknown, owner, [context]);
+            if (typeof available !== "boolean") {
+              throw new TypeError("canonical Host WebFetch availability must return a boolean");
+            }
+            return available;
+          },
+          run: (request: ProductHostWebFetchRequest) =>
+            Reflect.apply(host.run as (request: ProductHostWebFetchRequest) => unknown, owner, [request]) as Promise<unknown>,
+        });
+      }
       const fetchProvider = new ProductFetchProvider(
         fetch.client,
         ctx,
@@ -640,6 +696,62 @@ export class CanonicalWebTools extends Service {
         const product = ctx.productTools.resolve(exec);
         if (product.environment.network.mode !== "host-policy") {
           throw new ProductToolError("network_policy_denied", "operation-frozen network policy denies WebFetch");
+        }
+        const hostFetch = this.#hostFetch;
+        if (hostFetch?.available(product) === true) {
+          let requestedUrl: URL;
+          try { requestedUrl = new URL(args.url as string); } catch {
+            throw new ProductToolError("unsafe_destination", "WebFetch URL is invalid");
+          }
+          if ((requestedUrl.protocol !== "https:" && requestedUrl.protocol !== "http:")
+            || requestedUrl.username !== "" || requestedUrl.password !== "") {
+            throw new ProductToolError("unsafe_destination", "WebFetch URL is unsafe");
+          }
+          await ctx.productTools.authorize(product, {
+            permissionClass: contract.permissionClass,
+            target: requestedUrl.origin,
+            tool: "WebFetch",
+          });
+          try {
+            const pending = hostFetch.run(Object.freeze({
+              context: product,
+              prompt: args.prompt as string,
+              signal: product.signal,
+              url: requestedUrl.toString(),
+            }));
+            const result = normalizeCanonicalJson(
+              await nativePromise<unknown>(pending, "Host WebFetch reverse executor"),
+              "Host WebFetch result",
+            );
+            product.signal.throwIfAborted();
+            const output = validateCanonicalToolOutput("WebFetch", result) as JsonObject;
+            if (output.url !== requestedUrl.toString()) {
+              throw new ProductToolError(
+                "utility_model_failed",
+                "Host WebFetch result differs from the requested URL",
+              );
+            }
+            const finalUrl = typeof output.finalUrl === "string" ? redactUrl(output.finalUrl) : undefined;
+            if (finalUrl === undefined || finalUrl !== output.finalUrl) {
+              throw new ProductToolError("utility_model_failed", "Host WebFetch final URL is unsafe");
+            }
+            const citationUrls = assertHttpCitations(output.citations, "Host WebFetch");
+            if (citationUrls.some((url) => redactUrl(url) !== finalUrl)) {
+              throw new ProductToolError(
+                "utility_model_failed",
+                "Host WebFetch citations lack final-content provenance",
+              );
+            }
+            return output;
+          } catch (error) {
+            if (product.signal.aborted) throw product.signal.reason;
+            if (error instanceof ProductToolError) throw error;
+            throw new ProductToolError(
+              "utility_model_failed",
+              "Host WebFetch reverse executor returned an invalid result",
+              { cause: error },
+            );
+          }
         }
         const store: FetchExecutionStore = { context: product };
         const fetched = await this.#fetchStorage.run(store, () => ctx.web.fetch({ url: args.url as string }, product.signal));

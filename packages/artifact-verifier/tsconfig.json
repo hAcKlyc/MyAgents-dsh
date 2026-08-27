@@ -11,6 +11,8 @@
     "src/batch-1-handoff.ts",
     "src/forbidden-content.ts",
     "src/index.ts",
+    "src/integration-compatibility.ts",
+    "src/integration-handoff.ts",
     "src/repository-entry.ts",
     "src/reference-web-artifact.ts",
     "src/runtime-artifact.ts",

@@ -1067,10 +1067,335 @@
                 "type": "string"
               },
               "compatibility": {
-                "patternProperties": {
-                  "^.*$": {}
-                },
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "credentialMode": {
+                        "const": "pi-ai-api-key",
+                        "type": "string"
+                      },
+                      "family": {
+                        "const": "anthropic-messages",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "wireCompat": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "maxTokensField": {
+                            "anyOf": [
+                              {
+                                "const": "max_completion_tokens",
+                                "type": "string"
+                              },
+                              {
+                                "const": "max_tokens",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "requiresAssistantAfterToolResult": {
+                            "type": "boolean"
+                          },
+                          "requiresToolResultName": {
+                            "type": "boolean"
+                          },
+                          "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsReasoningEffort": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictMode": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictTools": {
+                            "type": "boolean"
+                          },
+                          "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsUsageInStreaming": {
+                            "type": "boolean"
+                          },
+                          "thinkingFormat": {
+                            "anyOf": [
+                              {
+                                "const": "openai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "deepseek",
+                                "type": "string"
+                              },
+                              {
+                                "const": "openrouter",
+                                "type": "string"
+                              },
+                              {
+                                "const": "together",
+                                "type": "string"
+                              },
+                              {
+                                "const": "zai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen",
+                                "type": "string"
+                              },
+                              {
+                                "const": "chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen-chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "string-thinking",
+                                "type": "string"
+                              },
+                              {
+                                "const": "ant-ling",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "family",
+                      "credentialMode"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "credentialMode": {
+                        "const": "pi-ai-api-key",
+                        "type": "string"
+                      },
+                      "family": {
+                        "const": "openai-completions",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "wireCompat": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "maxTokensField": {
+                            "anyOf": [
+                              {
+                                "const": "max_completion_tokens",
+                                "type": "string"
+                              },
+                              {
+                                "const": "max_tokens",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "requiresAssistantAfterToolResult": {
+                            "type": "boolean"
+                          },
+                          "requiresToolResultName": {
+                            "type": "boolean"
+                          },
+                          "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsReasoningEffort": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictMode": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictTools": {
+                            "type": "boolean"
+                          },
+                          "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsUsageInStreaming": {
+                            "type": "boolean"
+                          },
+                          "thinkingFormat": {
+                            "anyOf": [
+                              {
+                                "const": "openai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "deepseek",
+                                "type": "string"
+                              },
+                              {
+                                "const": "openrouter",
+                                "type": "string"
+                              },
+                              {
+                                "const": "together",
+                                "type": "string"
+                              },
+                              {
+                                "const": "zai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen",
+                                "type": "string"
+                              },
+                              {
+                                "const": "chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen-chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "string-thinking",
+                                "type": "string"
+                              },
+                              {
+                                "const": "ant-ling",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "family",
+                      "credentialMode"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "credentialMode": {
+                        "const": "pi-ai-api-key",
+                        "type": "string"
+                      },
+                      "family": {
+                        "const": "openai-responses",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "wireCompat": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "maxTokensField": {
+                            "anyOf": [
+                              {
+                                "const": "max_completion_tokens",
+                                "type": "string"
+                              },
+                              {
+                                "const": "max_tokens",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "requiresAssistantAfterToolResult": {
+                            "type": "boolean"
+                          },
+                          "requiresToolResultName": {
+                            "type": "boolean"
+                          },
+                          "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsReasoningEffort": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictMode": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictTools": {
+                            "type": "boolean"
+                          },
+                          "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsUsageInStreaming": {
+                            "type": "boolean"
+                          },
+                          "thinkingFormat": {
+                            "anyOf": [
+                              {
+                                "const": "openai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "deepseek",
+                                "type": "string"
+                              },
+                              {
+                                "const": "openrouter",
+                                "type": "string"
+                              },
+                              {
+                                "const": "together",
+                                "type": "string"
+                              },
+                              {
+                                "const": "zai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen",
+                                "type": "string"
+                              },
+                              {
+                                "const": "chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen-chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "string-thinking",
+                                "type": "string"
+                              },
+                              {
+                                "const": "ant-ling",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "family",
+                      "credentialMode"
+                    ],
+                    "type": "object"
+                  }
+                ]
               },
               "contextWindow": {
                 "minimum": 1,
@@ -1105,6 +1430,24 @@
                     "type": "string"
                   }
                 ]
+              },
+              "inputModalities": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    {
+                      "const": "image",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "maxItems": 2,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
               },
               "maxTokens": {
                 "minimum": 1,
@@ -1162,6 +1505,40 @@
               },
               "reasoning": {
                 "type": "boolean"
+              },
+              "reasoningEffortMap": {
+                "additionalProperties": false,
+                "properties": {
+                  "high": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "low": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "max": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "medium": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "off": {
+                    "type": "null"
+                  },
+                  "xhigh": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
               },
               "revision": {
                 "maxLength": 256,
@@ -5813,7 +6190,7 @@
             "type": "string"
           },
           "protocolVersion": {
-            "const": "2.0.0-draft.1",
+            "const": "2.0.0-draft.2",
             "type": "string"
           },
           "runtimeCapabilities": {
@@ -7182,10 +7559,335 @@
                 "type": "string"
               },
               "compatibility": {
-                "patternProperties": {
-                  "^.*$": {}
-                },
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "credentialMode": {
+                        "const": "pi-ai-api-key",
+                        "type": "string"
+                      },
+                      "family": {
+                        "const": "anthropic-messages",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "wireCompat": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "maxTokensField": {
+                            "anyOf": [
+                              {
+                                "const": "max_completion_tokens",
+                                "type": "string"
+                              },
+                              {
+                                "const": "max_tokens",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "requiresAssistantAfterToolResult": {
+                            "type": "boolean"
+                          },
+                          "requiresToolResultName": {
+                            "type": "boolean"
+                          },
+                          "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsReasoningEffort": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictMode": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictTools": {
+                            "type": "boolean"
+                          },
+                          "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsUsageInStreaming": {
+                            "type": "boolean"
+                          },
+                          "thinkingFormat": {
+                            "anyOf": [
+                              {
+                                "const": "openai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "deepseek",
+                                "type": "string"
+                              },
+                              {
+                                "const": "openrouter",
+                                "type": "string"
+                              },
+                              {
+                                "const": "together",
+                                "type": "string"
+                              },
+                              {
+                                "const": "zai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen",
+                                "type": "string"
+                              },
+                              {
+                                "const": "chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen-chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "string-thinking",
+                                "type": "string"
+                              },
+                              {
+                                "const": "ant-ling",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "family",
+                      "credentialMode"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "credentialMode": {
+                        "const": "pi-ai-api-key",
+                        "type": "string"
+                      },
+                      "family": {
+                        "const": "openai-completions",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "wireCompat": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "maxTokensField": {
+                            "anyOf": [
+                              {
+                                "const": "max_completion_tokens",
+                                "type": "string"
+                              },
+                              {
+                                "const": "max_tokens",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "requiresAssistantAfterToolResult": {
+                            "type": "boolean"
+                          },
+                          "requiresToolResultName": {
+                            "type": "boolean"
+                          },
+                          "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsReasoningEffort": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictMode": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictTools": {
+                            "type": "boolean"
+                          },
+                          "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsUsageInStreaming": {
+                            "type": "boolean"
+                          },
+                          "thinkingFormat": {
+                            "anyOf": [
+                              {
+                                "const": "openai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "deepseek",
+                                "type": "string"
+                              },
+                              {
+                                "const": "openrouter",
+                                "type": "string"
+                              },
+                              {
+                                "const": "together",
+                                "type": "string"
+                              },
+                              {
+                                "const": "zai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen",
+                                "type": "string"
+                              },
+                              {
+                                "const": "chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen-chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "string-thinking",
+                                "type": "string"
+                              },
+                              {
+                                "const": "ant-ling",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "family",
+                      "credentialMode"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "credentialMode": {
+                        "const": "pi-ai-api-key",
+                        "type": "string"
+                      },
+                      "family": {
+                        "const": "openai-responses",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "wireCompat": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "maxTokensField": {
+                            "anyOf": [
+                              {
+                                "const": "max_completion_tokens",
+                                "type": "string"
+                              },
+                              {
+                                "const": "max_tokens",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "requiresAssistantAfterToolResult": {
+                            "type": "boolean"
+                          },
+                          "requiresToolResultName": {
+                            "type": "boolean"
+                          },
+                          "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsReasoningEffort": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictMode": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictTools": {
+                            "type": "boolean"
+                          },
+                          "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsUsageInStreaming": {
+                            "type": "boolean"
+                          },
+                          "thinkingFormat": {
+                            "anyOf": [
+                              {
+                                "const": "openai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "deepseek",
+                                "type": "string"
+                              },
+                              {
+                                "const": "openrouter",
+                                "type": "string"
+                              },
+                              {
+                                "const": "together",
+                                "type": "string"
+                              },
+                              {
+                                "const": "zai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen",
+                                "type": "string"
+                              },
+                              {
+                                "const": "chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen-chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "string-thinking",
+                                "type": "string"
+                              },
+                              {
+                                "const": "ant-ling",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "family",
+                      "credentialMode"
+                    ],
+                    "type": "object"
+                  }
+                ]
               },
               "contextWindow": {
                 "minimum": 1,
@@ -7220,6 +7922,24 @@
                     "type": "string"
                   }
                 ]
+              },
+              "inputModalities": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    {
+                      "const": "image",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "maxItems": 2,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
               },
               "maxTokens": {
                 "minimum": 1,
@@ -7277,6 +7997,40 @@
               },
               "reasoning": {
                 "type": "boolean"
+              },
+              "reasoningEffortMap": {
+                "additionalProperties": false,
+                "properties": {
+                  "high": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "low": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "max": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "medium": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "off": {
+                    "type": "null"
+                  },
+                  "xhigh": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
               },
               "revision": {
                 "maxLength": 256,
@@ -9822,10 +10576,335 @@
                 "type": "string"
               },
               "compatibility": {
-                "patternProperties": {
-                  "^.*$": {}
-                },
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "credentialMode": {
+                        "const": "pi-ai-api-key",
+                        "type": "string"
+                      },
+                      "family": {
+                        "const": "anthropic-messages",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "wireCompat": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "maxTokensField": {
+                            "anyOf": [
+                              {
+                                "const": "max_completion_tokens",
+                                "type": "string"
+                              },
+                              {
+                                "const": "max_tokens",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "requiresAssistantAfterToolResult": {
+                            "type": "boolean"
+                          },
+                          "requiresToolResultName": {
+                            "type": "boolean"
+                          },
+                          "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsReasoningEffort": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictMode": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictTools": {
+                            "type": "boolean"
+                          },
+                          "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsUsageInStreaming": {
+                            "type": "boolean"
+                          },
+                          "thinkingFormat": {
+                            "anyOf": [
+                              {
+                                "const": "openai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "deepseek",
+                                "type": "string"
+                              },
+                              {
+                                "const": "openrouter",
+                                "type": "string"
+                              },
+                              {
+                                "const": "together",
+                                "type": "string"
+                              },
+                              {
+                                "const": "zai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen",
+                                "type": "string"
+                              },
+                              {
+                                "const": "chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen-chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "string-thinking",
+                                "type": "string"
+                              },
+                              {
+                                "const": "ant-ling",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "family",
+                      "credentialMode"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "credentialMode": {
+                        "const": "pi-ai-api-key",
+                        "type": "string"
+                      },
+                      "family": {
+                        "const": "openai-completions",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "wireCompat": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "maxTokensField": {
+                            "anyOf": [
+                              {
+                                "const": "max_completion_tokens",
+                                "type": "string"
+                              },
+                              {
+                                "const": "max_tokens",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "requiresAssistantAfterToolResult": {
+                            "type": "boolean"
+                          },
+                          "requiresToolResultName": {
+                            "type": "boolean"
+                          },
+                          "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsReasoningEffort": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictMode": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictTools": {
+                            "type": "boolean"
+                          },
+                          "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsUsageInStreaming": {
+                            "type": "boolean"
+                          },
+                          "thinkingFormat": {
+                            "anyOf": [
+                              {
+                                "const": "openai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "deepseek",
+                                "type": "string"
+                              },
+                              {
+                                "const": "openrouter",
+                                "type": "string"
+                              },
+                              {
+                                "const": "together",
+                                "type": "string"
+                              },
+                              {
+                                "const": "zai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen",
+                                "type": "string"
+                              },
+                              {
+                                "const": "chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen-chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "string-thinking",
+                                "type": "string"
+                              },
+                              {
+                                "const": "ant-ling",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "family",
+                      "credentialMode"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "credentialMode": {
+                        "const": "pi-ai-api-key",
+                        "type": "string"
+                      },
+                      "family": {
+                        "const": "openai-responses",
+                        "type": "string"
+                      },
+                      "version": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "wireCompat": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "maxTokensField": {
+                            "anyOf": [
+                              {
+                                "const": "max_completion_tokens",
+                                "type": "string"
+                              },
+                              {
+                                "const": "max_tokens",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "requiresAssistantAfterToolResult": {
+                            "type": "boolean"
+                          },
+                          "requiresToolResultName": {
+                            "type": "boolean"
+                          },
+                          "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsReasoningEffort": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictMode": {
+                            "type": "boolean"
+                          },
+                          "supportsStrictTools": {
+                            "type": "boolean"
+                          },
+                          "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsUsageInStreaming": {
+                            "type": "boolean"
+                          },
+                          "thinkingFormat": {
+                            "anyOf": [
+                              {
+                                "const": "openai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "deepseek",
+                                "type": "string"
+                              },
+                              {
+                                "const": "openrouter",
+                                "type": "string"
+                              },
+                              {
+                                "const": "together",
+                                "type": "string"
+                              },
+                              {
+                                "const": "zai",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen",
+                                "type": "string"
+                              },
+                              {
+                                "const": "chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "qwen-chat-template",
+                                "type": "string"
+                              },
+                              {
+                                "const": "string-thinking",
+                                "type": "string"
+                              },
+                              {
+                                "const": "ant-ling",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "family",
+                      "credentialMode"
+                    ],
+                    "type": "object"
+                  }
+                ]
               },
               "contextWindow": {
                 "minimum": 1,
@@ -9860,6 +10939,24 @@
                     "type": "string"
                   }
                 ]
+              },
+              "inputModalities": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "const": "text",
+                      "type": "string"
+                    },
+                    {
+                      "const": "image",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "maxItems": 2,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
               },
               "maxTokens": {
                 "minimum": 1,
@@ -9917,6 +11014,40 @@
               },
               "reasoning": {
                 "type": "boolean"
+              },
+              "reasoningEffortMap": {
+                "additionalProperties": false,
+                "properties": {
+                  "high": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "low": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "max": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "medium": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "off": {
+                    "type": "null"
+                  },
+                  "xhigh": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
               },
               "revision": {
                 "maxLength": 256,
@@ -16195,6 +17326,6 @@
       }
     }
   },
-  "protocolVersion": "2.0.0-draft.1",
+  "protocolVersion": "2.0.0-draft.2",
   "title": "MyAgents DSH native RPC"
 }

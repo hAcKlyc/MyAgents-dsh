@@ -6,6 +6,7 @@ export type {
   CanonicalWebFetchToolsConfig,
   CanonicalWebSearchToolsConfig,
   CanonicalWebToolsConfig,
+  ProductHostWebFetchRequest,
   ProductWebContentRequest,
   ProductWebSearchRequest,
   ProductWebUtilityRequest,

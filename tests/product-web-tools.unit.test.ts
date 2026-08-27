@@ -16,6 +16,7 @@ import {
   ProductSafeHttpClient,
   validateCanonicalWebToolsConfig,
   type CanonicalWebToolsConfig,
+  type ProductHostWebFetchRequest,
   type ProductDnsAnswer,
   type ProductHttpResponse,
   type ProductHttpTransport,
@@ -135,6 +136,7 @@ const defaultUtility: NonNullable<CanonicalWebToolsConfig["fetch"]>["utility"] =
 
 const createWebHarness = async (options: Readonly<{
   content?: NonNullable<CanonicalWebToolsConfig["fetch"]>["content"];
+  host?: NonNullable<CanonicalWebToolsConfig["fetch"]>["host"];
   product?: ProductToolContext;
   search?: CanonicalWebToolsConfig["search"];
   transport?: ProductHttpTransport;
@@ -162,6 +164,7 @@ const createWebHarness = async (options: Readonly<{
         },
       }),
       content: options.content ?? defaultContent,
+      ...(options.host === undefined ? {} : { host: options.host }),
       utility: options.utility ?? defaultUtility,
     }),
     ...(options.search === undefined ? {} : { search: options.search }),
@@ -932,6 +935,88 @@ describe("safe Web Providers and canonical Web tools", () => {
     ]);
     expect(context.tools.schemas().map(({ name }) => name)).toEqual(["WebFetch", "WebSearch"]);
     await context.fiber.dispose();
+  });
+
+  it("routes WebFetch through the Host for non-native Provider profiles without invoking local network work", async () => {
+    const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(
+      () => Promise.reject(new Error("local transport must not run")),
+    );
+    const content = vi.fn(defaultContent.convert);
+    const utility = vi.fn(defaultUtility.run);
+    const run = vi.fn((request: ProductHostWebFetchRequest) => Promise.resolve(Object.freeze({
+      answer: `Host answer for ${request.prompt}`,
+      citations: Object.freeze([{ title: "Host source", url: "https://example.com/final" }]),
+      finalUrl: "https://example.com/final",
+      truncated: false,
+      url: request.url,
+      usage: Object.freeze({
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        inputTokens: 3,
+        outputTokens: 2,
+        totalTokens: 5,
+      }),
+    })));
+    const harness = await createWebHarness({
+      content: Object.freeze({ convert: content }),
+      host: Object.freeze({ available: () => true, run }),
+      transport: { dispatch },
+      utility: Object.freeze({ run: utility }),
+    });
+
+    await expect(harness.execute("WebFetch", {
+      prompt: "Summarize",
+      url: "https://example.com/source",
+    })).resolves.toMatchObject({
+      isError: false,
+      value: {
+        answer: "Host answer for Summarize",
+        finalUrl: "https://example.com/final",
+        url: "https://example.com/source",
+        usage: { totalTokens: 5 },
+      },
+    });
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]?.[0]).toMatchObject({
+      context: { productTurnId: "turn-v1" },
+      prompt: "Summarize",
+      url: "https://example.com/source",
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(content).not.toHaveBeenCalled();
+    expect(utility).not.toHaveBeenCalled();
+    await harness.context.fiber.dispose();
+  });
+
+  it("fails closed when a Host WebFetch result breaks canonical provenance", async () => {
+    const harness = await createWebHarness({
+      host: Object.freeze({
+        available: () => true,
+        run: () => Promise.resolve(Object.freeze({
+          answer: "forged",
+          citations: Object.freeze([{ title: "Other", url: "https://example.com/other" }]),
+          finalUrl: "https://example.com/final",
+          truncated: false,
+          url: "https://example.com/source",
+          usage: Object.freeze({
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            inputTokens: 1,
+            outputTokens: 1,
+            totalTokens: 2,
+          }),
+        })),
+      }),
+    });
+
+    await expect(harness.execute("WebFetch", {
+      prompt: "Summarize",
+      url: "https://example.com/source",
+    })).resolves.toMatchObject({
+      error: { info: { code: "utility_model_failed" } },
+      isError: true,
+    });
+    await harness.context.fiber.dispose();
   });
 
   it("does not register WebSearch without an approved available server-side adapter", async () => {

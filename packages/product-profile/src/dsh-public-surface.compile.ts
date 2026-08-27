@@ -47,6 +47,8 @@ import {
   DeepSeekAdapter,
   PUBLIC_BASE_URL,
 } from "@deepseek-ai/dsh-llm-deepseek";
+import { SettingsProvider, settingsNamespace } from "@deepseek-ai/dsh-settings";
+import type { SettingsNamespace, SettingsScope } from "@deepseek-ai/dsh-settings";
 import type { DeepSeekConnectionOptions, RequestDefaults } from "@deepseek-ai/dsh-llm-deepseek";
 import { apply as applyMcpClient } from "@deepseek-ai/dsh-mcp-client";
 import type { Config as McpConfig, McpResult } from "@deepseek-ai/dsh-mcp-client";
@@ -147,6 +149,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   TOOL_TIMEOUT,
   TokenMeter,
   ToolRuntime,
+  SettingsProvider,
   UserQuestionService,
   WebRuntime,
   applyMcpClient,
@@ -174,6 +177,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   isSkillName,
   renderSkillContent,
   resolveRetryPolicy,
+  settingsNamespace,
   startInProcessRun,
 });
 
@@ -193,6 +197,7 @@ export interface DshPublicSurfaceTypes {
   jobsLocal: [LocalJobRegistryConfig];
   llm: [GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk];
   llmDeepSeek: [DeepSeekConnectionOptions, RequestDefaults];
+  settings: [SettingsNamespace, SettingsScope<unknown>];
   mcp: [McpConfig, McpResult];
   persistence: [PersistenceBackend, SessionInspection, SessionPersistenceSnapshot];
   planMode: [PlanProjection];

@@ -16,8 +16,8 @@ import {
 } from "@myagents-dsh/product-profile";
 import {
   composeDshRootServices,
-  createHostDeepSeekWebFetchPlaneConfig,
-  createHostDeepSeekWebSearchPlaneConfig,
+  createHostProviderWebFetchPlaneConfig,
+  createHostProviderWebSearchPlaneConfig,
   createHostBackedInteractionProvider,
   createProductAgentComponentCompiler,
   createProductCommandComponentCompiler,
@@ -26,7 +26,7 @@ import {
   createProductManagedMcpComponentCompiler,
   createProductSkillComponentCompiler,
   installCanonicalToolPlane,
-  installHostDeepSeekModelPlane,
+  installHostModelPlane,
   installProductComponentPlane,
   staticSkillCatalogDigest,
   type DshRootComposition,
@@ -219,7 +219,7 @@ export const composeOfficialRuntimeServices = async (
   });
   authority.composition = configured;
   try {
-    await installHostDeepSeekModelPlane(configured, Object.freeze({ resolveUserId: anonymousUserId }));
+    await installHostModelPlane(configured, Object.freeze({ resolveUserId: anonymousUserId }));
     const interaction = createHostBackedInteractionProvider(configured, Object.freeze({
       revision: OFFICIAL_HOST_INTERACTION_REVISION,
       deadlineMs: 120_000,
@@ -240,11 +240,11 @@ export const composeOfficialRuntimeServices = async (
       skills: OFFICIAL_STATIC_SKILL_CATALOG,
       temporaryRoot: await realpath(process.env.TMPDIR ?? tmpdir()),
       web: Object.freeze({
-        fetch: createHostDeepSeekWebFetchPlaneConfig(
+        fetch: createHostProviderWebFetchPlaneConfig(
           configured,
           DEEPSEEK_WEB_SEARCH_POLICY_REF,
         ),
-        search: createHostDeepSeekWebSearchPlaneConfig(
+        search: createHostProviderWebSearchPlaneConfig(
           configured,
           DEEPSEEK_WEB_SEARCH_POLICY_REF,
         ),

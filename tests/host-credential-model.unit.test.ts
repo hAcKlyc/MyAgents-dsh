@@ -158,6 +158,27 @@ const modelOptions = (signal = new AbortController().signal): GenerateOptions =>
 });
 
 describe("Host credential and model route", () => {
+  it("removes an initial Provider binding when admission rolls back", async () => {
+    const harness = await createHarness();
+    harness.pair.host.registerRequestHandler("host/credential/resolve", () => ({
+      authoritativeCredentialRevision: "credential-v1",
+      available: true,
+      kind: "availability" as const,
+    }));
+    const authority = new HostDeepSeekModelAuthority(
+      fakeModelContext(harness.root),
+      harness.credentialController,
+      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" },
+    );
+    await authority.preflight(sessionRequest());
+    await expect(harness.credentials.describe(profile.credentialRef as CredentialRef))
+      .resolves.toMatchObject({ configured: true });
+    await authority.rollbackAdmission("config-v1", "runtime-session-1");
+    await expect(harness.credentials.describe(profile.credentialRef as CredentialRef))
+      .resolves.toEqual({ configured: false, writable: false });
+    expect(() => authority.currentProfile()).toThrow("not ready");
+  });
+
   it("keeps product credential controllers outside the public Cordis service surface", async () => {
     const harness = await createHarness();
     const child = harness.root.isolate("credential-surface-probe");
@@ -523,7 +544,7 @@ describe("Host credential and model route", () => {
     expect(() => validateHostDeepSeekProfile({
       ...profile,
       compatibility: { [credentialValueField]: "must-not-be-config" },
-    })).toThrow(expect.objectContaining({ code: "provider_compatibility_not_supported" }));
+    } as never)).toThrow(expect.objectContaining({ code: "provider_compatibility_not_supported" }));
     expect(() => validateHostDeepSeekProfile({
       ...profile,
       providerRouteId: "ambient-route",

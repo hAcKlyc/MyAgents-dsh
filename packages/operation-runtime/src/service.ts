@@ -70,10 +70,6 @@ type IncompleteRecoveryWake = Readonly<{
   messageId: string;
 }>;
 
-type WakePendingAgent = Agent & Readonly<{
-  wakePending?: (messageId: MessageId) => boolean;
-}>;
-
 export interface SdkOperationServiceConfig {
   readonly birthAuthority: OperationBirthAuthority;
   readonly drainOwnedWork: (agent: Agent) => Promise<void>;
@@ -1762,7 +1758,7 @@ export class SdkOperationService extends Service {
   }
 
   private wakeExactPending(agent: Agent, messageId: string): boolean {
-    const wakePending = (agent as WakePendingAgent).wakePending;
+    const wakePending: unknown = Reflect.get(agent, "wakePending");
     if (typeof wakePending !== "function" || utilTypes.isProxy(wakePending)) {
       throw this.fence(new Error("accepted DSH Agent.wakePending seam is unavailable"));
     }

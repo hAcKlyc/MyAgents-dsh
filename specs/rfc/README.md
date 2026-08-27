@@ -30,3 +30,11 @@ If an RFC discovers that an existing architecture fact is wrong, update `specs/A
 | [Reference Web Host and WebUI](./batch-1-reference-web-host.md) | External Host/browser contract, one-process-per-Session supervisor, reverse ports, UI architecture, loopback security, direct-open packaging, and browser evidence | `accepted design; implementation active` |
 
 The ten documents form one design set: the first three establish cross-cutting topology, DSH reuse boundaries, and requirement coverage; the seven implementation/evidence RFCs specify each workstream and the accumulated release proof. Draft RFCs are not permission to implement around an unresolved seam or mark a ledger item complete without executable evidence.
+
+## Batch 3 design set
+
+| Document | Purpose | Status |
+| --- | --- | --- |
+| [MyAgents-dsh Runtime integration handoff](./batch-3-myagents-integration-runtime.md) | Official multi-provider adapter integration, Host-controlled compatibility, canonical tool/web policy, exact artifact handoff, conformance and platform gates | `implementation-in-progress` |
+
+The corresponding MyAgents Host/product implementation design is maintained in sibling repository document `MyAgents/specs/tech_docs/myagents_dsh_integrated_runtime.md`. Both RFCs implement the single accepted [Batch 3 Product PRD](../prd/batch-3-myagents-integration.md); neither creates an independent product gate.

@@ -6,6 +6,7 @@ import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
 import { BasicCompactionEngine } from "@deepseek-ai/dsh-compaction-basic";
 import { CommandId, CommandRuntime } from "@deepseek-ai/dsh-commands";
 import { LlmAdapter, LlmRuntime, type ContentBlock } from "@deepseek-ai/dsh-llm";
+import { SettingsProvider } from "@deepseek-ai/dsh-settings";
 import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
@@ -31,6 +32,7 @@ import {
 } from "@myagents-dsh/operation-runtime";
 import {
   ProtocolError,
+  type InitializeParams,
   type MethodParams,
   type MethodResult,
 } from "@myagents-dsh/protocol";
@@ -140,6 +142,8 @@ import {
   ProductSafeHttpClient,
   validateCanonicalWebToolsConfig,
   type CanonicalWebToolsConfig,
+  type ProductHostWebFetchRequest,
+  type ProductWebSearchRequest,
   type ProductNetworkPolicy,
   type ProductSafeHttpOpenResponse,
 } from "@myagents-dsh/tools-web";
@@ -147,9 +151,11 @@ import { ProductSessionService, type PrimarySessionState } from "./primary-sessi
 import {
   HOST_DEEPSEEK_PROVIDER_ROUTE,
   HostDeepSeekLlmAdapter,
-  HostDeepSeekModelAuthority,
-  type HostDeepSeekModelPlaneConfig,
+  HostModelAuthority,
+  installHostLlmRequestScope,
+  type HostModelPlaneConfig,
 } from "./host-model.js";
+import { HostSettingsProvider } from "./host-settings.js";
 import type { PrimarySessionBackendRequest } from "./primary-session.js";
 import { ProductUtilityService } from "./utility.js";
 import {
@@ -159,6 +165,7 @@ import {
 } from "./host-interaction.js";
 import { createHostDeepSeekWebSearchConfig } from "./host-web-search.js";
 import { createHostDeepSeekWebFetchConfig } from "./host-web-fetch.js";
+import { executeHostCanonicalWebTool } from "./host-web-bridge.js";
 
 export type { HostBackedInteractionProviderConfig } from "./host-interaction.js";
 
@@ -205,6 +212,25 @@ export interface DshRootCompositionSnapshot {
 }
 
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
+
+const PI_AI_PLUGIN_SPECIFIER = "@deepseek-ai/dsh-llm-pi-ai";
+const loadPiAiPlugin = async (): Promise<Plugin> => {
+  // Runtime package-root validation is the explicit fallback while the exact
+  // upstream vendor declaration graph contains broken relative undici imports.
+  const candidate = await import(PI_AI_PLUGIN_SPECIFIER) as Record<string, unknown>;
+  if (candidate.name !== "llm-pi-ai" || !Array.isArray(candidate.inject)
+    || typeof candidate.apply !== "function" || typeof candidate.supportedProtocols !== "function"
+    || candidate.Config === undefined || candidate.PiAiAdapter === undefined) {
+    throw new Error("official pi-ai plugin package-root exports differ from the locked contract");
+  }
+  const protocols = Reflect.apply(candidate.supportedProtocols as () => unknown, candidate, []);
+  if (!Array.isArray(protocols)
+    || !["anthropic-messages", "openai-completions", "openai-responses"]
+      .every((protocol) => protocols.includes(protocol))) {
+    throw new Error("official pi-ai plugin lacks one required public protocol family");
+  }
+  return candidate as unknown as Plugin;
+};
 
 type JsonObject = Record<string, unknown>;
 
@@ -349,6 +375,7 @@ export interface DshRootCompositionAuthority {
   readonly context: Context;
   readonly dispose: () => Promise<void>;
   readonly bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
+  readonly bindHostCapabilities: (capabilities: InitializeParams["hostCapabilities"]) => void;
   readonly hostPorts: HostPortTransportLifecycle;
   readonly installPersistence: (runtimeHome: string) => Promise<void>;
   readonly commandInvoke: (
@@ -402,8 +429,8 @@ type CompositionAuthorityState = {
   readonly hostPorts: HostPortServiceController;
   hostAttachments: HostAttachmentStoreController | undefined;
   hostCredentials: HostCredentialProviderController | undefined;
-  hostModelAuthority: HostDeepSeekModelAuthority | undefined;
-  readonly installHostModelGuards: (authority: HostDeepSeekModelAuthority) => void;
+  hostModelAuthority: HostModelAuthority | undefined;
+  readonly installHostModelGuards: (authority: HostModelAuthority) => void;
   readonly snapshot: () => DshRootCompositionSnapshot;
   claimed: boolean;
   canonicalToolPlane: "absent" | "installing" | "installed" | "failed";
@@ -423,7 +450,7 @@ type CompositionAuthorityState = {
   hostInteractionRevision: string | undefined;
   componentPlane: "absent" | "installing" | "installed" | "failed";
   hostModelPlane: "absent" | "installing" | "installed" | "failed";
-  hostModelProviderRoute: string | undefined;
+  hostModelProviderRoutes: (() => readonly string[]) | undefined;
   persistenceInstallPromise: Promise<void> | undefined;
   checkpointStore: ProductCheckpointStore | undefined;
   persistencePlane: "absent" | "installing" | "installed" | "failed";
@@ -433,6 +460,7 @@ type CompositionAuthorityState = {
 
 type NativeRpcLifecycleAuthorityState = {
   readonly bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
+  readonly bindHostCapabilities: (capabilities: InitializeParams["hostCapabilities"]) => void;
   readonly context: Context;
   readonly dispose: () => Promise<void>;
   readonly hostPorts: HostPortTransportLifecycle;
@@ -617,6 +645,8 @@ export const claimNativeRpcLifecycleAuthority = (
   nativeRpcLifecycleAuthorities.set(authority, {
     bindAttachmentLeaseLimit: (maxAttachmentLeases) =>
       state.hostAttachments?.bindLeaseLimit(maxAttachmentLeases),
+    bindHostCapabilities: (capabilities) =>
+      state.hostModelAuthority?.bindHostCapabilities(capabilities),
     consumed: false,
     context: state.context,
     commandInvoke: (params, control) => state.context.productCommands.invoke(params, control),
@@ -624,56 +654,72 @@ export const claimNativeRpcLifecycleAuthority = (
       control.signal,
       control.commit,
       async () => {
-        assertConfigurationToolPolicy(state, params);
-        const candidate = await state.context.productSession.prepareConfiguration(params, control.signal);
-        if (!candidate.alreadyEffective) {
-          const permission = state.permissionController;
-          const interaction = state.hostInteractionProvider;
-          if (permission === undefined || interaction === undefined) {
-            throw new ProtocolError(
-              "primary_session_not_ready",
-              "configuration permission authority is not installed",
-              true,
-            );
+        try {
+          assertConfigurationToolPolicy(state, params);
+          const candidate = await state.context.productSession.prepareConfiguration(params, control.signal);
+          if (!candidate.alreadyEffective) {
+            const permission = state.permissionController;
+            const interaction = state.hostInteractionProvider;
+            if (permission === undefined || interaction === undefined) {
+              throw new ProtocolError(
+                "primary_session_not_ready",
+                "configuration permission authority is not installed",
+                true,
+              );
+            }
+            const nextInteraction: ProductLocalInteractionProvider = Object.freeze({
+              revision: params.interactionScenario,
+              decidePermission: (
+                request: Parameters<ProductLocalInteractionProvider["decidePermission"]>[0],
+                settlement: Parameters<ProductLocalInteractionProvider["decidePermission"]>[1],
+              ) =>
+                interaction.decidePermission(request, settlement),
+              answerQuestions: (
+                request: Parameters<ProductLocalInteractionProvider["answerQuestions"]>[0],
+                settlement: Parameters<ProductLocalInteractionProvider["answerQuestions"]>[1],
+              ) =>
+                interaction.answerQuestions(request, settlement),
+            });
+            const autoAllowTools = params.toolPolicy?.autoAllowTools
+              ?? state.canonicalAutoAllowTools ?? Object.freeze([]);
+            await state.context.productSession.replaceConfiguration(candidate, async (agent) => {
+              await permission.applyConfiguration(agent, Object.freeze({
+                mode: params.permissionMode as Parameters<
+                  ProductPermissionController["applyConfiguration"]
+                >[1]["mode"],
+                autoAllowTools: autoAllowTools as Parameters<
+                  ProductPermissionController["applyConfiguration"]
+                >[1]["autoAllowTools"],
+                interaction: nextInteraction,
+              }));
+              state.canonicalPermissionMode = params.permissionMode;
+              state.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
+              state.hostInteractionRevision = params.interactionScenario;
+            });
           }
-          const nextInteraction: ProductLocalInteractionProvider = Object.freeze({
-            revision: params.interactionScenario,
-            decidePermission: (
-              request: Parameters<ProductLocalInteractionProvider["decidePermission"]>[0],
-              settlement: Parameters<ProductLocalInteractionProvider["decidePermission"]>[1],
-            ) =>
-              interaction.decidePermission(request, settlement),
-            answerQuestions: (
-              request: Parameters<ProductLocalInteractionProvider["answerQuestions"]>[0],
-              settlement: Parameters<ProductLocalInteractionProvider["answerQuestions"]>[1],
-            ) =>
-              interaction.answerQuestions(request, settlement),
+          const session = state.context.productSession.snapshot();
+          const status = state.context.productComponents.status();
+          return Object.freeze({
+            desiredRevision: params.revision,
+            effectiveRevision: session.effectiveConfigRevision ?? params.revision,
+            state: "applied" as const,
+            components: status.components,
           });
-          const autoAllowTools = params.toolPolicy?.autoAllowTools
-            ?? state.canonicalAutoAllowTools ?? Object.freeze([]);
-          await state.context.productSession.replaceConfiguration(candidate, async (agent) => {
-            await permission.applyConfiguration(agent, Object.freeze({
-              mode: params.permissionMode as Parameters<
-                ProductPermissionController["applyConfiguration"]
-              >[1]["mode"],
-              autoAllowTools: autoAllowTools as Parameters<
-                ProductPermissionController["applyConfiguration"]
-              >[1]["autoAllowTools"],
-              interaction: nextInteraction,
-            }));
-            state.canonicalPermissionMode = params.permissionMode;
-            state.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
-            state.hostInteractionRevision = params.interactionScenario;
-          });
+        } catch (error) {
+          const modelAuthority = state.hostModelAuthority;
+          if (modelAuthority !== undefined) {
+            try {
+              await modelAuthority.rollbackAdmission(params.revision);
+            } catch (rollbackError) {
+              throw new AggregateError(
+                [error, rollbackError],
+                "configuration apply and Provider admission rollback failed",
+                { cause: rollbackError },
+              );
+            }
+          }
+          throw error;
         }
-        const session = state.context.productSession.snapshot();
-        const status = state.context.productComponents.status();
-        return Object.freeze({
-          desiredRevision: params.revision,
-          effectiveRevision: session.effectiveConfigRevision ?? params.revision,
-          state: "applied" as const,
-          components: status.components,
-        });
       },
     ),
     credentialReconcile: (params) => {
@@ -753,6 +799,7 @@ export const consumeNativeRpcLifecycleAuthority = (
     artifactManifestSha256: snapshot.artifactManifestSha256,
     artifactVersion: snapshot.artifactVersion,
     bindAttachmentLeaseLimit: state.bindAttachmentLeaseLimit,
+    bindHostCapabilities: state.bindHostCapabilities,
     commandInvoke: state.commandInvoke,
     configApply: state.configApply,
     context: installationContext,
@@ -884,10 +931,10 @@ export class DshRootComposition {
     const registeredProviders = this.context.llm.listProviders()
       .map(({ id }) => id)
       .sort(compareCodePoints);
-    const hostModelProviderRoute = compositionAuthorities.get(this.context)?.hostModelProviderRoute;
+    const hostModelProviderRoutes = compositionAuthorities.get(this.context)?.hostModelProviderRoutes;
     const expectedProviders = [
       ...this.providers,
-      ...(hostModelProviderRoute === undefined ? [] : [hostModelProviderRoute]),
+      ...(hostModelProviderRoutes === undefined ? [] : hostModelProviderRoutes()),
     ].sort(compareCodePoints);
     if (JSON.stringify(registeredProviders) !== JSON.stringify(expectedProviders)) {
       throw new Error("DSH root composition provider registry differs from its authority");
@@ -906,7 +953,7 @@ export class DshRootComposition {
         componentEffectiveRevision: componentStatus.effectiveRevision,
         componentState: componentStatus.state,
       }),
-      hostModelPlane: hostModelProviderRoute === undefined ? "absent" : "installed",
+      hostModelPlane: hostModelProviderRoutes === undefined ? "absent" : "installed",
       persistencePlane: componentAuthority?.persistencePlane === "installed" ? "installed" : "absent",
       ...(componentAuthority?.persistencePlane === "installed"
         ? { persistenceFormat: PRODUCT_PERSISTENCE_FORMAT }
@@ -1754,9 +1801,9 @@ export const createProductCommandComponentCompiler = (
   return createCommandComponentCompiler({ controller: authority.dynamicCommands });
 };
 
-export const installHostDeepSeekModelPlane = async (
+export const installHostModelPlane = async (
   composition: DshRootComposition,
-  config: HostDeepSeekModelPlaneConfig,
+  config: HostModelPlaneConfig,
 ): Promise<void> => {
   const root = composition.context;
   const authority = compositionAuthorities.get(root);
@@ -1788,8 +1835,15 @@ export const installHostDeepSeekModelPlane = async (
     if (credentialController === undefined) {
       throw new Error("Host credential Provider did not register its private composition controller");
     }
-    const modelAuthority = new HostDeepSeekModelAuthority(root, credentialController, config);
+    await root.plugin(HostSettingsProvider);
+    if (!(root.settings instanceof HostSettingsProvider)
+      || !(root.settings instanceof SettingsProvider)) {
+      throw new Error("Host settings Provider did not install through the public DSH service seam");
+    }
+    await root.plugin(await loadPiAiPlugin(), Object.freeze({ providers: Object.freeze({}) }));
+    const modelAuthority = new HostModelAuthority(root, credentialController, config);
     authority.installHostModelGuards(modelAuthority);
+    installHostLlmRequestScope(root, modelAuthority, credentialController);
     await root.plugin(adapterPlugin(
       [HOST_DEEPSEEK_PROVIDER_ROUTE],
       new HostDeepSeekLlmAdapter(modelAuthority, root.credentials, credentialController),
@@ -1797,7 +1851,7 @@ export const installHostDeepSeekModelPlane = async (
     await root.plugin(ProductUtilityService, { authority: modelAuthority });
     authority.hostCredentials = credentialController;
     authority.hostModelAuthority = modelAuthority;
-    authority.hostModelProviderRoute = HOST_DEEPSEEK_PROVIDER_ROUTE;
+    authority.hostModelProviderRoutes = () => modelAuthority.activeProviderRoutes();
     authority.hostModelPlane = "installed";
     composition.snapshot();
   } catch (error) {
@@ -1806,7 +1860,9 @@ export const installHostDeepSeekModelPlane = async (
   }
 };
 
-export const createHostDeepSeekWebSearchPlaneConfig = (
+export const installHostDeepSeekModelPlane = installHostModelPlane;
+
+export const createHostProviderWebSearchPlaneConfig = (
   composition: DshRootComposition,
   policyRef: string,
 ): NonNullable<CanonicalWebToolsConfig["search"]> => {
@@ -1816,14 +1872,46 @@ export const createHostDeepSeekWebSearchPlaneConfig = (
     || authority.hostModelPlane !== "installed" || authority.hostModelAuthority === undefined
     || authority.canonicalToolPlane !== "absent") {
     throw new Error(
-      "Host DeepSeek WebSearch config requires the exact unclaimed composition after model installation",
+      "Host Provider WebSearch config requires the exact unclaimed composition after model installation",
     );
   }
   composition.snapshot();
-  return createHostDeepSeekWebSearchConfig(root, authority.hostModelAuthority, policyRef);
+  const modelAuthority = authority.hostModelAuthority;
+  const native = createHostDeepSeekWebSearchConfig(root, modelAuthority, policyRef);
+  return Object.freeze({
+    ...native,
+    run: async (request: ProductWebSearchRequest) => {
+      if (!modelAuthority.shouldUseHostCanonicalWeb()) return await native.run(request);
+      const result = await executeHostCanonicalWebTool(
+        root,
+        authority.hostPorts,
+        modelAuthority,
+        request.context,
+        "WebSearch",
+        Object.freeze({
+          query: request.query,
+          ...(request.allowedDomains === undefined
+            ? {}
+            : { allowed_domains: request.allowedDomains }),
+          ...(request.blockedDomains === undefined
+            ? {}
+            : { blocked_domains: request.blockedDomains }),
+        }),
+      );
+      if (result.query !== request.query) {
+        throw new ProtocolError(
+          "host_web_result_invalid",
+          "Host WebSearch result differs from the requested query",
+        );
+      }
+      const { query: _query, ...detail } = result;
+      void _query;
+      return detail as Awaited<ReturnType<NonNullable<CanonicalWebToolsConfig["search"]>["run"]>>;
+    },
+  });
 };
 
-export const createHostDeepSeekWebFetchPlaneConfig = (
+export const createHostProviderWebFetchPlaneConfig = (
   composition: DshRootComposition,
   policyRef: string,
 ): NonNullable<CanonicalWebToolsConfig["fetch"]> => {
@@ -1833,12 +1921,32 @@ export const createHostDeepSeekWebFetchPlaneConfig = (
     || authority.hostModelPlane !== "installed" || authority.hostModelAuthority === undefined
     || authority.canonicalToolPlane !== "absent") {
     throw new Error(
-      "Host DeepSeek WebFetch config requires the exact unclaimed composition after model installation",
+      "Host Provider WebFetch config requires the exact unclaimed composition after model installation",
     );
   }
   composition.snapshot();
-  return createHostDeepSeekWebFetchConfig(root, policyRef);
+  const modelAuthority = authority.hostModelAuthority;
+  const native = createHostDeepSeekWebFetchConfig(root, policyRef);
+  return Object.freeze({
+    ...native,
+    host: Object.freeze({
+      available: () => modelAuthority.shouldUseHostCanonicalWeb(),
+      run: (request: ProductHostWebFetchRequest) => executeHostCanonicalWebTool(
+        root,
+        authority.hostPorts,
+        modelAuthority,
+        request.context,
+        "WebFetch",
+        Object.freeze({ prompt: request.prompt, url: request.url }),
+      ) as ReturnType<NonNullable<
+        NonNullable<CanonicalWebToolsConfig["fetch"]>["host"]
+      >["run"]>,
+    }),
+  });
 };
+
+export const createHostDeepSeekWebSearchPlaneConfig = createHostProviderWebSearchPlaneConfig;
+export const createHostDeepSeekWebFetchPlaneConfig = createHostProviderWebFetchPlaneConfig;
 
 Object.freeze(DshRootComposition.prototype);
 Object.freeze(DshRootComposition);
@@ -1854,7 +1962,7 @@ export const composeDshRootServices = async (
   let providerAdmissionGuard: ((request: PrimarySessionBackendRequest) => Promise<void>) | undefined;
   let providerAdmissionAssert: ((request: PrimarySessionBackendRequest) => void) | undefined;
   let modelProfileBirthGuard: ((revision: string) => void) | undefined;
-  let hostModelRequestAuthority: HostDeepSeekModelAuthority | undefined;
+  let hostModelRequestAuthority: HostModelAuthority | undefined;
   let hostPortController: HostPortServiceController | undefined;
   let componentController: ProductComponentServiceController | undefined;
   let operationLifecycleController: OperationLifecycleController | undefined;
@@ -1917,6 +2025,12 @@ export const composeDshRootServices = async (
         root.productComponents.assertSessionExtensionCatalog(request.params.extensionDigest);
         assertInitialSessionConfiguration(authority, request);
         await providerAdmissionGuard?.(request);
+      },
+      providerAdmissionRollback: async (request) => {
+        await hostModelRequestAuthority?.rollbackAdmission(
+          request.params.configRevision,
+          request.runtimeSessionId,
+        );
       },
       providerConfigurationGuard: async (request) => {
         await providerAdmissionGuard?.(request);
@@ -2268,7 +2382,7 @@ export const composeDshRootServices = async (
       hostCredentials: undefined,
       hostModelAuthority: undefined,
       hostModelPlane: "absent",
-      hostModelProviderRoute: undefined,
+      hostModelProviderRoutes: undefined,
       checkpointStore: undefined,
       persistenceInstallPromise: undefined,
       persistencePlane: "absent",

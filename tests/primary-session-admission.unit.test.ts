@@ -65,7 +65,12 @@ const createParams = (
     credentialRef: "credential-primary",
     contextWindow: 8_192,
     maxTokens: 1_024,
-    compatibility: { beta: true, alpha: "stable" },
+    compatibility: {
+      credentialMode: "pi-ai-api-key",
+      family: "openai-completions",
+      version: 1,
+      wireCompat: { supportsStrictMode: true, supportsDeveloperRole: true },
+    },
   },
   configRevision: "config-v1",
   extensionDigest: digest,
@@ -117,6 +122,33 @@ const backendWith = (
 ): PrimarySessionBackend => ({ create, resume });
 
 describe("one-primary-session admission", () => {
+  it("rolls back a prepared Provider when backend admission fails", async () => {
+    const failure = new Error("synthetic backend failure");
+    const admissionGuard = vi.fn(() => Promise.resolve());
+    const rollback = vi.fn<(request: PrimarySessionBackendRequest) => Promise<void>>(
+      () => Promise.resolve(),
+    );
+    const admission = new PrimarySessionAdmission(
+      backendWith(
+        () => Promise.reject(failure),
+        () => Promise.reject(new Error("resume must not run")),
+      ),
+      workspace,
+      createRuntimeSettlementDeadlineAuthority(),
+      admissionGuard,
+      undefined,
+      rollback,
+    );
+    await expect(admission.bindCreate(createParams())).rejects.toBe(failure);
+    expect(admissionGuard).toHaveBeenCalledOnce();
+    expect(rollback).toHaveBeenCalledOnce();
+    expect(rollback.mock.calls[0]?.[0]).toMatchObject({
+      mode: "create",
+      runtimeSessionId: "runtime-primary",
+    });
+    expect(admission.snapshot().state).toBe("recovery_required");
+  });
+
   it("coalesces exact create retries and permanently fences a different primary identity", async () => {
     const pending = Promise.withResolvers<PrimarySessionBackendResult>();
     const create = vi.fn(() => pending.promise);
@@ -176,7 +208,12 @@ describe("one-primary-session admission", () => {
     const secondParams = createParams({
       provider: {
         ...firstParams.provider,
-        compatibility: { alpha: "stable", beta: true },
+        compatibility: {
+          credentialMode: "pi-ai-api-key",
+          family: "openai-completions",
+          version: 1,
+          wireCompat: { supportsDeveloperRole: true, supportsStrictMode: true },
+        },
       },
     });
     const first = admission.bindCreate(firstParams);

@@ -338,6 +338,7 @@ const emptyActiveCounts = () => ({
 
 type NativeRpcCompositionCapabilities = Readonly<{
   bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
+  bindHostCapabilities: (capabilities: InitializeParams["hostCapabilities"]) => void;
   hostPorts: HostPortTransportLifecycle;
   installPersistence: (runtimeHome: string) => Promise<void>;
   commandInvoke: (
@@ -425,6 +426,7 @@ export class NativeRpcServer extends Service {
     }
     nativeRpcCompositionCapabilities.set(this, Object.freeze({
       bindAttachmentLeaseLimit: compositionAuthority.bindAttachmentLeaseLimit,
+      bindHostCapabilities: compositionAuthority.bindHostCapabilities,
       commandInvoke: compositionAuthority.commandInvoke,
       configApply: compositionAuthority.configApply,
       credentialReconcile: compositionAuthority.credentialReconcile,
@@ -716,6 +718,7 @@ export class NativeRpcServer extends Service {
       path: params.workspace.path,
       platformTarget: this.configValue.platformTarget,
     });
+    compositionCapabilitiesOf(this).bindHostCapabilities(params.hostCapabilities);
     context.signal.throwIfAborted();
     try {
       await compositionCapabilitiesOf(this).installPersistence(params.runtimeHome);

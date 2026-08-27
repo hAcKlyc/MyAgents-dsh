@@ -35,7 +35,8 @@ import {
 
 const sourceVersion = "0.1.1-rc.2";
 const rootNames = [...expectedDshDependencies.keys()]
-  .filter((name) => name.startsWith("@deepseek-ai/dsh-"));
+  .filter((name) => name.startsWith("@deepseek-ai/dsh-")
+    && name !== "@deepseek-ai/dsh-llm-pi-ai");
 const transitiveNames = Array.from(
   { length: PATCHED_DSH_ARTIFACT_PACKAGE_COUNT - rootNames.length },
   (_, index) => `@deepseek-ai/dsh-artifact-fixture-${String(index + 1)}`,

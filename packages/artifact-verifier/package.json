@@ -7,6 +7,8 @@
   "files": ["src"],
   "exports": {
     ".": "./src/index.ts",
+    "./integration-compatibility": "./src/integration-compatibility.ts",
+    "./integration-handoff": "./src/integration-handoff.ts",
     "./batch-1-handoff": "./src/batch-1-handoff.ts",
     "./batch-1-distribution-handoff": "./src/batch-1-distribution-handoff.ts",
     "./reference-web-artifact": "./src/reference-web-artifact.ts",

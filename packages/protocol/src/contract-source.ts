@@ -10,12 +10,13 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "2.0.0-draft.1" as const;
+export const PROTOCOL_VERSION = "2.0.0-draft.2" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.fc0096a8d5bc" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
 export const DEEPSEEK_WEB_SEARCH_POLICY_REF = "deepseek-official-web-search-v1" as const;
+export const HOST_CANONICAL_WEB_ADAPTER_ID = "myagents-host-canonical-web-v1" as const;
 export const MAX_FRAME_BYTES = 1_048_576;
 export const MIN_FRAME_BYTES = 4_096;
 export const MAX_IDENTIFIER_LENGTH = 256;
@@ -217,6 +218,57 @@ export const ExtensionCatalogSchema = strictObject({
   mcpServers: Type.Array(strictObject({ id: identifier, state: componentState }), { maxItems: 1_024 }),
 });
 
+const providerWireCompatibilityV1 = strictObject({
+  supportsDeveloperRole: Type.Optional(Type.Boolean()),
+  supportsReasoningEffort: Type.Optional(Type.Boolean()),
+  supportsUsageInStreaming: Type.Optional(Type.Boolean()),
+  maxTokensField: Type.Optional(Type.Union([
+    Type.Literal("max_completion_tokens"),
+    Type.Literal("max_tokens"),
+  ])),
+  requiresToolResultName: Type.Optional(Type.Boolean()),
+  requiresAssistantAfterToolResult: Type.Optional(Type.Boolean()),
+  thinkingFormat: Type.Optional(Type.Union([
+    Type.Literal("openai"),
+    Type.Literal("deepseek"),
+    Type.Literal("openrouter"),
+    Type.Literal("together"),
+    Type.Literal("zai"),
+    Type.Literal("qwen"),
+    Type.Literal("chat-template"),
+    Type.Literal("qwen-chat-template"),
+    Type.Literal("string-thinking"),
+    Type.Literal("ant-ling"),
+  ])),
+  supportsStrictMode: Type.Optional(Type.Boolean()),
+  supportsTemperature: Type.Optional(Type.Boolean()),
+  supportsStrictTools: Type.Optional(Type.Boolean()),
+});
+
+const providerCompatibility = (
+  family: "anthropic-messages" | "openai-completions" | "openai-responses",
+) => strictObject({
+  version: Type.Literal(1),
+  family: Type.Literal(family),
+  credentialMode: Type.Literal("pi-ai-api-key"),
+  wireCompat: Type.Optional(providerWireCompatibilityV1),
+});
+
+export const ProviderCompatibilityProfileSchema = Type.Union([
+  providerCompatibility("anthropic-messages"),
+  providerCompatibility("openai-completions"),
+  providerCompatibility("openai-responses"),
+]);
+
+const reasoningEffortMap = strictObject({
+  off: Type.Optional(Type.Null()),
+  low: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  medium: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  high: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  xhigh: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  max: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+});
+
 export const ModelExecutionProfileSchema = strictObject({
   revision,
   providerRouteId: identifier,
@@ -227,6 +279,10 @@ export const ModelExecutionProfileSchema = strictObject({
   credentialRef: identifier,
   contextWindow: Type.Integer({ minimum: 1 }),
   maxTokens: Type.Integer({ minimum: 1 }),
+  inputModalities: Type.Optional(Type.Array(Type.Union([
+    Type.Literal("text"),
+    Type.Literal("image"),
+  ]), { minItems: 1, maxItems: 2, uniqueItems: true })),
   pricing: Type.Optional(strictObject({
     inputUsdPerMillionTokens: Type.Number({ minimum: 0, maximum: 1_000_000 }),
     outputUsdPerMillionTokens: Type.Number({ minimum: 0, maximum: 1_000_000 }),
@@ -235,7 +291,8 @@ export const ModelExecutionProfileSchema = strictObject({
   })),
   reasoning: Type.Optional(Type.Boolean()),
   effort: Type.Optional(Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high"), Type.Literal("xhigh"), Type.Literal("max")])),
-  compatibility: Type.Optional(jsonRecord),
+  reasoningEffortMap: Type.Optional(reasoningEffortMap),
+  compatibility: Type.Optional(ProviderCompatibilityProfileSchema),
 });
 
 export const InitializeParamsSchema = strictObject({

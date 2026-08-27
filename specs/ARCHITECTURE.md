@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: draft
-updated: 2026-08-26
+updated: 2026-08-27
 project: MyAgents-dsh
 ---
 
@@ -132,6 +132,10 @@ MyAgents-owned plugins implement compatibility and product policy through DSH se
 - safe WebFetch and model/provider policy;
 - Host-backed attachment and declarative extension providers.
 
+The official model plane keeps two deliberately different adapter owners behind the one DSH `ctx.llm` service. `dsh-llm-deepseek` exclusively owns `deepseek-official` and its DeepSeek-native Files/search behavior. Exact public `dsh-llm-pi-ai@0.1.1-rc.2` is mounted dormant and owns only Host-declared Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes. A root-only in-memory `HostSettingsProvider` atomically replaces its non-secret route document during Session/config admission; it is not a user configuration store. Request middleware holds one reverse-port credential scope across adapter iterator creation, each read and cleanup, and sanitizes both thrown failures and in-stream failure terminals before persistence. Failed admission restores the prior settings and credential binding.
+
+Canonical Web tools remain in the same `ctx.tools` pipeline. `deepseek-official` uses the native DeepSeek web plane; a non-DeepSeek route can exist only when initialization advertises the versioned Host canonical-web capability, in which case `WebSearch` and `WebFetch` dispatch through the existing `host/tool/execute` reverse port after normal schema, policy, permission, Hook and operation-authority checks.
+
 ### 4.5 DSH foundation
 
 The official profile directly consumes pinned public DSH packages for:
@@ -182,7 +186,9 @@ Shared conformance suites run against every platform adapter. A target that has 
 | --- | --- | --- |
 | Product Session, product transcript, UI cards | MyAgents Host or SDK Host | Host persists and projects |
 | Provider route, model selection, credential references | Host snapshot | Runtime freezes effective profile per operation |
+| Non-secret pi-ai route settings | Root `HostSettingsProvider` projection of the admitted Host profile | In-memory only; atomic replace/rollback; no independent config authority |
 | Secret material | Host credential provider | Request/connection scoped; never persisted or emitted |
+| Provider/API/model compatibility truth | Artifact-bound MyAgents-dsh compatibility manifest plus exact Host profile cell | Runtime validates at admission; Host filters product choices |
 | Runtime generation and primary-session admission | Official runtime profile | Process lifetime |
 | AgentLoop and model-conversation execution | DSH concrete AgentLoop | DSH lifecycle and cancellation |
 | Durable model conversation | DSH Session event log | Persistence provider stores exact events |
@@ -234,6 +240,7 @@ process start
   -> construct official Cordis profile
   -> run invariant preflight
   -> initialize / negotiate protocol and limits
+  -> bind immutable Host capability inventory
   -> Host sends initialized confirmation
   -> reconcile initial declarative component snapshot
   -> session/create or session/resume
@@ -357,7 +364,7 @@ Host ports are Service Definitions consumed by runtime plugins and provided by t
 - PreToolUse, PostToolUse, and PermissionRequest Hooks;
 - attachment put/acquire/release leases.
 
-The runtime may execute model network requests through selected DSH LLM adapters, but the Host remains the authority for the route, profile, credential reference, and secret material. Secret material is resolved only for one model request or MCP connection attempt.
+The runtime may execute model network requests through selected DSH LLM adapters, but the Host remains the authority for the route, profile, credential reference, and secret material. Secret material is resolved only for one model request or MCP connection attempt. Non-DeepSeek Session birth also requires the immutable Host canonical-web capability because the accepted MyAgents profile promises all 20 tools; an unavailable backend is rejected before a turn rather than represented by an inert tool.
 
 Reverse requests carry runtime generation, session, operation, turn, tool, and component identities sufficient to reject stale responses. Cancellation is explicit and settles exactly once.
 
@@ -411,6 +418,8 @@ The compatibility manifest records every supported export, option, message, meth
 MyAgents is the first-party native Host. It owns Product Session identity, the product transcript, provider/profile selection, credentials, UI interactions, attachment bytes, workspace identity, and product scheduling.
 
 Each Product Session sidecar owns one runtime generation. Renderer code never parses the runtime wire directly; an application-owned adapter uses the generated native client and projects events into product state. The Rust shell or unrelated processes do not become alternate protocol authorities.
+
+MyAgents consumes the standalone Batch 3 integration handoff rather than repository source. That handoff nests the complete Runtime artifact verifier, generated client/schema/fixtures, exact compatibility manifest, canonical tool/profile contracts, notices and content-bound platform evidence. Platform `verified` is accepted only when an inventoried native report passed against that exact Runtime manifest. The Reference Web artifact and Agent SDK facade are not dependencies of this integration path.
 
 ## 16. DSH extension and fork policy
 

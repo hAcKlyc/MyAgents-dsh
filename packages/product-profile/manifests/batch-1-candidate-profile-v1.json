@@ -12,6 +12,8 @@
       "@deepseek-ai/dsh-agent-loop:AgentLoop",
       "@myagents-dsh/host-ports:HostPortService",
       "@myagents-dsh/host-ports:HostCredentialProvider",
+      "@myagents-dsh/runtime-product:HostSettingsProvider",
+      "@deepseek-ai/dsh-llm-pi-ai:llm-pi-ai",
       "@myagents-dsh/runtime-product:ProductSessionService",
       "@myagents-dsh/runtime-product:ProductUtilityService",
       "@myagents-dsh/operation-runtime:SdkOperationService",
@@ -130,8 +132,8 @@
       "host/attachment/acquire",
       "host/attachment/release"
     ],
-    "schemaSha256": "95d834cce120e8da45f8b4269e7ea89ae03e75ec786bde1e94fc2afafe1ca77d",
-    "version": "2.0.0-draft.1"
+    "schemaSha256": "5e3d3e4c2e64f850d8cd0d12065fc01e9e6ce76fb626e2f0b021f2603956e447",
+    "version": "2.0.0-draft.2"
   },
   "runtimeActivation": "workstream-evidence-only",
   "stage": "batch-1-w4-a10",

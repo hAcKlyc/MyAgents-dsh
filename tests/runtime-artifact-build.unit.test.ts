@@ -1,8 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { projectRuntimePackageExports } from "../scripts/verify-dsh-runtime-composition.js";
+import {
+  projectRuntimeDependencySection,
+  projectRuntimePackageExports,
+} from "../scripts/verify-dsh-runtime-composition.js";
 
 describe("Runtime artifact public export projection", () => {
+  it("keeps the public pi-ai adapter outside the patched DSH version projection", () => {
+    expect(projectRuntimeDependencySection({
+      "@deepseek-ai/dsh-agent": "0.1.1-rc.2",
+      "@deepseek-ai/dsh-llm-pi-ai": "0.1.1-rc.2",
+      "@myagents-dsh/protocol": "0.0.0",
+    }, "fixture dependencies")).toEqual({
+      "@deepseek-ai/dsh-agent": "0.1.1-rc.2.myagents.b150a551b8d4.fc0096a8d5bc",
+      "@deepseek-ai/dsh-llm-pi-ai": "0.1.1-rc.2",
+      "@myagents-dsh/protocol": "0.0.0",
+    });
+  });
+
   it("preserves every public subpath while translating compiled TypeScript targets", () => {
     expect(projectRuntimePackageExports({
       ".": "./src/index.ts",

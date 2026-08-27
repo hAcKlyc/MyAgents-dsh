@@ -111,6 +111,8 @@ describe("official product profile authority", () => {
     });
     expect(BATCH1_CANDIDATE_PROFILE.composition.installedPluginAllowlist).toEqual(expect.arrayContaining([
       "@myagents-dsh/host-ports:HostPortService",
+      "@myagents-dsh/runtime-product:HostSettingsProvider",
+      "@deepseek-ai/dsh-llm-pi-ai:llm-pi-ai",
       "@myagents-dsh/runtime-product:ProductSessionService",
       "@myagents-dsh/operation-runtime:SdkOperationService",
       "@myagents-dsh/rpc-server:NativeRpcServer",
