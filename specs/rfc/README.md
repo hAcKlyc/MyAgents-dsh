@@ -35,6 +35,6 @@ The ten documents form one design set: the first three establish cross-cutting t
 
 | Document | Purpose | Status |
 | --- | --- | --- |
-| [MyAgents-dsh Runtime integration handoff](./batch-3-myagents-integration-runtime.md) | Official multi-provider adapter integration, Host-controlled compatibility, canonical tool/web policy, exact artifact handoff, conformance and platform gates | `implementation-in-progress` |
+| [MyAgents-dsh Runtime integration handoff](./batch-3-myagents-integration-runtime.md) | Official multi-provider adapter integration, Host-controlled compatibility, canonical tool/web policy, exact artifact handoff, conformance and platform gates | `integration-handoff-ready` |
 
 The corresponding MyAgents Host/product implementation design is maintained in sibling repository document `MyAgents/specs/tech_docs/myagents_dsh_integrated_runtime.md`. Both RFCs implement the single accepted [Batch 3 Product PRD](../prd/batch-3-myagents-integration.md); neither creates an independent product gate.

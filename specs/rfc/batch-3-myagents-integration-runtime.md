@@ -1,7 +1,7 @@
 ---
 type: technical-rfc
-status: implementation-in-progress
-version: 0.2
+status: integration-handoff-ready
+version: 0.3
 updated: 2026-08-27
 implementation_repository: MyAgents-dsh
 product_prd: ../prd/batch-3-myagents-integration.md
@@ -10,6 +10,10 @@ audit_baseline:
   commit: 0fbcdb3a15879465b2dbc7f91b61dd5741aa3b27
   dsh: 0.1.1-rc.2
   protocol: 2.0.0-draft.2
+release_handoff:
+  source_commit: a0d125ce5b717b648e9dd73a17feef80f7273756
+  runtime_manifest: 338234561a8a5fc19e84163142dde0d30908f622ec322e7e838b830bd211563b
+  handoff_manifest: 9ddf2857a2fd2df9150fda49823630f9e66fe8f8bb4e828a15af803dd16a6fa5
 ---
 
 # Batch 3 Runtime RFC — MyAgents-dsh handoff for native MyAgents integration
@@ -102,7 +106,7 @@ The current implementation closes this repository-code gap without modifying DSH
 - deterministic public-package tests prove text, reasoning, incremental tool calls, usage, terminal state, endpoint selection and credential injection for all three families;
 - raw in-stream Provider failures are reduced to bounded codes and fixed safe messages before DSH can persist them.
 
-The remaining blockers are release evidence rather than another model plane: build the exact artifact from a clean committed head, emit its content-bound integration handoff, run the new artifact on native targets, and complete the MyAgents cross-repository provider-cell/J1–J18 campaign. MyAgents must not compensate for any remaining cell gap with a hidden Claude SDK/OpenAI bridge as a second model loop.
+The repository implementation and Runtime-delivery evidence are now closed for the pinned handoff in section 2.3. Remaining Batch 3 work is Host/product integration: define the exact visible MyAgents Provider/model cells, ingest the full handoff, and complete the combined J1–J18/platform campaign. MyAgents must not compensate for an unproved cell with a hidden Claude SDK/OpenAI bridge as a second model loop.
 
 ### 2.3 Artifact consequence
 
@@ -110,9 +114,18 @@ The accepted patched DSH dependency remains pinned to:
 
 - DSH release `0.1.1-rc.2`;
 - patched artifact version `0.1.1-rc.2.myagents.b150a551b8d4.fc0096a8d5bc`;
-- patched DSH manifest `35c0aaf3832365dd35600d10949f54324a08f2bb23c03fb5a799993944fbddef`.
+- patched DSH manifest `ea68706a6b109e6a91134317e55a6693d6cd568d9f3458dedfb829380e6442e5`.
 
-Batch 3 code changes will produce a new MyAgents-dsh Runtime artifact, protocol/profile/compatibility identities and handoff. Existing Batch 1 candidate artifact digests remain evidence for their exact binaries; they must not be relabeled as the Batch 3 integration artifact.
+The accepted Batch 3 integration input was built from clean source commit `a0d125ce5b717b648e9dd73a17feef80f7273756`:
+
+- Runtime manifest `338234561a8a5fc19e84163142dde0d30908f622ec322e7e838b830bd211563b`;
+- integration-handoff manifest `9ddf2857a2fd2df9150fda49823630f9e66fe8f8bb4e828a15af803dd16a6fa5`;
+- compatibility digest `bc7e4a5c0782414158335e1e37606e63f1e52f9144fe962e04bf9cb5139a1548`;
+- protocol `2.0.0-draft.2`, schema digest `5e3d3e4c2e64f850d8cd0d12065fc01e9e6ce76fb626e2f0b021f2603956e447`, and generated client digest `faec71c666f4f597944ce8b68aeb6b99ec6c968b9063b0ff2a468078a2db9737`;
+- macOS arm64 native evidence `ec4feb06ef89c226f3733bda32b0547ab320aa7e34a32bc5f1dce5ae08872371`, 7/7 passed;
+- Linux x64 evidence `9fa8485d572977e5c729c63764860c414bac57d9db019b64db9094dbcd15bd4d` and Windows x64 evidence `b8af3a2e230a359f11cb26051a487b859be379e379c0902742033582921999d5`, both correctly labeled `implementation-complete_pending-native-validation`.
+
+The handoff verifies independently from a clean directory and binds exact Node `24.13.1`. Existing Batch 1 candidate artifact digests remain evidence for their exact binaries; they must not be relabeled as this Batch 3 integration artifact.
 
 Reference Web artifact or review status is unrelated to this Runtime handoff.
 
@@ -790,13 +803,13 @@ A changed member invalidates dependent evidence.
 | DSH-B3-W1 | Provider contract and generated protocol | `complete` |
 | DSH-B3-W2 | Official pi-ai adapter integration and Host control layer | `complete` |
 | DSH-B3-W3 | Canonical tools/web Host capability | `complete` |
-| DSH-B3-W4 | Runtime integration handoff and packaging | `in_progress` |
+| DSH-B3-W4 | Runtime integration handoff and packaging | `complete` |
 | DSH-B3-W5 | Cross-product and platform acceptance | `in_progress` |
 | DSH-B3-U1 | Explicit user rollout acceptance | `not_started` |
 
 ### 21.1 Current implementation evidence
 
-The repository implementation on 2026-08-27 has completed W1–W3 and the code portion of W4:
+The repository implementation on 2026-08-27 has completed W1–W4:
 
 - protocol `2.0.0-draft.2` freezes the strict compatibility profile, modalities, reasoning vocabulary and Host canonical-web capability;
 - the official pi-ai adapter and its required same-release authorization peer remain public external packages, not a seventh core patch and not part of the 54-package patched DSH graph;
@@ -805,7 +818,7 @@ The repository implementation on 2026-08-27 has completed W1–W3 and the code p
 - the standalone handoff verifier recursively binds contracts/notices/platform evidence and delegates the nested Runtime directory to its complete-inventory verifier; `verified` platform claims require a passing native report for the exact Runtime digest;
 - the bounded repository suite passes 67 files / 603 tests with no residual Vitest or Runtime helper process.
 
-W4 remains `in_progress` because the builder correctly refuses to publish from this dirty, uncommitted implementation head; the immutable Runtime artifact and handoff can be generated only after an explicit release commit. W5 remains `in_progress` because exact-artifact native campaigns, fresh independent reviews and the MyAgents-owned cross-product acceptance are evidence on the combined pinned version set, not facts code in this worktree can manufacture.
+W4 is complete at the exact identities in section 2.3. The Runtime artifact and handoff were independently verified from a clean directory, and macOS arm64 native evidence passed 7/7. W5 remains `in_progress`: Windows/Linux retain their honest pending-native-validation claims, while exact MyAgents Provider cells, J1–J18 product journeys, combined distribution evidence and final cross-repository reviews require the MyAgents Host implementation.
 
 ## 22. Definition of done
 
