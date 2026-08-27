@@ -640,7 +640,7 @@ Required gates:
 - symlink/path/inventory verification;
 - no private fixtures, copied proprietary prompts or user files.
 
-The selected official adapter brings `@earendil-works/pi-ai`; its exact locked version, transitive dependency graph, lazy dynamic imports, license and packaging behavior are part of the artifact review. Do not float the adapter's declared caret dependency during a release build.
+The selected official adapter brings `@earendil-works/pi-ai` and requires the same-release public `@deepseek-ai/dsh-authorization` peer. Both are explicit exact Runtime artifact roots: authorization is packaged so the public adapter entrypoint is complete, but its service/login flows are not mounted or advertised. Their transitive dependency graph, lazy dynamic imports, licenses and packaging behavior are part of the artifact review. Do not float the adapter's declared ranges during a release build.
 
 Community bundles are not copied into the trusted product composition by search popularity. A candidate must preserve Host-owned secrets/configuration, the one `ctx.tools` pipeline, canonical tool names, bounded subprocess ownership and the artifact inventory. `@liustack/modsearch` does not meet those conditions unchanged; subscription-OAuth and arbitrary plugin bridges conflict more directly and remain excluded.
 
@@ -799,11 +799,11 @@ A changed member invalidates dependent evidence.
 The repository implementation on 2026-08-27 has completed W1–W3 and the code portion of W4:
 
 - protocol `2.0.0-draft.2` freezes the strict compatibility profile, modalities, reasoning vocabulary and Host canonical-web capability;
-- the official pi-ai adapter remains a public external package, not a seventh core patch and not part of the 54-package patched DSH graph;
+- the official pi-ai adapter and its required same-release authorization peer remain public external packages, not a seventh core patch and not part of the 54-package patched DSH graph;
 - Runtime artifact construction enforces exactly 54 accepted patched DSH packages plus public `dsh-llm-pi-ai@0.1.1-rc.2` and `pi-ai@0.82.1`;
 - `myagents-dsh-compatibility-v1.json` is recomputed from an installed Runtime artifact and enumerates the three API families, 20 tools, 36 Host methods, seven reverse ports, limitations and honest platform claims;
 - the standalone handoff verifier recursively binds contracts/notices/platform evidence and delegates the nested Runtime directory to its complete-inventory verifier; `verified` platform claims require a passing native report for the exact Runtime digest;
-- the bounded repository suite passes 67 files / 601 tests with no residual Vitest or Runtime helper process.
+- the bounded repository suite passes 67 files / 603 tests with no residual Vitest or Runtime helper process.
 
 W4 remains `in_progress` because the builder correctly refuses to publish from this dirty, uncommitted implementation head; the immutable Runtime artifact and handoff can be generated only after an explicit release commit. W5 remains `in_progress` because exact-artifact native campaigns, fresh independent reviews and the MyAgents-owned cross-product acceptance are evidence on the combined pinned version set, not facts code in this worktree can manufacture.
 

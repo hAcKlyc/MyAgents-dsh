@@ -207,12 +207,18 @@ const runtimePackageWorkspaces = [
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
 ] as const;
 const runtimeVendoredExternalPackages = ["typebox"] as const;
+const runtimeVendoredExternalRoots = ["typebox@1.3.7"] as const;
+const officialPiAiTypeboxVersion = "1.1.38" as const;
+const runtimeNodeTypesVersion = "24.13.3" as const;
 const officialPiAiAdapterPackage = "@deepseek-ai/dsh-llm-pi-ai" as const;
 const officialPiAiAdapterVersion = "0.1.1-rc.2" as const;
+const officialPiAiAuthorizationPeerPackage = "@deepseek-ai/dsh-authorization" as const;
+const officialPiAiAuthorizationPeerVersion = "0.1.1-rc.2" as const;
 const officialPiAiCorePackage = "@earendil-works/pi-ai" as const;
 const officialPiAiCoreVersion = "0.82.1" as const;
 const runtimePublicExternalRoots = Object.freeze([
   `${officialPiAiAdapterPackage}@${officialPiAiAdapterVersion}`,
+  `${officialPiAiAuthorizationPeerPackage}@${officialPiAiAuthorizationPeerVersion}`,
   `${officialPiAiCorePackage}@${officialPiAiCoreVersion}`,
 ] as const);
 
@@ -325,13 +331,18 @@ const collectRuntimeProviderVersions = (tree: JsonObject): Map<string, Set<strin
   return versions;
 };
 
-const assertRuntimeDshVersions = (versions: Map<string, Set<string>>): void => {
+export const assertRuntimeProviderVersions = (versions: Map<string, Set<string>>): void => {
   const piAiVersions = versions.get(officialPiAiAdapterPackage);
   if (piAiVersions?.size !== 1) {
     throw new Error("installed Runtime lacks the exact public pi-ai adapter authority");
   }
   if (!piAiVersions.has(officialPiAiAdapterVersion)) {
     throw new Error("installed Runtime lacks the exact public pi-ai adapter authority");
+  }
+  const authorizationVersions = versions.get(officialPiAiAuthorizationPeerPackage);
+  if (authorizationVersions?.size !== 1
+    || !authorizationVersions.has(officialPiAiAuthorizationPeerVersion)) {
+    throw new Error("installed Runtime lacks the exact public pi-ai authorization peer authority");
   }
   const piAiCoreVersions = versions.get(officialPiAiCorePackage);
   if (piAiCoreVersions?.size !== 1) {
@@ -342,6 +353,7 @@ const assertRuntimeDshVersions = (versions: Map<string, Set<string>>): void => {
   }
   const patchedVersions = new Map(versions);
   patchedVersions.delete(officialPiAiAdapterPackage);
+  patchedVersions.delete(officialPiAiAuthorizationPeerPackage);
   patchedVersions.delete(officialPiAiCorePackage);
   if (patchedVersions.size !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount) {
     throw new Error(
@@ -616,7 +628,7 @@ const cleanBuildRuntimeComposition = (
   return buildRoot;
 };
 
-const stageExactWorkspaceDependency = (
+const assertExactWorkspaceDependency = (
   consumerRoot: string,
   workspaceDirectory: string,
   packageName: string,
@@ -639,9 +651,38 @@ const stageExactWorkspaceDependency = (
     throw new Error(`${packageName} differs from the exact workspace dependency authority`);
   }
   const destination = resolve(consumerRoot, "node_modules", ...packageName.split("/"));
-  if (existsSync(destination)) throw new Error(`${packageName} is unexpectedly present before isolated staging`);
-  mkdirSync(dirname(destination), { recursive: true });
-  cpSync(source, destination, { dereference: true, recursive: true });
+  const destinationManifest = exactObject(
+    JSON.parse(readFileSync(resolve(destination, "package.json"), "utf8")) as unknown,
+    `isolated ${packageName} manifest`,
+  );
+  if (destinationManifest.name !== packageName || destinationManifest.version !== expectedVersion) {
+    throw new Error(`${packageName} differs from the exact isolated dependency authority`);
+  }
+};
+
+const prepareRuntimeConsumerOverrides = (consumerRoot: string): void => {
+  const manifestPath = resolve(consumerRoot, "package.json");
+  const manifest = exactObject(
+    JSON.parse(readFileSync(manifestPath, "utf8")) as unknown,
+    "patched DSH consumer manifest",
+  );
+  const runtimeOverrides = projectRuntimeConsumerOverrides(manifest.overrides);
+  writeFileSync(manifestPath, `${JSON.stringify({
+    ...manifest,
+    overrides: runtimeOverrides,
+  }, null, 2)}\n`);
+};
+
+export const projectRuntimeConsumerOverrides = (value: unknown): Record<string, unknown> => {
+  const overrides = exactObject(value, "patched DSH consumer overrides");
+  if (overrides.typebox !== officialPiAiTypeboxVersion) {
+    throw new Error("patched DSH consumer typebox override differs from the public pi-ai graph");
+  }
+  const runtimeOverrides = { ...overrides };
+  delete runtimeOverrides.typebox;
+  runtimeOverrides["@types/node"] = runtimeNodeTypesVersion;
+  return Object.fromEntries(Object.entries(runtimeOverrides)
+    .sort(([left], [right]) => compareCodePoint(left, right)));
 };
 
 const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
@@ -732,7 +773,7 @@ const assertCleanRuntimeDependencyTree = (
   if (Array.isArray(tree.problems) && tree.problems.length > 0) {
     throw new Error(`installed Runtime dependency tree is invalid: ${JSON.stringify(tree.problems)}`);
   }
-  assertRuntimeDshVersions(collectRuntimeProviderVersions(tree));
+  assertRuntimeProviderVersions(collectRuntimeProviderVersions(tree));
   const verifierRoot = resolve(candidateRoot, "node_modules/@myagents-dsh/artifact-verifier");
   const verifierManifest = exactObject(JSON.parse(readFileSync(
     resolve(verifierRoot, "package.json"),
@@ -789,6 +830,10 @@ const buildInstalledRuntimeCandidate = (
     stagedConsumerManifest.dependencies,
     "staged DSH consumer dependencies",
   );
+  const stagedOverrides = exactObject(
+    stagedConsumerManifest.overrides,
+    "staged DSH consumer overrides",
+  );
   const dependencies: Record<string, string> = {};
   for (const [name, value] of Object.entries(stagedDependencies)) {
     if (typeof value !== "string") throw new TypeError(`staged dependency ${name} is not a string`);
@@ -835,6 +880,8 @@ const buildInstalledRuntimeCandidate = (
   const orderedDependencies = Object.fromEntries(
     Object.entries(dependencies).sort(([left], [right]) => compareCodePoint(left, right)),
   );
+  const orderedOverrides = Object.fromEntries(Object.entries(stagedOverrides)
+    .sort(([left], [right]) => compareCodePoint(left, right)));
   writeFileSync(resolve(candidateRoot, "package.json"), `${JSON.stringify({
     name: "@myagents-dsh/w1-runtime-candidate",
     version: protocolMetaJson.runtimeVersion,
@@ -842,6 +889,7 @@ const buildInstalledRuntimeCandidate = (
     type: "module",
     engines: { node: "24.13.1", npm: "11.8.0" },
     dependencies: orderedDependencies,
+    overrides: orderedOverrides,
   }, null, 2)}\n`);
   cpSync(
     resolve(buildRoot, "tests/fixtures/runtime-server-process.artifact.js"),
@@ -1048,6 +1096,7 @@ const main = (): void => {
     const environment = isolatedEnvironment(temporaryRoot, values["npm-cache"]);
     const buildRoot = cleanBuildRuntimeComposition(temporaryRoot, environment);
     run("npm", ["ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], consumerRoot, environment);
+    prepareRuntimeConsumerOverrides(consumerRoot);
     run("npm", [
       "install",
       "--offline",
@@ -1056,20 +1105,21 @@ const main = (): void => {
       "--no-fund",
       "--save-exact",
       ...runtimePublicExternalRoots,
+      ...runtimeVendoredExternalRoots,
     ], consumerRoot, environment);
     assertContainedNodeModules(consumerRoot);
     const dependencyTree = exactObject(
       JSON.parse(run("npm", ["ls", "--all", "--json"], consumerRoot, environment)) as unknown,
       "npm ls tree",
     );
-    assertRuntimeDshVersions(collectRuntimeProviderVersions(dependencyTree));
+    assertRuntimeProviderVersions(collectRuntimeProviderVersions(dependencyTree));
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
       "packages/product-profile",
       "@myagents-dsh/product-profile",
     );
-    stageExactWorkspaceDependency(consumerRoot, "packages/tool-contracts", "typebox");
+    assertExactWorkspaceDependency(consumerRoot, "packages/tool-contracts", "typebox");
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
