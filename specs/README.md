@@ -13,6 +13,7 @@ This directory contains the product, architecture, protocol, and delivery author
 | Reference Web usable-product features and browser acceptance journeys | [prd/batch-1-reference-web-product.md](./prd/batch-1-reference-web-product.md) |
 | Implementation design over pinned DSH public seams | [rfc/README.md](./rfc/README.md) |
 | Accepted irreversible decisions and evidence state | [adr/README.md](./adr/README.md) |
+| Non-normative technical research and comparisons | [research/](./research/) |
 
 Before protocol implementation exists, the protocol specification is normative. Once the Pre-Batch Foundation creates the canonical TypeBox contract source, generated schema, fixtures, and clients become projections of that source and this document records the intended semantics.
 
