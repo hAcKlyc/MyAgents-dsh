@@ -62,6 +62,7 @@ const runtimeCompositionSourcePaths = [
   "apps/runtime-server/src/process.ts",
   "apps/runtime-server/src/self-check.ts",
   "packages/artifact-verifier/src/artifact-policy.ts",
+  "packages/artifact-verifier/src/batch-1-distribution-handoff.ts",
   "packages/artifact-verifier/src/batch-1-handoff.ts",
   "packages/artifact-verifier/src/forbidden-content.ts",
   "packages/artifact-verifier/src/index.ts",
