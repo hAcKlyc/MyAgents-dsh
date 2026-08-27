@@ -151,6 +151,18 @@ The official profile directly consumes pinned public DSH packages for:
 
 No package-private DSH imports are allowed.
 
+The official composition installs the public `BasicCompactionEngine` with
+automatic compaction enabled. DSH remains the sole compaction authority: before
+each accepted model step it resolves the latest durable provider/model route,
+reads that adapter model's `context.contextWindow`, and applies the pinned
+engine defaults of an 80% pressure threshold and a 16% verbatim-tail budget.
+A provider-confirmed context-window overflow may force a balanced reduction and
+retry the request once. The Host supplies the routed model profile and owns
+credentials, usage/cost projection, cancellation and explicit
+`session/compact`; it does not estimate a second context or rewrite the DSH
+surface. Compaction start/summary/replacement/end events and their provenance
+remain durable DSH Session facts.
+
 ### 4.6 Distribution and verification
 
 Build-time packages create and verify:

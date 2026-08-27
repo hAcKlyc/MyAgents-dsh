@@ -87,6 +87,13 @@ describe("official Host-profiled Provider composition", () => {
         }),
       );
       expect(root.llm.listProviders().map(({ id }) => id)).toContain("fixture-responses-route");
+      await expect(root.llm.resolveModelInfo(
+        "fixture-responses-route",
+        "fixture-responses-model",
+      )).resolves.toMatchObject({
+        context: { contextWindow: 128_000 },
+        defaultMaxTokens: 8_192,
+      });
       await root.settings.replace(
         HOST_PI_AI_SETTINGS_NAMESPACE,
         Object.freeze({ providers: Object.freeze({}) }),

@@ -1366,7 +1366,8 @@ const main = (): void => {
       evidence.compactionEvidence,
       "manual long-Session compaction evidence",
     );
-    if (compactionEvidence.acceptedState !== "accepted"
+    if (compactionEvidence.automaticEnabled !== true
+      || compactionEvidence.acceptedState !== "accepted"
       || JSON.stringify(compactionEvidence.durableEventTypes) !== JSON.stringify([
         "compaction/start",
         "compaction/summary",

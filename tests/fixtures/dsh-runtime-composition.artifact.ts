@@ -8,6 +8,7 @@ import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers
 import { DatabaseSync } from "node:sqlite";
 
 import { Context } from "@deepseek-ai/cordis";
+import { BasicCompactionEngine } from "@deepseek-ai/dsh-compaction-basic";
 import { CallId } from "@deepseek-ai/dsh-llm";
 import { assembleContextFor, type Agent } from "@deepseek-ai/dsh-agent";
 import { PERSONA_SECTION, SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
@@ -936,6 +937,12 @@ const composition = await composeDshRootServices({
   systemPrompt: { persona: "Composition fallback persona before primary Session admission." },
   tools: { mode: "native" },
 });
+assert.equal(composition.context.compaction instanceof BasicCompactionEngine, true);
+assert.equal(
+  (composition.context.compaction as BasicCompactionEngine).config.auto,
+  true,
+  "the production DSH composition must register automatic pressure and overflow compaction",
+);
 const hostInteractionProvider = createHostBackedInteractionProvider(composition, Object.freeze({
   revision: "artifact-interaction-v1",
   deadlineMs: 5_000,
@@ -4510,6 +4517,7 @@ process.stdout.write(`${JSON.stringify({
   deleteTransactionVerified: true,
   compactionVerified: true,
   compactionEvidence: {
+    automaticEnabled: true,
     acceptedState: compactionAccepted.state,
     durableEventTypes: compactionEvents.map(({ type }) => type),
     eventCountAdded: compactionEvents.length,

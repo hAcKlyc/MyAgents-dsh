@@ -1974,7 +1974,7 @@ export const composeDshRootServices = async (
     await root.plugin(ToolRuntime, tools);
     if (adapter !== undefined) await root.plugin(adapterPlugin(providers, adapter));
     await root.plugin(TokenMeter);
-    await root.plugin(BasicCompactionEngine, { auto: false });
+    await root.plugin(BasicCompactionEngine, { auto: true });
     await root.plugin(AgentLoop, {
       ...agentLoop,
       agents: [],
