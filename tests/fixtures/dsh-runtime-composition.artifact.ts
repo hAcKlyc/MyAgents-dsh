@@ -394,16 +394,21 @@ const waitUntil = async (predicate: () => boolean, description: string): Promise
   throw new Error(`timed out waiting for ${description}`);
 };
 
+// The accumulated composition campaign intentionally keeps every prior tool,
+// work and mutation fact on one synthetic Session. Give that fixture a large
+// routed window so enabling production auto-compaction does not consume a
+// scripted product response before the dedicated compaction phase below.
+const artifactContextWindow = 1_000_000;
 const adapter = new ScriptedFakeLlmAdapter({
   provider: "fixture",
   model: "fixture-model",
-  contextWindow: 8_192,
+  contextWindow: artifactContextWindow,
   inputModalities: ["text", "image"],
 });
 const childAdapter = new ScriptedFakeLlmAdapter({
   provider: "fixture",
   model: "fixture-model",
-  contextWindow: 8_192,
+  contextWindow: artifactContextWindow,
 });
 class ArtifactRoutingLlmAdapter extends LlmAdapter {
   override providerInfo(provider: string): LlmProviderInfo {
@@ -2216,7 +2221,7 @@ const primarySessionParams = {
     provider: "fixture",
     modelId: "fixture-model",
     credentialRef: "artifact-credential-ref",
-    contextWindow: 8_192,
+    contextWindow: artifactContextWindow,
     maxTokens: 1_024,
   },
   configRevision: "artifact-config-v1",
@@ -4081,7 +4086,7 @@ const failedResumeRecoveryOnly = true;
 const resumeAdapter = new ScriptedFakeLlmAdapter({
   provider: "fixture",
   model: "fixture-model",
-  contextWindow: 8_192,
+  contextWindow: artifactContextWindow,
 });
 const resumedComposition = await composeDshRootServices({
   adapter: resumeAdapter,

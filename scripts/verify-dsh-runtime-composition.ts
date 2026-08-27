@@ -1364,7 +1364,7 @@ const main = (): void => {
     }
     const compactionEvidence = exactObject(
       evidence.compactionEvidence,
-      "manual long-Session compaction evidence",
+      "automatic and explicit long-Session compaction evidence",
     );
     if (compactionEvidence.automaticEnabled !== true
       || compactionEvidence.acceptedState !== "accepted"
@@ -1379,7 +1379,7 @@ const main = (): void => {
       || !Number.isSafeInteger(compactionEvidence.longSessionTurnCount)
       || (compactionEvidence.longSessionTurnCount as number) < 10
       || compactionEvidence.summaryRequests !== 1) {
-      throw new Error("manual compaction evidence differs from the exact W4-A10 contract");
+      throw new Error("compaction evidence differs from the exact W4-A10 contract");
     }
     const deletePurgeEvidence = exactObject(
       evidence.deletePurgeEvidence,
