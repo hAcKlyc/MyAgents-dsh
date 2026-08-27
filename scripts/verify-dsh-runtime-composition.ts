@@ -1935,7 +1935,9 @@ const main = (): void => {
       || usage.cacheReadTokens !== 3 || usage.cacheWriteTokens !== 0
       || usage.totalTokens !== 12 || usage.costUsd !== 0
       || usageEvent?.contextOccupiedTokens !== null
-      || usageEvent.runtimeContextWindow !== 8_192) {
+      // The accumulated fixture deliberately uses a large synthetic window so
+      // automatic pressure compaction cannot reorder its scripted tool matrix.
+      || usageEvent.runtimeContextWindow !== 1_000_000) {
       throw new Error("Runtime usage/context projection differs from the durable DSH accounting facts");
     }
     rmSync(runner);
