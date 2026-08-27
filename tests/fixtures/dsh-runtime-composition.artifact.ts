@@ -3870,7 +3870,7 @@ assert.deepEqual(firstUsage.event.usage, {
   costUsd: 0,
 });
 assert.equal(firstUsage.event.contextOccupiedTokens, null);
-assert.equal(firstUsage.event.runtimeContextWindow, 8_192);
+assert.equal(firstUsage.event.runtimeContextWindow, artifactContextWindow);
 
 const snapshot = composition.snapshot();
 const componentCatalog = composition.context.productComponents.catalog();
