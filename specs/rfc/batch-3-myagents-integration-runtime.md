@@ -1,7 +1,7 @@
 ---
 type: technical-rfc
 status: integration-handoff-ready
-version: 0.3
+version: 0.4
 updated: 2026-08-27
 implementation_repository: MyAgents-dsh
 product_prd: ../prd/batch-3-myagents-integration.md
@@ -11,9 +11,9 @@ audit_baseline:
   dsh: 0.1.1-rc.2
   protocol: 2.0.0-draft.2
 release_handoff:
-  source_commit: a0d125ce5b717b648e9dd73a17feef80f7273756
-  runtime_manifest: 338234561a8a5fc19e84163142dde0d30908f622ec322e7e838b830bd211563b
-  handoff_manifest: 9ddf2857a2fd2df9150fda49823630f9e66fe8f8bb4e828a15af803dd16a6fa5
+  source_commit: b2f0d6a7891e693ebcc6cf1c0e7a136d18b113b6
+  runtime_manifest: b2ad2643b6fd2670f9959c69dde62052d6eace87c7e1c60bfdbc29b4c064e46d
+  handoff_manifest: 1b10a270c643136974076afcb5842b989658f36064d1f1875781f7591b967b3e
 ---
 
 # Batch 3 Runtime RFC — MyAgents-dsh handoff for native MyAgents integration
@@ -114,18 +114,18 @@ The accepted patched DSH dependency remains pinned to:
 
 - DSH release `0.1.1-rc.2`;
 - patched artifact version `0.1.1-rc.2.myagents.b150a551b8d4.fc0096a8d5bc`;
-- patched DSH manifest `ea68706a6b109e6a91134317e55a6693d6cd568d9f3458dedfb829380e6442e5`.
+- patched DSH manifest `b7431f897c7d9e2022068dbbcdfadd54e862b9b32c173226ae78d1deb89366a7`.
 
-The accepted Batch 3 integration input was built from clean source commit `a0d125ce5b717b648e9dd73a17feef80f7273756`:
+The accepted Batch 3 integration input was built from clean source commit `b2f0d6a7891e693ebcc6cf1c0e7a136d18b113b6`:
 
-- Runtime manifest `338234561a8a5fc19e84163142dde0d30908f622ec322e7e838b830bd211563b`;
-- integration-handoff manifest `9ddf2857a2fd2df9150fda49823630f9e66fe8f8bb4e828a15af803dd16a6fa5`;
-- compatibility digest `bc7e4a5c0782414158335e1e37606e63f1e52f9144fe962e04bf9cb5139a1548`;
+- Runtime manifest `b2ad2643b6fd2670f9959c69dde62052d6eace87c7e1c60bfdbc29b4c064e46d`;
+- integration-handoff manifest `1b10a270c643136974076afcb5842b989658f36064d1f1875781f7591b967b3e`;
+- compatibility digest `5bf5f6db2e2aa742b111fbb122e9ec8b435a53a41b26344f3733b4218b0f6888`;
 - protocol `2.0.0-draft.2`, schema digest `5e3d3e4c2e64f850d8cd0d12065fc01e9e6ce76fb626e2f0b021f2603956e447`, and generated client digest `faec71c666f4f597944ce8b68aeb6b99ec6c968b9063b0ff2a468078a2db9737`;
-- macOS arm64 native evidence `ec4feb06ef89c226f3733bda32b0547ab320aa7e34a32bc5f1dce5ae08872371`, 7/7 passed;
-- Linux x64 evidence `9fa8485d572977e5c729c63764860c414bac57d9db019b64db9094dbcd15bd4d` and Windows x64 evidence `b8af3a2e230a359f11cb26051a487b859be379e379c0902742033582921999d5`, both correctly labeled `implementation-complete_pending-native-validation`.
+- macOS arm64 native evidence `2fa8f05ec2077f54f6b628e7be933ddd69a894d8964b33b104059eb83d7f7719`, 7/7 passed;
+- Linux x64 evidence `747a3e23ff6a9d2c0db3efdbee7f3027cc436b8bc494f54eeaceae4187d6e06a` and Windows x64 evidence `416ea6ae3404b71c18bfb7c5b8357f477843713976cef41b79a26cf31fca80b4`, both correctly labeled `implementation-complete_pending-native-validation`.
 
-The handoff verifies independently from a clean directory and binds exact Node `24.13.1`. Existing Batch 1 candidate artifact digests remain evidence for their exact binaries; they must not be relabeled as this Batch 3 integration artifact.
+The handoff verifies independently from a clean directory and binds exact Node `24.14.0`, matching MyAgents' bundled Runtime Node. npm `11.8.0` is reproducible build provenance for this artifact; the installed Runtime never invokes npm and does not depend on the Host's package-manager distribution. Existing Batch 1 candidate artifact digests remain evidence for their exact binaries; they must not be relabeled as this Batch 3 integration artifact.
 
 Reference Web artifact or review status is unrelated to this Runtime handoff.
 
