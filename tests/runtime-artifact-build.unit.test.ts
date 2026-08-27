@@ -35,7 +35,6 @@ describe("Runtime artifact public export projection", () => {
     })).toEqual({
       "@earendil-works/pi-ai": "0.82.1",
       "@types/node": "24.13.3",
-      zod: "4.4.3",
     });
     expect(() => projectRuntimeConsumerOverrides({ typebox: "1.3.7" }))
       .toThrow("differs from the public pi-ai graph");

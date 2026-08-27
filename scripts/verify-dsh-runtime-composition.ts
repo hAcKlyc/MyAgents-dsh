@@ -678,11 +678,10 @@ export const projectRuntimeConsumerOverrides = (value: unknown): Record<string, 
   if (overrides.typebox !== officialPiAiTypeboxVersion) {
     throw new Error("patched DSH consumer typebox override differs from the public pi-ai graph");
   }
-  const runtimeOverrides = { ...overrides };
-  delete runtimeOverrides.typebox;
-  runtimeOverrides["@types/node"] = runtimeNodeTypesVersion;
-  return Object.fromEntries(Object.entries(runtimeOverrides)
-    .sort(([left], [right]) => compareCodePoint(left, right)));
+  return {
+    [officialPiAiCorePackage]: officialPiAiCoreVersion,
+    "@types/node": runtimeNodeTypesVersion,
+  };
 };
 
 const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
