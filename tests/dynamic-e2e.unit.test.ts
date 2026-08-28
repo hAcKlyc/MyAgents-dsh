@@ -376,6 +376,26 @@ describe("dynamic E2E harness", () => {
     }
   });
 
+  it("keeps the compaction pressure route on the one native DeepSeek adapter", async () => {
+    const path = resolve(
+      import.meta.dirname,
+      "../packages/dynamic-e2e/routes/deepseek-official-v4-flash-compaction.json",
+    );
+    const environmentName = "MYAGENTS_DYNAMIC_COMPACTION_ROUTE_MATERIAL";
+    process.env[environmentName] = "synthetic-compaction-route-material-canary";
+    try {
+      const route = await loadApprovedDynamicRoute(path, environmentName);
+      expect(route.provider).toMatchObject({
+        revision: "deepseek-official-v4-flash-compaction-v1",
+        providerRouteId: "deepseek-official",
+        contextWindow: 12_288,
+        maxTokens: 2_048,
+      });
+    } finally {
+      delete process.env[environmentName];
+    }
+  });
+
   it("keeps diagnostics closed until terminal and detects sealed-evidence tampering", async () => {
     const root = await temporaryRoot("myagents-dynamic-evidence-");
     const recorder = new DynamicEvidenceRecorder();

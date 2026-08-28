@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "provider": {
     "revision": "deepseek-official-v4-flash-compaction-v1",
-    "providerRouteId": "deepseek-official-compaction",
+    "providerRouteId": "deepseek-official",
     "api": "openai-completions",
     "provider": "deepseek",
     "modelId": "deepseek-v4-flash",
