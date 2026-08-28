@@ -2,7 +2,7 @@
 type: technical-rfc
 status: integration-handoff-ready
 version: 0.4
-updated: 2026-08-27
+updated: 2026-08-29
 implementation_repository: MyAgents-dsh
 product_prd: ../prd/batch-3-myagents-integration.md
 host_rfc: ../../../MyAgents/specs/tech_docs/myagents_dsh_integrated_runtime.md
@@ -11,9 +11,9 @@ audit_baseline:
   dsh: 0.1.1-rc.2
   protocol: 2.0.0-draft.2
 release_handoff:
-  source_commit: b2f0d6a7891e693ebcc6cf1c0e7a136d18b113b6
-  runtime_manifest: b2ad2643b6fd2670f9959c69dde62052d6eace87c7e1c60bfdbc29b4c064e46d
-  handoff_manifest: 1b10a270c643136974076afcb5842b989658f36064d1f1875781f7591b967b3e
+  source_commit: 3ff1a370f8fdd3bae6247d306cb2f625c967d52c
+  runtime_manifest: 61b9d01b0ab271fec6e789c650f210e9fe4f911bba75ee83a3968dcd431a0083
+  handoff_manifest: fedfe76d0896108eceb3646d68da332d5c9fd05289b08f83e2e2b2d9d5aa0c84
 ---
 
 # Batch 3 Runtime RFC — MyAgents-dsh handoff for native MyAgents integration
@@ -113,17 +113,19 @@ The repository implementation and Runtime-delivery evidence are now closed for t
 The accepted patched DSH dependency remains pinned to:
 
 - DSH release `0.1.1-rc.2`;
-- patched artifact version `0.1.1-rc.2.myagents.b150a551b8d4.fc0096a8d5bc`;
-- patched DSH manifest `b7431f897c7d9e2022068dbbcdfadd54e862b9b32c173226ae78d1deb89366a7`.
+- patched artifact version `0.1.1-rc.2.myagents.b150a551b8d4.8ac244cc6367`;
+- patched DSH manifest `9c5ed754341bae0f82bbb118188c5c45a97f640133cc3e91d22b9a2bee1b3f7c`, 55 packages / 47 roots, seven-patch digest `8ac244cc6367662c99c5fe4a6a7dad554344c3a3e6b846188ea651ce7fce1322`.
 
-The accepted Batch 3 integration input was built from clean source commit `b2f0d6a7891e693ebcc6cf1c0e7a136d18b113b6`:
+The accepted Batch 3 integration input was built from clean source commit `3ff1a370f8fdd3bae6247d306cb2f625c967d52c`:
 
-- Runtime manifest `b2ad2643b6fd2670f9959c69dde62052d6eace87c7e1c60bfdbc29b4c064e46d`;
-- integration-handoff manifest `1b10a270c643136974076afcb5842b989658f36064d1f1875781f7591b967b3e`;
-- compatibility digest `5bf5f6db2e2aa742b111fbb122e9ec8b435a53a41b26344f3733b4218b0f6888`;
-- protocol `2.0.0-draft.2`, schema digest `5e3d3e4c2e64f850d8cd0d12065fc01e9e6ce76fb626e2f0b021f2603956e447`, and generated client digest `faec71c666f4f597944ce8b68aeb6b99ec6c968b9063b0ff2a468078a2db9737`;
-- macOS arm64 native evidence `2fa8f05ec2077f54f6b628e7be933ddd69a894d8964b33b104059eb83d7f7719`, 7/7 passed;
-- Linux x64 evidence `747a3e23ff6a9d2c0db3efdbee7f3027cc436b8bc494f54eeaceae4187d6e06a` and Windows x64 evidence `416ea6ae3404b71c18bfb7c5b8357f477843713976cef41b79a26cf31fca80b4`, both correctly labeled `implementation-complete_pending-native-validation`.
+- Runtime manifest `61b9d01b0ab271fec6e789c650f210e9fe4f911bba75ee83a3968dcd431a0083`, 23,773 files;
+- integration-handoff manifest `fedfe76d0896108eceb3646d68da332d5c9fd05289b08f83e2e2b2d9d5aa0c84`;
+- compatibility digest `b825113ffae8a353a17388f1490e2433c07a958342d56d5f117739a818bb0480`;
+- protocol `2.0.0-draft.2`, schema digest `03a4275f66b3678ce0df56317952262cb7d577887446a612f4793d837d9a54f7`, and generated client digest `90f7330fef5f858dc18cff69f06ba128878de69c99c4d469e96631a8fc2ef51f`;
+- macOS arm64 native evidence `7c74800a27bd11fe154addd21a5e407dbb17b136646fab1041e3b8e5670f0120`, with dynamic campaign `5d6b066598b3bb7a66e0b271c84ff2a098caa31d4d8a90a8c5e5bf8a02ab1c26`, 8/8 passed;
+- Linux x64 evidence `79c371a7d634ef27c5e69de59c949fb2563d8606b983c1533b2b24bc75a97e5c` and Windows x64 evidence `0a76f21bb4bc28de3017de9e754db8c22403362f487e265100f520ee20fa9ba2`, both correctly labeled `implementation-complete_pending-native-validation`.
+
+This replacement includes the accepted P0 automatic compaction graph: official TokenMeter, official Tool Result Pruner, and one `BasicCompactionEngine({ auto: true })`, plus the capacity-safe upstream-ready patch. The pre-P0 Runtime/handoff remains attributable evidence for its exact bytes but is no longer an integration input.
 
 The handoff verifies independently from a clean directory and binds exact Node `24.14.0`, matching MyAgents' bundled Runtime Node. npm `11.8.0` is reproducible build provenance for this artifact; the installed Runtime never invokes npm and does not depend on the Host's package-manager distribution. Existing Batch 1 candidate artifact digests remain evidence for their exact binaries; they must not be relabeled as this Batch 3 integration artifact.
 
@@ -136,7 +138,7 @@ The release and ecosystem audit established:
 - GitHub `master`, tag `dsh-v0.1.1-rc.2` and commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` are identical;
 - npm `@deepseek-ai/dsh` `latest`/`next` are `0.1.1-rc.2`, which this repository already pins exactly;
 - npm publishes `@deepseek-ai/dsh-llm-pi-ai@0.1.1-rc.2`, but that package's `latest` dist-tag still points to an old prerelease while `next` points to rc.2; the integration must name the exact version and never install the bare package name;
-- the six accepted MyAgents DSH seam patches still target semantics absent from that exact upstream commit; none is retired by a newer release, and no new core patch is required for the multi-provider plan;
+- the first six accepted MyAgents DSH seam patches still target semantics absent from that exact upstream commit; compaction P0 adds the separately governed patch 0007 because rc.2 public seams cannot express exact summary preflight/range fitting without duplicating private transaction logic; no additional core patch is required for the multi-provider plan;
 - `npm run check:dsh-source` and the patched-source compile/regression matrix passed against the pinned source; the latter ran 402 tests with bounded workers;
 - in an isolated worktree at the release commit, the targeted `dsh-llm-pi-ai` adapter/dynamic-configuration/composition suites passed 59 tests with one worker; five live Provider API tests skipped because no audit credential was supplied;
 - official web packages already implement `ctx.web`, DeepSeek/Exa/Perplexity search providers, an HTTP fetch provider and the single model-facing web tool consumer;
@@ -809,16 +811,16 @@ A changed member invalidates dependent evidence.
 
 ### 21.1 Current implementation evidence
 
-The repository implementation on 2026-08-27 has completed W1–W4:
+The repository implementation through 2026-08-29 has completed W1–W4 and the Runtime-side compaction P0 refresh:
 
 - protocol `2.0.0-draft.2` freezes the strict compatibility profile, modalities, reasoning vocabulary and Host canonical-web capability;
-- the official pi-ai adapter and its required same-release authorization peer remain public external packages, not a seventh core patch and not part of the 54-package patched DSH graph;
-- Runtime artifact construction enforces exactly 54 accepted patched DSH packages plus public `dsh-llm-pi-ai@0.1.1-rc.2` and `pi-ai@0.82.1`;
+- the official pi-ai adapter and its required same-release authorization peer remain public external packages, not a core patch and not part of the 55-package patched DSH graph;
+- Runtime artifact construction enforces exactly 55 accepted patched DSH packages, including the official Tool Result Pruner, plus public `dsh-llm-pi-ai@0.1.1-rc.2` and `pi-ai@0.82.1`;
 - `myagents-dsh-compatibility-v1.json` is recomputed from an installed Runtime artifact and enumerates the three API families, 20 tools, 36 Host methods, seven reverse ports, limitations and honest platform claims;
 - the standalone handoff verifier recursively binds contracts/notices/platform evidence and delegates the nested Runtime directory to its complete-inventory verifier; `verified` platform claims require a passing native report for the exact Runtime digest;
-- the bounded repository suite passes 67 files / 603 tests with no residual Vitest or Runtime helper process.
+- the bounded repository suite passes 67 files / 605 tests with no residual Vitest or Runtime helper process.
 
-W4 is complete at the exact identities in section 2.3. The Runtime artifact and handoff were independently verified from a clean directory, and macOS arm64 native evidence passed 7/7. W5 remains `in_progress`: Windows/Linux retain their honest pending-native-validation claims, while exact MyAgents Provider cells, J1–J18 product journeys, combined distribution evidence and final cross-repository reviews require the MyAgents Host implementation.
+W4 is complete at the exact identities in section 2.3. The Runtime artifact and handoff were independently verified from a clean directory, and macOS arm64 native evidence passed 8/8, including eight automatic pressure compactions in the long continuity scenario. W5 remains `in_progress`: Windows/Linux retain their honest pending-native-validation claims, while exact MyAgents Provider cells, J1–J18 product journeys, combined distribution evidence and final cross-repository reviews require the MyAgents Host implementation.
 
 ## 22. Definition of done
 

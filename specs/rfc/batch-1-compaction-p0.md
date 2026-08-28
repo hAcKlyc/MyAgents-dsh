@@ -1,6 +1,6 @@
 ---
 type: rfc
-status: accepted-design
+status: implemented
 batch: 1
 workstream: B1-W4
 owner_action: B1-W4-A11
@@ -117,3 +117,11 @@ Repository tests own public package-root imports, exact official composition/ord
 - Provider-native compaction, continuity capsules, or WebUI changes;
 - logging checkpoint or request content for observability;
 - unlimited repair, overflow, or convergence loops.
+
+## 10. Implemented evidence
+
+The accepted implementation is bound to source commit `3ff1a370f8fdd3bae6247d306cb2f625c967d52c`. The exact seven-patch DSH artifact is `0.1.1-rc.2.myagents.b150a551b8d4.8ac244cc6367`, manifest `9c5ed754341bae0f82bbb118188c5c45a97f640133cc3e91d22b9a2bee1b3f7c`; its 0007 digest is `98a45e3b5ae9abdba8afefd5a44ca95bdc69a58b9d1728ea707401fab2f6ed07`. The resulting 23,773-file Runtime manifest is `61b9d01b0ab271fec6e789c650f210e9fe4f911bba75ee83a3968dcd431a0083`.
+
+The production route is unchanged. A compaction-only evidence route uses a 16,384-token context window and 4,096-token output cap so the structured summary request has legal input headroom; its 80-record deterministic ballast is test-only. Pressure acceptance counts only a completed summary transaction that begins while a Turn is open and before that Turn's model step starts, so explicit compact and Provider-overflow recovery cannot be misreported as automatic pressure compaction.
+
+The macOS arm64 report `7c74800a27bd11fe154addd21a5e407dbb17b136646fab1041e3b8e5670f0120` binds dynamic campaign `5d6b066598b3bb7a66e0b271c84ff2a098caa31d4d8a90a8c5e5bf8a02ab1c26`: all 8 scenarios pass, and the long continuity case completes eight automatic pressure compactions across 16/16 operations. The replacement Batch 3 handoff is `fedfe76d0896108eceb3646d68da332d5c9fd05289b08f83e2e2b2d9d5aa0c84` and verifies independently from its copied verifier.
