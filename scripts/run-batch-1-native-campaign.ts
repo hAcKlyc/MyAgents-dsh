@@ -16,7 +16,7 @@ import { resolveExternalOutputRoot } from "./run-batch-1-pre-artifact-gate.js";
 
 type JsonObject = Record<string, unknown>;
 
-export const BATCH_1_NATIVE_CAMPAIGN_VERSION = 1 as const;
+export const BATCH_1_NATIVE_CAMPAIGN_VERSION = 2 as const;
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const sha256 = (value: string | Uint8Array): string => createHash("sha256").update(value).digest("hex");
 
@@ -87,6 +87,7 @@ const main = async (): Promise<number> => {
     allowPositionals: false,
     options: {
       artifact: { type: "string" },
+      "compaction-route-config": { type: "string" },
       "credential-env": { type: "string" },
       "expected-manifest-sha256": { type: "string" },
       "npm-cache": { type: "string" },
@@ -100,6 +101,10 @@ const main = async (): Promise<number> => {
     "expected-manifest-sha256",
   );
   const routeConfig = resolve(required(values["route-config"], "route-config"));
+  const compactionRouteConfig = resolve(required(
+    values["compaction-route-config"],
+    "compaction-route-config",
+  ));
   const credentialEnvironmentName = required(values["credential-env"], "credential-env");
   const npmCache = resolve(required(values["npm-cache"], "npm-cache"));
   const requestedOutput = required(values.out, "out");
@@ -115,9 +120,15 @@ const main = async (): Promise<number> => {
 
   let routeAvailable = true;
   let routeConfigSha256 = sha256(readFileSync(routeConfig));
+  let compactionRouteConfigSha256 = sha256(readFileSync(compactionRouteConfig));
   try {
     const route = await loadApprovedDynamicRoute(routeConfig, credentialEnvironmentName);
     routeConfigSha256 = route.routeConfigSha256;
+    const compactionRoute = await loadApprovedDynamicRoute(
+      compactionRouteConfig,
+      credentialEnvironmentName,
+    );
+    compactionRouteConfigSha256 = compactionRoute.routeConfigSha256;
   } catch (error) {
     if (!(error instanceof ApprovedDynamicRouteCredentialUnavailableError)) throw error;
     routeAvailable = false;
@@ -143,6 +154,7 @@ const main = async (): Promise<number> => {
     "--artifact", artifactRoot,
     "--expected-manifest-sha256", expectedManifestSha256,
     "--route-config", routeConfig,
+    "--compaction-route-config", compactionRouteConfig,
     "--credential-env", credentialEnvironmentName,
     "--jobs", "1",
     "--out", dynamicOutput,
@@ -169,7 +181,7 @@ const main = async (): Promise<number> => {
       fileCount: artifact.fileCount,
       repositoryHead: artifact.repositoryHead,
     },
-    route: { routeConfigSha256, available: routeAvailable },
+    route: { routeConfigSha256, compactionRouteConfigSha256, available: routeAvailable },
     selfCheck: { outputSha256: selfCheck.outputSha256 },
     installedArtifact: { outputSha256: installed.outputSha256 },
     dynamic: {

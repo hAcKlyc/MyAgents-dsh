@@ -25,6 +25,7 @@ Commands:
   run --scenario <id> --artifact <path> [--route-config <path> --credential-env <name>]
       [--expected-manifest-sha256 <sha>] [--out <path>]
   campaign --artifact <path> [--route-config <path> --credential-env <name>]
+      [--compaction-route-config <path>]
       [--expected-manifest-sha256 <sha>] [--jobs 1|2] [--out <path>]
   inspect --run <run-root>
   verify --campaign <campaign-root> [--expected-manifest-sha256 <sha>]
@@ -151,13 +152,22 @@ const main = async (): Promise<number> => {
   }
   if (command === "campaign") {
     exactOptions(options, ["artifact"], [
-      "credential-env", "expected-manifest-sha256", "jobs", "out", "route-config",
+      "compaction-route-config", "credential-env", "expected-manifest-sha256", "jobs", "out",
+      "route-config",
     ]);
     if ((options["route-config"] === undefined) !== (options["credential-env"] === undefined)) {
       throw new TypeError("dynamic route config and credential environment name must be supplied together");
     }
     const selection = await selectDriver(options["route-config"], options["credential-env"]);
+    if (options["compaction-route-config"] !== undefined && options["credential-env"] === undefined) {
+      throw new TypeError("dynamic compaction route config requires the credential environment name");
+    }
+    const compactionSelection = options["compaction-route-config"] === undefined
+      ? selection
+      : await selectDriver(options["compaction-route-config"], options["credential-env"]);
     const jobs = options.jobs === undefined ? 1 : Number(options.jobs);
+    const secretCanaries = [selection.route, compactionSelection.route]
+      .flatMap((route) => route === undefined ? [] : [route.credentialMaterial()]);
     const result = await runDynamicCampaign({
       repositoryRoot,
       outputRoot: options.out ?? defaultOutputRoot,
@@ -167,10 +177,10 @@ const main = async (): Promise<number> => {
       }),
       scenarios,
       jobs,
-      ...(selection.route === undefined ? {} : {
-        secretCanaries: [selection.route.credentialMaterial()],
-      }),
-      createDriver: () => selection.driver,
+      ...(secretCanaries.length === 0 ? {} : { secretCanaries: [...new Set(secretCanaries)] }),
+      createDriver: (scenario) => scenario.id === "compaction-continuity"
+        ? compactionSelection.driver
+        : selection.driver,
     });
     process.stdout.write(`${JSON.stringify({
       campaignId: result.campaignId,

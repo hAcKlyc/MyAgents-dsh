@@ -24,7 +24,7 @@ export const runDynamicCampaign = async (options: Readonly<{
   scenarios: readonly DynamicScenario[];
   jobs: number;
   secretCanaries?: readonly string[];
-  createDriver(): DynamicRunDriver;
+  createDriver(scenario: DynamicScenario): DynamicRunDriver;
 }>): Promise<DynamicCampaignResult> => {
   if (!Number.isSafeInteger(options.jobs) || options.jobs < 1 || options.jobs > 2) {
     throw new TypeError("dynamic campaign jobs must be 1 or 2");
@@ -52,7 +52,7 @@ export const runDynamicCampaign = async (options: Readonly<{
         ...(options.expectedArtifactManifestSha256 === undefined
           ? {} : { expectedArtifactManifestSha256: options.expectedArtifactManifestSha256 }),
         scenario,
-        driver: options.createDriver(),
+        driver: options.createDriver(scenario),
         ...(options.secretCanaries === undefined ? {} : { secretCanaries: options.secretCanaries }),
       });
     }

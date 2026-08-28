@@ -518,6 +518,7 @@ describe("dynamic E2E harness", () => {
     const output = await temporaryRoot("myagents-dynamic-campaign-");
     const artifact = await createArtifact();
     const scenarios = (await loadDynamicScenarioCorpus(resolve(packageRoot, "scenarios"))).slice(0, 2);
+    const selectedScenarios: string[] = [];
     const campaign = await runDynamicCampaign({
       repositoryRoot,
       outputRoot: output,
@@ -525,10 +526,14 @@ describe("dynamic E2E harness", () => {
       expectedArtifactManifestSha256: artifact.manifestSha256,
       scenarios,
       jobs: 2,
-      createDriver: () => passingDriver,
+      createDriver: (scenario) => {
+        selectedScenarios.push(scenario.id);
+        return passingDriver;
+      },
     });
     expect(campaign.runs).toHaveLength(2);
     expect(new Set(campaign.runs.map(({ runId }) => runId)).size).toBe(2);
+    expect(selectedScenarios.sort()).toEqual(scenarios.map(({ id }) => id).sort());
     await expect(verifyDynamicCampaign(campaign.root, campaign.manifestSha256)).resolves.toEqual({
       campaignId: campaign.campaignId,
       manifestSha256: campaign.manifestSha256,
