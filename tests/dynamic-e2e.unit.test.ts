@@ -12,6 +12,7 @@ import type { MethodParams } from "@myagents-dsh/protocol";
 
 import {
   ApprovedDynamicRouteCredentialUnavailableError,
+  countAutomaticPressureCompactions,
   createScriptedQuestionAnswer,
   DynamicEvidenceRecorder,
   evaluateDynamicScenarioPostconditions,
@@ -71,6 +72,33 @@ describe("approved-route scripted interaction", () => {
       options: [{ label: "Revise" }, { label: "Approve" }],
       intent: { kind: "plan-review", approve: "Approve" },
     }]))).toEqual({ answers: [{ id: "plan-review", selected: ["Approve"] }] });
+  });
+});
+
+describe("automatic compaction evidence", () => {
+  it("counts only completed between-step summaries inside an open turn", () => {
+    const lifecycle = (eventType: string, compactionId: string, error = false) => ({
+      eventType,
+      data: { compactionId, ...(error ? { error: [{ message: "synthetic" }] } : {}) },
+    });
+    expect(countAutomaticPressureCompactions([
+      { eventType: "turn/start", data: {} },
+      lifecycle("compaction/start", "pressure-complete"),
+      lifecycle("compaction/summary", "pressure-complete"),
+      lifecycle("compaction/end", "pressure-complete"),
+      { eventType: "step/start", data: {} },
+      lifecycle("compaction/start", "overflow-inside-step"),
+      lifecycle("compaction/summary", "overflow-inside-step"),
+      lifecycle("compaction/end", "overflow-inside-step"),
+      { eventType: "step/end", data: {} },
+      lifecycle("compaction/start", "pressure-failed"),
+      lifecycle("compaction/summary", "pressure-failed"),
+      lifecycle("compaction/end", "pressure-failed", true),
+      { eventType: "turn/end", data: {} },
+      lifecycle("compaction/start", "manual-idle"),
+      lifecycle("compaction/summary", "manual-idle"),
+      lifecycle("compaction/end", "manual-idle"),
+    ])).toBe(1);
   });
 });
 
@@ -397,9 +425,9 @@ describe("dynamic E2E harness", () => {
     try {
       const route = await loadApprovedDynamicRoute(path, environmentName);
       expect(route.provider).toMatchObject({
-        revision: "deepseek-official-v4-flash-compaction-v2",
+        revision: "deepseek-official-v4-flash-compaction-v3",
         providerRouteId: "deepseek-official",
-        contextWindow: 12_288,
+        contextWindow: 16_384,
         maxTokens: 4_096,
       });
     } finally {

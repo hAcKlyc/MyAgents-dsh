@@ -61,9 +61,9 @@ export interface DynamicRunResult {
 const sha256Text = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 const compactionPressurePrompt = (prompt: string, operation: number): string => {
-  const records = Array.from({ length: 320 }, (_, index) => {
+  const records = Array.from({ length: 80 }, (_, index) => {
     const identity = createHash("sha256")
-      .update(`compaction-pressure-v1\0${String(operation)}\0${String(index)}`)
+      .update(`compaction-pressure-v3\0${String(operation)}\0${String(index)}`)
       .digest("hex")
       .slice(0, 20);
     return `pressure-record-${String(operation)}-${String(index)}=${identity}`;
@@ -87,6 +87,39 @@ const messageText = (data: unknown): string => {
     const candidate = block as { type?: unknown; text?: unknown };
     return candidate.type === "text" && typeof candidate.text === "string" ? [candidate.text] : [];
   }).join("\n");
+};
+
+export const countAutomaticPressureCompactions = (
+  events: readonly Readonly<{ eventType: string; data: unknown }>[],
+): number => {
+  const betweenStepCompactionIds = new Set<string>();
+  const summaryCompactionIds = new Set<string>();
+  const completedCompactionIds = new Set<string>();
+  let turnOpen = false;
+  let stepOpen = false;
+  for (const { eventType, data } of events) {
+    if (eventType === "turn/start") turnOpen = true;
+    if (eventType === "step/start") stepOpen = true;
+    if (eventType === "step/end") stepOpen = false;
+    if (data !== null && typeof data === "object" && !Array.isArray(data)) {
+      const compactionId = (data as { compactionId?: unknown }).compactionId;
+      if (typeof compactionId === "string") {
+        if (eventType === "compaction/start" && turnOpen && !stepOpen) {
+          betweenStepCompactionIds.add(compactionId);
+        }
+        if (eventType === "compaction/summary") summaryCompactionIds.add(compactionId);
+        if (eventType === "compaction/end" && !("error" in data)) {
+          completedCompactionIds.add(compactionId);
+        }
+      }
+    }
+    if (eventType === "turn/end") {
+      turnOpen = false;
+      stepOpen = false;
+    }
+  }
+  return [...betweenStepCompactionIds].filter((compactionId) =>
+    summaryCompactionIds.has(compactionId) && completedCompactionIds.has(compactionId)).length;
 };
 
 export const createScriptedQuestionAnswer = (
@@ -626,6 +659,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
       }).length;
       const summaryCompactions = durableEvents.filter(({ eventType }) =>
         eventType === "compaction/summary").length;
+      const automaticPressureCompactions = countAutomaticPressureCompactions(durableEvents);
       const terminalAssistantText = messageText(durableEvents.findLast(({ eventType }) =>
         eventType === "assistant/message")?.data);
       const requiredContinuityFacts = [
@@ -640,8 +674,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
       const supersededContinuityFactsAbsent = !terminalAssistantText.includes("speed-first")
         && !terminalAssistantText.includes("inspect-compaction-evidence");
       const compactionContinuityVerified = input.scenario.id !== "compaction-continuity"
-        || completedCompactions >= 3
-          && summaryCompactions >= 3
+        || automaticPressureCompactions >= 3
           && terminalContinuityFactsPresent
           && supersededContinuityFactsAbsent;
       await runtime.client.sessionClose({ clientOperationId: `close-${input.workspace.runId}` }, { signal: input.signal });
@@ -705,6 +738,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           ...persistenceLifecycleEvidence,
         }]), ...(input.scenario.id === "compaction-continuity" ? [{
           kind: "compaction_continuity",
+          automaticPressureCompactions,
           completedCompactions,
           summaryCompactions,
           terminalAssistantSha256: sha256Text(terminalAssistantText),
