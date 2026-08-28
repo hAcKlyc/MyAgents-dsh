@@ -292,6 +292,16 @@ describe("dynamic E2E harness", () => {
       }),
     ])).passed).toBe(true);
     expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, Object.freeze([
+      migrationRequest,
+      stableSelection,
+      Object.freeze({
+        path: "selection.txt.bak-20260828T215629Z",
+        kind: "file" as const,
+        size: 8,
+        sha256: currentDigest,
+      }),
+    ])).passed).toBe(true);
+    expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, Object.freeze([
       ...interactionAfter,
       Object.freeze({ path: "unexpected.txt", kind: "file" as const, size: 1, sha256: "4".repeat(64) }),
     ])).passed).toBe(false);

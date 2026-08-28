@@ -77,7 +77,7 @@ const interactionSelectionIsStable = (
   const afterRequest = after.find(({ path }) => path === "migration-request.md");
   if (beforeSelection?.kind !== "file"
     || JSON.stringify(beforeRequest) !== JSON.stringify(afterRequest)) return false;
-  const backupPath = /^selection\.txt\.bak(?:-[0-9]{8}T[0-9]{6})?$/u;
+  const backupPath = /^selection\.txt\.bak(?:-[0-9]{8}T[0-9]{6}Z?)?$/u;
   if (after.some(({ path }) => !new Set([
     "migration-request.md", "selection.txt", "migration-plan.md",
   ]).has(path) && !backupPath.test(path))) return false;
