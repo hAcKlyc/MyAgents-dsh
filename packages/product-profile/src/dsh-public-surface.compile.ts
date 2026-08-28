@@ -19,6 +19,8 @@ import { CompactionEngine, CompactionId } from "@deepseek-ai/dsh-compaction";
 import type { CompactionAgentContext, CompactionResult } from "@deepseek-ai/dsh-compaction";
 import { BasicCompactionEngine } from "@deepseek-ai/dsh-compaction-basic";
 import type { BasicCompactionConfig } from "@deepseek-ai/dsh-compaction-basic";
+import { DEFAULTS as TOOL_RESULT_PRUNER_DEFAULTS, ToolResultPruner } from "@deepseek-ai/dsh-compaction-tool-result-pruner";
+import type { PruneResult, ToolResultPruneConfig } from "@deepseek-ai/dsh-compaction-tool-result-pruner";
 import { CommandId, CommandRuntime, parseCommand } from "@deepseek-ai/dsh-commands";
 import type {
   CommandDefinition,
@@ -115,6 +117,8 @@ export const dshPublicSurfaceValues = Object.freeze({
   CompactionEngine,
   CompactionId,
   BasicCompactionEngine,
+  ToolResultPruner,
+  TOOL_RESULT_PRUNER_DEFAULTS,
   CommandId,
   CommandRuntime,
   Context,
@@ -189,6 +193,7 @@ export interface DshPublicSurfaceTypes {
   cordis: [Plugin];
   compaction: [CompactionAgentContext, CompactionResult];
   compactionBasic: [BasicCompactionConfig];
+  compactionToolResultPruner: [PruneResult, ToolResultPruneConfig];
   commands: [CommandDefinition, CommandExecution, CommandInputDescriptor, CommandInvocation, CommandResult, ParsedCommand];
   credentials: [CredentialInfo, ResolvedCredential];
   filesystem: [FsEditRequest, FsWriteIntent];

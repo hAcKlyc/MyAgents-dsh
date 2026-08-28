@@ -56,6 +56,11 @@
         "version": "0.1.1-rc.2"
       },
       {
+        "name": "@deepseek-ai/dsh-compaction-tool-result-pruner",
+        "role": "dsh-library",
+        "version": "0.1.1-rc.2"
+      },
+      {
         "name": "@deepseek-ai/dsh-credentials",
         "role": "dsh-library",
         "version": "0.1.1-rc.2"
@@ -293,7 +298,7 @@
     ]
   },
   "dsh": {
-    "baselineSha256": "cda7a001bbe57715dfbe58b2cb99a39410b3b047b76c46929b50c12438e4b0db",
+    "baselineSha256": "eb00fc22cce3e07b5592b194f92dccdb9f6980e38b5a978aba9f6a9db48dd883",
     "release": "0.1.1-rc.2"
   },
   "formatVersion": 1,
@@ -307,7 +312,7 @@
   },
   "profileId": "myagents-dsh-official-v1",
   "protocol": {
-    "schemaSha256": "5e3d3e4c2e64f850d8cd0d12065fc01e9e6ce76fb626e2f0b021f2603956e447",
+    "schemaSha256": "03a4275f66b3678ce0df56317952262cb7d577887446a612f4793d837d9a54f7",
     "version": "2.0.0-draft.2"
   },
   "runtimeActivation": "forbidden-until-patched-dsh-and-batch-1-gate",

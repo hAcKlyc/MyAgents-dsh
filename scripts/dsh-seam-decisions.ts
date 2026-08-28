@@ -128,6 +128,61 @@ export const DSH_SEAM_SOURCE = Object.freeze({
       blob: "e5a98d1c676877e05e2084f648ffc59e8d91f2e7",
       sha256: "48c2279588133f09b3385ebd547398f9f991ecb61210e499c1ec848e89dcb945",
     }),
+    Object.freeze({
+      path: "packages/compaction/compaction-basic/src/index.ts",
+      blob: "9a5dcca2e19cfac6a7b60e95dbcf9ea096327a1a",
+      sha256: "d902d83329a1eda4ed7e29aa459c1a9663a19d5b7d95c76af118cb2c510a2edd",
+    }),
+    Object.freeze({
+      path: "packages/compaction/compaction-basic/src/region.ts",
+      blob: "1472a4e68cc4362bb190518e046f34a5b21e88fe",
+      sha256: "3e3d995cb88d5cf8e5f14088d9bb0da1c99e55990fda5a75e06094fa936c42f9",
+    }),
+    Object.freeze({
+      path: "packages/compaction/compaction-basic/src/summarizer.ts",
+      blob: "e77d9ec0a04127203f59a73da3562a561607926d",
+      sha256: "3589f95a1b63d882d3907752d369c641a1f473b49e538a071f8a3604dda9789c",
+    }),
+    Object.freeze({
+      path: "packages/compaction/compaction-basic/src/types.ts",
+      blob: "05fc35457337b49d466e1516a7094c9a655118e2",
+      sha256: "0b2c6dc3839bb43544b1dd9dbf678918578ff88ea00100eac1c0c2e7153ce0b4",
+    }),
+    Object.freeze({
+      path: "packages/compaction/compaction-basic/tests/compaction-basic.spec.ts",
+      blob: "2cf07d3f706e5350e3c3484fd0d6a96171e8072b",
+      sha256: "2896acd63a7f9872a6531079f2668c7fe24836cc3c5a049a57fff4d965fd5861",
+    }),
+    Object.freeze({
+      path: "packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts",
+      blob: "867d11c2a66ff766011de24ad6af5f8f2502b6e7",
+      sha256: "b5b8115a2ef574e5ed8f85def0514ba6fc2aba0ef8d03ffc7f7050557c4dbc16",
+    }),
+    Object.freeze({
+      path: "packages/compaction/compaction/src/invariant.ts",
+      blob: "7252fb06b0803ebbfa00229e3672f0ad29466709",
+      sha256: "c1b124bfc0b6a3fa227faccae90e21a4695c642390e9a3e51f5c77d59e5c4ff4",
+    }),
+    Object.freeze({
+      path: "packages/compaction/compaction/src/types.ts",
+      blob: "0ad5796d933aed3d4a551721cbce8ed1a3052a0a",
+      sha256: "72a52bbac6cb2143d3efd09880dea175dc4c91b26a2be6580b57c23b9c2cf254",
+    }),
+    Object.freeze({
+      path: "packages/llm/token-meter/src/estimate.ts",
+      blob: "1e02428086ec5e55aba16a1759bc26ee5384dbe1",
+      sha256: "0602d0ef294143290a327a4d4d393cf9807b3a40902079c32b5eca3c236fed3f",
+    }),
+    Object.freeze({
+      path: "packages/llm/token-meter/src/index.ts",
+      blob: "2fa53f78f1c4aa64527c111e408fdfe713f832f7",
+      sha256: "bbc45ac18017f2000c2021e170eadcbe1535454a88064f7a610ce95d390c0a6c",
+    }),
+    Object.freeze({
+      path: "packages/llm/token-meter/src/types.ts",
+      blob: "779bd8e2716d31584caf1f01568ba5a63d794694",
+      sha256: "24f98b3447c523ce071495f64fac34cdfae974fa957205993d0dc1395fbb3597",
+    }),
   ]),
 });
 
@@ -143,6 +198,13 @@ export const PATCHED_SOURCE_TESTS = Object.freeze([
   "packages/subagent/subagent-in-process-driver/tests/subagent-in-process-driver.spec.ts",
   "packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts",
   "packages/subagent/subagent-fork-in-process/tests/subagent-fork-in-process.spec.ts",
+  "packages/llm/token-meter/tests/token-meter.spec.ts",
+  "packages/compaction/compaction/tests/invariant.spec.ts",
+  "packages/compaction/compaction-basic/tests/capacity-safe.spec.ts",
+  "packages/compaction/compaction-basic/tests/compaction-basic.spec.ts",
+  "packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts",
+  "packages/compaction/compaction-basic/tests/manual-compaction.spec.ts",
+  "packages/compaction/compaction-basic/tests/loader-composition.spec.ts",
 ] as const);
 
 const WAKE_PATCH = "specs/dsh/patches/0001-agent-wake-pending.patch";
@@ -151,6 +213,7 @@ const KNOWN_EVENT_PATCH = "specs/dsh/patches/0003-persistence-known-event-predic
 const PUBLICATION_GUARDS_PATCH = "specs/dsh/patches/0004-publication-guards.patch";
 const PRODUCT_CONTINUABLE_LIFECYCLE_PATCH = "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch";
 const DEEPSEEK_STREAM_TOOL_IDENTITY_PATCH = "specs/dsh/patches/0006-deepseek-stream-tool-identity.patch";
+const CAPACITY_SAFE_COMPACTION_PATCH = "specs/dsh/patches/0007-capacity-safe-compaction.patch";
 export const DSH_SEAM_PATCHES = Object.freeze([
   WAKE_PATCH,
   PRE_ASSISTANT_COMMIT_PATCH,
@@ -158,6 +221,7 @@ export const DSH_SEAM_PATCHES = Object.freeze([
   PUBLICATION_GUARDS_PATCH,
   PRODUCT_CONTINUABLE_LIFECYCLE_PATCH,
   DEEPSEEK_STREAM_TOOL_IDENTITY_PATCH,
+  CAPACITY_SAFE_COMPACTION_PATCH,
 ] as const);
 
 export interface DshSeamPatchSnapshot {
@@ -207,7 +271,7 @@ export function buildDshSeamDecisions(): object {
 
   return {
     schemaVersion: 1,
-    recordedAt: "2026-08-23",
+    recordedAt: "2026-08-29",
     authority: DSH_SEAM_SOURCE,
     productProfileActivation: "forbidden-until-patched-DSH-artifact-and-batch-1-gate",
     patchSeries: DSH_SEAM_PATCHES.map((path, index) => patchEvidence(path, index + 1)),
@@ -332,6 +396,26 @@ export function buildDshSeamDecisions(): object {
         ],
         removalCondition: "an installed DSH release preserves established call ids and tool names across empty stream continuation fields",
       },
+      {
+        id: "DSH-SEAM-008",
+        seam: "capacity-safe-structured-compaction",
+        status: "required_upstream_patch_accepted",
+        adr: "specs/adr/0008-capacity-safe-compaction.md",
+        rejected: "duplicate-private-DSH-range-and-transaction-logic-in-product-code",
+        selectedPublicApi: "TokenMeter.estimateRequest plus stock BasicCompactionEngine capacity fitting, structured validation/repair, safe telemetry, and direct-call count provenance",
+        patch: patch(CAPACITY_SAFE_COMPACTION_PATCH),
+        executableEvidence: [
+          "one singleton estimator prices durable pressure and exact summary requests",
+          "summary output cap follows the independently resolved summary model",
+          "known-overflow summary requests fail before Provider call and durable bracket",
+          "the largest fitting tool-balanced older range is selected",
+          "Prompt v2 shallow validation permits at most one repair and aggregates usage",
+          "direct stream-call count remains backward compatible for old one-call events",
+          "content-free telemetry excludes synthetic secret and checkpoint canaries",
+          "stock manual, automatic pressure, and Provider-overflow regressions remain green",
+        ],
+        removalCondition: "an installed DSH release exposes equivalent tested request estimation and capacity-safe structured compaction semantics",
+      },
     ],
     evidenceOwners: {
       runtimeSemantics: "tests/dsh-seam-spikes.unit.test.ts",
@@ -422,6 +506,9 @@ export function verifyDshSeamSource(
       "--filter", "@deepseek-ai/dsh-subagent-spawn-in-process...",
       "--filter", "@deepseek-ai/dsh-subagent-fork-in-process...",
       "--filter", "@deepseek-ai/dsh-llm-deepseek...",
+      "--filter", "@deepseek-ai/dsh-compaction-basic...",
+      "--filter", "@deepseek-ai/dsh-compaction...",
+      "--filter", "@deepseek-ai/dsh-token-meter...",
     ], worktree);
     run("corepack", [
       "pnpm", "exec", "tsc", "-b",
@@ -435,6 +522,9 @@ export function verifyDshSeamSource(
       "packages/subagent/subagent-spawn-in-process/tsconfig.json",
       "packages/subagent/subagent-fork-in-process/tsconfig.json",
       "packages/llm/llm-deepseek/tsconfig.json",
+      "packages/llm/token-meter/tsconfig.json",
+      "packages/compaction/compaction/tsconfig.json",
+      "packages/compaction/compaction-basic/tsconfig.json",
       "--pretty", "false",
     ], worktree);
     run("corepack", [

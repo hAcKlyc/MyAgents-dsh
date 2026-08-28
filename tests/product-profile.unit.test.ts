@@ -48,7 +48,7 @@ describe("official product profile authority", () => {
     });
     expect(BATCH1_CANDIDATE_PROFILE).toMatchObject({
       profileId: "myagents-dsh-batch-1-candidate-v1",
-      stage: "batch-1-w4-a10",
+      stage: "batch-1-w4-a11",
       runtimeActivation: "workstream-evidence-only",
       composition: {
         maxPrimaryRootSessions: 1,
@@ -112,6 +112,7 @@ describe("official product profile authority", () => {
     expect(BATCH1_CANDIDATE_PROFILE.composition.installedPluginAllowlist).toEqual(expect.arrayContaining([
       "@myagents-dsh/host-ports:HostPortService",
       "@myagents-dsh/runtime-product:HostSettingsProvider",
+      "@deepseek-ai/dsh-compaction-tool-result-pruner:ToolResultPruner",
       "@deepseek-ai/dsh-llm-pi-ai:llm-pi-ai",
       "@myagents-dsh/runtime-product:ProductSessionService",
       "@myagents-dsh/operation-runtime:SdkOperationService",

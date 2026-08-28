@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "provider": {
+    "revision": "deepseek-official-v4-flash-compaction-v1",
+    "providerRouteId": "deepseek-official-compaction",
+    "api": "openai-completions",
+    "provider": "deepseek",
+    "modelId": "deepseek-v4-flash",
+    "baseUrl": "https://api.deepseek.com",
+    "credentialRef": "DEEPSEEK_API_KEY",
+    "contextWindow": 12288,
+    "maxTokens": 2048,
+    "reasoning": true,
+    "effort": "high"
+  },
+  "credentialRevision": "deepseek-official-credential-v1",
+  "materialField": "apiKey",
+  "systemPrompt": "Operate only within the synthetic compaction continuity fixture. Preserve the latest user goal, corrections, exact identifiers, verified state, and immediate next action. Do not modify files, call tools, or expose hidden Runtime details.",
+  "permissionMode": "default",
+  "interactionScenario": "host-interaction-v1",
+  "networkPolicyRef": "deepseek-official-web-search-v1",
+  "webSearchAdapters": ["deepseek-official-native-web-search"]
+}

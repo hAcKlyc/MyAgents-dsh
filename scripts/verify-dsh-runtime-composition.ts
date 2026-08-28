@@ -976,7 +976,7 @@ const assertRuntimeProcessEvidence = (
     || selfCheckProtocol.schemaSha256 !== protocolMetaJson.schemaSha256
     || JSON.stringify(selfCheckContracts) !== JSON.stringify(RUNTIME_SELF_CHECK_CONTRACT_AUTHORITIES)
     || selfCheckProfile.digest !== BATCH1_CANDIDATE_PROFILE_SHA256
-    || selfCheckProfile.stage !== "batch-1-w4-a10"
+    || selfCheckProfile.stage !== "batch-1-w4-a11"
     || processEvidence.invalidCliRejected !== true
     || processEvidence.stdoutProtocolOnly !== true
     || processEvidence.stderrClean !== true
@@ -997,7 +997,7 @@ const assertRuntimeProcessEvidence = (
       { signal: "SIGINT", code: 130 },
       { signal: "SIGTERM", code: 143 },
     ])) {
-    throw new Error("Runtime process/self-check evidence differs from the exact A10 contract");
+    throw new Error("Runtime process/self-check evidence differs from the exact A11 contract");
   }
   return processEvidence;
 };
@@ -1367,6 +1367,14 @@ const main = (): void => {
       "automatic and explicit long-Session compaction evidence",
     );
     if (compactionEvidence.automaticEnabled !== true
+      || compactionEvidence.automaticDurableEvents !== 78
+      || compactionEvidence.automaticPressureCompactions !== 3
+      || compactionEvidence.automaticSummaryRequests !== 3
+      || compactionEvidence.contentFreeTelemetry !== true
+      || compactionEvidence.overflowSummaryRequests !== 1
+      || compactionEvidence.overflowTriggerVerified !== true
+      || compactionEvidence.pruneOnlyProviderRequests !== 0
+      || compactionEvidence.pruneOnlyReplacementAdvanced !== true
       || compactionEvidence.acceptedState !== "accepted"
       || JSON.stringify(compactionEvidence.durableEventTypes) !== JSON.stringify([
         "compaction/start",
@@ -1378,8 +1386,24 @@ const main = (): void => {
       || compactionEvidence.eventCountAdded !== 5
       || !Number.isSafeInteger(compactionEvidence.longSessionTurnCount)
       || (compactionEvidence.longSessionTurnCount as number) < 10
-      || compactionEvidence.summaryRequests !== 1) {
-      throw new Error("compaction evidence differs from the exact W4-A10 contract");
+      || compactionEvidence.explicitSummaryRequests !== 1
+      || compactionEvidence.mergedPriorCheckpoint !== true
+      || JSON.stringify(compactionEvidence.prunerDefaults) !== JSON.stringify({
+        thresholdChars: 8_192,
+        headChars: 4_096,
+        tailChars: 1_024,
+      })
+      || compactionEvidence.summaryMaxTokens !== 8_192
+      || compactionEvidence.summaryStreamCalls !== 1
+      || JSON.stringify(compactionEvidence.telemetryKinds) !== JSON.stringify([
+        "convergence",
+        "prune",
+        "range",
+        "summary",
+      ])) {
+      throw new Error(
+        `compaction evidence differs from the exact W4-A10/A11 contract: ${JSON.stringify(compactionEvidence)}`,
+      );
     }
     const deletePurgeEvidence = exactObject(
       evidence.deletePurgeEvidence,
@@ -1419,9 +1443,14 @@ const main = (): void => {
       || persistenceEvidence.format !== "myagents-sqlite-session-v1"
       || persistenceEvidence.generationCount !== 2
       || persistenceEvidence.productEventReloaded !== true
-      || persistenceEvidence.resumedAddedEventCount !== 7
+      || typeof persistenceEvidence.resumedAddedEventCount !== "number"
+      || !Number.isSafeInteger(persistenceEvidence.resumedAddedEventCount)
+      || persistenceEvidence.resumedAddedEventCount
+        !== 7 + compactionEvidence.automaticDurableEvents
+      || typeof persistenceEvidence.resumedEventCount !== "number"
+      || !Number.isSafeInteger(persistenceEvidence.resumedEventCount)
       || persistenceEvidence.resumedEventCount
-        !== persistenceEvidence.eventCount + (persistenceEvidence.resumedAddedEventCount as number)
+        !== persistenceEvidence.eventCount + persistenceEvidence.resumedAddedEventCount
       || persistenceEvidence.resumedDurableSequence !== persistenceEvidence.resumedEventCount
       || persistenceEvidence.resumedSourcePrefixByteEquivalent !== true
       || persistenceEvidence.resumedWithoutModelReplay !== true

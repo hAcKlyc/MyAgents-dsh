@@ -44,7 +44,7 @@ const runtimeDependencySections = Object.freeze([
 ] as const);
 
 export const PATCHED_DSH_ARTIFACT_SCHEMA_VERSION = 1;
-export const PATCHED_DSH_ARTIFACT_PACKAGE_COUNT = 54;
+export const PATCHED_DSH_ARTIFACT_PACKAGE_COUNT = 55;
 const patchedDshPnpmVersion = "11.7.0";
 export const PATCHED_DSH_EXTERNAL_ROOT_COMPATIBILITY_PACKAGES = Object.freeze([
   "@img/sharp-wasm32",

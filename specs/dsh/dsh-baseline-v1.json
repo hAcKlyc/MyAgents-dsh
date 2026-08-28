@@ -17,8 +17,8 @@
     "registry": "https://registry.npmjs.org",
     "dshRelease": "0.1.1-rc.2",
     "sourceAssociation": "unproven",
-    "directPackageCount": 48,
-    "productionPackageCount": 313
+    "directPackageCount": 49,
+    "productionPackageCount": 314
   },
   "publicCompileFixture": "packages/product-profile/src/dsh-public-surface.compile.ts",
   "publicSeams": [
@@ -300,6 +300,23 @@
       ],
       "types": [
         "BasicCompactionConfig"
+      ]
+    },
+    {
+      "id": "compaction-tool-result-pruner",
+      "package": "@deepseek-ai/dsh-compaction-tool-result-pruner",
+      "importPath": "@deepseek-ai/dsh-compaction-tool-result-pruner",
+      "classification": "provider",
+      "batchUse": [
+        "B1-W4"
+      ],
+      "values": [
+        "DEFAULTS",
+        "ToolResultPruner"
+      ],
+      "types": [
+        "PruneResult",
+        "ToolResultPruneConfig"
       ]
     },
     {
@@ -766,7 +783,7 @@
     },
     {
       "license": "MIT",
-      "count": 213
+      "count": 214
     },
     {
       "license": "Python-2.0",
@@ -1262,6 +1279,16 @@
       "version": "0.1.1-rc.2",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-compaction-basic/-/dsh-compaction-basic-0.1.1-rc.2.tgz",
       "integrity": "sha512-qNg4JqWlZ5NvlFmaVZtJ+RuvJUtYFgdS7xXlhhBGSHbMZi4sHgB63Mo+9Y0Rl8glLSxLjo2reMMPlECN+duUuw==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-compaction-tool-result-pruner",
+      "name": "@deepseek-ai/dsh-compaction-tool-result-pruner",
+      "version": "0.1.1-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-compaction-tool-result-pruner/-/dsh-compaction-tool-result-pruner-0.1.1-rc.2.tgz",
+      "integrity": "sha512-HUS95EsuveR8fuzaZW0qSv90mVWbv6aj7W9zfWPbr5BmLJsmomQlw6jFX3GodN1Iv8qWtrzFkMuxDHk4ZTHcAA==",
       "license": "MIT",
       "direct": true,
       "optional": false

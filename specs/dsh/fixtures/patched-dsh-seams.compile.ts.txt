@@ -13,6 +13,13 @@ import type {
   ContinuableStartSpec,
   SubagentRunEndInfo,
 } from "@deepseek-ai/dsh-subagent";
+import {
+  SUMMARY_SAFETY_MARGIN_TOKENS,
+  SummaryCapacityError,
+  SummaryValidationError,
+  type CompactionTelemetry,
+} from "@deepseek-ai/dsh-compaction-basic";
+import type { TokenRequestEstimateInput } from "@deepseek-ai/dsh-token-meter";
 
 export interface PatchedDshSeamTypes {
   readonly commit: PreparedAssistantCommit;
@@ -40,10 +47,24 @@ export const compilePatchedDshSeams = (
   const infrastructureFailure: SubagentRunEndInfo["infrastructureFailure"] = true;
   const drainContinuableChildren = ctx.subagents.drainContinuableChildren;
   const resumeContinuable = ctx.subagents.resumeContinuable;
+  const requestEstimate: TokenRequestEstimateInput = { messages: [] };
+  const estimatedTokens: number = ctx.tokenMeter.estimateRequest(requestEstimate);
+  const safetyMargin: 1024 = SUMMARY_SAFETY_MARGIN_TOKENS;
+  const capacityError = new SummaryCapacityError("compile fixture");
+  const validationError = new SummaryValidationError("compile fixture");
+  const disposeTelemetry = ctx.on("compaction/telemetry", (event) => {
+    const telemetry: Readonly<CompactionTelemetry> = event;
+    void telemetry;
+  });
+  disposeTelemetry();
   void settlementDelivery;
   void infrastructureFailure;
   void drainContinuableChildren;
   void resumeContinuable;
+  void estimatedTokens;
+  void safetyMargin;
+  void capacityError;
+  void validationError;
   ctx.on("agent/pre-assistant-commit", async ({ commit, signal }, next) => {
     const prepared: Readonly<PreparedAssistantCommit> = commit;
     signal.throwIfAborted();

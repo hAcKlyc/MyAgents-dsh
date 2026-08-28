@@ -128,8 +128,8 @@ describe("Runtime artifact self-check", () => {
         requiredNodeVersion: "24.14.0",
         actualNodeVersion: "24.14.0",
       });
-      expect(report.profile.stage).toBe("batch-1-w4-a10");
-      expect(report.dsh.packageCount).toBe(54);
+      expect(report.profile.stage).toBe("batch-1-w4-a11");
+      expect(report.dsh.packageCount).toBe(55);
       expect(report.contracts).toEqual({
         canonicalToolsSha256: "b150cf36eed203391a99d5c12d9fbd4dd09ff2bb4400ab635bee95ccb3302092",
         eventsSha256: "2996feb8aeb3dc2ff9503d2a13e895ecf88713001160474e0d6601c94f3d497a",

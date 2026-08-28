@@ -28,6 +28,7 @@ If an RFC discovers that an existing architecture fact is wrong, update `specs/A
 | [Independent-Agent dynamic acceptance](./batch-1-dynamic-agent-acceptance.md) | Codex/Main-Agent dispatch, independent Tester Agents, natural-prompt campaigns, trace evidence, finding adjudication, and reruns | `draft; harness and campaign evidence pending` |
 | [Verification and release](./batch-1-verification-release.md) | Standard Test Host, conformance, fault injection, dynamic Agent campaign, artifact and clean-room evidence | `draft; implementation evidence pending` |
 | [Reference Web Host and WebUI](./batch-1-reference-web-host.md) | External Host/browser contract, one-process-per-Session supervisor, reverse ports, UI architecture, loopback security, direct-open packaging, and browser evidence | `accepted design; implementation active` |
+| [Capacity-safe DSH compaction P0](./batch-1-compaction-p0.md) | Official pruner composition, summary-model capacity fitting, Prompt v2 validation/repair, safe telemetry, and artifact acceptance for `B1-W4-A11` | `accepted design; implementation active` |
 
 The ten documents form one design set: the first three establish cross-cutting topology, DSH reuse boundaries, and requirement coverage; the seven implementation/evidence RFCs specify each workstream and the accumulated release proof. Draft RFCs are not permission to implement around an unresolved seam or mark a ledger item complete without executable evidence.
 

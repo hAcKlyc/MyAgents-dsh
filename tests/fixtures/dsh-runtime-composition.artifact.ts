@@ -9,7 +9,16 @@ import { DatabaseSync } from "node:sqlite";
 
 import { Context } from "@deepseek-ai/cordis";
 import { BasicCompactionEngine } from "@deepseek-ai/dsh-compaction-basic";
-import { CallId } from "@deepseek-ai/dsh-llm";
+import {
+  DEFAULTS as TOOL_RESULT_PRUNER_DEFAULTS,
+  ToolResultPruner,
+} from "@deepseek-ai/dsh-compaction-tool-result-pruner";
+import {
+  CallId,
+  createMessage,
+  createToolResultMessage,
+  createUserMessage,
+} from "@deepseek-ai/dsh-llm";
 import { assembleContextFor, type Agent } from "@deepseek-ai/dsh-agent";
 import { PERSONA_SECTION, SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
@@ -948,6 +957,13 @@ assert.equal(
   true,
   "the production DSH composition must register automatic pressure and overflow compaction",
 );
+assert.equal(
+  composition.context.toolResultPruner instanceof ToolResultPruner,
+  true,
+  "the production DSH composition must register the official Tool Result Pruner",
+);
+assert.deepEqual(composition.context.toolResultPruner.config, TOOL_RESULT_PRUNER_DEFAULTS);
+const productionPrunerConfig = structuredClone(composition.context.toolResultPruner.config);
 const hostInteractionProvider = createHostBackedInteractionProvider(composition, Object.freeze({
   revision: "artifact-interaction-v1",
   deadlineMs: 5_000,
@@ -4092,6 +4108,12 @@ const resumedComposition = await composeDshRootServices({
   adapter: resumeAdapter,
   providers: ["fixture"],
 });
+const compactionTelemetry: Array<Record<string, unknown>> = [];
+const disposeCompactionTelemetry = (resumedComposition.context as unknown as {
+  on(name: string, listener: (event: Record<string, unknown>) => void): () => void;
+}).on("compaction/telemetry", (event) => {
+  compactionTelemetry.push(structuredClone(event));
+});
 await installCanonicalToolPlane(
   resumedComposition,
   bindCanonicalToolPlaneConfig(resumedComposition),
@@ -4168,6 +4190,11 @@ assert.equal(
   resumeSessionParams.systemPrompt,
   "resumed primary Session must restore the requested persona in its fresh Agent scope",
 );
+assert.match(
+  resumedPrompt.sections.find(({ name }) => name === "compaction:continuity")?.text ?? "",
+  /old oversized tool results may retain only their beginning and end/u,
+  "the product prompt must give bounded continuity guidance for deterministic pruning",
+);
 assert.equal(resumedPrimary.durableHead.sequence, resumedAgent.session.seq);
 assert.equal(
   JSON.stringify(resumedAgent.session.events.slice(0, persistedPrimary.events.length)),
@@ -4185,9 +4212,32 @@ assert.equal(resumeAdapter.requests.length, 0, "Session resume must not replay m
 const longSessionTurnCount = resumedAgent.session.events.filter(({ type }) => type === "turn/end").length;
 assert.ok(longSessionTurnCount >= 10, "manual compaction evidence requires a real long Session history");
 const preCompactionEventCount = resumedAgent.session.events.length;
+const structuredCompactionCheckpoint = [
+  "## User Intent and Non-Negotiable Constraints",
+  "- Continue the exact artifact verification task without changing its authorities.",
+  "## Progress",
+  "### Verified Done",
+  "- Durable Session resume equality is verified.",
+  "### In Progress",
+  "- Repeated compaction verification is active.",
+  "### Blocked",
+  "- (none)",
+  "## Decisions and Rationale",
+  "- Keep DSH as the sole durable compaction authority.",
+  "## Working Set",
+  "- dsh-artifact-primary",
+  "## Failures and Corrections",
+  "- (none)",
+  "## Active Operations",
+  "- artifact-primary-session-compaction",
+  "## Next Action",
+  "- Verify the durable compaction receipt and safe telemetry.",
+  "## Critical Continuity Facts",
+  "- The accepted profile uses automatic compaction and the official Tool Result Pruner.",
+].join("\n");
 resumeAdapter.enqueue({
   kind: "complete",
-  text: "Artifact long-session compaction summary preserving the accepted Runtime evidence.",
+  text: structuredCompactionCheckpoint,
   usage: { inputTokens: 21, outputTokens: 11, cacheReadTokens: 5 },
 });
 const compactionAccepted = await resumeHostClient.sessionCompact({
@@ -4221,6 +4271,12 @@ if (compactionStart?.type !== "compaction/start"
 assert.equal(compactionStart.data.turn, null);
 assert.equal(String(compactionStart.data.sourceCommandId), "artifact-primary-session-compaction");
 assert.equal(compactionSummary.data.compactionId, compactionStart.data.compactionId);
+assert.equal(compactionSummary.data.llmStreamCall, true);
+const compactionSummaryStreamCalls: unknown = Reflect.get(
+  compactionSummary.data,
+  "llmStreamCallCount",
+);
+assert.equal(compactionSummaryStreamCalls, 1);
 assert.equal(compactionEnd.data.compactionId, compactionStart.data.compactionId);
 assert.equal(compactionEnd.data.error, undefined);
 assert.deepEqual(compactionReplacement.data.source, {
@@ -4235,6 +4291,169 @@ assert.equal(compactionReceipt.data.startSeq, compactionStart.seq);
 assert.equal(compactionReceipt.data.summarySeq, compactionSummary.seq);
 assert.equal(compactionReceipt.data.endSeq, compactionEnd.seq);
 assert.equal(compactionReceipt.data.resultEventCount, resumedAgent.session.events.length);
+assert.equal(resumeAdapter.requests[0]?.maxTokens, 8_192);
+assert.match(
+  resumeAdapter.requests[0].messages.at(-1)?.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n") ?? "",
+  /## Next Action/u,
+);
+assert.deepEqual(compactionTelemetry.map(({ kind, status }) => ({ kind, status })), [
+  { kind: "range", status: "succeeded" },
+  { kind: "summary", status: "succeeded" },
+]);
+assert.equal(JSON.stringify(compactionTelemetry).includes("artifact verification task"), false);
+assert.equal(JSON.stringify(compactionTelemetry).includes("dsh-artifact-primary"), true);
+const automaticPressureResults: unknown[] = [];
+const compactionPrivateCanary = ["COMPACTION", "PRIVATE", "CANARY"].join("_");
+const preAutomaticPressureEventCount = resumedAgent.session.events.length;
+for (let cycle = 1; cycle <= 3; cycle += 1) {
+  const turn = 10_000 + cycle;
+  resumedAgent.session.append("turn/start", { turn });
+  for (let index = 0; index < 20; index += 1) {
+    resumedAgent.session.append("user/message", createUserMessage({
+      content: [{
+        type: "text",
+        text: `${cycle}:${index}:${index === 0 ? compactionPrivateCanary : "pressure"}:`
+          + "x".repeat(195_000),
+      }],
+      source: { kind: "user" },
+    }), { surfaceOp: "append" });
+  }
+  resumeAdapter.enqueue({
+    kind: "complete",
+    text: structuredCompactionCheckpoint,
+    usage: { inputTokens: 31, outputTokens: 13, cacheReadTokens: 7 },
+  });
+  const result = await (resumedComposition.context.compaction as BasicCompactionEngine)
+    .compactIfNeeded(resumedAgent, "pressure", new AbortController().signal);
+  assert.ok(result, `automatic pressure compaction cycle ${String(cycle)} must reduce the surface`);
+  automaticPressureResults.push(result);
+  resumedAgent.session.append("turn/end", { turn, reason: { kind: "completed" } });
+}
+assert.equal(automaticPressureResults.length, 3);
+const automaticPressureDurableEventCount = resumedAgent.session.events.length
+  - preAutomaticPressureEventCount;
+assert.equal(automaticPressureDurableEventCount, 78);
+assert.equal(resumeAdapter.requests.length, 4);
+assert.equal(
+  resumeAdapter.requests.slice(2).every(({ messages }) => JSON.stringify(messages)
+    .includes("Keep DSH as the sole durable compaction authority")),
+  true,
+  "later automatic compactions must merge the previously accepted checkpoint",
+);
+const automaticMergedPriorCheckpoint = resumeAdapter.requests.slice(2).every(({ messages }) =>
+  JSON.stringify(messages).includes("Keep DSH as the sole durable compaction authority"));
+const automaticTelemetry = compactionTelemetry.slice(2);
+assert.equal(automaticTelemetry.filter(({ kind }) => kind === "range").length, 3);
+assert.equal(automaticTelemetry.filter(({ kind }) => kind === "summary").length, 3);
+assert.equal(automaticTelemetry.filter(({ kind }) => kind === "convergence").length, 3);
+assert.equal(automaticTelemetry.filter(({ kind }) => kind === "prune").length, 3);
+assert.equal(JSON.stringify(automaticTelemetry).includes(compactionPrivateCanary), false);
+const automaticSummaryRequestCount = resumeAdapter.requests.length - 1;
+
+// Exercise the two overflow recovery outcomes through the exact packed public
+// composition: a deterministic prune that is sufficient by itself, followed
+// by a provider-confirmed trigger that still requires one semantic summary.
+const pruneOnlySession = Session.create(SessionId("artifact-compaction-prune-only"));
+const pruneOnlyCallId = CallId("artifact-compaction-prune-only-call");
+pruneOnlySession.append("turn/start", { turn: 1 });
+pruneOnlySession.append("step/start", { turn: 1, step: 1 });
+pruneOnlySession.append("request/header", {
+  header: { config: { provider: "fixture", model: "fixture-model" } },
+  reason: "initial",
+});
+pruneOnlySession.append("assistant/message", {
+  turn: 1,
+  step: 1,
+  message: createMessage({
+    role: "assistant",
+    content: [{
+      type: "tool-call",
+      id: pruneOnlyCallId,
+      name: "Read",
+      arguments: "{}",
+    }],
+    source: { kind: "model", provider: "fixture", model: "fixture-model" },
+  }),
+}, { surfaceOp: "append" });
+pruneOnlySession.append("tool/call", {
+  turn: 1,
+  step: 1,
+  callId: pruneOnlyCallId,
+  name: "Read",
+  arguments: "{}",
+});
+pruneOnlySession.append("tool/result", {
+  turn: 1,
+  step: 1,
+  message: createToolResultMessage({
+    callId: pruneOnlyCallId,
+    content: [{ type: "text", text: `head-${"p".repeat(32_000)}-tail` }],
+    isError: false,
+  }),
+}, { surfaceOp: "append" });
+pruneOnlySession.append("step/end", { turn: 1, step: 1 });
+pruneOnlySession.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+pruneOnlySession.append("turn/start", { turn: 2 });
+const pruneOnlyAgent = {
+  session: pruneOnlySession,
+  options: { provider: "fixture", model: "fixture-model" },
+} as Agent;
+const requestsBeforePruneOnly = resumeAdapter.requests.length;
+const generationBeforePruneOnly = pruneOnlySession.surface.replaceGeneration;
+const pruneOnlyResult = await (resumedComposition.context.compaction as BasicCompactionEngine)
+  .compactIfNeeded(pruneOnlyAgent, "context-overflow", new AbortController().signal);
+assert.equal(pruneOnlyResult, null);
+assert.equal(resumeAdapter.requests.length, requestsBeforePruneOnly);
+const pruneOnlyProviderRequests = resumeAdapter.requests.length - requestsBeforePruneOnly;
+assert.equal(pruneOnlySession.surface.replaceGeneration, generationBeforePruneOnly + 1);
+const prunedVisibleResultEvent = pruneOnlySession.events.findLast((event) =>
+  event.type === "tool/result");
+assert.ok(prunedVisibleResultEvent);
+const prunedVisibleResult = pruneOnlySession.deriveEventMessage(prunedVisibleResultEvent);
+assert.match(JSON.stringify(prunedVisibleResult), /tool result middle pruned/u);
+
+const overflowSession = Session.create(SessionId("artifact-compaction-provider-overflow"));
+overflowSession.append("turn/start", { turn: 1 });
+overflowSession.append("request/header", {
+  header: { config: { provider: "fixture", model: "fixture-model" } },
+  reason: "initial",
+});
+for (let index = 0; index < 3; index += 1) {
+  overflowSession.append("user/message", createUserMessage({
+    content: [{ type: "text", text: `overflow-${String(index)}-${"o".repeat(4_000)}` }],
+    source: { kind: "user" },
+  }), { surfaceOp: "append" });
+}
+resumeAdapter.enqueue({
+  kind: "complete",
+  text: structuredCompactionCheckpoint,
+  usage: { inputTokens: 29, outputTokens: 12 },
+});
+const requestsBeforeOverflowSummary = resumeAdapter.requests.length;
+const overflowResult = await (resumedComposition.context.compaction as BasicCompactionEngine)
+  .compactIfNeeded({
+    session: overflowSession,
+    options: { provider: "fixture", model: "fixture-model" },
+  } as Agent, "context-overflow", new AbortController().signal);
+assert.ok(overflowResult);
+const overflowSummaryRequests = resumeAdapter.requests.length - requestsBeforeOverflowSummary;
+assert.equal(overflowSummaryRequests, 1);
+const overflowTelemetry = compactionTelemetry.filter(({ sessionId }) =>
+  sessionId === "artifact-compaction-provider-overflow");
+assert.equal(overflowTelemetry.some(({ kind, trigger, status }) =>
+  kind === "range" && trigger === "context-overflow" && status === "succeeded"), true);
+assert.equal(overflowTelemetry.some(({ kind, status }) =>
+  kind === "summary" && status === "succeeded"), true);
+const pruneOnlyTelemetry = compactionTelemetry.filter(({ sessionId }) =>
+  sessionId === "artifact-compaction-prune-only");
+assert.deepEqual(pruneOnlyTelemetry.map(({ kind, trigger, status }) => ({ kind, trigger, status })), [{
+  kind: "prune",
+  trigger: "context-overflow",
+  status: "succeeded",
+}]);
 const oversizedSessionReadText = "artifact-session-read-chunk-".repeat(48_000);
 resumedAgent.session.append("todo/write", {
   todos: [{ content: oversizedSessionReadText, status: "pending" }],
@@ -4350,6 +4569,7 @@ const resumedStopped = await resumedLifecycle.whenStopped();
 assert.equal(resumedStopped.disposed, true);
 assert.equal(resumedStopped.exit.kind, "shutdown");
 assert.throws(() => resumedComposition.snapshot(), /disposing or disposed/u);
+disposeCompactionTelemetry();
 resumeHostPeer.close();
 resumeRuntimeInput.destroy();
 resumeRuntimeOutput.destroy();
@@ -4358,7 +4578,10 @@ const resumedPersistenceSession = resumedPersistenceProbe.prepare(
   "SELECT event_count, revision FROM sessions WHERE id = ?",
 ).get("dsh-artifact-primary") as { event_count: number; revision: number };
 resumedPersistenceProbe.close();
-assert.equal(resumedPersistenceSession.event_count, persistedPrimary.events.length + 7);
+assert.equal(
+  resumedPersistenceSession.event_count,
+  persistedPrimary.events.length + 7 + automaticPressureDurableEventCount,
+);
 assert.ok(resumedPersistenceSession.revision > persistenceSession.revision);
 
 const purgeComposition = await composeDshRootServices({
@@ -4523,11 +4746,26 @@ process.stdout.write(`${JSON.stringify({
   compactionVerified: true,
   compactionEvidence: {
     automaticEnabled: true,
+    automaticDurableEvents: automaticPressureDurableEventCount,
+    automaticPressureCompactions: automaticPressureResults.length,
+    automaticSummaryRequests: automaticSummaryRequestCount,
+    contentFreeTelemetry: !JSON.stringify(compactionTelemetry).includes(compactionPrivateCanary),
     acceptedState: compactionAccepted.state,
     durableEventTypes: compactionEvents.map(({ type }) => type),
     eventCountAdded: compactionEvents.length,
     longSessionTurnCount,
-    summaryRequests: resumeAdapter.requests.length,
+    explicitSummaryRequests: 1,
+    mergedPriorCheckpoint: automaticMergedPriorCheckpoint,
+    prunerDefaults: productionPrunerConfig,
+    summaryMaxTokens: resumeAdapter.requests[0].maxTokens,
+    summaryStreamCalls: compactionSummaryStreamCalls,
+    telemetryKinds: [...new Set(compactionTelemetry.map(({ kind }) => kind))].sort(),
+    overflowSummaryRequests,
+    overflowTriggerVerified: overflowTelemetry.some(({ kind, trigger, status }) =>
+      kind === "range" && trigger === "context-overflow" && status === "succeeded"),
+    pruneOnlyProviderRequests,
+    pruneOnlyReplacementAdvanced: pruneOnlySession.surface.replaceGeneration
+      === generationBeforePruneOnly + 1,
   },
   deletePurgeVerified: true,
   deletePurgeEvidence: {

@@ -68,6 +68,7 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
   "@deepseek-ai/dsh-tools:ToolRuntime",
   BATCH1_ADAPTER_REGISTRATION_PLUGIN_ID,
   "@deepseek-ai/dsh-token-meter:TokenMeter",
+  "@deepseek-ai/dsh-compaction-tool-result-pruner:ToolResultPruner",
   "@deepseek-ai/dsh-compaction-basic:BasicCompactionEngine",
   "@deepseek-ai/dsh-agent-loop:AgentLoop",
   "@myagents-dsh/host-ports:HostPortService",
@@ -86,7 +87,7 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
 export interface Batch1CandidateProfileManifest {
   readonly formatVersion: 1;
   readonly profileId: typeof BATCH1_CANDIDATE_PROFILE_ID;
-  readonly stage: "batch-1-w4-a10";
+  readonly stage: "batch-1-w4-a11";
   readonly runtimeActivation: "workstream-evidence-only";
   readonly protocol: Readonly<{
     version: string;
@@ -168,7 +169,7 @@ export const buildBatch1CandidateProfile = (
 ): Batch1CandidateProfileManifest => Object.freeze({
   formatVersion: 1,
   profileId: BATCH1_CANDIDATE_PROFILE_ID,
-  stage: "batch-1-w4-a10",
+  stage: "batch-1-w4-a11",
   runtimeActivation: "workstream-evidence-only",
   protocol: Object.freeze({
     version: exactIdentifier(input.protocolVersion, "candidate protocol version"),

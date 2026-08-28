@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { PROTOCOL_VERSION, REFERENCE_PROTOCOL_LIMITS, type MethodParams } from "@myagents-dsh/protocol";
+import {
+  PROTOCOL_VERSION,
+  REFERENCE_PROTOCOL_LIMITS,
+  SessionReadAssembler,
+  type MethodParams,
+} from "@myagents-dsh/protocol";
 import { launchArtifactRuntime } from "@myagents-dsh/test-host";
 
 import { inspectDynamicArtifact, type DynamicArtifactIdentity } from "./artifact.js";
@@ -54,6 +59,35 @@ export interface DynamicRunResult {
 }
 
 const sha256Text = (text: string): string => createHash("sha256").update(text).digest("hex");
+
+const compactionPressurePrompt = (prompt: string, operation: number): string => {
+  const records = Array.from({ length: 320 }, (_, index) => {
+    const identity = createHash("sha256")
+      .update(`compaction-pressure-v1\0${String(operation)}\0${String(index)}`)
+      .digest("hex")
+      .slice(0, 20);
+    return `pressure-record-${String(operation)}-${String(index)}=${identity}`;
+  });
+  return [
+    prompt,
+    "",
+    "Synthetic non-secret context-pressure appendix. It is test ballast, not task state; do not repeat it.",
+    ...records,
+  ].join("\n");
+};
+
+const messageText = (data: unknown): string => {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return "";
+  const message = (data as { message?: unknown }).message;
+  if (message === null || typeof message !== "object" || Array.isArray(message)) return "";
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return "";
+  return content.flatMap((block) => {
+    if (block === null || typeof block !== "object" || Array.isArray(block)) return [];
+    const candidate = block as { type?: unknown; text?: unknown };
+    return candidate.type === "text" && typeof candidate.text === "string" ? [candidate.text] : [];
+  }).join("\n");
+};
 
 export const createScriptedQuestionAnswer = (
   params: MethodParams<"host/interaction/request">,
@@ -429,8 +463,11 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
       const terminals: unknown[] = [];
       let persistenceLifecycleEvidence: Readonly<Record<string, unknown>> | undefined;
       for (let index = 0; index < input.scenario.prompts.length; index += 1) {
-        const prompt = input.scenario.prompts[index];
-        if (prompt === undefined) throw new Error("dynamic scenario prompt inventory changed");
+        const sourcePrompt = input.scenario.prompts[index];
+        if (sourcePrompt === undefined) throw new Error("dynamic scenario prompt inventory changed");
+        const prompt = input.scenario.id === "compaction-continuity"
+          ? compactionPressurePrompt(sourcePrompt, index + 1)
+          : sourcePrompt;
         const clientOperationId = `${input.workspace.runId}-operation-${String(index + 1)}`;
         await runtime.client.turnStart({
           clientOperationId,
@@ -516,10 +553,16 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
       }
       if (asynchronousHostFailures.length > 0) throw new AggregateError(asynchronousHostFailures, "Host interaction response failed");
       const diagnosticRecords: unknown[] = [];
+      const sessionReadAssembler = new SessionReadAssembler();
       let cursor: string | undefined;
       let diagnosticsComplete = false;
       for (let page = 0; page < 1_024; page += 1) {
-        const result = await runtime.client.sessionRead(cursor === undefined ? {} : { cursor }, { signal: input.signal });
+        const requestCursor = cursor;
+        const result = await runtime.client.sessionRead(
+          requestCursor === undefined ? {} : { cursor: requestCursor },
+          { signal: input.signal },
+        );
+        sessionReadAssembler.accept(result, requestCursor);
         diagnosticRecords.push(...result.records);
         cursor = result.nextCursor;
         if (cursor === undefined) {
@@ -528,6 +571,33 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
         }
       }
       if (!diagnosticsComplete) throw new Error("dynamic Session diagnostics exceeded their page bound");
+      const durableEvents = sessionReadAssembler.finish();
+      const completedCompactions = durableEvents.filter(({ eventType, data }) => {
+        if (eventType !== "compaction/end" || data === null || typeof data !== "object" || Array.isArray(data)) {
+          return false;
+        }
+        return !("error" in data);
+      }).length;
+      const summaryCompactions = durableEvents.filter(({ eventType }) =>
+        eventType === "compaction/summary").length;
+      const terminalAssistantText = messageText(durableEvents.findLast(({ eventType }) =>
+        eventType === "assistant/message")?.data);
+      const requiredContinuityFacts = [
+        "finish-compaction-continuity-audit",
+        "integrity-first",
+        "specs/continuity-target.md",
+        "COMPACTION_SENTINEL_42",
+        "report-terminal-evidence",
+      ];
+      const terminalContinuityFactsPresent = requiredContinuityFacts.every((fact) =>
+        terminalAssistantText.includes(fact));
+      const supersededContinuityFactsAbsent = !terminalAssistantText.includes("speed-first")
+        && !terminalAssistantText.includes("inspect-compaction-evidence");
+      const compactionContinuityVerified = input.scenario.id !== "compaction-continuity"
+        || completedCompactions >= 3
+          && summaryCompactions >= 3
+          && terminalContinuityFactsPresent
+          && supersededContinuityFactsAbsent;
       await runtime.client.sessionClose({ clientOperationId: `close-${input.workspace.runId}` }, { signal: input.signal });
       const finalStatus = await runtime.client.runtimeStatus({}, { signal: input.signal });
       await runtime.client.runtimeShutdown({ reason: "dynamic-scenario-complete" }, { signal: input.signal });
@@ -551,19 +621,21 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           && persistenceLifecycleEvidence.forkPreparedState === "prepared"
           && persistenceLifecycleEvidence.forkAbortedState === "aborted"
           && persistenceLifecycleEvidence.forkStatusState === "aborted";
-      const passed = succeeded && persistenceLifecycleVerified
+      const passed = succeeded && persistenceLifecycleVerified && compactionContinuityVerified
         && activeTotal === 0 && exits.every(({ code }) => code === 0) && noUnexpectedFatal;
       const reasonCode = !succeeded
         ? "operation_terminal_failed"
         : !persistenceLifecycleVerified
           ? "persistence_lifecycle_failed"
-          : activeTotal !== 0
-            ? "runtime_resources_remained_live"
-            : exits.some(({ code }) => code !== 0)
-              ? "runtime_exit_failed"
-              : !noUnexpectedFatal
-                ? "runtime_transport_failed"
-                : undefined;
+          : !compactionContinuityVerified
+            ? "compaction_continuity_failed"
+            : activeTotal !== 0
+              ? "runtime_resources_remained_live"
+              : exits.some(({ code }) => code !== 0)
+                ? "runtime_exit_failed"
+                : !noUnexpectedFatal
+                  ? "runtime_transport_failed"
+                  : undefined;
       return Object.freeze({
         outcome: passed ? "passed" as const : "failed" as const,
         ...(reasonCode === undefined ? {} : { reasonCode }),
@@ -582,7 +654,14 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
         }, ...(persistenceLifecycleEvidence === undefined ? [] : [{
           kind: "persistence_lifecycle",
           ...persistenceLifecycleEvidence,
-        }]), ...diagnosticRecords]),
+        }]), ...(input.scenario.id === "compaction-continuity" ? [{
+          kind: "compaction_continuity",
+          completedCompactions,
+          summaryCompactions,
+          terminalAssistantSha256: sha256Text(terminalAssistantText),
+          terminalContinuityFactsPresent,
+          supersededContinuityFactsAbsent,
+        }] : []), ...diagnosticRecords]),
         hardAssertions: Object.freeze({
           promptCount: input.scenario.prompts.length,
           terminalCount: terminals.length,
@@ -592,6 +671,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           zeroActiveResources: activeTotal === 0,
           diagnosticProjectionComplete: diagnosticsComplete,
           persistenceLifecycleVerified,
+          compactionContinuityVerified,
         }),
         resourceFinal: Object.freeze({
           runtimeProcess: exit.code === 0 ? "exited" : "failed",

@@ -127,11 +127,12 @@ const passingDriver: DynamicRunDriver = Object.freeze({
 describe("dynamic E2E harness", () => {
   it("loads a bounded natural-prompt corpus without exposing hidden coverage in prompts", async () => {
     const corpus = await loadDynamicScenarioCorpus(resolve(packageRoot, "scenarios"));
-    expect(corpus).toHaveLength(7);
+    expect(corpus).toHaveLength(8);
     expect(corpus.map(({ id }) => id)).toEqual([
       "adversarial-boundaries",
       "child-task-work",
       "coding-workspace",
+      "compaction-continuity",
       "degraded-host",
       "interaction-plan",
       "persistence-lifecycle",

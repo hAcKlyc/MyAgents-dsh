@@ -4,6 +4,7 @@ import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
 import { BasicCompactionEngine } from "@deepseek-ai/dsh-compaction-basic";
+import { ToolResultPruner } from "@deepseek-ai/dsh-compaction-tool-result-pruner";
 import { CommandId, CommandRuntime } from "@deepseek-ai/dsh-commands";
 import { LlmAdapter, LlmRuntime, type ContentBlock } from "@deepseek-ai/dsh-llm";
 import { SettingsProvider } from "@deepseek-ai/dsh-settings";
@@ -177,6 +178,7 @@ export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "tool-runtime",
   "llm-adapter",
   "token-meter",
+  "tool-result-pruner",
   "compaction-engine",
   "agent-loop",
   "host-port-service",
@@ -1971,9 +1973,15 @@ export const composeDshRootServices = async (
     await root.plugin(AgentRegistry);
     await root.plugin(LlmRuntime);
     await root.plugin(SystemPrompt, systemPrompt);
+    root.systemPrompt.section({
+      name: "compaction:continuity",
+      order: 118,
+      text: "Under context pressure, old oversized tool results may retain only their beginning and end. Record important exact conclusions, paths, identifiers, short errors, decisions, and pending work promptly so the task can continue correctly.",
+    });
     await root.plugin(ToolRuntime, tools);
     if (adapter !== undefined) await root.plugin(adapterPlugin(providers, adapter));
     await root.plugin(TokenMeter);
+    await root.plugin(ToolResultPruner);
     await root.plugin(BasicCompactionEngine, { auto: true });
     await root.plugin(AgentLoop, {
       ...agentLoop,
