@@ -77,10 +77,12 @@ const interactionSelectionIsStable = (
   const afterRequest = after.find(({ path }) => path === "migration-request.md");
   if (beforeSelection?.kind !== "file"
     || JSON.stringify(beforeRequest) !== JSON.stringify(afterRequest)) return false;
-  const allowed = new Set(["migration-request.md", "selection.txt", "selection.txt.bak", "migration-plan.md"]);
-  if (after.some(({ path }) => !allowed.has(path))) return false;
-  const backup = after.find(({ path }) => path === "selection.txt.bak");
-  if (backup !== undefined && (backup.kind !== "file"
+  const backupPath = /^selection\.txt\.bak(?:-[0-9]{8}T[0-9]{6})?$/u;
+  if (after.some(({ path }) => !new Set([
+    "migration-request.md", "selection.txt", "migration-plan.md",
+  ]).has(path) && !backupPath.test(path))) return false;
+  const backups = after.filter(({ path }) => backupPath.test(path));
+  if (backups.length > 1 || backups.some((backup) => backup.kind !== "file"
     || backup.sha256 !== beforeSelection.sha256
     || backup.size !== beforeSelection.size)) return false;
   const plan = after.find(({ path }) => path === "migration-plan.md");

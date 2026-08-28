@@ -394,6 +394,10 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
             recordHostCall("host/interaction/request", params);
             context.afterResponse(() => {
               const question = params.kind === "ask_user" || params.kind === "plan_approval";
+              const denyPermission = input.scenario.hostPolicy.interaction === "deny"
+                || input.scenario.id === "interaction-plan"
+                  && params.kind === "permission"
+                  && params.permissionAction === "process.execute";
               const response = question
                 ? input.scenario.hostPolicy.interaction === "deny"
                   ? {
@@ -410,7 +414,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
                 : {
                     interactionId: params.interactionId,
                     expectedRevision: params.desiredPolicyRevision,
-                    decision: input.scenario.hostPolicy.interaction === "deny" ? "deny" as const : "allow_once" as const,
+                    decision: denyPermission ? "deny" as const : "allow_once" as const,
                   };
               void client.interactionRespond(response).catch((error: unknown) => {
                 asynchronousHostFailures.push(error instanceof Error ? error : new Error("Host interaction response failed"));
@@ -572,6 +576,48 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
       }
       if (!diagnosticsComplete) throw new Error("dynamic Session diagnostics exceeded their page bound");
       const durableEvents = sessionReadAssembler.finish();
+      const hostCalls = [
+        ...overriddenHostCalls,
+        ...runtimes.flatMap((candidate) => candidate.standardHost.calls),
+      ];
+      const toolCalls = durableEvents.flatMap(({ sequence, eventType, data }) => {
+        if (eventType !== "tool/call" || data === null || typeof data !== "object" || Array.isArray(data)) {
+          return [];
+        }
+        const call = data as { arguments?: unknown; name?: unknown };
+        if (typeof call.name !== "string") return [];
+        let target: string | undefined;
+        if (typeof call.arguments === "string") {
+          try {
+            const value: unknown = JSON.parse(call.arguments);
+            if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+              const record = value as { file_path?: unknown; path?: unknown };
+              const candidate = typeof record.file_path === "string" ? record.file_path : record.path;
+              if (typeof candidate === "string") target = candidate;
+            }
+          } catch {
+            // Invalid tool arguments cannot prove a governed fixture mutation.
+          }
+        }
+        return [{ name: call.name, sequence, ...(target === undefined ? {} : { target }) }];
+      });
+      const enterPlan = toolCalls.find(({ name }) => name === "EnterPlanMode");
+      const exitPlan = toolCalls.find(({ name }) => name === "ExitPlanMode");
+      const selectionMutation = toolCalls.find(({ name, target }) =>
+        (name === "Write" || name === "Edit")
+        && (target === "selection.txt" || target?.endsWith("/selection.txt") === true));
+      const interactionPlanVerified = input.scenario.id !== "interaction-plan"
+        || toolCalls.some(({ name }) => name === "AskUserQuestion")
+          && enterPlan !== undefined
+          && exitPlan !== undefined
+          && hostCalls.some((call) => {
+            if (call === null || typeof call !== "object" || Array.isArray(call)) return false;
+            const params = (call as { params?: unknown }).params;
+            return params !== null && typeof params === "object" && !Array.isArray(params)
+              && (params as { kind?: unknown }).kind === "plan_approval";
+          })
+          && selectionMutation !== undefined
+          && selectionMutation.sequence > exitPlan.sequence;
       const completedCompactions = durableEvents.filter(({ eventType, data }) => {
         if (eventType !== "compaction/end" || data === null || typeof data !== "object" || Array.isArray(data)) {
           return false;
@@ -622,6 +668,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           && persistenceLifecycleEvidence.forkAbortedState === "aborted"
           && persistenceLifecycleEvidence.forkStatusState === "aborted";
       const passed = succeeded && persistenceLifecycleVerified && compactionContinuityVerified
+        && interactionPlanVerified
         && activeTotal === 0 && exits.every(({ code }) => code === 0) && noUnexpectedFatal;
       const reasonCode = !succeeded
         ? "operation_terminal_failed"
@@ -629,7 +676,9 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           ? "persistence_lifecycle_failed"
           : !compactionContinuityVerified
             ? "compaction_continuity_failed"
-            : activeTotal !== 0
+            : !interactionPlanVerified
+              ? "interaction_plan_failed"
+              : activeTotal !== 0
               ? "runtime_resources_remained_live"
               : exits.some(({ code }) => code !== 0)
                 ? "runtime_exit_failed"
@@ -650,7 +699,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           runtimeGeneration: initialized.runtimeGeneration,
         }, {
           kind: "host_reverse_calls",
-          calls: [...overriddenHostCalls, ...runtimes.flatMap((candidate) => candidate.standardHost.calls)],
+          calls: hostCalls,
         }, ...(persistenceLifecycleEvidence === undefined ? [] : [{
           kind: "persistence_lifecycle",
           ...persistenceLifecycleEvidence,
@@ -672,6 +721,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           diagnosticProjectionComplete: diagnosticsComplete,
           persistenceLifecycleVerified,
           compactionContinuityVerified,
+          interactionPlanVerified,
         }),
         resourceFinal: Object.freeze({
           runtimeProcess: exit.code === 0 ? "exited" : "failed",

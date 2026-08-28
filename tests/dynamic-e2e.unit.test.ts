@@ -238,20 +238,31 @@ describe("dynamic E2E harness", () => {
       sha256: currentDigest,
     });
     const interactionBefore = Object.freeze([migrationRequest, currentSelection]);
+    const stableSelection = Object.freeze({
+      path: "selection.txt",
+      kind: "file" as const,
+      size: 7,
+      sha256: createHash("sha256").update("stable\n").digest("hex"),
+    });
     const interactionAfter = Object.freeze([
       migrationRequest,
-      Object.freeze({
-        path: "selection.txt",
-        kind: "file" as const,
-        size: 7,
-        sha256: createHash("sha256").update("stable\n").digest("hex"),
-      }),
+      stableSelection,
       Object.freeze({ path: "selection.txt.bak", kind: "file" as const, size: 8, sha256: currentDigest }),
     ]);
     expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, interactionAfter)).toMatchObject({
       passed: true,
       assertions: [{ name: "approved-stable-selection", passed: true }],
     });
+    expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, Object.freeze([
+      migrationRequest,
+      stableSelection,
+      Object.freeze({
+        path: "selection.txt.bak-20260829T042129",
+        kind: "file" as const,
+        size: 8,
+        sha256: currentDigest,
+      }),
+    ])).passed).toBe(true);
     expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, Object.freeze([
       ...interactionAfter,
       Object.freeze({ path: "unexpected.txt", kind: "file" as const, size: 1, sha256: "4".repeat(64) }),

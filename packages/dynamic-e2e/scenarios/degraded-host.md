@@ -9,7 +9,7 @@
   "experienceFocus": ["Degraded usability", "Truthful failure taxonomy", "Recovery guidance"],
   "capabilityCoverage": ["provider-unavailable", "host-timeout", "mcp-failure", "attachment-failure", "recovery-required", "cleanup"],
   "postconditions": ["Unavailable evidence is not counted as pass", "No fabricated result is committed", "Every request and lease settles"],
-  "hostPolicy": {"interaction": "scripted", "network": "synthetic-only", "credentials": "none"},
+  "hostPolicy": {"interaction": "deny", "network": "synthetic-only", "credentials": "none"},
   "budgets": {"wallTimeMs": 240000, "operations": 3, "turns": 16, "modelCalls": 24, "toolCalls": 64, "children": 1, "processes": 4, "networkAttempts": 8, "bytes": 8388608, "retries": 1}
 }
 -->
