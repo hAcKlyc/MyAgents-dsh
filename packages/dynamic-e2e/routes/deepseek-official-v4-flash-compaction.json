@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "provider": {
-    "revision": "deepseek-official-v4-flash-compaction-v1",
+    "revision": "deepseek-official-v4-flash-compaction-v2",
     "providerRouteId": "deepseek-official",
     "api": "openai-completions",
     "provider": "deepseek",
@@ -9,7 +9,7 @@
     "baseUrl": "https://api.deepseek.com",
     "credentialRef": "DEEPSEEK_API_KEY",
     "contextWindow": 12288,
-    "maxTokens": 2048,
+    "maxTokens": 4096,
     "reasoning": true,
     "effort": "high"
   },

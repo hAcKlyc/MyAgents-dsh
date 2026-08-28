@@ -397,10 +397,10 @@ describe("dynamic E2E harness", () => {
     try {
       const route = await loadApprovedDynamicRoute(path, environmentName);
       expect(route.provider).toMatchObject({
-        revision: "deepseek-official-v4-flash-compaction-v1",
+        revision: "deepseek-official-v4-flash-compaction-v2",
         providerRouteId: "deepseek-official",
         contextWindow: 12_288,
-        maxTokens: 2_048,
+        maxTokens: 4_096,
       });
     } finally {
       delete process.env[environmentName];
