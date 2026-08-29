@@ -21,7 +21,9 @@ import {
 } from "@myagents-dsh/artifact-verifier/integration-compatibility";
 import {
   BATCH_3_INTEGRATION_HANDOFF_MANIFEST_FILENAME,
+  BATCH_3_INTEGRATION_HANDOFF_README_FILENAME,
   createBatch3IntegrationHandoffManifest,
+  createBatch3IntegrationHandoffReadme,
   serializeBatch3IntegrationHandoffManifest,
   verifyBatch3IntegrationHandoff,
 } from "@myagents-dsh/artifact-verifier/integration-handoff";
@@ -208,6 +210,11 @@ const main = (): void => {
   writeFileSync(
     resolve(outputRoot, "contracts/myagents-dsh-compatibility-v1.json"),
     serializeMyAgentsDshCompatibilityManifest(compatibility),
+    { flag: "wx", mode: 0o644 },
+  );
+  writeFileSync(
+    resolve(outputRoot, BATCH_3_INTEGRATION_HANDOFF_README_FILENAME),
+    createBatch3IntegrationHandoffReadme(copiedArtifact, compatibility),
     { flag: "wx", mode: 0o644 },
   );
   const handoff = createBatch3IntegrationHandoffManifest(outputRoot, platforms);
