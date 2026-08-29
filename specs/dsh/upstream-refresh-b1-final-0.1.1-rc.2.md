@@ -67,7 +67,7 @@ negative tests.
 | Platform filesystem/process/network behavior | Public service contracts and helpers | `compose-public-provider` | Composition-selected macOS/Windows/Linux Providers own native path, process-tree, shell, SQLite, and network policy differences. |
 
 The detailed per-package and per-tool mapping remains in
-[`batch-1-dsh-capability-map.md`](../rfc/batch-1-dsh-capability-map.md). The
+[`tech_rfc_0.1_dsh_capability_map.md`](../prd/tech_rfc_0.1_dsh_capability_map.md). The
 zero-delta fetch does not justify widening the official profile; it confirms
 that the implemented split remains correct against the newest public source.
 

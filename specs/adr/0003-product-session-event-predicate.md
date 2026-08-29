@@ -2,6 +2,8 @@
 
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 
+Current disposition (2026-08-29): retained and rebased as `DSH-SEAM-003` / patch 0003 for official DSH `0.1.1-rc.2`. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
+
 ## Context
 
 MyAgents operation, TaskGraph, work, permission, checkpoint, and mutation facts are required DSH Session events. Stock `PersistenceCoordinator` accepts only its monorepo-generated event set when it loads, inspects, prepares, resumes, or adopts a live prefix. Marking product facts ignorable would permit a reader to reconstruct an incorrect operation or mutation state.

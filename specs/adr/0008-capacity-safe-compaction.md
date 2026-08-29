@@ -4,6 +4,8 @@
 - Date: 2026-08-29
 - Scope: `B1-W4-A11`, `CP-P0-03` through `CP-P0-07`
 
+Current disposition (2026-08-29): retained as `DSH-SEAM-008` / patch 0007 in the current seven-patch artifact and documented by `specs/tech_docs/compaction-architecture.md`.
+
 ## Context
 
 The pinned basic compaction package exposes only a post-selection summarizer hook. MyAgents-dsh cannot preflight the exact summary envelope or reduce a selected range at balanced boundaries through public APIs. Reimplementing private range/transaction behavior in a product plugin would create a second compaction policy owner and couple the product to private DSH internals.

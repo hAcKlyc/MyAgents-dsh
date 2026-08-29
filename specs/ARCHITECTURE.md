@@ -13,16 +13,7 @@ project: MyAgents-dsh
 
 The project does not wrap DSH with the existing Pi runtime. The runtime process itself is a DSH/Cordis application, DSH owns the only concrete AgentLoop, and all product runtime behavior is implemented through DSH services, plugins, scopes, and durable session events.
 
-The initial compatibility target is the implemented public boundary recorded by `myagents-runtime` Batch 1 and Batch 2, not every current or future feature of any upstream Agent SDK.
-
-The initial design review used these exact, clean authority baselines on 2026-08-15:
-
-| Source | Revision | Role |
-| --- | --- | --- |
-| `myagents-runtime` | `b7bbcadb172254defc0ea86229dd5de043fbb5f3` | Current implemented behavior, protocol 1.1, and Agent SDK compatibility source |
-| `deepseek-harness` | `47f943859bef60e4160492346772ded9b24f765a` (`0.1.0-rc.5`) | DSH architecture and public seam design reference |
-
-These rows record the initial design evidence, not the current package lock. Batch action `B1-DSH-R1` has since re-audited the implementation against `dsh-v0.1.1-rc.2`, commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`; the current executable candidate and patch dispositions are owned by `specs/dsh/upstream-rebaseline-0.1.1-rc.2.md` and the content-addressed accepted-artifact manifest.
+The compatibility target is the versioned MyAgents Agent experience admitted by the exact product profile and artifact-bound compatibility manifest, not every feature of an upstream SDK or DSH package. Historical Pi migration and early DSH baselines remain attributable in `specs/migration/`, the Foundation PRD, and DSH refresh records; they are not current architecture.
 
 ### 1.1 Current implementation and acceptance state
 
@@ -98,6 +89,21 @@ The target architecture makes MyAgents and the standalone SDK two Hosts of the s
 The Reference Web Host is a third Host of the same contract. It may expose an ephemeral loopback-only browser carrier, but the carrier terminates in the Host process: the Runtime remains an unchanged stdio child with one primary root Session. Multiple browser-visible Sessions map to separate Runtime processes while active and to Host-owned routing metadata while cold.
 
 ## 4. Layer model
+
+The detailed current implementation is divided into a small set of maintained module guides:
+
+| Module | Guide |
+| --- | --- |
+| Runtime process, composition, operation and RPC | [Runtime core and native RPC](./tech_docs/runtime-core-and-rpc.md) |
+| Protocol intent and lifecycle | [Runtime protocol](./tech_docs/runtime-protocol.md) |
+| Canonical tools, policy, tasks and child work | [Agent tools and policy](./tech_docs/agent-tools-and-policy.md) |
+| Reverse Host ports and declarative extensions | [Host ports and components](./tech_docs/host-ports-and-components.md) |
+| Durable Sessions, storage and mutations | [Sessions, persistence and mutations](./tech_docs/sessions-persistence-and-mutations.md) |
+| Automatic and explicit context compaction | [Compaction architecture](./tech_docs/compaction-architecture.md) |
+| Content-addressed artifacts and Host handoff | [Artifact verification and handoff](./tech_docs/artifact-verification-and-handoff.md) |
+| Local browser product | [Reference Web Host](./tech_docs/reference-web-host.md) |
+
+These guides own module-level current explanation. The sections below retain the cross-module boundaries and authority model.
 
 ### 4.1 Consumer surfaces
 

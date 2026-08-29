@@ -2,6 +2,8 @@
 
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 
+Current disposition (2026-08-29): retained and rebased as `DSH-SEAM-002` / patch 0002 for official DSH `0.1.1-rc.2`. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
+
 ## Context
 
 Stock DSH appends `assistant/message` before parsing and dispatching its tool calls. A later `tools/pre-execute` replacement can change execution input but cannot change durable assistant history. That would make replay, audit, UI, permission, and execution disagree.

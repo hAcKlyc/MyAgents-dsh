@@ -1,24 +1,18 @@
 # Architecture decision records
 
-ADRs record accepted, durable implementation choices that cannot be inferred safely from code alone. Product scope remains in `specs/prd/`; current owners and data flow remain in `specs/ARCHITECTURE.md`; implementation detail remains in `specs/rfc/`.
+ADRs explain accepted durable choices that cannot be reconstructed safely from code alone. Product scope lives in `specs/prd/`, current running architecture in `specs/ARCHITECTURE.md` and `specs/tech_docs/`, and exact patch identity/order/removal conditions in `specs/dsh/seam-decisions-v1.json`.
 
-An unresolved candidate is not an ADR. It first needs the executable evidence required by the Batch 1 architecture, then an RFC review. When accepted, create a numbered file such as `0001-native-rpc-boundary.md` containing context, evidence, decision, rejected alternatives, consequences, and supersession rules.
+All eight recorded decisions are accepted for the current official DSH `0.1.1-rc.2` source authority. Seven require ordered upstream patches; ADR 0004 is implemented through the public persistence Provider plus product mutation companion.
 
-## Batch 1 decision register
-
-The program-level policy already permits a pinned, minimal, upstream-ready DSH patch series while upstream review is pending. The seam rows below remain unresolved because executable evidence must still prove that each exact core patch is necessary and correct; accepting the fork policy is not blanket acceptance of a proposed patch.
-
-| Candidate | Current state | ADR trigger |
+| Decision | Current disposition | Executable seam |
 | --- | --- | --- |
-| Native MyAgents RPC remains independent of the minimal DSH SDK wire | architecture decision and RFC drafted; acceptance pending | Runtime/RPC RFC acceptance |
-| One product operation may own multiple DSH engine turns | accepted by operation fold/recovery fixture; implementation remains B1-W1 | [ADR 0001](./0001-wake-existing-inbox-message.md) owns the missing restart wake seam |
-| PreTool input rewrite uses a pre-assistant-commit DSH waterfall in a minimal pinned/upstream patch | accepted | [ADR 0002](./0002-pre-assistant-commit-waterfall.md) |
-| Required downstream Session events use an optional generated known-event predicate in `PersistenceCoordinator` | accepted | [ADR 0003](./0003-product-session-event-predicate.md) |
-| Production persistence is a MyAgents SQLite Provider plus mutation companion over one storage owner | composition accepted; production implementation/fault campaign remain B1-W4 | [ADR 0004](./0004-shared-backend-lock-and-immutable-rewind-generation.md) |
-| Rewind creates an immutable storage generation and atomically switches the active locator | accepted; production journal/locator implementation remains B1-W4 | [ADR 0004](./0004-shared-backend-lock-and-immutable-rewind-generation.md) |
-| One primary root Session is fenced at the DSH Session and Agent pre-publication commit boundaries | accepted | [ADR 0005](./0005-root-publication-guards.md) |
-| Product-owned continuable work suppresses the stock parent notice and retires one exact Activation forest quiescently | accepted | [ADR 0006](./0006-product-owned-continuable-lifecycle.md) |
-| Capacity-safe summary fitting, validation, repair, and telemetry stay inside the official DSH engine | accepted | [ADR 0008](./0008-capacity-safe-compaction.md) |
-| Dynamic component replacement uses prepared generations and an operation-quiescent commit | RFC interfaces selected; unresolved until spike | zero-visibility/atomicity/rollback/leak spike |
+| [ADR 0001](./0001-wake-existing-inbox-message.md) wake an existing Inbox identity | retained and rebased | `DSH-SEAM-001`, patch 0001 |
+| [ADR 0002](./0002-pre-assistant-commit-waterfall.md) authoritative transformed tool input | retained and rebased | `DSH-SEAM-002`, patch 0002 |
+| [ADR 0003](./0003-product-session-event-predicate.md) required downstream Session events | retained and rebased | `DSH-SEAM-003`, patch 0003 |
+| [ADR 0004](./0004-shared-backend-lock-and-immutable-rewind-generation.md) immutable generations and shared mutation lock | implemented through public composition | `DSH-SEAM-004`, no core patch |
+| [ADR 0005](./0005-root-publication-guards.md) pre-publication root guards | retained and rebased | `DSH-SEAM-005`, patch 0004 |
+| [ADR 0006](./0006-product-owned-continuable-lifecycle.md) product-owned continuable work | reduced against newer public seams and rebased | `DSH-SEAM-006`, patch 0005 |
+| [ADR 0007](./0007-deepseek-stream-tool-identity.md) preserve streamed tool identity | retained | `DSH-SEAM-007`, patch 0006 |
+| [ADR 0008](./0008-capacity-safe-compaction.md) capacity-safe official compaction engine | retained | `DSH-SEAM-008`, patch 0007 |
 
-The register is an index, not a substitute for the numbered ADR created when a choice is accepted.
+An official DSH update does not silently carry these decisions forward. Use the repository maintenance skill, inspect the exact current upstream seam, and classify every patch as retire, reduce, or rebase. Update the ADR disposition, generated seam registry, patch bytes, artifacts, Runtime/platform evidence, and Host handoff as one attributable chain.

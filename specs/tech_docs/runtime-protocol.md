@@ -1,12 +1,15 @@
 ---
 type: protocol-specification
 status: intent-reference
+module: runtime-core-and-rpc
 candidate_version: 2.0.0-draft.2
 updated: 2026-08-29
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
+product_scope: ../prd/prd_0.1_agent_runtime.md
+implementation_decision: ../prd/tech_rfc_0.1_runtime_rpc.md
 ---
 
-# MyAgents-dsh native runtime RPC protocol
+# Runtime protocol intent and ownership
 
 ## 1. Scope and status
 

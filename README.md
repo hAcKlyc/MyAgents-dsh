@@ -112,10 +112,9 @@ On the new machine:
 ## Specifications
 
 - [Architecture](./specs/ARCHITECTURE.md)
-- [Runtime RPC protocol intent](./specs/protocol/runtime-rpc-v2.md)
+- [Runtime RPC protocol intent](./specs/tech_docs/runtime-protocol.md)
 - [Development plan and current status](./specs/prd/plan.md)
-- [Batch PRDs and workstreams](./specs/prd/README.md)
-- [Implementation RFC index](./specs/rfc/README.md)
+- [Versioned PRDs and technical RFCs](./specs/prd/README.md)
 - [Core-module technical guides](./specs/tech_docs/README.md)
 - [DSH source and patch evidence](./specs/dsh/README.md)
 - [Architecture decisions](./specs/adr/README.md)

@@ -6,8 +6,8 @@ This repository builds a production-oriented Agent Harness distribution on DeepS
 
 1. Exact installed APIs, versions, scripts, and executable constraints: code, tests, `package.json`, and the lockfile.
 2. Current owners, process boundaries, lifecycle placement, and data flow: `specs/ARCHITECTURE.md`.
-3. Exact wire behavior: `packages/protocol/src/contract-source.ts`, with generated schema/client/fixtures as deterministic projections. `specs/protocol/runtime-rpc-v2.md` records protocol intent and ownership, not competing exact shapes.
-4. Development entry, repository/migration relationships, Batch scope, status, and acceptance: `specs/prd/plan.md` and the active Batch PRD. Batch 1 workstream chapters refine implementation but do not create independent product gates.
+3. Exact wire behavior: `packages/protocol/src/contract-source.ts`, with generated schema/client/fixtures as deterministic projections. `specs/tech_docs/runtime-protocol.md` records protocol intent and ownership, not competing exact shapes.
+4. Development entry, repository/migration relationships, milestone/Batch scope, status, and acceptance: `specs/prd/README.md`, `specs/prd/plan.md`, and the active `prd_<milestone>_*.md`. Paired `tech_rfc_<milestone>_*.md` files preserve implementation decisions but do not create independent product gates.
 5. Compatibility claims: versioned compatibility manifests and executable fixtures, never README prose alone.
 6. Implemented core-module maintenance guides: `specs/tech_docs/`; compaction architecture and evolution: `specs/tech_docs/compaction-architecture.md`.
 
@@ -34,6 +34,7 @@ This repository builds a production-oriented Agent Harness distribution on DeepS
 
 - Work on `dev` or a feature branch; do not commit implementation directly to `main` after repository bootstrap.
 - Read `specs/prd/plan.md` plus the active Batch and internal workstream ledger before changing code. Update the owning ledger after each accepted action item.
+- Keep product PRDs and their technical RFCs together under `specs/prd/` with bidirectional links. When implemented module behavior changes, update the corresponding `specs/tech_docs/` guide and the module link in `specs/ARCHITECTURE.md` in the same change.
 - Read the relevant architecture section before changing an owner, process, Session, lifecycle, persistence, security, or protocol boundary.
 - Pin the exact DSH version/commit. Imports from package-private `src/*` or `dist/*` paths are forbidden.
 - Before auditing or integrating an official DSH update, use `.agents/skills/dsh-upstream-maintenance/SKILL.md`; read its complete patch inventory and every affected ADR/module guide.
@@ -55,7 +56,7 @@ The root `package.json` and lockfile own the exact command definitions and toolc
 
 ## Batch 3 integration handoff generation
 
-When asked to generate, refresh, or package the MyAgents integration delivery, use the official builder; do not hand-write a delivery README or assemble selected files manually. Read `specs/prd/batch-3-myagents-integration.md` and `specs/rfc/batch-3-myagents-integration-runtime.md` first.
+When asked to generate, refresh, or package the MyAgents integration delivery, use the official builder; do not hand-write a delivery README or assemble selected files manually. Read `specs/prd/prd_0.3_myagents_integration.md` and `specs/prd/tech_rfc_0.3_myagents_dsh_integration.md` first.
 
 The builder requires a clean checkout, an already verified Runtime artifact whose `repositoryHead` equals the current Git `HEAD`, a three-platform claim file, and the exact content-addressed platform evidence named by that file. Old Runtime or platform evidence cannot be relabeled for a newer source commit. If those inputs do not exist on the current machine, rebuild and re-run the affected Runtime/native evidence campaign before generating the handoff.
 

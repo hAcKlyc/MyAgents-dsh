@@ -20,10 +20,10 @@
           "specs/prd/prd_0.1_pi_native_agent_runtime_dynamic_e2e.md"
         ]
       },
-      "targetPackages": ["specs/prd", "specs/rfc"],
+      "targetPackages": ["specs/prd"],
       "dshSeams": ["architecture and PRD boundary only"],
       "piAssumptionsToRemove": ["Pi AgentSession, entry tree, leaf anchors, and Pi event names are evidence only"],
-      "acceptanceEvidence": ["requirement-trace coverage and reviewed old-to-new capability join"],
+      "acceptanceEvidence": ["versioned PRD/RFC coverage and reviewed migration-inventory capability join"],
       "provenance": "private MyAgents-authored planning source at the fixed commit; public-release license review required",
       "privateDataPolicy": "extract requirements only; copy no prompts, transcripts, credentials, or user fixtures"
     },

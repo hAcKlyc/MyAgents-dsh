@@ -2,6 +2,8 @@
 
 Status: accepted for the fixed DSH `0.1.1-rc.2` source baseline
 
+Current disposition (2026-08-29): retained as `DSH-SEAM-007` / patch 0006 in the current seven-patch artifact.
+
 ## Context
 
 The sanctioned Batch 1 production route uses the official DeepSeek adapter with

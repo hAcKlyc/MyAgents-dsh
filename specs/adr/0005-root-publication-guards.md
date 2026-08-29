@@ -2,6 +2,8 @@
 
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 
+Current disposition (2026-08-29): retained and rebased as `DSH-SEAM-005` / patch 0004 for official DSH `0.1.1-rc.2`. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
+
 ## Context
 
 The official Runtime generation owns at most one primary root Session. Stock DSH intentionally exposes advanced `SessionStore.enter` and `AgentRegistry.enter` primitives so the AgentLoop can publish a prepared Session and Agent in one ordered lifecycle. A product listener on `agent/created` is too late to enforce that invariant: direct Session publication never reaches it, an advanced Agent caller can retain an entered Agent after ignoring an announcement veto, and observers can see a rogue Session before a later Agent announcement rolls the transaction back.
