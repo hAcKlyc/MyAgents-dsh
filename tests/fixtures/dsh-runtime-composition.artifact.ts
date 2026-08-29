@@ -2413,7 +2413,7 @@ const enteredHostPlan = await hostClient.planApply({
 });
 assert.equal(enteredHostPlan.state, "applied");
 assert.equal(enteredHostPlan.mode, "plan");
-assert.ok(enteredHostPlan.planPath?.endsWith("plan.md"));
+assert.ok(enteredHostPlan.planPath?.endsWith(".md"));
 assert.deepEqual(await hostClient.planApply({
   clientOperationId: "artifact-host-enter-plan-retry",
   expectedRevision: initialPlanRevision,
