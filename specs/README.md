@@ -2,6 +2,8 @@
 
 `specs/` is the concentrated project-knowledge entrypoint. It deliberately separates current architecture, product decisions, implemented module documentation, durable decisions, and machine-verifiable evidence so a maintainer knows what to trust for each question.
 
+This file is the canonical documentation-governance guide referenced by `AGENTS.md`. A structural change to `specs/`, a naming convention, or a document authority must update this index in the same commit.
+
 ## Read in this order
 
 1. [ARCHITECTURE.md](./ARCHITECTURE.md) — current whole-system owners, process boundaries, lifecycle and data flow.
@@ -34,3 +36,12 @@
 - Research is never authority. Promote accepted conclusions into a PRD/RFC/ADR/module guide, then remove a superseded draft from the active tree; Git retains history.
 
 Versioned PRD filenames use the target program milestone, while `batch` and `workstream` remain explicit metadata. A filename version is not an npm compatibility promise.
+
+## Naming and placement
+
+- Keep the current whole-system truth in `ARCHITECTURE.md`; do not create a competing architecture overview.
+- Name product requirements `prd_<milestone>_<slug>.md` and their accepted designs `tech_rfc_<milestone>_<slug>.md`, colocated under `prd/` with bidirectional links.
+- Name current subsystem guides by stable module slug under `tech_docs/` and link them from Architecture.
+- Use numbered ADRs only for accepted durable choices that code cannot explain safely.
+- Keep comparative exploration under `research/` only while it remains useful and non-normative.
+- Preserve generated contracts, DSH seam records, and migration inventories in their existing machine-owned directories and change them only through their owning workflow.

@@ -2,6 +2,8 @@
 
 This repository builds a production-oriented Agent Harness distribution on DeepSeek Harness. It must never contain credentials, tokens, private prompts, transcripts, user files, or copied proprietary fixtures.
 
+Documentation governance starts at `specs/README.md`. That index owns document placement, naming, authority, and lifecycle rules; update it whenever the documentation structure or an authority boundary changes.
+
 ## Sources of truth
 
 1. Exact installed APIs, versions, scripts, and executable constraints: code, tests, `package.json`, and the lockfile.
