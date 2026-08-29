@@ -2,6 +2,8 @@
 
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 
+Current disposition (2026-08-29): retained and rebased as `DSH-SEAM-001` / patch 0001 for official DSH `0.1.1-rc.2`. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
+
 ## Context
 
 Resume can find a durable operation-owned `MessageId` still pending while the restarted Agent driver is idle. The existing public surface can remove that message and submit it again through `followup()`, but those two operations are durable Inbox mutations.

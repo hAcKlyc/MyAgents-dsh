@@ -3,8 +3,8 @@ type: technical-architecture
 status: implemented
 module: compaction
 updated: 2026-08-29
-product_scope: ../prd/batch-1-compaction-p0.md
-implementation_decision: ../rfc/batch-1-compaction-p0.md
+product_scope: ../prd/prd_0.1_context_compaction.md
+implementation_decision: ../prd/tech_rfc_0.1_context_compaction.md
 upstream_seam: DSH-SEAM-008
 ---
 
@@ -16,8 +16,8 @@ This document is the canonical maintenance guide for context compaction in MyAge
 
 Use the following authorities together:
 
-- the [P0 compaction PRD](../prd/batch-1-compaction-p0.md) owns product behavior and acceptance;
-- the [P0 compaction RFC](../rfc/batch-1-compaction-p0.md) owns the accepted implementation decision;
+- the [P0 compaction PRD](../prd/prd_0.1_context_compaction.md) owns product behavior and acceptance;
+- the [P0 compaction RFC](../prd/tech_rfc_0.1_context_compaction.md) owns the accepted implementation decision;
 - [ADR 0008](../adr/0008-capacity-safe-compaction.md) owns the decision to patch the official engine instead of creating a product engine;
 - [`seam-decisions-v1.json`](../dsh/seam-decisions-v1.json) owns the exact patch order, hashes, source authority, evidence, and removal condition;
 - code, tests, package manifests, locks, and artifact manifests own the exact installed and executable bytes.
@@ -246,7 +246,7 @@ This telemetry is diagnostic metadata, not a Session event or native transcript.
 
 The currently accepted source authority is official DSH `0.1.1-rc.2` at commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`. Patch 0007 participates in the seven-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.8ac244cc6367`.
 
-The exact accepted DSH artifact, Runtime, native campaign, dynamic campaign, and Batch 3 handoff identities are recorded in the [implemented compaction RFC](../rfc/batch-1-compaction-p0.md#10-implemented-evidence), [project plan](../prd/plan.md), release ledgers, and generated manifests. Do not copy those identities into a new release without rebuilding them.
+The exact accepted DSH artifact, Runtime, native campaign, dynamic campaign, and Batch 3 handoff identities are recorded in the [implemented compaction RFC](../prd/tech_rfc_0.1_context_compaction.md#10-implemented-evidence), [project plan](../prd/plan.md), release ledgers, and generated manifests. Do not copy those identities into a new release without rebuilding them.
 
 Current executable coverage includes:
 

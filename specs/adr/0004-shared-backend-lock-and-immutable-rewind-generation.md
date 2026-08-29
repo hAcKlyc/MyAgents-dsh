@@ -2,6 +2,8 @@
 
 Status: accepted on 2026-08-16 as the Batch 1 persistence composition
 
+Current disposition (2026-08-29): implemented through the public DSH PersistenceBackend plus the product-owned SQLite mutation companion as `DSH-SEAM-004`; no DSH core patch is carried for this decision.
+
 ## Context
 
 The public DSH persistence seam supports append, load, inspect, prepare, and revision observation, but product delete/fork/rewind needs explicit transaction preconditions. Rewind cannot hide later events only at the surface: those events would remain authoritative for operation, work, permission, and checkpoint folds.

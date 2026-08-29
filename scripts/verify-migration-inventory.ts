@@ -64,7 +64,6 @@ const allowedClassifications = new Set([
 const allowedTestFixtureDispositions = new Set(["migrate", "regenerate", "exclude", "none"]);
 const allowedTargetPackages = new Set([
   "specs/prd",
-  "specs/rfc",
   "root workspace",
   "root conformance tests",
   "none",

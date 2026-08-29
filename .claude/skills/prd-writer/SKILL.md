@@ -97,7 +97,7 @@ PRD 必须定义所有会影响产品行为或长期复杂度的结构性选择�
 
 ## 产出物:放哪、长什么样
 
-**落盘**：先核对 `specs/prd/plan.md` 的 Stage/Batch 文档地图。现有 Stage/Batch 的需求写回其既有 PRD；真正独立的新原子交付才新建 `specs/prd/prd_<version>_<slug>.md`。version 优先从 `package.json` / 当前分支推断；Pre-Batch 尚未创建 `package.json` 时，使用与 plan 一致且未占用的显式版本/名称，不得凭空伪造包版本。关联研究报告放 `specs/research/` 或按 plan 纳入对应 `specs/rfc/`。
+**落盘**：先核对 `specs/prd/README.md` 与 `specs/prd/plan.md` 的 milestone/Batch 文档地图。现有 milestone/Batch 的需求写回其既有 PRD；真正独立的新原子交付才新建 `specs/prd/prd_<milestone>_<slug>.md`。`milestone` 是文档计划中的产品交付版本，不自动等同于 npm 包版本；必须沿用索引/plan 已定义的版本，不能从当前分支或 `package.json` 凭空推断。配套技术方案放在同一目录并命名为 `specs/prd/tech_rfc_<milestone>_<slug>.md`。PRD 和 technical RFC 必须在 frontmatter 与正文中双向引用；已实现后再共同指向对应 `specs/tech_docs/` 模块文档。未被需求吸收的比较研究才放 `specs/research/`，研究永远不是实现权威。
 
 **frontmatter**(成稿先进入待用户接受态):
 ```yaml
