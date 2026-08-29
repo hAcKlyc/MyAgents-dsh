@@ -1,6 +1,6 @@
 ---
 type: technical-architecture
-status: implemented_pending-release-handoff-refresh
+status: implemented_handoff-sealed
 module: permissions-and-interactions
 updated: 2026-08-29
 product_scope:
@@ -109,13 +109,13 @@ The first MyAgents integration keeps its existing universal product vocabulary:
 
 `default` and `dontAsk` remain available Runtime modes but are not required as ordinary MyAgents desktop choices. A future headless/enterprise policy surface may expose `dontAsk` with `permission/rules/*`; it must not reinterpret `disallowedTools` as a permission-rule blacklist.
 
-MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. The Runtime handoff must be rebuilt for draft.3 before MyAgents consumes these methods.
+MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. Draft.3 handoff `acb54443…` now carries these methods and supersedes every draft.2 integration input.
 
 ## 8. Security and platform boundary
 
 The protocol truth remains `execution=trusted-local-user-process` and `osSandbox=false` on every platform. Application-level governed file tools enforce canonical roots and symlink/identity checks. Web tools enforce the selected Host network policy. Bash runs as a real local-user process; process groups on POSIX and a Windows Job Object own cancellation/tree cleanup, not security isolation. Bash may reach resources available to the local user, including network paths outside Web tool policy.
 
-Product permission semantics are platform-neutral. macOS arm64 has current native Runtime evidence. Windows x64 and Linux x64 retain `implementation-complete_pending-native-validation` until their exact draft.3 artifact campaigns pass. No new OS-sandbox claim is introduced by this module.
+Product permission semantics are platform-neutral. macOS arm64, Windows x64 and Linux x64 retain `implementation-complete_pending-native-validation` until a complete native campaign passes against exact draft.3 Runtime `a99c7d80…`. Two macOS credential-backed campaigns exercised every scenario successfully across the pair but each sealed at least one wall-time timeout, so neither is a verified-platform report. No new OS-sandbox claim is introduced by this module.
 
 ## 9. Change and release discipline
 

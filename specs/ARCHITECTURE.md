@@ -22,11 +22,11 @@ This table is the architecture-level snapshot as of 2026-08-29. The active PRDs 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
 | DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus seven isolated patches; artifact manifest `9c5ed754…` |
-| Standalone Runtime and native RPC | Source implementation complete; replacement artifact pending | Protocol `2.0.0-draft.3` adds Host Plan and permission-rule control; the prior `61b9d01b…` Runtime remains draft.2 historical evidence |
-| Batch 3 integration handoff | Refresh required | The prior `fedfe76d…` handoff is attributable draft.2 evidence and must not be consumed for the new control plane; sibling MyAgents Host work remains not started |
+| Standalone Runtime and native RPC | Draft.3 artifact built and independently verified | Runtime `a99c7d80…` at source `2a303f09…`; protocol `2.0.0-draft.3` includes Host Plan and permission-rule control |
+| Batch 3 integration handoff | Draft.3 handoff sealed and independently verified | Handoff `acb54443…`, compatibility `dd97a0a9…`; sibling MyAgents Host work remains not started |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
-| Platforms | Implementations remain complete; draft.3 native artifact validation pending | Prior macOS draft.2 evidence remains historical; no draft.3 platform claim until replacement campaigns bind the new Runtime manifest |
+| Platforms | All three implementations complete; draft.3 native validation pending | Handoff binds pending claims for macOS arm64, Windows x64 and Linux x64; prior macOS draft.2 verification remains historical |
 
 The previous draft.2 Runtime/handoff and the Reference Web artifact are different frozen distributions, and both predate the draft.3 permission control plane. They remain historical evidence only. Neither may be described as the current source implementation until its Host is deliberately rebound and every affected artifact/evidence set is regenerated. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public-release promotion.
 
@@ -211,7 +211,7 @@ Batch 1 is implemented for three explicit product targets from the start:
 
 | Target | Implementation obligation | Batch 1 native acceptance state |
 | --- | --- | --- |
-| macOS arm64 | complete production implementation and packaging | draft.3 replacement artifact/native campaign pending; prior `61b9d01b…` draft.2 evidence remains historical |
+| macOS arm64 | complete production implementation and packaging | draft.3 native validation pending; two credential-backed campaigns were sealed as unavailable after wall-time-budget failures, so no verified claim is made |
 | Windows x64 | complete production implementation and packaging path | pending native-machine verification; no verified-support claim yet |
 | Linux x64 | complete production implementation and packaging path | pending native-platform verification; no verified-support claim yet |
 
@@ -460,7 +460,7 @@ MyAgents is the first-party native Host. It owns Product Session identity, the p
 
 Each Product Session sidecar owns one runtime generation. Renderer code never parses the runtime wire directly; an application-owned adapter uses the generated native client and projects events into product state. The Rust shell or unrelated processes do not become alternate protocol authorities.
 
-MyAgents will consume the standalone Batch 3 integration handoff rather than repository source. The last verified draft.2 handoff is historical after the draft.3 permission/Plan contract amendment; a replacement handoff must be sealed before MyAgents integration or release acceptance. Every handoff nests the complete Runtime artifact verifier, generated client/schema/fixtures, exact compatibility manifest, canonical tool/profile contracts, notices and content-bound platform evidence. Platform `verified` is accepted only when an inventoried native report passed against that exact Runtime manifest. The Reference Web artifact and future Agent SDK facade are not dependencies of this integration path.
+MyAgents will consume the standalone Batch 3 integration handoff rather than repository source. Current handoff `acb54443…` binds draft.3 Runtime `a99c7d80…`, compatibility `dd97a0a9…`, the generated client/schema/fixtures, canonical tool/profile contracts, notices and content-bound platform evidence. It supersedes the historical draft.2 handoff as the integration input. All three current platform claims remain `implementation-complete_pending-native-validation`; `verified` is accepted only when an inventoried native report passes against the exact Runtime manifest. The Reference Web artifact and future Agent SDK facade are not dependencies of this integration path.
 
 ## 16. DSH extension and fork policy
 

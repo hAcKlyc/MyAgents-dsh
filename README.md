@@ -10,12 +10,12 @@ Status as of 2026-08-29:
 
 | Surface | State | Current authority |
 | --- | --- | --- |
-| Standalone Runtime | Runtime-side implementation and macOS arm64 evidence complete; ready as the Batch 3 integration input | Runtime manifest `61b9d01b0ab271fec6e789c650f210e9fe4f911bba75ee83a3968dcd431a0083` |
-| MyAgents integration handoff | Built and independently verified | Handoff manifest `fedfe76d0896108eceb3646d68da332d5c9fd05289b08f83e2e2b2d9d5aa0c84` |
+| Standalone Runtime | Draft.3 artifact built and independently verified; ready as the Batch 3 integration input | Runtime manifest `a99c7d8060e36647a004edce4ee5b27221d9867c75b3a751ca3112ae4c812099` |
+| MyAgents integration handoff | Draft.3 package built and independently verified | Handoff manifest `acb54443e178ae697f6a9a062264f4b02b035d990c3d98277132b6b2c446f653` |
 | Reference Web Host | W5 A1–A4 implementation exists; usable-product revalidation, fresh independent reviews, final distribution handoff, and explicit acceptance remain open | Web artifact `48c7f09cf76bb81d21a7ca5452ce2758135a176052f8f63231c558cfb70e5bd3`, frozen to the older Runtime `ddd6052efbceb0a323bf0942ba709aa78885a98ea49c03186d79751da224cdb1` |
 | Standalone Agent SDK | Not started | Batch 2 PRD only; there is no `@myagents-dsh/agent-sdk` package yet |
-| Native MyAgents Host | Not started in the sibling repository | Batch 3 PRD/RFC; it must consume the immutable handoff above |
-| Platform support | macOS arm64 verified; Windows x64 and Linux x64 implementation-complete pending native validation | Exact platform reports bound into the handoff |
+| Native MyAgents Host | Not started in the sibling repository | Batch 3 PRD/RFC; it must consume the immutable draft.3 handoff above |
+| Platform support | macOS arm64, Windows x64 and Linux x64 implementation-complete pending native validation | Exact content-bound pending claims are carried by the handoff; no draft.3 target is currently advertised as verified |
 
 The latest Runtime includes the accepted automatic-compaction P0 work. The current Reference Web artifact predates that Runtime and must not be used as evidence that the latest compaction artifact has been exercised through the browser product.
 
@@ -83,7 +83,7 @@ Git contains source, generated contracts, patch definitions, specifications, and
 Before leaving the current machine:
 
 1. make the merged commit reachable from an approved remote or transfer the Git repository by another trusted method;
-2. preserve the exact Runtime `61b9d01b…` and Batch 3 handoff `fedfe76d…` in durable storage, or plan to rebuild and re-run their evidence campaign from the recorded clean source commit;
+2. preserve the exact Runtime `a99c7d80…` and Batch 3 handoff `acb54443…` in durable storage, or plan to rebuild and re-run their evidence campaign from clean source commit `2a303f09…`;
 3. preserve any local user data separately only if needed—never commit `.env`, Runtime homes, Web catalog state, transcripts, or workspaces;
 4. do not treat a copied cache path or `/private/tmp` directory as release authority; verify every transferred artifact by its nested manifest.
 
@@ -91,7 +91,7 @@ On the new machine:
 
 1. obtain the exact Git commit and install Node `24.14.0` / npm `11.8.0`;
 2. run `npm ci` and the four repository gates below;
-3. verify the transferred Batch 3 handoff byte-for-byte before MyAgents integration, then read its generated root `README.md` as the semantic entrypoint; the existing `fedfe76d…` package predates this generated README and retains its original immutable inventory until a later handoff is rebuilt;
+3. verify the transferred Batch 3 handoff byte-for-byte with expected digest `acb54443…`, then read its generated root `README.md` as the semantic entrypoint before MyAgents integration;
 4. recreate `.env` locally only when using a real provider;
 5. if continuing Reference Web work, provide its separately frozen `ddd6052ef…` Runtime and resume W5 A5/revalidation—do not silently substitute the newer Runtime without rebuilding Web evidence.
 
@@ -101,7 +101,7 @@ On the new machine:
 - Batch 1 Reference Web still needs W5 A5 usable-product revalidation, fresh `B1-R2` reviews, the final combined distribution handoff, and explicit user acceptance.
 - Batch 2 Agent SDK has not started.
 - Batch 3 Runtime delivery is ready; implementation in the sibling `MyAgents/` repository and joint J1–J18 acceptance have not started.
-- Windows x64 and Linux x64 still require native artifact campaigns before a verified-support claim.
+- macOS arm64, Windows x64 and Linux x64 still require a complete native artifact campaign against the exact draft.3 Runtime before a verified-support claim.
 
 ## Delivery Batches
 
