@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: sessions-persistence-and-mutations
-updated: 2026-08-29
+updated: 2026-08-30
 product_scope: ../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../prd/tech_rfc_0.1_session_persistence_mutations.md
 decisions:
@@ -28,7 +28,7 @@ Cold load validates sequence, hashes, revisions, event vocabulary, and fold inva
 
 Create publishes a fresh Session only after root admission. Resume inspects and repairs permitted incomplete operation facts, reconstructs product folds, and starts the DSH Agent over the active generation. Read returns bounded engine-neutral durable projections with stable cursors. Close drains persistence and retires the Agent/Session without deleting history.
 
-Crash recovery appends or resumes explicit product settlement where allowed. It does not silently truncate valid effects or infer success from an idle process. Recovery-only operations remain fenced to the exact incomplete transaction.
+Crash recovery appends or resumes explicit product settlement where allowed. It does not silently truncate valid effects or infer success from an idle process. Recovery-only operations remain fenced to the exact incomplete transaction. While resume is `recovery_required`, an exact replay of the already prepared delete/fork/rewind request is accepted solely to recover its durable token/result; the persistence fingerprint and pending-mutation capacity reject a different request.
 
 ## 4. Mutations
 

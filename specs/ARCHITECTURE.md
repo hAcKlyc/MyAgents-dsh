@@ -427,7 +427,7 @@ Non-secret desired configuration and declarative component snapshots are stored 
 
 The v1 checkpoint claim covers only root-origin `Write` and `Edit` executed through the official governed definitions. Before the side effect, the checkpoint plugin persists an immutable correlation and preimage or absence fact. Commit, abort, and crash adjudication use canonical paths and content hashes.
 
-Rewind, fork, and delete use prepare/commit/rollback-or-abort/status protocols. They coordinate:
+Rewind, fork, and delete use prepare/commit/rollback-or-abort/status protocols. A mutation-fenced `recovery_required` Session also accepts only an exact replay of its already prepared request so the Host can recover the durable random token after a crash between Runtime prepare and Host journal publication; store fingerprint/capacity checks reject a new mutation. They coordinate:
 
 - DSH stable session boundaries;
 - product transcript postconditions supplied by Host;

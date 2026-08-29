@@ -156,6 +156,29 @@ export interface ProductSessionSnapshot extends PrimarySessionAdmissionSnapshot 
   readonly liveRootAgents: number;
 }
 
+type ProductMutationKind = SessionRecoveryStatus["unsettledMutations"][number];
+
+const assertMutationPrepareAdmission = (
+  snapshot: Readonly<PrimarySessionAdmissionSnapshot>,
+  mutation: ProductMutationKind,
+): string => {
+  if ((snapshot.state !== "ready" && snapshot.state !== "recovery_required")
+    || snapshot.runtimeSessionId === undefined) {
+    throw new ProtocolError(
+      "primary_session_not_ready",
+      `primary Session is not bound for ${mutation} prepare`,
+    );
+  }
+  if (snapshot.state === "recovery_required"
+    && snapshot.recovery?.unsettledMutations.includes(mutation) !== true) {
+    throw new ProtocolError(
+      "session_idempotency_conflict",
+      `recovery-required primary Session has no unsettled ${mutation} prepare to replay`,
+    );
+  }
+  return snapshot.runtimeSessionId;
+};
+
 export interface ProductSessionSettlementFailure {
   readonly code: "primary_session_settlement_failed";
   readonly message: string;
@@ -2103,12 +2126,10 @@ export class ProductSessionService extends Service {
     if (owner !== this) return owner.rewindPrepare(value, signal);
     const params = validateMethodParams("session/rewind/prepare", value);
     const snapshot = this.snapshot();
-    if (snapshot.state !== "ready" || snapshot.runtimeSessionId === undefined) {
-      throw new ProtocolError("primary_session_not_ready", "primary Session is not ready for rewind prepare");
-    }
+    const runtimeSessionId = assertMutationPrepareAdmission(snapshot, "rewind");
     return this.#requireRewindStore().prepareRewind(Object.freeze({
       clientMutationId: params.clientMutationId,
-      runtimeSessionId: snapshot.runtimeSessionId,
+      runtimeSessionId,
       sourceTranscriptPostcondition: params.sourceTranscriptPostcondition,
       targetStableBoundaryId: params.targetStableBoundaryId,
       targetTranscriptPostcondition: params.targetTranscriptPostcondition,
@@ -2123,12 +2144,10 @@ export class ProductSessionService extends Service {
     if (owner !== this) return owner.deletePrepare(value, signal);
     const params = validateMethodParams("session/delete/prepare", value);
     const snapshot = this.snapshot();
-    if (snapshot.state !== "ready" || snapshot.runtimeSessionId === undefined) {
-      throw new ProtocolError("primary_session_not_ready", "primary Session is not ready for delete prepare");
-    }
+    const runtimeSessionId = assertMutationPrepareAdmission(snapshot, "delete");
     return this.#requireDeleteStore().prepareDelete(Object.freeze({
       clientMutationId: params.clientMutationId,
-      runtimeSessionId: snapshot.runtimeSessionId,
+      runtimeSessionId,
     }), signal).then((record) => this.#projectDelete(record));
   }
 
@@ -2220,9 +2239,7 @@ export class ProductSessionService extends Service {
     if (owner !== this) return owner.forkPrepare(value, signal);
     const params = validateMethodParams("session/fork/prepare", value);
     const snapshot = this.snapshot();
-    if (snapshot.state !== "ready" || snapshot.runtimeSessionId === undefined) {
-      throw new ProtocolError("primary_session_not_ready", "primary Session is not ready for fork prepare");
-    }
+    const runtimeSessionId = assertMutationPrepareAdmission(snapshot, "fork");
     const workspace = this.workspaceValue;
     if (workspace?.identity !== params.targetWorkspaceIdentity) {
       throw new ProtocolError(
@@ -2232,7 +2249,7 @@ export class ProductSessionService extends Service {
     }
     return this.#requireForkStore().prepareFork(Object.freeze({
       clientMutationId: params.clientMutationId,
-      runtimeSessionId: snapshot.runtimeSessionId,
+      runtimeSessionId,
       sourceStableBoundaryId: params.sourceStableBoundaryId,
       targetPersistenceRef: params.targetPersistenceRef,
       targetRuntimeHome: params.targetRuntimeHome,

@@ -960,4 +960,111 @@ describe("one-primary-session admission", () => {
     await context.fiber.dispose();
   });
 
+  it("replays the exact prepared mutation while resume is recovery-required", async () => {
+    const context = new Context();
+    context.provide("agents", {
+      roots: () => [],
+      setPublicationGuard: () => () => undefined,
+    } as never);
+    context.provide("sessions", {
+      list: () => [],
+      setPublicationGuard: () => () => undefined,
+    } as never);
+    const recovery = Object.freeze({
+      state: "recovery_required" as const,
+      runtimeSessionId: "runtime-resume",
+      persistenceRef: "persistence-primary",
+      reason: "persisted_mutation_unsettled" as const,
+      retryable: true,
+      unsettledMutations: Object.freeze(["delete", "fork", "rewind"] as const),
+    });
+    const prepareRewind = vi.fn(() => Promise.resolve(Object.freeze({
+      token: "rw_token",
+      phase: "prepared" as const,
+    })));
+    const prepareDelete = vi.fn(() => Promise.resolve(Object.freeze({
+      token: "del_token",
+      phase: "prepared" as const,
+    })));
+    const prepareFork = vi.fn(() => Promise.resolve(Object.freeze({
+      token: "fk_token",
+      phase: "prepared" as const,
+    })));
+    const service = new ProductSessionService(context, {
+      backend: backendWith(
+        () => Promise.reject(new Error("create must not run")),
+        () => Promise.resolve({ state: "recovery_required", recovery }),
+      ),
+      rewindStore: () => ({ prepareRewind } as never),
+      deleteStore: () => ({ prepareDelete } as never),
+      forkStore: () => ({ prepareFork } as never),
+    });
+    service.bindWorkspace(workspace);
+    await expect(service.bindResume(resumeParams())).resolves.toMatchObject({
+      state: "recovery_required",
+      runtimeSessionId: "runtime-resume",
+    });
+
+    await expect(service.rewindPrepare({
+      clientMutationId: "rewind-client",
+      targetStableBoundaryId: "boundary-1",
+      sourceTranscriptPostcondition: "a".repeat(64),
+      targetTranscriptPostcondition: "b".repeat(64),
+    })).resolves.toEqual({ token: "rw_token", state: "prepared" });
+    await expect(service.deletePrepare({ clientMutationId: "delete-client" }))
+      .resolves.toEqual({ token: "del_token", state: "prepared" });
+    await expect(service.forkPrepare({
+      clientMutationId: "fork-client",
+      sourceStableBoundaryId: "boundary-1",
+      targetRuntimeHome: "/fixture/fork-runtime",
+      targetPersistenceRef: "persistence-fork",
+      targetRuntimeSessionId: "runtime-fork",
+      targetWorkspaceIdentity: workspace.identity,
+    })).resolves.toEqual({ token: "fk_token", state: "prepared" });
+
+    expect(prepareRewind).toHaveBeenCalledWith(expect.objectContaining({
+      clientMutationId: "rewind-client",
+      runtimeSessionId: "runtime-resume",
+    }), undefined);
+    expect(prepareDelete).toHaveBeenCalledWith({
+      clientMutationId: "delete-client",
+      runtimeSessionId: "runtime-resume",
+    }, undefined);
+    expect(prepareFork).toHaveBeenCalledWith(expect.objectContaining({
+      clientMutationId: "fork-client",
+      runtimeSessionId: "runtime-resume",
+    }), undefined);
+
+    const rewindOnlyRecovery = Object.freeze({
+      ...recovery,
+      unsettledMutations: Object.freeze(["rewind" as const]),
+    });
+    const rewindOnlyContext = new Context();
+    rewindOnlyContext.provide("agents", {
+      roots: () => [],
+      setPublicationGuard: () => () => undefined,
+    } as never);
+    rewindOnlyContext.provide("sessions", {
+      list: () => [],
+      setPublicationGuard: () => () => undefined,
+    } as never);
+    const rewindOnlyService = new ProductSessionService(rewindOnlyContext, {
+      backend: backendWith(
+        () => Promise.reject(new Error("create must not run")),
+        () => Promise.resolve({ state: "recovery_required", recovery: rewindOnlyRecovery }),
+      ),
+      deleteStore: () => ({ prepareDelete } as never),
+    });
+    rewindOnlyService.bindWorkspace(workspace);
+    await rewindOnlyService.bindResume(resumeParams());
+    expect(() => rewindOnlyService.deletePrepare({ clientMutationId: "new-delete-client" }))
+      .toThrow(expect.objectContaining({ code: "session_idempotency_conflict" }));
+    expect(prepareDelete).toHaveBeenCalledOnce();
+
+    await rewindOnlyService.retire();
+    await rewindOnlyContext.fiber.dispose();
+    await service.retire();
+    await context.fiber.dispose();
+  });
+
 });

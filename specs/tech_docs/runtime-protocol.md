@@ -369,6 +369,7 @@ type MutationResult = {
 Rules:
 
 - Prepare changes no active locator, source generation, workspace, or published target identity. It freezes exact preconditions and may persist only the idempotency journal and hidden unadopted staging needed for durable preparation.
+- If that journal makes resume return `recovery_required`, the Runtime MUST still accept an exact replay of the same prepare request and return its existing token/result. This closes the crash gap between Runtime prepare durability and Host token persistence; a different mutation identity or fingerprint still fails closed.
 - Commit, rollback, or abort MUST be idempotent for the same token and immutable request.
 - Status performs no mutation and reports durable truth.
 - Reusing a client mutation ID with different immutable input is a conflict.
