@@ -12,7 +12,9 @@ import {
 } from "@myagents-dsh/artifact-verifier/integration-compatibility";
 import {
   BATCH_3_INTEGRATION_HANDOFF_MANIFEST_FILENAME,
+  BATCH_3_INTEGRATION_HANDOFF_README_FILENAME,
   createBatch3IntegrationHandoffManifest,
+  createBatch3IntegrationHandoffReadme,
   serializeBatch3IntegrationHandoffManifest,
   verifyBatch3IntegrationHandoff,
 } from "@myagents-dsh/artifact-verifier/integration-handoff";
@@ -143,19 +145,34 @@ describe("MyAgents-dsh integration compatibility manifest", () => {
       writeFileSync(resolve(handoffRoot, "contracts/host-client.generated.ts"), "export {};\n");
       const clientDigest = createHash("sha256").update("export {};\n").digest("hex");
       const artifact = verifyInstalledRuntimeArtifact(resolve(handoffRoot, "runtime-artifact"));
+      const compatibility = createMyAgentsDshCompatibilityManifest(
+        artifact, clientDigest, platforms,
+      );
       writeFileSync(
         resolve(handoffRoot, "contracts/myagents-dsh-compatibility-v1.json"),
-        serializeMyAgentsDshCompatibilityManifest(createMyAgentsDshCompatibilityManifest(
-          artifact, clientDigest, platforms,
-        )),
+        serializeMyAgentsDshCompatibilityManifest(compatibility),
       );
+      const readme = createBatch3IntegrationHandoffReadme(artifact, compatibility);
+      writeFileSync(resolve(handoffRoot, BATCH_3_INTEGRATION_HANDOFF_README_FILENAME), readme);
       writeFileSync(resolve(handoffRoot, "notices/third-party-notices-v1.json"), '{"schemaVersion":1}\n');
       const manifest = createBatch3IntegrationHandoffManifest(handoffRoot, platforms);
+      expect(manifest.files.some(({ path }) =>
+        path === BATCH_3_INTEGRATION_HANDOFF_README_FILENAME)).toBe(true);
+      expect(readme).toContain("Start here");
+      expect(readme).toContain(artifact.manifestSha256);
+      expect(readme).toContain(PROTOCOL_VERSION);
+      expect(readme).toContain(artifact.manifest.build.repositoryHead);
+      expect(readme).toContain("Regenerating a future handoff automatically regenerates");
+      expect(createBatch3IntegrationHandoffReadme(artifact, compatibility)).toBe(readme);
       const bytes = serializeBatch3IntegrationHandoffManifest(manifest);
       writeFileSync(resolve(handoffRoot, BATCH_3_INTEGRATION_HANDOFF_MANIFEST_FILENAME), bytes);
       const manifestDigest = createHash("sha256").update(bytes).digest("hex");
       expect(verifyBatch3IntegrationHandoff(handoffRoot, manifestDigest).runtime.manifestSha256)
         .toBe(artifact.manifestSha256);
+      writeFileSync(resolve(handoffRoot, BATCH_3_INTEGRATION_HANDOFF_README_FILENAME), `${readme}tampered\n`);
+      expect(() => verifyBatch3IntegrationHandoff(handoffRoot, manifestDigest))
+        .toThrow("exact content inventory");
+      writeFileSync(resolve(handoffRoot, BATCH_3_INTEGRATION_HANDOFF_README_FILENAME), readme);
       writeFileSync(resolve(handoffRoot, "notices/third-party-notices-v1.json"), '{"schemaVersion":2}\n');
       expect(() => verifyBatch3IntegrationHandoff(handoffRoot, manifestDigest))
         .toThrow("exact content inventory");

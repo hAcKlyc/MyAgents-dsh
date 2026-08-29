@@ -91,7 +91,7 @@ On the new machine:
 
 1. obtain the exact Git commit and install Node `24.14.0` / npm `11.8.0`;
 2. run `npm ci` and the four repository gates below;
-3. verify the transferred Batch 3 handoff byte-for-byte before MyAgents integration, following [Batch 3 integration](./specs/prd/batch-3-myagents-integration.md);
+3. verify the transferred Batch 3 handoff byte-for-byte before MyAgents integration, then read its generated root `README.md` as the semantic entrypoint; the existing `fedfe76d…` package predates this generated README and retains its original immutable inventory until a later handoff is rebuilt;
 4. recreate `.env` locally only when using a real provider;
 5. if continuing Reference Web work, provide its separately frozen `ddd6052ef…` Runtime and resume W5 A5/revalidation—do not silently substitute the newer Runtime without rebuilding Web evidence.
 

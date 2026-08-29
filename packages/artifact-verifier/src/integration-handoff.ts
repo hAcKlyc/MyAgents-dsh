@@ -5,11 +5,16 @@ import { posix, relative, resolve, sep } from "node:path";
 import {
   assertMyAgentsDshCompatibilityManifest,
   type IntegrationPlatformEvidence,
+  type MyAgentsDshCompatibilityManifestV1,
 } from "./integration-compatibility.js";
-import { verifyInstalledRuntimeArtifact } from "./runtime-artifact.js";
+import {
+  verifyInstalledRuntimeArtifact,
+  type VerifiedRuntimeArtifact,
+} from "./runtime-artifact.js";
 
 export const BATCH_3_INTEGRATION_HANDOFF_MANIFEST_FILENAME =
   "batch-3-integration-handoff-v1.json" as const;
+export const BATCH_3_INTEGRATION_HANDOFF_README_FILENAME = "README.md" as const;
 
 export interface IntegrationHandoffFile {
   readonly path: string;
@@ -100,6 +105,163 @@ const fileDigest = (files: readonly IntegrationHandoffFile[], path: string): str
   const entry = files.find((item) => item.path === path);
   if (entry === undefined) throw new TypeError(`integration handoff lacks ${path}`);
   return entry.sha256;
+};
+
+const platformClaimLabel = (
+  claim: IntegrationPlatformEvidence["claim"],
+): string => claim === "verified"
+  ? "verified"
+  : "implementation complete; native validation pending";
+
+export const createBatch3IntegrationHandoffReadme = (
+  artifact: VerifiedRuntimeArtifact,
+  compatibilityInput: MyAgentsDshCompatibilityManifestV1,
+): string => {
+  const compatibility = assertMyAgentsDshCompatibilityManifest(
+    compatibilityInput,
+    artifact,
+    compatibilityInput.protocol.generatedClientSha256,
+    compatibilityInput.platforms,
+  );
+  const platformRows = compatibility.platforms.map((platform) =>
+    `| \`${platform.target}\` | ${platformClaimLabel(platform.claim)} | ${platform.evidenceSha256.map((digest) => `\`${digest}\``).join("<br>")} |`);
+  const apiFamilies = compatibility.apiFamilies.map(({ id }) => `\`${id}\``).join(", ");
+  const tools = compatibility.tools.map(({ name }) => `\`${name}\``).join(", ");
+  const limitations = compatibility.limitations.map(({ id, statement }) =>
+    `- \`${id}\`: ${statement}`);
+
+  return [
+    "# MyAgents-dsh Batch 3 integration handoff",
+    "",
+    "> Start here. This generated document is the first reading entry for humans and AI agents integrating this exact Runtime into the MyAgents product. Do not edit files inside this handoff.",
+    "",
+    "This directory is one immutable, self-verifying delivery unit. It contains the executable MyAgents-dsh Runtime plus the exact Host contracts, compatibility declaration, platform evidence, and notices needed by the sibling `MyAgents/` repository. It is not source code, a Reference Web distribution, an Agent SDK, a user Session, or a second Agent Runtime.",
+    "",
+    "## Exact identity",
+    "",
+    "| Fact | Value |",
+    "| --- | --- |",
+    `| MyAgents-dsh source commit | \`${artifact.manifest.build.repositoryHead}\` |`,
+    `| Runtime manifest SHA-256 | \`${artifact.manifestSha256}\` |`,
+    `| Runtime version | \`${compatibility.runtime.version}\` |`,
+    `| Runtime entrypoint | \`runtime-artifact/${compatibility.runtime.entrypoint}\` |`,
+    `| Runtime Node | \`${artifact.manifest.build.toolchain.node}\` |`,
+    `| Build npm provenance | \`${artifact.manifest.build.toolchain.npm}\` (the installed Runtime does not invoke npm) |`,
+    `| Protocol | \`${compatibility.protocol.version}\` |`,
+    `| Protocol schema SHA-256 | \`${compatibility.protocol.schemaSha256}\` |`,
+    `| Generated Host client SHA-256 | \`${compatibility.protocol.generatedClientSha256}\` |`,
+    `| Product profile | \`${compatibility.runtime.profileId}\` / \`${compatibility.runtime.profileDigest}\` |`,
+    `| DSH distribution | \`${compatibility.dsh.version}\` |`,
+    `| DSH source commit | \`${compatibility.dsh.sourceCommit}\` |`,
+    `| DSH patch-series SHA-256 | \`${compatibility.dsh.patchSeriesSha256}\` |`,
+    "",
+    "The expected SHA-256 of `batch-3-integration-handoff-v1.json` is supplied out of band by the trusted release/integration record. It cannot be embedded here because that manifest inventories this README, so embedding the outer digest would create a self-reference.",
+    "",
+    "## Read in this order",
+    "",
+    "1. `README.md` — concepts, boundaries, reading order, and integration rules.",
+    "2. `batch-3-integration-handoff-v1.json` — exact outer inventory and digest bindings.",
+    "3. `contracts/myagents-dsh-compatibility-v1.json` — what this Runtime may actually advertise to MyAgents.",
+    "4. `contracts/protocol-meta.json`, `contracts/protocol.schema.json`, and `contracts/host-client.generated.ts` — exact wire vocabulary, schemas, and generated client.",
+    "5. `contracts/official-product-profile-v1.json`, `contracts/batch-1-candidate-profile-v1.json`, and canonical tool contracts — composition and tool truth.",
+    "6. `evidence/platforms/` and `notices/` — platform claims, provenance, dependencies, and licenses.",
+    "7. `runtime-artifact/runtime-artifact-v1.json` — nested executable inventory; inspect Runtime internals only for verification or packaging diagnostics.",
+    "",
+    "Exact generated contracts and manifests outrank this navigation document if prose ever differs from machine-readable data.",
+    "",
+    "## Directory semantics",
+    "",
+    "```text",
+    ".",
+    "├── README.md                              # this generated integration entrypoint",
+    "├── batch-3-integration-handoff-v1.json    # complete outer inventory",
+    "├── verify.mjs                            # clean-directory verifier",
+    "├── runtime-artifact/                     # complete executable Runtime and nested verifier authority",
+    "├── contracts/                            # generated client, wire/tool/profile contracts, compatibility",
+    "├── evidence/platforms/                   # content-addressed platform reports",
+    "└── notices/                              # third-party package and license obligations",
+    "```",
+    "",
+    "The outer manifest inventories the handoff-level files and the nested Runtime manifest. The nested Runtime manifest independently inventories all Runtime files. Both layers must verify.",
+    "",
+    "## Ownership boundary",
+    "",
+    "| MyAgents Host owns | MyAgents-dsh Runtime owns |",
+    "| --- | --- |",
+    "| Product Session identity and frozen Runtime binding | The only DSH AgentLoop and model-conversation execution |",
+    "| Product transcript, UI, queueing policy, and projection idempotency | Durable DSH Session events and Runtime operation settlement |",
+    "| Provider/model choice, compatibility filtering, credentials, and pricing | Validation and execution of the admitted immutable profile |",
+    "| Permission/question/plan UI, Host tools, Hooks, and attachment bytes | The single governed `ctx.tools` pipeline and reverse-port requests |",
+    "| Artifact acquisition, verification, installation, update, and rollback | Process lifecycle, persistence, recovery, compaction, child work, and mutations |",
+    "",
+    "One active MyAgents Product Session binds to one exact Runtime family/artifact/protocol identity. One MyAgents-dsh Runtime generation owns at most one primary root DSH Session. MyAgents must never reinterpret native DSH history through another Runtime.",
+    "",
+    "## Compatibility snapshot",
+    "",
+    `Declared API families: ${apiFamilies}. Each visible Provider/model still requires an exact MyAgents Host profile and conformance cell; API-family support alone is not a product compatibility claim.`,
+    "",
+    `Canonical tools (${String(compatibility.tools.length)}): ${tools}.`,
+    "",
+    "`WebFetch` and `WebSearch` are route-dependent. DeepSeek may use its native backend; non-DeepSeek routes require the declared Host canonical-web reverse capability. MyAgents must hide or reject any capability that the exact compatibility manifest cannot admit.",
+    "",
+    "### Platform claims",
+    "",
+    "| Target | Claim | Evidence SHA-256 |",
+    "| --- | --- | --- |",
+    ...platformRows,
+    "",
+    "A pending-native-validation claim is not verified support. A MyAgents distribution may advertise only the intersection of its own platform policy and these exact artifact-bound claims.",
+    "",
+    "### Known limitations",
+    "",
+    ...limitations,
+    "",
+    "## Required MyAgents consumption flow",
+    "",
+    "1. Obtain this complete directory and its expected outer manifest SHA-256 from a trusted release channel.",
+    "2. Verify the untouched directory before reading individual files as authority.",
+    "3. Copy or stage the complete handoff atomically; never reconstruct it from selected files.",
+    "4. Verify the staged copy again with the same expected digest.",
+    "5. Admit generated-client changes through a deterministic source/diff gate; never hand-edit generated wire types.",
+    "6. Build the visible Provider/model catalog from the exact compatibility manifest plus MyAgents policy and joint conformance cells.",
+    "7. Install the nested Runtime as a deeply managed resource and launch it with the exact Node identity above.",
+    "8. Implement all seven reverse Host ports and project Runtime events through the MyAgents SessionEngine/domain layer, not directly into Renderer wire parsing.",
+    "9. Freeze the exact Runtime, protocol, profile, compatibility, and artifact identity into every new Product Session binding.",
+    "10. Complete the MyAgents-side J1–J18 product, platform, Provider-cell, recovery, and independent-review campaign before rollout.",
+    "",
+    "## Verify",
+    "",
+    "From this directory, using the trusted expected outer digest:",
+    "",
+    "```bash",
+    "node verify.mjs <EXPECTED_HANDOFF_MANIFEST_SHA256>",
+    "```",
+    "",
+    "A successful result reports the handoff kind, nested Runtime manifest, compatibility digest, and file count. Verification failure is terminal for that copy: do not repair individual files or fall back to an unverified Runtime.",
+    "",
+    "## Hard rules",
+    "",
+    "- Do not import a sibling MyAgents-dsh checkout or package-private Runtime source into MyAgents.",
+    "- Do not float DSH/npm dependencies or rebuild a partial Runtime inside MyAgents.",
+    "- Do not mix a Runtime, generated client, schema, compatibility manifest, profile, or evidence from different handoffs.",
+    "- Do not treat the Reference Web Host or future Agent SDK as an integration dependency.",
+    "- Do not persist credentials, private prompts, transcripts, attachment bytes, or user workspaces in the handoff.",
+    "- Do not claim Windows/Linux verified support from implementation-complete evidence.",
+    "- Do not use README prose to widen machine-readable compatibility or rollback claims.",
+    "",
+    "## Source-level context",
+    "",
+    "When the MyAgents-dsh source repository is available at the recorded source commit, deeper design context is owned by:",
+    "",
+    "- `specs/prd/batch-3-myagents-integration.md` — product decisions and J1–J18 acceptance.",
+    "- `specs/rfc/batch-3-myagents-integration-runtime.md` — Runtime-side composition and handoff design.",
+    "- `specs/ARCHITECTURE.md` — process, authority, lifecycle, persistence, and trust boundaries.",
+    "- `specs/protocol/runtime-rpc-v2.md` — protocol intent; generated contracts in this handoff own exact shapes.",
+    "- `specs/tech_docs/compaction-architecture.md` — complete compaction ownership and patch boundary.",
+    "",
+    "This README is generated by the official Batch 3 handoff builder from verified artifact and compatibility facts. Regenerating a future handoff automatically regenerates and re-inventories this document.",
+    "",
+  ].join("\n");
 };
 
 const platformEvidencePath = (
