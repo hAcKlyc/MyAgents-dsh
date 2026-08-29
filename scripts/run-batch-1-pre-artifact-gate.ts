@@ -184,7 +184,9 @@ export const createGatePlan = (outputRoot: string): readonly GateCommand[] => {
   plan.push(
     npm("typecheck", ["run", "typecheck"], 600_000),
     npm("lint", ["run", "lint"], 300_000),
-    npm("test", ["test", "--", ...BATCH_1_VITEST_CONCURRENCY], 600_000),
+    // The repository test script already owns the frozen single-worker policy.
+    // Repeating a valued Vitest flag after `--` makes current Vitest reject the run.
+    npm("test", ["test"], 600_000),
     npm("build", ["run", "build"], 600_000),
   );
   return Object.freeze(plan);

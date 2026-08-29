@@ -30,6 +30,7 @@ describe("Batch 1 pre-artifact gate", () => {
     expect(soak).toHaveLength(3);
     expect(soak.every(({ args }) =>
       args.includes("--maxWorkers=1") && args.includes("--no-file-parallelism"))).toBe(true);
+    expect(plan.find(({ id }) => id === "test")?.args).toEqual(["test"]);
     expect(plan.map(({ id }) => id)).toEqual([
       "dsh-source",
       "dsh-seams-source",
