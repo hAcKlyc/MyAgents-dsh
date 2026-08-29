@@ -2844,7 +2844,7 @@ assert.deepEqual(primaryAgent.session.events
 ]);
 assert.equal(
   primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule").length,
-  1,
+  2,
 );
 const transformedWriteCall = primaryAgent.session.events.findLast((event) => event.type === "tool/call"
   && String(event.data.callId) === "artifact-write-call");
@@ -4761,9 +4761,12 @@ assert.deepEqual(hostFatalErrors, []);
 const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
 const permissionDecidedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/decided");
 const permissionRuleEvents = primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule");
+const permissionRuleRevokedEvents = primaryAgent.session.events
+  .filter(({ type }) => type === "myagents/permission/rule/revoked");
 assert.equal(permissionAskedEvents.length, 25);
 assert.equal(permissionDecidedEvents.length, 25);
-assert.equal(permissionRuleEvents.length, 1);
+assert.equal(permissionRuleEvents.length, 2);
+assert.equal(permissionRuleRevokedEvents.length, 1);
 assert.equal(hostInteractionResponses.length, hostInteractionCalls.length + 2);
 assert.ok(hostInteractionCalls.length >= permissionAskedEvents.length);
 assert.deepEqual(
@@ -4992,6 +4995,7 @@ process.stdout.write(`${JSON.stringify({
     asked: permissionAskedEvents.length,
     decided: permissionDecidedEvents.length,
     durableRules: permissionRuleEvents.length,
+    durableRuleRevocations: permissionRuleRevokedEvents.length,
     providerRequests: fileToolEvidence.filter((entry) => entry.startsWith("permission:")).length,
     safeToolsAutoAllowed: ["Read", "Glob", "Grep", "ls", "TaskGet", "TaskList"].every((tool) =>
       !fileToolEvidence.some((entry) => entry.startsWith(`permission:${tool}:`))),
