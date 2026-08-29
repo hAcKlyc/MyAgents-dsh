@@ -349,6 +349,19 @@ type NativeRpcCompositionCapabilities = Readonly<{
     params: MethodParams<"config/apply">,
     control: Readonly<{ signal: AbortSignal; commit: () => void }>,
   ) => Promise<MethodResult<"config/apply">>;
+  planApply: (
+    params: MethodParams<"plan/apply">,
+    control: Readonly<{ signal: AbortSignal; commit: () => void }>,
+  ) => Promise<MethodResult<"plan/apply">>;
+  permissionRulesList: () => MethodResult<"permission/rules/list">;
+  permissionRuleAdd: (
+    params: MethodParams<"permission/rules/add">,
+    control: Readonly<{ signal: AbortSignal; commit: () => void }>,
+  ) => Promise<MethodResult<"permission/rules/add">>;
+  permissionRuleRevoke: (
+    params: MethodParams<"permission/rules/revoke">,
+    control: Readonly<{ signal: AbortSignal; commit: () => void }>,
+  ) => Promise<MethodResult<"permission/rules/revoke">>;
   utilityRun: (
     params: MethodParams<"utility/run">,
     signal: AbortSignal,
@@ -429,6 +442,10 @@ export class NativeRpcServer extends Service {
       bindHostCapabilities: compositionAuthority.bindHostCapabilities,
       commandInvoke: compositionAuthority.commandInvoke,
       configApply: compositionAuthority.configApply,
+      planApply: compositionAuthority.planApply,
+      permissionRulesList: compositionAuthority.permissionRulesList,
+      permissionRuleAdd: compositionAuthority.permissionRuleAdd,
+      permissionRuleRevoke: compositionAuthority.permissionRuleRevoke,
       credentialReconcile: compositionAuthority.credentialReconcile,
       extensionReload: compositionAuthority.extensionReload,
       extensionReplace: compositionAuthority.extensionReplace,
@@ -606,6 +623,23 @@ export class NativeRpcServer extends Service {
           })))),
         registered("config/apply", this.peerValue.registerRequestHandler("config/apply", (params, context) =>
           compositionAuthority.configApply(params, Object.freeze({
+            signal: context.signal,
+            commit: () => context.commit(),
+          })))),
+        registered("plan/apply", this.peerValue.registerRequestHandler("plan/apply", (params, context) =>
+          compositionAuthority.planApply(params, Object.freeze({
+            signal: context.signal,
+            commit: () => context.commit(),
+          })))),
+        registered("permission/rules/list", this.peerValue.registerRequestHandler("permission/rules/list", () =>
+          compositionAuthority.permissionRulesList())),
+        registered("permission/rules/add", this.peerValue.registerRequestHandler("permission/rules/add", (params, context) =>
+          compositionAuthority.permissionRuleAdd(params, Object.freeze({
+            signal: context.signal,
+            commit: () => context.commit(),
+          })))),
+        registered("permission/rules/revoke", this.peerValue.registerRequestHandler("permission/rules/revoke", (params, context) =>
+          compositionAuthority.permissionRuleRevoke(params, Object.freeze({
             signal: context.signal,
             commit: () => context.commit(),
           })))),

@@ -37,6 +37,7 @@ import {
   ProductPlanFoldError,
   ProductPlanService,
   foldProductPlan,
+  type ProductPlanController,
   type ProductPlanIoAuthority,
 } from "@myagents-dsh/tools-interaction";
 import { link, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
@@ -207,6 +208,7 @@ const mounted = async (options: MountedOptions = {}) => {
   });
   const fileSystem = requireLocalWorkspaceFileSystem(context.fs);
   const basePlanIo = fileSystem.createPlanIoAuthority();
+  let planController: ProductPlanController | undefined;
   await context.plugin(ProductPlanService, {
     durability: Object.freeze({
       flush: (candidate: Session) => {
@@ -217,8 +219,10 @@ const mounted = async (options: MountedOptions = {}) => {
     environment: () => environment,
     io: options.planIo?.(basePlanIo) ?? basePlanIo,
     requireAgent: () => agent,
+    registerController: (controller) => { planController = controller; },
     revision: "plan-v1",
   });
+  if (planController === undefined) throw new Error("plan controller was not registered");
   context.provide("productProcesses", Object.freeze({}) as never);
   await context.plugin(CanonicalFileTools, {
     attachments: Object.freeze({
@@ -298,6 +302,7 @@ const mounted = async (options: MountedOptions = {}) => {
     fileSystem,
     flushes,
     output,
+    planController,
     questionRequests,
     questionResponders,
     refreshOperation,
@@ -309,6 +314,46 @@ const mounted = async (options: MountedOptions = {}) => {
 };
 
 describe("canonical interaction and DSH-backed plan mode", () => {
+  it("lets the Host enter and leave durable plan mode at an explicit revision", async () => {
+    const state = await mounted();
+    const initial = state.planController.snapshot(state.agent);
+    expect(initial.mode).toBe("normal");
+    const entered = await state.planController.apply(state.agent, Object.freeze({
+      clientOperationId: "host-plan-entry",
+      expectedRevision: initial.revision,
+      mode: "plan",
+      signal: new AbortController().signal,
+    }));
+    expect(entered).toMatchObject({ state: "applied", mode: "plan" });
+    expect(entered.planPath).toBeTypeOf("string");
+    expect(state.session.events.filter(({ type }) => type === "plan/mode")).toHaveLength(1);
+    await expect(state.planController.apply(state.agent, Object.freeze({
+      clientOperationId: "host-plan-entry-retry",
+      expectedRevision: initial.revision,
+      mode: "plan",
+      signal: new AbortController().signal,
+    }))).resolves.toMatchObject({ state: "already_effective", revision: entered.revision });
+
+    const left = await state.planController.apply(state.agent, Object.freeze({
+      clientOperationId: "host-plan-exit",
+      expectedRevision: entered.revision,
+      mode: "normal",
+      signal: new AbortController().signal,
+    }));
+    expect(left).toMatchObject({ state: "applied", mode: "normal" });
+    expect(state.planController.snapshot(state.agent)).toMatchObject({
+      mode: "normal",
+      revision: left.revision,
+    });
+    await expect(state.planController.apply(state.agent, Object.freeze({
+      clientOperationId: "host-plan-stale",
+      expectedRevision: initial.revision,
+      mode: "plan",
+      signal: new AbortController().signal,
+    }))).rejects.toMatchObject({ code: "plan_revision_stale" });
+    expect(state.flushes.filter((entry) => entry.startsWith("plan:"))).toHaveLength(2);
+  });
+
   it("asks structured questions once and rejects duplicate question identity", async () => {
     const state = await mounted();
     state.questionResponders.push(state.answer(["Continue"]));

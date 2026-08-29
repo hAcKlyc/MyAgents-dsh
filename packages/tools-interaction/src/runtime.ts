@@ -91,6 +91,26 @@ export interface ProductPlanServiceConfig extends ProductPlanPlaneConfig {
   readonly environment: () => ProductToolExecutionEnvironment;
   readonly io: ProductPlanIoAuthority;
   readonly requireAgent: () => Agent;
+  readonly registerController?: (controller: ProductPlanController) => void;
+}
+
+export interface ProductPlanApplyRequest {
+  readonly clientOperationId: string;
+  readonly expectedRevision: string;
+  readonly mode: "normal" | "plan";
+  readonly signal: AbortSignal;
+}
+
+export type ProductPlanApplyResult = Readonly<{
+  state: "applied" | "already_effective";
+  mode: "normal" | "plan";
+  revision: string;
+  planPath?: string;
+}>;
+
+export interface ProductPlanController {
+  readonly snapshot: (agent: Agent) => ProductPlanSnapshot;
+  readonly apply: (agent: Agent, request: ProductPlanApplyRequest) => Promise<ProductPlanApplyResult>;
 }
 
 export interface ProductPlanSnapshot {
@@ -451,7 +471,7 @@ const validateServiceConfig = (value: unknown): ProductPlanServiceConfig => {
   const config = exactDataObject(
     value,
     ["durability", "environment", "io", "requireAgent", "revision"],
-    [],
+    ["registerController"],
     "ProductPlanService config",
   );
   const durability = exactDataObject(config.durability, ["flush"], [], "plan durability authority");
@@ -459,6 +479,9 @@ const validateServiceConfig = (value: unknown): ProductPlanServiceConfig => {
   const flush = dataFunction(durability, "flush", "plan durability flush");
   const environment = dataFunction(config, "environment", "plan execution environment authority");
   const requireAgent = dataFunction(config, "requireAgent", "plan primary Agent authority");
+  const registerController = config.registerController === undefined
+    ? undefined
+    : dataFunction(config, "registerController", "plan controller registration");
   const pathFor = dataFunction(io, "pathFor", "plan path authority");
   const prepare = dataFunction(io, "prepare", "plan artifact preparation authority");
   const read = dataFunction(io, "read", "plan artifact read authority");
@@ -484,6 +507,11 @@ const validateServiceConfig = (value: unknown): ProductPlanServiceConfig => {
       ) => Reflect.apply(resolve, io, [runtimeHome, sessionId, path, allowMissingLeaf, signal]) as Promise<FsTarget>,
     }),
     requireAgent: () => Reflect.apply(requireAgent, config, []) as Agent,
+    ...(registerController === undefined ? {} : {
+      registerController: (controller: ProductPlanController) => {
+        Reflect.apply(registerController, config, [controller]);
+      },
+    }),
   });
 };
 
@@ -538,6 +566,10 @@ export class ProductPlanService extends Service {
   constructor(ctx: Context, config: ProductPlanServiceConfig) {
     super(ctx, "productPlan");
     this.configValue = validateServiceConfig(config);
+    this.configValue.registerController?.(Object.freeze({
+      snapshot: (agent: Agent) => this.snapshot(agent),
+      apply: (agent: Agent, request: ProductPlanApplyRequest) => this.applyHostMode(agent, request),
+    }));
     ctx.effect(() => {
       const stopGuard = ctx.tools.guard((execution) => this.guardExecution(execution));
       const stopEvent = ctx.on("session/event", (session, event) => {
@@ -635,6 +667,79 @@ export class ProductPlanService extends Service {
     } catch (error) {
       this.failure ??= error;
       throw new ProductToolError("plan_recovery_required", "durable plan state cannot be trusted", { cause: error });
+    }
+  }
+
+  private async applyHostMode(
+    agent: Agent,
+    rawRequest: ProductPlanApplyRequest,
+  ): Promise<ProductPlanApplyResult> {
+    this.assertHealthy();
+    const request = exactDataObject(
+      rawRequest,
+      ["clientOperationId", "expectedRevision", "mode", "signal"],
+      [],
+      "Host plan apply request",
+    );
+    const clientOperationId = boundedIdentifier(request.clientOperationId, "Host plan operation id");
+    const expectedRevision = boundedIdentifier(request.expectedRevision, "Host plan expected revision");
+    if (request.mode !== "normal" && request.mode !== "plan") {
+      throw new TypeError("Host plan mode must be normal or plan");
+    }
+    if (!(request.signal instanceof AbortSignal)) throw new TypeError("Host plan signal must be an AbortSignal");
+    request.signal.throwIfAborted();
+    const before = this.snapshot(agent);
+    if (before.mode === request.mode) {
+      return Object.freeze({
+        state: "already_effective" as const,
+        mode: before.mode,
+        revision: before.revision,
+        ...(before.planPath === undefined ? {} : { planPath: before.planPath }),
+      });
+    }
+    if (before.revision !== expectedRevision) {
+      throw new ProductToolError("plan_revision_stale", "plan state changed before the Host transition");
+    }
+    const runtimeHome = planRuntimeHome(this.configValue.environment());
+    const sessionId = String(agent.session.id);
+    const controller = this.controller(request.signal);
+    let transitionStarted = false;
+    try {
+      if (request.mode === "plan") {
+        const target = snapshotFsTarget(await this.track(exactNativePromise<FsTarget>(
+          this.configValue.io.prepare(runtimeHome, sessionId, controller.signal),
+          "Host managed plan artifact preparation",
+        )), "Host managed plan artifact preparation result");
+        const expectedPath = this.configValue.io.pathFor(runtimeHome, sessionId);
+        if (target.displayPath !== expectedPath) {
+          throw new ProductToolError("plan_state_conflict", "Host plan artifact identity changed");
+        }
+      }
+      request.signal.throwIfAborted();
+      transitionStarted = true;
+      const syntheticId = `host-plan-${hash(clientOperationId).slice(0, 32)}`;
+      this.appendMode(agent, before, request.mode === "plan", Object.freeze({
+        callId: syntheticId,
+        clientOperationId,
+        productTurnId: syntheticId,
+      }));
+      await this.flush(agent.session, `Host ${request.mode} plan transition`);
+      const after = this.snapshot(agent);
+      if (after.mode !== request.mode) {
+        throw new ProductToolError("plan_state_conflict", "Host plan transition did not fold to the requested mode");
+      }
+      return Object.freeze({
+        state: "applied" as const,
+        mode: after.mode,
+        revision: after.revision,
+        ...(after.planPath === undefined ? {} : { planPath: after.planPath }),
+      });
+    } catch (error) {
+      if (transitionStarted) this.failure ??= error;
+      if (error instanceof ProductToolError) throw error;
+      throw new ProductToolError("plan_state_conflict", "Host plan transition durability became uncertain", { cause: error });
+    } finally {
+      this.releaseController(controller, request.signal);
     }
   }
 
@@ -877,7 +982,7 @@ export class ProductPlanService extends Service {
         }
         this.ctx.productTools.assertCurrent(context, "EnterPlanMode");
         transitionStarted = true;
-        this.appendMode(context, before, true);
+        this.appendMode(context.agent, before, true, context);
         await this.flush(context.agent.session, "enter plan mode");
         const after = this.snapshot(context.agent);
         if (after.mode !== "plan" || after.planPath !== target.displayPath) {
@@ -975,7 +1080,7 @@ export class ProductPlanService extends Service {
         let transitionStarted = false;
         try {
           transitionStarted = true;
-          this.appendMode(context, before, false);
+          this.appendMode(context.agent, before, false, context);
           await this.flush(context.agent.session, "exit plan mode");
         } catch (error) {
           if (transitionStarted) this.failure ??= error;
@@ -1007,8 +1112,13 @@ export class ProductPlanService extends Service {
     });
   }
 
-  private appendMode(context: ProductToolContext, before: ProductPlanSnapshot, active: boolean): void {
-    const session = context.agent.session;
+  private appendMode(
+    agent: Agent,
+    before: ProductPlanSnapshot,
+    active: boolean,
+    owner: Readonly<{ callId: string; clientOperationId: string; productTurnId: string }>,
+  ): void {
+    const session = agent.session;
     if (this.permit !== undefined) throw new ProductToolError("plan_state_conflict", "another plan transition is in progress");
     if ((before.mode === "plan") === active) {
       throw new ProductToolError("plan_state_conflict", "plan transition does not change the durable state");
@@ -1028,25 +1138,25 @@ export class ProductPlanService extends Service {
     );
     this.permit = Object.freeze({
       active,
-      callId: context.callId,
-      clientOperationId: context.clientOperationId,
+      callId: owner.callId,
+      clientOperationId: owner.clientOperationId,
       nextRevision,
       ownershipEventSeq,
       planEventSeq,
       priorRevision: before.revision,
-      productTurnId: context.productTurnId,
+      productTurnId: owner.productTurnId,
       session,
       sessionId,
     });
     try {
       session.append("myagents/plan/transition", {
         active,
-        callId: context.callId,
-        clientOperationId: context.clientOperationId,
+        callId: owner.callId,
+        clientOperationId: owner.clientOperationId,
         nextRevision,
         planEventSeq,
         priorRevision: before.revision,
-        productTurnId: context.productTurnId,
+        productTurnId: owner.productTurnId,
         sessionId,
       });
       session.append("plan/mode", { active });

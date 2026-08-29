@@ -6190,7 +6190,7 @@
             "type": "string"
           },
           "protocolVersion": {
-            "const": "2.0.0-draft.2",
+            "const": "2.0.0-draft.3",
             "type": "string"
           },
           "runtimeCapabilities": {
@@ -7123,6 +7123,651 @@
             },
             "required": [
               "state"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "permission/rules/add": {
+      "direction": "host_to_runtime",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "permissionClass": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "target": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tool": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedRevision",
+          "tool",
+          "permissionClass",
+          "target"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "revision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "rule": {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "expiresAt": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "origin": {
+                    "const": "root",
+                    "type": "string"
+                  },
+                  "permissionClass": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "revision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "ruleId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "target": {
+                    "maxLength": 8192,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "tool": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ruleId",
+                  "revision",
+                  "tool",
+                  "permissionClass",
+                  "target",
+                  "origin",
+                  "createdAt",
+                  "expiresAt"
+                ],
+                "type": "object"
+              },
+              "state": {
+                "const": "applied",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "revision"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "revision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "rule": {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "expiresAt": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "origin": {
+                    "const": "root",
+                    "type": "string"
+                  },
+                  "permissionClass": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "revision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "ruleId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "target": {
+                    "maxLength": 8192,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "tool": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ruleId",
+                  "revision",
+                  "tool",
+                  "permissionClass",
+                  "target",
+                  "origin",
+                  "createdAt",
+                  "expiresAt"
+                ],
+                "type": "object"
+              },
+              "state": {
+                "const": "already_effective",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "revision",
+              "rule"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "revision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "state": {
+                "const": "already_absent",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "revision"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "permission/rules/list": {
+      "direction": "host_to_runtime",
+      "params": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "autoAllowTools": {
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+              "type": "string"
+            },
+            "maxItems": 512,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "permissionMode": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "revision": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "expiresAt": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "origin": {
+                  "const": "root",
+                  "type": "string"
+                },
+                "permissionClass": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "revision": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "ruleId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "target": {
+                  "maxLength": 8192,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "tool": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ruleId",
+                "revision",
+                "tool",
+                "permissionClass",
+                "target",
+                "origin",
+                "createdAt",
+                "expiresAt"
+              ],
+              "type": "object"
+            },
+            "maxItems": 512,
+            "type": "array"
+          }
+        },
+        "required": [
+          "permissionMode",
+          "autoAllowTools",
+          "revision",
+          "rules"
+        ],
+        "type": "object"
+      }
+    },
+    "permission/rules/revoke": {
+      "direction": "host_to_runtime",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "ruleId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedRevision",
+          "ruleId"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "revision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "rule": {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "expiresAt": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "origin": {
+                    "const": "root",
+                    "type": "string"
+                  },
+                  "permissionClass": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "revision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "ruleId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "target": {
+                    "maxLength": 8192,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "tool": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ruleId",
+                  "revision",
+                  "tool",
+                  "permissionClass",
+                  "target",
+                  "origin",
+                  "createdAt",
+                  "expiresAt"
+                ],
+                "type": "object"
+              },
+              "state": {
+                "const": "applied",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "revision"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "revision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "rule": {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "expiresAt": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "origin": {
+                    "const": "root",
+                    "type": "string"
+                  },
+                  "permissionClass": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "revision": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "ruleId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "target": {
+                    "maxLength": 8192,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "tool": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ruleId",
+                  "revision",
+                  "tool",
+                  "permissionClass",
+                  "target",
+                  "origin",
+                  "createdAt",
+                  "expiresAt"
+                ],
+                "type": "object"
+              },
+              "state": {
+                "const": "already_effective",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "revision",
+              "rule"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "revision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "state": {
+                "const": "already_absent",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "revision"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "plan/apply": {
+      "direction": "host_to_runtime",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "clientOperationId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "expectedRevision": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "const": "normal",
+                "type": "string"
+              },
+              {
+                "const": "plan",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "clientOperationId",
+          "expectedRevision",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "mode": {
+                "anyOf": [
+                  {
+                    "const": "normal",
+                    "type": "string"
+                  },
+                  {
+                    "const": "plan",
+                    "type": "string"
+                  }
+                ]
+              },
+              "planPath": {
+                "maxLength": 8192,
+                "minLength": 1,
+                "pattern": "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\(?:\\?\\\\|[^\\\\/]+[\\\\/][^\\\\/]+))[^\\u0000-\\u001F\\u007F]*$",
+                "type": "string"
+              },
+              "revision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "state": {
+                "const": "applied",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "mode",
+              "revision"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "mode": {
+                "anyOf": [
+                  {
+                    "const": "normal",
+                    "type": "string"
+                  },
+                  {
+                    "const": "plan",
+                    "type": "string"
+                  }
+                ]
+              },
+              "planPath": {
+                "maxLength": 8192,
+                "minLength": 1,
+                "pattern": "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\(?:\\?\\\\|[^\\\\/]+[\\\\/][^\\\\/]+))[^\\u0000-\\u001F\\u007F]*$",
+                "type": "string"
+              },
+              "revision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "state": {
+                "const": "already_effective",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "mode",
+              "revision"
             ],
             "type": "object"
           }
@@ -17326,6 +17971,6 @@
       }
     }
   },
-  "protocolVersion": "2.0.0-draft.2",
+  "protocolVersion": "2.0.0-draft.3",
   "title": "MyAgents DSH native RPC"
 }

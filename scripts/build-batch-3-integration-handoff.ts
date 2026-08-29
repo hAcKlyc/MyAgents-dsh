@@ -28,6 +28,7 @@ import {
   verifyBatch3IntegrationHandoff,
 } from "@myagents-dsh/artifact-verifier/integration-handoff";
 import { verifyInstalledRuntimeArtifact } from "@myagents-dsh/artifact-verifier/runtime-artifact";
+import { PROTOCOL_VERSION } from "@myagents-dsh/protocol";
 
 import { resolveExternalOutputRoot } from "./run-batch-1-pre-artifact-gate.js";
 
@@ -182,7 +183,7 @@ const main = (): void => {
   copyContract("packages/product-profile/manifests/batch-1-candidate-profile-v1.json", outputRoot);
   copyContract("packages/product-profile/manifests/official-product-profile-v1.json", outputRoot);
   copyContract("packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json", outputRoot);
-  copyContract("specs/contracts/protocol-2.0.0-draft.2-evidence.json", outputRoot);
+  copyContract(`specs/contracts/protocol-${PROTOCOL_VERSION}-evidence.json`, outputRoot);
   copyFileSync(
     resolve(repositoryRoot, "scripts/verify-batch-3-integration-handoff.mjs"),
     resolve(outputRoot, "verify.mjs"),

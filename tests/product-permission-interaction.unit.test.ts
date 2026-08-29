@@ -242,6 +242,98 @@ describe("product permission policy and local interaction provider", () => {
     expect(state.session.events.filter(({ type }) => type.startsWith("approval/"))).toEqual([]);
   });
 
+  it("enforces the complete four-mode behavior matrix", async () => {
+    const cases = [
+      { mode: "default" as const, write: "deny", bash: "deny", prompts: 2 },
+      { mode: "acceptEdits" as const, write: "allow", bash: "deny", prompts: 1 },
+      { mode: "dontAsk" as const, write: "deny", bash: "deny", prompts: 0 },
+      { mode: "bypassPermissions" as const, write: "allow", bash: "allow", prompts: 0 },
+    ];
+    for (const fixture of cases) {
+      const local = provider(`scenario-${fixture.mode}`, (pending, settlement) =>
+        response(pending, "deny", settlement));
+      const state = await mounted(local.provider, { mode: fixture.mode });
+      await expect(state.context.productPermission.authorize(
+        state.product(),
+        request("Read", "workspace.read", "workspace-file"),
+      )).resolves.toBe("allow");
+      await expect(state.context.productPermission.authorize(
+        state.product(),
+        request("Write", "workspace.write", "workspace-file"),
+      )).resolves.toBe(fixture.write);
+      await expect(state.context.productPermission.authorize(
+        state.product(),
+        request("Bash", "process.execute", "workspace-command"),
+      )).resolves.toBe(fixture.bash);
+      expect(local.permissionRequests, fixture.mode).toHaveLength(fixture.prompts);
+    }
+  });
+
+  it("keeps the Host Hook deny authoritative in bypassPermissions", async () => {
+    const local = provider("scenario-bypass-hook", (pending, settlement) =>
+      response(pending, "allow_once", settlement));
+    const state = await mounted(local.provider, {
+      mode: "bypassPermissions",
+      hook: Object.freeze({ authorize: () => Promise.resolve("deny" as const) }),
+    });
+    await expect(state.context.productPermission.authorize(state.product(), request()))
+      .resolves.toBe("deny");
+    expect(local.permissionRequests).toEqual([]);
+  });
+
+  it("lets a Host list, pre-authorize, retry, and revoke exact dontAsk rules durably", async () => {
+    const local = provider("scenario-managed-rules", (pending, settlement) =>
+      response(pending, "deny", settlement));
+    const state = await mounted(local.provider, { mode: "dontAsk" });
+    const before = state.permissionController.snapshot(state.agent);
+    expect(before).toMatchObject({ mode: "dontAsk", rules: [] });
+    await expect(state.context.productPermission.authorize(state.product(before.revision), request()))
+      .resolves.toBe("deny");
+
+    const applied = await state.permissionController.grantRule(state.agent, Object.freeze({
+      expectedRevision: before.revision,
+      tool: "Bash",
+      permissionClass: "process.execute",
+      target: "workspace-command",
+    }));
+    expect(applied).toMatchObject({ state: "applied", rule: { tool: "Bash" } });
+    if (applied.state !== "applied" || applied.rule === undefined) throw new Error("rule grant fixture failed");
+    expect(state.flushes).toEqual(["permission-session"]);
+    await expect(state.context.productPermission.authorize(state.product(applied.revision), request()))
+      .resolves.toBe("allow");
+
+    await expect(state.permissionController.grantRule(state.agent, Object.freeze({
+      expectedRevision: before.revision,
+      tool: "Bash",
+      permissionClass: "process.execute",
+      target: "workspace-command",
+    }))).resolves.toMatchObject({ state: "already_effective", revision: applied.revision });
+
+    const revoked = await state.permissionController.revokeRule(state.agent, Object.freeze({
+      expectedRevision: applied.revision,
+      ruleId: applied.rule.ruleId,
+    }));
+    expect(revoked).toMatchObject({ state: "applied" });
+    expect(state.session.events.at(-1)?.type).toBe("myagents/permission/rule/revoked");
+    expect(state.permissionController.snapshot(state.agent).rules).toEqual([]);
+    const replayed = foldProductPermissions(
+      structuredClone(state.session.events),
+      String(state.session.id),
+      state.context.productPermission.baseRevision(state.session),
+      8,
+      60_000,
+    );
+    expect(replayed.latestRevision).toBe(revoked.revision);
+    expect(replayed.history.at(-1)?.rules).toEqual([]);
+    await expect(state.context.productPermission.authorize(state.product(revoked.revision), request()))
+      .resolves.toBe("deny");
+    await expect(state.permissionController.revokeRule(state.agent, Object.freeze({
+      expectedRevision: before.revision,
+      ruleId: applied.rule.ruleId,
+    }))).resolves.toMatchObject({ state: "already_absent", revision: revoked.revision });
+    expect(local.permissionRequests).toEqual([]);
+  });
+
   it("routes an identified one-shot decision through DSH approval audit", async () => {
     const local = provider("scenario-v1", (pending, settlement) =>
       response(pending, "allow_once", settlement));

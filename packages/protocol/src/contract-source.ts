@@ -10,7 +10,7 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "2.0.0-draft.2" as const;
+export const PROTOCOL_VERSION = "2.0.0-draft.3" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.8ac244cc6367" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
@@ -434,6 +434,25 @@ const toolVisibilityPolicy = strictObject({
   autoAllowTools: Type.Optional(Type.Array(identifier, { maxItems: 512, uniqueItems: true })),
   disallowedTools: Type.Optional(Type.Array(identifier, { maxItems: 512, uniqueItems: true })),
 });
+const permissionRule = strictObject({
+  ruleId: identifier,
+  revision,
+  tool: identifier,
+  permissionClass: identifier,
+  target: Type.String({ minLength: 1, maxLength: 8_192 }),
+  origin: Type.Literal("root"),
+  createdAt: nonNegativeInteger,
+  expiresAt: nonNegativeInteger,
+});
+const permissionRuleMutationResult = Type.Union([
+  strictObject({ state: Type.Literal("applied"), revision, rule: Type.Optional(permissionRule) }),
+  strictObject({ state: Type.Literal("already_effective"), revision, rule: permissionRule }),
+  strictObject({ state: Type.Literal("already_absent"), revision }),
+]);
+const planApplyResult = Type.Union([
+  strictObject({ state: Type.Literal("applied"), mode: Type.Union([Type.Literal("normal"), Type.Literal("plan")]), revision, planPath: Type.Optional(absolutePath) }),
+  strictObject({ state: Type.Literal("already_effective"), mode: Type.Union([Type.Literal("normal"), Type.Literal("plan")]), revision, planPath: Type.Optional(absolutePath) }),
+]);
 const operationParams = strictObject({ clientOperationId: identifier });
 const activeCounts = strictObject({
   rootTurns: nonNegativeInteger,
@@ -784,6 +803,10 @@ export const RPC_METHODS = {
   "turn/interrupt": method("host_to_runtime", strictObject({ clientOperationId: identifier, cancelQueued: Type.Optional(Type.Boolean()) }), strictObject({ ok: Type.Literal(true), stillQueuedMessageIds: Type.Array(identifier, { maxItems: 4_096 }), cancelledMessageIds: Type.Array(identifier, { maxItems: 4_096 }) })),
   "command/invoke": method("host_to_runtime", strictObject({ clientOperationId: identifier, clientUserMessageId: identifier, commandId: identifier, arguments: Type.Array(boundedText, { maxItems: 256 }), configRevision: revision, extensionDigest: sha256, executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256, limits: operationLimits, origin: turnOrigin }), turnStartResult),
   "config/apply": method("host_to_runtime", strictObject({ revision, provider: ModelExecutionProfileSchema, permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier, systemPrompt: Type.String({ maxLength: 1_000_000 }), executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256 }), applyResult),
+  "plan/apply": method("host_to_runtime", strictObject({ clientOperationId: identifier, expectedRevision: revision, mode: Type.Union([Type.Literal("normal"), Type.Literal("plan")]) }), planApplyResult),
+  "permission/rules/list": method("host_to_runtime", emptyParams, strictObject({ permissionMode: identifier, autoAllowTools: Type.Array(identifier, { maxItems: 512, uniqueItems: true }), revision, rules: Type.Array(permissionRule, { maxItems: 512 }) })),
+  "permission/rules/add": method("host_to_runtime", strictObject({ expectedRevision: revision, tool: identifier, permissionClass: identifier, target: Type.String({ minLength: 1, maxLength: 8_192 }) }), permissionRuleMutationResult),
+  "permission/rules/revoke": method("host_to_runtime", strictObject({ expectedRevision: revision, ruleId: identifier }), permissionRuleMutationResult),
   "credential/reconcile": method("host_to_runtime", strictObject({ subject: Type.Literal("mcp"), serverId: identifier, extensionDigest: sha256, previousCredentialRevision: Type.Optional(revision), credentialRevision: revision, reason: Type.Union([Type.Literal("rotated"), Type.Literal("revoked"), Type.Literal("logged_out")]) }), Type.Union([strictObject({ state: Type.Literal("applied"), effectiveCredentialRevision: revision }), strictObject({ state: Type.Literal("restart_when_idle"), blockedNewCalls: Type.Literal(true) }), strictObject({ state: Type.Literal("already_effective"), effectiveCredentialRevision: revision }), strictObject({ state: Type.Literal("failed"), code: identifier, retryable: Type.Boolean() })])),
   "extension/replace": method("host_to_runtime", extensionSnapshot, applyResult),
   "extension/status": method("host_to_runtime", emptyParams, applyResult),

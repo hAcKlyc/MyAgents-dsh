@@ -2370,6 +2370,68 @@ assert.equal(rpcStatus.runtimeSessionId, "dsh-artifact-primary");
 assert.equal(rpcStatus.desiredConfigRevision, "artifact-config-v1");
 assert.equal(rpcStatus.effectiveConfigRevision, "artifact-config-v1");
 
+const initialPermissionPolicy = await hostClient.permissionRulesList({});
+assert.equal(initialPermissionPolicy.permissionMode, "default");
+assert.deepEqual(initialPermissionPolicy.autoAllowTools, []);
+assert.deepEqual(initialPermissionPolicy.rules, []);
+const grantedPermissionRule = await hostClient.permissionRulesAdd({
+  expectedRevision: initialPermissionPolicy.revision,
+  tool: "Read",
+  permissionClass: "workspace.read",
+  target: "/artifact/exact-read-target",
+});
+assert.equal(grantedPermissionRule.state, "applied");
+assert.ok(grantedPermissionRule.rule !== undefined);
+assert.deepEqual(Reflect.ownKeys(grantedPermissionRule.rule), [
+  "ruleId", "revision", "tool", "permissionClass", "target", "origin", "createdAt", "expiresAt",
+]);
+const listedPermissionPolicy = await hostClient.permissionRulesList({});
+assert.deepEqual(listedPermissionPolicy.rules, [grantedPermissionRule.rule]);
+const retriedPermissionRule = await hostClient.permissionRulesAdd({
+  expectedRevision: initialPermissionPolicy.revision,
+  tool: "Read",
+  permissionClass: "workspace.read",
+  target: "/artifact/exact-read-target",
+});
+assert.deepEqual(retriedPermissionRule, {
+  state: "already_effective",
+  revision: grantedPermissionRule.revision,
+  rule: grantedPermissionRule.rule,
+});
+const revokedPermissionRule = await hostClient.permissionRulesRevoke({
+  expectedRevision: grantedPermissionRule.revision,
+  ruleId: grantedPermissionRule.rule.ruleId,
+});
+assert.equal(revokedPermissionRule.state, "applied");
+assert.deepEqual((await hostClient.permissionRulesList({})).rules, []);
+
+const initialPlanRevision = capturePlanRevision();
+const enteredHostPlan = await hostClient.planApply({
+  clientOperationId: "artifact-host-enter-plan",
+  expectedRevision: initialPlanRevision,
+  mode: "plan",
+});
+assert.equal(enteredHostPlan.state, "applied");
+assert.equal(enteredHostPlan.mode, "plan");
+assert.ok(enteredHostPlan.planPath?.endsWith("plan.md"));
+assert.deepEqual(await hostClient.planApply({
+  clientOperationId: "artifact-host-enter-plan-retry",
+  expectedRevision: initialPlanRevision,
+  mode: "plan",
+}), {
+  state: "already_effective",
+  mode: "plan",
+  revision: enteredHostPlan.revision,
+  planPath: enteredHostPlan.planPath,
+});
+const exitedHostPlan = await hostClient.planApply({
+  clientOperationId: "artifact-host-exit-plan",
+  expectedRevision: enteredHostPlan.revision,
+  mode: "normal",
+});
+assert.equal(exitedHostPlan.state, "applied");
+assert.equal(exitedHostPlan.mode, "normal");
+
 let primaryAgent = composition.context.productSession.requireAgent();
 const primaryPrompt = await composition.context.systemPrompt.assemble(assembleContextFor(primaryAgent));
 assert.equal(

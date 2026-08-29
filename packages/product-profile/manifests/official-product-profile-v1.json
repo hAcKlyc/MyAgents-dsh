@@ -312,8 +312,8 @@
   },
   "profileId": "myagents-dsh-official-v1",
   "protocol": {
-    "schemaSha256": "03a4275f66b3678ce0df56317952262cb7d577887446a612f4793d837d9a54f7",
-    "version": "2.0.0-draft.2"
+    "schemaSha256": "810bed6deb66d40982c5455e36d703364128da501fcd516fc7b4b2f1eddb5bd3",
+    "version": "2.0.0-draft.3"
   },
   "runtimeActivation": "forbidden-until-patched-dsh-and-batch-1-gate",
   "stage": "pre-batch-foundation",

@@ -31,6 +31,7 @@ declare module "@deepseek-ai/cordis" {
 export const PRODUCT_PERMISSION_EVENT_TYPES = Object.freeze([
   "myagents/permission/config",
   "myagents/permission/rule",
+  "myagents/permission/rule/revoked",
 ] as const);
 
 export type ProductPermissionEventType = (typeof PRODUCT_PERMISSION_EVENT_TYPES)[number];
@@ -68,6 +69,14 @@ export interface ProductPermissionRuleEvent {
   readonly expiresAt: number;
 }
 
+export interface ProductPermissionRuleRevokedEvent {
+  readonly sessionId: string;
+  readonly ruleId: string;
+  readonly fromRevision: string;
+  readonly revision: string;
+  readonly revokedAt: number;
+}
+
 export interface ProductPermissionConfigEvent {
   readonly sessionId: string;
   readonly previousBaseRevision: string;
@@ -79,6 +88,7 @@ declare module "@deepseek-ai/dsh-session/types" {
   interface SessionEventMap {
     "myagents/permission/config": ProductPermissionConfigEvent;
     "myagents/permission/rule": ProductPermissionRuleEvent;
+    "myagents/permission/rule/revoked": ProductPermissionRuleRevokedEvent;
   }
 }
 
@@ -151,6 +161,39 @@ export interface ProductPermissionController {
     agent: Agent,
     config: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
   ) => Promise<void>;
+  readonly snapshot: (agent: Agent) => ProductPermissionPolicySnapshot;
+  readonly grantRule: (
+    agent: Agent,
+    request: ProductPermissionRuleGrantRequest,
+  ) => Promise<ProductPermissionRuleMutationResult>;
+  readonly revokeRule: (
+    agent: Agent,
+    request: ProductPermissionRuleRevokeRequest,
+  ) => Promise<ProductPermissionRuleMutationResult>;
+}
+
+export interface ProductPermissionRuleGrantRequest {
+  readonly expectedRevision: string;
+  readonly tool: string;
+  readonly permissionClass: ProductPermissionClass;
+  readonly target: string;
+}
+
+export interface ProductPermissionRuleRevokeRequest {
+  readonly expectedRevision: string;
+  readonly ruleId: string;
+}
+
+export type ProductPermissionRuleMutationResult =
+  | Readonly<{ state: "applied"; revision: string; rule?: ProductPermissionRule }>
+  | Readonly<{ state: "already_effective"; revision: string; rule: ProductPermissionRule }>
+  | Readonly<{ state: "already_absent"; revision: string }>;
+
+export interface ProductPermissionPolicySnapshot {
+  readonly mode: ProductPermissionMode;
+  readonly autoAllowTools: readonly CanonicalToolName[];
+  readonly revision: string;
+  readonly rules: readonly ProductPermissionRule[];
 }
 
 export interface ProductPermissionRule {
@@ -175,6 +218,8 @@ export interface ProductPermissionFold {
   readonly baseRevision: string;
   readonly latestRevision: string;
   readonly history: readonly ProductPermissionRevisionSnapshot[];
+  readonly grantEventCount: number;
+  readonly revokeEventCount: number;
 }
 
 export class ProductPermissionError extends HarnessError {
@@ -384,6 +429,16 @@ const computeRuleRevision = (event: Omit<ProductPermissionRuleEvent, "revision">
     event.ruleId,
   ]));
 
+const computeRuleRevocationRevision = (
+  event: Omit<ProductPermissionRuleRevokedEvent, "revision">,
+): string => sha256(JSON.stringify([
+  "myagents-permission-rule-revoked-v1",
+  event.sessionId,
+  event.fromRevision,
+  event.ruleId,
+  event.revokedAt,
+]));
+
 export const permissionBaseRevision = (
   config: Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction" | "interactionTimeoutMs" | "maxRules" | "ruleTtlMs">,
   sessionId: string,
@@ -454,6 +509,42 @@ const validateRuleEvent = (value: unknown): ProductPermissionRuleEvent => {
   });
 };
 
+const validateRuleRevokedEvent = (value: unknown): ProductPermissionRuleRevokedEvent => {
+  const event = exactOwnDataObject(value, [
+    "sessionId", "ruleId", "fromRevision", "revision", "revokedAt",
+  ], [], "product permission rule revocation event");
+  return Object.freeze({
+    sessionId: boundedIdentifier(event.sessionId, "permission rule revocation Session id"),
+    ruleId: boundedIdentifier(event.ruleId, "permission revoked rule id"),
+    fromRevision: boundedIdentifier(event.fromRevision, "permission rule revocation source revision"),
+    revision: boundedIdentifier(event.revision, "permission rule revocation revision"),
+    revokedAt: safeEpoch(event.revokedAt, "permission rule revocation time"),
+  });
+};
+
+const validateRuleGrantRequest = (value: unknown): ProductPermissionRuleGrantRequest => {
+  const request = exactOwnDataObject(value, [
+    "expectedRevision", "tool", "permissionClass", "target",
+  ], [], "product permission rule grant request");
+  const tool = boundedIdentifier(request.tool, "permission rule grant tool");
+  return Object.freeze({
+    expectedRevision: boundedIdentifier(request.expectedRevision, "permission rule grant expected revision"),
+    tool,
+    permissionClass: validateProductPermissionClass(request.permissionClass, tool),
+    target: boundedTarget(request.target),
+  });
+};
+
+const validateRuleRevokeRequest = (value: unknown): ProductPermissionRuleRevokeRequest => {
+  const request = exactOwnDataObject(value, [
+    "expectedRevision", "ruleId",
+  ], [], "product permission rule revoke request");
+  return Object.freeze({
+    expectedRevision: boundedIdentifier(request.expectedRevision, "permission rule revoke expected revision"),
+    ruleId: boundedIdentifier(request.ruleId, "permission rule revoke id"),
+  });
+};
+
 const validateConfigEvent = (value: unknown): ProductPermissionConfigEvent => {
   const event = exactOwnDataObject(
     value,
@@ -495,6 +586,7 @@ export const foldProductPermissions = (
     rules: Object.freeze([]),
   })];
   let acceptedRuleEvents = 0;
+  let acceptedRevocationEvents = 0;
   for (const event of eventsSnapshot) {
     if (event.type === "myagents/permission/config") {
       let candidate: ProductPermissionConfigEvent;
@@ -513,6 +605,42 @@ export const foldProductPermissions = (
       latestRevision = candidate.revision;
       rules = new Map();
       history.push(Object.freeze({ revision: latestRevision, rules: Object.freeze([]) }));
+      continue;
+    }
+    if (event.type === "myagents/permission/rule/revoked") {
+      acceptedRevocationEvents += 1;
+      if (acceptedRevocationEvents > normalizedMaxRules) {
+        throw new ProductPermissionFoldError("product permission rule revocation history exceeds its durable bound");
+      }
+      let candidate: ProductPermissionRuleRevokedEvent;
+      try {
+        candidate = validateRuleRevokedEvent(event.data);
+      } catch (error) {
+        throw new ProductPermissionFoldError("product permission rule revocation event is invalid", { cause: error });
+      }
+      if (candidate.sessionId !== normalizedSessionId) {
+        throw new ProductPermissionFoldError("product permission rule revocation belongs to another Session");
+      }
+      if (candidate.fromRevision !== latestRevision
+        || candidate.revision !== computeRuleRevocationRevision({
+          sessionId: candidate.sessionId,
+          ruleId: candidate.ruleId,
+          fromRevision: candidate.fromRevision,
+          revokedAt: candidate.revokedAt,
+        })) {
+        throw new ProductPermissionFoldError("product permission rule revocation revision chain is invalid");
+      }
+      const revoked = [...rules.entries()].find(([, rule]) => rule.ruleId === candidate.ruleId);
+      if (revoked === undefined) {
+        throw new ProductPermissionFoldError("product permission rule revocation targets no active rule");
+      }
+      latestRevision = candidate.revision;
+      rules = new Map(rules);
+      rules.delete(revoked[0]);
+      history.push(Object.freeze({
+        revision: latestRevision,
+        rules: Object.freeze([...rules.values()]),
+      }));
       continue;
     }
     if (event.type !== "myagents/permission/rule") continue;
@@ -576,6 +704,8 @@ export const foldProductPermissions = (
     baseRevision: policyBase,
     latestRevision,
     history: Object.freeze(history),
+    grantEventCount: acceptedRuleEvents,
+    revokeEventCount: acceptedRevocationEvents,
   });
 };
 
@@ -894,6 +1024,21 @@ export class ProductPermissionService extends Service {
         agent: Agent,
         next: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
       ) => this.applyConfiguration(agent, next),
+      snapshot: (agent: Agent) => this.policySnapshot(agent),
+      grantRule: (agent: Agent, request: ProductPermissionRuleGrantRequest) => {
+        this.assertRuleMutationBoundary();
+        return this.trackDurableMutation(
+          this.grantRule(agent, request),
+          "permission rule grant settlement",
+        );
+      },
+      revokeRule: (agent: Agent, request: ProductPermissionRuleRevokeRequest) => {
+        this.assertRuleMutationBoundary();
+        return this.trackDurableMutation(
+          this.revokeRule(agent, request),
+          "permission rule revoke settlement",
+        );
+      },
     }));
     const questionProvider: UserQuestionProvider = Object.freeze({
       ask: (request: AskUserQuestionRequest) => this.answerQuestions(request),
@@ -959,6 +1104,76 @@ export class ProductPermissionService extends Service {
   currentRevision(agent: Agent): string {
     this.assertHealthy();
     return this.fold(agent.session).latestRevision;
+  }
+
+  private policySnapshot(agent: Agent): ProductPermissionPolicySnapshot {
+    this.assertHealthy();
+    const fold = this.foldInternal(agent.session);
+    const now = this.now();
+    return Object.freeze({
+      mode: this.configValue.mode,
+      autoAllowTools: Object.freeze([...this.configValue.autoAllowTools]),
+      revision: fold.latestRevision,
+      rules: Object.freeze((fold.history.at(-1)?.rules ?? []).filter((rule) => rule.expiresAt > now)),
+    });
+  }
+
+  private async grantRule(
+    agent: Agent,
+    rawRequest: ProductPermissionRuleGrantRequest,
+  ): Promise<ProductPermissionRuleMutationResult> {
+    this.assertHealthy();
+    const request = validateRuleGrantRequest(rawRequest);
+    const fold = this.foldInternal(agent.session);
+    const now = this.now();
+    const existing = (fold.history.at(-1)?.rules ?? []).find((rule) =>
+      rule.tool === request.tool
+      && rule.permissionClass === request.permissionClass
+      && rule.target === request.target
+      && rule.expiresAt > now);
+    if (existing !== undefined) {
+      return Object.freeze({ state: "already_effective", revision: fold.latestRevision, rule: existing });
+    }
+    if (fold.latestRevision !== request.expectedRevision) {
+      throw new ProductPermissionError(
+        "permission_revision_stale",
+        "permission policy changed before the Host rule grant",
+      );
+    }
+    const rule = await this.persistRuleForAgent(agent, fold, request);
+    return Object.freeze({ state: "applied", revision: rule.revision, rule });
+  }
+
+  private async revokeRule(
+    agent: Agent,
+    rawRequest: ProductPermissionRuleRevokeRequest,
+  ): Promise<ProductPermissionRuleMutationResult> {
+    this.assertHealthy();
+    const request = validateRuleRevokeRequest(rawRequest);
+    const fold = this.foldInternal(agent.session);
+    const rule = (fold.history.at(-1)?.rules ?? []).find((candidate) => candidate.ruleId === request.ruleId);
+    if (rule === undefined) {
+      return Object.freeze({ state: "already_absent", revision: fold.latestRevision });
+    }
+    if (fold.latestRevision !== request.expectedRevision) {
+      throw new ProductPermissionError(
+        "permission_revision_stale",
+        "permission policy changed before the Host rule revocation",
+      );
+    }
+    if (fold.revokeEventCount >= this.configValue.maxRules) {
+      throw new ProductPermissionError("permission_rule_limit", "durable permission rule revocation limit reached");
+    }
+    const unsigned = Object.freeze({
+      sessionId: String(agent.session.id),
+      ruleId: rule.ruleId,
+      fromRevision: fold.latestRevision,
+      revokedAt: this.now(),
+    });
+    const revision = computeRuleRevocationRevision(unsigned);
+    agent.session.append("myagents/permission/rule/revoked", { ...unsigned, revision });
+    await this.flushRuleMutation(agent.session, revision, "permission rule revocation");
+    return Object.freeze({ state: "applied", revision });
   }
 
   private async applyConfiguration(
@@ -1320,14 +1535,22 @@ export class ProductPermissionService extends Service {
         "permission policy changed while always-allow was pending",
       );
     }
-    if (fold.history.length - 1 >= this.configValue.maxRules) {
+    await this.persistRuleForAgent(context.agent, fold, request);
+  }
+
+  private async persistRuleForAgent(
+    agent: Agent,
+    fold: ProductPermissionFold,
+    request: ProductPermissionRequest,
+  ): Promise<ProductPermissionRule> {
+    if (fold.grantEventCount >= this.configValue.maxRules) {
       throw new ProductPermissionError("permission_rule_limit", "durable permission rule limit reached");
     }
     const createdAt = this.now();
     const expiresAt = createdAt + this.configValue.ruleTtlMs;
     safeEpoch(expiresAt, "permission rule expiry time");
     const unsigned = Object.freeze({
-      sessionId: String(context.agent.session.id),
+      sessionId: String(agent.session.id),
       fromRevision: fold.latestRevision,
       tool: request.tool,
       permissionClass: request.permissionClass,
@@ -1338,25 +1561,52 @@ export class ProductPermissionService extends Service {
     });
     const ruleId = computeRuleId(unsigned);
     const revision = computeRuleRevision({ ...unsigned, ruleId });
-    context.agent.session.append("myagents/permission/rule", { ...unsigned, ruleId, revision });
+    agent.session.append("myagents/permission/rule", { ...unsigned, ruleId, revision });
+    await this.flushRuleMutation(agent.session, revision, "permission rule grant");
+    const rule = this.foldInternal(agent.session).history.at(-1)?.rules.find(
+      (candidate) => candidate.ruleId === ruleId,
+    );
+    if (rule === undefined) {
+      this.failureValue ??= new Error("persisted permission rule is absent after folding");
+      throw new ProductPermissionError(
+        "permission_durability_failed",
+        "permission rule grant durability became uncertain",
+        { cause: this.failureValue },
+      );
+    }
+    return rule;
+  }
+
+  private async flushRuleMutation(session: Session, revision: string, description: string): Promise<void> {
     try {
       const pending = exactNativePromise<boolean>(
-        this.configValue.durability.flush(context.agent.session),
-        "permission durability flush",
+        this.configValue.durability.flush(session),
+        `${description} durability flush`,
       );
       if (!(await pending)) {
-        throw new Error("no Session durability Provider participated in the permission rule flush");
+        throw new Error(`no Session durability Provider participated in the ${description} flush`);
       }
-      const updated = this.foldInternal(context.agent.session);
+      const updated = this.foldInternal(session);
       if (updated.latestRevision !== revision) {
-        throw new Error("persisted permission rule did not become the exact folded revision");
+        throw new Error(`persisted ${description} did not become the exact folded revision`);
       }
     } catch (error) {
       this.failureValue ??= error;
       throw new ProductPermissionError(
         "permission_durability_failed",
-        "always-allow rule durability became uncertain",
+        `${description} durability became uncertain`,
         { cause: error },
+      );
+    }
+  }
+
+  private assertRuleMutationBoundary(): void {
+    this.assertHealthy();
+    if (this.pending.size !== 0 || this.activeInteractionSettlements.size !== 0
+      || this.activeDurabilitySettlements.size !== 0) {
+      throw new ProductPermissionError(
+        "permission_configuration_busy",
+        "permission rule mutation requires a quiescent interaction boundary",
       );
     }
   }
@@ -1552,6 +1802,12 @@ export class ProductPermissionService extends Service {
         : new Error("permission durability settlement failed", { cause: error })),
     );
     return result;
+  }
+
+  private trackDurableMutation<T>(task: Promise<T>, description: string): Promise<T> {
+    const pending = exactNativePromise<T>(task, description);
+    this.trackDurabilitySettlement(pending);
+    return pending;
   }
 }
 

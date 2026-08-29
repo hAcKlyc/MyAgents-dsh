@@ -34,6 +34,8 @@ visible definition + frozen operation scope
 
 Visibility and permission remain separate. Hiding a tool does not authorize execution, and a visible definition still revalidates workspace, revision, mode, origin, and hard policy at the delayed execution boundary.
 
+The four permission modes, durable exact-rule lifecycle, blocking interaction path and Host-controlled Plan transition are specified in [Permissions and interactions](./permissions-and-interactions.md). This guide owns their placement in the tool pipeline; that guide owns their detailed policy semantics.
+
 ## 3. Canonical catalog and owners
 
 The official catalog contains exactly twenty definitions:

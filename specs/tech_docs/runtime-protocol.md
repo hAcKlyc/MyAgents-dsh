@@ -2,7 +2,7 @@
 type: protocol-specification
 status: intent-reference
 module: runtime-core-and-rpc
-candidate_version: 2.0.0-draft.2
+candidate_version: 2.0.0-draft.3
 updated: 2026-08-29
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 product_scope: ../prd/prd_0.1_agent_runtime.md
@@ -17,7 +17,7 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Candidate version `2.0.0-draft.2` is implemented but is not a released compatibility promise. Pre-Batch P0-3 created the canonical TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and conformance tests. That source, generated digests, and tests are authoritative for exact shapes; this document remains the intent and ownership reference. If an illustrative shape below differs from generated code, generated code wins and this document must be repaired.
+Candidate version `2.0.0-draft.3` is implemented but is not a released compatibility promise. It extends draft.2 with Host-controlled durable Plan state and exact permission-rule management. Pre-Batch P0-3 created the canonical TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and conformance tests. That source, generated digests, and tests are authoritative for exact shapes; this document remains the intent and ownership reference. If an illustrative shape below differs from generated code, generated code wins and this document must be repaired.
 
 This wire is independent of `@deepseek-ai/dsh-sdk-protocol`. The DSH SDK protocol's three request methods and four notifications are not a base version of this contract, and its JSON-RPC server is not loaded in the official profile. Both protocols may use NDJSON JSON-RPC and DSH event values without sharing method or lifecycle authority.
 
@@ -177,7 +177,7 @@ Secret values MUST be represented only by reverse-port references.
 
 ```ts
 type InitializeResult = {
-  protocolVersion: "2.0.0-draft.2"
+  protocolVersion: "2.0.0-draft.3"
   runtimeVersion: string
   runtimeGeneration: string
   runtimeEngine: {
@@ -199,9 +199,9 @@ type InitializeResult = {
 
 ## 7. Method inventory
 
-The candidate exposes 43 request methods: 36 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 47 names. The 42 protocol-1.1 request names remain recognizable; `session/delete/purge` is the one added request needed to separate recoverable tombstoning from irreversible deletion.
+The candidate exposes 47 request methods: 40 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 51 names. Draft.2 added `session/delete/purge`; draft.3 adds `plan/apply` plus `permission/rules/list`, `permission/rules/add`, and `permission/rules/revoke`.
 
-### 7.1 Host-to-Runtime methods: 36
+### 7.1 Host-to-Runtime methods: 40
 
 | Domain | Methods |
 | --- | --- |
@@ -211,7 +211,8 @@ The candidate exposes 43 request methods: 36 Host-to-Runtime methods and seven R
 | Fork transaction | `session/fork/prepare`, `session/fork/commit`, `session/fork/abort`, `session/fork/status` |
 | Rewind transaction | `session/rewind/prepare`, `session/rewind/commit`, `session/rewind/rollback`, `session/rewind/status` |
 | Turn | `turn/start`, `turn/get`, `turn/steer`, `turn/followUp`, `turn/message/cancel`, `turn/interrupt` |
-| Command/configuration | `command/invoke`, `config/apply`, `credential/reconcile` |
+| Command/configuration | `command/invoke`, `config/apply`, `plan/apply`, `credential/reconcile` |
+| Permission policy | `permission/rules/list`, `permission/rules/add`, `permission/rules/revoke` |
 | Extensions | `extension/replace`, `extension/status`, `extension/catalog`, `extension/reload` |
 | Interaction/utility | `interaction/respond`, `utility/run` |
 
@@ -486,7 +487,15 @@ Configuration becomes effective according to the negotiated capability profile a
 
 Configuration may tighten initialize-frozen workspace, execution-environment, credential, network, process, and artifact authorities, but it cannot widen them within the process generation.
 
-### 12.3 Extension methods
+### 12.3 Host Plan and exact permission policy
+
+`plan/apply` changes the single durable `ProductPlanService` state at an exact expected revision and quiescent operation boundary. It returns `applied` or retry-safe `already_effective`; entering Plan prepares the same managed artifact used by `EnterPlanMode`. Host exit is an explicit product decision, while Agent-initiated exit retains inline plan approval.
+
+`permission/rules/list` returns the effective mode, tool-level auto-allow list, latest policy revision and unexpired exact rules. `permission/rules/add` pre-authorizes one exact tool/class/target tuple; `permission/rules/revoke` appends a durable revocation. Mutations require the expected revision, flush through the Session durability Provider before success, and return retry-safe `already_effective` or `already_absent` where the requested end state already holds. These methods manage the same rules created by `always_allow`; they do not create a Host policy database.
+
+The complete semantics and security boundary are in [Permissions and interactions](./permissions-and-interactions.md).
+
+### 12.4 Extension methods
 
 `extension/replace` accepts a complete declarative snapshot with:
 
@@ -703,7 +712,7 @@ protocol-meta.json
 protocol-fixtures.json
 host-client.generated.ts
 runtime-client.generated.ts, if separately required
-protocol-2.0.0-draft.2-evidence.json
+protocol-2.0.0-draft.3-evidence.json
 ```
 
 Conformance tests must prove:

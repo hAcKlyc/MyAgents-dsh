@@ -101,6 +101,36 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
         state: "applied" as const,
         components: Object.freeze([]),
       })),
+      planApply: (params: MethodParams<"plan/apply">) => Promise.resolve(Object.freeze({
+        state: "applied" as const,
+        mode: params.mode,
+        revision: "b".repeat(64),
+        ...(params.mode === "plan" ? { planPath: "/fixture/runtime-home/plans/plan.md" } : {}),
+      })),
+      permissionRulesList: () => Object.freeze({
+        permissionMode: "dontAsk",
+        autoAllowTools: Object.freeze(["Read"]),
+        revision: "c".repeat(64),
+        rules: Object.freeze([]),
+      }),
+      permissionRuleAdd: (params: MethodParams<"permission/rules/add">) => Promise.resolve(Object.freeze({
+        state: "applied" as const,
+        revision: "d".repeat(64),
+        rule: Object.freeze({
+          ruleId: "rule-1",
+          revision: "d".repeat(64),
+          tool: params.tool,
+          permissionClass: params.permissionClass,
+          target: params.target,
+          origin: "root" as const,
+          createdAt: 1_000,
+          expiresAt: 61_000,
+        }),
+      })),
+      permissionRuleRevoke: () => Promise.resolve(Object.freeze({
+        state: "applied" as const,
+        revision: "e".repeat(64),
+      })),
       utilityActiveCount: () => 0,
       utilityRun: () => Promise.resolve(Object.freeze({ state: "succeeded" as const, text: "synthetic" })),
       hostPorts: hostPortLifecycleState.current,
@@ -570,6 +600,34 @@ describe("native RPC Cordis service", () => {
         state: "applied",
         components: [],
       });
+      await expect(within("plan/apply", harness.client.planApply({
+        clientOperationId: "native-plan-apply",
+        expectedRevision: "a".repeat(64),
+        mode: "plan",
+      }))).resolves.toEqual({
+        state: "applied",
+        mode: "plan",
+        revision: "b".repeat(64),
+        planPath: "/fixture/runtime-home/plans/plan.md",
+      });
+      await expect(within("permission/rules/list", harness.client.permissionRulesList({})))
+        .resolves.toEqual({
+          permissionMode: "dontAsk",
+          autoAllowTools: ["Read"],
+          revision: "c".repeat(64),
+          rules: [],
+        });
+      const granted = await within("permission/rules/add", harness.client.permissionRulesAdd({
+        expectedRevision: "c".repeat(64),
+        tool: "Bash",
+        permissionClass: "process.execute",
+        target: "/fixture/workspace",
+      }));
+      expect(granted).toMatchObject({ state: "applied", rule: { tool: "Bash" } });
+      await expect(within("permission/rules/revoke", harness.client.permissionRulesRevoke({
+        expectedRevision: "d".repeat(64),
+        ruleId: "rule-1",
+      }))).resolves.toEqual({ state: "applied", revision: "e".repeat(64) });
       await expect(within("utility/run", harness.client.utilityRun({
         clientOperationId: "native-utility-v1",
         prompt: "Return a bounded answer.",

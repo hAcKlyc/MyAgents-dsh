@@ -7,6 +7,7 @@ These guides explain how substantial, independently understandable subsystems wo
 | Runtime core and native RPC | [runtime-core-and-rpc.md](./runtime-core-and-rpc.md) | `apps/runtime-server`, `packages/runtime-product`, `operation-runtime`, `rpc-server`, `protocol` |
 | Runtime protocol intent | [runtime-protocol.md](./runtime-protocol.md) | `packages/protocol/src/contract-source.ts` and generated projections |
 | Agent tools and policy | [agent-tools-and-policy.md](./agent-tools-and-policy.md) | `tool-contracts`, `tool-runtime-product`, `tools-*`, `task-graph` |
+| Permissions, interactions and Plan | [permissions-and-interactions.md](./permissions-and-interactions.md) | `tool-runtime-product/permission`, `runtime-product/host-interaction`, `tools-interaction`, `protocol` |
 | Host ports and components | [host-ports-and-components.md](./host-ports-and-components.md) | `host-ports`, `component-runtime`, `components-*`, `runtime-product` |
 | Sessions and mutations | [sessions-persistence-and-mutations.md](./sessions-persistence-and-mutations.md) | `persistence-product`, `checkpoint`, `runtime-product` |
 | Context compaction | [compaction-architecture.md](./compaction-architecture.md) | official DSH compaction graph, patch 0007, product composition |

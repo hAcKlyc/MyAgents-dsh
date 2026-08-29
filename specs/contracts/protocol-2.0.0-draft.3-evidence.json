@@ -1,0 +1,21 @@
+{
+  "artifactFormatVersion": 1,
+  "authority": "packages/protocol/src/contract-source.ts",
+  "canonicalToolContractSha256": "b150cf36eed203391a99d5c12d9fbd4dd09ff2bb4400ab635bee95ccb3302092",
+  "capabilityProfileDigest": "80d3f130738d75c57caa6ad6d233b6f2cfc57a7ad3a786985d985445c7177d02",
+  "contractSourceSha256": "5136cbe80a2df69a7b6b89b44e8d2312b0f7072d5099fe42c4bae7412f382e24",
+  "generator": "scripts/generate-protocol.ts",
+  "inventory": {
+    "canonicalToolCount": 20,
+    "hostMethodCount": 40,
+    "notificationCount": 4,
+    "reverseMethodCount": 7
+  },
+  "outputs": {
+    "host-client.generated.ts": "f445472f09acbee4d01a9ae1ae8278b88c50b37c9fe63fd38e5cea0cd9fac07b",
+    "protocol-fixtures.json": "3773f4aac2b9242afc04f1e2cf6cd6d7c4d21caa7eeefdec1c682098aba736f6",
+    "protocol-meta.json": "cc2469d1d7229d577504d594f0efa362028062b847140db42b5fa5a87a8af9ef",
+    "protocol.schema.json": "810bed6deb66d40982c5455e36d703364128da501fcd516fc7b4b2f1eddb5bd3"
+  },
+  "protocolVersion": "2.0.0-draft.3"
+}

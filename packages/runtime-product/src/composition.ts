@@ -106,6 +106,8 @@ import {
   validateProductPermissionPlaneConfig,
   type ProductPermissionController,
   type ProductPermissionPlaneConfig,
+  type ProductPermissionRule,
+  type ProductPermissionRuleMutationResult,
   type ProductLocalInteractionProvider,
   type ProductToolContext,
   type ProductToolRuntimeConfig,
@@ -136,6 +138,7 @@ import {
 import {
   ProductPlanService,
   validateProductPlanPlaneConfig,
+  type ProductPlanController,
   type ProductPlanPlaneConfig,
 } from "@myagents-dsh/tools-interaction";
 import {
@@ -388,6 +391,19 @@ export interface DshRootCompositionAuthority {
     params: MethodParams<"config/apply">,
     control: OperationAdmissionControl,
   ) => Promise<MethodResult<"config/apply">>;
+  readonly planApply: (
+    params: MethodParams<"plan/apply">,
+    control: OperationAdmissionControl,
+  ) => Promise<MethodResult<"plan/apply">>;
+  readonly permissionRulesList: () => MethodResult<"permission/rules/list">;
+  readonly permissionRuleAdd: (
+    params: MethodParams<"permission/rules/add">,
+    control: OperationAdmissionControl,
+  ) => Promise<MethodResult<"permission/rules/add">>;
+  readonly permissionRuleRevoke: (
+    params: MethodParams<"permission/rules/revoke">,
+    control: OperationAdmissionControl,
+  ) => Promise<MethodResult<"permission/rules/revoke">>;
   readonly utilityRun: (
     params: MethodParams<"utility/run">,
     signal: AbortSignal,
@@ -440,6 +456,7 @@ type CompositionAuthorityState = {
   canonicalPermissionMode: string | undefined;
   canonicalAutoAllowTools: readonly string[] | undefined;
   permissionController: ProductPermissionController | undefined;
+  planController: ProductPlanController | undefined;
   readonly operationLifecycle: OperationLifecycleController;
   readonly components: ProductComponentServiceController;
   dynamicSkills: ProductDynamicSkillController | undefined;
@@ -460,6 +477,39 @@ type CompositionAuthorityState = {
   persistenceTarget: PlatformTarget | undefined;
 };
 
+const toWirePermissionRule = (
+  rule: ProductPermissionRule,
+): MethodResult<"permission/rules/list">["rules"][number] => Object.freeze({
+  ruleId: rule.ruleId,
+  revision: rule.revision,
+  tool: rule.tool,
+  permissionClass: rule.permissionClass,
+  target: rule.target,
+  origin: rule.origin,
+  createdAt: rule.createdAt,
+  expiresAt: rule.expiresAt,
+});
+
+const toWirePermissionRuleMutation = (
+  result: ProductPermissionRuleMutationResult,
+): MethodResult<"permission/rules/add"> => {
+  if (result.state === "already_absent") {
+    return Object.freeze({ state: result.state, revision: result.revision });
+  }
+  if (result.state === "already_effective") {
+    return Object.freeze({
+      state: result.state,
+      revision: result.revision,
+      rule: toWirePermissionRule(result.rule),
+    });
+  }
+  return Object.freeze({
+    state: result.state,
+    revision: result.revision,
+    ...(result.rule === undefined ? {} : { rule: toWirePermissionRule(result.rule) }),
+  });
+};
+
 type NativeRpcLifecycleAuthorityState = {
   readonly bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   readonly bindHostCapabilities: (capabilities: InitializeParams["hostCapabilities"]) => void;
@@ -469,6 +519,10 @@ type NativeRpcLifecycleAuthorityState = {
   readonly installPersistence: (runtimeHome: string, platformTarget: PlatformTarget) => Promise<void>;
   readonly commandInvoke: DshRootCompositionAuthority["commandInvoke"];
   readonly configApply: DshRootCompositionAuthority["configApply"];
+  readonly planApply: DshRootCompositionAuthority["planApply"];
+  readonly permissionRulesList: DshRootCompositionAuthority["permissionRulesList"];
+  readonly permissionRuleAdd: DshRootCompositionAuthority["permissionRuleAdd"];
+  readonly permissionRuleRevoke: DshRootCompositionAuthority["permissionRuleRevoke"];
   readonly utilityRun: DshRootCompositionAuthority["utilityRun"];
   readonly utilityActiveCount: DshRootCompositionAuthority["utilityActiveCount"];
   readonly credentialReconcile: DshRootCompositionAuthority["credentialReconcile"];
@@ -724,6 +778,67 @@ export const claimNativeRpcLifecycleAuthority = (
         }
       },
     ),
+    planApply: (params, control) => state.operationLifecycle.runAtNextQuiescentBoundary(
+      control.signal,
+      control.commit,
+      () => {
+        const plan = state.planController;
+        if (plan === undefined) {
+          throw new ProtocolError("primary_session_not_ready", "plan authority is not installed", true);
+        }
+        return plan.apply(state.context.productSession.requireAgent(), Object.freeze({
+          clientOperationId: params.clientOperationId,
+          expectedRevision: params.expectedRevision,
+          mode: params.mode,
+          signal: control.signal,
+        }));
+      },
+    ),
+    permissionRulesList: () => {
+      const permission = state.permissionController;
+      if (permission === undefined) {
+        throw new ProtocolError("primary_session_not_ready", "permission authority is not installed", true);
+      }
+      const snapshot = permission.snapshot(state.context.productSession.requireAgent());
+      return Object.freeze({
+        permissionMode: snapshot.mode,
+        autoAllowTools: [...snapshot.autoAllowTools],
+        revision: snapshot.revision,
+        rules: snapshot.rules.map(toWirePermissionRule),
+      });
+    },
+    permissionRuleAdd: (params, control) => state.operationLifecycle.runAtNextQuiescentBoundary(
+      control.signal,
+      control.commit,
+      async () => {
+        const permission = state.permissionController;
+        if (permission === undefined) {
+          throw new ProtocolError("primary_session_not_ready", "permission authority is not installed", true);
+        }
+        return toWirePermissionRuleMutation(await permission.grantRule(
+          state.context.productSession.requireAgent(), Object.freeze({
+          expectedRevision: params.expectedRevision,
+          tool: params.tool,
+          permissionClass: params.permissionClass as Parameters<
+            ProductPermissionController["grantRule"]
+          >[1]["permissionClass"],
+          target: params.target,
+        })));
+      },
+    ),
+    permissionRuleRevoke: (params, control) => state.operationLifecycle.runAtNextQuiescentBoundary(
+      control.signal,
+      control.commit,
+      async () => {
+        const permission = state.permissionController;
+        if (permission === undefined) {
+          throw new ProtocolError("primary_session_not_ready", "permission authority is not installed", true);
+        }
+        return toWirePermissionRuleMutation(await permission.revokeRule(
+          state.context.productSession.requireAgent(), Object.freeze(params),
+        ));
+      },
+    ),
     credentialReconcile: (params) => {
       const credentials = state.hostCredentials;
       if (credentials === undefined) {
@@ -804,6 +919,10 @@ export const consumeNativeRpcLifecycleAuthority = (
     bindHostCapabilities: state.bindHostCapabilities,
     commandInvoke: state.commandInvoke,
     configApply: state.configApply,
+    planApply: state.planApply,
+    permissionRulesList: state.permissionRulesList,
+    permissionRuleAdd: state.permissionRuleAdd,
+    permissionRuleRevoke: state.permissionRuleRevoke,
     context: installationContext,
     dispose: state.dispose,
     credentialReconcile: state.credentialReconcile,
@@ -1220,6 +1339,7 @@ export const installCanonicalToolPlane = async (
     }));
     if (hookController === undefined) throw new Error("Host Hook controller did not register");
     authority.hooks = hookController;
+    let planController: ProductPlanController | undefined;
     fibers.push(await root.plugin(ProductPlanService, {
       ...planConfig,
       durability: Object.freeze({
@@ -1231,7 +1351,16 @@ export const installCanonicalToolPlane = async (
       environment: () => root.productSession.requireExecutionEnvironment(),
       io: planIo,
       requireAgent: () => root.productSession.requireAgent(),
+      registerController: (controller) => {
+        if (planController !== undefined) {
+          throw new Error("product plan controller may register exactly once");
+        }
+        planController = controller;
+      },
     }));
+    if (planController === undefined) {
+      throw new Error("product plan service did not register its composition controller");
+    }
     fibers.push(await root.plugin(ProductTaskGraphService, {
       durability: Object.freeze({
         flush: (session: Session) => permissionDeadline.wait(
@@ -1395,6 +1524,7 @@ export const installCanonicalToolPlane = async (
     authority.canonicalPermissionMode = permissionConfig.mode;
     authority.canonicalAutoAllowTools = permissionConfig.autoAllowTools;
     authority.permissionController = permissionController;
+    authority.planController = planController;
     authority.hostAttachments = installedAttachmentController;
     authority.dynamicSkills = dynamicSkills;
     authority.dynamicAgents = dynamicAgents;
@@ -2411,6 +2541,7 @@ export const composeDshRootServices = async (
       canonicalPermissionMode: undefined,
       canonicalAutoAllowTools: undefined,
       permissionController: undefined,
+      planController: undefined,
       operationLifecycle,
       components: componentController,
       componentPlane: "absent",

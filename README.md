@@ -50,7 +50,7 @@ The Web Host is a Host and browser carrier, not another runtime or transcript. O
 The implemented Runtime provides:
 
 - exact pinned DSH composition with seven minimal, source-controlled core patches;
-- protocol `2.0.0-draft.2`, generated schema/client/fixtures, reverse Host ports, and strict operation settlement;
+- protocol `2.0.0-draft.3` (40 Host requests, seven reverse requests, four notifications), generated schema/client/fixtures, reverse Host ports, exact permission/Plan control, and strict operation settlement;
 - the canonical 20-tool experience, permission and interaction flows, Hooks, MCP, Skills, agents, TaskGraph, and child/background work;
 - Host-owned provider routes and request-scoped credentials, including native DeepSeek plus the official `dsh-llm-pi-ai` adapter for declared Anthropic/OpenAI API families;
 - SQLite durable Sessions, crash recovery, root `Write`/`Edit` managed checkpoints, and transactional Session mutations;
