@@ -10,12 +10,12 @@ Status as of 2026-08-29:
 
 | Surface | State | Current authority |
 | --- | --- | --- |
-| Standalone Runtime | Draft.3 artifact built and independently verified; ready as the Batch 3 integration input | Runtime manifest `a99c7d8060e36647a004edce4ee5b27221d9867c75b3a751ca3112ae4c812099` |
-| MyAgents integration handoff | Draft.3 package built and independently verified | Handoff manifest `acb54443e178ae697f6a9a062264f4b02b035d990c3d98277132b6b2c446f653` |
+| Standalone Runtime | Protocol `2.0.0` source is frozen; formal artifact refresh is in progress | Draft.3 Runtime `a99c7d8060e36647a004edce4ee5b27221d9867c75b3a751ca3112ae4c812099` remains historical evidence only |
+| MyAgents integration handoff | Formal `2.0.0` package refresh is in progress | Draft.3 handoff `acb54443e178ae697f6a9a062264f4b02b035d990c3d98277132b6b2c446f653` must not be relabeled |
 | Reference Web Host | W5 A1–A4 implementation exists; usable-product revalidation, fresh independent reviews, final distribution handoff, and explicit acceptance remain open | Web artifact `48c7f09cf76bb81d21a7ca5452ce2758135a176052f8f63231c558cfb70e5bd3`, frozen to the older Runtime `ddd6052efbceb0a323bf0942ba709aa78885a98ea49c03186d79751da224cdb1` |
 | Standalone Agent SDK | Not started | Batch 2 PRD only; there is no `@myagents-dsh/agent-sdk` package yet |
-| Native MyAgents Host | Not started in the sibling repository | Batch 3 PRD/RFC; it must consume the immutable draft.3 handoff above |
-| Platform support | macOS arm64, Windows x64 and Linux x64 implementation-complete pending native validation | Exact content-bound pending claims are carried by the handoff; no draft.3 target is currently advertised as verified |
+| Native MyAgents Host | Not started in the sibling repository | Batch 3 PRD/RFC; it must consume the replacement immutable `2.0.0` handoff |
+| Platform support | macOS arm64, Windows x64 and Linux x64 implementation-complete pending native validation | Exact content-bound pending claims must be rebound to the frozen Runtime; no target is currently advertised as verified |
 
 The latest Runtime includes the accepted automatic-compaction P0 work. The current Reference Web artifact predates that Runtime and must not be used as evidence that the latest compaction artifact has been exercised through the browser product.
 
@@ -50,7 +50,7 @@ The Web Host is a Host and browser carrier, not another runtime or transcript. O
 The implemented Runtime provides:
 
 - exact pinned DSH composition with seven minimal, source-controlled core patches;
-- protocol `2.0.0-draft.3` (40 Host requests, seven reverse requests, four notifications), generated schema/client/fixtures, reverse Host ports, exact permission/Plan control, and strict operation settlement;
+- frozen protocol `2.0.0` (40 Host requests, seven reverse requests, four notifications), generated schema/client/fixtures, reverse Host ports, exact permission/Plan control, and strict operation settlement;
 - the canonical 20-tool experience, permission and interaction flows, Hooks, MCP, Skills, agents, TaskGraph, and child/background work;
 - Host-owned provider routes and request-scoped credentials, including native DeepSeek plus the official `dsh-llm-pi-ai` adapter for declared Anthropic/OpenAI API families;
 - SQLite durable Sessions, crash recovery, root `Write`/`Edit` managed checkpoints, and transactional Session mutations;
@@ -101,7 +101,7 @@ On the new machine:
 - Batch 1 Reference Web still needs W5 A5 usable-product revalidation, fresh `B1-R2` reviews, the final combined distribution handoff, and explicit user acceptance.
 - Batch 2 Agent SDK has not started.
 - Batch 3 Runtime delivery is ready; implementation in the sibling `MyAgents/` repository and joint J1–J18 acceptance have not started.
-- macOS arm64, Windows x64 and Linux x64 still require a complete native artifact campaign against the exact draft.3 Runtime before a verified-support claim.
+- macOS arm64, Windows x64 and Linux x64 still require a complete native artifact campaign against the exact frozen Runtime before a verified-support claim.
 
 ## Delivery Batches
 

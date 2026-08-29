@@ -1,8 +1,8 @@
 ---
 type: protocol-specification
-status: intent-reference
+status: current
 module: runtime-core-and-rpc
-candidate_version: 2.0.0-draft.3
+version: 2.0.0
 updated: 2026-08-29
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 product_scope: ../prd/prd_0.1_agent_runtime.md
@@ -17,7 +17,17 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Candidate version `2.0.0-draft.3` is implemented but is not a released compatibility promise. It extends draft.2 with Host-controlled durable Plan state and exact permission-rule management. Pre-Batch P0-3 created the canonical TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and conformance tests. That source, generated digests, and tests are authoritative for exact shapes; this document remains the intent and ownership reference. If an illustrative shape below differs from generated code, generated code wins and this document must be repaired.
+Protocol `2.0.0` is the first frozen DSH Runtime compatibility contract. It is wire-identical to the completed `2.0.0-draft.3` candidate, which added Host-controlled durable Plan state and exact permission-rule management; the release changes identity and compatibility status, not method or field semantics. Pre-Batch P0-3 created the canonical TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and conformance tests. That source, generated digests, and tests are authoritative for exact shapes; this document remains the intent and ownership reference. If an illustrative shape below differs from generated code, generated code wins and this document must be repaired.
+
+### 1.1 Compatibility versioning
+
+The official Runtime currently implements exactly `2.0.0`, and the first MyAgents Host must pin that exact version and its artifact/compatibility digests. Future versions follow semantic compatibility:
+
+- `2.0.x` repairs implementation defects without changing required wire behavior;
+- `2.x.0` may add negotiated optional capabilities while retaining the complete `2.0.0` behavior for a Host that selects it;
+- `3.0.0` is required for a breaking method, required-field, lifecycle, persistence-meaning, or terminal-semantics change.
+
+A larger number is not evidence of compatibility by itself. A Runtime advertises a version range only when executable negotiation and conformance prove every version in that range; otherwise min and max remain the same exact version. Draft.1 through draft.3 evidence remains historical and must never be relabeled as the frozen release.
 
 This wire is independent of `@deepseek-ai/dsh-sdk-protocol`. The DSH SDK protocol's three request methods and four notifications are not a base version of this contract, and its JSON-RPC server is not loaded in the official profile. Both protocols may use NDJSON JSON-RPC and DSH event values without sharing method or lifecycle authority.
 
@@ -177,7 +187,7 @@ Secret values MUST be represented only by reverse-port references.
 
 ```ts
 type InitializeResult = {
-  protocolVersion: "2.0.0-draft.3"
+  protocolVersion: "2.0.0"
   runtimeVersion: string
   runtimeGeneration: string
   runtimeEngine: {
@@ -199,7 +209,7 @@ type InitializeResult = {
 
 ## 7. Method inventory
 
-The candidate exposes 47 request methods: 40 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 51 names. Draft.2 added `session/delete/purge`; draft.3 adds `plan/apply` plus `permission/rules/list`, `permission/rules/add`, and `permission/rules/revoke`.
+The frozen contract exposes 47 request methods: 40 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 51 names. Draft.2 added `session/delete/purge`; draft.3 added `plan/apply` plus `permission/rules/list`, `permission/rules/add`, and `permission/rules/revoke`; `2.0.0` freezes that exact vocabulary.
 
 ### 7.1 Host-to-Runtime methods: 40
 
@@ -712,7 +722,7 @@ protocol-meta.json
 protocol-fixtures.json
 host-client.generated.ts
 runtime-client.generated.ts, if separately required
-protocol-2.0.0-draft.3-evidence.json
+protocol-2.0.0-evidence.json
 ```
 
 Conformance tests must prove:

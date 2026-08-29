@@ -69,7 +69,7 @@ tool + permissionClass + target + root origin
 
 It carries a deterministic rule ID, chained policy revision, creation time and bounded expiry. The official composition permits at most 128 grant events and 128 revocation events and uses a 24-hour TTL. Configuration-base changes clear effective exact rules through the durable revision chain.
 
-Protocol `2.0.0-draft.3` exposes:
+Protocol `2.0.0` exposes:
 
 | Method | Semantics |
 | --- | --- |
@@ -93,7 +93,7 @@ Permission decisions are `deny`, `allow_once`, `always_allow` and `cancelled`. A
 
 Plan is not a fifth permission mode. `ProductPlanService` owns one durable `normal | plan` state, the managed plan artifact, prompt contribution and monotonic tool guard. Model-visible `EnterPlanMode` and `ExitPlanMode` continue to use that service.
 
-Protocol `2.0.0-draft.3` adds `plan/apply` so a first-party Host can apply the product's Plan selector at a quiescent boundary. The request carries a client operation identity, expected Plan revision and desired mode. It prepares the same managed artifact, appends the same adjacent product ownership plus public DSH `plan/mode` facts, flushes them, and returns `applied` or retry-safe `already_effective`.
+Protocol `2.0.0` includes `plan/apply` so a first-party Host can apply the product's Plan selector at a quiescent boundary. The request carries a client operation identity, expected Plan revision and desired mode. It prepares the same managed artifact, appends the same adjacent product ownership plus public DSH `plan/mode` facts, flushes them, and returns `applied` or retry-safe `already_effective`.
 
 A Host-initiated exit is itself the explicit user/product decision and does not open a second plan-approval interaction. Agent-initiated `ExitPlanMode` still reads the exact managed bytes and requires the existing inline plan review.
 
@@ -109,13 +109,13 @@ The first MyAgents integration keeps its existing universal product vocabulary:
 
 `default` and `dontAsk` remain available Runtime modes but are not required as ordinary MyAgents desktop choices. A future headless/enterprise policy surface may expose `dontAsk` with `permission/rules/*`; it must not reinterpret `disallowedTools` as a permission-rule blacklist.
 
-MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. Draft.3 handoff `acb54443…` now carries these methods and supersedes every draft.2 integration input.
+MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. The frozen `2.0.0` handoff must carry these methods; draft.3 handoff `acb54443…` remains its immediate historical predecessor and supersedes every draft.2 integration input.
 
 ## 8. Security and platform boundary
 
 The protocol truth remains `execution=trusted-local-user-process` and `osSandbox=false` on every platform. Application-level governed file tools enforce canonical roots and symlink/identity checks. Web tools enforce the selected Host network policy. Bash runs as a real local-user process; process groups on POSIX and a Windows Job Object own cancellation/tree cleanup, not security isolation. Bash may reach resources available to the local user, including network paths outside Web tool policy.
 
-Product permission semantics are platform-neutral. macOS arm64, Windows x64 and Linux x64 retain `implementation-complete_pending-native-validation` until a complete native campaign passes against exact draft.3 Runtime `a99c7d80…`. Two macOS credential-backed campaigns exercised every scenario successfully across the pair but each sealed at least one wall-time timeout, so neither is a verified-platform report. No new OS-sandbox claim is introduced by this module.
+Product permission semantics are platform-neutral. macOS arm64, Windows x64 and Linux x64 retain `implementation-complete_pending-native-validation` until a complete native campaign passes against the exact frozen `2.0.0` Runtime. The preceding draft.3 Runtime `a99c7d80…` had two credential-backed macOS campaigns that exercised every scenario successfully across the pair but each sealed at least one wall-time timeout, so neither is a verified-platform report. No new OS-sandbox claim is introduced by this module.
 
 ## 9. Change and release discipline
 

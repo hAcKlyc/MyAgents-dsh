@@ -22,13 +22,13 @@ This table is the architecture-level snapshot as of 2026-08-29. The active PRDs 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
 | DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus seven isolated patches; artifact manifest `9c5ed754…` |
-| Standalone Runtime and native RPC | Draft.3 artifact built and independently verified | Runtime `a99c7d80…` at source `2a303f09…`; protocol `2.0.0-draft.3` includes Host Plan and permission-rule control |
-| Batch 3 integration handoff | Draft.3 handoff sealed and independently verified | Handoff `acb54443…`, compatibility `dd97a0a9…`; sibling MyAgents Host work remains not started |
+| Standalone Runtime and native RPC | Protocol `2.0.0` source frozen; artifact refresh in progress | Wire-identical draft.3 Runtime `a99c7d80…` remains historical evidence until replacement packaging completes |
+| Batch 3 integration handoff | Formal `2.0.0` handoff refresh in progress | Draft.3 handoff `acb54443…` and compatibility `dd97a0a9…` remain historical; sibling MyAgents Host work has not started |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
-| Platforms | All three implementations complete; draft.3 native validation pending | Handoff binds pending claims for macOS arm64, Windows x64 and Linux x64; prior macOS draft.2 verification remains historical |
+| Platforms | All three implementations complete; frozen-artifact native validation pending | Replacement handoff must bind pending claims for macOS arm64, Windows x64 and Linux x64; prior draft evidence remains historical |
 
-The previous draft.2 Runtime/handoff and the Reference Web artifact are different frozen distributions, and both predate the draft.3 permission control plane. They remain historical evidence only. Neither may be described as the current source implementation until its Host is deliberately rebound and every affected artifact/evidence set is regenerated. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public-release promotion.
+The previous draft.2 and draft.3 Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.0.0`. Every current consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
 
 ## 2. Product boundaries
 
@@ -211,7 +211,7 @@ Batch 1 is implemented for three explicit product targets from the start:
 
 | Target | Implementation obligation | Batch 1 native acceptance state |
 | --- | --- | --- |
-| macOS arm64 | complete production implementation and packaging | draft.3 native validation pending; two credential-backed campaigns were sealed as unavailable after wall-time-budget failures, so no verified claim is made |
+| macOS arm64 | complete production implementation and packaging | frozen `2.0.0` native validation pending; two preceding draft.3 credential-backed campaigns were sealed as unavailable after wall-time-budget failures, so no verified claim is inherited |
 | Windows x64 | complete production implementation and packaging path | pending native-machine verification; no verified-support claim yet |
 | Linux x64 | complete production implementation and packaging path | pending native-platform verification; no verified-support claim yet |
 
@@ -371,7 +371,7 @@ Current DSH does not expose an authoritative pre-dispatch argument-rewrite seam.
 
 Plan-mode transition and policy ownership belongs to the single `ProductPlanService`. It records one product ownership fact adjacent to each public DSH `plan/mode` event and verifies the resulting state with `foldPlanMode`; it does not install the broader stock `PlanModeController`, whose stock tool, prompt, and pending-state ownership are not contract-equivalent. The service contributes one monotonic global `ctx.tools` guard derived from the canonical twenty-tool contract. Consequently definitions registered later through trusted Host/MCP composition are denied by default while plan mode is active unless they carry an exact current product-operation authority and declared plan policy. The operation that owns a durable transition may continue under the new revision, while older concurrent births fail closed.
 
-Permission mode is the fallback policy after hard guards, PermissionRequest Hooks, safe classes, tool-level auto-allow policy and unexpired exact rules. `default` asks, `acceptEdits` additionally auto-allows governed `Write`/`Edit`, `dontAsk` denies anything not pre-authorized without opening an interaction, and `bypassPermissions` skips permission prompting without bypassing hard policy. Exact rules and revocations are chained durable DSH Session facts. Protocol `2.0.0-draft.3` gives the Host list/add/revoke rule methods and a quiescent `plan/apply` method; both model-driven and Host-driven Plan transitions still use the one `ProductPlanService`. The complete ordering, security boundary and MyAgents mapping are maintained in [Permissions and interactions](./tech_docs/permissions-and-interactions.md).
+Permission mode is the fallback policy after hard guards, PermissionRequest Hooks, safe classes, tool-level auto-allow policy and unexpired exact rules. `default` asks, `acceptEdits` additionally auto-allows governed `Write`/`Edit`, `dontAsk` denies anything not pre-authorized without opening an interaction, and `bypassPermissions` skips permission prompting without bypassing hard policy. Exact rules and revocations are chained durable DSH Session facts. Protocol `2.0.0` gives the Host list/add/revoke rule methods and a quiescent `plan/apply` method; both model-driven and Host-driven Plan transitions still use the one `ProductPlanService`. The complete ordering, security boundary and MyAgents mapping are maintained in [Permissions and interactions](./tech_docs/permissions-and-interactions.md).
 
 ## 11. Declarative component lifecycle
 
@@ -460,7 +460,7 @@ MyAgents is the first-party native Host. It owns Product Session identity, the p
 
 Each Product Session sidecar owns one runtime generation. Renderer code never parses the runtime wire directly; an application-owned adapter uses the generated native client and projects events into product state. The Rust shell or unrelated processes do not become alternate protocol authorities.
 
-MyAgents will consume the standalone Batch 3 integration handoff rather than repository source. Current handoff `acb54443…` binds draft.3 Runtime `a99c7d80…`, compatibility `dd97a0a9…`, the generated client/schema/fixtures, canonical tool/profile contracts, notices and content-bound platform evidence. It supersedes the historical draft.2 handoff as the integration input. All three current platform claims remain `implementation-complete_pending-native-validation`; `verified` is accepted only when an inventoried native report passes against the exact Runtime manifest. The Reference Web artifact and future Agent SDK facade are not dependencies of this integration path.
+MyAgents will consume the standalone Batch 3 integration handoff rather than repository source. The required handoff binds frozen protocol `2.0.0`, one exact Runtime, compatibility manifest, generated client/schema/fixtures, canonical tool/profile contracts, notices and content-bound platform evidence. Draft.3 handoff `acb54443…` remains historical and must not be consumed as the formal release. All three current platform claims remain `implementation-complete_pending-native-validation`; `verified` is accepted only when an inventoried native report passes against the exact Runtime manifest. The Reference Web artifact and future Agent SDK facade are not dependencies of this integration path.
 
 ## 16. DSH extension and fork policy
 

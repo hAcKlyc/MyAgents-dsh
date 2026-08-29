@@ -4,15 +4,15 @@
   "batch1Candidate": {
     "activationState": "workstream-evidence-only",
     "installedPluginCount": 21,
-    "profileDigest": "0542211aad2ae8fbbb67bd7487b33f220b7b2c790b8f98b99fff9e77853400f5"
+    "profileDigest": "ab30d44941e19ef155218c12e38c8d2dcebfc72954e1f07472add4419de19e06"
   },
   "formatVersion": 1,
   "generator": "scripts/generate-product-profile.ts",
   "installedPluginCount": 0,
   "outputs": {
-    "batch-1-candidate-profile-v1.json": "0542211aad2ae8fbbb67bd7487b33f220b7b2c790b8f98b99fff9e77853400f5",
-    "official-product-profile-v1.json": "739baa04bb8df20a4cbe811c3d546b6a548c8392f8289bc79effaaa38989b023",
-    "official-profile-authority.generated.ts": "fc7464d66755fc4bd8b3f2b0943bdce8c10f5eeef2581b0cb833c27a6e59625c",
+    "batch-1-candidate-profile-v1.json": "ab30d44941e19ef155218c12e38c8d2dcebfc72954e1f07472add4419de19e06",
+    "official-product-profile-v1.json": "e2951e1c7d641d80af9ba62269ec82fa35cb9b9b9cbe1e7a42a95a90c7e92879",
+    "official-profile-authority.generated.ts": "eb743b1edb028f9c98b17c18b25104ded79b59d090d8555f20a6b43faf7198c3",
     "platform-targets-v1.json": "d560416306b873ff189092ec56189e3071e73cab90fc784b78266a3e30c0674e"
   },
   "platformEvidenceStates": {
@@ -20,6 +20,6 @@
     "linux-x64": "implementation-complete_pending-native-validation",
     "win32-x64": "implementation-complete_pending-native-validation"
   },
-  "profileDigest": "739baa04bb8df20a4cbe811c3d546b6a548c8392f8289bc79effaaa38989b023",
+  "profileDigest": "e2951e1c7d641d80af9ba62269ec82fa35cb9b9b9cbe1e7a42a95a90c7e92879",
   "profileId": "myagents-dsh-official-v1"
 }
