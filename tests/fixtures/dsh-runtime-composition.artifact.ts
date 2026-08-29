@@ -3201,7 +3201,7 @@ assert.deepEqual(JSON.parse(durableToolText("artifact-exit-plan-call")), {
 assert.equal(composition.context.productPlan.snapshot(primaryAgent).mode, "normal");
 assert.deepEqual(
   primaryAgent.session.events.flatMap((event) => event.type === "plan/mode" ? [event.data.active] : []),
-  [true, false],
+  [true, false, true, false],
 );
 assert.equal(interactionToolEvidence.length, 2);
 
