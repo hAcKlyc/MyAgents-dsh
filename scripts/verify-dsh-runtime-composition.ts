@@ -1570,7 +1570,8 @@ const main = (): void => {
     );
     if (permissionEvidence.asked !== 25
       || permissionEvidence.decided !== 25
-      || permissionEvidence.durableRules !== 1
+      || permissionEvidence.durableRules !== 2
+      || permissionEvidence.durableRuleRevocations !== 1
       || permissionEvidence.providerRequests !== 25
       || permissionEvidence.safeToolsAutoAllowed !== true) {
       throw new Error("canonical permission and interaction evidence differs from the exact policy contract");
