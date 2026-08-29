@@ -52,3 +52,26 @@ npm run build
 ```
 
 The root `package.json` and lockfile own the exact command definitions and toolchain constraints.
+
+## Batch 3 integration handoff generation
+
+When asked to generate, refresh, or package the MyAgents integration delivery, use the official builder; do not hand-write a delivery README or assemble selected files manually. Read `specs/prd/batch-3-myagents-integration.md` and `specs/rfc/batch-3-myagents-integration-runtime.md` first.
+
+The builder requires a clean checkout, an already verified Runtime artifact whose `repositoryHead` equals the current Git `HEAD`, a three-platform claim file, and the exact content-addressed platform evidence named by that file. Old Runtime or platform evidence cannot be relabeled for a newer source commit. If those inputs do not exist on the current machine, rebuild and re-run the affected Runtime/native evidence campaign before generating the handoff.
+
+```bash
+npm run build:batch-3-integration-handoff -- \
+  --artifact /absolute/path/to/runtime-artifact \
+  --expected-manifest-sha256 <RUNTIME_MANIFEST_SHA256> \
+  --platforms /absolute/path/to/platform-claims-v1.json \
+  --platform-evidence-dir /absolute/path/to/content-addressed-platform-evidence \
+  --out /absolute/path/to/new-handoff-directory
+```
+
+The command generates the root `README.md` automatically from verified Runtime and compatibility facts, copies the complete Runtime/contracts/evidence/notices inventory, seals the outer manifest, verifies the result, and prints `outputRoot` plus `handoffSha256`. Preserve that outer digest through a trusted out-of-band release/integration record and verify a transferred copy with:
+
+```bash
+node /absolute/path/to/handoff/verify.mjs <HANDOFF_MANIFEST_SHA256>
+```
+
+Never modify an accepted handoff in place. A later source, Runtime, protocol, profile, compatibility, patch, or platform-evidence change produces a new immutable handoff and new digest; update the owning PRD/RFC/plan status only after the new artifact and required evidence are accepted.
