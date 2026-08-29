@@ -1,0 +1,27 @@
+{
+  "name": "@myagents-dsh/product-profile",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Official profile manifest and invariant owner",
+  "files": [
+    "manifests/accepted-patched-dsh-artifact-v1.json",
+    "manifests/batch-1-candidate-profile-v1.json",
+    "manifests/official-product-profile-v1.json",
+    "manifests/platform-targets-v1.json",
+    "src/candidate-runtime-profile-authority.ts",
+    "src/candidate-runtime-profile.ts",
+    "src/index.ts",
+    "src/official-profile-authority.generated.ts",
+    "src/patched-dsh-artifact.ts",
+    "src/platform-contract.ts",
+    "src/profile.ts"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./artifact-manifest": "./manifests/accepted-patched-dsh-artifact-v1.json",
+    "./batch-1-candidate-manifest": "./manifests/batch-1-candidate-profile-v1.json",
+    "./manifest": "./manifests/official-product-profile-v1.json",
+    "./platform-manifest": "./manifests/platform-targets-v1.json"
+  }
+}

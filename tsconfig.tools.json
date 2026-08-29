@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM"],
+    "rootDir": ".",
+    "outDir": "dist/tools",
+    "tsBuildInfoFile": "dist/tools/.tsbuildinfo"
+  },
+  "include": ["scripts/**/*.ts", "vitest.config.ts", "vitest.web-host-process.config.ts"],
+  "references": [
+    { "path": "./packages/artifact-verifier" },
+    { "path": "./packages/dynamic-e2e" },
+    { "path": "./packages/persistence-product" },
+    { "path": "./packages/protocol" },
+    { "path": "./packages/tool-contracts" },
+    { "path": "./packages/compatibility" },
+    { "path": "./packages/product-profile" },
+    { "path": "./packages/web-host-contract" },
+    { "path": "./packages/web-host" }
+  ]
+}

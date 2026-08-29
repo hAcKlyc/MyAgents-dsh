@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/artifact-verifier",
+    "tsBuildInfoFile": "../../dist/packages/artifact-verifier/.tsbuildinfo"
+  },
+  "files": [
+    "src/artifact-policy.ts",
+    "src/batch-1-distribution-handoff.ts",
+    "src/batch-1-handoff.ts",
+    "src/forbidden-content.ts",
+    "src/index.ts",
+    "src/integration-compatibility.ts",
+    "src/integration-handoff.ts",
+    "src/repository-entry.ts",
+    "src/reference-web-artifact.ts",
+    "src/runtime-artifact.ts",
+    "src/self-check.ts"
+  ],
+  "references": [
+    { "path": "../persistence-product" },
+    { "path": "../product-profile" },
+    { "path": "../protocol" }
+  ]
+}

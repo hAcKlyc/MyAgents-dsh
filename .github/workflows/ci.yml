@@ -1,0 +1,71 @@
+name: foundation-ci
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install pinned npm
+        run: npm install --global npm@11.8.0
+      - name: Install exact dependency graph
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Test without credentials or network
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  patched-dsh-seams:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact MyAgents revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: myagents-dsh
+          persist-credentials: false
+      - name: Checkout exact DSH seam baseline
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: 47f943859bef60e4160492346772ded9b24f765a
+          path: deepseek-harness
+          persist-credentials: false
+      - name: Install pinned Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: myagents-dsh/.nvmrc
+      - name: Install exact MyAgents toolchain
+        working-directory: myagents-dsh
+        run: |
+          npm install --global npm@11.8.0
+          npm ci
+      - name: Prime exact DSH dependency store
+        working-directory: deepseek-harness
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.7.0 --activate
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Compile and test the exact patched DSH source
+        working-directory: myagents-dsh
+        run: npx tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test

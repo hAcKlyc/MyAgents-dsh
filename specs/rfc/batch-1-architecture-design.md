@@ -1,14 +1,16 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented
 batch: 1
-updated: 2026-08-15
+updated: 2026-08-29
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ../protocol/runtime-rpc-v2.md
 ---
 
 # Batch 1 technical architecture — DSH Agent Runtime and native RPC
+
+> Current disposition (2026-08-29): implemented for the current Runtime identity. This RFC preserves the reviewed design path; `specs/ARCHITECTURE.md`, code, manifests, and the active Batch 1 ledger own current executable truth.
 
 ## 1. Decision summary
 
@@ -31,13 +33,15 @@ All Batch 1 behavior still lives inside DSH/Cordis composition. “MyAgents-owne
 
 ## 2. Evidence baseline
 
-This design was checked against:
+This design was initially checked against:
 
 - `deepseek-harness` commit `47f943859bef`, package baseline `0.1.0-rc.5`;
 - DSH public package sources and READMEs for AgentLoop, Session, Tools, LLM, persistence, credentials, attachments, presets, filesystem, shell, web, interactions, Skills, subagents, jobs, plan mode, and todo;
 - current `myagents-runtime` protocol authority `packages/protocol/src/contract-source.ts` and generated protocol metadata;
 - current `myagents-runtime` canonical tool authorities `packages/runtime-core/src/tools/{contracts,golden-contracts,profile}.ts` and generated profile;
 - the implemented old Runtime Core/RPC RFC, 20-tool RFC, and dynamic Agent acceptance PRD.
+
+Batch action `B1-DSH-R1` subsequently re-audited the same owner split against `dsh-v0.1.1-rc.2` / `b150a551b8d4`; `../dsh/upstream-rebaseline-0.1.1-rc.2.md` owns the current public-capability and fork-delta evidence.
 
 The migration inputs from `myagents-runtime` include behavior contracts, synthetic fixtures, tests, and reusable engine-neutral source modules. Pi controllers and Pi entry/tree assumptions are not implementation dependencies; copied tool/infrastructure code must replace Pi registration, context, event, and lifecycle glue with DSH-native ownership.
 
@@ -214,15 +218,15 @@ DSH `idle`, an enqueue receipt, or the most recent assistant event is not a term
 
 ### 7.2 Resume and crash gap
 
-DSH persists pending inbox messages but a resumed Agent does not expose a public “wake existing inbox without inserting a message” operation. The operation spike must prove a public-seam recovery algorithm. The current candidate is:
+DSH persists pending inbox messages but the fixed baseline originally exposed no public “wake existing inbox without inserting a message” operation. Foundation Spike evidence rejected remove/reinsert because it changes FIFO order and records false cancellation/reinsertion history. ADR 0001 accepts the minimal optional public `Agent.wakePending(messageId)` seam, which the official composition requires in its patched DSH artifact:
 
 - fold product events and the DSH inbox;
 - if acceptance is durable but its root message is absent, admit only the exact immutable `turn/start` retry needed to reconstruct that identified message once;
-- if an accepted message is still pending, remove and reinsert the same immutable MessageId to create a waking delivery without duplicating logical identity;
+- if an accepted message is still pending, append a product recovery-wake intent, call `agent.wakePending(messageId)` without mutating Inbox, append the matching completion receipt, and flush;
 - if a claimed turn was crash-repaired, settle from repaired DSH facts without replaying side effects;
 - if the final `turn/end` is durable but the product terminal is missing, append the recoverable terminal before accepting new work.
 
-This candidate is not accepted until race and restart fixtures prove ordering, queue projection, and exactly-once terminal behavior.
+The crash/FIFO matrix and real patched `ReactLoopAgent` regressions prove repeated wake attempts preserve MessageId/order and converge without a second claim. A missing `wakePending` implementation is a startup invariant failure, not permission to fall back to remove/reinsert or a product scheduler.
 
 ## 8. Tool execution design
 
@@ -313,7 +317,7 @@ A product `agent/request` listener returns the frozen LLM config for every DSH s
 
 ### 13.1 Reuse as authoritative migration input
 
-- all 35 Host methods, 7 reverse methods, 4 notifications, limits, error families, idempotency and terminal rules;
+- all 36 Host methods, 7 reverse methods, 4 notifications, limits, error families, idempotency and terminal rules;
 - the canonical 20 tool names, exact schemas/descriptions/result/error contracts, concurrency and checkpoint classifications;
 - Host/Test Host fixtures, malformed-frame cases, cancellation/race matrices, secret canaries, artifact checks;
 - managed-file checkpoint algorithms and mutation transaction safety properties;
@@ -368,7 +372,7 @@ Work may overlap only after its shared contract owners freeze. No implementation
 
 | Decision | Current candidate | Required evidence |
 | --- | --- | --- |
-| Operation recovery wake | remove/reinsert same pending MessageId, then normal DSH followup/steer | queued/restart/cancel/race spike |
+| Operation recovery wake | accepted `Agent.wakePending(messageId)` patch with durable product intent/completion receipts and no Inbox splice | ADR 0001, queued/restart/cancel/FIFO/crash matrix, patched-source regressions |
 | Operation terminal | quiescent owned queue plus durable DSH turn facts, product terminal appended and flushed before Runtime event projection | one-to-many turn and crash-gap matrix |
 | PreTool input rewrite | upstream-ready pre-identity transaction before assistant/tool-call audit commit | provider replay, UI/audit, cancellation and revalidation tests |
 | Required product events | optional generated known-event predicate in the public coordinator | append/load/inspect/prepare/resume/HMR and unknown-required refusal spike |

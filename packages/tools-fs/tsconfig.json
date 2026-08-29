@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/tools-fs",
+    "tsBuildInfoFile": "../../dist/packages/tools-fs/.tsbuildinfo"
+  },
+  "files": ["src/canonical-file-tools.ts", "src/index.ts", "src/local-filesystem.ts"],
+  "references": [
+    { "path": "../checkpoint" },
+    { "path": "../product-profile" },
+    { "path": "../tool-contracts" },
+    { "path": "../tool-runtime-product" },
+    { "path": "../tools-interaction" },
+    { "path": "../tools-process" }
+  ]
+}

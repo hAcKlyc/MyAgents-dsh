@@ -1,0 +1,413 @@
+{
+  "artifactFormatVersion": 1,
+  "contractSha256": "b150cf36eed203391a99d5c12d9fbd4dd09ff2bb4400ab635bee95ccb3302092",
+  "decisions": [
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "provider",
+          "id": "filesystem",
+          "importPath": "@deepseek-ai/dsh-fs",
+          "symbols": [
+            "FileSystem"
+          ]
+        },
+        {
+          "classification": "provider",
+          "id": "attachments",
+          "importPath": "@deepseek-ai/dsh-attachment",
+          "symbols": [
+            "AttachmentStore"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-fs",
+      "stockModelDefinition": "excluded",
+      "tool": "Read"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "provider",
+          "id": "filesystem",
+          "importPath": "@deepseek-ai/dsh-fs",
+          "symbols": [
+            "FileSystem",
+            "FsWriteIntent"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-fs",
+      "stockModelDefinition": "excluded",
+      "tool": "Write"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "provider",
+          "id": "filesystem",
+          "importPath": "@deepseek-ai/dsh-fs",
+          "symbols": [
+            "FileSystem",
+            "FsEditRequest"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-fs",
+      "stockModelDefinition": "excluded",
+      "tool": "Edit"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "helper",
+          "id": "fs-search-helpers",
+          "importPath": "@deepseek-ai/dsh-tool-fs-search",
+          "symbols": [
+            "buildGlobCommand",
+            "parseGlobArgs"
+          ]
+        },
+        {
+          "classification": "provider",
+          "id": "subprocess",
+          "importPath": "@deepseek-ai/dsh-subprocess",
+          "symbols": [
+            "SubprocessRuntime"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-fs",
+      "stockModelDefinition": "excluded",
+      "tool": "Glob"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "helper",
+          "id": "fs-search-helpers",
+          "importPath": "@deepseek-ai/dsh-tool-fs-search",
+          "symbols": [
+            "buildGrepCommand",
+            "parseGrepArgs"
+          ]
+        },
+        {
+          "classification": "provider",
+          "id": "subprocess",
+          "importPath": "@deepseek-ai/dsh-subprocess",
+          "symbols": [
+            "SubprocessRuntime"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-fs",
+      "stockModelDefinition": "excluded",
+      "tool": "Grep"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "provider",
+          "id": "shell",
+          "importPath": "@deepseek-ai/dsh-shell",
+          "symbols": [
+            "ShellExecutor"
+          ]
+        },
+        {
+          "classification": "provider",
+          "id": "subprocess",
+          "importPath": "@deepseek-ai/dsh-subprocess",
+          "symbols": [
+            "SubprocessRuntime"
+          ]
+        },
+        {
+          "classification": "provider",
+          "id": "jobs",
+          "importPath": "@deepseek-ai/dsh-jobs",
+          "symbols": [
+            "JobRegistry"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-process",
+      "stockModelDefinition": "excluded",
+      "tool": "Bash"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "provider",
+          "id": "filesystem",
+          "importPath": "@deepseek-ai/dsh-fs",
+          "symbols": [
+            "FileSystem"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-fs",
+      "stockModelDefinition": "excluded",
+      "tool": "ls"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "provider",
+          "id": "web",
+          "importPath": "@deepseek-ai/dsh-web",
+          "symbols": [
+            "WebRuntime"
+          ]
+        },
+        {
+          "classification": "helper",
+          "id": "web-helpers",
+          "importPath": "@deepseek-ai/dsh-tool-web",
+          "symbols": [
+            "formatFetchOutput",
+            "parseFetchArgs"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-web",
+      "stockModelDefinition": "excluded",
+      "tool": "WebFetch"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "provider",
+          "id": "web",
+          "importPath": "@deepseek-ai/dsh-web",
+          "symbols": [
+            "WebRuntime"
+          ]
+        },
+        {
+          "classification": "helper",
+          "id": "web-helpers",
+          "importPath": "@deepseek-ai/dsh-tool-web",
+          "symbols": [
+            "formatSearchOutput",
+            "searchMetaFromValue"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-web",
+      "stockModelDefinition": "excluded",
+      "tool": "WebSearch"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "provider",
+          "id": "questions",
+          "importPath": "@deepseek-ai/dsh-user-questions",
+          "symbols": [
+            "UserQuestionService"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-interaction",
+      "stockModelDefinition": "excluded",
+      "tool": "AskUserQuestion"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "helper",
+          "id": "plan-mode-fold",
+          "importPath": "@deepseek-ai/dsh-plan-mode",
+          "symbols": [
+            "foldPlanMode"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-interaction",
+      "stockModelDefinition": "excluded",
+      "tool": "EnterPlanMode"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "helper",
+          "id": "plan-mode-fold",
+          "importPath": "@deepseek-ai/dsh-plan-mode",
+          "symbols": [
+            "foldPlanMode"
+          ]
+        },
+        {
+          "classification": "provider",
+          "id": "questions",
+          "importPath": "@deepseek-ai/dsh-user-questions",
+          "symbols": [
+            "UserQuestionService"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-interaction",
+      "stockModelDefinition": "excluded",
+      "tool": "ExitPlanMode"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "provider",
+          "id": "skills",
+          "importPath": "@deepseek-ai/dsh-skill",
+          "symbols": [
+            "SkillRegistry"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-agent",
+      "stockModelDefinition": "excluded",
+      "tool": "Skill"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "direct",
+          "id": "subagents",
+          "importPath": "@deepseek-ai/dsh-subagent",
+          "symbols": [
+            "SubagentRuntime"
+          ]
+        },
+        {
+          "classification": "provider",
+          "id": "jobs",
+          "importPath": "@deepseek-ai/dsh-jobs",
+          "symbols": [
+            "JobRegistry"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-agent",
+      "stockModelDefinition": "excluded",
+      "tool": "Agent"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "provider",
+          "id": "jobs",
+          "importPath": "@deepseek-ai/dsh-jobs",
+          "symbols": [
+            "JobRegistry"
+          ]
+        },
+        {
+          "classification": "direct",
+          "id": "subagents",
+          "importPath": "@deepseek-ai/dsh-subagent",
+          "symbols": [
+            "SubagentRuntime"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-agent",
+      "stockModelDefinition": "excluded",
+      "tool": "TaskStop"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "direct",
+          "id": "subagents",
+          "importPath": "@deepseek-ai/dsh-subagent",
+          "symbols": [
+            "SubagentRuntime"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/tools-agent",
+      "stockModelDefinition": "excluded",
+      "tool": "SendMessage"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "product-plugin",
+          "id": "session",
+          "importPath": "@deepseek-ai/dsh-session",
+          "symbols": [
+            "Session"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/task-graph",
+      "stockModelDefinition": "excluded",
+      "tool": "TaskCreate"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "product-plugin",
+          "id": "session",
+          "importPath": "@deepseek-ai/dsh-session",
+          "symbols": [
+            "Session"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/task-graph",
+      "stockModelDefinition": "excluded",
+      "tool": "TaskGet"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "product-plugin",
+          "id": "session",
+          "importPath": "@deepseek-ai/dsh-session",
+          "symbols": [
+            "Session"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/task-graph",
+      "stockModelDefinition": "excluded",
+      "tool": "TaskList"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "product-plugin",
+          "id": "session",
+          "importPath": "@deepseek-ai/dsh-session",
+          "symbols": [
+            "Session"
+          ]
+        }
+      ],
+      "modelDefinition": "compat-tool",
+      "productOwner": "@myagents-dsh/task-graph",
+      "stockModelDefinition": "excluded",
+      "tool": "TaskUpdate"
+    }
+  ],
+  "profile": "canonical-agent-experience-v1"
+}

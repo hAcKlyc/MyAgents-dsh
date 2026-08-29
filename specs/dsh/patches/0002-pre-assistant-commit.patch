@@ -1,0 +1,589 @@
+diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
+index 2064c52f32..ab384d46e6 100644
+--- a/packages/core/agent-loop/src/agent.ts
++++ b/packages/core/agent-loop/src/agent.ts
+@@ -12,23 +12,26 @@ import type {
+   AgentStatus,
+   CancelOptions,
+   InboxTarget,
++  PreparedAssistantCommit,
++  PreparedAssistantToolCall,
+   PreStepDecision,
+   RequestErrorAction,
+ } from '@deepseek-ai/dsh-agent'
+ import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
+-import type { GenerateOptions, LlmCallConfig, Message, MessageId, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
++import type { AssistantMessage, GenerateOptions, LlmCallConfig, Message, MessageId, PreparedLlmCall, ToolCallBlock } from '@deepseek-ai/dsh-llm'
+ import {
+   BlockAssembler,
+   LlmError,
+   createAssistantMessage,
+   deepFreeze,
+   errorChain,
++  freezeMessage,
+   markAgentLoopRequest,
+ } from '@deepseek-ai/dsh-llm'
+ import type { Scope } from '@deepseek-ai/dsh-scope'
+ import { createScope } from '@deepseek-ai/dsh-scope'
+ import type { EpochHeader, RequestContext, Session, SessionId, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
+-import { canonicalHeader, headerEquals } from '@deepseek-ai/dsh-session'
++import { canonicalHeader, headerEquals, isJsonValue, snapshotJsonValue } from '@deepseek-ai/dsh-session'
+ import { joinContextSections, renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+ import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
+ import type { Context } from '@deepseek-ai/cordis'
+@@ -51,6 +54,127 @@ type PreparedStep =
+   | { kind: 'reject' }
+   | { kind: 'enter'; messages: UserMessage[]; assembly: PromptAssembly }
+ 
++/** Match DSH execution parsing while retaining a lossless immutable value. */
++function parsePreparedArguments(block: ToolCallBlock): PreparedAssistantToolCall['parsedArguments'] {
++  let parsed: unknown
++  try {
++    parsed = block.arguments ? JSON.parse(block.arguments) : {}
++  } catch {
++    parsed = block.arguments
++  }
++  const snapshot = snapshotJsonValue(parsed)
++  if (snapshot === undefined || !isJsonValue(snapshot)) {
++    throw new TypeError(`tool call "${block.name}" arguments are not lossless JSON`)
++  }
++  return snapshot as PreparedAssistantToolCall['parsedArguments']
++}
++
++/** Derive scheduling inputs exclusively from one assistant message. */
++function preparedAssistantCommit(message: AssistantMessage): PreparedAssistantCommit {
++  const toolCalls = message.content
++    .filter((block): block is ToolCallBlock => block.type === 'tool-call')
++    .map(block => Object.freeze({
++      callId: block.id,
++      name: block.name,
++      rawArguments: block.arguments,
++      parsedArguments: parsePreparedArguments(block),
++    }))
++  return Object.freeze({ message, toolCalls: Object.freeze(toolCalls) })
++}
++
++function ownDataKeys(value: unknown): string[] {
++  if (typeof value !== 'object' || value === null) throw new TypeError('expected immutable data object')
++  const keys = Reflect.ownKeys(value)
++  if (keys.some(key => typeof key !== 'string')) throw new TypeError('symbol data keys are forbidden')
++  for (const key of keys) {
++    const descriptor = Object.getOwnPropertyDescriptor(value, key)
++    if (descriptor === undefined || !('value' in descriptor)) throw new TypeError('accessor data keys are forbidden')
++  }
++  return (keys as string[]).sort()
++}
++
++function exactDataValue(left: unknown, right: unknown): boolean {
++  if (Object.is(left, right)) return true
++  if (typeof left !== 'object' || left === null || typeof right !== 'object' || right === null) return false
++  const leftKeys = ownDataKeys(left)
++  const rightKeys = ownDataKeys(right)
++  if (leftKeys.length !== rightKeys.length || leftKeys.some((key, index) => key !== rightKeys[index])) return false
++  return leftKeys.every(key => exactDataValue(
++    Object.getOwnPropertyDescriptor(left, key)?.value,
++    Object.getOwnPropertyDescriptor(right, key)?.value,
++  ))
++}
++
++/** Accept only argument replacement for existing calls; all other content is byte-identical. */
++function validatePreparedAssistantCommit(
++  original: PreparedAssistantCommit,
++  candidate: PreparedAssistantCommit,
++): PreparedAssistantCommit {
++  const candidateMessage = candidate.message
++  if (candidateMessage.id !== original.message.id
++    || candidateMessage.role !== 'assistant'
++    || !exactDataValue(candidateMessage.source, original.message.source)
++    || ownDataKeys(candidateMessage).join() !== ownDataKeys(original.message).join()
++    || candidateMessage.content.length !== original.message.content.length) {
++    throw new TypeError('agent/pre-assistant-commit changed assistant identity, source, or content shape')
++  }
++  for (const [index, block] of original.message.content.entries()) {
++    const replacement = candidateMessage.content[index]
++    if (replacement === undefined || replacement.type !== block.type) {
++      throw new TypeError('agent/pre-assistant-commit changed assistant content order')
++    }
++    if (block.type !== 'tool-call') {
++      if (!exactDataValue(replacement, block)) {
++        throw new TypeError('agent/pre-assistant-commit changed non-tool content')
++      }
++      continue
++    }
++    if (replacement.type !== 'tool-call'
++      || replacement.id !== block.id
++      || replacement.name !== block.name
++      || typeof replacement.arguments !== 'string'
++      || ownDataKeys(replacement).join() !== ownDataKeys(block).join()) {
++      throw new TypeError('agent/pre-assistant-commit changed tool identity')
++    }
++    // A changed argument string is authoritative only when it is valid JSON.
++    if (replacement.arguments !== block.arguments) {
++      let parsed: unknown
++      try {
++        parsed = JSON.parse(replacement.arguments)
++      } catch (error: unknown) {
++        throw new TypeError('agent/pre-assistant-commit returned invalid transformed JSON', { cause: error })
++      }
++      if (!isJsonValue(parsed)) {
++        throw new TypeError('agent/pre-assistant-commit returned non-lossless transformed JSON')
++      }
++    }
++  }
++  const message = freezeMessage({
++    id: original.message.id,
++    role: 'assistant',
++    source: original.message.source,
++    content: original.message.content.map((block, index) => block.type === 'tool-call'
++      ? { ...block, arguments: (candidateMessage.content[index] as ToolCallBlock).arguments }
++      : block),
++  })
++  const rebuilt = preparedAssistantCommit(message)
++  if (candidate.toolCalls.length !== rebuilt.toolCalls.length) {
++    throw new TypeError('agent/pre-assistant-commit returned a mismatched tool-call plan')
++  }
++  for (const [index, call] of rebuilt.toolCalls.entries()) {
++    const supplied = candidate.toolCalls[index]
++    if (supplied === undefined
++      || supplied.callId !== call.callId
++      || supplied.name !== call.name
++      || supplied.rawArguments !== call.rawArguments
++      || ownDataKeys(supplied).join() !== ownDataKeys(call).join()
++      || !exactDataValue(supplied.parsedArguments, call.parsedArguments)) {
++      throw new TypeError('agent/pre-assistant-commit returned a mismatched tool-call plan')
++    }
++  }
++  return rebuilt
++}
++
+ /** Remove adapter-derived values before plugins propose the next request config. */
+ function requestProposal(header: EpochHeader): LlmCallConfig {
+   if (header.adapterDefaults === undefined) return header.config
+@@ -397,7 +521,7 @@ export class ReactLoopAgent implements Agent {
+         continue
+       }
+ 
+-      const message = createAssistantMessage({
++      const assembledMessage = createAssistantMessage({
+         content: assembler.blocks(),
+         source: {
+           provider: request.provider,
+@@ -405,6 +529,18 @@ export class ReactLoopAgent implements Agent {
+           ...assembler.replayState !== undefined ? { replayState: assembler.replayState } : {},
+         },
+       })
++      const initialCommit = preparedAssistantCommit(assembledMessage)
++      let selectedCommit = initialCommit
++      if (finish.kind !== 'max-tokens' && initialCommit.toolCalls.length > 0) {
++        const proposedCommit = await this.dispatch.waterfall(
++          'agent/pre-assistant-commit',
++          { commit: initialCommit, turn, step, signal },
++          () => Promise.resolve(initialCommit),
++        )
++        signal.throwIfAborted()
++        selectedCommit = validatePreparedAssistantCommit(initialCommit, proposedCommit)
++      }
++      const { message, toolCalls } = selectedCommit
+       this.session.append(
+         'assistant/message',
+         {
+@@ -417,10 +553,16 @@ export class ReactLoopAgent implements Agent {
+       )
+       if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
+ 
+-      const toolCalls = message.content.filter(block => block.type === 'tool-call')
+       if (toolCalls.length === 0) return { kind: 'completed' }
+       const { concluded } = await executeToolCalls(
+-        this.loopCtx, turn, step, toolCalls, signal,
++        this.loopCtx, turn, step,
++        toolCalls.map(call => ({
++          type: 'tool-call',
++          id: call.callId,
++          name: call.name,
++          arguments: call.rawArguments,
++        })),
++        signal,
+         context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
+       )
+       return concluded ? { kind: 'completed' } : null
+diff --git a/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
+new file mode 100644
+index 0000000000..164582be29
+--- /dev/null
++++ b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
+@@ -0,0 +1,280 @@
++import { describe, expect, it } from 'vitest'
++import { Context } from '@deepseek-ai/cordis'
++import AgentRegistry, {
++  type Agent,
++  type PreparedAssistantCommit,
++  type PreparedAssistantToolCall,
++} from '@deepseek-ai/dsh-agent'
++import AgentLoop from '@deepseek-ai/dsh-agent-loop'
++import LlmRuntime, {
++  CallId,
++  createUserMessage,
++  freezeMessage,
++  type AssistantMessage,
++  type StreamChunk,
++  type ToolCallBlock,
++} from '@deepseek-ai/dsh-llm'
++import SessionStore, { Session, SessionId, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-session'
++import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
++import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
++import { maxTokensResponse, MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
++
++async function harness(adapter: MockAdapter): Promise<Context> {
++  const ctx = new Context()
++  await ctx.plugin(LlmRuntime)
++  await ctx.plugin(SessionStore)
++  await ctx.plugin(SystemPrompt)
++  await ctx.plugin(ToolRuntime)
++  await ctx.plugin(AgentRegistry)
++  await ctx.plugin(AgentLoop, { agents: [] })
++  ctx.llm.registerAdapter(['mock'], adapter)
++  return ctx
++}
++
++function send(agent: Agent): void {
++  agent.followup(createUserMessage({
++    content: [{ type: 'text', text: 'run tools' }],
++    source: { kind: 'user' },
++  }))
++}
++
++function parallelToolResponse(): StreamChunk[] {
++  return [
++    { type: 'block-start', index: 0, blockType: 'tool-call' },
++    { type: 'tool-call-delta', index: 0, id: CallId('call-a'), name: 'read', argumentsDelta: '{"path":"old-a"}' },
++    { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('call-a'), name: 'read', arguments: '{"path":"old-a"}' } },
++    { type: 'block-start', index: 1, blockType: 'tool-call' },
++    { type: 'tool-call-delta', index: 1, id: CallId('call-b'), name: 'write', argumentsDelta: '{"path":"old-b","content":"old"}' },
++    { type: 'block-end', index: 1, block: { type: 'tool-call', id: CallId('call-b'), name: 'write', arguments: '{"path":"old-b","content":"old"}' } },
++    { type: 'usage', usage: { inputTokens: 10, outputTokens: 10 } },
++    { type: 'finish', reason: { kind: 'tool-calls' } },
++  ]
++}
++
++function replaceArguments(
++  commit: PreparedAssistantCommit,
++  values: Readonly<Record<string, JsonValue>>,
++): PreparedAssistantCommit {
++  const message = freezeMessage({
++    id: commit.message.id,
++    role: 'assistant',
++    source: commit.message.source,
++    content: commit.message.content.map((block) => block.type === 'tool-call'
++      ? { ...block, arguments: JSON.stringify(values[block.name]) }
++      : block),
++  })
++  const toolCalls = message.content
++    .filter((block): block is ToolCallBlock => block.type === 'tool-call')
++    .map((block): PreparedAssistantToolCall => Object.freeze({
++      callId: block.id,
++      name: block.name,
++      rawArguments: block.arguments,
++      parsedArguments: snapshotJsonValue(JSON.parse(block.arguments)) as JsonValue,
++    }))
++  return Object.freeze({ message, toolCalls: Object.freeze(toolCalls) })
++}
++
++describe('agent/pre-assistant-commit', () => {
++  it('makes transformed multi-call input authoritative through history, permission, execution, result, and resume', async () => {
++    const adapter = new MockAdapter([parallelToolResponse(), textResponse('done')])
++    const ctx = await harness(adapter)
++    const preparedOrder: string[] = []
++    const permissionInputs: unknown[] = []
++    const executions: unknown[] = []
++    for (const name of ['read', 'write']) {
++      ctx.tools.register(defineContentToolFixture({
++        name,
++        description: name,
++        parameters: name === 'read'
++          ? { path: { type: 'string', required: true } }
++          : { path: { type: 'string', required: true }, content: { type: 'string', required: true } },
++        async execute(input) {
++          executions.push(input)
++          return [{ type: 'text', text: 'ok' }]
++        },
++      }))
++    }
++    ctx.on('agent/pre-assistant-commit', async ({ commit }, next) => {
++      const inherited = await next()
++      if (commit.toolCalls.length === 0) return inherited
++      preparedOrder.push(...commit.toolCalls.map(call => call.name))
++      return replaceArguments(inherited, {
++        read: { path: 'new-a' },
++        write: { path: 'new-b', content: 'published' },
++      })
++    })
++    ctx.on('tools/pre-execute', async (execution, next) => {
++      permissionInputs.push(execution.arguments)
++      return next()
++    })
++    const agent = ctx.agentLoop.create(SessionId('pre-commit-authoritative'), { provider: 'mock', model: 'mock' })
++
++    send(agent)
++    await agent.whenIdle()
++
++    expect(preparedOrder).toEqual(['read', 'write'])
++    expect(permissionInputs).toEqual([{ path: 'new-a' }, { path: 'new-b', content: 'published' }])
++    expect(executions).toEqual(permissionInputs)
++    const callEvents = agent.session.events.filter(event => event.type === 'tool/call')
++    expect(callEvents.map(event => event.type === 'tool/call' && event.data.arguments)).toEqual([
++      '{"path":"new-a"}',
++      '{"path":"new-b","content":"published"}',
++    ])
++    const resultIds = agent.session.events
++      .filter(event => event.type === 'tool/result')
++      .map(event => event.type === 'tool/result' && event.data.message.source.callId)
++    expect(resultIds).toEqual([CallId('call-a'), CallId('call-b')])
++    const authoritativeLog = JSON.stringify(agent.session.events.filter(event =>
++      event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result'))
++    expect(authoritativeLog).not.toContain('old-a')
++    expect(authoritativeLog).not.toContain('old-b')
++    const resumed = Session.create(SessionId('pre-commit-resumed'), agent.session.events)
++    expect(JSON.stringify(resumed.deriveMessages())).not.toContain('old-a')
++    expect(JSON.stringify(resumed.deriveMessages())).toContain('published')
++  })
++
++  it('keeps byte-equivalent stock behavior without a listener', async () => {
++    const adapter = new MockAdapter([toolCallResponse('call-a', 'echo', { text: 'original' }), textResponse('done')])
++    const ctx = await harness(adapter)
++    const executions: unknown[] = []
++    ctx.tools.register(defineContentToolFixture({
++      name: 'echo', description: 'echo', parameters: { text: { type: 'string', required: true } },
++      async execute(input) { executions.push(input); return [{ type: 'text', text: 'ok' }] },
++    }))
++    const agent = ctx.agentLoop.create(SessionId('pre-commit-default'), { provider: 'mock', model: 'mock' })
++
++    send(agent)
++    await agent.whenIdle()
++
++    expect(executions).toEqual([{ text: 'original' }])
++    expect(agent.session.events.find(event => event.type === 'tool/call'))
++      .toMatchObject({ data: { arguments: '{"text":"original"}' } })
++  })
++
++  it.each([
++    { name: 'text-only', response: textResponse('done') },
++    { name: 'max-tokens', response: maxTokensResponse('partial') },
++  ])('does not dispatch the tool-input waterfall for $name assistant output', async ({ response }) => {
++    const adapter = new MockAdapter([response])
++    const ctx = await harness(adapter)
++    let dispatched = 0
++    ctx.on('agent/pre-assistant-commit', () => {
++      dispatched += 1
++      throw new Error('tool-input waterfall must not own non-dispatched output')
++    })
++    const agent = ctx.agentLoop.create(SessionId(`pre-commit-bypass-${response.at(-1)?.type}`), {
++      provider: 'mock', model: 'mock',
++    })
++
++    send(agent)
++    await agent.whenIdle()
++
++    expect(dispatched).toBe(0)
++    expect(agent.session.events.some(event => event.type === 'assistant/message')).toBe(true)
++    expect(agent.session.events.some(event => event.type === 'tool/call')).toBe(false)
++  })
++
++  it.each(['denial', 'timeout', 'crash', 'invalid', 'extra'] as const)(
++    'commits no assistant or tool identity after Hook %s',
++    async (failure) => {
++      const adapter = new MockAdapter([toolCallResponse('call-a', 'echo', { text: 'original' })])
++      const ctx = await harness(adapter)
++      let executed = false
++      ctx.tools.register(defineContentToolFixture({
++        name: 'echo', description: 'echo', parameters: { text: { type: 'string' } },
++        async execute() { executed = true; return [{ type: 'text', text: 'bad' }] },
++      }))
++      ctx.on('agent/pre-assistant-commit', async ({ commit }, _next) => {
++        if (failure === 'invalid') {
++          const message = freezeMessage({
++            id: commit.message.id,
++            role: 'assistant',
++            source: commit.message.source,
++            content: commit.message.content.map(block => block.type === 'tool-call'
++              ? { ...block, arguments: 'not-json' }
++              : block),
++          })
++          return { message, toolCalls: commit.toolCalls }
++        }
++        if (failure === 'extra') {
++          const message = freezeMessage({
++            id: commit.message.id,
++            role: 'assistant',
++            source: { ...commit.message.source, hidden: undefined },
++            content: commit.message.content.map(block => block.type === 'tool-call'
++              ? { ...block, metadata: 'hidden' }
++              : block),
++          } as AssistantMessage)
++          return { message, toolCalls: commit.toolCalls }
++        }
++        throw new Error(failure === 'timeout' ? 'hook timeout' : failure === 'denial' ? 'hook denied' : 'hook crashed')
++      })
++      const agent = ctx.agentLoop.create(SessionId(`pre-commit-${failure}`), { provider: 'mock', model: 'mock' })
++
++      send(agent)
++      await agent.whenIdle()
++
++      expect(executed).toBe(false)
++      expect(agent.session.events.some(event => event.type === 'assistant/message' || event.type === 'tool/call')).toBe(false)
++      expect(agent.session.events.at(-1)).toMatchObject({ type: 'turn/end' })
++      const repaired = Session.create(SessionId(`pre-commit-${failure}-resume`), agent.session.events)
++      expect(repaired.deriveMessages().some(message => message.role === 'assistant')).toBe(false)
++    },
++  )
++
++  it('observes cancellation during the Hook and leaves no prepared identity', async () => {
++    const adapter = new MockAdapter([toolCallResponse('call-a', 'echo', { text: 'original' })])
++    const ctx = await harness(adapter)
++    const entered = Promise.withResolvers<AbortSignal>()
++    ctx.on('agent/pre-assistant-commit', async ({ signal }, next) => {
++      entered.resolve(signal)
++      await new Promise<void>((_resolve, reject) => {
++        signal.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
++      })
++      return next()
++    })
++    const agent = ctx.agentLoop.create(SessionId('pre-commit-cancel'), { provider: 'mock', model: 'mock' })
++
++    send(agent)
++    await entered.promise
++    agent.cancel({ kind: 'user' }, { keepInbox: true })
++    await agent.whenIdle()
++
++    expect(agent.session.events.some(event => event.type === 'assistant/message' || event.type === 'tool/call')).toBe(false)
++  })
++
++  it('pins the in-flight listener generation across replacement', async () => {
++    const adapter = new MockAdapter([toolCallResponse('call-a', 'echo', { text: 'original' }), textResponse('done')])
++    const ctx = await harness(adapter)
++    const entered = Promise.withResolvers<undefined>()
++    const release = Promise.withResolvers<undefined>()
++    const seen: string[] = []
++    ctx.tools.register(defineContentToolFixture({
++      name: 'echo', description: 'echo', parameters: { text: { type: 'string' } },
++      async execute(input) { seen.push(`execute:${String(input.text)}`); return [{ type: 'text', text: 'ok' }] },
++    }))
++    const disposeFirst = ctx.on('agent/pre-assistant-commit', async ({ commit }, next) => {
++      const inherited = await next()
++      if (commit.toolCalls.length === 0) return inherited
++      seen.push('revision-a')
++      entered.resolve(undefined)
++      await release.promise
++      return replaceArguments(inherited, { echo: { text: 'revision-a' } })
++    })
++    const agent = ctx.agentLoop.create(SessionId('pre-commit-hmr'), { provider: 'mock', model: 'mock' })
++    send(agent)
++    await entered.promise
++    disposeFirst()
++    ctx.on('agent/pre-assistant-commit', async ({ commit }, next) => {
++      const inherited = await next()
++      if (commit.toolCalls.length === 0) return inherited
++      seen.push('revision-b')
++      return replaceArguments(inherited, { echo: { text: 'revision-b' } })
++    })
++    release.resolve(undefined)
++    await agent.whenIdle()
++
++    expect(seen.slice(0, 2)).toEqual(['revision-a', 'execute:revision-a'])
++    expect(seen).not.toContain('execute:revision-b')
++  })
++})
+diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
+index 7fd4e706d1..e162396148 100644
+--- a/packages/core/agent/src/runtime-types.ts
++++ b/packages/core/agent/src/runtime-types.ts
+@@ -7,8 +7,8 @@
+ 
+ import type { Context } from '@deepseek-ai/cordis'
+ import type { Scoped } from '@deepseek-ai/dsh-scope'
+-import type { LlmCallConfig, LlmFailure, MessageId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+-import type { AgentCancelCause, Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
++import type { AssistantMessage, CallId, LlmCallConfig, LlmFailure, MessageId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
++import type { AgentCancelCause, JsonValue, Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
+ export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
+ import type { Inbox } from './inbox.ts'
+ import type { InboxTarget } from './types.ts'
+@@ -57,6 +57,20 @@ export type PreStepDecision =
+ /** Action returned by a listener that owns model-request recovery. */
+ export type RequestErrorAction = { kind: 'retry' } | undefined
+ 
++/** One assembled tool call at the pre-assistant-commit boundary. */
++export interface PreparedAssistantToolCall {
++  readonly callId: CallId
++  readonly name: string
++  readonly rawArguments: string
++  readonly parsedArguments: JsonValue
++}
++
++/** Complete immutable plan committed to assistant history and tool scheduling. */
++export interface PreparedAssistantCommit {
++  readonly message: AssistantMessage
++  readonly toolCalls: readonly PreparedAssistantToolCall[]
++}
++
+ /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
+ export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
+ 
+@@ -252,6 +266,14 @@ declare module '@deepseek-ai/cordis' {
+      * @mode waterfall
+     */
+     'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
++    /**
++     * Transform a complete assembled assistant response before any
++     * `assistant/message` or `tool/call` event is appended. The AgentLoop
++     * validates that only existing tool-call arguments changed and rebuilds
++     * scheduler inputs from the returned message.
++     * @mode waterfall
++     */
++    'agent/pre-assistant-commit'(this: Scoped<Agent>, payload: { agent: Agent; commit: Readonly<PreparedAssistantCommit>; turn: number; step: number; signal: AbortSignal }, next: () => Promise<PreparedAssistantCommit>): Promise<PreparedAssistantCommit>
+     /**
+      * Handle one failed model-request attempt before the loop retries or closes
+      * its step. A listener returns `{ kind: 'retry' }` without calling `next()`
+diff --git a/packages/core/scope/src/scoped-events.generated.ts b/packages/core/scope/src/scoped-events.generated.ts
+index 672914c5c3..ecda3e174a 100644
+--- a/packages/core/scope/src/scoped-events.generated.ts
++++ b/packages/core/scope/src/scoped-events.generated.ts
+@@ -14,6 +14,7 @@ const scopedSubjectResolvers: Readonly<Record<string, ScopedSubjectResolver | nu
+   'agent/inbox/claimed': args => (args[0] as Record<string, unknown>)['agent'],
+   'agent/inbox/discarded': args => (args[0] as Record<string, unknown>)['agent'],
+   'agent/inbox/inserted': args => (args[0] as Record<string, unknown>)['agent'],
++  'agent/pre-assistant-commit': args => (args[0] as Record<string, unknown>)['agent'],
+   'agent/pre-step': args => (args[0] as Record<string, unknown>)['agent'],
+   'agent/request': args => (args[0] as Record<string, unknown>)['agent'],
+   'agent/request-error': args => (args[0] as Record<string, unknown>)['agent'],
+diff --git a/packages/core/scope/tests/invariant.spec.ts b/packages/core/scope/tests/invariant.spec.ts
+index 345766b042..637239fd4c 100644
+--- a/packages/core/scope/tests/invariant.spec.ts
++++ b/packages/core/scope/tests/invariant.spec.ts
+@@ -2,7 +2,7 @@ import { freezeMessage, MessageId } from '@deepseek-ai/dsh-llm'
+ import { describe, expect, it } from 'vitest'
+ import { Context } from '@deepseek-ai/cordis'
+ import type { Events } from '@deepseek-ai/cordis'
+-import type { Agent } from '@deepseek-ai/dsh-agent'
++import type { Agent, PreparedAssistantCommit } from '@deepseek-ai/dsh-agent'
+ import { scopeTarget } from '@deepseek-ai/dsh-scope'
+ import * as ScopeInvariant from '@deepseek-ai/dsh-scope/invariant'
+ import InvariantRegistry from '@deepseek-ai/dsh-invariants'
+@@ -38,6 +38,7 @@ describe('scoped-dispatch invariants', () => {
+     const other = { id: 'a2' } as unknown as Agent
+     const signal = new AbortController().signal
+     const config = { provider: 'p', model: 'm' }
++    const commit = {} as PreparedAssistantCommit
+     const message = freezeMessage({
+       id: MessageId('m'),
+       role: 'user',
+@@ -54,6 +55,10 @@ describe('scoped-dispatch invariants', () => {
+       'agent/session-start': [{ agent, source: 'startup' }],
+       'agent/pre-step': [{ agent, messages: [message], turn: 1, step: 1, signal }, () => Promise.resolve({ kind: 'enter', messages: [message] })],
+       'agent/request': [{ agent, turn: 1, step: 1, signal }, () => Promise.resolve(config)],
++      'agent/pre-assistant-commit': [
++        { agent, commit, turn: 1, step: 1, signal },
++        () => Promise.resolve(commit),
++      ],
+       'agent/request-error': [
+         {
+           agent,

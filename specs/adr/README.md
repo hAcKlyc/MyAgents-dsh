@@ -11,11 +11,14 @@ The program-level policy already permits a pinned, minimal, upstream-ready DSH p
 | Candidate | Current state | ADR trigger |
 | --- | --- | --- |
 | Native MyAgents RPC remains independent of the minimal DSH SDK wire | architecture decision and RFC drafted; acceptance pending | Runtime/RPC RFC acceptance |
-| One product operation may own multiple DSH engine turns | RFC state machine drafted; recovery evidence pending | operation-correlation spike and Runtime/RPC RFC acceptance |
-| PreTool input rewrite uses a pre-assistant-commit DSH waterfall in a minimal pinned/upstream patch | RFC candidate selected; unresolved until spike | audit/history/revalidation/multi-call/repair spike proves exact seam |
-| Required downstream Session events use an optional generated known-event predicate in `PersistenceCoordinator` | RFC candidate selected; unresolved until spike | append/load/inspect/prepare/resume/HMR/unknown refusal spike |
-| Production persistence is a MyAgents SQLite Provider plus mutation companion over one storage owner | RFC candidate selected; unresolved until prototype | public backend/coordinator retirement/shared-lock/fault prototype |
-| Rewind creates an immutable storage generation and atomically switches the active locator | RFC candidate selected; surface shadow rejected | replay/product-fold/checkpoint/crash/rollback spike proves generation design |
+| One product operation may own multiple DSH engine turns | accepted by operation fold/recovery fixture; implementation remains B1-W1 | [ADR 0001](./0001-wake-existing-inbox-message.md) owns the missing restart wake seam |
+| PreTool input rewrite uses a pre-assistant-commit DSH waterfall in a minimal pinned/upstream patch | accepted | [ADR 0002](./0002-pre-assistant-commit-waterfall.md) |
+| Required downstream Session events use an optional generated known-event predicate in `PersistenceCoordinator` | accepted | [ADR 0003](./0003-product-session-event-predicate.md) |
+| Production persistence is a MyAgents SQLite Provider plus mutation companion over one storage owner | composition accepted; production implementation/fault campaign remain B1-W4 | [ADR 0004](./0004-shared-backend-lock-and-immutable-rewind-generation.md) |
+| Rewind creates an immutable storage generation and atomically switches the active locator | accepted; production journal/locator implementation remains B1-W4 | [ADR 0004](./0004-shared-backend-lock-and-immutable-rewind-generation.md) |
+| One primary root Session is fenced at the DSH Session and Agent pre-publication commit boundaries | accepted | [ADR 0005](./0005-root-publication-guards.md) |
+| Product-owned continuable work suppresses the stock parent notice and retires one exact Activation forest quiescently | accepted | [ADR 0006](./0006-product-owned-continuable-lifecycle.md) |
+| Capacity-safe summary fitting, validation, repair, and telemetry stay inside the official DSH engine | accepted | [ADR 0008](./0008-capacity-safe-compaction.md) |
 | Dynamic component replacement uses prepared generations and an operation-quiescent commit | RFC interfaces selected; unresolved until spike | zero-visibility/atomicity/rollback/leak spike |
 
 The register is an index, not a substitute for the numbered ADR created when a choice is accepted.

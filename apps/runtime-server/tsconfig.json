@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/apps/runtime-server",
+    "tsBuildInfoFile": "../../dist/apps/runtime-server/.tsbuildinfo"
+  },
+  "files": ["src/index.ts", "src/lifecycle.ts", "src/official-composition.ts", "src/process.ts", "src/self-check.ts"],
+  "references": [
+    { "path": "../../packages/artifact-verifier" },
+    { "path": "../../packages/product-profile" },
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/rpc-server" },
+    { "path": "../../packages/runtime-product" }
+  ]
+}

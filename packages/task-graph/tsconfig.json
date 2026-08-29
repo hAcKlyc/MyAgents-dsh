@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/task-graph",
+    "tsBuildInfoFile": "../../dist/packages/task-graph/.tsbuildinfo"
+  },
+  "files": ["src/index.ts", "src/runtime.ts"],
+  "references": [
+    { "path": "../tool-contracts" },
+    { "path": "../tool-runtime-product" }
+  ]
+}

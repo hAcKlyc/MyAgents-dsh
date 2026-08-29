@@ -1,0 +1,1158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractSha256": {
+      "const": "b150cf36eed203391a99d5c12d9fbd4dd09ff2bb4400ab635bee95ccb3302092",
+      "type": "string"
+    },
+    "diagnostics": {
+      "additionalItems": false,
+      "items": [
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "Read",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "Read",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "Write",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "Write",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "Edit",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "Edit",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "Glob",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "Glob",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "Grep",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "Grep",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "Bash",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "Bash",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "ls",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "ls",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "WebFetch",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "WebFetch",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "WebSearch",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "WebSearch",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "AskUserQuestion",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "AskUserQuestion",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "EnterPlanMode",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "EnterPlanMode",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "ExitPlanMode",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "ExitPlanMode",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "Skill",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "Skill",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "Agent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "Agent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "TaskStop",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "TaskStop",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "SendMessage",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "SendMessage",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "TaskCreate",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "TaskCreate",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "TaskGet",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "TaskGet",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "TaskList",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "TaskList",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "TaskUpdate",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "TaskUpdate",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      ],
+      "minItems": 20,
+      "type": "array"
+    },
+    "digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "effectiveTools": {
+      "items": {
+        "anyOf": [
+          {
+            "const": "Read",
+            "type": "string"
+          },
+          {
+            "const": "Write",
+            "type": "string"
+          },
+          {
+            "const": "Edit",
+            "type": "string"
+          },
+          {
+            "const": "Glob",
+            "type": "string"
+          },
+          {
+            "const": "Grep",
+            "type": "string"
+          },
+          {
+            "const": "Bash",
+            "type": "string"
+          },
+          {
+            "const": "ls",
+            "type": "string"
+          },
+          {
+            "const": "WebFetch",
+            "type": "string"
+          },
+          {
+            "const": "WebSearch",
+            "type": "string"
+          },
+          {
+            "const": "AskUserQuestion",
+            "type": "string"
+          },
+          {
+            "const": "EnterPlanMode",
+            "type": "string"
+          },
+          {
+            "const": "ExitPlanMode",
+            "type": "string"
+          },
+          {
+            "const": "Skill",
+            "type": "string"
+          },
+          {
+            "const": "Agent",
+            "type": "string"
+          },
+          {
+            "const": "TaskStop",
+            "type": "string"
+          },
+          {
+            "const": "SendMessage",
+            "type": "string"
+          },
+          {
+            "const": "TaskCreate",
+            "type": "string"
+          },
+          {
+            "const": "TaskGet",
+            "type": "string"
+          },
+          {
+            "const": "TaskList",
+            "type": "string"
+          },
+          {
+            "const": "TaskUpdate",
+            "type": "string"
+          }
+        ]
+      },
+      "maxItems": 20,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "formatVersion": {
+      "const": 1,
+      "type": "number"
+    },
+    "implementationCatalog": {
+      "additionalItems": false,
+      "items": [
+        {
+          "const": "Read",
+          "type": "string"
+        },
+        {
+          "const": "Write",
+          "type": "string"
+        },
+        {
+          "const": "Edit",
+          "type": "string"
+        },
+        {
+          "const": "Glob",
+          "type": "string"
+        },
+        {
+          "const": "Grep",
+          "type": "string"
+        },
+        {
+          "const": "Bash",
+          "type": "string"
+        },
+        {
+          "const": "ls",
+          "type": "string"
+        },
+        {
+          "const": "WebFetch",
+          "type": "string"
+        },
+        {
+          "const": "WebSearch",
+          "type": "string"
+        },
+        {
+          "const": "AskUserQuestion",
+          "type": "string"
+        },
+        {
+          "const": "EnterPlanMode",
+          "type": "string"
+        },
+        {
+          "const": "ExitPlanMode",
+          "type": "string"
+        },
+        {
+          "const": "Skill",
+          "type": "string"
+        },
+        {
+          "const": "Agent",
+          "type": "string"
+        },
+        {
+          "const": "TaskStop",
+          "type": "string"
+        },
+        {
+          "const": "SendMessage",
+          "type": "string"
+        },
+        {
+          "const": "TaskCreate",
+          "type": "string"
+        },
+        {
+          "const": "TaskGet",
+          "type": "string"
+        },
+        {
+          "const": "TaskList",
+          "type": "string"
+        },
+        {
+          "const": "TaskUpdate",
+          "type": "string"
+        }
+      ],
+      "minItems": 20,
+      "type": "array"
+    },
+    "revision": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "formatVersion",
+    "contractSha256",
+    "implementationCatalog",
+    "effectiveTools",
+    "revision",
+    "digest",
+    "diagnostics"
+  ],
+  "title": "MyAgents DSH effective canonical tool catalog",
+  "type": "object"
+}

@@ -1,14 +1,16 @@
 ---
 type: technical-rfc
-status: draft
+status: historical-implementation-baseline
 batch: 1
-updated: 2026-08-15
+updated: 2026-08-29
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ./batch-1-architecture-design.md
 ---
 
 # Batch 1 requirement traceability — implemented Pi Runtime to DSH distribution
+
+> Current disposition (2026-08-29): historical baseline used to derive Batch 1, not a list of current gaps. Current completion and remaining work are recorded in `specs/prd/plan.md` and `specs/prd/batch-1-agent-runtime.md`.
 
 ## 1. Purpose
 
@@ -30,7 +32,7 @@ The old repository is evidence, the preferred source migration input, and the wo
 
 ## 3. Protocol inventory
 
-The previous generated protocol metadata proves this implementation inventory:
+The previous implemented-boundary metadata proved this historical inventory:
 
 ```text
 Host -> Runtime methods: 35
@@ -39,13 +41,13 @@ Notifications: 4
 Canonical tools: 20
 ```
 
-Batch 1 preserves the 42 request names and four notification names while changing the engine-specific shapes to DSH-native candidate v2. Coverage is owned by `specs/protocol/runtime-rpc-v2.md` and the future TypeBox contract source.
+The current Batch 1 candidate adds `session/delete/purge`, so its canonical inventory is 36 Host requests, seven reverse requests, four notifications, 43 request names, and 47 total vocabulary names. Coverage is owned by `specs/protocol/runtime-rpc-v2.md` and the generated TypeBox contract source; the 35 + 7 + 4 figures above remain historical Foundation evidence only.
 
 | Domain | Method count | DSH Batch 1 owner | Coverage |
 | --- | ---: | --- | --- |
 | Runtime lifecycle | 3 | B1-W1 | Runtime/RPC RFC drafted; canonical source and executable evidence pending |
 | Session create/resume/read/close/compact | 5 | B1-W1 + B1-W4 | state/read/repair RFCs drafted; executable evidence pending |
-| Delete transaction | 4 | B1-W4 | SQLite Provider/journal state machine drafted; prototype pending |
+| Delete transaction | 5 | B1-W4 | SQLite Provider/journal state machine, recoverable purge, and executable evidence complete |
 | Fork transaction | 4 | B1-W4 | staged immutable-prefix design drafted; prototype pending |
 | Rewind transaction | 4 | B1-W4 | present; immutable storage-generation design drafted, spike pending |
 | Turn/queue/interrupt | 6 | B1-W1 | operation state machine drafted; acceptance/Inbox/restart-wake spikes pending |
@@ -75,7 +77,7 @@ No method family from the old implemented boundary is missing from the Batch 1 P
 | Host tools | B1-W3 generated DSH proxy definitions | single ToolRuntime path established |
 | attachments/images | B1-W3 Host-backed DSH AttachmentStore | public Provider seam matches ownership model |
 | child/background work | B1-W2 DSH subagents/jobs + WorkRegistry | substrate and product state/result design drafted; lifecycle evidence pending |
-| Plan state | B1-W2 DSH PlanModeController + compatibility tools | durable substrate mapped |
+| Plan state | B1-W2 ProductPlanService over public DSH `plan/mode` events + `foldPlanMode` | durable ownership/projection and global hard-policy guard mapped; stock controller deliberately not installed |
 | dependency-aware TaskGraph | B1-W2 product Session-event plugin | DSH todo explicitly rejected as non-equivalent |
 | compact | B1-W4 DSH compaction seam + product operation wrapper | candidate direct Provider; exact event/idempotency proof required |
 | managed file checkpoint | B1-W2/W4 product checkpoint plugin | exact Write/Edit-only coverage retained |
@@ -100,7 +102,7 @@ TaskCreate, TaskGet, TaskList, TaskUpdate
 | filesystem/read state | Read, Write, Edit, Glob, Grep, ls | compatibility definitions over fs/subprocess/attachment services | exact schemas, per-tool behavior vectors, ReadState/checkpoint algorithm |
 | process/work | Bash | compatibility definition over shell/jobs plus WorkRegistry | output/background/cancellation state machine |
 | network | WebFetch, WebSearch | compatibility definitions over `ctx.web` | provider, SSRF, redirect/rebinding, result limits |
-| interaction/plan | AskUserQuestion, EnterPlanMode, ExitPlanMode | compatibility definitions over Host questions/approval and plan controller | exact interaction/plan result and revision contracts |
+| interaction/plan | AskUserQuestion, EnterPlanMode, ExitPlanMode | compatibility definitions over Host questions/approval plus product-owned transitions cross-checked by DSH `foldPlanMode` | exact interaction/plan result, ownership, revision, and per-tool hard-policy contracts |
 | knowledge/delegation | Skill, Agent, TaskStop, SendMessage | compatibility definitions over Skills/subagents/jobs | descriptor, child inheritance, work retention/message authority |
 | task graph | TaskCreate, TaskGet, TaskList, TaskUpdate | product DSH plugin and Session events | event vocabulary, graph fold, transitions/cycles/resume |
 

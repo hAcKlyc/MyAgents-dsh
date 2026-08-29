@@ -1,8 +1,8 @@
 ---
 type: protocol-specification
-status: draft
-candidate_version: 2.0.0-draft.1
-updated: 2026-08-15
+status: intent-reference
+candidate_version: 2.0.0-draft.2
+updated: 2026-08-29
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 ---
 
@@ -14,7 +14,7 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Candidate version `2.0.0-draft.1` is not a released compatibility promise. The Pre-Batch Foundation must translate this specification into one canonical TypeBox contract source, generated JSON Schema, generated clients, fixtures, and conformance tests. After that translation, code and tests are authoritative for exact shapes while this document remains authoritative for intent and ownership.
+Candidate version `2.0.0-draft.2` is implemented but is not a released compatibility promise. Pre-Batch P0-3 created the canonical TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and conformance tests. That source, generated digests, and tests are authoritative for exact shapes; this document remains the intent and ownership reference. If an illustrative shape below differs from generated code, generated code wins and this document must be repaired.
 
 This wire is independent of `@deepseek-ai/dsh-sdk-protocol`. The DSH SDK protocol's three request methods and four notifications are not a base version of this contract, and its JSON-RPC server is not loaded in the official profile. Both protocols may use NDJSON JSON-RPC and DSH event values without sharing method or lifecycle authority.
 
@@ -174,7 +174,7 @@ Secret values MUST be represented only by reverse-port references.
 
 ```ts
 type InitializeResult = {
-  protocolVersion: "2.0.0-draft.1"
+  protocolVersion: "2.0.0-draft.2"
   runtimeVersion: string
   runtimeGeneration: string
   runtimeEngine: {
@@ -196,15 +196,15 @@ type InitializeResult = {
 
 ## 7. Method inventory
 
-The candidate preserves the 42 request method names from protocol 1.1 so existing Host routing and generated-client concepts can migrate with bounded change.
+The candidate exposes 43 request methods: 36 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 47 names. The 42 protocol-1.1 request names remain recognizable; `session/delete/purge` is the one added request needed to separate recoverable tombstoning from irreversible deletion.
 
-### 7.1 Host-to-Runtime methods: 35
+### 7.1 Host-to-Runtime methods: 36
 
 | Domain | Methods |
 | --- | --- |
 | Runtime | `initialize`, `runtime/status`, `runtime/shutdown` |
 | Session lifecycle | `session/create`, `session/resume`, `session/read`, `session/close`, `session/compact` |
-| Delete transaction | `session/delete/prepare`, `session/delete/commit`, `session/delete/rollback`, `session/delete/status` |
+| Delete transaction | `session/delete/prepare`, `session/delete/commit`, `session/delete/purge`, `session/delete/rollback`, `session/delete/status` |
 | Fork transaction | `session/fork/prepare`, `session/fork/commit`, `session/fork/abort`, `session/fork/status` |
 | Rewind transaction | `session/rewind/prepare`, `session/rewind/commit`, `session/rewind/rollback`, `session/rewind/status` |
 | Turn | `turn/start`, `turn/get`, `turn/steer`, `turn/followUp`, `turn/message/cancel`, `turn/interrupt` |
@@ -264,6 +264,8 @@ Accepts an optional reason. Once committed, new work is rejected, active work is
 - permission mode and tool visibility policy;
 - interaction scenario.
 
+The model execution profile may also carry one exact Host-authoritative USD rate card with disjoint per-million-token rates for uncached input, output, cache reads, and cache writes. Runtime freezes that card into every operation birth that uses it. A request containing `limits.maxCostUsd` is rejected before durable turn admission when the selected profile has no rate card; Runtime never guesses prices from provider names or mutable external metadata.
+
 The result is:
 
 ```ts
@@ -301,6 +303,8 @@ type SessionReadRecord =
       sequence: number
       eventType: string
       eventSha256: Sha256
+      chunkIndex: number
+      chunkCount: number
       offsetBytes: number
       totalBytes: number
       dataBase64: string
@@ -421,7 +425,9 @@ type TurnStartResult =
 
 If durable acceptance survives but insertion of its identified DSH Inbox message does not, Runtime enters recovery-required state. It may admit only an exact `turn/start` retry with the same operation ID and immutable fingerprint, reconstruct that already-identified message once, and return `already_known`; different input conflicts. No general new turn is admitted in recovery-required state.
 
-On this wire, “turn” names the product operation identified by `clientOperationId` and its admitted `turnId`. One product turn may own multiple DSH engine turns: the root message starts the interval, and `turn/followUp` may enqueue later FIFO messages before the operation becomes quiescent. Runtime MUST correlate all owned DSH MessageIds and DSH turn numbers to the same product turn. It MUST NOT emit the product terminal at an intermediate DSH `turn/end` while owned follow-up input remains pending. `limits.maxTurns`, when present, counts DSH engine turns inside this product operation.
+On this wire, “turn” names the product operation identified by `clientOperationId` and its admitted `turnId`. One product turn may own multiple DSH engine turns: the root message starts the interval, and `turn/followUp` may enqueue later FIFO messages before the operation becomes quiescent. Runtime MUST correlate all owned DSH MessageIds and DSH turn numbers to the same product turn. It MUST NOT emit the product terminal at an intermediate DSH `turn/end` while owned follow-up input remains pending. `limits.maxTurns`, when present, counts DSH engine turns inside this product operation and prevents a queued continuation from crossing the exact boundary. `limits.maxCostUsd` uses the frozen rate card and durable DSH usage; the cache counters are disjoint from uncached input. `limits.maxDurationMs` runs from durable admission time and is re-armed from that timestamp after recovery.
+
+Limit arbitration appends one durable first-limit fact to the same DSH Session log. Once present, it prevents further model requests and queued continuation delivery. A turn-count fact maps to `max_turns`, a cost fact maps to `max_budget`, and a duration fact maps to non-retryable `failed` with code `max_duration` because this protocol version has no separate duration terminal. A normal completion exactly at a limit remains normal when no further work would cross the limit. The canonical DSH context-window-exceeded code maps to `context_exhausted`; unrelated provider failures remain `failed`.
 
 ### 11.3 Turn terminal
 
@@ -482,9 +488,11 @@ Configuration may tighten initialize-frozen workspace, execution-environment, cr
 `extension/replace` accepts a complete declarative snapshot with:
 
 - format version, revision, and digest;
-- agent, command, Hook, MCP, and Host-tool descriptors;
-- bounded content resources;
-- Skill source roots and enabled paths.
+- agent, command, Hook, MCP, and Host-tool components with required enabled state, optional bounded metadata, and exact kind-specific descriptors;
+- bounded command-template, Agent-prompt, and Skill-document resources with non-executable media types;
+- governed Skill source roots and explicit bounded relative enabled paths without traversal or glob syntax.
+
+The MCP descriptor selects either a trusted stdio launch-profile reference or a bounded non-secret HTTP(S) endpoint plus an opaque credential reference. Host-tool input schemas use the protocol's closed declarative JSON Schema subset. Component, descriptor, annotation, credential-reference, resource, and path objects all reject unknown fields.
 
 The snapshot MUST NOT contain executable JavaScript, credentials, or unbounded filesystem discovery instructions.
 
@@ -507,6 +515,22 @@ The request includes the expected policy revision. Runtime returns `applied`, `r
 Runs one tool-free, in-process, ephemeral model request for bounded auxiliary work. It uses an explicit model profile revision, prompt, system prompt, output cap, cancellation signal, and usage result. It does not create a second product Session or reusable conversation.
 
 ## 14. Runtime-to-Host reverse methods
+
+All seven methods carry one strict `authority` envelope. The Runtime-owned
+`HostPortService` injects `requestId`, `runtimeGeneration`, and
+`productSessionId`; callers may supply only the relevant Runtime Session,
+operation, product-turn, DSH-turn, root-call, call, component-generation,
+component, configuration-revision, and credential-revision fields. Every
+envelope also carries a bounded relative `deadlineMs`. The strict JSON-RPC
+peer owns wire correlation and cancellation; after a response, the service
+revalidates the captured caller authority before returning any material or
+capability. A stale or disposed scope rejects locally and cannot be revived
+by a late Host response.
+
+No product consumer receives the peer or constructs generation/Product
+Session authority. Reverse calls are not retried by this layer, and the
+service retains only safe in-flight counts—never credentials, attachment
+bytes, tool input/output, or Host error detail.
 
 ### 14.1 Credentials
 
@@ -659,7 +683,7 @@ Host MUST branch on negotiated capability values, not runtime name or version gu
 - Paths are canonicalized and revalidated immediately before side effects.
 - Runtime home, workspace roots, attachment staging, and persistence paths have non-overlapping explicit authorities.
 - Environment inheritance is sealed by allowlist.
-- Network providers enforce scheme, DNS/IP/private-range, redirect, response-size, timeout, and cancellation policy.
+- Network providers enforce scheme, DNS/IP/private-range, redirect, response-size, timeout, and cancellation policy. Remote MCP HTTP/SSE uses a trusted composition-injected capability rather than ambient `fetch`: every request resolves and validates all address-family answers, rejects the whole result if any answer is non-public, and pins the selected public address through transport dispatch while preserving the declared Host name for HTTP/TLS.
 - Credentials are reverse-port-only and request/connection scoped.
 - Every Host response is fenced by generation and current operation/component revision.
 - Model-visible and event-visible text is bounded before serialization.
@@ -668,7 +692,7 @@ Host MUST branch on negotiated capability values, not runtime name or version gu
 
 ## 20. Generated artifacts and conformance
 
-The Pre-Batch Foundation must generate from one contract source:
+The completed Pre-Batch Foundation generates from one contract source:
 
 ```text
 protocol.schema.json
@@ -676,6 +700,7 @@ protocol-meta.json
 protocol-fixtures.json
 host-client.generated.ts
 runtime-client.generated.ts, if separately required
+protocol-2.0.0-draft.2-evidence.json
 ```
 
 Conformance tests must prove:

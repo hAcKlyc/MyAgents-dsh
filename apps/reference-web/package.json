@@ -1,0 +1,35 @@
+{
+  "name": "@myagents-dsh/reference-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "React browser client for the Batch 1 Reference Web Host",
+  "files": [
+    "index.html",
+    "src",
+    "vite.config.ts"
+  ],
+  "exports": {
+    "./app": "./src/app.tsx",
+    "./components/composer": "./src/components/composer.tsx",
+    "./components/control-center": "./src/components/control-center.tsx",
+    "./history": "./src/history.ts",
+    "./store": "./src/store.ts"
+  },
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@myagents-dsh/web-host-contract": "0.0.0",
+    "marked": "18.0.5",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.2",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "jsdom": "29.1.1",
+    "vite": "8.2.2"
+  }
+}

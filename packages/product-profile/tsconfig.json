@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/product-profile",
+    "tsBuildInfoFile": "../../dist/packages/product-profile/.tsbuildinfo",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+  },
+  "files": [
+    "manifests/accepted-patched-dsh-artifact-v1.json",
+    "manifests/batch-1-candidate-profile-v1.json",
+    "src/candidate-runtime-profile-authority.ts",
+    "src/candidate-runtime-profile.ts",
+    "src/dsh-public-surface.compile.ts",
+    "src/official-profile-authority.generated.ts",
+    "src/index.ts",
+    "src/patched-dsh-artifact.ts",
+    "src/platform-contract.ts",
+    "src/profile.ts"
+  ]
+}

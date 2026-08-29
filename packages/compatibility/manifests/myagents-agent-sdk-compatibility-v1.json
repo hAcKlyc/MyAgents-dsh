@@ -1,0 +1,193 @@
+{
+  "formatVersion": 1,
+  "profile": "myagents-agent-sdk-compatibility-v1",
+  "source": {
+    "acceptedBoundary": {
+      "repository": "myagents-runtime",
+      "commit": "b7bbcadb172254defc0ea86229dd5de043fbb5f3",
+      "path": "packages/agent-sdk/compatibility/myagents-agent-sdk-compatibility-v1.json",
+      "gitBlob": "fc3e694d5482eaeaf0597bae94999b5c3333549a"
+    },
+    "publicShapeSource": {
+      "repository": "MyAgents",
+      "commit": "eee6be92086ebf0e9eb1af994fbedaddde4aea76"
+    },
+    "agentSdkPackage": "@anthropic-ai/claude-agent-sdk",
+    "agentSdkVersion": "0.3.220"
+  },
+  "exports": {
+    "supported": [
+      "createSdkMcpServer",
+      "deleteSession",
+      "forkSession",
+      "getSessionMessages",
+      "query",
+      "tool"
+    ],
+    "explicitlyUnsupported": [
+      "claudeAuthenticate"
+    ]
+  },
+  "translated": [
+    "messages.stream_event",
+    "options.enableFileCheckpointing",
+    "options.extraArgs.replay-user-messages",
+    "options.pathToClaudeCodeExecutable",
+    "options.settings.cleanupPeriodDays",
+    "options.settings.disableArtifact",
+    "options.settings.disableBundledSkills",
+    "options.settings.feedbackDrafts",
+    "options.settings.skipWebFetchPreflight",
+    "options.systemPrompt.claude_code"
+  ],
+  "queryMethods": {
+    "supported": [
+      "cancelAsyncMessage",
+      "close",
+      "getContextUsage",
+      "initializationResult",
+      "interrupt",
+      "mcpServerStatus",
+      "reloadSkills",
+      "rewindFiles",
+      "setMcpServers",
+      "setModel",
+      "setPermissionMode"
+    ]
+  },
+  "options": {
+    "supported": [
+      "abortController",
+      "agents",
+      "allowDangerouslySkipPermissions",
+      "allowedTools",
+      "canUseTool",
+      "cwd",
+      "disallowedTools",
+      "effort",
+      "enableFileCheckpointing",
+      "env",
+      "forkSession",
+      "hooks.PermissionRequest",
+      "hooks.PostToolUse",
+      "hooks.PreToolUse",
+      "includePartialMessages",
+      "maxTurns",
+      "mcpServers",
+      "model",
+      "permissionMode",
+      "persistSession",
+      "plugins.local",
+      "resume",
+      "resumeSessionAt",
+      "sessionId",
+      "settingSources.project",
+      "settings.cleanupPeriodDays",
+      "settings.disableArtifact",
+      "settings.disableBundledSkills",
+      "settings.feedbackDrafts",
+      "settings.plansDirectory",
+      "settings.skipWebFetchPreflight",
+      "skills",
+      "stderr",
+      "systemPrompt.string",
+      "thinking",
+      "toolConfig.askUserQuestion.previewFormat",
+      "tools"
+    ],
+    "explicitlyUnsupported": [
+      "executable",
+      "executableArgs",
+      "extraArgs.*"
+    ]
+  },
+  "messages": {
+    "supported": [
+      "assistant",
+      "compact_boundary",
+      "result",
+      "session_state_changed",
+      "system.api_retry",
+      "system.commands_changed",
+      "system.init",
+      "system.status",
+      "system.task_notification",
+      "system.task_started",
+      "system.task_updated",
+      "user.replay"
+    ]
+  },
+  "hooks": {
+    "supported": [
+      "PermissionRequest",
+      "PostToolUse",
+      "PreToolUse",
+      "canUseTool"
+    ]
+  },
+  "types": {
+    "supported": [
+      "AgentDefinition",
+      "HookInput",
+      "HookJSONOutput",
+      "McpSdkServerConfigWithInstance",
+      "PermissionRequestHookInput",
+      "PostToolUseHookInput",
+      "PreToolUseHookInput",
+      "Query",
+      "SDKMessage",
+      "SDKResultMessage",
+      "SDKUserMessage",
+      "SlashCommand",
+      "TerminalReason"
+    ],
+    "toolInputs": {
+      "supported": [
+        "AgentInput",
+        "BashInput",
+        "FileEditInput",
+        "FileReadInput",
+        "FileWriteInput",
+        "GlobInput",
+        "GrepInput",
+        "TaskCreateInput",
+        "TaskGetInput",
+        "TaskListInput",
+        "TaskUpdateInput",
+        "TodoWriteInput",
+        "WebFetchInput",
+        "WebSearchInput"
+      ],
+      "futureCapability": [
+        "NotebookEditInput"
+      ]
+    }
+  },
+  "excludedProductSurfaces": [
+    "accountInfo",
+    "claudeOAuthCallback",
+    "claudeOAuthWaitForCompletion",
+    "officialSubscription",
+    "osKeychain"
+  ],
+  "tests": {
+    "publicCompileFixture": "src/compatibility-call-shapes.compile.ts",
+    "batch21CoveredGroups": [
+      "queryMethods",
+      "reasoningOptions",
+      "translatedOptions"
+    ],
+    "batch22CoveredGroups": [
+      "exports",
+      "hooks",
+      "messages",
+      "remainingOptions",
+      "toolInputs"
+    ],
+    "batch23CoveredGroups": [
+      "sessionHistory",
+      "sessionMutation"
+    ],
+    "finalAcceptancePendingGroups": []
+  }
+}

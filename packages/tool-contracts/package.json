@@ -1,0 +1,18 @@
+{
+  "name": "@myagents-dsh/tool-contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Canonical twenty-tool contract, behavior, and DSH reuse authority",
+  "files": ["generated", "src"],
+  "exports": {
+    ".": "./src/index.ts",
+    "./canonical-tool-contracts-v1.json": "./generated/canonical-tool-contracts-v1.json",
+    "./dsh-reuse-matrix-v1.json": "./generated/dsh-reuse-matrix-v1.json",
+    "./tool-contract-meta.json": "./generated/tool-contract-meta.json"
+  },
+  "dependencies": {
+    "@myagents-dsh/protocol": "0.0.0",
+    "typebox": "1.3.7"
+  }
+}

@@ -1,9 +1,9 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented
 batch: 1
 workstream: B1-W3
-updated: 2026-08-15
+updated: 2026-08-29
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ../protocol/runtime-rpc-v2.md
@@ -12,6 +12,8 @@ depends_on:
 ---
 
 # Batch 1 Host ports and component lifecycle RFC
+
+> Current disposition (2026-08-29): implemented for the current Runtime identity. Exact component, reverse-port, and compatibility behavior is bound by code, generated contracts, and the active ledger.
 
 ## 1. Purpose
 

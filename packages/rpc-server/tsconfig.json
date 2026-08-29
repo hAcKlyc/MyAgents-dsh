@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/rpc-server",
+    "tsBuildInfoFile": "../../dist/packages/rpc-server/.tsbuildinfo"
+  },
+  "files": ["src/event-projector.ts", "src/index.ts", "src/native-rpc-service.ts"],
+  "references": [
+    { "path": "../host-ports" },
+    { "path": "../operation-runtime" },
+    { "path": "../protocol" },
+    { "path": "../product-profile" },
+    { "path": "../runtime-product" }
+  ]
+}

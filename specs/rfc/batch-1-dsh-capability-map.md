@@ -1,13 +1,15 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented
 batch: 1
-updated: 2026-08-15
+updated: 2026-08-29
 depends_on:
   - ./batch-1-architecture-design.md
 ---
 
 # Batch 1 DSH capability and canonical-tool map
+
+> Current disposition (2026-08-29): implemented. Historical gap and patch proposals below retain their review context; `specs/dsh/`, the current seven-patch registry, exact manifests, and executable tests own current seam truth.
 
 ## 1. Purpose
 
@@ -19,7 +21,7 @@ This document answers the implementation split that is easy to blur when describ
 - which model-visible tools require exact compatibility definitions;
 - which semantics currently require an upstream/fork decision.
 
-All classifications are against the pinned evidence baseline `deepseek-harness@0.1.0-rc.5`, repository commit `47f943859bef`. They must be re-audited when the pin changes.
+All classifications were finally re-audited under `B1-DSH-R2` after the Workstream 4 implementation freeze. A fresh official fetch found both the newest release `dsh-v0.1.1-rc.2` and `origin/master` at exact commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`, with zero delta from the immutable pin. The final fetch, patch dispositions, capability review, and rebuilt evidence are recorded in [`../dsh/upstream-refresh-b1-final-0.1.1-rc.2.md`](../dsh/upstream-refresh-b1-final-0.1.1-rc.2.md); the original mid-Batch delta remains in [`../dsh/upstream-rebaseline-0.1.1-rc.2.md`](../dsh/upstream-rebaseline-0.1.1-rc.2.md).
 
 ## 2. Classification vocabulary
 
@@ -56,7 +58,7 @@ One capability may use several classes. For example, `Read` is a `compat-tool` w
 | `dsh-skills` | `direct` seam, constrained Provider | declarative Skill discovery/load | Approved roots/digests only; no arbitrary Skill JavaScript |
 | DSH subagents/jobs | `direct` services + `product-plugin` | child/background execution substrate | Product names, origins, retention and Host projection differ |
 | DSH plan mode | `direct` service + `compat-tool` | durable plan state and approval substrate | Add exact Enter/Exit definitions and product hard policy |
-| DSH compaction | candidate `direct` Provider | append-only surface compaction | Wrap with product operation/idempotency/events; validate exact boundaries |
+| DSH compaction | `direct` Provider + product correlation | append-only surface compaction through TokenMeter and BasicCompactionEngine | Automatic compaction is disabled; explicit Host idempotency and receipts validate the exact DSH marker/summary/replacement/end boundaries |
 | DSH Session persistence definition/coordinator | `provider` + `fork-candidate` seam | MyAgents SQLite backend implements DSH contract and mutation companion | Stock Providers have no mutations; coordinator needs an optional product known-event predicate |
 | DSH MCP client | `excluded` as-is; product plugin uses MCP SDK/public DSH tools | server discovery and calls | Stock config holds literal env/headers and registers immediately; incompatible with Host secret/revision/staging rules |
 | DSH Agent Presets | `excluded` for Host extensions | no mid-session `extension/replace` | Presets may load arbitrary modules and recompose only blank Sessions |
@@ -119,8 +121,8 @@ This is still a modular DSH design. The tool packages are official modules of th
 | `WebFetch` | parallel governed network fetch; bounded text/attachment result | `ctx.web.fetch`, public `dsh-tool-web` parse/format helpers where compatible | exact schema, SSRF/redirect/DNS-rebinding policy, Host permission, result taxonomy | `compat-tool` + `helper` |
 | `WebSearch` | parallel provider search with explicit availability/errors | `ctx.web.search`, public tool-web helpers | exact schema/count/citation/result rules, Host credential/provider mapping | `compat-tool` + `helper` |
 | `AskUserQuestion` | Session-serial interaction with exact question/answer contract | `ctx.userQuestions` backed by Host interaction Provider | compatibility schema/result, interaction IDs/revisions, headless policy | `compat-tool` + `provider` |
-| `EnterPlanMode` | Session-serial durable state change | DSH `PlanModeController` event/state concepts | exact tool definition, product notice/event, hard-policy transition | `compat-tool` + `product-plugin` |
-| `ExitPlanMode` | Session-serial approval-backed exit | DSH plan controller and `ctx.userQuestions` | exact definition/result and Product permission semantics | `compat-tool` + `product-plugin` |
+| `EnterPlanMode` | Session-serial durable state change | public DSH `plan/mode` event vocabulary + `foldPlanMode` helper | exact tool definition, adjacent product ownership fact, revision lineage, global hard-policy transition; stock controller excluded | `compat-tool` + `product-plugin` |
+| `ExitPlanMode` | Session-serial approval-backed exit | public DSH `plan/mode`/`foldPlanMode` plus `ctx.userQuestions` | exact definition/result, adjacent product ownership fact, and Product permission semantics; stock controller excluded | `compat-tool` + `product-plugin` |
 | `Skill` | Session-serial explicit load from operation-visible catalog | `ctx.skills`, selected public catalog/load types | exact schema/result, approved-root/digest/resource policy, visibility snapshot | `compat-tool` |
 | `Agent` | parallel foreground/background child work under WorkRegistry | `ctx.subagents`, Agent factory/scope, DSH jobs | exact agent descriptor/model/tool policy, root/child origin, product task/result/events | `compat-tool` + `product-plugin` |
 | `TaskStop` | Session-serial stop of owned retained work | DSH job/subagent cancel primitives | unified product WorkRegistry lookup/authority and exact result | `compat-tool` |

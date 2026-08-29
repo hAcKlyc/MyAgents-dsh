@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/testkit",
+    "tsBuildInfoFile": "../../dist/packages/testkit/.tsbuildinfo"
+  },
+  "files": ["src/fake-llm-adapter.ts", "src/index.ts"]
+}

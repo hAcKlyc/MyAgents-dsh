@@ -1,0 +1,1641 @@
+diff --git a/packages/compaction/compaction-basic/src/index.ts b/packages/compaction/compaction-basic/src/index.ts
+index 9a5dcca2e1..b410ca6605 100644
+--- a/packages/compaction/compaction-basic/src/index.ts
++++ b/packages/compaction/compaction-basic/src/index.ts
+@@ -25,9 +25,16 @@ import {
+ import {
+   assertNoActiveCompaction,
+   compactSurfaceRegion,
++  fitCompactableRange,
+   selectCompactableRange,
+ } from './region.ts'
+-import { summarizeWithLlm } from './summarizer.ts'
++import {
++  emitCompactionTelemetry,
++  estimateSummaryRequest,
++  resolveSummaryCapacity,
++  summarizeWithLlm,
++  SummaryCapacityError,
++} from './summarizer.ts'
+ import type { SummarizationInput, SummaryResult } from './summarizer.ts'
+ import type {
+   BasicCompactionConfig,
+@@ -43,7 +50,14 @@ export type {
+   ResolvedConfig,
+   ResolvedRetention,
+   ResolvedTargetPolicy,
++  CompactionTelemetry,
+ } from './types.ts'
++export {
++  COMPACTION_INSTRUCTION,
++  SUMMARY_SAFETY_MARGIN_TOKENS,
++  SummaryCapacityError,
++  SummaryValidationError,
++} from './summarizer.ts'
+ 
+ /** The region transaction's view of this service's dynamically dispatched summarizer. */
+ type RegionSummarize = (input: SummarizationInput, agent: Agent, signal?: AbortSignal) => Promise<SummaryResult>
+@@ -122,6 +136,7 @@ export class BasicCompactionEngine extends CompactionEngine {
+   private readonly warnedPressureConfigTargets = new Set<string>()
+   private readonly overflowRetries = new WeakMap<Agent, number>()
+   private readonly overflowAgents = new WeakMap<Session, Agent>()
++  private readonly compactionTriggers = new WeakMap<Agent, CompactionTrigger>()
+ 
+   constructor(ctx: Context, config: BasicCompactionConfig = {}) {
+     super(ctx)
+@@ -238,11 +253,7 @@ export class BasicCompactionEngine extends CompactionEngine {
+     agent: Agent,
+     signal?: AbortSignal,
+   ): Promise<SummaryResult> {
+-    const target = conversationTarget(agent)
+-    const config = target === undefined
+-      ? this.config
+-      : resolveTargetPolicy(this.config, target)
+-    return summarizeWithLlm(this.ctx, config, input, agent, signal)
++    return summarizeWithLlm(this.ctx, this.summaryConfig(agent), input, agent, signal)
+   }
+ 
+   /**
+@@ -282,12 +293,14 @@ export class BasicCompactionEngine extends CompactionEngine {
+ 
+     if (trigger === 'context-overflow') {
+       if (prune !== undefined) {
+-        prune.pruneSession(agent.session)
++        const beforeTokens = measurement.totalTokens
++        const pruned = prune.pruneSession(agent.session)
+         measurement = meter.measure(agent.session)
++        this.emitPrune(agent, trigger, beforeTokens, measurement.totalTokens, pruned)
+       }
+       const range = selectCompactableRange(agent.session, measurement, 0)
+       if (range === null) return null
+-      return this.compactRegion(range.start, range.end, agent, signal)
++      return this.compactAutomaticRegion(range.start, range.end, agent, trigger, signal)
+     }
+ 
+     const context = (await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)).context
+@@ -306,8 +319,10 @@ export class BasicCompactionEngine extends CompactionEngine {
+     // Once pressure qualifies, land the model-free pass before choosing a
+     // summary range, then remeasure through the singleton replay fold.
+     if (prune !== undefined) {
+-      prune.pruneSession(agent.session)
++      const beforeTokens = measurement.totalTokens
++      const pruned = prune.pruneSession(agent.session)
+       measurement = meter.measure(agent.session)
++      this.emitPrune(agent, trigger, beforeTokens, measurement.totalTokens, pruned)
+     }
+     if (measurement.totalTokens < spec.thresholdTokens) return null
+ 
+@@ -320,9 +335,22 @@ export class BasicCompactionEngine extends CompactionEngine {
+         /* v8 ignore next -- paired with the defensive post-success branch above. */
+         break
+       }
+-      result = await this.compactRegion(range.start, range.end, agent, signal)
++      result = await this.compactAutomaticRegion(range.start, range.end, agent, trigger, signal)
+       measurement = meter.measure(agent.session)
+-      if (measurement.totalTokens < spec.thresholdTokens) return result
++      if (measurement.totalTokens < spec.thresholdTokens) {
++        emitCompactionTelemetry(this.ctx, {
++          kind: 'convergence',
++          status: 'succeeded',
++          sessionId: agent.session.id,
++          trigger,
++          provider: target.provider,
++          model: target.model,
++          afterTokens: measurement.totalTokens,
++          thresholdTokens: spec.thresholdTokens,
++          retainTokens: spec.retainTokens,
++        })
++        return result
++      }
+     }
+ 
+     throw new Error(
+@@ -346,11 +374,18 @@ export class BasicCompactionEngine extends CompactionEngine {
+     agent: Agent,
+     signal?: AbortSignal,
+   ): Promise<CompactionResult> {
++    const fitted = await this.fitRegion(
++      start,
++      end,
++      agent,
++      this.compactionTriggers.get(agent) ?? 'explicit',
++      signal,
++    )
+     return compactSurfaceRegion(
+       this.regionDependencies(),
+       agent.session,
+-      start,
+-      end,
++      fitted.start,
++      fitted.end,
+       agent,
+       { owner: 'current-turn', stability: 'whole-surface' },
+       signal,
+@@ -382,11 +417,18 @@ export class BasicCompactionEngine extends CompactionEngine {
+             0,
+           )
+           if (range === null) return null
++          const fitted = await this.fitRegion(
++            range.start,
++            range.end,
++            agent,
++            'explicit',
++            operationSignal,
++          )
+           return await compactSurfaceRegion(
+             this.regionDependencies(),
+             agent.session,
+-            range.start,
+-            range.end,
++            fitted.start,
++            fitted.end,
+             agent,
+             {
+               owner: null,
+@@ -426,6 +468,111 @@ export class BasicCompactionEngine extends CompactionEngine {
+       summarize: (input, owner, abort) => this.summarize(input, owner, abort),
+     }
+   }
++
++  /** Resolve the exact target-specific summary policy once for fitting/generation. */
++  private summaryConfig(agent: Agent): ResolvedConfig | ReturnType<typeof resolveTargetPolicy> {
++    const target = conversationTarget(agent)
++    return target === undefined ? this.config : resolveTargetPolicy(this.config, target)
++  }
++
++  /** Fit one range before opening a durable compaction transaction. */
++  private async fitRegion(
++    start: number,
++    end: number,
++    agent: Agent,
++    trigger: 'explicit' | CompactionTrigger,
++    signal?: AbortSignal,
++  ): Promise<{ start: number; end: number }> {
++    // A subclass replacing the documented summarizer hook owns its request
++    // shape and capacity policy; never fit it using the stock prompt envelope.
++    if (Object.getPrototypeOf(this)?.summarize !== BasicCompactionEngine.prototype.summarize) {
++      return { start, end }
++    }
++    try {
++      const capacity = await resolveSummaryCapacity(
++        this.ctx,
++        this.summaryConfig(agent),
++        agent,
++        signal,
++      )
++      const fitted = fitCompactableRange(
++        agent.session,
++        start,
++        end,
++        input => estimateSummaryRequest(this.ctx.tokenMeter, input),
++        capacity.inputBudget,
++      )
++      if (fitted === null) {
++        throw new SummaryCapacityError(
++          'compaction-basic: no balanced source range fits the summary target input capacity',
++        )
++      }
++      emitCompactionTelemetry(this.ctx, {
++        kind: 'range',
++        status: 'succeeded',
++        sessionId: agent.session.id,
++        trigger,
++        provider: capacity.provider,
++        model: capacity.model,
++        contextWindow: capacity.contextWindow,
++        configuredMaxTokens: capacity.configuredMaxTokens,
++        effectiveMaxTokens: capacity.effectiveMaxTokens,
++        safetyMarginTokens: capacity.safetyMarginTokens,
++        inputTokens: fitted.inputTokens,
++        rangeStart: fitted.start,
++        rangeEnd: fitted.end,
++        rangeNodes: fitted.nodes,
++      })
++      return { start: fitted.start, end: fitted.end }
++    } catch (error: unknown) {
++      emitCompactionTelemetry(this.ctx, {
++        kind: 'range',
++        status: 'failed',
++        sessionId: agent.session.id,
++        trigger,
++        errorCode: error instanceof SummaryCapacityError
++          ? error.code
++          : 'COMPACTION_RANGE_FAILED',
++      })
++      throw error
++    }
++  }
++
++  /** Automatic callers retain their current-turn ownership and trigger label. */
++  private async compactAutomaticRegion(
++    start: number,
++    end: number,
++    agent: Agent,
++    trigger: CompactionTrigger,
++    signal: AbortSignal,
++  ): Promise<CompactionResult> {
++    this.compactionTriggers.set(agent, trigger)
++    try {
++      return await this.compactRegion(start, end, agent, signal)
++    } finally {
++      this.compactionTriggers.delete(agent)
++    }
++  }
++
++  /** Emit only aggregate model-free pruning facts. */
++  private emitPrune(
++    agent: Agent,
++    trigger: CompactionTrigger,
++    beforeTokens: number,
++    afterTokens: number,
++    result: { readonly pruned: readonly unknown[]; readonly charsRemoved: number },
++  ): void {
++    emitCompactionTelemetry(this.ctx, {
++      kind: 'prune',
++      status: result.pruned.length === 0 ? 'skipped' : 'succeeded',
++      sessionId: agent.session.id,
++      trigger,
++      beforeTokens,
++      afterTokens,
++      prunedResults: result.pruned.length,
++      prunedChars: result.charsRemoved,
++    })
++  }
+ }
+ 
+ export default BasicCompactionEngine
+diff --git a/packages/compaction/compaction-basic/src/region.ts b/packages/compaction/compaction-basic/src/region.ts
+index 1472a4e68c..f2098311a0 100644
+--- a/packages/compaction/compaction-basic/src/region.ts
++++ b/packages/compaction/compaction-basic/src/region.ts
+@@ -133,6 +133,44 @@ export function selectCompactableRange(
+   return { start: first, end: cutoff }
+ }
+ 
++/**
++ * Select the largest older balanced prefix whose exact summary request fits a
++ * resolved input budget. This is read-only and runs before the durable start.
++ * @param session - authoritative current surface and request envelope.
++ * @param start - requested inclusive start boundary.
++ * @param end - requested inclusive maximum end boundary.
++ * @param estimateInput - singleton-meter estimate of the exact summary request.
++ * @param inputBudget - resolved summary target input budget.
++ * @returns the largest fitting range and estimate, or `null` when no legal unit fits.
++ */
++export function fitCompactableRange(
++  session: Session,
++  start: number,
++  end: number,
++  estimateInput: (input: SummarizationInput) => number,
++  inputBudget: number,
++): { start: number; end: number; inputTokens: number; nodes: number } | null {
++  const requested = validateSurfaceRegion(session, start, end)
++  const surface = session.surface.nodes
++  for (let endIdx = requested.endIdx; endIdx >= requested.startIdx; endIdx -= 1) {
++    // oxlint-disable-next-line typescript/no-non-null-assertion
++    const candidateEnd = surface[endIdx]!
++    if (!toolPairingBalancedAfter(session, candidateEnd)) continue
++    const shadowedSeqs = surface.slice(requested.startIdx, endIdx + 1)
++    const input = buildSummarizationInput(session, shadowedSeqs)
++    const inputTokens = estimateInput(input)
++    if (inputTokens <= inputBudget) {
++      return {
++        start,
++        end: candidateEnd,
++        inputTokens,
++        nodes: shadowedSeqs.length,
++      }
++    }
++  }
++  return null
++}
++
+ /**
+  * Run the single compaction transaction over one selected positional span.
+  * Selection and validation are read-only. Idle/log validation and
+@@ -442,7 +480,13 @@ function commitCompactionBody(
+     checkpointMessage,
+   } = summarized
+   const callProvenance = summarized.llmStreamCall === true
+-    ? { rawOutput: summarized.rawOutput, llmStreamCall: true as const }
++    ? {
++      rawOutput: summarized.rawOutput,
++      llmStreamCall: true as const,
++      ...summarized.llmStreamCallCount === undefined
++        ? {}
++        : { llmStreamCallCount: summarized.llmStreamCallCount },
++    }
+     : summarized.rawOutput === undefined ? {} : { rawOutput: summarized.rawOutput }
+   const summaryEvent = session.append('compaction/summary', {
+     compactionId: startEvent.data.compactionId,
+@@ -495,7 +539,7 @@ function completeCompaction(
+  * @param shadowedSeqs - the surface-node seqs, in order, being compacted.
+  * @returns the replayed conversation prefix to condense.
+  */
+-function buildSummarizationInput(
++export function buildSummarizationInput(
+   session: Session,
+   shadowedSeqs: readonly number[],
+ ): SummarizationInput {
+diff --git a/packages/compaction/compaction-basic/src/summarizer.ts b/packages/compaction/compaction-basic/src/summarizer.ts
+index e77d9ec0a0..5380ed7636 100644
+--- a/packages/compaction/compaction-basic/src/summarizer.ts
++++ b/packages/compaction/compaction-basic/src/summarizer.ts
+@@ -1,15 +1,27 @@
+ /**
+- * Default one-shot summarization and durable checkpoint framing.
++ * Capacity-safe summarization and durable checkpoint framing.
+  *
+  * @module @deepseek-ai/dsh-compaction-basic/summarizer
+  */
+ 
+ import type { Context } from '@deepseek-ai/cordis'
+-import { contentHasImage, createUserMessage, BlockAssembler, LlmError } from '@deepseek-ai/dsh-llm'
++import {
++  contentHasImage,
++  createUserMessage,
++  BlockAssembler,
++  LlmError,
++} from '@deepseek-ai/dsh-llm'
+ import type {
+-  ContentBlock, FinishReason, GenerateOptions, Message, TokenUsage, ToolSchema,
++  ContentBlock,
++  FinishReason,
++  GenerateOptions,
++  Message,
++  TokenUsage,
++  ToolSchema,
+ } from '@deepseek-ai/dsh-llm'
+ import type { Agent } from '@deepseek-ai/dsh-agent'
++import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
++import type { CompactionTelemetry } from './types.ts'
+ 
+ interface SummaryConfig {
+   readonly summarizationProvider: string
+@@ -17,70 +29,107 @@ interface SummaryConfig {
+   readonly maxTokens: number
+ }
+ 
++/** Fixed reserve for provider framing/tokenizer variance in P0. */
++export const SUMMARY_SAFETY_MARGIN_TOKENS = 1024
++
++/** Stable fail-closed classification for a known-invalid summary request. */
++export class SummaryCapacityError extends Error {
++  readonly code = 'COMPACTION_SUMMARY_CAPACITY'
++}
++
++/** Stable fail-closed classification for an unusable checkpoint. */
++export class SummaryValidationError extends Error {
++  readonly code = 'COMPACTION_SUMMARY_INVALID'
++}
++
++/** Resolved summary route and capacity used by fitting and generation. */
++export interface SummaryCapacity {
++  readonly provider: string
++  readonly model: string
++  readonly contextWindow: number
++  readonly configuredMaxTokens: number
++  readonly effectiveMaxTokens: number
++  readonly safetyMarginTokens: number
++  readonly inputBudget: number
++}
++
+ /** Tags wrapping the structured summary inside the landed checkpoint node. */
+ const SUMMARY_OPEN_TAG = '<compacted-summary>'
+ const SUMMARY_CLOSE_TAG = '</compacted-summary>'
+ 
+-/**
+- * The summarization directive, delivered as the FINAL user message after the
+- * replayed conversation rather than as a distinct summarizer system prompt.
+- * Keeping the conversation's own system prompt, tools, and message prefix in
+- * front of it makes the auxiliary call a genuine prefix of the last routed
+- * request, so the provider's KV cache is reused instead of invalidated.
+- */
+-const COMPACTION_INSTRUCTION = [
+-  'You are now acting as a compaction engine for this AI coding assistant. Condense the conversation ABOVE into a structured checkpoint that lets another model resume the work with no loss of essential context.',
++const REQUIRED_HEADINGS = Object.freeze([
++  'User Intent and Non-Negotiable Constraints',
++  'Progress',
++  'Decisions and Rationale',
++  'Working Set',
++  'Failures and Corrections',
++  'Active Operations',
++  'Next Action',
++  'Critical Continuity Facts',
++] as const)
++
++const PROGRESS_HEADINGS = Object.freeze(['Verified Done', 'In Progress', 'Blocked'] as const)
++
++/** Final request instruction for one continuation checkpoint. */
++export const COMPACTION_INSTRUCTION = [
++  'Act only as the compaction engine for the AI assistant conversation above.',
++  'Write one terse continuation checkpoint containing the latest supported truth needed to resume the same user task.',
+   '',
+-  'Output EXACTLY the Markdown structure below: keep every section, in order. Use terse bullets, not prose paragraphs. Write "(none)" for an empty section — never drop a section.',
++  'Output EXACTLY these Markdown headings once, in this order. Keep every section. Use concise bullets and write "(none)" when a section is empty.',
+   '',
+-  '## Primary Request and Intent',
+-  "- [the user's original and evolving goals; quote verbatim where the exact wording matters]",
++  '## User Intent and Non-Negotiable Constraints',
++  '- [latest user goal, corrections, constraints, and acceptance boundary]',
+   '',
+-  '## Key Technical Concepts',
+-  '- [technologies, frameworks, patterns, and conventions in play]',
++  '## Progress',
++  '### Verified Done',
++  '- [only work supported by observable verification evidence]',
++  '### In Progress',
++  '- [work actually underway, not merely planned]',
++  '### Blocked',
++  '- [blocker and the exact missing input or external change]',
+   '',
+-  '## Files and Code',
+-  '- [exact path: why it matters, key changes or snippets]',
++  '## Decisions and Rationale',
++  '- [accepted decisions and why; remove superseded decisions]',
+   '',
+-  '## Errors and Fixes',
+-  '- [error: how it was resolved, plus any related user feedback]',
++  '## Working Set',
++  '- [exact paths, symbols, commands, revisions, IDs, and bounded numeric facts needed next]',
+   '',
+-  '## Pending Jobs',
+-  '- [explicitly requested work not yet completed]',
++  '## Failures and Corrections',
++  '- [short exact error and correction; preserve current user feedback]',
+   '',
+-  '## Current Work',
+-  '- [precisely what was in progress at this checkpoint]',
++  '## Active Operations',
++  '- [only supported live child/background/approval/interaction work; otherwise (none)]',
+   '',
+-  '## Next Step',
+-  '- [the single next action, directly in line with the most recent request, or "(none)"]',
++  '## Next Action',
++  '- [exactly one immediate action, or (none) if the user goal is complete]',
+   '',
+-  '## Critical Context',
+-  '- [decisions and their rationale, constraints, user preferences, open questions, data needed to continue]',
++  '## Critical Continuity Facts',
++  '- [small set of facts whose loss would make continuation wrong]',
+   '',
+   'Rules:',
+-  '- Write concise English engineering prose. Preserve exact file paths, commands, error strings, identifiers, numeric values, function signatures, and syntax fragments.',
+-  '- Capture user feedback and explicit instructions faithfully, especially corrections.',
+-  '- Do NOT mention this summarization request or that the context was compacted.',
+-  '- Output only the checkpoint text: do not call any tool or take any other action.',
+-  `- If the conversation already contains a ${SUMMARY_OPEN_TAG} block, it is a PRIOR checkpoint. Do not copy it forward verbatim: preserve still-true facts, drop stale ones, and merge newer information into a single consolidated summary under the same structure.`,
++  '- Distinguish planned, applied, and verified work. Never infer success, user approval, or external state.',
++  '- Prefer newer user corrections over stale earlier intent. Update or remove stale facts and old next actions.',
++  '- Preserve exact paths, identifiers, short errors, commands, and numbers only when necessary for continuation.',
++  '- Do not include credentials, tokens, private prompts, attachment bytes, large code, full tool results, or full message lists.',
++  '- Output only the checkpoint. Do not call tools and do not mention compaction.',
++  `- If a prior ${SUMMARY_OPEN_TAG} block exists, merge only its still-true facts with newer evidence; never copy it verbatim.`,
++].join('\n')
++
++const REPAIR_INSTRUCTION = [
++  COMPACTION_INSTRUCTION,
++  '',
++  'Your previous checkpoint did not satisfy the required structure. Produce a fresh complete checkpoint now.',
++  'Check heading order and uniqueness, include all three Progress subheadings, and give Next Action one non-empty bullet or (none).',
+ ].join('\n')
+ 
+ /** Framing that makes the replacement user message established context. */
+ const CHECKPOINT_PREAMBLE =
+   'This is an automatically generated checkpoint condensing an earlier span of the conversation to free up context. Treat the captured context as established background and build on it without restating it. Continue the task directly from the messages that follow, without acknowledging this checkpoint.'
+ 
+-/**
+- * The replayed conversation surface the summarizer condenses. Reproducing the
+- * last routed request's system prompt, tools, and leading messages verbatim
+- * lets the auxiliary call reuse the provider's warm prefix cache; the trailing
+- * compaction instruction is then the only novel input.
+- */
++/** The exact replayed conversation prefix condensed by the summarizer. */
+ export interface SummarizationInput {
+-  /** The conversation's own system prompt, reused for prefix-cache alignment; absent for a system-less request. */
+   readonly system?: string
+-  /** The conversation's tool schemas, reused for prefix-cache alignment; absent when the request carried none. */
+   readonly tools?: readonly ToolSchema[]
+-  /** The shadowed region, in surface order, that precedes the compaction instruction. */
+   readonly messages: readonly Message[]
+ }
+ 
+@@ -90,41 +139,23 @@ export type SummaryResult = {
+   provider: string
+   model: string
+   maxTokens?: number
+-  /** Provider-reported usage for this summarization request. */
+   usage?: TokenUsage
+ } & (
+   | {
+-    /** Complete provider output before the text-only summary projection. */
+     rawOutput: ContentBlock[]
+-    /** Identifies exactly one call through this context's `ctx.llm.stream()`. */
+     llmStreamCall: true
++    /** One normal call, or two when one bounded structural repair succeeded. */
++    llmStreamCallCount?: number
+   }
+   | {
+-    /** Optional complete output from an unmarked template, remote, or other summarizer. */
+     rawOutput?: ContentBlock[]
+-    /** An unmarked result does not identify a call through this context's LLM seam. */
+     llmStreamCall?: never
++    llmStreamCallCount?: never
+   }
+ )
+ 
+-/**
+- * Run the default cache-reusing `ctx.llm.stream()` summarization call: replay
+- * the conversation prefix, then append the compaction instruction as the final
+- * user message so the provider's warm prefix cache is reused.
+- * @param ctx - context providing the LLM service.
+- * @param config - resolved backend configuration.
+- * @param input - replayed conversation prefix (system, tools, and leading messages) to condense.
+- * @param agent - supplies routed-model history, fallback model, and session id.
+- * @param signal - optional cancellation forwarded to the adapter.
+- * @returns safe text-only summary blocks and the exact call envelope and output.
+- */
+-export async function summarizeWithLlm(
+-  ctx: Context,
+-  config: SummaryConfig,
+-  input: SummarizationInput,
+-  agent: Agent,
+-  signal?: AbortSignal,
+-): Promise<SummaryResult> {
++/** Resolve the explicit, latest routed, or Agent fallback summary target. */
++function summaryTarget(config: SummaryConfig, agent: Agent): { provider: string; model: string } {
+   const latest = agent.session.requestHeader()?.config
+   const configured = config.summarizationProvider.length === 0
+     ? undefined
+@@ -137,26 +168,190 @@ export async function summarizeWithLlm(
+     : undefined
+   const target = configured ?? latest ?? agentTarget
+   if (target === undefined) {
+-    throw new Error(
++    throw new SummaryCapacityError(
+       'no provider/model available for summarization: set both BasicCompactionConfig summarization fields, route one request, or set both AgentOptions fields',
+     )
+   }
++  return target
++}
+ 
+-  const assembler = new BlockAssembler()
+-  const messages: Message[] = [
+-    ...input.messages,
+-    createUserMessage({
+-      content: [{ type: 'text', text: COMPACTION_INSTRUCTION }],
+-      source: { kind: 'plugin', plugin: 'dsh-compaction-basic' },
+-    }),
+-  ]
+-  const options: GenerateOptions = {
++/** Resolve and validate the one adapter-owned summary capacity authority. */
++export async function resolveSummaryCapacity(
++  ctx: Context,
++  config: SummaryConfig,
++  agent: Agent,
++  signal?: AbortSignal,
++): Promise<SummaryCapacity> {
++  const target = summaryTarget(config, agent)
++  const info = await ctx.llm.resolveModelInfo(target.provider, target.model, signal)
++  const contextWindow = info.context?.contextWindow
++  if (!Number.isSafeInteger(contextWindow) || (contextWindow ?? 0) <= 0) {
++    throw new SummaryCapacityError(
++      `compaction-basic: no valid summary context capacity for ${target.provider}/${target.model}`,
++    )
++  }
++  const declaredOutput = info.defaultMaxTokens
++  if (declaredOutput !== undefined
++    && (!Number.isSafeInteger(declaredOutput) || declaredOutput <= 0)) {
++    throw new SummaryCapacityError(
++      `compaction-basic: invalid summary output capacity for ${target.provider}/${target.model}`,
++    )
++  }
++  const effectiveMaxTokens = Math.min(config.maxTokens, declaredOutput ?? config.maxTokens)
++  const inputBudget = (contextWindow as number) - effectiveMaxTokens - SUMMARY_SAFETY_MARGIN_TOKENS
++  if (!Number.isSafeInteger(effectiveMaxTokens) || effectiveMaxTokens <= 0 || inputBudget <= 0) {
++    throw new SummaryCapacityError(
++      `compaction-basic: summary capacity leaves no input budget for ${target.provider}/${target.model}`,
++    )
++  }
++  return Object.freeze({
+     provider: target.provider,
+     model: target.model,
+-    messages,
++    contextWindow: contextWindow as number,
++    configuredMaxTokens: config.maxTokens,
++    effectiveMaxTokens,
++    safetyMarginTokens: SUMMARY_SAFETY_MARGIN_TOKENS,
++    inputBudget,
++  })
++}
++
++/** Build and price the exact request sent for one summary attempt. */
++export function estimateSummaryRequest(
++  meter: TokenMeter,
++  input: SummarizationInput,
++  instruction: string = COMPACTION_INSTRUCTION,
++): number {
++  return meter.estimateRequest({
++    ...input.system === undefined ? {} : { system: input.system },
++    ...input.tools === undefined ? {} : { tools: input.tools },
++    messages: [...input.messages, instructionMessage(instruction)],
++  })
++}
++
++/** Emit diagnostics defensively so an observer can never break compaction. */
++export function emitCompactionTelemetry(ctx: Context, event: CompactionTelemetry): void {
++  try {
++    ctx.emit('compaction/telemetry', Object.freeze({ ...event }))
++  } catch {
++    // Diagnostics are explicitly non-authoritative.
++  }
++}
++
++/** Run the cache-reusing summary call with one bounded structural repair. */
++export async function summarizeWithLlm(
++  ctx: Context,
++  config: SummaryConfig,
++  input: SummarizationInput,
++  agent: Agent,
++  signal?: AbortSignal,
++): Promise<SummaryResult> {
++  const startedAt = Date.now()
++  let capacity: SummaryCapacity | undefined
++  let calls = 0
++  let usage: TokenUsage | undefined
++  try {
++    capacity = await resolveSummaryCapacity(ctx, config, agent, signal)
++    for (const [index, instruction] of [COMPACTION_INSTRUCTION, REPAIR_INSTRUCTION].entries()) {
++      const inputTokens = estimateSummaryRequest(ctx.tokenMeter, input, instruction)
++      if (inputTokens > capacity.inputBudget) {
++        throw new SummaryCapacityError(
++          `compaction-basic: summary input exceeds capacity (${inputTokens} estimated tokens > ${capacity.inputBudget})`,
++        )
++      }
++      calls += 1
++      const attempt = await generateSummary(ctx, capacity, input, instruction, agent, signal)
++      usage = mergeUsage(usage, attempt.usage)
++      try {
++        validateCheckpoint(ctx.tokenMeter, attempt.summary, capacity.effectiveMaxTokens)
++        const outputTokens = usage?.outputTokens
++          ?? ctx.tokenMeter.estimateMessage(instructionMessage(summaryTextValue(attempt.summary)))
++        emitCompactionTelemetry(ctx, {
++          kind: 'summary',
++          status: 'succeeded',
++          sessionId: agent.session.id,
++          provider: attempt.provider,
++          model: attempt.model,
++          contextWindow: capacity.contextWindow,
++          configuredMaxTokens: capacity.configuredMaxTokens,
++          effectiveMaxTokens: capacity.effectiveMaxTokens,
++          safetyMarginTokens: capacity.safetyMarginTokens,
++          inputTokens,
++          outputTokens,
++          streamCalls: calls,
++          repairAttempts: index,
++          durationMs: Date.now() - startedAt,
++        })
++        return {
++          summary: attempt.summary,
++          rawOutput: attempt.rawOutput,
++          llmStreamCall: true,
++          llmStreamCallCount: calls,
++          provider: attempt.provider,
++          model: attempt.model,
++          maxTokens: capacity.effectiveMaxTokens,
++          ...usage === undefined ? {} : { usage },
++        }
++      } catch (error: unknown) {
++        if (!(error instanceof SummaryValidationError) || index === 1) throw error
++      }
++    }
++    /* v8 ignore next -- the bounded attempt loop returns or throws. */
++    throw new SummaryValidationError('compaction checkpoint repair did not produce a result')
++  } catch (error: unknown) {
++    emitCompactionTelemetry(ctx, {
++      kind: 'summary',
++      status: 'failed',
++      sessionId: agent.session.id,
++      ...capacity === undefined ? {} : {
++        provider: capacity.provider,
++        model: capacity.model,
++        contextWindow: capacity.contextWindow,
++        configuredMaxTokens: capacity.configuredMaxTokens,
++        effectiveMaxTokens: capacity.effectiveMaxTokens,
++        safetyMarginTokens: capacity.safetyMarginTokens,
++      },
++      streamCalls: calls,
++      repairAttempts: Math.max(0, calls - 1),
++      durationMs: Date.now() - startedAt,
++      errorCode: stableErrorCode(error),
++    })
++    throw error
++  }
++}
++
++/** Wrap raw summary blocks in the durable checkpoint framing. */
++export function frameSummary(summary: readonly ContentBlock[]): ContentBlock[] {
++  return [
++    { type: 'text', text: `${CHECKPOINT_PREAMBLE}\n\n${SUMMARY_OPEN_TAG}` },
++    ...summary,
++    { type: 'text', text: SUMMARY_CLOSE_TAG },
++  ]
++}
++
++interface GeneratedSummary {
++  readonly provider: string
++  readonly model: string
++  readonly rawOutput: ContentBlock[]
++  readonly summary: Array<Extract<ContentBlock, { type: 'text' }>>
++  readonly usage?: TokenUsage
++}
++
++async function generateSummary(
++  ctx: Context,
++  capacity: SummaryCapacity,
++  input: SummarizationInput,
++  instruction: string,
++  agent: Agent,
++  signal?: AbortSignal,
++): Promise<GeneratedSummary> {
++  const assembler = new BlockAssembler()
++  const options: GenerateOptions = {
++    provider: capacity.provider,
++    model: capacity.model,
++    messages: [...input.messages, instructionMessage(instruction)],
+     ...input.system === undefined ? {} : { system: input.system },
+     ...input.tools === undefined ? {} : { tools: [...input.tools] },
+-    maxTokens: config.maxTokens,
++    maxTokens: capacity.effectiveMaxTokens,
+     sessionId: agent.session.id,
+     purpose: 'compaction',
+     ...signal === undefined ? {} : { signal },
+@@ -164,34 +359,62 @@ export async function summarizeWithLlm(
+   for await (const chunk of ctx.llm.stream(options)) assembler.push(chunk)
+   const error = finishError(assembler.finish)
+   if (error !== undefined) throw error
+-
+   const rawOutput = assembler.blocks()
+   const summary = summaryText(rawOutput)
+-  if (!summary.some(block => block.text.trim().length > 0)) {
+-    throw new Error('summarization produced no text summary content')
+-  }
+   return {
+-    summary,
+-    rawOutput,
+-    llmStreamCall: true,
+     provider: options.provider,
+     model: options.model,
+-    maxTokens: config.maxTokens,
+-    ...(assembler.usage === undefined ? {} : { usage: assembler.usage }),
++    rawOutput,
++    summary,
++    ...assembler.usage === undefined ? {} : { usage: assembler.usage },
+   }
+ }
+ 
+-/**
+- * Wrap raw summary blocks in the durable checkpoint framing.
+- * @param summary - safe text-only model output.
+- * @returns content for the synthesized replacement user message.
+- */
+-export function frameSummary(summary: readonly ContentBlock[]): ContentBlock[] {
+-  return [
+-    { type: 'text', text: `${CHECKPOINT_PREAMBLE}\n\n${SUMMARY_OPEN_TAG}` },
+-    ...summary,
+-    { type: 'text', text: SUMMARY_CLOSE_TAG },
+-  ]
++function instructionMessage(instruction: string): Message {
++  return createUserMessage({
++    content: [{ type: 'text', text: instruction }],
++    source: { kind: 'plugin', plugin: 'dsh-compaction-basic' },
++  })
++}
++
++/** Deliberately shallow structure and size validation. */
++function validateCheckpoint(
++  meter: TokenMeter,
++  summary: readonly ContentBlock[],
++  effectiveMaxTokens: number,
++): void {
++  const text = summaryTextValue(summary).trim()
++  if (text.length === 0) throw new SummaryValidationError('compaction checkpoint is empty')
++  const headings = [...text.matchAll(/^## ([^\n]+)$/gmu)].map(match => match[1])
++  if (headings.length !== REQUIRED_HEADINGS.length
++    || headings.some((heading, index) => heading !== REQUIRED_HEADINGS[index])) {
++    throw new SummaryValidationError('compaction checkpoint headings are missing, duplicated, or out of order')
++  }
++  const progressStart = text.indexOf('## Progress')
++  const progressEnd = text.indexOf('## Decisions and Rationale')
++  const progress = text.slice(progressStart, progressEnd)
++  const progressHeadings = [...progress.matchAll(/^### ([^\n]+)$/gmu)].map(match => match[1])
++  if (progressHeadings.length !== PROGRESS_HEADINGS.length
++    || progressHeadings.some((heading, index) => heading !== PROGRESS_HEADINGS[index])) {
++    throw new SummaryValidationError('compaction checkpoint Progress subsections are incomplete')
++  }
++  const nextStart = text.indexOf('## Next Action') + '## Next Action'.length
++  const nextEnd = text.indexOf('## Critical Continuity Facts')
++  const next = text.slice(nextStart, nextEnd)
++    .replace(/^\s*[-*]\s*/gmu, '')
++    .trim()
++  if (next.length === 0) throw new SummaryValidationError('compaction checkpoint Next Action is empty')
++  const outputTokens = meter.estimateMessage(instructionMessage(text))
++  if (outputTokens > effectiveMaxTokens) {
++    throw new SummaryValidationError('compaction checkpoint exceeds the effective output cap')
++  }
++}
++
++function summaryTextValue(blocks: readonly ContentBlock[]): string {
++  return blocks
++    .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
++    .map(block => block.text)
++    .join('\n')
+ }
+ 
+ /** Map a terminal summarization finish to its fail-closed error. */
+@@ -213,7 +436,7 @@ function finishError(finish: FinishReason): Error | undefined {
+   }
+ }
+ 
+-/** Reject visual output and keep only text before synthesizing a user message. */
++/** Reject visual output and keep only text before validation. */
+ function summaryText(
+   blocks: readonly ContentBlock[],
+ ): Array<Extract<ContentBlock, { type: 'text' }>> {
+@@ -222,3 +445,32 @@ function summaryText(
+   }
+   return blocks.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
+ }
++
++function mergeUsage(left: TokenUsage | undefined, right: TokenUsage | undefined): TokenUsage | undefined {
++  if (left === undefined) return right
++  if (right === undefined) return left
++  return {
++    inputTokens: left.inputTokens + right.inputTokens,
++    outputTokens: left.outputTokens + right.outputTokens,
++    ...sumOptionalUsage(left, right, 'cacheReadTokens'),
++    ...sumOptionalUsage(left, right, 'cacheWriteTokens'),
++    ...sumOptionalUsage(left, right, 'reasoningTokens'),
++  }
++}
++
++function sumOptionalUsage(
++  left: TokenUsage,
++  right: TokenUsage,
++  key: 'cacheReadTokens' | 'cacheWriteTokens' | 'reasoningTokens',
++): Partial<TokenUsage> {
++  if (left[key] === undefined && right[key] === undefined) return {}
++  return { [key]: (left[key] ?? 0) + (right[key] ?? 0) }
++}
++
++function stableErrorCode(error: unknown): string {
++  if (error !== null && typeof error === 'object' && 'code' in error
++    && typeof error.code === 'string' && /^[A-Z0-9_]{1,64}$/u.test(error.code)) {
++    return error.code
++  }
++  return 'COMPACTION_SUMMARY_FAILED'
++}
+diff --git a/packages/compaction/compaction-basic/src/types.ts b/packages/compaction/compaction-basic/src/types.ts
+index 05fc354573..70d7f96956 100644
+--- a/packages/compaction/compaction-basic/src/types.ts
++++ b/packages/compaction/compaction-basic/src/types.ts
+@@ -6,6 +6,42 @@
+ 
+ import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
+ 
++/** Process-local, content-free compaction diagnostic metadata. */
++export interface CompactionTelemetry {
++  readonly kind: 'prune' | 'range' | 'summary' | 'convergence'
++  readonly status: 'succeeded' | 'failed' | 'skipped'
++  readonly sessionId: string
++  readonly trigger?: 'explicit' | 'pressure' | 'context-overflow'
++  readonly provider?: string
++  readonly model?: string
++  readonly contextWindow?: number
++  readonly configuredMaxTokens?: number
++  readonly effectiveMaxTokens?: number
++  readonly safetyMarginTokens?: number
++  readonly inputTokens?: number
++  readonly outputTokens?: number
++  readonly beforeTokens?: number
++  readonly afterTokens?: number
++  readonly thresholdTokens?: number
++  readonly retainTokens?: number
++  readonly prunedResults?: number
++  readonly prunedChars?: number
++  readonly rangeStart?: number
++  readonly rangeEnd?: number
++  readonly rangeNodes?: number
++  readonly streamCalls?: number
++  readonly repairAttempts?: number
++  readonly durationMs?: number
++  readonly errorCode?: string
++}
++
++declare module '@deepseek-ai/cordis' {
++  interface Events {
++    /** Bounded process-local diagnostics; never includes model-visible content. */
++    'compaction/telemetry'(event: Readonly<CompactionTelemetry>): void
++  }
++}
++
+ /** Policy fields shared by the default policy and exact model overrides. */
+ export interface CompactionPolicyConfig {
+   /** Compact at this fraction of the model's context window. Defaults to `0.8`. */
+diff --git a/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts b/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts
+new file mode 100644
+index 0000000000..809783dce5
+--- /dev/null
++++ b/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts
+@@ -0,0 +1,282 @@
++import { describe, expect, it } from 'vitest'
++import { Context } from '@deepseek-ai/cordis'
++import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
++import type { CompactionTelemetry } from '@deepseek-ai/dsh-compaction-basic'
++import type { SummarizationInput } from '../src/summarizer.ts'
++import {
++  CallId,
++  createMessage,
++  createToolResultMessage,
++  createUserMessage,
++  LlmAdapter,
++  LlmRuntime,
++} from '@deepseek-ai/dsh-llm'
++import type {
++  ContentBlock,
++  GenerateOptions,
++  LlmResolvedModelInfo,
++  StreamChunk,
++  TokenUsage,
++} from '@deepseek-ai/dsh-llm'
++import { Session, SessionId } from '@deepseek-ai/dsh-session'
++import TokenMeter from '@deepseek-ai/dsh-token-meter'
++import type { Agent } from '@deepseek-ai/dsh-agent'
++
++const SIGNAL = new AbortController().signal
++
++function checkpoint(detail = 'continue'): string {
++  return [
++    '## User Intent and Non-Negotiable Constraints',
++    '- preserve the latest goal',
++    '## Progress',
++    '### Verified Done',
++    '- (none)',
++    '### In Progress',
++    `- ${detail}`,
++    '### Blocked',
++    '- (none)',
++    '## Decisions and Rationale',
++    '- (none)',
++    '## Working Set',
++    '- fixture.ts',
++    '## Failures and Corrections',
++    '- (none)',
++    '## Active Operations',
++    '- (none)',
++    '## Next Action',
++    '- continue',
++    '## Critical Continuity Facts',
++    '- (none)',
++  ].join('\n')
++}
++
++class CapacityAdapter extends LlmAdapter {
++  readonly calls: GenerateOptions[] = []
++  readonly outputs: ContentBlock[][]
++  readonly usage: TokenUsage
++
++  constructor(
++    readonly contextWindow: number,
++    readonly defaultMaxTokens: number,
++    outputs: ContentBlock[][] = [[{ type: 'text', text: checkpoint() }]],
++    usage: TokenUsage = { inputTokens: 10, outputTokens: 5 },
++  ) {
++    super()
++    this.outputs = [...outputs]
++    this.usage = usage
++  }
++
++  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
++    return Promise.resolve({
++      provider,
++      id: model,
++      name: model,
++      context: { contextWindow: this.contextWindow },
++      defaultMaxTokens: this.defaultMaxTokens,
++    })
++  }
++
++  override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
++    this.calls.push(options)
++    const output = this.outputs.shift() ?? [{ type: 'text', text: checkpoint() }]
++    for (const [index, block] of output.entries()) {
++      yield { type: 'block-start', index, blockType: block.type }
++      if (block.type === 'text') yield { type: 'text-delta', index, text: block.text }
++      else if (block.type === 'reasoning') yield { type: 'reasoning-delta', index, text: block.text }
++      else yield { type: 'block-end', index, block }
++    }
++    yield { type: 'usage', usage: this.usage }
++    yield { type: 'finish', reason: { kind: 'stop' } }
++  }
++}
++
++class ExposedEngine extends BasicCompactionEngine {
++  run(input: SummarizationInput, owner: Agent): Promise<unknown> {
++    return this.summarize(input, owner, SIGNAL)
++  }
++}
++
++function owner(session: Session, route = 'route'): Agent {
++  return { session, options: { provider: route, model: route } } as Agent
++}
++
++function context(adapter: CapacityAdapter): { ctx: Context; meter: TokenMeter } {
++  const ctx = new Context()
++  void new LlmRuntime(ctx)
++  const meter = new TokenMeter(ctx)
++  ctx.llm.registerAdapter(['route'], adapter)
++  return { ctx, meter }
++}
++
++function openSession(id: string, texts: readonly string[], system?: string): Session {
++  const session = Session.create(SessionId(id))
++  session.append('turn/start', { turn: 1 })
++  session.append('request/header', {
++    header: {
++      config: { provider: 'route', model: 'route' },
++      ...system === undefined ? {} : { system },
++    },
++    reason: 'initial',
++  })
++  for (const text of texts) {
++    session.append('user/message', createUserMessage({
++      content: [{ type: 'text', text }],
++      source: { kind: 'user' },
++    }), { surfaceOp: 'append' })
++  }
++  return session
++}
++
++describe('capacity-safe stock compaction', () => {
++  it('prices an exact request through the same singleton meter as durable pressure', () => {
++    const adapter = new CapacityAdapter(32_000, 512)
++    const { meter } = context(adapter)
++    const session = openSession('request-estimate', ['hello'], 'system')
++    const message = session.deriveEventMessage(session.events.at(-1)!)!
++    expect(meter.estimateRequest({ system: 'system', messages: [message] }))
++      .toBe(meter.measure(session).totalTokens)
++  })
++
++  it.each([
++    [8_192, 256],
++    [32_768, 512],
++    [131_072, 4_096],
++    [200_000, 8_192],
++    [1_000_000, 8_192],
++  ])('clamps the summary request for a %i-token model to %i output tokens', async (
++    contextWindow,
++    outputCap,
++  ) => {
++    const adapter = new CapacityAdapter(contextWindow, outputCap)
++    const { ctx } = context(adapter)
++    const engine = new ExposedEngine(ctx, { auto: false, maxTokens: 8_192 })
++    const session = openSession(`window-${contextWindow}`, ['history'])
++
++    const result = await engine.run({ messages: [createUserMessage({
++      content: [{ type: 'text', text: 'history' }],
++      source: { kind: 'user' },
++    })] }, owner(session)) as { maxTokens: number; llmStreamCallCount: number }
++
++    expect(result.maxTokens).toBe(outputCap)
++    expect(result.llmStreamCallCount).toBe(1)
++    expect(adapter.calls[0]?.maxTokens).toBe(outputCap)
++  })
++
++  it('repairs one malformed checkpoint and aggregates call provenance', async () => {
++    const usage = { inputTokens: 10, outputTokens: 5 }
++    const adapter = new CapacityAdapter(32_768, 512, [
++      [{ type: 'text', text: 'not structured' }],
++      [{ type: 'text', text: checkpoint('repaired') }],
++    ], usage)
++    const { ctx } = context(adapter)
++    const engine = new ExposedEngine(ctx, { auto: false })
++    const session = openSession('repair-success', ['history'])
++
++    const result = await engine.run({ messages: [createUserMessage({
++      content: [{ type: 'text', text: 'history' }],
++      source: { kind: 'user' },
++    })] }, owner(session)) as { llmStreamCallCount: number; usage: TokenUsage }
++
++    expect(result.llmStreamCallCount).toBe(2)
++    expect(result.usage).toEqual({ inputTokens: 20, outputTokens: 10 })
++    expect(adapter.calls).toHaveLength(2)
++  })
++
++  it('rejects a second malformed checkpoint after exactly one repair', async () => {
++    const adapter = new CapacityAdapter(32_768, 512, [
++      [{ type: 'text', text: 'bad one' }],
++      [{ type: 'text', text: 'bad two' }],
++    ])
++    const { ctx } = context(adapter)
++    const engine = new ExposedEngine(ctx, { auto: false })
++    const session = openSession('repair-failure', ['history'])
++
++    await expect(engine.run({ messages: [createUserMessage({
++      content: [{ type: 'text', text: 'history' }],
++      source: { kind: 'user' },
++    })] }, owner(session))).rejects.toMatchObject({ code: 'COMPACTION_SUMMARY_INVALID' })
++    expect(adapter.calls).toHaveLength(2)
++  })
++
++  it('fails before a Provider call or durable bracket when no balanced unit fits', async () => {
++    const adapter = new CapacityAdapter(2_048, 256)
++    const { ctx } = context(adapter)
++    const engine = new BasicCompactionEngine(ctx, { auto: false })
++    const session = openSession('cannot-fit', ['SECRET_CANARY'.repeat(1_000)])
++    const [start] = session.surface.nodes
++
++    await expect(engine.compactRegion(start!, start!, owner(session), SIGNAL))
++      .rejects.toMatchObject({ code: 'COMPACTION_SUMMARY_CAPACITY' })
++    expect(adapter.calls).toHaveLength(0)
++    expect(session.events.some(event => event.type === 'compaction/start')).toBe(false)
++  })
++
++  it('shrinks to the largest fitting balanced head range before the call', async () => {
++    const adapter = new CapacityAdapter(4_096, 256)
++    const { ctx } = context(adapter)
++    const engine = new BasicCompactionEngine(ctx, { auto: false })
++    const session = openSession('range-fit', [
++      'first '.repeat(700),
++      'second '.repeat(700),
++      'third '.repeat(700),
++    ])
++    const nodes = [...session.surface.nodes]
++
++    const result = await engine.compactRegion(nodes[0]!, nodes[2]!, owner(session), SIGNAL)
++
++    expect(result.shadowedSeqs.length).toBeGreaterThan(0)
++    expect(result.shadowedSeqs.length).toBeLessThan(nodes.length)
++    expect(result.shadowedRange.start).toBe(nodes[0])
++    expect(adapter.calls).toHaveLength(1)
++  })
++
++  it('emits bounded content-free telemetry', async () => {
++    const adapter = new CapacityAdapter(32_768, 512)
++    const { ctx } = context(adapter)
++    const telemetry: CompactionTelemetry[] = []
++    ctx.on('compaction/telemetry', (event) => { telemetry.push(event) })
++    const engine = new BasicCompactionEngine(ctx, { auto: false })
++    const session = openSession('telemetry', ['SECRET_CANARY '.repeat(500)])
++    const [start] = session.surface.nodes
++
++    await engine.compactRegion(start!, start!, owner(session), SIGNAL)
++
++    expect(telemetry.map(event => event.kind)).toEqual(['range', 'summary'])
++    const serialized = JSON.stringify(telemetry)
++    expect(serialized).not.toContain('SECRET_CANARY')
++    expect(serialized).not.toContain('User Intent')
++    expect(serialized).not.toContain('fixture.ts')
++  })
++
++  it('keeps tool-call/result request pricing inside the public estimate seam', () => {
++    const adapter = new CapacityAdapter(32_768, 512)
++    const { meter } = context(adapter)
++    const callId = CallId('call')
++    const assistant = createMessage({
++      role: 'assistant',
++      content: [{ type: 'tool-call', id: callId, name: 'read', arguments: '{}' }],
++      source: { kind: 'model', provider: 'route', model: 'route' },
++    })
++    const result = createToolResultMessage({
++      callId,
++      content: [{ type: 'text', text: 'result' }],
++      isError: false,
++    })
++    expect(meter.estimateRequest({ messages: [assistant, result] }))
++      .toBe(meter.estimateMessage(assistant) + meter.estimateMessage(result))
++  })
++
++  it('keeps stock capacity fitting active through the Cordis service proxy', async () => {
++    const adapter = new CapacityAdapter(32_768, 512)
++    const { ctx } = context(adapter)
++    const telemetry: CompactionTelemetry[] = []
++    ctx.on('compaction/telemetry', event => { telemetry.push(event) })
++    void new BasicCompactionEngine(ctx, { auto: false })
++    const session = openSession('service-proxy', ['history '.repeat(500)])
++    const [start] = session.surface.nodes
++
++    await ctx.compaction.compactRegion(start!, start!, owner(session), SIGNAL)
++
++    expect(telemetry.map(event => event.kind)).toEqual(['range', 'summary'])
++  })
++})
+diff --git a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
+index 2cf07d3f70..0df91bffa2 100644
+--- a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
++++ b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
+@@ -30,6 +30,32 @@ import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
+ const SIGNAL = new AbortController().signal
+ const MODEL = 'test-model'
+ 
++function checkpoint(detail = '(none)'): string {
++  return [
++    '## User Intent and Non-Negotiable Constraints',
++    '- continue the test task',
++    '## Progress',
++    '### Verified Done',
++    '- (none)',
++    '### In Progress',
++    `- ${detail}`,
++    '### Blocked',
++    '- (none)',
++    '## Decisions and Rationale',
++    '- (none)',
++    '## Working Set',
++    '- fixture',
++    '## Failures and Corrections',
++    '- (none)',
++    '## Active Operations',
++    '- (none)',
++    '## Next Action',
++    '- continue',
++    '## Critical Continuity Facts',
++    '- (none)',
++  ].join('\n')
++}
++
+ class ContextAdapter extends LlmAdapter {
+   constructor(private readonly contextWindow: number) {
+     super()
+@@ -1120,6 +1146,16 @@ class ScriptedAdapter extends LlmAdapter {
+     super()
+   }
+ 
++  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
++    return Promise.resolve({
++      provider,
++      id: model,
++      name: model,
++      context: { contextWindow: 32_000 },
++      defaultMaxTokens: 4096,
++    })
++  }
++
+   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+     this.lastOptions = options
+     for (const [index, block] of this.blocks.entries()) {
+@@ -1163,7 +1199,10 @@ async function summarizerHarness(
+   const ctx = new Context()
+   await ctx.plugin(LlmRuntime)
+   void new TokenMeter(ctx)
+-  const adapter = new ScriptedAdapter(blocks, finish)
++  const normalized = blocks.length === 1 && blocks[0]?.type === 'text'
++    ? [{ type: 'text' as const, text: checkpoint(blocks[0].text) }]
++    : blocks
++  const adapter = new ScriptedAdapter(normalized, finish)
+   ctx.llm.registerAdapter([model], adapter)
+   const compact = new ExposedCompactionEngine(ctx, config)
+   return { ctx, adapter, compact }
+@@ -1180,9 +1219,10 @@ describe('default one-shot summarizer', () => {
+   })
+ 
+   it('uses configured model/default cap, forwards cancellation, and keeps only safe text', async () => {
++    const valid = checkpoint('public summary')
+     const { adapter, compact } = await summarizerHarness([
+       { type: 'reasoning', text: 'private' },
+-      { type: 'text', text: 'public summary' },
++      { type: 'text', text: valid },
+       { type: 'tool-call', id: CallId('unexpected'), name: 'x', arguments: '{}' },
+     ], undefined, MODEL, {
+       auto: false,
+@@ -1195,13 +1235,14 @@ describe('default one-shot summarizer', () => {
+     const output = await compact.runSummarize(promptInput('transcript'), agent(session, 'fallback'), SIGNAL)
+ 
+     expect(output).toEqual({
+-      summary: [{ type: 'text', text: 'public summary' }],
++      summary: [{ type: 'text', text: valid }],
+       rawOutput: [
+         { type: 'reasoning', text: 'private' },
+-        { type: 'text', text: 'public summary' },
++        { type: 'text', text: valid },
+         { type: 'tool-call', id: CallId('unexpected'), name: 'x', arguments: '{}' },
+       ],
+       llmStreamCall: true,
++      llmStreamCallCount: 1,
+       provider: MODEL,
+       model: MODEL,
+       maxTokens: 321,
+@@ -1216,7 +1257,8 @@ describe('default one-shot summarizer', () => {
+       purpose: 'compaction',
+     })
+     const instruction = adapter.lastOptions?.messages.at(-1)?.content[0]
+-    expect(instruction?.type === 'text' ? instruction.text : '').toContain('## Primary Request and Intent')
++    expect(instruction?.type === 'text' ? instruction.text : '')
++      .toContain('## User Intent and Non-Negotiable Constraints')
+   })
+ 
+   it('replays the conversation prefix and appends the instruction as the final message', async () => {
+@@ -1250,9 +1292,9 @@ describe('default one-shot summarizer', () => {
+     expect(messages[0]).toEqual(prefix)
+     const last = messages.at(-1)?.content[0]
+     const lastText = last?.type === 'text' ? last.text : ''
+-    expect(lastText).toContain('Write concise English engineering prose.')
+-    expect(lastText).toContain('numeric values, function signatures, and syntax fragments.')
+-    expect(lastText).toContain('## Primary Request and Intent')
++    expect(lastText).toContain('Distinguish planned, applied, and verified work.')
++    expect(lastText).toContain('exact paths, identifiers, short errors, commands, and numbers')
++    expect(lastText).toContain('## User Intent and Non-Negotiable Constraints')
+   })
+ 
+   it('applies the routed model policy without changing the replayed prefix', async () => {
+@@ -1272,7 +1314,7 @@ describe('default one-shot summarizer', () => {
+         }],
+       },
+     )
+-    const policyAdapter = new ScriptedAdapter([{ type: 'text', text: 'policy summary' }])
++    const policyAdapter = new ScriptedAdapter([{ type: 'text', text: checkpoint('policy summary') }])
+     ctx.llm.registerAdapter(['policy-summary'], policyAdapter)
+     const prefix: Message = createUserMessage({
+       content: [{ type: 'text', text: 'warm prefix' }],
+@@ -1314,7 +1356,8 @@ describe('default one-shot summarizer', () => {
+ 
+   it('records the model actually dispatched after one-shot stream routing', async () => {
+     const { ctx, compact } = await summarizerHarness([{ type: 'text', text: 'unused' }])
+-    const routedAdapter = new ScriptedAdapter([{ type: 'text', text: 'routed summary' }])
++    const routedSummary = checkpoint('routed summary')
++    const routedAdapter = new ScriptedAdapter([{ type: 'text', text: routedSummary }])
+     ctx.llm.registerAdapter(['routed-summary-provider'], routedAdapter)
+     ctx.on('llm/stream', (options, next) => {
+       options.provider = 'routed-summary-provider'
+@@ -1326,7 +1369,7 @@ describe('default one-shot summarizer', () => {
+     const nodes = session.surface.nodes
+     await compact.compactRegion(nodes[0]!, nodes[3]!, agent(session, MODEL), SIGNAL)
+     expect(session.events.findLast(event => event.type === 'compaction/summary')?.data).toMatchObject({
+-      summary: [{ type: 'text', text: 'routed summary' }],
++      summary: [{ type: 'text', text: routedSummary }],
+       llmStreamCall: true,
+       provider: 'routed-summary-provider',
+       model: 'routed-summary-model',
+@@ -1393,7 +1436,7 @@ describe('default one-shot summarizer', () => {
+   it('rejects empty or reasoning-only successful output', async () => {
+     const { compact } = await summarizerHarness([{ type: 'reasoning', text: 'private' }])
+     await expect(compact.runSummarize(promptInput('history'), agent(conversation(1), MODEL)))
+-      .rejects.toThrow(/no text summary content/)
++      .rejects.toThrow(/checkpoint is empty/)
+   })
+ 
+   it('rejects image summary output instead of silently dropping it', async () => {
+diff --git a/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts b/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts
+index 867d11c2a6..7ad24290de 100644
+--- a/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts
++++ b/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts
+@@ -17,6 +17,30 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
+ import * as LlmRetry from '@deepseek-ai/dsh-llm-retry'
+ import { Session, SessionId, type SessionEvent, type SurfaceEvent } from '@deepseek-ai/dsh-session'
+ 
++const RECOVERY_CHECKPOINT = [
++  '## User Intent and Non-Negotiable Constraints',
++  '- continue from history',
++  '## Progress',
++  '### Verified Done',
++  '- prior turns retained',
++  '### In Progress',
++  '- recovery',
++  '### Blocked',
++  '- (none)',
++  '## Decisions and Rationale',
++  '- (none)',
++  '## Working Set',
++  '- RECOVERY CHECKPOINT',
++  '## Failures and Corrections',
++  '- context overflow triggered recovery',
++  '## Active Operations',
++  '- (none)',
++  '## Next Action',
++  '- retry the request',
++  '## Critical Continuity Facts',
++  '- preserve recent history',
++].join('\n')
++
+ /**
+  * CBR-001 regression through the real loop. A replacement checkpoint has a high
+  * log seq at the surface head and carries no tool pair, so both adjacent cuts
+@@ -91,7 +115,8 @@ class OverflowRecoveryAdapter extends LlmAdapter {
+       provider,
+       id: model,
+       name: model,
+-      context: { contextWindow: 128 },
++      context: { contextWindow: 8192 },
++      defaultMaxTokens: 256,
+     })
+   }
+ 
+@@ -105,10 +130,10 @@ class OverflowRecoveryAdapter extends LlmAdapter {
+     const trailing = options.messages.at(-1)?.content
+       .map(block => (block.type === 'text' ? block.text : ''))
+       .join('') ?? ''
+-    if (trailing.includes('acting as a compaction engine')) {
++    if (trailing.includes('compaction engine for the AI assistant')) {
+       this.summaryRequests.push(options)
+       yield { type: 'block-start', index: 0, blockType: 'text' }
+-      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'RECOVERY CHECKPOINT' } }
++      yield { type: 'block-end', index: 0, block: { type: 'text', text: RECOVERY_CHECKPOINT } }
+       yield { type: 'finish', reason: { kind: 'stop' } }
+       return
+     }
+@@ -321,7 +346,7 @@ describe('context-overflow recovery across the real loop and compaction-basic',
+       await ctx.plugin(BasicCompactionEngine, {
+         thresholdRatio: 1,
+         retainTokens: 100,
+-        maxTokens: 64,
++        maxTokens: 256,
+         compactionRetries: 0,
+         maxOverflowRetries: 1,
+       })
+@@ -344,8 +369,8 @@ describe('context-overflow recovery across the real loop and compaction-basic',
+         const instruction = adapter.summaryRequests[0]!.messages.at(-1)?.content
+           .map(block => (block.type === 'text' ? block.text : ''))
+           .join('') ?? ''
+-        expect(instruction).toContain('Write concise English engineering prose.')
+-        expect(instruction).toContain('numeric values, function signatures, and syntax fragments.')
++        expect(instruction).toContain('Distinguish planned, applied, and verified work.')
++        expect(instruction).toContain('exact paths, identifiers, short errors, commands, and numbers')
+         expect(JSON.stringify(adapter.conversationRequests[0]!.messages)).toContain('OLD HISTORY SENTINEL')
+         const retry = JSON.stringify(adapter.conversationRequests[1]!.messages)
+         expect(retry).toContain('RECOVERY CHECKPOINT')
+@@ -397,7 +422,7 @@ describe('context-overflow recovery across the real loop and compaction-basic',
+     await ctx.plugin(BasicCompactionEngine, {
+       thresholdRatio: 1,
+       retainTokens: 100,
+-      maxTokens: 64,
++      maxTokens: 256,
+       compactionRetries: 0,
+       maxOverflowRetries: 1,
+     })
+diff --git a/packages/compaction/compaction/src/invariant.ts b/packages/compaction/compaction/src/invariant.ts
+index 7252fb06b0..b9d9507392 100644
+--- a/packages/compaction/compaction/src/invariant.ts
++++ b/packages/compaction/compaction/src/invariant.ts
+@@ -190,6 +190,13 @@ function validateCompactionEvent(
+     if (!Number.isSafeInteger(event.data.shadowedTokenCount) || event.data.shadowedTokenCount < 0) {
+       fail('compaction/summary shadowedTokenCount must be a non-negative safe integer')
+     }
++    if (event.data.llmStreamCall === true
++      && event.data.llmStreamCallCount !== undefined
++      && (!Number.isSafeInteger(event.data.llmStreamCallCount)
++        || event.data.llmStreamCallCount < 1
++        || event.data.llmStreamCallCount > 2)) {
++      fail('compaction/summary llmStreamCallCount must be one or two')
++    }
+     return {
+       kind: 'summary',
+       compactionId: open.compactionId,
+diff --git a/packages/compaction/compaction/src/types.ts b/packages/compaction/compaction/src/types.ts
+index 0ad5796d93..189633d4be 100644
+--- a/packages/compaction/compaction/src/types.ts
++++ b/packages/compaction/compaction/src/types.ts
+@@ -54,8 +54,10 @@ declare module '@deepseek-ai/dsh-session/types' {
+       | {
+         /** Complete provider output before the backend's safe summary projection. */
+         rawOutput: ContentBlock[]
+-        /** Identifies exactly one call through this context's `ctx.llm.stream()`. */
++        /** Identifies direct calls through this context's `ctx.llm.stream()`. */
+         llmStreamCall: true
++        /** Exact number of direct stream calls; absent legacy events mean one. */
++        llmStreamCallCount?: number
+       }
+       | {
+         /** Optional complete output from an unmarked template, remote, or other summarizer. */
+diff --git a/packages/llm/token-meter/src/estimate.ts b/packages/llm/token-meter/src/estimate.ts
+index 1e02428086..a6c9298ce2 100644
+--- a/packages/llm/token-meter/src/estimate.ts
++++ b/packages/llm/token-meter/src/estimate.ts
+@@ -6,8 +6,9 @@
+  * @module @deepseek-ai/dsh-token-meter/estimate
+  */
+ 
+-import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
++import type { ContentBlock, Message, ToolSchema } from '@deepseek-ai/dsh-llm'
+ import type { EpochHeader } from '@deepseek-ai/dsh-session'
++import type { TokenRequestEstimateInput } from './types.ts'
+ 
+ /** Fixed text-density estimate used until exact tokenization is needed. */
+ const CHARS_PER_TOKEN = 4
+@@ -63,8 +64,13 @@ export function estimateMessage(message: Message): number {
+  * @returns heuristic system-prompt tokens; 0 when absent.
+  */
+ export function estimateSystemTokens(header: EpochHeader | undefined): number {
+-  if (header?.system === undefined) return 0
+-  return Math.ceil(header.system.length / CHARS_PER_TOKEN) + ROLE_OVERHEAD
++  return estimateSystem(header?.system)
++}
++
++/** Price an optional raw system prompt with the request-envelope heuristic. */
++function estimateSystem(system: string | undefined): number {
++  if (system === undefined) return 0
++  return Math.ceil(system.length / CHARS_PER_TOKEN) + ROLE_OVERHEAD
+ }
+ 
+ /**
+@@ -73,8 +79,13 @@ export function estimateSystemTokens(header: EpochHeader | undefined): number {
+  * @returns heuristic tool-schema tokens; 0 when absent or empty.
+  */
+ export function estimateToolsTokens(header: EpochHeader | undefined): number {
+-  if (header?.tools === undefined || header.tools.length === 0) return 0
+-  return Math.ceil(JSON.stringify(header.tools).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD
++  return estimateTools(header?.tools)
++}
++
++/** Price optional raw tool schemas with the request-envelope heuristic. */
++function estimateTools(tools: readonly ToolSchema[] | undefined): number {
++  if (tools === undefined || tools.length === 0) return 0
++  return Math.ceil(JSON.stringify(tools).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD
+ }
+ 
+ /**
+@@ -85,3 +96,15 @@ export function estimateToolsTokens(header: EpochHeader | undefined): number {
+ export function estimateHeader(header: EpochHeader | undefined): number {
+   return estimateSystemTokens(header) + estimateToolsTokens(header)
+ }
++
++/**
++ * Price one exact arbitrary model-visible request with the same estimator used
++ * by durable pressure measurement.
++ * @param input - exact system, tool, and ordered message envelope.
++ * @returns heuristic input tokens for the complete request.
++ */
++export function estimateRequest(input: TokenRequestEstimateInput): number {
++  return estimateSystem(input.system)
++    + estimateTools(input.tools)
++    + input.messages.reduce((total, message) => total + estimateMessage(message), 0)
++}
+diff --git a/packages/llm/token-meter/src/index.ts b/packages/llm/token-meter/src/index.ts
+index 2fa53f78f1..e39113123a 100644
+--- a/packages/llm/token-meter/src/index.ts
++++ b/packages/llm/token-meter/src/index.ts
+@@ -16,11 +16,18 @@ import type {
+   TokenMeasurement,
+   TokenMeasurementBaseline,
+   TokenMeterConfig,
++  TokenRequestEstimateInput,
+   TokenSurfaceNode,
+ } from './types.ts'
+ import { contextBreakdownProjectionDefinition } from './breakdown-projection.ts'
+ import { contextPressureProjectionDefinition, tokenUsageProjectionDefinition } from './usage-projection.ts'
+-import { estimateContent, estimateHeader, estimateMessage, ROLE_OVERHEAD } from './estimate.ts'
++import {
++  estimateContent,
++  estimateHeader,
++  estimateMessage,
++  estimateRequest,
++  ROLE_OVERHEAD,
++} from './estimate.ts'
+ import { foldSurfaceTokens } from './surface-fold.ts'
+ 
+ export type * from './types.ts'
+@@ -156,6 +163,16 @@ export class TokenMeter extends Service {
+     return estimateMessage(message)
+   }
+ 
++  /**
++   * Heuristically price one exact model-visible request with the same fixed
++   * estimator used by durable pressure measurement.
++   * @param input - exact system, tool, and ordered message envelope.
++   * @returns total estimated request input tokens.
++   */
++  estimateRequest(input: TokenRequestEstimateInput): number {
++    return estimateRequest(input)
++  }
++
+   /** Catch one session's fold up to the current durable tail. */
+   private _sync(session: Session): ReplayState {
+     let state = this.states.get(session)
+diff --git a/packages/llm/token-meter/src/types.ts b/packages/llm/token-meter/src/types.ts
+index 779bd8e271..388ea3f697 100644
+--- a/packages/llm/token-meter/src/types.ts
++++ b/packages/llm/token-meter/src/types.ts
+@@ -4,13 +4,23 @@
+  * @module @deepseek-ai/dsh-token-meter/types
+  */
+ 
+-import type { TokenUsage } from '@deepseek-ai/dsh-llm'
++import type { Message, TokenUsage, ToolSchema } from '@deepseek-ai/dsh-llm'
+ 
+ export type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from './projection.ts'
+ 
+ /** Token-meter plugin configuration; the fixed estimator has no settings. */
+ export type TokenMeterConfig = Record<string, never>
+ 
++/** Exact model-visible request envelope priced by the singleton fixed estimator. */
++export interface TokenRequestEstimateInput {
++  /** Optional system prompt sent with the request. */
++  readonly system?: string
++  /** Optional tool schemas sent with the request. */
++  readonly tools?: readonly ToolSchema[]
++  /** Ordered model-visible request messages. */
++  readonly messages: readonly Message[]
++}
++
+ /** The baseline from which a signed surface delta produces current pressure. */
+ export type TokenMeasurementBaseline =
+   | { readonly kind: 'none'; readonly tokens: 0 }

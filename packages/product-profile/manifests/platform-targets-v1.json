@@ -1,0 +1,115 @@
+{
+  "contractVersion": "platform-adapters-v1",
+  "evidenceVocabulary": [
+    "contract_defined",
+    "implementation-complete_pending-native-validation",
+    "native_verified",
+    "native_validation_failed"
+  ],
+  "formatVersion": 1,
+  "targets": [
+    {
+      "artifact": {
+        "archive": "tar.gz",
+        "executableSuffix": "",
+        "targetTriple": "darwin-arm64"
+      },
+      "directories": {
+        "attachmentStagingOwner": "host-explicit",
+        "runtimeHomeOwner": "host-explicit",
+        "temporaryOwner": "platform-adapter"
+      },
+      "evidenceState": "contract_defined",
+      "pathFlavor": "posix",
+      "processTree": {
+        "forceSignal": "SIGKILL",
+        "gracefulSignal": "SIGTERM",
+        "owner": "process-group"
+      },
+      "shell": {
+        "dialect": "bash",
+        "executableRef": "bundled-bash"
+      },
+      "sqlite": {
+        "journalMode": "wal",
+        "parentDirectoryFlush": "required",
+        "synchronous": "full"
+      },
+      "stdio": {
+        "framing": "ndjson-utf8",
+        "newline": "lf",
+        "stdoutUse": "protocol-only"
+      },
+      "target": "darwin-arm64"
+    },
+    {
+      "artifact": {
+        "archive": "zip",
+        "executableSuffix": ".exe",
+        "targetTriple": "win32-x64"
+      },
+      "directories": {
+        "attachmentStagingOwner": "host-explicit",
+        "runtimeHomeOwner": "host-explicit",
+        "temporaryOwner": "platform-adapter"
+      },
+      "evidenceState": "implementation-complete_pending-native-validation",
+      "pathFlavor": "win32",
+      "processTree": {
+        "forceSignal": "TerminateJobObject",
+        "gracefulSignal": "CTRL_BREAK_EVENT",
+        "owner": "job-object"
+      },
+      "shell": {
+        "dialect": "bash",
+        "executableRef": "bundled-bash",
+        "utf8PreludeRef": "windows-utf8-v1"
+      },
+      "sqlite": {
+        "journalMode": "wal",
+        "parentDirectoryFlush": "record-unavailable",
+        "synchronous": "full"
+      },
+      "stdio": {
+        "framing": "ndjson-utf8",
+        "newline": "lf",
+        "stdoutUse": "protocol-only"
+      },
+      "target": "win32-x64"
+    },
+    {
+      "artifact": {
+        "archive": "tar.gz",
+        "executableSuffix": "",
+        "targetTriple": "linux-x64"
+      },
+      "directories": {
+        "attachmentStagingOwner": "host-explicit",
+        "runtimeHomeOwner": "host-explicit",
+        "temporaryOwner": "platform-adapter"
+      },
+      "evidenceState": "implementation-complete_pending-native-validation",
+      "pathFlavor": "posix",
+      "processTree": {
+        "forceSignal": "SIGKILL",
+        "gracefulSignal": "SIGTERM",
+        "owner": "process-group"
+      },
+      "shell": {
+        "dialect": "bash",
+        "executableRef": "bundled-bash"
+      },
+      "sqlite": {
+        "journalMode": "wal",
+        "parentDirectoryFlush": "required",
+        "synchronous": "full"
+      },
+      "stdio": {
+        "framing": "ndjson-utf8",
+        "newline": "lf",
+        "stdoutUse": "protocol-only"
+      },
+      "target": "linux-x64"
+    }
+  ]
+}

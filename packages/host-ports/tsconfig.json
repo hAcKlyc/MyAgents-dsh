@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/host-ports",
+    "tsBuildInfoFile": "../../dist/packages/host-ports/.tsbuildinfo"
+  },
+  "files": ["src/attachment-store.ts", "src/credential-provider.ts", "src/index.ts", "src/service.ts"],
+  "references": [
+    { "path": "../protocol" }
+  ]
+}

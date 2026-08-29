@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/apps/reference-web-types",
+    "tsBuildInfoFile": "../../dist/apps/reference-web-types/.tsbuildinfo",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"]
+  },
+  "files": [
+    "vite.config.ts",
+    "src/app.tsx",
+    "src/components/agent-surface.tsx",
+    "src/components/composer.tsx",
+    "src/components/control-center.tsx",
+    "src/components/inspector-pane.tsx",
+    "src/components/interaction-tray.tsx",
+    "src/components/safe-markdown.tsx",
+    "src/components/session-sidebar.tsx",
+    "src/history.ts",
+    "src/main.tsx",
+    "src/store.ts"
+  ],
+  "references": [{ "path": "../../packages/web-host-contract" }]
+}

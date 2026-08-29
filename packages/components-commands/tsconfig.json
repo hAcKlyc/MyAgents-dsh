@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM"],
+    "rootDir": ".",
+    "outDir": "../../dist/packages/components-commands",
+    "tsBuildInfoFile": "../../dist/packages/components-commands/.tsbuildinfo"
+  },
+  "files": ["src/index.ts"],
+  "references": [
+    { "path": "../component-runtime" },
+    { "path": "../operation-runtime" },
+    { "path": "../protocol" }
+  ]
+}

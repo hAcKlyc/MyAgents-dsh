@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/tools-process",
+    "tsBuildInfoFile": "../../dist/packages/tools-process/.tsbuildinfo"
+  },
+  "files": ["src/index.ts", "src/runtime.ts", "src/windows-job-subprocess.ts"],
+  "references": [
+    { "path": "../tool-contracts" },
+    { "path": "../tool-runtime-product" },
+    { "path": "../product-profile" }
+  ]
+}

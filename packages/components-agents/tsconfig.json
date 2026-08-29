@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/components-agents",
+    "tsBuildInfoFile": "../../dist/packages/components-agents/.tsbuildinfo"
+  },
+  "files": ["src/index.ts"],
+  "references": [
+    { "path": "../component-runtime" },
+    { "path": "../tools-agent" }
+  ]
+}

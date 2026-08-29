@@ -9,3 +9,4 @@ coverage/
 .dsh/
 .myagents/
 tmp/
+.claude/plans/myagents/

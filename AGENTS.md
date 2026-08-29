@@ -6,9 +6,10 @@ This repository builds a production-oriented Agent Harness distribution on DeepS
 
 1. Exact installed APIs, versions, scripts, and executable constraints: code, tests, `package.json`, and the lockfile.
 2. Current owners, process boundaries, lifecycle placement, and data flow: `specs/ARCHITECTURE.md`.
-3. Wire behavior: the future canonical protocol contract source; until the Pre-Batch Foundation creates it, `specs/protocol/runtime-rpc-v2.md`.
+3. Exact wire behavior: `packages/protocol/src/contract-source.ts`, with generated schema/client/fixtures as deterministic projections. `specs/protocol/runtime-rpc-v2.md` records protocol intent and ownership, not competing exact shapes.
 4. Development entry, repository/migration relationships, Batch scope, status, and acceptance: `specs/prd/plan.md` and the active Batch PRD. Batch 1 workstream chapters refine implementation but do not create independent product gates.
 5. Compatibility claims: versioned compatibility manifests and executable fixtures, never README prose alone.
+6. Implemented core-module maintenance guides: `specs/tech_docs/`; compaction architecture and evolution: `specs/tech_docs/compaction-architecture.md`.
 
 ## Architecture invariants
 
@@ -23,6 +24,8 @@ This repository builds a production-oriented Agent Harness distribution on DeepS
 - Secrets are request- or connection-scoped and are never persisted, logged, emitted, or placed in declarative snapshots.
 - File rollback claims must state their exact coverage. The initial target is root-origin governed `Write` and `Edit`, not shell, child-agent, or external changes.
 - DSH core changes are allowed only when an exact required semantic cannot be expressed through an existing public seam. Keep such changes minimal, tested, and proposed upstream.
+- DSH core patches are source-controlled here, verified against exact upstream blobs, applied only to an isolated build worktree, and consumed through a content-addressed artifact. Never edit the sibling upstream checkout, registry tarballs, or `node_modules` in place.
+- An official DSH update is not a normal dependency bump. Adjudicate every recorded seam and patch as `retire`, `reduce`, or `rebase`, then rebuild the affected artifact, Runtime, native/platform evidence, and Host handoff. Clean patch application is not acceptance, and evidence for old bytes cannot be inherited.
 - Batch 1 production code targets macOS arm64, Windows x64, and Linux x64. Isolate filesystem, path, shell/process, signal, SQLite, and packaging differences behind composition-selected platform Providers/adapters; do not scatter unowned `process.platform` branches through product logic.
 - A platform support claim must match native evidence. Until its native artifact campaign passes, a complete Windows/Linux implementation is labeled `implementation-complete_pending-native-validation`, not verified and not unsupported.
 - Dynamic acceptance keeps Agent roles separate: Codex/development Main Agent owns implementation and adjudication; fresh-context external Tester Agents operate only the test CLI; the packed DSH Root Agent is the system under test; Runtime child/subagents are product capabilities under test. Never give the Root Agent hidden rubrics/expected tool order or let a Tester Agent become release authority.
@@ -33,12 +36,13 @@ This repository builds a production-oriented Agent Harness distribution on DeepS
 - Read `specs/prd/plan.md` plus the active Batch and internal workstream ledger before changing code. Update the owning ledger after each accepted action item.
 - Read the relevant architecture section before changing an owner, process, Session, lifecycle, persistence, security, or protocol boundary.
 - Pin the exact DSH version/commit. Imports from package-private `src/*` or `dist/*` paths are forbidden.
+- Before auditing or integrating an official DSH update, use `.agents/skills/dsh-upstream-maintenance/SKILL.md`; read its complete patch inventory and every affected ADR/module guide.
 - Default tests use fake model adapters, fake Host ports, temporary homes/workspaces, and no real network or credentials.
 - Use explicit `git add <files...>` and Conventional Commits with a non-empty body.
 
 ## Required release gates
 
-Each implementation Batch and internal workstream must define targeted gates. Before a Batch release commit, the minimum repository-wide gate is expected to become:
+Each implementation Batch and internal workstream must define targeted gates. Before a Batch release commit, the established minimum repository-wide gate is:
 
 ```bash
 npm run typecheck
@@ -47,4 +51,4 @@ npm test
 npm run build
 ```
 
-No command is normative until the Pre-Batch Foundation creates and locks the corresponding package scripts.
+The root `package.json` and lockfile own the exact command definitions and toolchain constraints.

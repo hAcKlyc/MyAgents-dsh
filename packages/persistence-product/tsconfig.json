@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/persistence-product",
+    "tsBuildInfoFile": "../../dist/packages/persistence-product/.tsbuildinfo"
+  },
+  "files": [
+    "src/compaction.ts",
+    "src/delete.ts",
+    "src/index.ts",
+    "src/fork.ts",
+    "src/known-events.ts",
+    "src/provider.ts",
+    "src/read.ts",
+    "src/rewind.ts",
+    "src/schema.ts",
+    "src/session-lock.ts",
+    "src/sqlite-store.ts"
+  ],
+  "references": [
+    { "path": "../checkpoint" },
+    { "path": "../protocol" },
+    { "path": "../operation-runtime" },
+    { "path": "../product-profile" },
+    { "path": "../task-graph" },
+    { "path": "../tool-runtime-product" },
+    { "path": "../tools-agent" },
+    { "path": "../tools-interaction" }
+  ]
+}

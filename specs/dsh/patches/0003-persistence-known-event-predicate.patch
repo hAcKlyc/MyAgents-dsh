@@ -1,0 +1,191 @@
+diff --git a/packages/session/session-persistence/src/coordinator.ts b/packages/session/session-persistence/src/coordinator.ts
+index 63def62528..4c6a7867a7 100644
+--- a/packages/session/session-persistence/src/coordinator.ts
++++ b/packages/session/session-persistence/src/coordinator.ts
+@@ -86,6 +86,11 @@ export interface PersistenceCoordinatorOptions {
+   readonly preparedSessionCacheSize: number
+   /** Maximum intentional batching wait after an idle live queue receives work. */
+   readonly writeBatchMaxDelayMs: number
++  /**
++   * Recognize required event types contributed by the complete product build.
++   * Omission preserves the exact stock generated-event behavior.
++   */
++  readonly isKnownEventType?: (type: string) => boolean
+ }
+ 
+ /**
+@@ -601,6 +606,8 @@ export class PersistenceCoordinator<TornMarker = unknown> {
+   private chains = new Map<SessionId, Promise<unknown>>()
+   /** Resolved fixed write-batching window shared by per-session controllers. */
+   private readonly writeBatchMaxDelayMs: number
++  /** Frozen build-level required-event predicate. */
++  private readonly isKnownEventType: (type: string) => boolean
+ 
+   constructor(
+     private ctx: Context,
+@@ -619,7 +626,12 @@ export class PersistenceCoordinator<TornMarker = unknown> {
+       || options.writeBatchMaxDelayMs > MAX_WRITE_BATCH_DELAY_MS) {
+       throw new TypeError(`writeBatchMaxDelayMs must be an integer between 1 and ${MAX_WRITE_BATCH_DELAY_MS}`)
+     }
++    if (options.isKnownEventType !== undefined && typeof options.isKnownEventType !== 'function') {
++      throw new TypeError('isKnownEventType must be a function when provided')
++    }
+     this.writeBatchMaxDelayMs = options.writeBatchMaxDelayMs
++    this.isKnownEventType = options.isKnownEventType
++      ?? (type => KNOWN_SESSION_EVENT_TYPES.has(type))
+     this.preparations = new SessionPreparations(options.preparedSessionCacheSize)
+     this.installWritePath()
+   }
+@@ -1060,7 +1072,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
+    */
+   private assertEventsSupported(meta: SessionHeader, events: readonly SessionEvent[]): void {
+     for (const event of events) {
+-      if (KNOWN_SESSION_EVENT_TYPES.has(event.type) || event.ignorable === true) continue
++      if (this.isKnownEventType(event.type) || event.ignorable === true) continue
+       throw this.unsupported(meta, `session "${meta.id}" contains event type "${event.type}" (seq ${event.seq}) unknown to this harness and not marked ignorable; refusing to interpret the log — it was likely written by a newer harness`)
+     }
+   }
+diff --git a/packages/session/session-persistence/tests/persistence.spec.ts b/packages/session/session-persistence/tests/persistence.spec.ts
+index 6c63d72b9f..fbd7605cba 100644
+--- a/packages/session/session-persistence/tests/persistence.spec.ts
++++ b/packages/session/session-persistence/tests/persistence.spec.ts
+@@ -1,6 +1,6 @@
+ import { describe, expect, it, vi } from 'vitest'
+ import { Context } from '@deepseek-ai/cordis'
+-import SessionStore, { Session, SessionId, isJsonValue } from '@deepseek-ai/dsh-session'
++import SessionStore, { KNOWN_SESSION_EVENT_TYPES, Session, SessionId, isJsonValue } from '@deepseek-ai/dsh-session'
+ import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+ import {
+   DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
+@@ -10,6 +10,21 @@ import {
+ import { runPersistenceContract, meta, oneTurnLog } from './contract.ts'
+ import { runCoordinatorContract, type CoordinatorFixture } from './coordinator-contract.ts'
+ 
++declare module '@deepseek-ai/dsh-session' {
++  interface SessionEventMap {
++    'myagents/test-required': { marker: string }
++  }
++}
++
++function productRequiredEvent(seq = 0): SessionEvent {
++  return {
++    type: 'myagents/test-required',
++    seq,
++    time: 1,
++    data: { marker: 'product' },
++  }
++}
++
+ /** The durable store shape: materialized sessions only (no lazy entries). */
+ type MemoryStore = Map<string, { meta: SessionHeader; events: SessionEvent[] }>
+ 
+@@ -303,6 +318,109 @@ describe('PersistenceCoordinator seed ownership', () => {
+   })
+ })
+ 
++describe('PersistenceCoordinator product known-event predicate', () => {
++  async function mount(backend: ControlledBackend, acceptProduct: boolean) {
++    const ctx = new Context()
++    await ctx.plugin(SessionStore)
++    let coordinator!: PersistenceCoordinator<never>
++    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
++      coordinator = new PersistenceCoordinator(inner, backend, {
++        preparedSessionCacheSize: DEFAULT_PREPARED_SESSION_CACHE_SIZE,
++        writeBatchMaxDelayMs: DEFAULT_WRITE_BATCH_MAX_DELAY_MS,
++        ...(acceptProduct
++          ? { isKnownEventType: (type: string) => KNOWN_SESSION_EVENT_TYPES.has(type) || type === 'myagents/test-required' }
++          : {}),
++      })
++    }, { inject: ['sessions'] }))
++    return { ctx, coordinator, fiber }
++  }
++
++  it('keeps omitted-option stock refusal byte-equivalent', async () => {
++    const backend = new ControlledBackend()
++    const mounted = await mount(backend, false)
++    const id = SessionId('product-event-default-refusal')
++    try {
++      await mounted.coordinator.create(meta(id))
++      await expect(mounted.coordinator.append(id, [productRequiredEvent()])).resolves.toBeUndefined()
++      await expect(mounted.coordinator.inspect(id))
++        .rejects.toThrow(/event type "myagents\/test-required".*unknown/)
++      expect(backend.store.get(id)?.events).toHaveLength(1)
++    } finally {
++      await mounted.fiber.dispose()
++      await mounted.ctx.fiber.dispose()
++    }
++  })
++
++  it('survives append, inspect, prepare, cold load, and coordinator replacement', async () => {
++    const backend = new ControlledBackend()
++    const id = SessionId('product-event-all-paths')
++    const first = await mount(backend, true)
++    try {
++      await first.coordinator.create(meta(id))
++      await first.coordinator.append(id, [productRequiredEvent()])
++      await expect(first.coordinator.inspect(id)).resolves.toMatchObject({
++        events: [{ type: 'myagents/test-required', data: { marker: 'product' } }],
++      })
++    } finally {
++      await first.fiber.dispose()
++      await first.ctx.fiber.dispose()
++    }
++
++    const second = await mount(backend, true)
++    let preparation: Awaited<ReturnType<typeof second.coordinator.prepare>> | undefined
++    try {
++      await expect(second.coordinator.inspect(id)).resolves.toMatchObject({
++        events: [{ type: 'myagents/test-required' }],
++      })
++      preparation = await second.coordinator.prepare(id)
++      expect(preparation.session.events.map(event => event.type)).toEqual([
++        'myagents/test-required',
++        'session/end-seed',
++      ])
++      preparation[Symbol.dispose]()
++      preparation = undefined
++      await expect(second.coordinator.load(id)).resolves.toMatchObject({
++        events: [{ type: 'myagents/test-required' }],
++      })
++    } finally {
++      preparation?.[Symbol.dispose]()
++      await second.fiber.dispose()
++      await second.ctx.fiber.dispose()
++    }
++
++    const stock = await mount(backend, false)
++    try {
++      await expect(stock.coordinator.inspect(id))
++        .rejects.toThrow(/event type "myagents\/test-required".*unknown/)
++    } finally {
++      await stock.fiber.dispose()
++      await stock.ctx.fiber.dispose()
++    }
++  })
++
++  it('still refuses an unregistered downstream required event', async () => {
++    const backend = new ControlledBackend()
++    const id = SessionId('unknown-product-event')
++    backend.store.set(id, {
++      meta: meta(id),
++      events: [{
++        type: 'myagents/unregistered-required',
++        seq: 0,
++        time: 1,
++        data: {},
++      } as SessionEvent],
++    })
++    const mounted = await mount(backend, true)
++    try {
++      await expect(mounted.coordinator.load(id))
++        .rejects.toThrow(/event type "myagents\/unregistered-required".*unknown/)
++    } finally {
++      await mounted.fiber.dispose()
++      await mounted.ctx.fiber.dispose()
++    }
++  })
++})
++
+ describe('PersistenceCoordinator bounded writes', () => {
+   it('cancels the batching deadline when live initialization rejects', async () => {
+     vi.useFakeTimers()

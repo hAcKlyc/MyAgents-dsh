@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/checkpoint",
+    "tsBuildInfoFile": "../../dist/packages/checkpoint/.tsbuildinfo"
+  },
+  "files": ["src/index.ts", "src/runtime.ts"],
+  "references": [
+    { "path": "../tool-runtime-product" }
+  ]
+}

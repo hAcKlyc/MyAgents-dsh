@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM"],
+    "rootDir": ".",
+    "outDir": "../../dist/packages/compatibility",
+    "tsBuildInfoFile": "../../dist/packages/compatibility/.tsbuildinfo"
+  },
+  "files": [
+    "manifests/myagents-agent-sdk-compatibility-v1.json",
+    "src/agent-sdk-0.3.220-shapes.ts",
+    "src/compatibility-call-shapes.compile.ts",
+    "src/index.ts",
+    "src/manifest.ts"
+  ]
+}

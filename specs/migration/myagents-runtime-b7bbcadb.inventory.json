@@ -1,0 +1,716 @@
+{
+  "formatVersion": 1,
+  "source": {
+    "repository": "myagents-runtime",
+    "commit": "b7bbcadb172254defc0ea86229dd5de043fbb5f3",
+    "tree": "091be155a6b60cdd86d003dd0172e7e969b7fe24"
+  },
+  "entries": [
+    {
+      "id": "product-scope-docs",
+      "capability": "Implemented Runtime, protocol, canonical tools, and dynamic acceptance product baselines",
+      "workstream": "Pre-Batch and Batch 1",
+      "classification": "contract-test input",
+      "testFixtureDisposition": "none",
+      "matches": {
+        "paths": [
+          "specs/prd/prd_0.1_pi_native_agent_runtime.md",
+          "specs/prd/prd_0.1_pi_native_agent_runtime_20_tools_technical_rfc.md",
+          "specs/prd/prd_0.1_pi_native_agent_runtime_core_protocol.md",
+          "specs/prd/prd_0.1_pi_native_agent_runtime_dynamic_e2e.md"
+        ]
+      },
+      "targetPackages": ["specs/prd", "specs/rfc"],
+      "dshSeams": ["architecture and PRD boundary only"],
+      "piAssumptionsToRemove": ["Pi AgentSession, entry tree, leaf anchors, and Pi event names are evidence only"],
+      "acceptanceEvidence": ["requirement-trace coverage and reviewed old-to-new capability join"],
+      "provenance": "private MyAgents-authored planning source at the fixed commit; public-release license review required",
+      "privateDataPolicy": "extract requirements only; copy no prompts, transcripts, credentials, or user fixtures"
+    },
+    {
+      "id": "source-dependency-and-build-authority",
+      "capability": "Exact old dependency declarations, resolutions, toolchain, and root build interpretation",
+      "workstream": "PRE-A4 and later package-specific license review",
+      "classification": "contract-test input",
+      "testFixtureDisposition": "none",
+      "matches": {
+        "paths": [
+          ".npmrc",
+          ".nvmrc",
+          "eslint.config.js",
+          "package-lock.json",
+          "package.json",
+          "tsconfig.base.json",
+          "tsconfig.json",
+          "tsconfig.tools.json",
+          "vitest.config.ts"
+        ]
+      },
+      "targetPackages": ["root workspace"],
+      "dshSeams": ["none; provenance and dependency/license input only"],
+      "piAssumptionsToRemove": ["Pi packages and their transitive closure are negative evidence and may not enter the DSH artifact"],
+      "acceptanceEvidence": ["exact blob identity plus package-level dependency/license disposition before any copy-adapt port"],
+      "provenance": "private MyAgents-authored root metadata at the fixed commit; the lockfile supplies exact resolution provenance without copying package contents",
+      "privateDataPolicy": "record dependency facts only; copy no registry credentials, caches, environment values, or Pi closure"
+    },
+    {
+      "id": "runtime-server-entry",
+      "capability": "Process entry, self-check, and artifact bootstrap",
+      "workstream": "B1-W1",
+      "classification": "rewrite integration",
+      "testFixtureDisposition": "none",
+      "matches": { "prefixes": ["apps/runtime-server/"] },
+      "targetPackages": ["@myagents-dsh/runtime-server", "@myagents-dsh/product-profile"],
+      "dshSeams": ["Cordis root composition and public DSH services"],
+      "piAssumptionsToRemove": ["Pi kernel construction and Pi version identity"],
+      "acceptanceEvidence": ["DSH profile self-check, stdout purity, lifecycle, and artifact process tests"],
+      "provenance": "private MyAgents-authored implementation at the fixed commit; public-release license review required",
+      "privateDataPolicy": "copy no local paths or environment values; port only bounded engine-neutral process logic"
+    },
+    {
+      "id": "sdk-compatibility-baseline",
+      "capability": "Accepted Agent SDK 0.3.220 compatibility declaration and compile shapes",
+      "workstream": "PRE-A8 and Batch 2",
+      "classification": "contract-test input",
+      "testFixtureDisposition": "migrate",
+      "matches": {
+        "paths": [
+          "packages/agent-sdk/compatibility/myagents-agent-sdk-compatibility-v1.json",
+          "packages/agent-sdk/src/canonical-tools.generated.ts",
+          "packages/agent-sdk/src/canonical-tools.ts",
+          "packages/agent-sdk/src/compatibility-call-shapes.ts",
+          "packages/agent-sdk/src/compatibility.ts",
+          "packages/agent-sdk/src/compatibility.unit.test.ts"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/compatibility"],
+      "dshSeams": ["none; versioned Host facade contract"],
+      "piAssumptionsToRemove": ["manifest capability rows do not imply Pi implementation ownership"],
+      "acceptanceEvidence": ["sanitized manifest digest and compile/schema validation"],
+      "provenance": "private MyAgents-authored compatibility source derived from the recorded public SDK version",
+      "privateDataPolicy": "retain public API names and synthetic shapes only"
+    },
+    {
+      "id": "sdk-batch2-implementation",
+      "capability": "Standalone SDK facade implementation outside Batch 1",
+      "workstream": "Batch 2",
+      "classification": "exclude",
+      "testFixtureDisposition": "exclude",
+      "matches": {
+        "prefixes": ["packages/agent-sdk/"],
+        "excludePaths": [
+          "packages/agent-sdk/compatibility/myagents-agent-sdk-compatibility-v1.json",
+          "packages/agent-sdk/src/canonical-tools.generated.ts",
+          "packages/agent-sdk/src/canonical-tools.ts",
+          "packages/agent-sdk/src/compatibility-call-shapes.ts",
+          "packages/agent-sdk/src/compatibility.ts",
+          "packages/agent-sdk/src/compatibility.unit.test.ts"
+        ]
+      },
+      "targetPackages": ["none in Batch 1"],
+      "dshSeams": ["native generated client in later Batch 2"],
+      "piAssumptionsToRemove": ["SDK facade may not compensate for missing DSH Runtime behavior"],
+      "acceptanceEvidence": ["absence from Batch 1 production dependency graph"],
+      "provenance": "private MyAgents-authored implementation retained as later Batch 2 evidence",
+      "privateDataPolicy": "do not migrate implementation during Pre-Batch or Batch 1"
+    },
+    {
+      "id": "dynamic-agent-acceptance",
+      "capability": "Artifact-driven independent Tester Agent scenarios, orchestration, sealing, and reports",
+      "workstream": "Batch 1 gate",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": { "prefixes": ["packages/dynamic-e2e/"] },
+      "targetPackages": ["@myagents-dsh/dynamic-e2e", "@myagents-dsh/test-host"],
+      "dshSeams": ["generated native client only; no Runtime internal imports"],
+      "piAssumptionsToRemove": ["Pi artifact identity, Pi event facts, and Pi tool/session trace selectors"],
+      "acceptanceEvidence": ["credential-free harness tests and packed DSH artifact campaign"],
+      "provenance": "private MyAgents-authored harness and synthetic fixture corpus at the fixed commit",
+      "privateDataPolicy": "review every prompt/report fixture; regenerate synthetic equivalents and copy no prior transcripts"
+    },
+    {
+      "id": "protocol-generated-projections",
+      "capability": "Generated protocol schema, metadata, fixtures, and Host client",
+      "workstream": "PRE-A6",
+      "classification": "regenerate",
+      "testFixtureDisposition": "regenerate",
+      "matches": { "prefixes": ["packages/protocol/generated/"] },
+      "targetPackages": ["@myagents-dsh/protocol"],
+      "dshSeams": ["DSH event value types through public imports only"],
+      "piAssumptionsToRemove": ["protocol 1.1 version, piVersion, entry/leaf shapes"],
+      "acceptanceEvidence": ["byte-stable candidate-v2 generated drift and 35+7+4 inventory tests"],
+      "provenance": "generated projection from private MyAgents-authored source; never hand-copied",
+      "privateDataPolicy": "regenerate solely from sanitized canonical source"
+    },
+    {
+      "id": "protocol-peer-and-validation",
+      "capability": "Strict bidirectional JSON-RPC peer, validation, and unit corpus",
+      "workstream": "PRE-A7 and B1-W1",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": {
+        "paths": [
+          "packages/protocol/src/peer.ts",
+          "packages/protocol/src/peer.unit.test.ts",
+          "packages/protocol/src/validation.ts",
+          "packages/protocol/src/validation.unit.test.ts"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/protocol", "@myagents-dsh/test-host"],
+      "dshSeams": ["independent native wire; DSH SDK server excluded"],
+      "piAssumptionsToRemove": ["Pi method payloads and Pi runtime identity"],
+      "acceptanceEvidence": ["strict frame/result/direction/cancellation/backpressure/fatal behavior tests"],
+      "provenance": "private MyAgents-authored engine-neutral transport code at the fixed commit",
+      "privateDataPolicy": "migrate only synthetic frames and bounded error fixtures"
+    },
+    {
+      "id": "protocol-contract-source",
+      "capability": "Canonical method, notification, limit, error, capability, and digest source",
+      "workstream": "PRE-A6",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": {
+        "prefixes": ["packages/protocol/"],
+        "excludePrefixes": ["packages/protocol/generated/"],
+        "excludePaths": [
+          "packages/protocol/src/peer.ts",
+          "packages/protocol/src/peer.unit.test.ts",
+          "packages/protocol/src/validation.ts",
+          "packages/protocol/src/validation.unit.test.ts"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/protocol"],
+      "dshSeams": ["public DSH Session/message/event value contracts"],
+      "piAssumptionsToRemove": ["replace protocol 1.1 Pi engine/session fields with candidate-v2 DSH durable identities"],
+      "acceptanceEvidence": ["canonical TypeBox source review, deterministic generators, schema digest, and conformance"],
+      "provenance": "private MyAgents-authored protocol authority at the fixed commit",
+      "privateDataPolicy": "copy schemas and synthetic fixtures only; strip any product/private values"
+    },
+    {
+      "id": "tool-generated-projections",
+      "capability": "Generated canonical tool catalogs, schemas, profiles, and metadata",
+      "workstream": "B1-W2",
+      "classification": "regenerate",
+      "testFixtureDisposition": "none",
+      "matches": { "prefixes": ["packages/runtime-core/generated/"] },
+      "targetPackages": ["@myagents-dsh/tool-contracts", "@myagents-dsh/product-profile"],
+      "dshSeams": ["DSH ToolDefinition projections"],
+      "piAssumptionsToRemove": ["Pi registration and tool-profile identity"],
+      "acceptanceEvidence": ["exact twenty-name deterministic catalog and digest drift tests"],
+      "provenance": "generated projection from private MyAgents-authored tool source",
+      "privateDataPolicy": "regenerate from sanitized contracts; do not hand-copy outputs"
+    },
+    {
+      "id": "canonical-tool-contracts",
+      "capability": "Canonical twenty schemas, descriptions, results, behavior profiles, and golden tests",
+      "workstream": "B1-W2",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": {
+        "paths": [
+          "packages/runtime-core/src/tools/builtins/runtime-added.unit.test.ts",
+          "packages/runtime-core/src/tools/contracts.ts",
+          "packages/runtime-core/src/tools/contracts.unit.test.ts",
+          "packages/runtime-core/src/tools/golden-contracts.ts",
+          "packages/runtime-core/src/tools/profile.ts",
+          "packages/runtime-core/src/tools/result.ts",
+          "packages/runtime-core/src/tools/validate-contracts.ts"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/tool-contracts"],
+      "dshSeams": ["public DSH ToolDefinition and ToolRuntime"],
+      "piAssumptionsToRemove": ["Pi schema constructors, tool registration, and result presentation types"],
+      "acceptanceEvidence": ["per-tool schema/description/result/error fixtures and exact catalog digest"],
+      "provenance": "private MyAgents-authored canonical tool contracts at the fixed commit",
+      "privateDataPolicy": "migrate contracts and synthetic golden vectors only"
+    },
+    {
+      "id": "canonical-tool-execution",
+      "capability": "Shared tool dispatch, policy ordering, concurrency, and result normalization",
+      "workstream": "B1-W2",
+      "classification": "rewrite integration",
+      "testFixtureDisposition": "migrate",
+      "matches": {
+        "paths": [
+          "packages/runtime-core/src/tools/runtime.ts",
+          "packages/runtime-core/src/tools/runtime.unit.test.ts"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/tool-runtime-product"],
+      "dshSeams": ["single public DSH ctx.tools pipeline"],
+      "piAssumptionsToRemove": ["Pi tool registry/executor and Pi hook/event ordering"],
+      "acceptanceEvidence": ["built-in, Host, and MCP tools traverse one DSH pipeline with durable results"],
+      "provenance": "private MyAgents-authored behavior and tests at the fixed commit",
+      "privateDataPolicy": "port state-machine tests with synthetic inputs only"
+    },
+    {
+      "id": "coding-core-tools",
+      "capability": "Read, Write, Edit, Glob, Grep, Bash, and ls implementations",
+      "workstream": "B1-W2",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": { "paths": ["packages/runtime-core/src/tools/builtins/coding-core.ts"] },
+      "targetPackages": ["@myagents-dsh/tools-fs", "@myagents-dsh/tools-process"],
+      "dshSeams": ["ctx.fs, ctx.subprocess, ctx.shell, ctx.attachments, ctx.tools"],
+      "piAssumptionsToRemove": ["Pi tool context, registry, entry IDs, and checkpoint callbacks"],
+      "acceptanceEvidence": ["path/process bounds, cancellation, contract, and DSH authority suites"],
+      "provenance": "private MyAgents-authored engine-neutral tool bodies mixed with Pi glue",
+      "privateDataPolicy": "copy no workspace fixture content; regenerate synthetic files"
+    },
+    {
+      "id": "web-tools",
+      "capability": "WebFetch and WebSearch compatibility definitions",
+      "workstream": "B1-W2",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": { "paths": ["packages/runtime-core/src/tools/builtins/web.ts"] },
+      "targetPackages": ["@myagents-dsh/tools-web"],
+      "dshSeams": ["public ctx.web Provider and ctx.tools"],
+      "piAssumptionsToRemove": ["Pi tool context and Provider error/result wrappers"],
+      "acceptanceEvidence": ["SSRF/redirect/rebinding/cancellation and exact result fixtures"],
+      "provenance": "private MyAgents-authored compatibility implementation at the fixed commit",
+      "privateDataPolicy": "use synthetic/public-safe URLs and no captured provider bodies"
+    },
+    {
+      "id": "interaction-plan-tools",
+      "capability": "AskUserQuestion, EnterPlanMode, and ExitPlanMode definitions",
+      "workstream": "B1-W2",
+      "classification": "rewrite integration",
+      "testFixtureDisposition": "none",
+      "matches": { "paths": ["packages/runtime-core/src/tools/builtins/interaction-plan.ts"] },
+      "targetPackages": ["@myagents-dsh/tools-interaction"],
+      "dshSeams": ["ctx.userQuestions, DSH approval, PlanModeController, ctx.tools"],
+      "piAssumptionsToRemove": ["Pi interaction lifecycle and session event names"],
+      "acceptanceEvidence": ["revision/cancellation/plan hard-guard tests through DSH Providers"],
+      "provenance": "private MyAgents-authored behavior at the fixed commit",
+      "privateDataPolicy": "migrate synthetic question/answer fixtures only"
+    },
+    {
+      "id": "agent-skill-tools",
+      "capability": "Skill, Agent, TaskStop, and SendMessage definitions",
+      "workstream": "B1-W2",
+      "classification": "rewrite integration",
+      "testFixtureDisposition": "none",
+      "matches": {
+        "paths": [
+          "packages/runtime-core/src/tools/builtins/agents.ts",
+          "packages/runtime-core/src/tools/builtins/skill.ts"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/tools-agent"],
+      "dshSeams": ["DSH Skills, subagents, jobs, Agent scopes, and ctx.tools"],
+      "piAssumptionsToRemove": ["Pi child Agent/session, mailbox, and tool context ownership"],
+      "acceptanceEvidence": ["lineage, derived policy, message, stop, cleanup, and no-second-loop tests"],
+      "provenance": "private MyAgents-authored product contracts at the fixed commit",
+      "privateDataPolicy": "regenerate declarative Skill/agent fixtures without private prompts"
+    },
+    {
+      "id": "task-graph-tools",
+      "capability": "TaskCreate, TaskGet, TaskList, and TaskUpdate definitions",
+      "workstream": "B1-W2",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": { "paths": ["packages/runtime-core/src/tools/builtins/task-graph.ts"] },
+      "targetPackages": ["@myagents-dsh/task-graph"],
+      "dshSeams": ["required non-surface DSH Session events and ctx.tools"],
+      "piAssumptionsToRemove": ["Pi session event append/projection glue"],
+      "acceptanceEvidence": ["stable IDs, dependency, cycle, transition, resume, and scale tests"],
+      "provenance": "private MyAgents-authored engine-neutral graph tool layer",
+      "privateDataPolicy": "use synthetic task graphs only"
+    },
+    {
+      "id": "runtime-core-scaffolding",
+      "capability": "Old runtime-core package surface, errors, and foundation fixtures",
+      "workstream": "Batch 1 cross-cutting",
+      "classification": "rewrite integration",
+      "testFixtureDisposition": "migrate",
+      "matches": {
+        "paths": [
+          "packages/runtime-core/package.json",
+          "packages/runtime-core/src/errors.ts",
+          "packages/runtime-core/src/foundation-primitives.unit.test.ts",
+          "packages/runtime-core/src/index.ts",
+          "packages/runtime-core/tsconfig.json"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/runtime-product", "@myagents-dsh/tool-runtime-product", "root workspace"],
+      "dshSeams": ["public service/plugin packages; no monolithic runtime core"],
+      "piAssumptionsToRemove": ["single Pi-centered runtime-core export surface"],
+      "acceptanceEvidence": ["package-boundary, dependency, and no-Pi/private-import audits"],
+      "provenance": "private MyAgents-authored package metadata and test evidence",
+      "privateDataPolicy": "reuse dependency intent only; do not copy Pi dependencies"
+    },
+    {
+      "id": "runtime-event-projection",
+      "capability": "Activity accounting and ordered Runtime event projection",
+      "workstream": "B1-W1",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": {
+        "paths": ["packages/runtime-core/src/activity.ts"],
+        "prefixes": ["packages/runtime-core/src/events/"]
+      },
+      "targetPackages": ["@myagents-dsh/event-projector", "@myagents-dsh/operation-runtime"],
+      "dshSeams": ["committed DSH Session events and contained lifecycle events"],
+      "piAssumptionsToRemove": ["Pi entry/event vocabulary and Pi turn settlement signals"],
+      "acceptanceEvidence": ["identity, ordering, terminal reserve, replay, and usage/context tests"],
+      "provenance": "private MyAgents-authored engine-neutral event bus concepts and tests",
+      "privateDataPolicy": "project only bounded synthetic events; copy no transcripts"
+    },
+    {
+      "id": "attachment-management",
+      "capability": "Attachment identity, validation, lease, and cleanup manager",
+      "workstream": "B1-W3",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": { "prefixes": ["packages/runtime-core/src/attachment/"] },
+      "targetPackages": ["@myagents-dsh/host-ports"],
+      "dshSeams": ["public DSH AttachmentStore Provider"],
+      "piAssumptionsToRemove": ["Pi message/image content ownership and Runtime byte storage"],
+      "acceptanceEvidence": ["hash/MIME/size/stale/cancel/release and Host ownership tests"],
+      "provenance": "private MyAgents-authored lease algorithms and synthetic tests",
+      "privateDataPolicy": "copy no attachment bytes; regenerate tiny synthetic media"
+    },
+    {
+      "id": "managed-checkpoint",
+      "capability": "Managed root Write/Edit preimage and checkpoint coordination",
+      "workstream": "B1-W4",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": { "prefixes": ["packages/runtime-core/src/checkpoint/"] },
+      "targetPackages": ["@myagents-dsh/checkpoint"],
+      "dshSeams": ["required product Session events and governed tool publication"],
+      "piAssumptionsToRemove": ["Pi entry anchors and Pi session mutation callbacks"],
+      "acceptanceEvidence": ["root Write/Edit-only crash/race/preimage/fault matrix"],
+      "provenance": "private MyAgents-authored transaction algorithms and tests",
+      "privateDataPolicy": "copy algorithms only; use generated file contents and temporary workspaces"
+    },
+    {
+      "id": "component-lifecycle",
+      "capability": "Declarative agents, commands, Hooks, Host tools, MCP, and component registry",
+      "workstream": "B1-W3",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": { "prefixes": ["packages/runtime-core/src/component/"] },
+      "targetPackages": ["@myagents-dsh/component-runtime", "@myagents-dsh/host-ports"],
+      "dshSeams": ["prepared public DSH tool/prompt/Skill/Agent effect contributions"],
+      "piAssumptionsToRemove": ["Pi extension runner, resource loader, registry, and callback execution"],
+      "acceptanceEvidence": ["zero-visibility prepare, atomic promotion/rollback, collision, and leak tests"],
+      "provenance": "private MyAgents-authored validators/state machines and synthetic tests",
+      "privateDataPolicy": "copy no extension content; regenerate declarative synthetic descriptors"
+    },
+    {
+      "id": "execution-security-helpers",
+      "capability": "Execution environment, ReadState, and Web safety helpers",
+      "workstream": "B1-W2",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": { "prefixes": ["packages/runtime-core/src/execution/"] },
+      "targetPackages": ["@myagents-dsh/platform-runtime", "@myagents-dsh/tool-runtime-product", "@myagents-dsh/tools-web"],
+      "dshSeams": ["public filesystem/subprocess/web Providers plus monotonic product guards"],
+      "piAssumptionsToRemove": ["Pi execution context and environment ownership"],
+      "acceptanceEvidence": ["path identity, stale-read, sealed environment, SSRF, and cancellation tests"],
+      "provenance": "private MyAgents-authored engine-neutral security helpers and tests",
+      "privateDataPolicy": "retain no real environment values, hosts, paths, or responses"
+    },
+    {
+      "id": "interaction-and-permission",
+      "capability": "Interaction broker and monotonic permission gate",
+      "workstream": "B1-W2 and B1-W3",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": {
+        "prefixes": [
+          "packages/runtime-core/src/interaction/",
+          "packages/runtime-core/src/permission/"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/tool-runtime-product", "@myagents-dsh/host-ports"],
+      "dshSeams": ["DSH user questions and approval Providers"],
+      "piAssumptionsToRemove": ["Pi hook/permission callback context and turn identity"],
+      "acceptanceEvidence": ["register-before-wait, revision, stale response, cancellation, and deny-by-default tests"],
+      "provenance": "private MyAgents-authored broker/policy algorithms and tests",
+      "privateDataPolicy": "synthetic interactions only"
+    },
+    {
+      "id": "provider-policy",
+      "capability": "Credential, profile security, reasoning, and WebSearch provider policy",
+      "workstream": "B1-W2 and B1-W3",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": { "prefixes": ["packages/runtime-core/src/provider/"] },
+      "targetPackages": ["@myagents-dsh/host-ports", "@myagents-dsh/product-profile", "@myagents-dsh/tools-web"],
+      "dshSeams": ["public CredentialProvider, LlmAdapter, and Web Provider contracts"],
+      "piAssumptionsToRemove": ["Pi provider catalog, API wrapper, credential fallback, and reasoning types"],
+      "acceptanceEvidence": ["Host-only credentials, route freeze, no ambient fallback, and normalized error tests"],
+      "provenance": "private MyAgents-authored security/policy logic and tests",
+      "privateDataPolicy": "never copy credentials, endpoints from local config, or provider payloads"
+    },
+    {
+      "id": "task-graph",
+      "capability": "Durable plan state and dependency-aware TaskGraph folds",
+      "workstream": "B1-W2",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": {
+        "paths": [
+          "packages/runtime-core/src/session/plan-state.ts",
+          "packages/runtime-core/src/session/plan-state.unit.test.ts",
+          "packages/runtime-core/src/session/task-graph.ts",
+          "packages/runtime-core/src/session/task-graph.unit.test.ts"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/tools-interaction", "@myagents-dsh/task-graph"],
+      "dshSeams": ["required declaration-merged DSH Session events"],
+      "piAssumptionsToRemove": ["Pi session append/projection/event identifiers"],
+      "acceptanceEvidence": ["durable fold, corruption, cycle, transition, and resume tests"],
+      "provenance": "private MyAgents-authored state machines and tests",
+      "privateDataPolicy": "synthetic state/event fixtures only"
+    },
+    {
+      "id": "operation-and-session-integration",
+      "capability": "Operation correlation, Session control/locator, and turn coordination",
+      "workstream": "B1-W1 and B1-W4",
+      "classification": "rewrite integration",
+      "testFixtureDisposition": "none",
+      "matches": {
+        "paths": [
+          "packages/runtime-core/src/session/controller.ts",
+          "packages/runtime-core/src/session/locator-store.ts",
+          "packages/runtime-core/src/session/operation-correlation.ts",
+          "packages/runtime-core/src/turn/coordinator.ts"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/operation-runtime", "@myagents-dsh/runtime-product", "@myagents-dsh/persistence-product"],
+      "dshSeams": ["DSH Agent Inbox MessageId, turns, Session events, and public persistence"],
+      "piAssumptionsToRemove": ["Pi AgentSession, agent_start/settled, entry tree/leaf, and Pi locator format"],
+      "acceptanceEvidence": ["one-to-many DSH turn spike, durable terminal/idempotency, resume, and mutation tests"],
+      "provenance": "private MyAgents-authored product algorithms mixed with Pi authority",
+      "privateDataPolicy": "port pure folds/fixtures only after replacing every Pi identity"
+    },
+    {
+      "id": "work-registry",
+      "capability": "Stable child/background work identities and lifecycle projection",
+      "workstream": "B1-W2",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": { "prefixes": ["packages/runtime-core/src/work/"] },
+      "targetPackages": ["@myagents-dsh/tools-agent", "@myagents-dsh/operation-runtime"],
+      "dshSeams": ["public DSH jobs and subagent handles"],
+      "piAssumptionsToRemove": ["Pi child Agent execution and mailbox/session ownership"],
+      "acceptanceEvidence": ["lineage, retention, stop/message, root terminal, and cleanup tests"],
+      "provenance": "private MyAgents-authored projection/state model",
+      "privateDataPolicy": "copy no child prompts or transcripts"
+    },
+    {
+      "id": "legacy-runtime-kernel",
+      "capability": "Pi outer runtime kernel",
+      "workstream": "excluded",
+      "classification": "exclude",
+      "testFixtureDisposition": "none",
+      "matches": { "paths": ["packages/runtime-core/src/runtime/kernel.ts"] },
+      "targetPackages": ["none"],
+      "dshSeams": ["replaced by Cordis composition and owner-specific services"],
+      "piAssumptionsToRemove": ["entire outer compatibility kernel and second runtime authority"],
+      "acceptanceEvidence": ["no copied kernel and no second AgentLoop/Session/tool executor audit"],
+      "provenance": "private MyAgents-authored Pi composition source retained only as negative evidence",
+      "privateDataPolicy": "do not copy"
+    },
+    {
+      "id": "pi-runtime-authorities",
+      "capability": "Pi Session factory, native entries, Pi types/events, usage, and ls wrapper",
+      "workstream": "excluded",
+      "classification": "exclude",
+      "testFixtureDisposition": "exclude",
+      "matches": { "prefixes": ["packages/runtime-core/src/pi/"] },
+      "targetPackages": ["none"],
+      "dshSeams": ["public DSH Agent, Session, ToolRuntime, and event types"],
+      "piAssumptionsToRemove": ["all files in this family are Pi authority or Pi-specific repair wrappers"],
+      "acceptanceEvidence": ["dependency/private-import scan proves zero Pi production path"],
+      "provenance": "private MyAgents-authored Pi integration retained as do-not-port evidence",
+      "privateDataPolicy": "do not copy"
+    },
+    {
+      "id": "standard-test-host",
+      "capability": "Memory transport, Standard Test Host, and work completion deduplication",
+      "workstream": "Pre-Batch and Batch 1 gate",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": { "prefixes": ["packages/test-host/"] },
+      "targetPackages": ["@myagents-dsh/test-host"],
+      "dshSeams": ["generated native client only"],
+      "piAssumptionsToRemove": ["Pi protocol payloads, Pi engine identity, and Pi entry assertions"],
+      "acceptanceEvidence": ["all reverse ports, lifecycle, restart, malformed-frame, and no-internal-import tests"],
+      "provenance": "private MyAgents-authored engine-neutral Host harness and synthetic tests",
+      "privateDataPolicy": "fake Host data and temporary roots only"
+    },
+    {
+      "id": "protocol-generator-script",
+      "capability": "Deterministic protocol projection generator",
+      "workstream": "PRE-A6",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": { "paths": ["scripts/generate-protocol.ts"] },
+      "targetPackages": ["@myagents-dsh/protocol"],
+      "dshSeams": ["none; build-time projection"],
+      "piAssumptionsToRemove": ["protocol 1.1 and Pi-specific schema projections"],
+      "acceptanceEvidence": ["candidate-v2 byte-stable generation and manual-edit drift failure"],
+      "provenance": "private MyAgents-authored build script",
+      "privateDataPolicy": "generate from sanitized schema source only"
+    },
+    {
+      "id": "tool-generator-script",
+      "capability": "Deterministic canonical tool projection generator",
+      "workstream": "B1-W2",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": { "paths": ["scripts/generate-tool-contracts.ts"] },
+      "targetPackages": ["@myagents-dsh/tool-contracts"],
+      "dshSeams": ["none; build-time projection"],
+      "piAssumptionsToRemove": ["Pi profile/package output locations"],
+      "acceptanceEvidence": ["exact twenty deterministic generation and drift test"],
+      "provenance": "private MyAgents-authored build script",
+      "privateDataPolicy": "generate from sanitized contracts only"
+    },
+    {
+      "id": "artifact-and-security",
+      "capability": "Runtime artifact builder, verifier, provenance, and forbidden-content checks",
+      "workstream": "PRE-A9 and Batch 1 gate",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": {
+        "paths": ["scripts/build-artifact.mjs", "scripts/verify-artifact.mjs"]
+      },
+      "targetPackages": ["@myagents-dsh/artifact-verifier"],
+      "dshSeams": ["none; build-time artifact closure"],
+      "piAssumptionsToRemove": ["Pi package/version/digest and Pi runtime entry layout"],
+      "acceptanceEvidence": ["clean-install, content manifest, tamper, secret/private-path, and DSH closure tests"],
+      "provenance": "private MyAgents-authored artifact scripts",
+      "privateDataPolicy": "copy algorithms only; regenerate all manifests and canaries"
+    },
+    {
+      "id": "sdk-packaging-scripts",
+      "capability": "SDK package preparation and credentialed campaign scripts",
+      "workstream": "Batch 2",
+      "classification": "exclude",
+      "testFixtureDisposition": "none",
+      "matches": {
+        "paths": [
+          "scripts/prepare-agent-sdk-package.mjs",
+          "scripts/run-agent-sdk-campaign.mjs",
+          "scripts/verify-agent-sdk-package.mjs"
+        ]
+      },
+      "targetPackages": ["none in Batch 1"],
+      "dshSeams": ["later native client facade"],
+      "piAssumptionsToRemove": ["old Runtime artifact and SDK package paths"],
+      "acceptanceEvidence": ["absence from Batch 1 production/release scripts"],
+      "provenance": "private MyAgents-authored Batch 2 implementation evidence",
+      "privateDataPolicy": "do not copy during Pre-Batch or Batch 1"
+    },
+    {
+      "id": "platform-smoke-script",
+      "capability": "Cross-platform process/artifact smoke entry",
+      "workstream": "PRE-A11 and Batch 1 gate",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": { "paths": ["scripts/platform-smoke.mjs"] },
+      "targetPackages": ["@myagents-dsh/platform-runtime", "@myagents-dsh/artifact-verifier"],
+      "dshSeams": ["composition-selected platform Provider boundary"],
+      "piAssumptionsToRemove": ["Pi artifact identity and POSIX-only assumptions"],
+      "acceptanceEvidence": ["darwin-arm64/win32-x64/linux-x64 adapter and native-campaign contract"],
+      "provenance": "private MyAgents-authored smoke script",
+      "privateDataPolicy": "temporary synthetic roots only"
+    },
+    {
+      "id": "workspace-clean-script",
+      "capability": "Explicit build-output cleanup",
+      "workstream": "PRE-A3",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "none",
+      "matches": { "paths": ["scripts/clean.mjs"] },
+      "targetPackages": ["root workspace"],
+      "dshSeams": ["none"],
+      "piAssumptionsToRemove": ["old package/output path list"],
+      "acceptanceEvidence": ["cleanup touches only declared generated roots"],
+      "provenance": "private MyAgents-authored build utility",
+      "privateDataPolicy": "contains no user data"
+    },
+    {
+      "id": "protocol-process-conformance",
+      "capability": "Protocol inventory and process-level strict peer conformance",
+      "workstream": "PRE-A7 and B1-W1",
+      "classification": "contract-test input",
+      "testFixtureDisposition": "migrate",
+      "matches": { "paths": ["tests/protocol.conformance.test.ts"] },
+      "targetPackages": ["@myagents-dsh/protocol", "@myagents-dsh/test-host"],
+      "dshSeams": ["independent native peer"],
+      "piAssumptionsToRemove": ["Pi payload fixtures and Pi engine identity"],
+      "acceptanceEvidence": ["generated candidate-v2 positive/negative frame corpus"],
+      "provenance": "private MyAgents-authored synthetic conformance tests",
+      "privateDataPolicy": "regenerate frames; copy no Runtime transcript"
+    },
+    {
+      "id": "runtime-conformance-corpus",
+      "capability": "Runtime foundation, process, and WorkRegistry conformance",
+      "workstream": "Batch 1 accumulated gate",
+      "classification": "contract-test input",
+      "testFixtureDisposition": "migrate",
+      "matches": {
+        "paths": [
+          "tests/runtime-foundation.conformance.test.ts",
+          "tests/runtime-server-process.conformance.test.ts",
+          "tests/work-registry.conformance.test.ts"
+        ]
+      },
+      "targetPackages": ["@myagents-dsh/test-host", "@myagents-dsh/testkit", "root conformance tests"],
+      "dshSeams": ["real DSH AgentLoop/Session/ctx.tools through packed native RPC"],
+      "piAssumptionsToRemove": ["fake Pi, Pi entry/event assertions, and old artifact identity"],
+      "acceptanceEvidence": ["DSH-native process/fault/cancellation/resource suites"],
+      "provenance": "private MyAgents-authored synthetic integration tests",
+      "privateDataPolicy": "migrate scenario logic only with generated fixtures"
+    },
+    {
+      "id": "compaction-fixture",
+      "capability": "Compaction evidence helper",
+      "workstream": "B1-W4",
+      "classification": "copy-adapt",
+      "testFixtureDisposition": "migrate",
+      "matches": { "paths": ["tests/support/compaction-evidence.ts"] },
+      "targetPackages": ["@myagents-dsh/testkit", "@myagents-dsh/persistence-product"],
+      "dshSeams": ["public DSH compaction and Session surface events"],
+      "piAssumptionsToRemove": ["Pi entry/leaf compaction facts"],
+      "acceptanceEvidence": ["exact DSH derived history and operation idempotency tests"],
+      "provenance": "private MyAgents-authored synthetic helper",
+      "privateDataPolicy": "synthetic messages only"
+    },
+    {
+      "id": "fake-pi-fixture",
+      "capability": "Pi fake Agent/session fixture",
+      "workstream": "excluded",
+      "classification": "exclude",
+      "testFixtureDisposition": "exclude",
+      "matches": { "paths": ["tests/support/fake-pi.ts"] },
+      "targetPackages": ["none"],
+      "dshSeams": ["replace with public DSH fake LLM and AgentLoop testkit"],
+      "piAssumptionsToRemove": ["entire fake models Pi authority and events"],
+      "acceptanceEvidence": ["new DSH testkit contains no Pi import or emulation"],
+      "provenance": "private MyAgents-authored Pi test fixture retained only as negative evidence",
+      "privateDataPolicy": "do not copy"
+    },
+    {
+      "id": "legacy-test-config",
+      "capability": "Old test TypeScript project metadata",
+      "workstream": "PRE-A3",
+      "classification": "contract-test input",
+      "testFixtureDisposition": "migrate",
+      "matches": { "paths": ["tests/tsconfig.json"] },
+      "targetPackages": ["root workspace"],
+      "dshSeams": ["none"],
+      "piAssumptionsToRemove": ["old workspace references"],
+      "acceptanceEvidence": ["new exact Node/npm/TypeScript test project compiles"],
+      "provenance": "private MyAgents-authored build metadata",
+      "privateDataPolicy": "contains no data"
+    }
+  ]
+}

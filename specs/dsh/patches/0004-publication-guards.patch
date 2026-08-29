@@ -1,0 +1,211 @@
+diff --git a/packages/core/agent-loop/tests/publication-guards.spec.ts b/packages/core/agent-loop/tests/publication-guards.spec.ts
+new file mode 100644
+index 0000000000..bd829ddb2b
+--- /dev/null
++++ b/packages/core/agent-loop/tests/publication-guards.spec.ts
+@@ -0,0 +1,77 @@
++import { Context } from '@deepseek-ai/cordis'
++import AgentRegistry from '@deepseek-ai/dsh-agent'
++import type { Agent } from '@deepseek-ai/dsh-agent'
++import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
++import { describe, expect, it, vi } from 'vitest'
++
++const stubAgent = (id: string, session: Session): Agent => ({
++  id: SessionId(id),
++  session,
++} as Agent)
++
++describe('publication guards', () => {
++  it('rejects a Session before store mutation and restores stock behavior on dispose', async () => {
++    const ctx = new Context()
++    await ctx.plugin(SessionStore)
++    const allowed = Session.create(SessionId('allowed-session'))
++    const guard = vi.fn((session: Session) => {
++      expect(ctx.sessions.get(session.id)).toBeUndefined()
++      if (session !== allowed) throw new Error('session publication denied')
++    })
++    const disposeGuard = ctx.sessions.setPublicationGuard(guard)
++
++    expect(() => ctx.sessions.create(SessionId('rogue-session'))).toThrow('session publication denied')
++    expect(ctx.sessions.list()).toEqual([])
++    const detach = ctx.sessions.enter(allowed)
++    expect(ctx.sessions.list()).toEqual([allowed])
++    expect(guard).toHaveBeenCalledTimes(2)
++    detach()
++
++    disposeGuard()
++    const stock = ctx.sessions.create(SessionId('stock-session'))
++    expect(ctx.sessions.get(stock.id)).toBe(stock)
++  })
++
++  it('rejects an Agent before registry mutation with exact owner attribution', async () => {
++    const ctx = new Context()
++    await ctx.plugin(AgentRegistry)
++    const allowedSession = Session.create(SessionId('allowed-agent'))
++    const allowed = stubAgent('allowed-agent', allowedSession)
++    const owner = stubAgent('owner', Session.create(SessionId('owner')))
++    const guard = vi.fn((agent: Agent, candidateOwner: Agent | undefined) => {
++      expect(ctx.agents.get(agent.id)).toBeUndefined()
++      if (agent !== allowed || candidateOwner !== owner) throw new Error('agent publication denied')
++    })
++    const disposeGuard = ctx.agents.setPublicationGuard(guard)
++
++    expect(() => ctx.agents.register(stubAgent('rogue-agent', Session.create(SessionId('rogue-agent')))))
++      .toThrow('agent publication denied')
++    expect(ctx.agents.list()).toEqual([])
++    const detach = ctx.agents.enter(allowed, owner)
++    expect(ctx.agents.get(allowed.id)).toBe(allowed)
++    expect(guard).toHaveBeenCalledTimes(2)
++    detach()
++
++    disposeGuard()
++    const stock = stubAgent('stock-agent', Session.create(SessionId('stock-agent')))
++    const detachStock = ctx.agents.enter(stock, undefined)
++    expect(ctx.agents.get(stock.id)).toBe(stock)
++    detachStock()
++  })
++
++  it('allows only one guard of each kind and validates the callback', async () => {
++    const ctx = new Context()
++    await ctx.plugin(SessionStore)
++    await ctx.plugin(AgentRegistry)
++    const disposeSession = ctx.sessions.setPublicationGuard(() => undefined)
++    const disposeAgent = ctx.agents.setPublicationGuard(() => undefined)
++
++    expect(() => ctx.sessions.setPublicationGuard(() => undefined)).toThrow(/already registered/)
++    expect(() => ctx.agents.setPublicationGuard(() => undefined)).toThrow(/already registered/)
++    expect(() => ctx.sessions.setPublicationGuard(undefined as never)).toThrow(TypeError)
++    expect(() => ctx.agents.setPublicationGuard(undefined as never)).toThrow(TypeError)
++
++    disposeAgent()
++    disposeSession()
++  })
++})
+diff --git a/packages/core/agent/src/index.ts b/packages/core/agent/src/index.ts
+index 81052096dc..dc741e2919 100644
+--- a/packages/core/agent/src/index.ts
++++ b/packages/core/agent/src/index.ts
+@@ -70,6 +70,14 @@ export type AgentSetup = (
+   agentCtx: Context,
+ ) => AgentSetupCommit | Promise<AgentSetupCommit | void> | void
+ 
++/**
++ * Synchronous fail-closed guard invoked immediately before an Agent registry
++ * entry becomes visible. Deployments that own a stricter publication policy
++ * install one guard through {@link AgentRegistry.setPublicationGuard}; stock
++ * DSH behavior is unchanged when no guard is installed.
++ */
++export type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void
++
+ /**
+  * Options for programmatically creating an agent through the registry factory
+  * ({@link AgentRegistry.create}). The caller supplies the single live
+@@ -256,6 +264,7 @@ interface FactorySlot {
+ export class AgentRegistry extends Service {
+   private store = new Map<SessionId, AgentEntry>()
+   private factory: FactorySlot | undefined
++  private publicationGuard: AgentPublicationGuard | undefined
+   private readonly initiators = new AsyncLocalStorage<Agent | undefined>()
+   private readonly initiatorRuns = new AsyncLocalStorage<InitiatorRun>()
+   private initiatorState: 'active' | 'closing' | 'disposed' = 'active'
+@@ -387,6 +396,28 @@ export class AgentRegistry extends Service {
+     return dispose
+   }
+ 
++  /**
++   * Install the one process-wide Agent publication guard. The guard runs at
++   * the authoritative {@link enter} boundary after identity/collision checks
++   * and before the registry mutates. A synchronous throw rejects publication
++   * without exposing the candidate. Registration is effect-scoped and
++   * exclusive; the returned disposer restores stock behavior.
++   * @param guard - deployment-owned synchronous publication policy.
++   * @returns the exact Cordis effect disposer.
++   */
++  setPublicationGuard(guard: AgentPublicationGuard): () => void {
++    if (typeof guard !== 'function') throw new TypeError('agent publication guard must be a function')
++    const dispose = this.ctx.effect(() => {
++      if (this.publicationGuard !== undefined) {
++        throw new Error('an agent publication guard is already registered')
++      }
++      this.publicationGuard = guard
++      return () => { this.publicationGuard = undefined }
++    }, 'agents.setPublicationGuard()')
++    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
++    return dispose
++  }
++
+   /** Return the active creation factory. */
+   private requireFactory(): FactorySlot {
+     if (this.factory === undefined) throw new Error(NO_FACTORY_MESSAGE)
+@@ -480,6 +511,7 @@ export class AgentRegistry extends Service {
+     // This is the authoritative collision boundary. Concurrent create/resume
+     // operations may both prepare, but only one exact entry can publish.
+     if (this.store.has(id)) throw new Error(`agent "${id}" is already registered`)
++    this.publicationGuard?.(agent, owner)
+     const entry: AgentEntry = {
+       id,
+       agent,
+diff --git a/packages/core/session/src/index.ts b/packages/core/session/src/index.ts
+index 2d82a88623..588b4f6e07 100644
+--- a/packages/core/session/src/index.ts
++++ b/packages/core/session/src/index.ts
+@@ -760,6 +760,14 @@ export class Session {
+ /** A fork source: either the live session object or its live store id. */
+ export type SessionForkSource = Session | SessionId
+ 
++/**
++ * Synchronous fail-closed guard invoked immediately before a Session store
++ * entry becomes visible. Deployments with a stricter publication policy may
++ * install one through {@link SessionStore.setPublicationGuard}; stock DSH
++ * behavior is unchanged when no guard is installed.
++ */
++export type SessionPublicationGuard = (session: Session) => void
++
+ /**
+  * Rejection codes for session forking: the fork source id is unknown to the
+  * live store (`SESSION_NOT_FOUND`) or names a session object that is not the
+@@ -792,6 +800,7 @@ export class SessionForkError extends Error {
+ export class SessionStore extends Service {
+   private store = new Map<SessionId, SessionEntry>()
+   private counter = 0
++  private publicationGuard: SessionPublicationGuard | undefined
+ 
+   constructor(ctx: Context) {
+     super(ctx, 'sessions')
+@@ -806,6 +815,28 @@ export class SessionStore extends Service {
+     })
+   }
+ 
++  /**
++   * Install the one process-wide Session publication guard. The guard runs at
++   * the authoritative {@link enter} boundary after collision/attachment checks
++   * and before store or attachment state mutates. A synchronous throw rejects
++   * publication without exposing the candidate. Registration is effect-scoped
++   * and exclusive; the returned disposer restores stock behavior.
++   * @param guard - deployment-owned synchronous publication policy.
++   * @returns the exact Cordis effect disposer.
++   */
++  setPublicationGuard(guard: SessionPublicationGuard): () => void {
++    if (typeof guard !== 'function') throw new TypeError('session publication guard must be a function')
++    const dispose = this.ctx.effect(() => {
++      if (this.publicationGuard !== undefined) {
++        throw new Error('a session publication guard is already registered')
++      }
++      this.publicationGuard = guard
++      return () => { this.publicationGuard = undefined }
++    }, 'sessions.setPublicationGuard()')
++    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
++    return dispose
++  }
++
+   /**
+    * Create a session owned by the calling fiber: disposing that fiber stops
+    * event notification and removes the session from the store. `options.seed`
+@@ -917,6 +948,7 @@ export class SessionStore extends Service {
+     // preparation. Only one exact same-id transaction can publish.
+     if (this.store.has(id)) throw new Error(`session "${id}" already exists`)
+     if (attachments.has(session)) throw new Error(`session "${id}" is already attached to a store`)
++    this.publicationGuard?.(session)
+     const entry: SessionEntry = {
+       id,
+       session,

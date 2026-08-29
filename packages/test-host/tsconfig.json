@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/test-host",
+    "tsBuildInfoFile": "../../dist/packages/test-host/.tsbuildinfo"
+  },
+  "files": ["src/artifact-launcher.ts", "src/index.ts", "src/memory-peer.ts", "src/standard-test-host.ts"],
+  "references": [{ "path": "../protocol" }]
+}

@@ -1,9 +1,9 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented
 batch: 1
 workstream: B1-W2
-updated: 2026-08-15
+updated: 2026-08-29
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ./batch-1-runtime-rpc.md
@@ -11,6 +11,8 @@ depends_on:
 ---
 
 # Batch 1 Agent Experience implementation RFC
+
+> Current disposition (2026-08-29): implemented for the current 20-tool profile. Exact schemas, manifests, and tests supersede historical open-action language below.
 
 ## 1. Purpose
 
@@ -20,7 +22,7 @@ The product contract, engine-neutral tool implementation, and synthetic fixtures
 
 ## 2. Source evidence
 
-The design was checked against DSH `47f943859bef` / `0.1.0-rc.5`:
+The design was initially checked against DSH `47f943859bef` / `0.1.0-rc.5` and re-audited by `B1-DSH-R1` against `b150a551b8d4` / `0.1.1-rc.2`; the current capability delta and patch dispositions are recorded in `../dsh/upstream-rebaseline-0.1.1-rc.2.md`:
 
 - `@deepseek-ai/dsh-tools` exposes the single scoped `ToolRuntime`, `ToolDefinition`, restrictions, monotonic guards, pre/around/post waterfalls, final content, presentation, timeout metadata, and a boolean parallel/exclusive classifier;
 - AgentLoop appends `assistant/message` before scheduling its tool calls, then appends each `tool/call` immediately before `ToolRuntime.prepare()`;
@@ -286,7 +288,7 @@ WebSearch is unavailable unless an approved Provider and credential reference ar
 
 `AskUserQuestion` calls `ctx.userQuestions.ask()` with a stable interaction identity. The product provider registers the interaction before awaiting Host/local response and settles exactly once. Child origin may ask only when its descriptor and policy explicitly permit it.
 
-`EnterPlanMode` and `ExitPlanMode` are compatibility definitions over the public DSH plan controller. Plan state is projected from required Session facts and included in each operation birth snapshot. Enter is idempotent. Exit requires the accepted approval/interaction path. Plan-mode restrictions are `ctx.tools` hard guards and cannot be bypassed by direct calls, MCP, Host tools, or Hooks.
+`EnterPlanMode` and `ExitPlanMode` are compatibility definitions owned by `ProductPlanService`. The service appends a product ownership fact adjacent to the public DSH `plan/mode` event and cross-checks its projection with the public `foldPlanMode` helper. The stock `PlanModeController` is deliberately not installed: it also owns a stock exit tool, prompt text, and in-turn pending-state semantics that differ from this product contract. Plan state is included in each operation birth snapshot, while the exact operation that durably commits a transition may continue under the new revision; older concurrent operations remain stale. Enter is idempotent. Exit requires the accepted approval/interaction path. A monotonic `ctx.tools` guard applies the canonical per-tool plan policy to every definition, including later Host/MCP registrations, so direct calls and alternate registration paths cannot bypass it.
 
 ## 12. Skills
 

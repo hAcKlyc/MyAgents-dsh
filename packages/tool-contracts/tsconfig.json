@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../dist/packages/tool-contracts",
+    "tsBuildInfoFile": "../../dist/packages/tool-contracts/.tsbuildinfo"
+  },
+  "files": [
+    "generated/catalog-fixtures-v1.json",
+    "generated/canonical-tool-contracts-v1.json",
+    "generated/dsh-reuse-matrix-v1.json",
+    "generated/tool-catalog.schema.json",
+    "generated/tool-contract-meta.json",
+    "src/contract-source.ts",
+    "src/dsh-schema.ts",
+    "src/index.ts",
+    "src/schema.ts",
+    "src/validation.ts"
+  ],
+  "references": [
+    { "path": "../protocol" }
+  ]
+}

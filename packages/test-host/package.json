@@ -1,0 +1,14 @@
+{
+  "name": "@myagents-dsh/test-host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Generated-client-only Standard Host test-kit owner",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/protocol": "0.0.0"
+  }
+}

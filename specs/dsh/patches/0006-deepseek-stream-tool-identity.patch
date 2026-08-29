@@ -1,0 +1,48 @@
+diff --git a/packages/llm/llm-deepseek/src/translate.ts b/packages/llm/llm-deepseek/src/translate.ts
+index f1a626735..c8e651b2f 100644
+--- a/packages/llm/llm-deepseek/src/translate.ts
++++ b/packages/llm/llm-deepseek/src/translate.ts
+@@ -156,8 +156,9 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
+           toolBlocks.set(call.index, block)
+           yield { type: 'block-start', index: block.index, blockType: 'tool-call' }
+         }
+-        if (call.id !== undefined) block.callId = call.id
+-        if (call.function?.name !== undefined) block.name = call.function.name
++        if (typeof call.id === 'string' && call.id.length > 0) block.callId = call.id
++        const name = call.function?.name
++        if (typeof name === 'string' && name.length > 0) block.name = name
+         const fragment = call.function?.arguments ?? ''
+         block.text += fragment
+         yield {
+diff --git a/packages/llm/llm-deepseek/tests/translate.spec.ts b/packages/llm/llm-deepseek/tests/translate.spec.ts
+index e5a98d1c6..8a8650307 100644
+--- a/packages/llm/llm-deepseek/tests/translate.spec.ts
++++ b/packages/llm/llm-deepseek/tests/translate.spec.ts
+@@ -123,6 +123,27 @@ describe('translate: tool calls', () => {
+     ])
+   })
+ 
++  it('preserves the established tool identity across empty continuation fields', async () => {
++    const chunks = await collect(translate(feed(
++      firstChunk,
++      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_00_x', type: 'function', function: { name: 'get_weather', arguments: '' } }] } }] },
++      { choices: [{ delta: { tool_calls: [{ index: 0, id: '', function: { name: '', arguments: '{"city"' } }] } }] },
++      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: ': "Paris"}' } }] } }] },
++      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
++      DONE,
++    )))
++    expect(chunks.filter(chunk => chunk.type === 'tool-call-delta')).toEqual([
++      { type: 'tool-call-delta', index: 0, id: 'call_00_x', name: 'get_weather', argumentsDelta: '' },
++      { type: 'tool-call-delta', index: 0, id: 'call_00_x', name: 'get_weather', argumentsDelta: '{"city"' },
++      { type: 'tool-call-delta', index: 0, id: 'call_00_x', name: 'get_weather', argumentsDelta: ': "Paris"}' },
++    ])
++    expect(chunks.find(chunk => chunk.type === 'block-end')).toEqual({
++      type: 'block-end',
++      index: 0,
++      block: { type: 'tool-call', id: 'call_00_x', name: 'get_weather', arguments: '{"city": "Paris"}' },
++    })
++  })
++
+   it('disambiguates parallel tool calls by wire index', async () => {
+     const chunks = await collect(translate(feed(
+       firstChunk,

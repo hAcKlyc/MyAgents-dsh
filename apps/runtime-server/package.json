@@ -1,0 +1,21 @@
+{
+  "name": "@myagents-dsh/runtime-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Composition and process-lifecycle boundary for the verified MyAgents-dsh runtime artifact",
+  "files": ["src"],
+  "exports": {
+    ".": "./src/index.ts",
+    "./process": "./src/process.ts",
+    "./self-check": "./src/self-check.ts"
+  },
+  "dependencies": {
+    "@myagents-dsh/artifact-verifier": "0.0.0",
+    "@myagents-dsh/product-profile": "0.0.0",
+    "@myagents-dsh/protocol": "0.0.0",
+    "@myagents-dsh/rpc-server": "0.0.0",
+    "@myagents-dsh/runtime-product": "0.0.0",
+    "@vscode/ripgrep": "1.18.0"
+  }
+}
