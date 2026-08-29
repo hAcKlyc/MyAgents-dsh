@@ -1,8 +1,8 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented-runtime_web-release-open
 batch: 1
-updated: 2026-08-15
+updated: 2026-08-29
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ./batch-1-runtime-rpc.md
@@ -13,6 +13,8 @@ depends_on:
 ---
 
 # Batch 1 verification, artifact, and release RFC
+
+> Current disposition (2026-08-29): Runtime artifact/native/dynamic evidence is complete for manifest `61b9d01b…`; Reference Web A5, fresh reviews, final distribution handoff, and explicit user acceptance remain open.
 
 ## 1. Purpose
 

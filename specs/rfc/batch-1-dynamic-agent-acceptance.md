@@ -1,8 +1,8 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented-runtime
 batch: 1
-updated: 2026-08-23
+updated: 2026-08-29
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ./batch-1-runtime-rpc.md
@@ -12,6 +12,8 @@ depends_on:
 ---
 
 # Batch 1 independent-Agent dynamic acceptance RFC
+
+> Current disposition (2026-08-29): implemented and passed for the latest Runtime identity. Reference Web usable-product acceptance is tracked separately under W5.
 
 ## 1. Purpose
 

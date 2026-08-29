@@ -1,7 +1,7 @@
 ---
 type: architecture
-status: draft
-updated: 2026-08-27
+status: current
+updated: 2026-08-29
 project: MyAgents-dsh
 ---
 
@@ -9,7 +9,7 @@ project: MyAgents-dsh
 
 ## 1. Purpose
 
-`MyAgents-dsh` is a batteries-included, production-oriented distribution of DeepSeek Harness. It combines a pinned DSH foundation, a fixed official product profile, MyAgents-owned capability plugins, a native bidirectional RPC boundary, and an Agent SDK-compatible facade.
+`MyAgents-dsh` is a batteries-included, production-oriented distribution of DeepSeek Harness. The implemented repository combines a pinned DSH foundation, a fixed official product profile, MyAgents-owned capability plugins, a native bidirectional RPC boundary, content-addressed verification, and a Reference Web Host. Batch 2 will add the standalone Agent SDK facade; Batch 3 consumes the same Runtime contract from the sibling `MyAgents/` repository.
 
 The project does not wrap DSH with the existing Pi runtime. The runtime process itself is a DSH/Cordis application, DSH owns the only concrete AgentLoop, and all product runtime behavior is implemented through DSH services, plugins, scopes, and durable session events.
 
@@ -24,18 +24,34 @@ The initial design review used these exact, clean authority baselines on 2026-08
 
 These rows record the initial design evidence, not the current package lock. Batch action `B1-DSH-R1` has since re-audited the implementation against `dsh-v0.1.1-rc.2`, commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`; the current executable candidate and patch dispositions are owned by `specs/dsh/upstream-rebaseline-0.1.1-rc.2.md` and the content-addressed accepted-artifact manifest.
 
+### 1.1 Current implementation and acceptance state
+
+This table is the architecture-level snapshot as of 2026-08-29. The active PRDs remain the acceptance authority.
+
+| Surface | State | Exact current boundary |
+| --- | --- | --- |
+| DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus seven isolated patches; artifact manifest `9c5ed754…` |
+| Standalone Runtime and native RPC | Runtime-side complete for the current identity | Protocol `2.0.0-draft.2`; Runtime manifest `61b9d01b…`; macOS arm64 verified |
+| Batch 3 integration handoff | Ready and independently verified | Handoff manifest `fedfe76d…`; sibling MyAgents Host work and joint acceptance not started |
+| Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
+| Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
+| Windows x64 / Linux x64 | Implementation complete, native validation pending | No verified-support claim until each native artifact campaign passes |
+
+The latest Runtime/handoff and the Reference Web artifact are different frozen distributions. They must not be described or tested as one artifact until W5 deliberately rebinds the Web Host and regenerates all affected evidence. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public-release promotion.
+
 ## 2. Product boundaries
 
 ### 2.1 In scope
 
 - A reproducible official DSH product profile for MyAgents.
-- One native stdio JSON-RPC runtime artifact used by both MyAgents and the standalone Agent SDK.
+- One native stdio JSON-RPC Runtime contract designed for MyAgents, the standalone Agent SDK, and other trusted Hosts.
 - A separately packaged local Reference Web Host that drives that exact artifact through the generated native client and provides a directly usable browser UI.
-- Agent SDK-compatible Node.js APIs and messages over that artifact.
 - Canonical coding tools, permissions, interaction, Hooks, MCP, Skills, child/background work, TaskGraph, usage/context, and session operations.
 - Host-owned credentials, product interaction, Host tools, Hooks, and attachment bytes through reverse RPC ports.
 - Crash-aware durable sessions and explicitly bounded managed-file recovery.
 - A trusted plugin-builder surface for custom distributions, separate from ordinary SDK request input.
+
+The Runtime, native protocol, product capabilities, and Reference Web code are current Batch 1 implementation. The Agent SDK-compatible Node.js surface is the confirmed Batch 2 scope, not current code. Native MyAgents consumption is the Batch 3 scope and lives primarily in the sibling repository.
 
 ### 2.2 Out of scope for v1
 
@@ -49,12 +65,11 @@ These rows record the initial design evidence, not the current package lock. Bat
 ## 3. System context
 
 ```text
-MyAgents application                         Third-party Node application
-  Product Session                              SDK query/session object
-  Provider/credential authority                LocalSdkHost callbacks
-  Product transcript/UI                        Local process/attachments
+Reference Web browser                      Future consumer Hosts
+  local conversation UI                      MyAgents (Batch 3)
+  browser projection                         Agent SDK (Batch 2)
           |                                             |
-          | generated native client                     | Agent SDK facade
+          | loopback Web Host + generated client        | generated native client/facade
           +-------------------+-------------------------+
                               |
                    bidirectional stdio JSON-RPC
@@ -78,7 +93,7 @@ MyAgents application                         Third-party Node application
           +---------------------------------------+
 ```
 
-MyAgents and the standalone SDK are two Hosts of the same runtime contract. The SDK embeds a default Host implementation; it does not bypass or replace the native protocol.
+The target architecture makes MyAgents and the standalone SDK two Hosts of the same Runtime contract. The future SDK embeds a default Host implementation; it does not bypass or replace the native protocol.
 
 The Reference Web Host is a third Host of the same contract. It may expose an ephemeral loopback-only browser carrier, but the carrier terminates in the Host process: the Runtime remains an unchanged stdio child with one primary root Session. Multiple browser-visible Sessions map to separate Runtime processes while active and to Host-owned routing metadata while cold.
 
@@ -86,9 +101,9 @@ The Reference Web Host is a third Host of the same contract. It may expose an ep
 
 ### 4.1 Consumer surfaces
 
-- MyAgents uses the complete native RPC and may consume every supported product capability.
-- `@myagents-dsh/agent-sdk` exposes a stable compatibility projection and process-lifecycle facade.
-- `@myagents-dsh/web-host` and the packaged Reference WebUI expose the complete native surface for direct local use, manual verification, and browser E2E without becoming a second Runtime.
+- `@myagents-dsh/web-host` and the packaged Reference WebUI are implemented and expose the native surface for direct local use, manual verification, and browser E2E without becoming a second Runtime.
+- MyAgents is the planned Batch 3 first-party consumer of the complete native RPC and may consume every supported product capability after its Host implementation and joint acceptance.
+- `@myagents-dsh/agent-sdk` is the planned Batch 2 compatibility projection and process-lifecycle facade; it is not implemented yet.
 - Trusted harness builders may compose exported plugin packages into a custom runtime artifact.
 
 Consumer surfaces are outside the runtime's Cordis context.
@@ -173,10 +188,11 @@ Build-time packages create and verify:
 
 - the runtime executable/artifact;
 - generated protocol schema/client/fixtures;
-- the Agent SDK package;
 - compatibility manifests;
 - dependency and license inventory;
 - clean-room, platform, soak, fault-injection, and security evidence.
+
+The current build also creates the Reference Web artifact and the immutable Batch 3 integration handoff. Building an Agent SDK package is a Batch 2 extension of this layer, not current behavior.
 
 Build-time verification is not a runtime plugin.
 
@@ -188,7 +204,7 @@ Batch 1 is implemented for three explicit product targets from the start:
 
 | Target | Implementation obligation | Batch 1 native acceptance state |
 | --- | --- | --- |
-| macOS arm64 | complete production implementation and packaging | full native verification required before Batch 1 acceptance |
+| macOS arm64 | complete production implementation and packaging | verified for Runtime manifest `61b9d01b…`; Web product acceptance remains separate |
 | Windows x64 | complete production implementation and packaging path | pending native-machine verification; no verified-support claim yet |
 | Linux x64 | complete production implementation and packaging path | pending native-platform verification; no verified-support claim yet |
 
@@ -414,9 +430,9 @@ Ordinary events are append-only within an immutable storage generation. Rewind c
 
 Shell, child-agent, MCP, Host-tool, and external file changes remain outside rollback coverage unless a later version explicitly adds a governed owner and acceptance suite.
 
-## 14. Agent SDK facade
+## 14. Planned Batch 2 Agent SDK facade
 
-`@myagents-dsh/agent-sdk` is a Host facade over the native protocol. It owns:
+The future `@myagents-dsh/agent-sdk` is a Host facade over the native protocol. It will own:
 
 - spawning and verifying the exact runtime artifact;
 - a generated native RPC client;
@@ -425,17 +441,17 @@ Shell, child-agent, MCP, Host-tool, and external file changes remain outside rol
 - message projection and async iteration;
 - callback cancellation and bounded cleanup.
 
-It does not own an AgentLoop, a second session store, or alternative tool execution. Static session helpers drive the same runtime transaction methods used by MyAgents.
+It will not own an AgentLoop, a second session store, or alternative tool execution. Static session helpers will drive the same Runtime transaction methods used by MyAgents.
 
-The compatibility manifest records every supported export, option, message, method, and deliberate gap against an exact reference SDK version. Compatibility is tested at compile time and runtime.
+Batch 2 will bind its compatibility manifest to every supported export, option, message, method, and deliberate gap against an exact reference SDK version. Compatibility will be tested at compile time and runtime.
 
-## 15. MyAgents integration
+## 15. Planned Batch 3 MyAgents integration
 
 MyAgents is the first-party native Host. It owns Product Session identity, the product transcript, provider/profile selection, credentials, UI interactions, attachment bytes, workspace identity, and product scheduling.
 
 Each Product Session sidecar owns one runtime generation. Renderer code never parses the runtime wire directly; an application-owned adapter uses the generated native client and projects events into product state. The Rust shell or unrelated processes do not become alternate protocol authorities.
 
-MyAgents consumes the standalone Batch 3 integration handoff rather than repository source. That handoff nests the complete Runtime artifact verifier, generated client/schema/fixtures, exact compatibility manifest, canonical tool/profile contracts, notices and content-bound platform evidence. Platform `verified` is accepted only when an inventoried native report passed against that exact Runtime manifest. The Reference Web artifact and Agent SDK facade are not dependencies of this integration path.
+MyAgents will consume the standalone Batch 3 integration handoff rather than repository source. The current verified handoff nests the complete Runtime artifact verifier, generated client/schema/fixtures, exact compatibility manifest, canonical tool/profile contracts, notices and content-bound platform evidence. Platform `verified` is accepted only when an inventoried native report passed against that exact Runtime manifest. The Reference Web artifact and future Agent SDK facade are not dependencies of this integration path.
 
 ## 16. DSH extension and fork policy
 
@@ -453,7 +469,7 @@ The project is authorized to carry such minimal patches against a pinned DSH sou
 
 An official DSH update requires a semantic review of every recorded seam and patch. Each patch is explicitly retired, reduced, or rebased; clean applicability is not acceptance. The source baseline, patch registry, affected ADRs, artifacts, Runtime evidence, platform evidence, and Host handoff are rebuilt for the new identity. Evidence for the previous source and bytes remains historical and cannot be inherited by the update.
 
-Known early seam risks are authoritative PreToolUse input rewriting, exact product-operation correlation and restart wake over one-to-many DSH turns, append-only rewind representation, and quiescent component-generation promotion. Product deletion/transaction capability is known to require a replacement persistence Provider on the current DSH seam.
+The early seam review identified authoritative PreToolUse input rewriting, exact product-operation correlation and restart wake over one-to-many DSH turns, append-only rewind representation, quiescent component-generation promotion, and product deletion/transactions. Batch 1 implemented their accepted dispositions through the recorded public seams, replacement persistence Provider, and minimal patch series. The current patch registry and affected module guides—not this historical risk list—are the update authority.
 
 ## 17. Failure and recovery principles
 
@@ -469,5 +485,5 @@ Known early seam risks are authoritative PreToolUse input rewriting, exact produ
 - DSH is pinned by exact version and lockfile; release evidence records the resolved commit when available.
 - Native RPC uses negotiated semantic versions and a schema digest.
 - Product profiles and canonical tool contracts have independent revisions and digests.
-- Agent SDK compatibility is versioned by manifest, not inferred from package version alone.
+- Future Agent SDK compatibility is versioned by manifest, not inferred from package version alone.
 - Protocol 1.1 from the Pi runtime is a migration source, not the DSH wire identity. The engine-neutral DSH protocol begins at candidate major version 2.

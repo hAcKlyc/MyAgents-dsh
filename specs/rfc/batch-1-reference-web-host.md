@@ -1,6 +1,8 @@
 # Batch 1 Reference Web Host and WebUI RFC
 
-Status: `accepted design; B1-W5-A1/A2/A3/A4 complete; B1-W5-A5 in progress`
+Status: `accepted design; B1-W5-A1/A2/A3/A4 complete; B1-W5-A5 and final acceptance in progress`
+
+Current artifact note (2026-08-29): Reference Web artifact `48c7f09c…` is frozen to Runtime `ddd6052e…`. The latest compaction Runtime `61b9d01b…` and Batch 3 handoff `fedfe76d…` are separate; this RFC and its older browser evidence do not prove that newer combination.
 
 ## 1. Purpose
 

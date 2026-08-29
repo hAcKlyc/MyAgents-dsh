@@ -1,14 +1,16 @@
 ---
 type: technical-rfc
-status: draft
+status: historical-implementation-baseline
 batch: 1
-updated: 2026-08-15
+updated: 2026-08-29
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ./batch-1-architecture-design.md
 ---
 
 # Batch 1 requirement traceability — implemented Pi Runtime to DSH distribution
+
+> Current disposition (2026-08-29): historical baseline used to derive Batch 1, not a list of current gaps. Current completion and remaining work are recorded in `specs/prd/plan.md` and `specs/prd/batch-1-agent-runtime.md`.
 
 ## 1. Purpose
 

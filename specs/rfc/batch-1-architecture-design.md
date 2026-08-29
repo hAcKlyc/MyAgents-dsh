@@ -1,14 +1,16 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented
 batch: 1
-updated: 2026-08-16
+updated: 2026-08-29
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ../protocol/runtime-rpc-v2.md
 ---
 
 # Batch 1 technical architecture — DSH Agent Runtime and native RPC
+
+> Current disposition (2026-08-29): implemented for the current Runtime identity. This RFC preserves the reviewed design path; `specs/ARCHITECTURE.md`, code, manifests, and the active Batch 1 ledger own current executable truth.
 
 ## 1. Decision summary
 

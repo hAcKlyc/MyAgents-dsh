@@ -1,9 +1,9 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented
 batch: 1
 workstream: B1-W1
-updated: 2026-08-16
+updated: 2026-08-29
 depends_on:
   - ../protocol/runtime-rpc-v2.md
   - ./batch-1-architecture-design.md
@@ -11,6 +11,8 @@ depends_on:
 ---
 
 # Batch 1 Runtime/RPC implementation RFC
+
+> Current disposition (2026-08-29): implemented for protocol `2.0.0-draft.2`; exact wire shapes live in the canonical TypeBox source and generated projections.
 
 ## 1. Purpose
 

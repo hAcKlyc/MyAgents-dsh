@@ -1,9 +1,9 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented
 batch: 1
 workstream: B1-W4
-updated: 2026-08-15
+updated: 2026-08-29
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ../protocol/runtime-rpc-v2.md
@@ -12,6 +12,8 @@ depends_on:
 ---
 
 # Batch 1 Session persistence and mutation RFC
+
+> Current disposition (2026-08-29): implemented, including the accepted automatic-compaction P0 extension documented in `specs/tech_docs/compaction-architecture.md`.
 
 ## 1. Purpose
 

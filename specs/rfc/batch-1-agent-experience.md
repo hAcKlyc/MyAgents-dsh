@@ -1,9 +1,9 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented
 batch: 1
 workstream: B1-W2
-updated: 2026-08-15
+updated: 2026-08-29
 depends_on:
   - ../prd/batch-1-agent-runtime.md
   - ./batch-1-runtime-rpc.md
@@ -11,6 +11,8 @@ depends_on:
 ---
 
 # Batch 1 Agent Experience implementation RFC
+
+> Current disposition (2026-08-29): implemented for the current 20-tool profile. Exact schemas, manifests, and tests supersede historical open-action language below.
 
 ## 1. Purpose
 

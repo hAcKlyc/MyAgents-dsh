@@ -1,8 +1,8 @@
 ---
 type: protocol-specification
-status: draft
-candidate_version: 2.0.0-draft.1
-updated: 2026-08-15
+status: intent-reference
+candidate_version: 2.0.0-draft.2
+updated: 2026-08-29
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 ---
 
@@ -14,7 +14,7 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Candidate version `2.0.0-draft.1` is not a released compatibility promise. Pre-Batch P0-3 translates this specification into the canonical TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and conformance tests. Code, generated digests, and tests are authoritative for exact shapes; this document remains authoritative for intent and ownership.
+Candidate version `2.0.0-draft.2` is implemented but is not a released compatibility promise. Pre-Batch P0-3 created the canonical TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and conformance tests. That source, generated digests, and tests are authoritative for exact shapes; this document remains the intent and ownership reference. If an illustrative shape below differs from generated code, generated code wins and this document must be repaired.
 
 This wire is independent of `@deepseek-ai/dsh-sdk-protocol`. The DSH SDK protocol's three request methods and four notifications are not a base version of this contract, and its JSON-RPC server is not loaded in the official profile. Both protocols may use NDJSON JSON-RPC and DSH event values without sharing method or lifecycle authority.
 
@@ -174,7 +174,7 @@ Secret values MUST be represented only by reverse-port references.
 
 ```ts
 type InitializeResult = {
-  protocolVersion: "2.0.0-draft.1"
+  protocolVersion: "2.0.0-draft.2"
   runtimeVersion: string
   runtimeGeneration: string
   runtimeEngine: {
@@ -692,7 +692,7 @@ Host MUST branch on negotiated capability values, not runtime name or version gu
 
 ## 20. Generated artifacts and conformance
 
-The Pre-Batch Foundation must generate from one contract source:
+The completed Pre-Batch Foundation generates from one contract source:
 
 ```text
 protocol.schema.json
@@ -700,7 +700,7 @@ protocol-meta.json
 protocol-fixtures.json
 host-client.generated.ts
 runtime-client.generated.ts, if separately required
-protocol-2.0.0-draft.1-evidence.json
+protocol-2.0.0-draft.2-evidence.json
 ```
 
 Conformance tests must prove:

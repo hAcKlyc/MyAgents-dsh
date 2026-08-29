@@ -1,13 +1,15 @@
 ---
 type: technical-rfc
-status: draft
+status: implemented
 batch: 1
-updated: 2026-08-23
+updated: 2026-08-29
 depends_on:
   - ./batch-1-architecture-design.md
 ---
 
 # Batch 1 DSH capability and canonical-tool map
+
+> Current disposition (2026-08-29): implemented. Historical gap and patch proposals below retain their review context; `specs/dsh/`, the current seven-patch registry, exact manifests, and executable tests own current seam truth.
 
 ## 1. Purpose
 

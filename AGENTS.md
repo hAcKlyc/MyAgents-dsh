@@ -6,7 +6,7 @@ This repository builds a production-oriented Agent Harness distribution on DeepS
 
 1. Exact installed APIs, versions, scripts, and executable constraints: code, tests, `package.json`, and the lockfile.
 2. Current owners, process boundaries, lifecycle placement, and data flow: `specs/ARCHITECTURE.md`.
-3. Wire behavior: the future canonical protocol contract source; until the Pre-Batch Foundation creates it, `specs/protocol/runtime-rpc-v2.md`.
+3. Exact wire behavior: `packages/protocol/src/contract-source.ts`, with generated schema/client/fixtures as deterministic projections. `specs/protocol/runtime-rpc-v2.md` records protocol intent and ownership, not competing exact shapes.
 4. Development entry, repository/migration relationships, Batch scope, status, and acceptance: `specs/prd/plan.md` and the active Batch PRD. Batch 1 workstream chapters refine implementation but do not create independent product gates.
 5. Compatibility claims: versioned compatibility manifests and executable fixtures, never README prose alone.
 6. Implemented core-module maintenance guides: `specs/tech_docs/`; compaction architecture and evolution: `specs/tech_docs/compaction-architecture.md`.
@@ -42,7 +42,7 @@ This repository builds a production-oriented Agent Harness distribution on DeepS
 
 ## Required release gates
 
-Each implementation Batch and internal workstream must define targeted gates. Before a Batch release commit, the minimum repository-wide gate is expected to become:
+Each implementation Batch and internal workstream must define targeted gates. Before a Batch release commit, the established minimum repository-wide gate is:
 
 ```bash
 npm run typecheck
@@ -51,4 +51,4 @@ npm test
 npm run build
 ```
 
-No command is normative until the Pre-Batch Foundation creates and locks the corresponding package scripts.
+The root `package.json` and lockfile own the exact command definitions and toolchain constraints.
