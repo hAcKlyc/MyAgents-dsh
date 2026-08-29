@@ -163,6 +163,10 @@ credentials, usage/cost projection, cancellation and explicit
 surface. Compaction start/summary/replacement/end events and their provenance
 remain durable DSH Session facts.
 
+The complete running strategy, official-vs-product ownership, persistence and
+recovery model, current core-patch boundary, and upstream-update procedure are
+maintained in [Compaction module architecture](./tech_docs/compaction-architecture.md).
+
 ### 4.6 Distribution and verification
 
 Build-time packages create and verify:
@@ -445,7 +449,9 @@ A DSH core change is justified only when:
 4. the project records the pinned upstream commit and patch inventory;
 5. an upstream contribution or issue is prepared when appropriate.
 
-The project is authorized to carry such minimal patches in a pinned DSH fork while upstream review is pending; Batch 1 does not wait indefinitely for upstream incorporation. Each patch remains an isolated upstream-ready commit with a baseline commit, digest, public API/type test, rebase alert, and removal condition. The official product profile may consume only the recorded patch series. A spike may still reject a proposed patch when an existing public seam proves sufficient.
+The project is authorized to carry such minimal patches against a pinned DSH source authority while upstream review is pending; Batch 1 does not wait indefinitely for upstream incorporation. Patches are stored in this repository, verified against exact upstream blobs, applied only to an isolated build worktree, and packed as a content-addressed artifact. The sibling upstream checkout, registry tarballs, and `node_modules` are never edited in place. Each patch remains isolated and upstream-ready with a baseline commit, digest, public API/type test, rebase alert, and removal condition. The official product profile may consume only the recorded patch series. A spike may still reject a proposed patch when an existing public seam proves sufficient.
+
+An official DSH update requires a semantic review of every recorded seam and patch. Each patch is explicitly retired, reduced, or rebased; clean applicability is not acceptance. The source baseline, patch registry, affected ADRs, artifacts, Runtime evidence, platform evidence, and Host handoff are rebuilt for the new identity. Evidence for the previous source and bytes remains historical and cannot be inherited by the update.
 
 Known early seam risks are authoritative PreToolUse input rewriting, exact product-operation correlation and restart wake over one-to-many DSH turns, append-only rewind representation, and quiescent component-generation promotion. Product deletion/transaction capability is known to require a replacement persistence Provider on the current DSH seam.
 

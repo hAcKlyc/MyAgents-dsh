@@ -11,6 +11,8 @@ This directory contains the product, architecture, protocol, and delivery author
 | Development entrypoint, background, repository relationships, migration policy, status, Batch dependencies, and acceptance | [prd/plan.md](./prd/plan.md) |
 | Batch-specific product scope and internal workstreams | The corresponding document under `prd/` |
 | P0 automatic compaction product boundary | [prd/batch-1-compaction-p0.md](./prd/batch-1-compaction-p0.md) |
+| Implemented core-module architecture and upstream/product ownership | [tech_docs/README.md](./tech_docs/README.md) |
+| Complete compaction strategy, ownership, persistence, and patch boundary | [tech_docs/compaction-architecture.md](./tech_docs/compaction-architecture.md) |
 | Reference Web usable-product features and browser acceptance journeys | [prd/batch-1-reference-web-product.md](./prd/batch-1-reference-web-product.md) |
 | Implementation design over pinned DSH public seams | [rfc/README.md](./rfc/README.md) |
 | Accepted irreversible decisions and evidence state | [adr/README.md](./adr/README.md) |

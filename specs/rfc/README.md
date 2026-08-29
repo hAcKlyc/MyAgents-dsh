@@ -10,6 +10,7 @@ This directory contains implementation design for accepted product scope. RFCs d
 | Current owner, process, lifecycle, and persistence boundaries | `specs/ARCHITECTURE.md` |
 | Exact Host/Runtime wire semantics | `specs/protocol/runtime-rpc-v2.md`, then the canonical contract source |
 | How accepted behavior is implemented over the pinned DSH surface | This directory |
+| How an implemented core module works across official DSH, patches, and product composition | `specs/tech_docs/` |
 | An irreversible choice or unresolved upstream seam | `specs/adr/` plus executable spike evidence |
 
 If an RFC discovers that an existing architecture fact is wrong, update `specs/ARCHITECTURE.md` in the same reviewable change. If an RFC needs to change product scope or acceptance, update the owning PRD instead of hiding the change here.
@@ -29,6 +30,8 @@ If an RFC discovers that an existing architecture fact is wrong, update `specs/A
 | [Verification and release](./batch-1-verification-release.md) | Standard Test Host, conformance, fault injection, dynamic Agent campaign, artifact and clean-room evidence | `draft; implementation evidence pending` |
 | [Reference Web Host and WebUI](./batch-1-reference-web-host.md) | External Host/browser contract, one-process-per-Session supervisor, reverse ports, UI architecture, loopback security, direct-open packaging, and browser evidence | `accepted design; implementation active` |
 | [Capacity-safe DSH compaction P0](./batch-1-compaction-p0.md) | Official pruner composition, summary-model capacity fitting, Prompt v2 validation/repair, safe telemetry, and artifact acceptance for `B1-W4-A11` | `implemented; packed and real-route evidence passed` |
+
+The complete post-implementation compaction maintenance model is [Compaction module architecture](../tech_docs/compaction-architecture.md). The RFC remains the implementation decision; the module document explains the whole running system and official-update boundary.
 
 The ten documents form one design set: the first three establish cross-cutting topology, DSH reuse boundaries, and requirement coverage; the seven implementation/evidence RFCs specify each workstream and the accumulated release proof. Draft RFCs are not permission to implement around an unresolved seam or mark a ledger item complete without executable evidence.
 
