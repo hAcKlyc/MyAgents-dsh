@@ -3,7 +3,7 @@ type: protocol-specification
 status: current
 module: runtime-core-and-rpc
 version: 2.0.0
-updated: 2026-08-29
+updated: 2026-08-30
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 product_scope: ../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../prd/tech_rfc_0.1_runtime_rpc.md

@@ -6,16 +6,16 @@ This repository currently delivers the standalone Runtime, its bidirectional nat
 
 ## Current delivery truth
 
-Status as of 2026-08-29:
+Status as of 2026-08-30:
 
 | Surface | State | Current authority |
 | --- | --- | --- |
-| Standalone Runtime | Protocol `2.0.0` source is frozen; formal artifact refresh is in progress | Draft.3 Runtime `a99c7d8060e36647a004edce4ee5b27221d9867c75b3a751ca3112ae4c812099` remains historical evidence only |
-| MyAgents integration handoff | Formal `2.0.0` package refresh is in progress | Draft.3 handoff `acb54443e178ae697f6a9a062264f4b02b035d990c3d98277132b6b2c446f653` must not be relabeled |
+| Standalone Runtime | Frozen protocol `2.0.0` artifact built and independently verified; ready for Batch 3 Host integration | Runtime manifest `d9d8c5706365dc5b3443f278779225e22115202af752dfe986112957825a8036` |
+| MyAgents integration handoff | Formal `2.0.0` package built and independently verified | Handoff manifest `437dd66cbdfa224d225dffa0aafe485c08a6da8663c1c2a61279aee6d6a74e66` |
 | Reference Web Host | W5 A1–A4 implementation exists; usable-product revalidation, fresh independent reviews, final distribution handoff, and explicit acceptance remain open | Web artifact `48c7f09cf76bb81d21a7ca5452ce2758135a176052f8f63231c558cfb70e5bd3`, frozen to the older Runtime `ddd6052efbceb0a323bf0942ba709aa78885a98ea49c03186d79751da224cdb1` |
 | Standalone Agent SDK | Not started | Batch 2 PRD only; there is no `@myagents-dsh/agent-sdk` package yet |
-| Native MyAgents Host | Not started in the sibling repository | Batch 3 PRD/RFC; it must consume the replacement immutable `2.0.0` handoff |
-| Platform support | macOS arm64, Windows x64 and Linux x64 implementation-complete pending native validation | Exact content-bound pending claims must be rebound to the frozen Runtime; no target is currently advertised as verified |
+| Native MyAgents Host | Not started in the sibling repository | Batch 3 PRD/RFC; it must consume the immutable `2.0.0` handoff above |
+| Platform support | macOS arm64, Windows x64 and Linux x64 implementation-complete pending native validation | Exact content-bound pending claims are carried by the formal handoff; no target is currently advertised as verified |
 
 The latest Runtime includes the accepted automatic-compaction P0 work. The current Reference Web artifact predates that Runtime and must not be used as evidence that the latest compaction artifact has been exercised through the browser product.
 
@@ -83,7 +83,7 @@ Git contains source, generated contracts, patch definitions, specifications, and
 Before leaving the current machine:
 
 1. make the merged commit reachable from an approved remote or transfer the Git repository by another trusted method;
-2. preserve the exact Runtime `a99c7d80…` and Batch 3 handoff `acb54443…` in durable storage, or plan to rebuild and re-run their evidence campaign from clean source commit `2a303f09…`;
+2. preserve the exact Runtime `d9d8c570…` and Batch 3 handoff `437dd66c…` in durable storage, or plan to rebuild and re-run their evidence campaign from clean source commit `e9fbd6e…`;
 3. preserve any local user data separately only if needed—never commit `.env`, Runtime homes, Web catalog state, transcripts, or workspaces;
 4. do not treat a copied cache path or `/private/tmp` directory as release authority; verify every transferred artifact by its nested manifest.
 
@@ -91,7 +91,7 @@ On the new machine:
 
 1. obtain the exact Git commit and install Node `24.14.0` / npm `11.8.0`;
 2. run `npm ci` and the four repository gates below;
-3. verify the transferred Batch 3 handoff byte-for-byte with expected digest `acb54443…`, then read its generated root `README.md` as the semantic entrypoint before MyAgents integration;
+3. verify the transferred Batch 3 handoff byte-for-byte with expected digest `437dd66c…`, then read its generated root `README.md` as the semantic entrypoint before MyAgents integration;
 4. recreate `.env` locally only when using a real provider;
 5. if continuing Reference Web work, provide its separately frozen `ddd6052ef…` Runtime and resume W5 A5/revalidation—do not silently substitute the newer Runtime without rebuilding Web evidence.
 

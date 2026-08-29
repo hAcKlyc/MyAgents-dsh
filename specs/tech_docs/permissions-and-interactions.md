@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented_handoff-sealed
 module: permissions-and-interactions
-updated: 2026-08-29
+updated: 2026-08-30
 product_scope:
   - ../prd/prd_0.1_agent_runtime.md
   - ../prd/prd_0.3_myagents_integration.md
@@ -109,7 +109,7 @@ The first MyAgents integration keeps its existing universal product vocabulary:
 
 `default` and `dontAsk` remain available Runtime modes but are not required as ordinary MyAgents desktop choices. A future headless/enterprise policy surface may expose `dontAsk` with `permission/rules/*`; it must not reinterpret `disallowedTools` as a permission-rule blacklist.
 
-MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. The frozen `2.0.0` handoff must carry these methods; draft.3 handoff `acb54443…` remains its immediate historical predecessor and supersedes every draft.2 integration input.
+MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. Frozen `2.0.0` handoff `437dd66c…` carries these methods; draft.3 handoff `acb54443…` remains its immediate historical predecessor.
 
 ## 8. Security and platform boundary
 
