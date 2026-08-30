@@ -327,7 +327,7 @@ describe("transactional product component generations", () => {
     ]);
   });
 
-  it("rejects revision reuse and leaves the prior effective generation intact on prepare failure", async () => {
+  it("rejects revision reuse while isolating component-local prepare failures", async () => {
     const compiler: ComponentCompiler = Object.freeze({
       kind: "agent",
       prepare: (component: ExtensionComponent) => component.id === "throws"
@@ -351,21 +351,24 @@ describe("transactional product component generations", () => {
       [agentComponent("bad")],
     ))).resolves.toMatchObject({
       desiredRevision: "extension-bad-v1",
-      effectiveRevision: "extension-one-v1",
-      state: "failed",
+      effectiveRevision: "extension-bad-v1",
+      state: "applied",
+      components: [
+        { key: "agent:bad", state: "degraded", reason: "synthetic_unavailable" },
+      ],
     });
-    expect(harness.service.catalog().revision).toBe("extension-one-v1");
+    expect(harness.service.catalog().revision).toBe("extension-bad-v1");
     await expect(harness.controller.replace(snapshot(
       "extension-throws-v1",
       [agentComponent("prepared"), agentComponent("throws"), agentComponent("not-visited")],
     ))).resolves.toMatchObject({
       desiredRevision: "extension-throws-v1",
-      effectiveRevision: "extension-one-v1",
-      state: "failed",
+      effectiveRevision: "extension-throws-v1",
+      state: "applied",
       components: [
         { key: "agent:prepared", state: "ready" },
-        { key: "agent:throws", state: "failed", reason: "component_prepare_failed" },
-        { key: "agent:not-visited", state: "failed", reason: "component_prepare_failed" },
+        { key: "agent:throws", state: "degraded", reason: "agent_prepare_failed" },
+        { key: "agent:not-visited", state: "ready" },
       ],
     });
   });
@@ -469,6 +472,42 @@ describe("transactional product component generations", () => {
     expect(harness.service.catalog().skills.map(({ name }) => name)).toEqual(["healthy-install"]);
   });
 
+  it("isolates the later component when catalog identities collide", async () => {
+    const disposed: string[] = [];
+    const compiler: ComponentCompiler = Object.freeze({
+      kind: "agent",
+      prepare: (component: ExtensionComponent) => Promise.resolve(Object.freeze({
+        status: "ready" as const,
+        contributions: Object.freeze([Object.freeze({
+          componentId: component.id,
+          kind: component.kind,
+          name: "shared-agent",
+          catalog: Object.freeze({ kind: "agent" as const, name: "shared-agent" }),
+          install: () => undefined,
+        })]),
+        dispose: () => {
+          disposed.push(component.id);
+          return Promise.resolve();
+        },
+      })),
+    });
+    const harness = await mount({ compilers: [compiler] });
+
+    await expect(harness.controller.replace(snapshot(
+      "extension-isolated-catalog-conflict-v1",
+      [agentComponent("first"), agentComponent("second")],
+    ))).resolves.toMatchObject({
+      effectiveRevision: "extension-isolated-catalog-conflict-v1",
+      state: "applied",
+      components: [
+        { key: "agent:first", state: "ready" },
+        { key: "agent:second", state: "degraded", reason: "component_catalog_conflict" },
+      ],
+    });
+    expect(harness.service.catalog().agents).toEqual(["shared-agent"]);
+    expect(disposed).toEqual(["second"]);
+  });
+
   it("rolls back partial commits and enters recovery when rollback itself fails", async () => {
     const effects: string[] = [];
     const compiler = (rollbackFails: boolean): ComponentCompiler => Object.freeze({
@@ -511,11 +550,16 @@ describe("transactional product component generations", () => {
       [agentComponent("recoverable")],
     ))).resolves.toMatchObject({
       desiredRevision: "extension-commit-fails-v1",
-      effectiveRevision: "extension-empty-v1",
-      state: "failed",
+      effectiveRevision: "extension-commit-fails-v1",
+      state: "applied",
+      components: [{
+        key: "agent:recoverable",
+        state: "degraded",
+        reason: "agent_install_failed",
+      }],
     });
-    expect(effects).toEqual(["install:a", "install:b", "rollback:a", "dispose:plan"]);
-    expect(recoverable.service.catalog().revision).toBe("extension-empty-v1");
+    expect(effects).toEqual(["install:a", "install:b", "rollback:a"]);
+    expect(recoverable.service.catalog().revision).toBe("extension-commit-fails-v1");
 
     effects.length = 0;
     const unrecoverable = await mount({ compilers: [compiler(true)] });

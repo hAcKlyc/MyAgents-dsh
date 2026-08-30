@@ -624,8 +624,7 @@ export class ProductComponentService extends Service {
             reason: "implementation_batch_pending",
           } as const);
           statuses.push(unsupported);
-          if (component.kind === "skill") continue;
-          throw new ProtocolError("extension_component_unsupported", "enabled component kind is not installed");
+          continue;
         }
         let plan: PreparedComponentPlan;
         try {
@@ -639,13 +638,12 @@ export class ProductComponentService extends Service {
             throw new TypeError("component compiler must return one native Promise");
           }
           plan = normalizePlan(await pending, component);
-        } catch (error) {
+        } catch {
           signal.throwIfAborted();
-          if (component.kind !== "skill") throw error;
           statuses.push(Object.freeze({
-            key: `skill:${component.id}`,
+            key: `${component.kind}:${component.id}`,
             state: "degraded" as const,
-            reason: "skill_prepare_failed",
+            reason: `${component.kind}_prepare_failed`,
           }));
           continue;
         }
@@ -655,12 +653,8 @@ export class ProductComponentService extends Service {
           ...(plan.reason === undefined ? {} : { reason: plan.reason }),
         }));
         if (plan.status !== "ready") {
-          if (component.kind === "skill") {
-            await plan.dispose();
-            continue;
-          }
-          plans.push(plan);
-          throw new ProtocolError("extension_component_unavailable", "required component did not prepare ready");
+          await plan.dispose();
+          continue;
         }
         plans.push(plan);
       }
@@ -671,16 +665,64 @@ export class ProductComponentService extends Service {
           - (componentOrder.get(right.componentId) ?? Number.MAX_SAFE_INTEGER)
         || compareCodePoints(left.componentId, right.componentId)
         || compareCodePoints(left.name, right.name));
-      const identities = contributions.map(({ kind, componentId, name }) => `${kind}:${componentId}:${name}`);
-      if (new Set(identities).size !== identities.length) {
-        throw new ProtocolError("extension_contribution_collision", "prepared contribution identities must be unique");
+      const admittedContributions: PreparedContribution[] = [];
+      const admittedContributionIdentities = new Set<string>();
+      const catalogIsolatedKeys = new Set<string>();
+      const contributionGroups: PreparedContribution[][] = [];
+      for (const contribution of contributions) {
+        const current = contributionGroups.at(-1);
+        if (current?.at(0)?.kind === contribution.kind
+          && current.at(0)?.componentId === contribution.componentId) {
+          current.push(contribution);
+        } else {
+          contributionGroups.push([contribution]);
+        }
       }
-      const catalog = buildExtensionCatalog(snapshot, plane.catalog, contributions);
+      for (const group of contributionGroups) {
+        const first = group[0];
+        if (first === undefined) continue;
+        const groupIdentities = group.map(({ kind, componentId, name }) => `${kind}:${componentId}:${name}`);
+        if (new Set(groupIdentities).size !== groupIdentities.length
+          || groupIdentities.some(identity => admittedContributionIdentities.has(identity))) {
+          catalogIsolatedKeys.add(`${first.kind}:${first.componentId}`);
+          continue;
+        }
+        try {
+          buildExtensionCatalog(snapshot, plane.catalog, [...admittedContributions, ...group]);
+          admittedContributions.push(...group);
+          for (const identity of groupIdentities) admittedContributionIdentities.add(identity);
+        } catch {
+          catalogIsolatedKeys.add(`${first.kind}:${first.componentId}`);
+        }
+      }
+      const admittedPlans = catalogIsolatedKeys.size === 0
+        ? plans
+        : plans.filter((plan) => !catalogIsolatedKeys.has(
+            `${plan.contributions[0]?.kind ?? "unknown"}:${plan.contributions[0]?.componentId ?? "unknown"}`,
+          ));
+      if (catalogIsolatedKeys.size > 0) {
+        const admittedPlanSet = new Set(admittedPlans);
+        for (const plan of plans) {
+          if (!admittedPlanSet.has(plan)) await plan.dispose();
+        }
+        for (let index = 0; index < statuses.length; index += 1) {
+          const status = statuses[index];
+          if (status === undefined) continue;
+          if (catalogIsolatedKeys.has(status.key)) {
+            statuses[index] = Object.freeze({
+              key: status.key,
+              state: "degraded" as const,
+              reason: "component_catalog_conflict",
+            });
+          }
+        }
+      }
+      const catalog = buildExtensionCatalog(snapshot, plane.catalog, admittedContributions);
       this.#candidate = Object.freeze({
         catalog,
-        contributions: Object.freeze(contributions),
+        contributions: Object.freeze(admittedContributions),
         id: `${snapshot.revision}:${snapshot.digest}`,
-        plans: Object.freeze(plans),
+        plans: Object.freeze(admittedPlans),
         snapshot,
         statuses: Object.freeze(statuses),
       });
@@ -734,7 +776,7 @@ export class ProductComponentService extends Service {
       this.#phase = "committing";
       const installed: (() => void)[] = [];
       const committedContributions: PreparedContribution[] = [];
-      const degradedSkillKeys = new Set<string>();
+      const degradedComponentKeys = new Set<string>();
       const previous = this.#effective;
       const previousDisposers = previous?.installedDisposers ?? [];
       try {
@@ -751,6 +793,8 @@ export class ProductComponentService extends Service {
           }
         }
         for (const group of contributionGroups) {
+          const first = group[0];
+          if (first === undefined) continue;
           const componentInstalled: (() => void)[] = [];
           try {
             for (const contribution of group) {
@@ -774,26 +818,23 @@ export class ProductComponentService extends Service {
                 { cause: error },
               );
             }
-            if (group[0]?.kind === "skill") {
-              degradedSkillKeys.add(`skill:${group[0].componentId}`);
-              continue;
-            }
-            throw error;
+            degradedComponentKeys.add(`${first.kind}:${first.componentId}`);
+            continue;
           }
           installed.push(...componentInstalled);
           committedContributions.push(...group);
         }
-        const statuses = degradedSkillKeys.size === 0
+        const statuses = degradedComponentKeys.size === 0
           ? candidate.statuses
-          : Object.freeze(candidate.statuses.map((status) => degradedSkillKeys.has(status.key)
+          : Object.freeze(candidate.statuses.map((status) => degradedComponentKeys.has(status.key)
             ? Object.freeze({
                 key: status.key,
                 state: "degraded" as const,
-                reason: "skill_install_failed",
+                reason: `${status.key.slice(0, status.key.indexOf(":"))}_install_failed`,
               })
             : status));
         const contributions = Object.freeze(committedContributions);
-        const catalog = degradedSkillKeys.size === 0
+        const catalog = degradedComponentKeys.size === 0
           ? candidate.catalog
           : buildExtensionCatalog(candidate.snapshot, this.#requirePlane().catalog, contributions);
         committed = {

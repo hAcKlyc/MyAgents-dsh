@@ -386,22 +386,15 @@ describe("generation-owned MCP component compiler", () => {
     const failedReconnect = await controller.replace(snapshot("mcp-reconnect-failed-v1"));
     expect(failedReconnect).toMatchObject({
       desiredRevision: "mcp-reconnect-failed-v1",
-      effectiveRevision: "mcp-v1",
-      state: "failed",
+      effectiveRevision: "mcp-reconnect-failed-v1",
+      state: "applied",
+      components: [{
+        key: "mcp:fixture",
+        state: "degraded",
+        reason: "mcp_prepare_failed",
+      }],
     });
-    expect(root.tools.get("mcp__fixture__echo")).toBe(definition);
-    const retained = await root.tools.execute({
-      arguments: Object.freeze({ value: "retained" }),
-      callId: CallId("call-retained"),
-      name: "mcp__fixture__echo",
-      signal: new AbortController().signal,
-    });
-    expect(retained).toMatchObject({
-      isError: false,
-      value: {
-        content: ["result 1", `[MCP image attachment sha256:${"d".repeat(64)}]`],
-      },
-    });
+    expect(root.tools.get("mcp__fixture__echo")).toBeUndefined();
     expect(closeHits).toBe(1);
     await controller.replace(snapshot("mcp-v2"));
     expect(root.tools.get("mcp__fixture__echo")).toBeDefined();
@@ -420,10 +413,10 @@ describe("generation-owned MCP component compiler", () => {
         truncated: false,
       },
     });
-    expect(publishImage).toHaveBeenCalledTimes(3);
+    expect(publishImage).toHaveBeenCalledTimes(2);
     expect(connectHits).toBe(3);
-    expect(permissionHits).toBe(3);
-    expect(executionGuards).toBe(12);
+    expect(permissionHits).toBe(2);
+    expect(executionGuards).toBe(8);
     await new Promise((resolve) => setImmediate(resolve));
     expect(closeHits).toBe(2);
     await controller.close();
@@ -462,7 +455,14 @@ describe("generation-owned MCP component compiler", () => {
       })],
       initialSnapshot: snapshot("duplicate-v1"),
     });
-    expect(result.state).toBe("failed");
+    expect(result).toMatchObject({
+      state: "applied",
+      components: [{
+        key: "mcp:fixture",
+        state: "degraded",
+        reason: "mcp_prepare_failed",
+      }],
+    });
     expect(closeHits).toBe(1);
     expect(root.tools.get("mcp__fixture__same")).toBeUndefined();
   });
@@ -634,7 +634,14 @@ describe("generation-owned MCP component compiler", () => {
       })],
       initialSnapshot: snapshot("proxy-v1"),
     });
-    expect(result.state).toBe("failed");
+    expect(result).toMatchObject({
+      state: "applied",
+      components: [{
+        key: "mcp:fixture",
+        state: "degraded",
+        reason: "mcp_prepare_failed",
+      }],
+    });
     expect(traps).toBe(0);
     expect(closeHits).toBe(1);
   });

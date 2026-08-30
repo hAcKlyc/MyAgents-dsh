@@ -358,7 +358,14 @@ describe("generation-owned Host tool component compiler", () => {
       ...hostToolComponent(),
       id: "forged",
     })]);
-    await expect(harness.componentController.replace(wrongIdentity)).resolves.toMatchObject({ state: "failed" });
+    await expect(harness.componentController.replace(wrongIdentity)).resolves.toMatchObject({
+      state: "applied",
+      components: [{
+        key: "host_tool:forged",
+        state: "degraded",
+        reason: "host_tool_prepare_failed",
+      }],
+    });
 
     const getter = vi.fn(() => ({ type: "object" }));
     const unsafeDescriptor = Object.freeze({
