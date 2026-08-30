@@ -1542,7 +1542,7 @@ const main = (): void => {
       evidence.workstream3LifecycleEvidence,
       "accumulated Workstream 3 lifecycle evidence",
     );
-    if (workstream3LifecycleEvidence.failedReconnectRetainedRevision !== "artifact-lifecycle-v1"
+    if (workstream3LifecycleEvidence.degradedReconnectRevision !== "artifact-lifecycle-reconnect-failed-v1"
       || workstream3LifecycleEvidence.retainedOldCallResult !== "lifecycle result 1"
       || workstream3LifecycleEvidence.replacementRevision !== "artifact-lifecycle-v2"
       || workstream3LifecycleEvidence.replacementResult !== "lifecycle result 3"

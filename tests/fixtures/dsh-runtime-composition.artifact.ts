@@ -598,23 +598,6 @@ const lifecycleToolName = "mcp__artifact_lifecycle__echo";
 const lifecycleOldDefinition = lifecycleRoot.tools.get(lifecycleToolName);
 assert.ok(lifecycleOldDefinition !== undefined);
 const lifecycleInitialCatalog = JSON.stringify(lifecycleRoot.productComponents.catalog());
-const lifecycleFailed = await lifecycleController.replace(
-  lifecycleMcpSnapshot("artifact-lifecycle-reconnect-failed-v1"),
-);
-assert.deepEqual(lifecycleFailed, {
-  desiredRevision: "artifact-lifecycle-reconnect-failed-v1",
-  effectiveRevision: "artifact-lifecycle-v1",
-  state: "failed",
-  components: [{
-    key: "mcp:artifact_lifecycle",
-    state: "failed",
-    reason: "component_prepare_failed",
-  }],
-});
-assert.equal(lifecycleRoot.tools.get(lifecycleToolName), lifecycleOldDefinition);
-assert.equal(JSON.stringify(lifecycleRoot.productComponents.catalog()), lifecycleInitialCatalog);
-assert.equal(lifecycleCloseHits.get(1) ?? 0, 0);
-assert.equal(lifecycleCloseHits.get(2), 1);
 const lifecycleOldExecution = lifecycleRoot.tools.execute({
   arguments: Object.freeze({ value: "hold" }),
   callId: CallId("artifact-lifecycle-old-call"),
@@ -622,6 +605,23 @@ const lifecycleOldExecution = lifecycleRoot.tools.execute({
   signal: new AbortController().signal,
 });
 await lifecycleOldCallStarted.promise;
+const lifecycleDegraded = await lifecycleController.replace(
+  lifecycleMcpSnapshot("artifact-lifecycle-reconnect-failed-v1"),
+);
+assert.deepEqual(lifecycleDegraded, {
+  desiredRevision: "artifact-lifecycle-reconnect-failed-v1",
+  effectiveRevision: "artifact-lifecycle-reconnect-failed-v1",
+  state: "applied",
+  components: [{
+    key: "mcp:artifact_lifecycle",
+    state: "degraded",
+    reason: "mcp_prepare_failed",
+  }],
+});
+assert.equal(lifecycleRoot.tools.get(lifecycleToolName), undefined);
+assert.notEqual(JSON.stringify(lifecycleRoot.productComponents.catalog()), lifecycleInitialCatalog);
+assert.equal(lifecycleCloseHits.get(1) ?? 0, 0);
+assert.equal(lifecycleCloseHits.get(2), 1);
 const lifecycleReplacement = await lifecycleController.replace(
   lifecycleMcpSnapshot("artifact-lifecycle-v2"),
 );
@@ -671,7 +671,7 @@ const lifecycleLiveToolAfterClose = lifecycleRoot.tools.get(lifecycleToolName) !
 assert.deepEqual(Object.fromEntries(lifecycleCloseHits), { 1: 1, 2: 1, 3: 1 });
 await lifecycleRoot.fiber.dispose();
 const workstream3LifecycleEvidence = Object.freeze({
-  failedReconnectRetainedRevision: lifecycleFailed.effectiveRevision,
+  degradedReconnectRevision: lifecycleDegraded.effectiveRevision,
   retainedOldCallResult: lifecycleRetainedOutcome.value.content[0],
   replacementRevision: lifecycleReplacement.effectiveRevision,
   replacementResult: lifecycleReplacementOutcome.value.content[0],
