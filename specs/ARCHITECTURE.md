@@ -22,11 +22,11 @@ This table is the architecture-level snapshot as of 2026-08-30. The active PRDs 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
 | DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus seven isolated patches; artifact manifest `9c5ed754…` |
-| Standalone Runtime and native RPC | Frozen `2.0.0` artifact built and independently verified | Runtime `d9d8c570…` at source `e9fbd6e…`; protocol includes Host Plan and permission-rule control |
-| Batch 3 integration handoff | Formal `2.0.0` handoff sealed and independently verified | Handoff `437dd66c…`, compatibility `21a48204…`; sibling MyAgents Host work remains not started |
+| Standalone Runtime and native RPC | Portable `2.0.0` artifact built and independently verified | Link-free Runtime `5d87edae…` at source `7b9530a…`; protocol includes Host Plan, permission-rule control and durable prepare recovery |
+| Batch 3 integration handoff | Current `2.0.0` handoff sealed and independently verified | Handoff `eb9876ed…`, compatibility `4b2eb105…`; sibling MyAgents Host work is in progress through H5 |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
-| Platforms | All three implementations complete; frozen-artifact native validation pending | Formal handoff binds pending claims for macOS arm64, Windows x64 and Linux x64; prior draft evidence remains historical |
+| Platforms | All three implementations complete; current-artifact native validation pending | Current handoff binds pending claims for macOS arm64, Windows x64 and Linux x64; prior evidence remains historical |
 
 The previous draft.2 and draft.3 Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.0.0`. Every current consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
 
@@ -460,7 +460,7 @@ MyAgents is the first-party native Host. It owns Product Session identity, the p
 
 Each Product Session sidecar owns one runtime generation. Renderer code never parses the runtime wire directly; an application-owned adapter uses the generated native client and projects events into product state. The Rust shell or unrelated processes do not become alternate protocol authorities.
 
-MyAgents will consume the standalone Batch 3 integration handoff rather than repository source. Formal handoff `437dd66c…` binds frozen protocol `2.0.0`, Runtime `d9d8c570…`, compatibility `21a48204…`, generated client/schema/fixtures, canonical tool/profile contracts, notices and content-bound platform evidence. Draft.3 handoff `acb54443…` remains historical and must not be consumed as the formal release. All three current platform claims remain `implementation-complete_pending-native-validation`; `verified` is accepted only when an inventoried native report passes against the exact Runtime manifest. The Reference Web artifact and future Agent SDK facade are not dependencies of this integration path.
+MyAgents consumes the standalone Batch 3 integration handoff rather than repository source. Current handoff `eb9876ed…` binds frozen protocol `2.0.0`, link-free Runtime `5d87edae…`, compatibility `4b2eb105…`, generated client/schema/fixtures, canonical tool/profile contracts, notices and content-bound platform evidence. Earlier formal handoff `437dd66c…` and draft.3 handoff `acb54443…` remain historical and must not be consumed as the current release. All three current platform claims remain `implementation-complete_pending-native-validation`; `verified` is accepted only when an inventoried native report passes against the exact Runtime manifest. The Reference Web artifact and future Agent SDK facade are not dependencies of this integration path.
 
 ## 16. DSH extension and fork policy
 
