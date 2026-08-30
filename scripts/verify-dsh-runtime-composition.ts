@@ -47,6 +47,7 @@ import {
   verifyExistingBundle,
 } from "./build-patched-dsh-artifact.js";
 import { readDshSeamPatchSet } from "./dsh-seam-decisions.js";
+import { materializeRuntimeArtifactFileLinks } from "./runtime-artifact-packaging.js";
 import { evaluateToolchain } from "./toolchain-policy.mjs";
 
 type JsonObject = Record<string, unknown>;
@@ -690,6 +691,7 @@ const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
   "package-lock.json",
   "tsconfig.base.json",
   "scripts/verify-dsh-runtime-composition.ts",
+  "scripts/runtime-artifact-packaging.ts",
   "scripts/build-patched-dsh-artifact.ts",
   "scripts/patched-dsh-artifact-policy.ts",
   "scripts/dsh-baseline-policy.ts",
@@ -906,6 +908,7 @@ const buildInstalledRuntimeCandidate = (
   assertCleanRuntimeDependencyTree(candidateRoot, environment);
   const finalLock = JSON.parse(readFileSync(resolve(candidateRoot, "package-lock.json"), "utf8")) as unknown;
   assertArtifactLocalFileReferences(finalLock, "reinstalled Runtime lock");
+  materializeRuntimeArtifactFileLinks(candidateRoot);
 };
 
 const assertRuntimeProcessEvidence = (

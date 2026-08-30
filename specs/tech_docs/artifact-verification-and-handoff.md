@@ -28,7 +28,7 @@ pinned DSH source + ordered patches + exact stores/toolchain
   -> Batch 3 integration handoff
 ```
 
-Every edge is content-addressed. Builders reject dirty repositories, mismatched source commits, unexpected files, symlinks/hardlinks/special files, forbidden content, dependency drift, and evidence bound to another Runtime manifest.
+Every edge is content-addressed. Builders reject dirty repositories, mismatched source commits, unexpected files, hardlinks/special files, forbidden content, dependency drift, and evidence bound to another Runtime manifest. npm-created file links in the Runtime staging tree are the only normalized case: before the Runtime manifest is created, the builder replaces each contained link with a regular file carrying the exact target bytes and canonical executable mode. Dangling, directory, escaping, or unstable links fail closed. The sealed Runtime and outer handoff therefore have one link-free inventory that desktop bundlers and installers can preserve on all target filesystems.
 
 ## 3. Code and builder ownership
 
