@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: current
-updated: 2026-08-30
+updated: 2026-08-31
 project: MyAgents-dsh
 ---
 
@@ -17,18 +17,18 @@ The compatibility target is the versioned MyAgents Agent experience admitted by 
 
 ### 1.1 Current implementation and acceptance state
 
-This table is the architecture-level snapshot as of 2026-08-30. The active PRDs remain the acceptance authority.
+This table is the architecture-level snapshot as of 2026-08-31. The active PRDs remain the acceptance authority.
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
 | DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus seven isolated patches; artifact manifest `9c5ed754…` |
-| Standalone Runtime and native RPC | Portable `2.0.0` artifact built and independently verified | Link-free Runtime `5d87edae…` at source `7b9530a…`; protocol includes Host Plan, permission-rule control and durable prepare recovery |
-| Batch 3 integration handoff | Current `2.0.0` handoff sealed and independently verified | Handoff `eb9876ed…`, compatibility `4b2eb105…`; sibling MyAgents H0–H5 plus the direct ownership audit are complete, and H6 deterministic/package evidence is recorded at `44fca1cc…`; Provider/native acceptance remains active |
+| Standalone Runtime and native RPC | Protocol `2.1.0` source implementation complete; immutable artifact refresh pending | `2.1.0` retains the 40/7/4 vocabulary and adds the opaque genesis rewind boundary; exact-tuple permission settlement now returns post-effect truth |
+| Batch 3 integration handoff | Previous `2.0.0` handoff remains historical; `2.1.0` refresh required | Sibling MyAgents H0–H5 are complete and interaction-reliability deterministic gates pass; a new source-bound Runtime/handoff must replace the old integration input before packaged acceptance |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
 | Platforms | All three implementations complete; current-artifact native validation pending | Current handoff binds pending claims for macOS arm64, Windows x64 and Linux x64; prior evidence remains historical |
 
-The previous draft.2 and draft.3 Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.0.0`. Every current consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
+The previous draft.2, draft.3 and `2.0.0` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.1.0`. Every current consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
 
 ## 2. Product boundaries
 
@@ -321,13 +321,13 @@ Operation birth freezes the effective model profile, optional Host-authoritative
 
 DSH append-only Session events are the single durable model-conversation source. MyAgents product events declaration-merge into the same Session event vocabulary; they do not create another transcript database. The persistence profile must also register the frozen product event vocabulary as known required events. The pinned stock coordinator's build-generated event set does not include downstream declaration merges, so the official profile requires a minimal known-event predicate seam or an equivalent public-contract coordinator; recovery-critical events are never marked ignorable to bypass validation.
 
-The native RPC `session/read` projection exposes versioned, engine-neutral durable events or bounded chunks. It does not expose Pi native entry types or pretend that a DSH session has a Pi leaf identity.
+The native RPC `session/read` projection exposes versioned, engine-neutral durable events or bounded chunks. Protocol `2.1.0` additionally exposes one opaque, postcondition-bound genesis prefix before the first product operation, so an admitted first turn can use the same transactional rewind owner as later turns. It does not expose Pi native entry types or pretend that a DSH session has a Pi leaf identity.
 
 The initial persistence provider must support:
 
 - create, append/flush, inspect, resume, and list;
 - crash repair for incomplete DSH turns without deleting valid effects;
-- stable-boundary fork inputs;
+- stable-boundary fork inputs and completed-turn/genesis rewind targets;
 - revisions sufficient for fail-closed mutation coordination;
 - product-owned deletion and retention extensions required by the native protocol.
 
@@ -373,7 +373,7 @@ Current DSH does not expose an authoritative pre-dispatch argument-rewrite seam.
 
 Plan-mode transition and policy ownership belongs to the single `ProductPlanService`. It records one product ownership fact adjacent to each public DSH `plan/mode` event and verifies the resulting state with `foldPlanMode`; it does not install the broader stock `PlanModeController`, whose stock tool, prompt, and pending-state ownership are not contract-equivalent. The service contributes one monotonic global `ctx.tools` guard derived from the canonical twenty-tool contract. Consequently definitions registered later through trusted Host/MCP composition are denied by default while plan mode is active unless they carry an exact current product-operation authority and declared plan policy. The operation that owns a durable transition may continue under the new revision, while older concurrent births fail closed.
 
-Permission mode is the fallback policy after hard guards, PermissionRequest Hooks, safe classes, tool-level auto-allow policy and unexpired exact rules. `default` asks, `acceptEdits` additionally auto-allows governed `Write`/`Edit`, `dontAsk` denies anything not pre-authorized without opening an interaction, and `bypassPermissions` skips permission prompting without bypassing hard policy. Exact rules and revocations are chained durable DSH Session facts. Protocol `2.0.0` gives the Host list/add/revoke rule methods and a quiescent `plan/apply` method; both model-driven and Host-driven Plan transitions still use the one `ProductPlanService`. The complete ordering, security boundary and MyAgents mapping are maintained in [Permissions and interactions](./tech_docs/permissions-and-interactions.md).
+Permission mode is the fallback policy after hard guards, PermissionRequest Hooks, safe classes, tool-level auto-allow policy and unexpired exact rules. `default` asks, `acceptEdits` additionally auto-allows governed `Write`/`Edit`, `dontAsk` denies anything not pre-authorized without opening an interaction, and `bypassPermissions` skips permission prompting without bypassing hard policy. Exact rules and revocations are chained durable DSH Session facts. Same-operation calls for one exact tuple are single-flight; a durably settled `always_allow` adds only that operation-local exact proof while preserving the frozen birth for every unrelated decision. Protocol `2.1.0` retains the Host list/add/revoke rule methods and quiescent `plan/apply`, and `interaction/respond` reports the actual post-effect revision. Both model-driven and Host-driven Plan transitions still use the one `ProductPlanService`. The complete ordering, security boundary and MyAgents mapping are maintained in [Permissions and interactions](./tech_docs/permissions-and-interactions.md).
 
 ## 11. Declarative component lifecycle
 

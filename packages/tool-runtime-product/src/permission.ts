@@ -21,6 +21,7 @@ import {
 import { types as utilTypes } from "node:util";
 
 import type { ProductToolContext, ProductToolPermissionRequest } from "./runtime.js";
+import { ProductKeyedLocks } from "./keyed-locks.js";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -115,8 +116,12 @@ export interface ProductPermissionInteractionResponse {
 }
 
 export interface ProductLocalInteractionSettlement<T> {
-  resolve(value: T): void;
+  resolve(value: T): Promise<ProductLocalInteractionEffectReceipt>;
   reject(error: Error): void;
+}
+
+export interface ProductLocalInteractionEffectReceipt {
+  readonly effectivePolicyRevision?: string;
 }
 
 export type ProductLocalInteractionDisposer = () => void;
@@ -996,14 +1001,32 @@ type PendingPermission = {
   readonly request: ProductPermissionInteractionRequest;
   started: boolean;
   response: ProductPermissionInteractionResponse | undefined;
+  effect: RegisteredLocalInteraction<ProductPermissionInteractionResponse> | undefined;
   settlement: Promise<ApprovalOutcome> | undefined;
 };
+
+type RegisteredLocalInteraction<T> = Readonly<{
+  value: T;
+  apply: (receipt: ProductLocalInteractionEffectReceipt) => void;
+  rejectEffect: (error: Error) => void;
+}>;
 
 const safeAutoAllow = new Set<PermissionClass>([
   "workspace.read", "workspace.search", "task_graph.read", "session.plan.enter",
 ]);
 
 const pendingKey = (agent: Agent, callId: string): string => `${agent.id}\0${callId}`;
+const permissionTupleKey = (
+  context: ProductToolContext,
+  request: ProductPermissionRequest,
+): string => JSON.stringify([
+  String(context.agent.id),
+  context.clientOperationId,
+  context.origin,
+  request.tool,
+  request.permissionClass,
+  request.target,
+]);
 
 export class ProductPermissionService extends Service {
   static inject = ["approval", "sessions", "userQuestions"];
@@ -1012,6 +1035,9 @@ export class ProductPermissionService extends Service {
   private readonly activeControllers = new Set<AbortController>();
   private readonly activeInteractionSettlements = new Set<Promise<unknown>>();
   private readonly activeDurabilitySettlements = new Set<Promise<unknown>>();
+  private readonly permissionLocks = new ProductKeyedLocks();
+  private readonly operationAlwaysAllowGrants = new Set<string>();
+  private operationGrantOwner: string | undefined;
   private closingValue = false;
   private closedValue = false;
   private failureValue: unknown;
@@ -1324,7 +1350,30 @@ export class ProductPermissionService extends Service {
     const now = this.now();
     if (this.isAutomaticallyAllowed(normalized, birth, now)) return "allow";
     if (this.configValue.mode === "dontAsk") return "deny";
-    return await this.requestApproval(context, normalized, fold.latestRevision);
+    const tuple = permissionTupleKey(context, normalized);
+    if (this.operationGrantOwner !== context.clientOperationId) {
+      this.operationAlwaysAllowGrants.clear();
+      this.operationGrantOwner = context.clientOperationId;
+    }
+    if (this.operationAlwaysAllowGrants.has(tuple)) return "allow";
+    const release = await this.permissionLocks.acquire(tuple, context.signal);
+    try {
+      if (this.operationAlwaysAllowGrants.has(tuple)) return "allow";
+      const latest = this.fold(context.agent.session);
+      const latestBirth = latest.history.find(
+        ({ revision }) => revision === context.birth.permissionRevision,
+      );
+      if (latestBirth === undefined) {
+        throw new ProductPermissionError(
+          "permission_revision_stale",
+          "operation permission revision is absent from durable policy history",
+        );
+      }
+      if (this.isAutomaticallyAllowed(normalized, latestBirth, this.now())) return "allow";
+      return await this.requestApproval(context, normalized, latest.latestRevision, tuple);
+    } finally {
+      release();
+    }
   }
 
   private isAutomaticallyAllowed(
@@ -1348,6 +1397,7 @@ export class ProductPermissionService extends Service {
     context: ProductToolContext,
     request: ProductPermissionRequest,
     latestRevision: string,
+    tuple: string,
   ): Promise<"allow" | "deny"> {
     if (latestRevision !== context.birth.permissionRevision) {
       throw new ProductPermissionError(
@@ -1401,6 +1451,7 @@ export class ProductPermissionService extends Service {
       request: interactionRequest,
       started: false,
       response: undefined,
+      effect: undefined,
       settlement: undefined,
     };
     this.pending.set(key, pending);
@@ -1416,18 +1467,28 @@ export class ProductPermissionService extends Service {
       if (controller.signal.aborted && controller.signal.reason instanceof ProductPermissionError) {
         throw controller.signal.reason;
       }
-      if (outcome !== "allowed-once" || pending.response === undefined) return "deny";
+      if (outcome !== "allowed-once" || pending.response === undefined) {
+        pending.effect?.apply({ effectivePolicyRevision: context.birth.permissionRevision });
+        return "deny";
+      }
       const response = pending.response;
       if (response.decision === "allow_once") {
         this.assertLatestRevision(context.agent, context.birth.permissionRevision);
+        pending.effect?.apply({ effectivePolicyRevision: context.birth.permissionRevision });
         return "allow";
       }
       if (response.decision === "always_allow") {
         const durabilitySettlement = this.startDurabilitySettlement(() => this.persistRule(context, request));
-        await durabilitySettlement;
+        const rule = await durabilitySettlement;
+        this.operationAlwaysAllowGrants.add(tuple);
+        pending.effect?.apply({ effectivePolicyRevision: rule.revision });
         return "allow";
       }
+      pending.effect?.apply({ effectivePolicyRevision: context.birth.permissionRevision });
       return "deny";
+    } catch (error) {
+      pending.effect?.rejectEffect(error instanceof Error ? error : new Error(String(error)));
+      throw error;
     } finally {
       clearTimeout(timer);
       context.signal.removeEventListener("abort", onAbort);
@@ -1452,11 +1513,12 @@ export class ProductPermissionService extends Service {
       pending.request.signal,
       (callbacks) => this.configValue.interaction.decidePermission(pending.request, callbacks),
       (candidate) => validateProductPermissionInteractionResponse(candidate, pending.request),
-    ).then((candidate) => {
-      pending.response = candidate;
-      return candidate.decision === "allow_once" || candidate.decision === "always_allow"
+    ).then((registered) => {
+      pending.response = registered.value;
+      pending.effect = registered;
+      return registered.value.decision === "allow_once" || registered.value.decision === "always_allow"
         ? "allowed-once" as const
-        : candidate.decision === "cancelled" ? "cancelled" as const : "rejected" as const;
+        : registered.value.decision === "cancelled" ? "cancelled" as const : "rejected" as const;
     });
     pending.settlement = settlement;
     void settlement.catch(() => undefined);
@@ -1501,7 +1563,9 @@ export class ProductPermissionService extends Service {
       );
       let answer: AskUserQuestionAnswer;
       try {
-        answer = await settlement;
+        const registered = await settlement;
+        registered.apply({});
+        answer = registered.value;
       } catch (error) {
         if (controller.signal.aborted) {
           throw new UserQuestionError(
@@ -1527,7 +1591,7 @@ export class ProductPermissionService extends Service {
   private async persistRule(
     context: ProductToolContext,
     request: ProductPermissionRequest,
-  ): Promise<void> {
+  ): Promise<ProductPermissionRule> {
     const fold = this.foldInternal(context.agent.session);
     if (fold.latestRevision !== context.birth.permissionRevision) {
       throw new ProductPermissionError(
@@ -1535,7 +1599,7 @@ export class ProductPermissionService extends Service {
         "permission policy changed while always-allow was pending",
       );
     }
-    await this.persistRuleForAgent(context.agent, fold, request);
+    return await this.persistRuleForAgent(context.agent, fold, request);
   }
 
   private async persistRuleForAgent(
@@ -1645,16 +1709,24 @@ export class ProductPermissionService extends Service {
     signal: AbortSignal,
     register: (settlement: ProductLocalInteractionSettlement<T>) => ProductLocalInteractionDisposer,
     snapshot: (value: unknown) => T,
-  ): Promise<T> {
+  ): Promise<RegisteredLocalInteraction<T>> {
     let disposer: ProductLocalInteractionDisposer | undefined;
     let disposerCalled = false;
     let publishing = false;
     let published = false;
     let registrationComplete = false;
-    let requested: Readonly<{ kind: "resolve"; value: T } | { kind: "reject"; error: Error }> | undefined;
-    let resolveResult: ((value: T) => void) | undefined;
+    let requested: Readonly<
+      | {
+          kind: "resolve";
+          value: T;
+          apply: (receipt: ProductLocalInteractionEffectReceipt) => void;
+          rejectEffect: (error: Error) => void;
+        }
+      | { kind: "reject"; error: Error }
+    > | undefined;
+    let resolveResult: ((value: RegisteredLocalInteraction<T>) => void) | undefined;
     let rejectResult: ((error: Error) => void) | undefined;
-    const result = new Promise<T>((resolve, reject) => {
+    const result = new Promise<RegisteredLocalInteraction<T>>((resolve, reject) => {
       resolveResult = resolve;
       rejectResult = reject;
     });
@@ -1691,9 +1763,14 @@ export class ProductPermissionService extends Service {
             "local interaction failed and its disposer also failed",
           )
           : cleanupFailure;
+        if (terminal.kind === "resolve") terminal.rejectEffect(error);
         rejectResult?.(error);
       } else if (terminal.kind === "resolve") {
-        resolveResult?.(terminal.value);
+        resolveResult?.(Object.freeze({
+          value: terminal.value,
+          apply: terminal.apply,
+          rejectEffect: terminal.rejectEffect,
+        }));
       } else {
         rejectResult?.(terminal.error);
       }
@@ -1701,13 +1778,22 @@ export class ProductPermissionService extends Service {
       rejectResult = undefined;
     };
     const requestSettlement = (
-      candidate: Readonly<{ kind: "resolve"; value: T } | { kind: "reject"; error: Error }>,
+      candidate: Readonly<
+        | {
+            kind: "resolve";
+            value: T;
+            apply: (receipt: ProductLocalInteractionEffectReceipt) => void;
+            rejectEffect: (error: Error) => void;
+          }
+        | { kind: "reject"; error: Error }
+      >,
     ): void => {
       if (requested !== undefined || publishing || published) {
         const failure = new ProductPermissionError(
           "interaction_provider_invalid",
           "local interaction provider attempted a duplicate or late settlement",
         );
+        if (candidate.kind === "resolve") candidate.rejectEffect(failure);
         this.failureValue ??= failure;
         if (!published) requested = Object.freeze({ kind: "reject", error: failure });
         return;
@@ -1717,16 +1803,26 @@ export class ProductPermissionService extends Service {
     };
     const callbacks = Object.freeze({
       resolve: (value: T) => {
+        const effect = Promise.withResolvers<ProductLocalInteractionEffectReceipt>();
+        void effect.promise.catch(() => undefined);
         try {
-          requestSettlement(Object.freeze({ kind: "resolve", value: snapshot(value) }));
+          requestSettlement(Object.freeze({
+            kind: "resolve",
+            value: snapshot(value),
+            apply: effect.resolve,
+            rejectEffect: effect.reject,
+          }));
         } catch (error) {
+          const failure = error instanceof Error
+            ? error
+            : new Error("local interaction response snapshot failed", { cause: error });
           requestSettlement(Object.freeze({
             kind: "reject",
-            error: error instanceof Error
-              ? error
-              : new Error("local interaction response snapshot failed", { cause: error }),
+            error: failure,
           }));
+          effect.reject(failure);
         }
+        return effect.promise;
       },
       reject: (error: Error) => requestSettlement(Object.freeze({
         kind: "reject",
@@ -1778,17 +1874,17 @@ export class ProductPermissionService extends Service {
     );
   }
 
-  private startDurabilitySettlement(execute: () => Promise<void>): Promise<void> {
-    let resolveResult: (() => void) | undefined;
+  private startDurabilitySettlement<T>(execute: () => Promise<T>): Promise<T> {
+    let resolveResult: ((value: T) => void) | undefined;
     let rejectResult: ((error: Error) => void) | undefined;
-    const result = new Promise<void>((resolve, reject) => {
+    const result = new Promise<T>((resolve, reject) => {
       resolveResult = resolve;
       rejectResult = reject;
     });
     this.trackDurabilitySettlement(result);
-    let pending: Promise<void>;
+    let pending: Promise<T>;
     try {
-      pending = exactNativePromise<undefined>(execute(), "permission durability settlement");
+      pending = exactNativePromise<T>(execute(), "permission durability settlement");
     } catch (error) {
       rejectResult?.(error instanceof Error
         ? error
@@ -1796,7 +1892,7 @@ export class ProductPermissionService extends Service {
       return result;
     }
     void pending.then(
-      () => resolveResult?.(),
+      (value) => resolveResult?.(value),
       (error: unknown) => rejectResult?.(error instanceof Error
         ? error
         : new Error("permission durability settlement failed", { cause: error })),
@@ -1890,7 +1986,7 @@ export const createDeterministicLocalInteractionProvider = (
         ));
         return () => undefined;
       }
-      settlement.resolve(Object.freeze({
+      void settlement.resolve(Object.freeze({
         interactionId: request.interactionId,
         expectedPermissionRevision: request.expectedPermissionRevision,
         decision: step.decision,
@@ -1916,7 +2012,7 @@ export const createDeterministicLocalInteractionProvider = (
         ));
         return () => undefined;
       }
-      settlement.resolve(Object.freeze(structuredClone(answer)));
+      void settlement.resolve(Object.freeze(structuredClone(answer)));
       return () => undefined;
     },
   });

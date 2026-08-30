@@ -31,6 +31,11 @@ export interface ProductSessionReadSource {
     id: SessionId,
     signal?: AbortSignal,
   ) => Promise<Readonly<{
+    genesisBoundary?: Readonly<{
+      stableBoundaryId: string;
+      sequence: number;
+      transcriptPostcondition: string;
+    }>;
     mutationBoundaries: readonly Readonly<{
       stableBoundaryId: string;
       sequence: number;
@@ -133,6 +138,9 @@ const resultByteLength = (
   },
   records,
   ...(mutationAuthority === undefined ? {} : {
+    ...(mutationAuthority.genesisBoundary === undefined
+      ? {}
+      : { genesisBoundary: mutationAuthority.genesisBoundary }),
     mutationBoundaries: mutationAuthority.mutationBoundaries,
     transcriptPostcondition: mutationAuthority.transcriptPostcondition,
   }),
@@ -435,6 +443,9 @@ export class ProductSessionReadProjector {
       },
       records,
       ...(stable.mutationAuthority === undefined ? {} : {
+        ...(stable.mutationAuthority.genesisBoundary === undefined
+          ? {}
+          : { genesisBoundary: stable.mutationAuthority.genesisBoundary }),
         mutationBoundaries: [...stable.mutationAuthority.mutationBoundaries],
         transcriptPostcondition: stable.mutationAuthority.transcriptPostcondition,
       }),

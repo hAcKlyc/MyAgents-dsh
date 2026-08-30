@@ -1,8 +1,8 @@
 ---
 type: technical-architecture
-status: implemented_handoff-sealed
+status: implemented_pending-handoff-refresh
 module: permissions-and-interactions
-updated: 2026-08-30
+updated: 2026-08-31
 product_scope:
   - ../prd/prd_0.1_agent_runtime.md
   - ../prd/prd_0.3_myagents_integration.md
@@ -53,11 +53,13 @@ visible current tool + frozen operation birth
   -> acceptEdits Write/Edit allowance
   -> bypassPermissions allowance
   -> dontAsk denial
+  -> operation-local exact Always Allow grant
+  -> exact-tuple single-flight gate and authority re-check
   -> default/acceptEdits blocking Host permission interaction
   -> execution-time current-authority revalidation
 ```
 
-An operation freezes its permission revision at birth. A policy change is a next-operation boundary; delayed answers cannot authorize a stale operation.
+An operation freezes its permission revision at birth. A policy change is a next-operation boundary; delayed answers cannot authorize a stale operation. The one exception is not a new policy snapshot: a successful inline `always_allow` installs an operation-local proof for the exact root-operation/origin/tool/class/target tuple after the durable rule has flushed. It cannot authorize another tuple or adopt unrelated policy changes.
 
 ## 4. Durable exact rules
 
@@ -79,7 +81,7 @@ Protocol `2.0.0` exposes:
 
 Grants append `myagents/permission/rule`; revocations append `myagents/permission/rule/revoked`. Both flush through the DSH Session durability Provider before success is returned. A corrupt/discontinuous chain fences permission execution as recovery-required.
 
-`always_allow` from an inline permission interaction uses the same grant implementation. The Host management RPC is therefore not a parallel policy store.
+`always_allow` from an inline permission interaction uses the same grant implementation. Its effect receipt returns the actual durable rule revision after append, flush and fold; a durability failure rejects the interaction effect and installs no operation-local grant. The Host management RPC is therefore not a parallel policy store.
 
 Target granularity depends on the tool contract. File rules bind the canonical display path; WebFetch binds its governed target; external Host/MCP tools bind a namespaced component identity. Bash currently binds the workspace command target and is not an OS-sandbox guarantee.
 
@@ -87,13 +89,13 @@ Target granularity depends on the tool contract. File rules bind the canonical d
 
 Permission, AskUserQuestion and plan approval register through `host/interaction/request`. Registration acknowledgment does not settle the interaction. The Runtime blocks the owning AgentLoop path until `interaction/respond`, cancellation, timeout or teardown settles it exactly once. Duplicate, late, stale-revision and wrong-operation responses fail closed. Runtime cancellation is projected through `host/interaction/cancel`.
 
-Permission decisions are `deny`, `allow_once`, `always_allow` and `cancelled`. AskUser and plan approval use `answered` or `cancelled`. Approval audit events and product permission/Plan facts remain in the single DSH Session history; the Host UI is a disposable projection.
+Permission decisions are `deny`, `allow_once`, `always_allow` and `cancelled`. AskUser and plan approval use `answered` or `cancelled`. Calls sharing the same root operation and exact authorization tuple serialize behind one gate: one prompt is pending at a time, an `always_allow` leader releases waiters through the exact operation-local proof, while `allow_once`, deny and cancellation remain call-scoped and allow a later waiter to ask independently. Different tuples never share settlement. Approval audit events and product permission/Plan facts remain in the single DSH Session history; the Host UI is a disposable projection.
 
 ## 6. Host-controlled Plan state
 
 Plan is not a fifth permission mode. `ProductPlanService` owns one durable `normal | plan` state, the managed plan artifact, prompt contribution and monotonic tool guard. Model-visible `EnterPlanMode` and `ExitPlanMode` continue to use that service.
 
-Protocol `2.0.0` includes `plan/apply` so a first-party Host can apply the product's Plan selector at a quiescent boundary. The request carries a client operation identity, expected Plan revision and desired mode. It prepares the same managed artifact, appends the same adjacent product ownership plus public DSH `plan/mode` facts, flushes them, and returns `applied` or retry-safe `already_effective`.
+Protocol `2.1.0` retains `plan/apply` so a first-party Host can apply the product's Plan selector at a quiescent boundary. The request carries a client operation identity, expected Plan revision and desired mode. It prepares the same managed artifact, appends the same adjacent product ownership plus public DSH `plan/mode` facts, flushes them, and returns `applied` or retry-safe `already_effective`.
 
 A Host-initiated exit is itself the explicit user/product decision and does not open a second plan-approval interaction. Agent-initiated `ExitPlanMode` still reads the exact managed bytes and requires the existing inline plan review.
 
@@ -109,7 +111,7 @@ The first MyAgents integration keeps its existing universal product vocabulary:
 
 `default` and `dontAsk` remain available Runtime modes but are not required as ordinary MyAgents desktop choices. A future headless/enterprise policy surface may expose `dontAsk` with `permission/rules/*`; it must not reinterpret `disallowedTools` as a permission-rule blacklist.
 
-MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. Frozen `2.0.0` handoff `437dd66c…` carries these methods; draft.3 handoff `acb54443…` remains its immediate historical predecessor.
+MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. The prior frozen `2.0.0` handoffs remain historical; the `2.1.0` interaction-reliability handoff is the required current input once sealed.
 
 ## 8. Security and platform boundary
 

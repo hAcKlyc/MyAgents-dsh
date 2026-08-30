@@ -132,6 +132,11 @@ export interface ProductSqliteReadSnapshot {
 }
 
 export interface ProductSqliteMutationBoundaryAuthority {
+  readonly genesisBoundary?: Readonly<{
+    stableBoundaryId: string;
+    sequence: number;
+    transcriptPostcondition: string;
+  }>;
   readonly mutationBoundaries: readonly Readonly<{
     stableBoundaryId: string;
     sequence: number;
@@ -643,6 +648,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         SELECT boundary_id, seq_exclusive, turn
           FROM stable_boundaries
          WHERE session_id = ? AND generation_id = ? AND seq_exclusive <= ?
+           AND policy_version = 'stable-boundary-v1'
          ORDER BY seq_exclusive DESC LIMIT 256
       `).all(row.sessionId, row.activeGenerationId, row.eventCount) as unknown[];
       const boundaries = boundaryValues.map((value) => {
@@ -653,10 +659,27 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
           turn: rowInteger(boundary, "turn", "Session mutation boundary"),
         });
       }).reverse();
+      const genesisValue = this.#requireDatabase().prepare(`
+        SELECT boundary_id, seq_exclusive
+          FROM stable_boundaries
+         WHERE session_id = ? AND generation_id = ? AND seq_exclusive <= ?
+           AND policy_version = 'genesis-boundary-v1'
+         ORDER BY seq_exclusive ASC LIMIT 1
+      `).get(row.sessionId, row.activeGenerationId, row.eventCount);
+      const genesis = genesisValue === undefined
+        ? undefined
+        : (() => {
+            const value = asRecord(genesisValue, "Session genesis boundary");
+            return Object.freeze({
+              stableBoundaryId: rowString(value, "boundary_id", "Session genesis boundary"),
+              sequence: rowInteger(value, "seq_exclusive", "Session genesis boundary"),
+            });
+          })();
       const boundaryBySequence = new Map(boundaries.map((boundary) => [boundary.sequence, boundary]));
       const transcript = createHash("sha256");
       transcript.update("myagents-transcript-postcondition-v1\0", "utf8");
       const projected: Array<(typeof boundaries)[number] & { transcriptPostcondition: string }> = [];
+      let genesisBoundary: ProductSqliteMutationBoundaryAuthority["genesisBoundary"];
       for (const event of events) {
         const data = canonicalSessionReadData(event.data, "session_recovery_required");
         transcript.update(String(event.seq), "utf8");
@@ -672,11 +695,21 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
             transcriptPostcondition: transcript.copy().digest("hex"),
           }));
         }
+        if (genesis?.sequence === event.seq + 1) {
+          genesisBoundary = Object.freeze({
+            ...genesis,
+            transcriptPostcondition: transcript.copy().digest("hex"),
+          });
+        }
       }
       if (projected.length !== boundaries.length) {
         throw new Error("Session mutation boundary sequence is outside durable history");
       }
+      if (genesis !== undefined && genesisBoundary === undefined) {
+        throw new Error("Session genesis mutation boundary sequence is outside durable history");
+      }
       return Object.freeze({
+        ...(genesisBoundary === undefined ? {} : { genesisBoundary }),
         mutationBoundaries: Object.freeze(projected),
         transcriptPostcondition: transcript.digest("hex"),
       });
@@ -2615,6 +2648,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
   ): void {
     const tailType = events.at(-1)?.type;
     if (tailType !== "myagents/operation/terminal" && tailType !== "turn/end") return;
+    this.#materializeGenesisBoundary(row);
     if (tailType === "turn/end") {
       const productOperations = asRecord(this.#requireDatabase().prepare(`
         SELECT count(*) AS count FROM session_events
@@ -2678,10 +2712,35 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     );
   }
 
+  #materializeGenesisBoundary(row: ActiveSessionRow): void {
+    const accepted = this.#requireDatabase().prepare(`
+      SELECT seq FROM session_events
+       WHERE session_id = ? AND generation_id = ?
+         AND type IN ('myagents/operation/accepted', 'turn/start')
+       ORDER BY seq ASC LIMIT 1
+    `).get(row.sessionId, row.activeGenerationId);
+    if (accepted === undefined) return;
+    const sequence = rowInteger(asRecord(accepted, "genesis operation"), "seq", "genesis operation");
+    if (sequence < 1) return;
+    const prefixHash = rowString(asRecord(this.#requireDatabase().prepare(`
+      SELECT chain_hash FROM session_events
+       WHERE session_id = ? AND generation_id = ? AND seq = ?
+    `).get(row.sessionId, row.activeGenerationId, sequence - 1), "genesis prefix"),
+    "chain_hash", "genesis prefix");
+    this.#requireDatabase().prepare(`
+      INSERT INTO stable_boundaries(
+        boundary_id, session_id, generation_id, seq_exclusive,
+        turn, prefix_hash, policy_version, created_at
+      ) VALUES (?, ?, ?, ?, 1, ?, 'genesis-boundary-v1', ?)
+      ON CONFLICT(session_id, generation_id, seq_exclusive) DO NOTHING
+    `).run(`g_${randomUUID()}`, row.sessionId, row.activeGenerationId, sequence, prefixHash, Date.now());
+  }
+
   #latestStableBoundaryId(row: ActiveSessionRow): string | undefined {
     const value = this.#requireDatabase().prepare(`
       SELECT boundary_id, prefix_hash, seq_exclusive FROM stable_boundaries
        WHERE session_id = ? AND generation_id = ? AND seq_exclusive <= ?
+         AND policy_version = 'stable-boundary-v1'
        ORDER BY seq_exclusive DESC LIMIT 1
     `).get(row.sessionId, row.activeGenerationId, row.eventCount);
     if (value === undefined) return undefined;
@@ -2906,7 +2965,11 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
        WHERE session_id = ? AND generation_id = ? AND dsh_turn > ?
          AND state = 'settled' AND last_event_phase = 'settled'
        ORDER BY path, dsh_turn, prepared_at, checkpoint_id
-    `).all(active.sessionId, active.activeGenerationId, boundary.turn) as unknown[];
+    `).all(
+      active.sessionId,
+      active.activeGenerationId,
+      boundary.policyVersion === "genesis-boundary-v1" ? 0 : boundary.turn,
+    ) as unknown[];
     const byPath = new Map<string, ProductCheckpointRecord[]>();
     for (const value of rows) {
       const record = this.#decodeCheckpoint(value);

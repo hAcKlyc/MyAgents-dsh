@@ -161,7 +161,7 @@ const mounted = async (options: MountedOptions = {}) => {
         request: ProductPermissionInteractionRequest,
         settlement: ProductLocalInteractionSettlement<unknown>,
       ) => {
-        settlement.resolve(Object.freeze({
+        void settlement.resolve(Object.freeze({
           decision: "allow_once" as const,
           expectedPermissionRevision: request.expectedPermissionRevision,
           interactionId: request.interactionId,
@@ -285,13 +285,15 @@ const mounted = async (options: MountedOptions = {}) => {
     return JSON.parse(result.content[0].text) as unknown;
   };
   const answer = (selected: readonly string[], custom?: string): QuestionResponder =>
-    (request, settlement) => settlement.resolve({
-      answers: request.questions.map(({ id }) => Object.freeze({
-        id,
-        selected: [...selected],
-        ...(custom === undefined ? {} : { custom }),
-      })),
-    } satisfies AskUserQuestionAnswer);
+    (request, settlement) => {
+      void settlement.resolve({
+        answers: request.questions.map(({ id }) => Object.freeze({
+          id,
+          selected: [...selected],
+          ...(custom === undefined ? {} : { custom }),
+        })),
+      } satisfies AskUserQuestionAnswer);
+    };
 
   return Object.freeze({
     agent,
@@ -507,7 +509,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     await writeFile(entered.planPath, "# changed during review\n", "utf8");
     const reviewRequest = state.questionRequests.at(-1);
     const reviewId = reviewRequest?.questions[0]?.id;
-    pendingReview.resolve({ answers: [{ id: reviewId, selected: ["Approve"] }] });
+    void pendingReview.resolve({ answers: [{ id: reviewId, selected: ["Approve"] }] });
     expect((await staleExit).isError).toBe(true);
     expect(state.context.productPlan.snapshot(state.agent).mode).toBe("plan");
 
@@ -729,7 +731,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     void pending.catch(() => undefined);
     while (pendingSettlement === undefined) await yieldImmediate();
     controller.abort(new Error("synthetic caller cancellation"));
-    pendingSettlement.resolve({ answers: [] });
+    void pendingSettlement.resolve({ answers: [] });
     expect(await pending).toMatchObject({ isError: true });
 
     const childSession = state.context.sessions.create(SessionId("interaction-plan-child"));

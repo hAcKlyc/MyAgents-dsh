@@ -331,6 +331,61 @@ describe("ProductSqliteSessionPersistence", () => {
     await context.fiber.dispose();
   });
 
+  it("projects and commits the stable prefix before the first model turn", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const id = SessionId("product-persistence-genesis-rewind");
+    const configuration = Object.freeze({
+      data: Object.freeze({}),
+      seq: 0,
+      time: 1,
+      type: "session/end-seed" as const,
+    });
+    const firstTurn = turn(1, 1);
+    const sourceEvents = Object.freeze([configuration, ...firstTurn]);
+    await context.sessionPersistence.create(header(id));
+    await context.sessionPersistence.append(id, sourceEvents);
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      throw new Error("test did not install product persistence");
+    }
+    const persistence = context.sessionPersistence;
+    const read = await persistence.readSession({
+      maxResultBytes: 65_536,
+      runtimeGeneration: "genesis-rewind-generation",
+      runtimeSessionId: id,
+    });
+    expect(read.genesisBoundary).toMatchObject({
+      sequence: 1,
+      transcriptPostcondition: productTranscriptPostcondition([configuration]),
+    });
+    const genesis = read.genesisBoundary;
+    if (genesis === undefined) throw new Error("genesis boundary is unavailable");
+    const prepared = await persistence.prepareRewind({
+      clientMutationId: "genesis-rewind-client",
+      runtimeSessionId: id,
+      sourceTranscriptPostcondition: productTranscriptPostcondition(sourceEvents),
+      targetStableBoundaryId: genesis.stableBoundaryId,
+      targetTranscriptPostcondition: genesis.transcriptPostcondition,
+    });
+    const committed = await persistence.commitRewind(prepared.token, "genesis-rewind-client");
+    expect(committed).toMatchObject({
+      phase: "committed",
+      receipt: { durableSequence: 2, rewindEventSequence: 1 },
+    });
+    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const probe = new DatabaseSync(databasePath, { readOnly: true });
+    expect((probe.prepare(`
+      SELECT e.type FROM session_events AS e
+      JOIN sessions AS s ON s.id = e.session_id AND s.active_generation_id = e.generation_id
+      WHERE e.session_id = ? ORDER BY e.seq
+    `).all(id) as Array<{ type: string }>).map(({ type }) => type)).toEqual([
+      "session/end-seed",
+      "myagents/session/rewind",
+    ]);
+    probe.close();
+    await context.fiber.dispose();
+  });
+
   it("prepares, tombstones, retries, and rolls back only the exact Session generation", async () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);

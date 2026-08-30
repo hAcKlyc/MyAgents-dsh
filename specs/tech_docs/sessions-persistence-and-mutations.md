@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: sessions-persistence-and-mutations
-updated: 2026-08-30
+updated: 2026-08-31
 product_scope: ../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../prd/tech_rfc_0.1_session_persistence_mutations.md
 decisions:
@@ -26,7 +26,7 @@ Cold load validates sequence, hashes, revisions, event vocabulary, and fold inva
 
 ## 3. Lifecycle and recovery
 
-Create publishes a fresh Session only after root admission. Resume inspects and repairs permitted incomplete operation facts, reconstructs product folds, and starts the DSH Agent over the active generation. Read returns bounded engine-neutral durable projections with stable cursors. Close drains persistence and retires the Agent/Session without deleting history.
+Create publishes a fresh Session only after root admission. Resume inspects and repairs permitted incomplete operation facts, reconstructs product folds, and starts the DSH Agent over the active generation. Read returns bounded engine-neutral durable projections with stable cursors, completed-turn mutation boundaries, and one optional genesis boundary for the exact prefix before the first product operation. Close drains persistence and retires the Agent/Session without deleting history.
 
 Crash recovery appends or resumes explicit product settlement where allowed. It does not silently truncate valid effects or infer success from an idle process. Recovery-only operations remain fenced to the exact incomplete transaction. While resume is `recovery_required`, an exact replay of the already prepared delete/fork/rewind request is accepted solely to recover its durable token/result; the persistence fingerprint and pending-mutation capacity reject a different request.
 
@@ -34,11 +34,11 @@ Crash recovery appends or resumes explicit product settlement where allowed. It 
 
 Rewind, fork and delete use prepare/commit/status/rollback-or-abort protocols with immutable operation tokens and exact source revisions.
 
-- Rewind publishes a new generation from one stable DSH prefix, restores only governed file state, and switches the locator atomically.
+- Rewind publishes a new generation from one stable DSH prefix, restores only governed file state, and switches the locator atomically. Its target may be a completed-turn boundary or the materialized genesis boundary; genesis permits an admitted first turn to be removed without inventing an empty-history assumption.
 - Fork publishes an independent Session identity from the selected stable prefix.
 - Delete publishes a recoverable tombstone; purge later removes only the exact committed graph and unreferenced checkpoint blobs.
 
-No mutation rewrites the source generation. Every delayed boundary revalidates locator, revision, Session identity, child/work ownership, transcript postcondition, and managed-file hashes.
+No mutation rewrites the source generation. Every delayed boundary revalidates locator, revision, Session identity, child/work ownership, transcript postcondition, and managed-file hashes. Genesis is excluded from the ordinary latest-completed-boundary calculation and is accepted only through its exact opaque identity, sequence and postcondition.
 
 ## 5. Compaction relationship
 

@@ -10,7 +10,7 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "2.0.0" as const;
+export const PROTOCOL_VERSION = "2.1.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.8ac244cc6367" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
@@ -419,11 +419,17 @@ const sessionMutationBoundary = strictObject({
   turn: Type.Integer({ minimum: 1 }),
   transcriptPostcondition: sha256,
 });
+const sessionGenesisBoundary = strictObject({
+  stableBoundaryId: identifier,
+  sequence: nonNegativeInteger,
+  transcriptPostcondition: sha256,
+});
 export const SessionReadResultSchema = strictObject({
   runtimeSessionId: identifier,
   historyFormat: Type.Literal(SESSION_FORMAT),
   durableHead,
   records: Type.Array(sessionReadRecord, { maxItems: 16_384 }),
+  genesisBoundary: Type.Optional(sessionGenesisBoundary),
   mutationBoundaries: Type.Optional(Type.Array(sessionMutationBoundary, { maxItems: 256 })),
   transcriptPostcondition: Type.Optional(sha256),
   nextCursor: Type.Optional(identifier),

@@ -22,6 +22,7 @@ import {
   effectiveToolCatalogDigest,
 } from "@myagents-dsh/tool-contracts";
 import {
+  ProductPermissionError,
   ProductToolRuntime,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
@@ -396,6 +397,22 @@ const harness = async (options: Readonly<{
 };
 
 describe("canonical process tools", () => {
+  it("preserves bounded permission failures instead of reporting a spawn failure", async () => {
+    const state = await harness();
+    const denied = Promise.reject<"allow" | "deny">(new ProductPermissionError(
+      "permission_revision_stale",
+      "permission policy changed before Bash admission",
+    ));
+    void denied.catch(() => undefined);
+    state.setPermissionPromise(denied);
+    await expect(state.execute({ command: "echo blocked" })).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "permission_revision_stale" } },
+    });
+    expect(state.fakeSubprocess.specs).toHaveLength(0);
+    await state.context.fiber.dispose();
+  });
+
   it("builds the pinned Windows Job Object host plan and sealed platform Bash argv", async () => {
     const plan = createWindowsJobHostPlan({
       argv: ["C:\\runtime\\bash.exe", "-c", "echo ready"],

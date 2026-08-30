@@ -14,6 +14,7 @@ import {
   validateProductQuestionAnswer,
   type ProductLocalInteractionProvider,
   type ProductLocalInteractionSettlement,
+  type ProductLocalInteractionEffectReceipt,
   type ProductPermissionInteractionRequest,
 } from "@myagents-dsh/tool-runtime-product";
 
@@ -61,7 +62,9 @@ type InteractionRecord = {
   readonly interactionId: string;
   readonly registration: Promise<"waiting" | "expired">;
   readonly reject: (error: Error) => void;
-  readonly resolve: (params: MethodParams<"interaction/respond">) => void;
+  readonly resolve: (
+    params: MethodParams<"interaction/respond">,
+  ) => Promise<ProductLocalInteractionEffectReceipt>;
   state: InteractionState;
 };
 
@@ -183,7 +186,7 @@ class ProductHostInteractionBridge {
           || params.decision === "answered") {
           throw new TypeError("permission interaction response has an invalid decision or value");
         }
-        settlement.resolve(validateProductPermissionInteractionResponse(Object.freeze({
+        return settlement.resolve(validateProductPermissionInteractionResponse(Object.freeze({
           interactionId: request.interactionId,
           expectedPermissionRevision: request.expectedPermissionRevision,
           decision: params.decision,
@@ -230,16 +233,17 @@ class ProductHostInteractionBridge {
       authority.expectedPermissionRevision,
       (params) => {
         if (params.decision === "cancelled" && !Object.hasOwn(params, "value")) {
-          settlement.reject(new ProductPermissionError(
+          const error = new ProductPermissionError(
             "interaction_cancelled",
             "Host cancelled the question interaction",
-          ));
-          return;
+          );
+          settlement.reject(error);
+          return Promise.reject(error);
         }
         if (params.decision !== "answered" || !Object.hasOwn(params, "value")) {
           throw new TypeError("question interaction response has an invalid decision or value");
         }
-        settlement.resolve(validateProductQuestionAnswer(params.value, request));
+        return settlement.resolve(validateProductQuestionAnswer(params.value, request));
       },
       (error) => settlement.reject(error),
     );
@@ -250,7 +254,9 @@ class ProductHostInteractionBridge {
     assertCurrent: () => void,
     request: InteractionRequest,
     expectedRevision: string,
-    resolve: (params: MethodParams<"interaction/respond">) => void,
+    resolve: (
+      params: MethodParams<"interaction/respond">,
+    ) => Promise<ProductLocalInteractionEffectReceipt>,
     reject: (error: Error) => void,
   ): () => void {
     const id = boundedIdentifier(request.interactionId, "Host interaction id");
@@ -340,13 +346,9 @@ class ProductHostInteractionBridge {
       return Object.freeze({ state: "rejected" as const, code: "interaction_authority_stale" });
     }
     this.#active.delete(id);
+    let effect: Promise<ProductLocalInteractionEffectReceipt>;
     try {
-      record.resolve(params);
-      this.#remember(id, "settled");
-      return Object.freeze({
-        state: "applied" as const,
-        effectivePolicyRevision: record.expectedRevision,
-      });
+      effect = record.resolve(params);
     } catch {
       this.#remember(id, "expired");
       record.reject(new ProductPermissionError(
@@ -354,6 +356,22 @@ class ProductHostInteractionBridge {
         "Host interaction response failed strict validation",
       ));
       return Object.freeze({ state: "rejected" as const, code: "interaction_response_invalid" });
+    }
+    try {
+      const receipt = await effect;
+      this.#remember(id, "settled");
+      return Object.freeze({
+        state: "applied" as const,
+        effectivePolicyRevision: receipt.effectivePolicyRevision ?? record.expectedRevision,
+      });
+    } catch (error) {
+      this.#remember(id, "settled");
+      return Object.freeze({
+        state: "rejected" as const,
+        code: error instanceof ProductPermissionError
+          ? error.code
+          : "interaction_effect_failed",
+      });
     }
   }
 

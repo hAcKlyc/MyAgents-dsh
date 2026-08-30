@@ -27,6 +27,7 @@ import {
   validateCanonicalToolOutput,
 } from "@myagents-dsh/tool-contracts";
 import {
+  ProductPermissionError,
   ProductToolError,
   type ProductToolContext,
   type ProductToolExecutionEnvironment,
@@ -901,7 +902,9 @@ export class ProductProcessRuntime extends Service {
       if (deadlineController.signal.aborted) deadlineController.signal.throwIfAborted();
       throw error instanceof ProductToolError
         ? error
-        : new ProductToolError("process_spawn_failed", "Bash process could not start", { cause: error });
+        : error instanceof ProductPermissionError
+          ? new ProductToolError(error.code, error.message, { cause: error })
+          : new ProductToolError("process_spawn_failed", "Bash process could not start", { cause: error });
     }
     if (args.run_in_background === true) {
       try {

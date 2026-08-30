@@ -18,7 +18,9 @@ describe("Host interaction bridge", () => {
     });
     const requestInteraction = vi.fn(() => registration);
     const notifyInteractionCancelled = vi.fn();
-    const resolveSettlement = vi.fn();
+    const resolveSettlement = vi.fn(() => Promise.resolve({
+      effectivePolicyRevision: "permission-v2",
+    }));
     const rejectSettlement = vi.fn();
     const request: ProductPermissionInteractionRequest = Object.freeze({
       agent: Object.freeze({}) as Agent,
@@ -66,7 +68,7 @@ describe("Host interaction bridge", () => {
     acknowledge({ registered: true });
     await expect(response).resolves.toEqual({
       state: "applied",
-      effectivePolicyRevision: request.expectedPermissionRevision,
+      effectivePolicyRevision: "permission-v2",
     });
     expect(resolveSettlement).toHaveBeenCalledWith({
       interactionId: request.interactionId,

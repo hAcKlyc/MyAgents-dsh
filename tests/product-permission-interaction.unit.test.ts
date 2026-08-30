@@ -42,7 +42,7 @@ const provider = (
     request: unknown,
     settlement: ProductLocalInteractionSettlement<unknown>,
   ) => unknown = (_request, settlement) => {
-    settlement.resolve({ answers: [] });
+    void settlement.resolve({ answers: [] });
   },
 ): MutableProvider => {
   const permissionRequests: ProductPermissionInteractionRequest[] = [];
@@ -74,11 +74,13 @@ const response = (
   request: ProductPermissionInteractionRequest,
   decision: ProductPermissionDecision,
   settlement: ProductLocalInteractionSettlement<unknown>,
-): void => settlement.resolve(Object.freeze({
+): void => {
+  void settlement.resolve(Object.freeze({
     interactionId: request.interactionId,
     expectedPermissionRevision: request.expectedPermissionRevision,
     decision,
   }));
+};
 
 const mounted = async (
   interaction: ProductLocalInteractionProvider,
@@ -403,7 +405,7 @@ describe("product permission policy and local interaction provider", () => {
         expectedPermissionRevision: pending.expectedPermissionRevision,
         decision: "allow_once",
       };
-      settlement.resolve(providerOwnedResponse);
+      void settlement.resolve(providerOwnedResponse);
       providerOwnedResponse.decision = "deny";
       return () => { order.push("disposed"); };
     });
@@ -417,12 +419,12 @@ describe("product permission policy and local interaction provider", () => {
 
   it("fails a duplicate synchronous provider settlement closed", async () => {
     const local = provider("scenario-duplicate", (pending, settlement) => {
-      settlement.resolve({
+      void settlement.resolve({
         interactionId: pending.interactionId,
         expectedPermissionRevision: pending.expectedPermissionRevision,
         decision: "allow_once",
       });
-      settlement.resolve({
+      void settlement.resolve({
         interactionId: pending.interactionId,
         expectedPermissionRevision: pending.expectedPermissionRevision,
         decision: "deny",
@@ -439,7 +441,7 @@ describe("product permission policy and local interaction provider", () => {
 
   it("rejects the current permission when its disposer reenters settlement", async () => {
     const local = provider("scenario-disposer-reentry", (pending, settlement) => {
-      settlement.resolve({
+      void settlement.resolve({
         interactionId: pending.interactionId,
         expectedPermissionRevision: pending.expectedPermissionRevision,
         decision: "allow_once",
@@ -459,7 +461,7 @@ describe("product permission policy and local interaction provider", () => {
     const local = provider("scenario-question-disposer-reentry", (_pending, settlement) => {
       settlement.reject(new Error("unused"));
     }, (_request, settlement) => {
-      settlement.resolve({ answers: [{ id: "confirm", selected: ["Yes"] }] });
+      void settlement.resolve({ answers: [{ id: "confirm", selected: ["Yes"] }] });
       return () => settlement.reject(new Error("disposer must not settle again"));
     });
     const state = await mounted(local.provider);
@@ -519,7 +521,7 @@ describe("product permission policy and local interaction provider", () => {
       .resolves.toBe("allow");
     expect(calls).toBe(1);
     await expect(state.context.productPermission.authorize(original, request()))
-      .rejects.toMatchObject({ code: "permission_revision_stale" });
+      .resolves.toBe("allow");
   });
 
   it("fails closed and permanently fences the service when rule durability is uncertain", async () => {
@@ -556,7 +558,7 @@ describe("product permission policy and local interaction provider", () => {
     expect(disposed).toBe(true);
   });
 
-  it("lets only one concurrent always-allow response extend the expected revision", async () => {
+  it("applies one concurrent always-allow response to the exact operation tuple", async () => {
     const decisions: Array<ProductLocalInteractionSettlement<unknown>> = [];
     const local = provider("scenario-v1", (_request, settlement) => {
       decisions.push(settlement);
@@ -572,19 +574,15 @@ describe("product permission policy and local interaction provider", () => {
     const second = state.context.productPermission.authorize(secondProduct, request());
     void first.catch(() => undefined);
     void second.catch(() => undefined);
-    while (local.permissionRequests.length < 2) await Promise.resolve();
-    decisions[0]?.resolve({
+    while (local.permissionRequests.length < 1) await Promise.resolve();
+    void decisions[0]?.resolve({
       interactionId: local.permissionRequests[0]?.interactionId,
       expectedPermissionRevision: firstProduct.birth.permissionRevision,
       decision: "always_allow",
     });
     await expect(first).resolves.toBe("allow");
-    decisions[1]?.resolve({
-      interactionId: local.permissionRequests[1]?.interactionId,
-      expectedPermissionRevision: secondProduct.birth.permissionRevision,
-      decision: "always_allow",
-    });
-    await expect(second).rejects.toMatchObject({ code: "permission_revision_stale" });
+    await expect(second).resolves.toBe("allow");
+    expect(local.permissionRequests).toHaveLength(1);
     expect(state.session.events.filter(({ type }) => type === "myagents/permission/rule")).toHaveLength(1);
   });
 
@@ -593,13 +591,16 @@ describe("product permission policy and local interaction provider", () => {
       (
         pending: ProductPermissionInteractionRequest,
         settlement: ProductLocalInteractionSettlement<unknown>,
-      ) => settlement.resolve({
+      ) => {
+        void settlement.resolve({
           interactionId: pending.interactionId,
           expectedPermissionRevision: "stale-revision",
           decision: "allow_once",
-        }),
-      (_pending: ProductPermissionInteractionRequest, settlement: ProductLocalInteractionSettlement<unknown>) =>
-        settlement.resolve({ decision: "allow_once" }),
+        });
+      },
+      (_pending: ProductPermissionInteractionRequest, settlement: ProductLocalInteractionSettlement<unknown>) => {
+        void settlement.resolve({ decision: "allow_once" });
+      },
       (_pending: ProductPermissionInteractionRequest, settlement: ProductLocalInteractionSettlement<unknown>) =>
         settlement.reject(new Error("local provider failed")),
       (pending: ProductPermissionInteractionRequest, settlement: ProductLocalInteractionSettlement<unknown>) =>
@@ -743,7 +744,7 @@ describe("product permission policy and local interaction provider", () => {
       } catch {
         mutationRejected = true;
       }
-      settlement.resolve({ answers: [{ id: "confirm", selected: ["Injected"] }] });
+      void settlement.resolve({ answers: [{ id: "confirm", selected: ["Injected"] }] });
     });
     const state = await mounted(local.provider);
     const questions = [{
