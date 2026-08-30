@@ -13,11 +13,11 @@ describe("workspace foundation", () => {
     );
 
     expect(rootPackage).toMatchObject({
-      packageManager: "npm@11.8.0",
-      engines: { node: "24.14.0", npm: "11.8.0" },
+      packageManager: "npm@11.15.0",
+      engines: { node: "24.14.0", npm: "11.15.0" },
       devEngines: {
         runtime: { name: "node", version: "24.14.0", onFail: "error" },
-        packageManager: { name: "npm", version: "11.8.0", onFail: "error" },
+        packageManager: { name: "npm", version: "11.15.0", onFail: "error" },
       },
     });
     await expect(readFile(resolve(repositoryRoot, ".nvmrc"), "utf8")).resolves.toBe("24.14.0\n");
@@ -31,12 +31,12 @@ describe("workspace foundation", () => {
       }),
     ).toEqual([
       "Node must be 24.14.0; received v24.17.0",
-      "npm must be 11.8.0; received 11.13.0",
+      "npm must be 11.15.0; received 11.13.0",
     ]);
     expect(
       evaluateToolchain({
         nodeVersion: "v24.14.0",
-        npmUserAgent: "npm/11.8.0 node/v24.14.0 darwin arm64",
+        npmUserAgent: "npm/11.15.0 node/v24.14.0 darwin arm64",
       }),
     ).toEqual([]);
   });

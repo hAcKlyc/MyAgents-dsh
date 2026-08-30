@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "npm@11.8.0",
+  "packageManager": "npm@11.15.0",
   "engines": {
     "node": "24.14.0",
-    "npm": "11.8.0"
+    "npm": "11.15.0"
   },
   "devEngines": {
     "runtime": {
@@ -16,7 +16,7 @@
     },
     "packageManager": {
       "name": "npm",
-      "version": "11.8.0",
+      "version": "11.15.0",
       "onFail": "error"
     }
   },

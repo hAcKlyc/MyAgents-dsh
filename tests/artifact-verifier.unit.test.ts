@@ -76,7 +76,7 @@ describe("repository and packed-artifact forbidden-content policy", () => {
           repositoryHead: "a".repeat(40),
           rootLockSha256: digest("lock"),
           builderAuthoritySha256: digest(JSON.stringify(inputs)),
-          toolchain: Object.freeze({ node: "24.14.0", npm: "11.8.0", typescript: "5.9.3", vite: "8.2.2" }),
+          toolchain: Object.freeze({ node: "24.14.0", npm: "11.15.0", typescript: "5.9.3", vite: "8.2.2" }),
           inputs,
         }),
       }) satisfies ReferenceWebArtifactAuthority;

@@ -888,7 +888,7 @@ const buildInstalledRuntimeCandidate = (
     version: protocolMetaJson.runtimeVersion,
     private: true,
     type: "module",
-    engines: { node: "24.14.0", npm: "11.8.0" },
+    engines: { node: "24.14.0", npm: "11.15.0" },
     dependencies: orderedDependencies,
     overrides: orderedOverrides,
   }, null, 2)}\n`);

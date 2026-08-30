@@ -301,11 +301,11 @@ for (const failure of evaluateToolchain({
 }
 
 assert(rootPackage.private === true, "root package must remain private");
-assert(rootPackage.packageManager === "npm@11.8.0", "packageManager must be npm@11.8.0");
+assert(rootPackage.packageManager === "npm@11.15.0", "packageManager must be npm@11.15.0");
 
 const engines = rootPackage.engines as JsonObject | undefined;
 assert(engines?.node === "24.14.0", "Node engine must be exactly 24.14.0");
-assert(engines?.npm === "11.8.0", "npm engine must be exactly 11.8.0");
+assert(engines?.npm === "11.15.0", "npm engine must be exactly 11.15.0");
 
 const devEngines = rootPackage.devEngines as JsonObject | undefined;
 assert(
@@ -315,8 +315,8 @@ assert(
 );
 assert(
   JSON.stringify(devEngines?.packageManager) ===
-    JSON.stringify({ name: "npm", version: "11.8.0", onFail: "error" }),
-  "devEngines.packageManager must fail on any npm version other than 11.8.0",
+    JSON.stringify({ name: "npm", version: "11.15.0", onFail: "error" }),
+  "devEngines.packageManager must fail on any npm version other than 11.15.0",
 );
 
 assert(

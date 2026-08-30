@@ -23,7 +23,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - name: Install pinned npm
-        run: npm install --global npm@11.8.0
+        run: npm install --global npm@11.15.0
       - name: Install exact dependency graph
         run: npm ci
       - name: Typecheck
@@ -58,7 +58,7 @@ jobs:
       - name: Install exact MyAgents toolchain
         working-directory: myagents-dsh
         run: |
-          npm install --global npm@11.8.0
+          npm install --global npm@11.15.0
           npm ci
       - name: Prime exact DSH dependency store
         working-directory: deepseek-harness

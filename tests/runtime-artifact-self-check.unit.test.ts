@@ -91,7 +91,7 @@ const createArtifactFixture = (): Readonly<{
       builderAuthoritySha256: createHash("sha256")
         .update(JSON.stringify(buildInputs))
         .digest("hex"),
-      toolchain: { node: "24.14.0", npm: "11.8.0", typescript: "5.9.3" },
+      toolchain: { node: "24.14.0", npm: "11.15.0", typescript: "5.9.3" },
       inputs: buildInputs,
     },
     dsh: {

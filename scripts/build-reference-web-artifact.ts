@@ -201,8 +201,8 @@ const main = (): void => {
   if (runGit(["status", "--porcelain=v1", "--untracked-files=all"]) !== "") {
     throw new Error("Reference Web artifact build requires a clean repository");
   }
-  if (process.versions.node !== "24.14.0" || run("npm", ["--version"]) !== "11.8.0") {
-    throw new Error("Reference Web artifact build requires exact Node 24.14.0 and npm 11.8.0");
+  if (process.versions.node !== "24.14.0" || run("npm", ["--version"]) !== "11.15.0") {
+    throw new Error("Reference Web artifact build requires exact Node 24.14.0 and npm 11.15.0");
   }
   const repositoryHead = runGit(["rev-parse", "HEAD"]);
   const runtimeRoot = resolve(values.runtime ?? defaultRuntimeRoot());

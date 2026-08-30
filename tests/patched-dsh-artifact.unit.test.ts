@@ -90,7 +90,7 @@ describe("patched DSH artifact authority", () => {
     expect(first.patches).toHaveLength(7);
     expect(first.toolchain).toEqual({
       node: "24.14.0",
-      npm: "11.8.0",
+      npm: "11.15.0",
       pnpm: "11.7.0",
       typescript: "5.9.3",
     });
@@ -110,7 +110,7 @@ describe("patched DSH artifact authority", () => {
       pnpmVersion: "11.8.0",
     })).toEqual([
       "Node must be 24.14.0; received v24.17.0",
-      "npm must be 11.8.0; received 11.13.0",
+      "npm must be 11.15.0; received 11.13.0",
       "pnpm must be 11.7.0; received 11.8.0",
     ]);
   });
