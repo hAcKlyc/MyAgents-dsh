@@ -39,7 +39,7 @@ validate descriptors and content identities
   -> drain and dispose the previous generation
 ```
 
-Preparation must not leak a tool, prompt section, listener, transport, or credential into the active Agent scope. A generation-level failed promotion leaves the previous generation effective. One structurally valid Host Skill is instead an isolated compatibility unit: a prepare failure or locally reversible install failure marks that Skill `degraded`, omits its contributions, and still permits the remaining generation to become effective. Snapshot schema/digest/identity ambiguity and failed isolation rollback remain generation failures.
+Preparation must not leak a tool, prompt section, listener, transport, or credential into the active Agent scope. Every structurally valid declarative component is an isolated compatibility unit. A missing compiler reports `unsupported`; a prepare failure, non-ready plan, contribution/catalog collision, or locally reversible install failure omits only that component and still permits the remaining generation to become effective. Component receipts preserve kind/id plus a phase-specific reason, and the Host must log non-ready receipts. Snapshot schema/digest/reference ambiguity and failed prepare cleanup or install rollback remain generation failures because the Runtime can no longer prove a clean effective boundary.
 
 ## 4. Component packages
 
