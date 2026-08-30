@@ -166,6 +166,10 @@ export interface ProductPermissionController {
     agent: Agent,
     config: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
   ) => Promise<void>;
+  readonly restoreConfiguration: (
+    agent: Agent,
+    config: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
+  ) => void;
   readonly snapshot: (agent: Agent) => ProductPermissionPolicySnapshot;
   readonly grantRule: (
     agent: Agent,
@@ -1050,6 +1054,10 @@ export class ProductPermissionService extends Service {
         agent: Agent,
         next: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
       ) => this.applyConfiguration(agent, next),
+      restoreConfiguration: (
+        agent: Agent,
+        next: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
+      ) => this.restoreConfiguration(agent, next),
       snapshot: (agent: Agent) => this.policySnapshot(agent),
       grantRule: (agent: Agent, request: ProductPermissionRuleGrantRequest) => {
         this.assertRuleMutationBoundary();
@@ -1249,6 +1257,50 @@ export class ProductPermissionService extends Service {
       interaction: candidate.interaction,
     });
     this.foldInternal(agent.session);
+  }
+
+  private restoreConfiguration(
+    agent: Agent,
+    next: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
+  ): void {
+    this.assertHealthy();
+    if (this.pending.size !== 0 || this.activeInteractionSettlements.size !== 0
+      || this.activeDurabilitySettlements.size !== 0) {
+      throw new ProductPermissionError(
+        "permission_configuration_busy",
+        "permission restore requires a quiescent interaction boundary",
+      );
+    }
+    const candidate = validateProductPermissionPlaneConfig({
+      mode: next.mode,
+      autoAllowTools: next.autoAllowTools,
+      interaction: next.interaction,
+      interactionTimeoutMs: this.configValue.interactionTimeoutMs,
+      maxRules: this.configValue.maxRules,
+      ruleTtlMs: this.configValue.ruleTtlMs,
+    });
+    try {
+      foldProductPermissions(
+        agent.session.events,
+        String(agent.session.id),
+        permissionBaseRevision(candidate, String(agent.session.id)),
+        candidate.maxRules,
+        candidate.ruleTtlMs,
+      );
+    } catch (error) {
+      this.failureValue ??= error;
+      throw new ProductPermissionError(
+        "permission_recovery_required",
+        "product permission history cannot be trusted",
+        { cause: error },
+      );
+    }
+    this.configValue = Object.freeze({
+      ...this.configValue,
+      mode: candidate.mode,
+      autoAllowTools: candidate.autoAllowTools,
+      interaction: candidate.interaction,
+    });
   }
 
   fold(session: Session): ProductPermissionFold {

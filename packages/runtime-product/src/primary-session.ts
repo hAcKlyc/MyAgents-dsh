@@ -1531,7 +1531,10 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
       agent: Agent,
       request: PrimarySessionBackendRequest,
     ) => void,
-    private readonly validateResume?: (agent: Agent) => Promise<void>,
+    private readonly validateResume?: (
+      agent: Agent,
+      request: PrimarySessionBackendRequest,
+    ) => Promise<void>,
     private readonly reconcileResume?: (agent: Agent) => Promise<void>,
     private readonly inspectResume?: (
       request: PrimarySessionBackendRequest,
@@ -1632,7 +1635,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
             text: request.params.systemPrompt,
           }));
           request.signal.throwIfAborted();
-          await this.validateResume?.(agent);
+          await this.validateResume?.(agent, request);
           request.signal.throwIfAborted();
           this.assertPublicationCurrent?.(agent, request);
           const preparedPublication = await publication.setup(agentContext);
@@ -1724,7 +1727,10 @@ export interface ProductSessionServiceConfig {
   ) => Promise<PrimarySessionResumeInspection>;
   readonly rewindStore?: () => ProductRewindStore | undefined;
   readonly reconcileResume?: (agent: Agent) => Promise<void>;
-  readonly validateResume?: (agent: Agent) => Promise<void>;
+  readonly validateResume?: (
+    agent: Agent,
+    request: PrimarySessionBackendRequest,
+  ) => Promise<void>;
 }
 
 export class ProductSessionService extends Service {
@@ -1792,7 +1798,7 @@ export class ProductSessionService extends Service {
         ) => void
       : undefined;
     const validateResume = Object.hasOwn(normalized, "validateResume")
-      ? normalized.validateResume as ((agent: Agent) => Promise<void>)
+      ? normalized.validateResume as ProductSessionServiceConfig["validateResume"]
       : undefined;
     const reconcileResume = Object.hasOwn(normalized, "reconcileResume")
       ? normalized.reconcileResume as ((agent: Agent) => Promise<void>)

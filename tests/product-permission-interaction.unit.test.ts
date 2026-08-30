@@ -204,6 +204,39 @@ describe("product permission policy and local interaction provider", () => {
     )).toMatchObject({ baseRevision: after, latestRevision: after });
   });
 
+  it("restores the persisted permission base before resume validation", async () => {
+    const initial = provider("scenario-v1", (pending, settlement) => response(pending, "deny", settlement));
+    const desired = provider("scenario-v2", (pending, settlement) => response(pending, "deny", settlement));
+    const source = await mounted(initial.provider);
+    await source.permissionController.applyConfiguration(source.agent, Object.freeze({
+      mode: "acceptEdits",
+      autoAllowTools: Object.freeze([]),
+      interaction: desired.provider,
+    }));
+    const persistedPermissionEvents = source.session.events.filter(({ type }) =>
+      type.startsWith("myagents/permission/"));
+
+    const resumed = await mounted(initial.provider);
+    const appendPersisted = resumed.session.append.bind(resumed.session) as unknown as (
+      type: string,
+      data: unknown,
+    ) => unknown;
+    for (const event of persistedPermissionEvents) {
+      appendPersisted(event.type, event.data);
+    }
+    const beforeEventCount = resumed.session.events.length;
+    resumed.permissionController.restoreConfiguration(resumed.agent, Object.freeze({
+      mode: "acceptEdits",
+      autoAllowTools: Object.freeze([]),
+      interaction: desired.provider,
+    }));
+
+    expect(resumed.context.productPermission.currentRevision(resumed.agent))
+      .toBe(source.context.productPermission.currentRevision(source.agent));
+    expect(resumed.session.events).toHaveLength(beforeEventCount);
+    expect(resumed.flushes).toEqual([]);
+  });
+
   it("runs the generation Hook after birth validation and scopes approval to one call", async () => {
     const local = provider("scenario-hook", (pending, settlement) => response(pending, "deny", settlement));
     const decisions: Array<"allow_once" | "deny"> = ["allow_once", "deny"];

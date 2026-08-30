@@ -564,12 +564,14 @@ const assertInitialSessionConfiguration = (
   const toolPolicy = params.toolPolicy;
   const effective = catalog.effectiveTools;
   const disabled = catalog.implementationCatalog.filter((tool) => !effective.includes(tool));
-  if (params.permissionMode !== state.canonicalPermissionMode
-    || params.interactionScenario !== state.hostInteractionRevision
+  const restoresPersistedPermissionConfiguration = request.mode === "resume";
+  if ((!restoresPersistedPermissionConfiguration
+      && (params.permissionMode !== state.canonicalPermissionMode
+        || params.interactionScenario !== state.hostInteractionRevision
+        || (toolPolicy?.autoAllowTools !== undefined
+          && !equalStringArrays(toolPolicy.autoAllowTools, state.canonicalAutoAllowTools))))
     || (toolPolicy?.builtinTools !== undefined
       && !equalStringArrays(toolPolicy.builtinTools, effective))
-    || (toolPolicy?.autoAllowTools !== undefined
-      && !equalStringArrays(toolPolicy.autoAllowTools, state.canonicalAutoAllowTools))
     || (toolPolicy?.disallowedTools !== undefined
       && !equalStringArrays(toolPolicy.disallowedTools, disabled))) {
     throw new ProtocolError(
@@ -2338,7 +2340,45 @@ export const composeDshRootServices = async (
         await root.sdkOperations.reconcileResumed(agent);
         await root.productWork.initialize(agent);
       },
-      validateResume: async (agent) => {
+      validateResume: async (agent, request) => {
+        const authority = compositionAuthorities.get(root);
+        const permission = authority?.permissionController;
+        const interaction = authority?.hostInteractionProvider;
+        if (authority === undefined || permission === undefined || interaction === undefined
+          || authority.canonicalAutoAllowTools === undefined) {
+          throw new ProtocolError(
+            "primary_session_not_ready",
+            "resume permission configuration authority is unavailable",
+            true,
+          );
+        }
+        const nextInteraction: ProductLocalInteractionProvider = Object.freeze({
+          revision: request.params.interactionScenario,
+          decidePermission: (
+            permissionRequest: Parameters<ProductLocalInteractionProvider["decidePermission"]>[0],
+            settlement: Parameters<ProductLocalInteractionProvider["decidePermission"]>[1],
+          ) =>
+            interaction.decidePermission(permissionRequest, settlement),
+          answerQuestions: (
+            questionRequest: Parameters<ProductLocalInteractionProvider["answerQuestions"]>[0],
+            settlement: Parameters<ProductLocalInteractionProvider["answerQuestions"]>[1],
+          ) =>
+            interaction.answerQuestions(questionRequest, settlement),
+        });
+        const autoAllowTools = request.params.toolPolicy?.autoAllowTools
+          ?? authority.canonicalAutoAllowTools;
+        permission.restoreConfiguration(agent, Object.freeze({
+          mode: request.params.permissionMode as Parameters<
+            ProductPermissionController["restoreConfiguration"]
+          >[1]["mode"],
+          autoAllowTools: autoAllowTools as Parameters<
+            ProductPermissionController["restoreConfiguration"]
+          >[1]["autoAllowTools"],
+          interaction: nextInteraction,
+        }));
+        authority.canonicalPermissionMode = request.params.permissionMode;
+        authority.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
+        authority.hostInteractionRevision = request.params.interactionScenario;
         foldProductCompactions(agent.session.events);
         root.sdkOperations.prepareGenerationReplacement(agent);
         root.productWork.prepareGenerationReplacement(agent);
