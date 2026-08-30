@@ -519,6 +519,8 @@ The MCP descriptor selects either a trusted stdio launch-profile reference or a 
 
 The snapshot MUST NOT contain executable JavaScript, credentials, or unbounded filesystem discovery instructions.
 
+The 4,096-character Skill descriptor field is an ingress compatibility bound, not the amount necessarily disclosed to a model. For every structurally valid Host Skill, Runtime preserves the immutable source resource and derives one effective description by collapsing ASCII control/whitespace runs and truncating to 1,024 Unicode code points. The effective extension catalog and DSH Skill provider expose that same projection. A Skill-local prepare or locally reversible install failure returns that component as `degraded`, omits it from the effective catalog, and does not prevent unrelated components from becoming effective. Snapshot schema/digest/identity ambiguity, a failed isolation rollback, or a required non-Skill failure remains a generation-level failure.
+
 `extension/status`, `extension/catalog`, and `extension/reload` expose desired/effective and catalog state without making Host infer readiness from tool events.
 
 ## 13. Interaction and utility

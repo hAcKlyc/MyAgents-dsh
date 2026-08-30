@@ -9,6 +9,7 @@ import type {
   DynamicSkillRegistration,
   ProductDynamicSkillController,
 } from "@myagents-dsh/tools-agent";
+import { projectProductSkillDescription } from "@myagents-dsh/tools-agent";
 import { isProxy } from "node:util/types";
 
 export interface SkillComponentCompilerConfig {
@@ -54,10 +55,11 @@ export const createSkillComponentCompiler = (
       if (resource?.kind !== "skill_document") {
         throw new TypeError("Skill component lacks its exact declarative document");
       }
+      const description = projectProductSkillDescription(component.descriptor.description, component.id);
       const registration: DynamicSkillRegistration = Object.freeze({
         componentId: component.id,
         content: resource.content,
-        description: component.descriptor.description,
+        description,
         generation: Object.freeze({ digest: snapshot.digest, revision: snapshot.revision }),
         invocation: Object.freeze({ ...component.descriptor.invocation }),
         name: component.id,
@@ -76,7 +78,7 @@ export const createSkillComponentCompiler = (
           kind: "skill" as const,
           value: Object.freeze({
             name: component.id,
-            description: component.descriptor.description,
+            description,
             disableModelInvocation: !component.descriptor.invocation.modelInvocable,
           }),
         }),

@@ -618,32 +618,51 @@ export class ProductComponentService extends Service {
         }
         const compiler = plane.compilers.get(component.kind);
         if (compiler === undefined) {
-          statuses.push(Object.freeze({
+          const unsupported = Object.freeze({
             key: `${component.kind}:${component.id}`,
             state: "unsupported",
             reason: "implementation_batch_pending",
-          }));
+          } as const);
+          statuses.push(unsupported);
+          if (component.kind === "skill") continue;
           throw new ProtocolError("extension_component_unsupported", "enabled component kind is not installed");
         }
-        const pending = compiler.prepare(
-          component,
-          snapshot,
-          signal,
-          this.#prepareAuthority(component, snapshot, signal),
-        );
-        if (isProxy(pending) || !(pending instanceof Promise)) {
-          throw new TypeError("component compiler must return one native Promise");
+        let plan: PreparedComponentPlan;
+        try {
+          const pending = compiler.prepare(
+            component,
+            snapshot,
+            signal,
+            this.#prepareAuthority(component, snapshot, signal),
+          );
+          if (isProxy(pending) || !(pending instanceof Promise)) {
+            throw new TypeError("component compiler must return one native Promise");
+          }
+          plan = normalizePlan(await pending, component);
+        } catch (error) {
+          signal.throwIfAborted();
+          if (component.kind !== "skill") throw error;
+          statuses.push(Object.freeze({
+            key: `skill:${component.id}`,
+            state: "degraded" as const,
+            reason: "skill_prepare_failed",
+          }));
+          continue;
         }
-        const plan = normalizePlan(await pending, component);
-        plans.push(plan);
         statuses.push(Object.freeze({
           key: `${component.kind}:${component.id}`,
           state: plan.status,
           ...(plan.reason === undefined ? {} : { reason: plan.reason }),
         }));
         if (plan.status !== "ready") {
+          if (component.kind === "skill") {
+            await plan.dispose();
+            continue;
+          }
+          plans.push(plan);
           throw new ProtocolError("extension_component_unavailable", "required component did not prepare ready");
         }
+        plans.push(plan);
       }
       const componentOrder = new Map(snapshot.components.map((component, index) => [component.id, index]));
       const contributions = plans.flatMap(({ contributions: values }) => values).sort((left, right) =>
@@ -714,21 +733,76 @@ export class ProductComponentService extends Service {
     const entered = await this.#config.runAtCommitBoundary(signal, () => {
       this.#phase = "committing";
       const installed: (() => void)[] = [];
+      const committedContributions: PreparedContribution[] = [];
+      const degradedSkillKeys = new Set<string>();
       const previous = this.#effective;
       const previousDisposers = previous?.installedDisposers ?? [];
       try {
         for (const dispose of [...previousDisposers].reverse()) dispose();
         if (previous !== undefined) previous.installedDisposers = Object.freeze([]);
+        const contributionGroups: PreparedContribution[][] = [];
         for (const contribution of candidate.contributions) {
-          const disposer = contribution.install();
-          if (disposer !== undefined) {
-            if (typeof disposer !== "function" || isProxy(disposer)) {
-              throw new TypeError("prepared contribution installer returned an invalid disposer");
-            }
-            installed.push(disposer);
+          const current = contributionGroups.at(-1);
+          if (current?.at(0)?.kind === contribution.kind
+            && current.at(0)?.componentId === contribution.componentId) {
+            current.push(contribution);
+          } else {
+            contributionGroups.push([contribution]);
           }
         }
-        committed = { ...candidate, installedDisposers: Object.freeze(installed) };
+        for (const group of contributionGroups) {
+          const componentInstalled: (() => void)[] = [];
+          try {
+            for (const contribution of group) {
+              const disposer = contribution.install();
+              if (disposer !== undefined) {
+                if (typeof disposer !== "function" || isProxy(disposer)) {
+                  throw new TypeError("prepared contribution installer returned an invalid disposer");
+                }
+                componentInstalled.push(disposer);
+              }
+            }
+          } catch (error) {
+            const rollbackErrors: unknown[] = [];
+            for (const dispose of componentInstalled.reverse()) {
+              try { dispose(); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+            }
+            if (rollbackErrors.length > 0) {
+              throw new AggregateError(
+                [error, ...rollbackErrors],
+                "component install isolation rollback failed",
+                { cause: error },
+              );
+            }
+            if (group[0]?.kind === "skill") {
+              degradedSkillKeys.add(`skill:${group[0].componentId}`);
+              continue;
+            }
+            throw error;
+          }
+          installed.push(...componentInstalled);
+          committedContributions.push(...group);
+        }
+        const statuses = degradedSkillKeys.size === 0
+          ? candidate.statuses
+          : Object.freeze(candidate.statuses.map((status) => degradedSkillKeys.has(status.key)
+            ? Object.freeze({
+                key: status.key,
+                state: "degraded" as const,
+                reason: "skill_install_failed",
+              })
+            : status));
+        const contributions = Object.freeze(committedContributions);
+        const catalog = degradedSkillKeys.size === 0
+          ? candidate.catalog
+          : buildExtensionCatalog(candidate.snapshot, this.#requirePlane().catalog, contributions);
+        committed = {
+          ...candidate,
+          catalog,
+          contributions,
+          statuses,
+          installedDisposers: Object.freeze(installed),
+        };
       } catch (error) {
         const rollbackErrors: unknown[] = [];
         for (const dispose of installed.reverse()) {

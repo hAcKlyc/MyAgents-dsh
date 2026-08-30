@@ -39,7 +39,7 @@ validate descriptors and content identities
   -> drain and dispose the previous generation
 ```
 
-Preparation must not leak a tool, prompt section, listener, transport, or credential into the active Agent scope. A failed promotion leaves the previous generation effective.
+Preparation must not leak a tool, prompt section, listener, transport, or credential into the active Agent scope. A generation-level failed promotion leaves the previous generation effective. One structurally valid Host Skill is instead an isolated compatibility unit: a prepare failure or locally reversible install failure marks that Skill `degraded`, omits its contributions, and still permits the remaining generation to become effective. Snapshot schema/digest/identity ambiguity and failed isolation rollback remain generation failures.
 
 ## 4. Component packages
 
@@ -53,6 +53,8 @@ Preparation must not leak a tool, prompt section, listener, transport, or creden
 | Pre/Post/Permission Hooks | `packages/components-hooks/` |
 
 Every call revalidates the operation-frozen component generation and relevant policy. Replacement creates a new owned connection/resource set; it does not mutate a live generation in place.
+
+Host Skill source content is never rewritten. Only its effective catalog/provider description is projected for portable discovery: ASCII control/whitespace runs collapse to one space and the value is truncated by Unicode code point to 1,024 characters, matching the open Agent Skills description bound. The effective catalog and DSH Skill provider receive the same projected value.
 
 ## 5. Network and attachment safety
 

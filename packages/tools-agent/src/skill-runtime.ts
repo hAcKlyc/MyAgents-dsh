@@ -35,6 +35,7 @@ import { LocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 
 export const PRODUCT_STATIC_SKILL_PROVIDER = "myagents-static-skills";
 export const PRODUCT_COMPONENT_SKILL_PROVIDER = "myagents-component-skills";
+export const PRODUCT_SKILL_DESCRIPTION_MAX_CHARACTERS = 1_024;
 
 const MAX_SKILLS = 128;
 const MAX_SKILL_SOURCE_BYTES = 240_000;
@@ -121,6 +122,44 @@ const boundedText = (value: unknown, maximum: number, description: string): stri
   }
   return value;
 };
+
+const projectSkillText = (
+  value: unknown,
+  maximum: number,
+  fallback: string,
+  description: string,
+): string => {
+  if (typeof value !== "string") throw new TypeError(`${description} must be text`);
+  const characters: string[] = [];
+  let pendingSpace = false;
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code <= 0x20 || code === 0x7f) {
+      if (characters.length > 0) pendingSpace = true;
+      continue;
+    }
+    if (pendingSpace && characters.length + 1 < maximum) characters.push(" ");
+    pendingSpace = false;
+    if (characters.length >= maximum) break;
+    characters.push(character);
+    if (characters.length >= maximum) break;
+  }
+  const projected = characters.length === 0
+    ? Array.from(fallback).slice(0, maximum).join("")
+    : characters.join("");
+  if (projected.length === 0) throw new TypeError(`${description} must not be empty`);
+  return projected;
+};
+
+export const projectProductSkillDescription = (
+  value: unknown,
+  skillName: string,
+): string => projectSkillText(
+  value,
+  PRODUCT_SKILL_DESCRIPTION_MAX_CHARACTERS,
+  `Skill ${skillName}`,
+  "Skill description",
+);
 
 const boundedDocument = (value: unknown, maximumBytes: number, description: string): string => {
   if (typeof value !== "string" || value.length === 0
@@ -698,17 +737,15 @@ const normalizeObservedSkillCatalog = (
     if (resource !== undefined && resource.kind !== "directory") {
       throw new TypeError("operation-visible static Skill resource base must be a directory");
     }
+    const name = boundedIdentifier(summary.name, `operation-visible Skill summary[${String(index)}].name`);
     return Object.freeze({
-      name: boundedIdentifier(summary.name, `operation-visible Skill summary[${String(index)}].name`),
-      description: boundedText(
-        summary.description,
-        2_048,
-        `operation-visible Skill summary[${String(index)}].description`,
-      ),
+      name,
+      description: projectProductSkillDescription(summary.description, name),
       ...(summary.whenToUse === undefined ? {} : {
-        whenToUse: boundedText(
+        whenToUse: projectSkillText(
           summary.whenToUse,
           4_096,
+          `Use ${name} when its workflow matches the request.`,
           `operation-visible Skill summary[${String(index)}].whenToUse`,
         ),
       }),
@@ -945,7 +982,7 @@ export class ProductSkillService extends Service {
     const record: DynamicSkillRecord = Object.freeze({
       componentId: boundedIdentifier(registration.componentId, "dynamic Skill component"),
       content,
-      description: boundedText(registration.description, 2_048, "dynamic Skill description"),
+      description: projectProductSkillDescription(registration.description, name),
       generation: identity,
       invocation: freezeInvocation(registration.invocation, "dynamic Skill invocation"),
       locator,
@@ -954,7 +991,12 @@ export class ProductSkillService extends Service {
       source: `extension:${identity.digest}:${name}`,
       sourceSha256: registration.sourceSha256,
       ...(registration.whenToUse === undefined ? {} : {
-        whenToUse: boundedText(registration.whenToUse, 4_096, "dynamic Skill when-to-use"),
+        whenToUse: projectSkillText(
+          registration.whenToUse,
+          4_096,
+          `Use ${name} when its workflow matches the request.`,
+          "dynamic Skill when-to-use",
+        ),
       }),
     });
     records.set(name, record);

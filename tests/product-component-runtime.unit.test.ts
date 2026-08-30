@@ -14,6 +14,7 @@ import {
   type EffectiveToolCatalogSnapshot,
   type MethodParams,
 } from "@myagents-dsh/protocol";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 
 const contexts: Context[] = [];
@@ -63,6 +64,33 @@ const agentComponent = (id: string): SnapshotAuthority["components"][number] => 
     prompt: `Synthetic prompt for ${id}`,
   }),
 });
+
+const skillFixture = (id: string): Readonly<{
+  component: SnapshotAuthority["components"][number];
+  resource: SnapshotAuthority["resources"][number];
+}> => {
+  const content = `# ${id}\n\nSynthetic Skill instructions.`;
+  const resourceId = `${id}-document`;
+  return Object.freeze({
+    component: Object.freeze({
+      id,
+      enabled: true,
+      kind: "skill",
+      descriptor: Object.freeze({
+        description: `Skill ${id}`,
+        invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
+        resourceId,
+      }),
+    }),
+    resource: Object.freeze({
+      id: resourceId,
+      kind: "skill_document",
+      mediaType: "text/markdown",
+      content,
+      sha256: createHash("sha256").update(content).digest("hex"),
+    }),
+  });
+};
 
 type Harness = Readonly<{
   controller: ProductComponentServiceController;
@@ -340,6 +368,105 @@ describe("transactional product component generations", () => {
         { key: "agent:not-visited", state: "failed", reason: "component_prepare_failed" },
       ],
     });
+  });
+
+  it("degrades only a Skill that fails preparation and publishes the remaining catalog", async () => {
+    const broken = skillFixture("broken-skill");
+    const healthy = skillFixture("healthy-skill");
+    const prepared: string[] = [];
+    const compiler: ComponentCompiler = Object.freeze({
+      kind: "skill",
+      prepare: (component: ExtensionComponent) => {
+        prepared.push(component.id);
+        if (component.id === "broken-skill") return Promise.reject(new Error("synthetic Skill failure"));
+        return Promise.resolve(Object.freeze({
+          status: "ready" as const,
+          contributions: Object.freeze([Object.freeze({
+            componentId: component.id,
+            kind: component.kind,
+            name: component.id,
+            catalog: Object.freeze({
+              kind: "skill" as const,
+              value: Object.freeze({
+                name: component.id,
+                description: `Skill ${component.id}`,
+                disableModelInvocation: false,
+              }),
+            }),
+            install: () => undefined,
+          })]),
+          dispose: () => Promise.resolve(),
+        }));
+      },
+    });
+    const harness = await mount({ compilers: [compiler] });
+
+    await expect(harness.controller.replace(snapshot(
+      "extension-isolated-skill-prepare-v1",
+      [broken.component, healthy.component],
+      [broken.resource, healthy.resource],
+    ))).resolves.toMatchObject({
+      desiredRevision: "extension-isolated-skill-prepare-v1",
+      effectiveRevision: "extension-isolated-skill-prepare-v1",
+      state: "applied",
+      components: [
+        { key: "skill:broken-skill", state: "degraded", reason: "skill_prepare_failed" },
+        { key: "skill:healthy-skill", state: "ready" },
+      ],
+    });
+    expect(prepared).toEqual(["broken-skill", "healthy-skill"]);
+    expect(harness.service.catalog().skills).toEqual([{
+      name: "healthy-skill",
+      description: "Skill healthy-skill",
+      disableModelInvocation: false,
+    }]);
+  });
+
+  it("degrades only a Skill whose prepared contribution fails installation", async () => {
+    const broken = skillFixture("broken-install");
+    const healthy = skillFixture("healthy-install");
+    const installed: string[] = [];
+    const compiler: ComponentCompiler = Object.freeze({
+      kind: "skill",
+      prepare: (component: ExtensionComponent) => Promise.resolve(Object.freeze({
+        status: "ready" as const,
+        contributions: Object.freeze([Object.freeze({
+          componentId: component.id,
+          kind: component.kind,
+          name: component.id,
+          catalog: Object.freeze({
+            kind: "skill" as const,
+            value: Object.freeze({
+              name: component.id,
+              description: `Skill ${component.id}`,
+              disableModelInvocation: false,
+            }),
+          }),
+          install: () => {
+            installed.push(component.id);
+            if (component.id === "broken-install") throw new Error("synthetic Skill install failure");
+            return () => undefined;
+          },
+        })]),
+        dispose: () => Promise.resolve(),
+      })),
+    });
+    const harness = await mount({ compilers: [compiler] });
+
+    await expect(harness.controller.replace(snapshot(
+      "extension-isolated-skill-install-v1",
+      [broken.component, healthy.component],
+      [broken.resource, healthy.resource],
+    ))).resolves.toMatchObject({
+      effectiveRevision: "extension-isolated-skill-install-v1",
+      state: "applied",
+      components: [
+        { key: "skill:broken-install", state: "degraded", reason: "skill_install_failed" },
+        { key: "skill:healthy-install", state: "ready" },
+      ],
+    });
+    expect(installed).toEqual(["broken-install", "healthy-install"]);
+    expect(harness.service.catalog().skills.map(({ name }) => name)).toEqual(["healthy-install"]);
   });
 
   it("rolls back partial commits and enters recovery when rollback itself fails", async () => {

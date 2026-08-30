@@ -20,6 +20,10 @@ import type {
   DynamicAgentRegistration,
   DynamicSkillRegistration,
 } from "@myagents-dsh/tools-agent";
+import {
+  PRODUCT_SKILL_DESCRIPTION_MAX_CHARACTERS,
+  projectProductSkillDescription,
+} from "@myagents-dsh/tools-agent";
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { CommandRuntime } from "@deepseek-ai/dsh-commands";
@@ -103,6 +107,52 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
     expect(effects).toEqual(["prepare", "install", "unpublish"]);
     await plan.dispose();
     expect(effects).toEqual(["prepare", "install", "unpublish", "dispose"]);
+  });
+
+  it("projects multiline or oversized Skill descriptions into one portable 1024-character catalog value", async () => {
+    let observed: DynamicSkillRegistration | undefined;
+    const compiler = createSkillComponentCompiler({
+      controller: Object.freeze({
+        prepare: (registration: DynamicSkillRegistration) => {
+          observed = registration;
+          return Object.freeze({ dispose: vi.fn(), install: () => vi.fn() });
+        },
+      }),
+    });
+    const description = `  First line\r\nSecond\tline\u0000 ${"界".repeat(1_100)}  `;
+    const expected = projectProductSkillDescription(description, "portable-skill");
+    const content = "Use the portable Skill.";
+    const component: ExtensionComponent = Object.freeze({
+      descriptor: Object.freeze({
+        description,
+        invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
+        resourceId: "portable-skill-document",
+      }),
+      enabled: true,
+      id: "portable-skill",
+      kind: "skill",
+    });
+    const source = snapshot([component], [Object.freeze({
+      content,
+      id: "portable-skill-document",
+      kind: "skill_document",
+      mediaType: "text/markdown",
+      sha256: sha256(content),
+    })]);
+
+    const plan = await compiler.prepare(component, source, new AbortController().signal, authority(component.id));
+
+    expect(Array.from(expected)).toHaveLength(PRODUCT_SKILL_DESCRIPTION_MAX_CHARACTERS);
+    expect(expected.startsWith("First line Second line ")).toBe(true);
+    expect(Array.from(expected).some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code <= 0x1f || code === 0x7f;
+    })).toBe(false);
+    expect(observed?.description).toBe(expected);
+    expect(plan.contributions[0]?.catalog).toMatchObject({
+      kind: "skill",
+      value: { name: "portable-skill", description: expected },
+    });
   });
 
   it("compiles one immutable Agent birth template from its prompt and referenced Skills", async () => {

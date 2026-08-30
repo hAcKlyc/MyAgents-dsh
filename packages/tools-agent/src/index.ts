@@ -1,7 +1,9 @@
 export {
   PRODUCT_COMPONENT_SKILL_PROVIDER,
+  PRODUCT_SKILL_DESCRIPTION_MAX_CHARACTERS,
   PRODUCT_STATIC_SKILL_PROVIDER,
   ProductSkillService,
+  projectProductSkillDescription,
   staticSkillCatalogDigest,
   validateStaticSkillCatalog,
 } from "./skill-runtime.js";
