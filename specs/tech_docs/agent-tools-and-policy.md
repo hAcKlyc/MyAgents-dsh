@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: agent-tools-and-policy
-updated: 2026-08-29
+updated: 2026-08-30
 product_scope: ../prd/prd_0.1_agent_runtime.md
 implementation_decisions:
   - ../prd/tech_rfc_0.1_agent_experience.md
@@ -69,6 +69,12 @@ Operation birth freezes the catalog, permission, component, workspace, execution
 ## 5. Plan, task and child work
 
 Plan mode has one product owner and contributes a monotonic guard to `ctx.tools`. TaskGraph state is durable in the DSH Session event vocabulary. Child and background work executes through DSH subagent/jobs primitives while the MyAgents WorkRegistry adds product identities, permission/origin restrictions, settlement, messaging, stop, and recovery behavior.
+
+### 5.1 Portable Task metadata
+
+`TaskCreate` and `TaskUpdate` expose one bounded flat metadata record. Each key is non-empty and bounded, and each value is exactly one JSON scalar: string, finite number, boolean, or `null`. Arrays, nested objects, schema references, and recursive values are rejected. On `TaskUpdate`, `null` deletes the named key; the other scalar values replace it.
+
+This restriction is part of the canonical Runtime tool contract, not a Provider-specific rewrite. The same non-recursive model-visible schema is sent through Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses. Structured product meaning belongs in versioned named Task fields rather than an arbitrary nested metadata bag. The contract and TaskGraph packages own this rule; DSH Core supplies the common tool and Session seams but does not define Task metadata.
 
 ## 6. Changes and verification
 

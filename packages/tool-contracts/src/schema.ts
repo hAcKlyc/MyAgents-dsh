@@ -42,27 +42,16 @@ export const sha256 = Type.String({ pattern: "^[a-f0-9]{64}$" });
 export const revision = boundedIdentifier;
 export const emptyStrictObject = strictObject({});
 
-const metadataJsonValue = Type.Cyclic({
-  MetadataJsonValue: Type.Union([
-    Type.Null(),
-    Type.Boolean(),
-    Type.Number(),
-    Type.String({ maxLength: 65_536 }),
-    Type.Array(Type.Ref("MetadataJsonValue"), { maxItems: 128 }),
-    Type.Record(
-      Type.String(),
-      Type.Ref("MetadataJsonValue"),
-      {
-        maxProperties: 128,
-        propertyNames: { type: "string", minLength: 1, maxLength: 128 },
-      },
-    ),
-  ]),
-}, "MetadataJsonValue");
+const taskMetadataValue = Type.Union([
+  Type.Null(),
+  Type.Boolean(),
+  Type.Number(),
+  Type.String({ maxLength: 65_536 }),
+]);
 
-export const boundedJsonMetadata = Type.Record(
+export const boundedTaskMetadata = Type.Record(
   Type.String(),
-  metadataJsonValue,
+  taskMetadataValue,
   {
     maxProperties: 128,
     propertyNames: { type: "string", minLength: 1, maxLength: 128 },
@@ -105,7 +94,7 @@ export const taskNode = strictObject({
   status: taskStatus,
   owner: Type.Optional(boundedIdentifier),
   blockedBy: Type.Array(boundedIdentifier, { maxItems: 256, uniqueItems: true }),
-  metadata: Type.Optional(boundedJsonMetadata),
+  metadata: Type.Optional(boundedTaskMetadata),
   createdSequence: positiveInteger,
   updatedSequence: positiveInteger,
 });

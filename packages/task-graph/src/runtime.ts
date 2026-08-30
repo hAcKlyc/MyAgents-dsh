@@ -10,7 +10,7 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import {
   CANONICAL_TOOL_CONTRACTS,
-  boundedJsonMetadata,
+  boundedTaskMetadata,
   canonicalInputSchemaForDsh,
   canonicalOutputSchemaForDsh,
   deepFreeze,
@@ -26,6 +26,7 @@ import {
 
 type JsonObject = Record<string, unknown>;
 export type ProductTaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
+export type ProductTaskMetadataValue = string | number | boolean | null;
 
 export interface ProductTaskNode {
   readonly activeForm?: string;
@@ -33,7 +34,7 @@ export interface ProductTaskNode {
   readonly createdSequence: number;
   readonly description?: string;
   readonly id: string;
-  readonly metadata?: Readonly<Record<string, unknown>>;
+  readonly metadata?: Readonly<Record<string, ProductTaskMetadataValue>>;
   readonly owner?: string;
   readonly status: ProductTaskStatus;
   readonly subject: string;
@@ -102,7 +103,7 @@ const taskUpdatePatchSchema = Type.Object({
   owner: Type.Optional(eventIdentifierSchema),
   addBlocks: Type.Optional(Type.Array(eventIdentifierSchema, { maxItems: 256, uniqueItems: true })),
   addBlockedBy: Type.Optional(Type.Array(eventIdentifierSchema, { maxItems: 256, uniqueItems: true })),
-  metadata: Type.Optional(boundedJsonMetadata),
+  metadata: Type.Optional(boundedTaskMetadata),
 }, { additionalProperties: false, minProperties: 1 });
 
 export const PRODUCT_TASK_EVENT_SCHEMAS = deepFreeze({
@@ -111,7 +112,7 @@ export const PRODUCT_TASK_EVENT_SCHEMAS = deepFreeze({
     authority: taskMutationAuthoritySchema,
     description: Type.String({ minLength: 1, maxLength: 65_536 }),
     eventSeq: eventSequenceSchema,
-    metadata: Type.Optional(boundedJsonMetadata),
+    metadata: Type.Optional(boundedTaskMetadata),
     priorRevision: eventSha256Schema,
     revision: eventSha256Schema,
     sessionId: eventIdentifierSchema,
@@ -326,7 +327,10 @@ const exactTaskInput = (name: "TaskCreate" | "TaskUpdate", value: unknown): Json
   }
 };
 
-const normalizedMetadata = (value: unknown, description: string): Readonly<Record<string, unknown>> => {
+const normalizedMetadata = (
+  value: unknown,
+  description: string,
+): Readonly<Record<string, ProductTaskMetadataValue>> => {
   let normalized: unknown;
   try {
     normalized = normalizeCanonicalJson(value, description);
@@ -337,10 +341,16 @@ const normalizedMetadata = (value: unknown, description: string): Readonly<Recor
     throw new ProductTaskGraphFoldError(`${description} must be a canonical JSON object`);
   }
   const record = exactDataObject(normalized, Object.keys(normalized), [], description);
+  for (const entry of Object.values(record)) {
+    if (entry !== null && typeof entry !== "string" && typeof entry !== "number"
+      && typeof entry !== "boolean") {
+      throw new ProductTaskGraphFoldError(`${description} values must be flat JSON scalars`);
+    }
+  }
   if (Buffer.byteLength(canonicalJson(record), "utf8") > MAX_METADATA_BYTES) {
     throw new ProductTaskGraphFoldError(`${description} exceeds its byte budget`);
   }
-  return deepFreeze(record);
+  return deepFreeze(record as Record<string, ProductTaskMetadataValue>);
 };
 
 export const validateProductTaskEventData = <Type extends ProductTaskEventType>(

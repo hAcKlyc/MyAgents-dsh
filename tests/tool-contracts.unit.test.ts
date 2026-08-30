@@ -18,6 +18,7 @@ import {
   CANONICAL_TOOL_NAMES,
   CANONICAL_TOOL_REUSE_MATRIX,
   CANONICAL_TOOL_SCHEMA_FIXTURES,
+  canonicalInputSchemaForDsh,
   effectiveToolCatalogDigest,
   validateCanonicalToolInput,
   validateCanonicalToolOutput,
@@ -120,9 +121,16 @@ describe("canonical twenty-tool contract authority", () => {
     })).toBe(false);
     expect(Value.Check(CANONICAL_TOOL_CONTRACTS.TaskCreate.inputSchema, {
       subject: "bounded metadata",
-      description: "recursive JSON remains declarative",
-      metadata: { nested: [true, null, 3, { value: "ok" }] },
+      description: "flat scalar metadata remains portable",
+      metadata: { priority: 3, pinned: true, label: "ready", removed: null },
     })).toBe(true);
+    for (const metadata of [{ nested: { value: "no" } }, { list: [1, 2] }]) {
+      expect(Value.Check(CANONICAL_TOOL_CONTRACTS.TaskCreate.inputSchema, {
+        subject: "structured metadata",
+        description: "nested values are outside the portable Task contract",
+        metadata,
+      })).toBe(false);
+    }
     expect(Value.Check(CANONICAL_TOOL_CONTRACTS.TaskCreate.inputSchema, {
       subject: "non-JSON metadata",
       description: "functions are never declarative extension input",
@@ -144,6 +152,23 @@ describe("canonical twenty-tool contract authority", () => {
     const exactPiLongPath = "x".repeat(32_769);
     expect(validateCanonicalToolInput("ls", { path: exactPiLongPath })).toEqual({ path: exactPiLongPath });
     expect(() => validateCanonicalToolInput("ls", { limit: Number.POSITIVE_INFINITY })).toThrow();
+  });
+
+  it("projects portable reference-free Task metadata schemas for every Provider family", () => {
+    for (const name of ["TaskCreate", "TaskUpdate"] as const) {
+      const schema = canonicalInputSchemaForDsh(CANONICAL_TOOL_CONTRACTS[name].inputSchema);
+      const metadata = (schema as unknown as TSchema & {
+        properties: Readonly<Record<string, TSchema>>;
+      }).properties.metadata;
+      const serialized = JSON.stringify(metadata);
+      expect(serialized).not.toContain('"$ref"');
+      expect(serialized).not.toContain("MetadataJsonValue");
+      expect(serialized).not.toContain('"type":"array"');
+      expect(serialized).toContain('"type":"string"');
+      expect(serialized).toContain('"type":"number"');
+      expect(serialized).toContain('"type":"boolean"');
+      expect(serialized).toContain('"type":"null"');
+    }
   });
 
   it("normalizes untrusted values without invoking accessors or Proxy traps", () => {

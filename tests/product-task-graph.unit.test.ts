@@ -122,7 +122,7 @@ describe("durable Session-local product TaskGraph", () => {
       subject: "Inspect durable fold",
       description: "Read the Session event history",
       activeForm: "Inspecting",
-      metadata: { priority: 1, nested: { x: 1 }, list: [1] },
+      metadata: { priority: 1, category: "inspection", pinned: true },
     });
     const second = await successful(state, "TaskCreate", {
       subject: "Publish result",
@@ -135,7 +135,7 @@ describe("durable Session-local product TaskGraph", () => {
       blockedBy: [],
       createdSequence: 1,
       updatedSequence: 1,
-      metadata: { priority: 1, nested: { x: 1 }, list: [1] },
+      metadata: { priority: 1, category: "inspection", pinned: true },
     });
     expect(second.task).toMatchObject({ id: "task-2", createdSequence: 2, updatedSequence: 2 });
     const firstTaskEvent = state.session.events.find(({ type }) => type === "myagents/task/created");
@@ -155,18 +155,11 @@ describe("durable Session-local product TaskGraph", () => {
     expect(resumed.sequence).toBe(2);
     expect(resumed.revision).toBe(second.revision);
 
-    const projected = resumed.tasks[0]?.metadata as {
-      readonly list: readonly number[];
-      readonly nested: Readonly<{ x: number }>;
-    };
+    const projected = resumed.tasks[0]?.metadata as Readonly<Record<string, unknown>>;
     expect(Object.isFrozen(projected)).toBe(true);
-    expect(Object.isFrozen(projected.nested)).toBe(true);
-    expect(Object.isFrozen(projected.list)).toBe(true);
-    expect(() => { (projected.nested as { x: number }).x = 2; }).toThrow(TypeError);
-    expect(() => { (projected.list as number[]).push(2); }).toThrow(TypeError);
-    expect((state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.metadata as {
-      nested: { x: number };
-    }).nested.x).toBe(1);
+    expect(() => { (projected as Record<string, unknown>).priority = 2; }).toThrow(TypeError);
+    expect(state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.metadata)
+      .toEqual({ priority: 1, category: "inspection", pinned: true });
   });
 
   it("exports exact immutable schemas used by durable event parsing", async () => {
@@ -227,13 +220,13 @@ describe("durable Session-local product TaskGraph", () => {
       taskId: "task-1",
       description: "Patched bounded JSON",
       owner: "root",
-      metadata: { remove: null, add: [1, 2] },
+      metadata: { remove: null, estimate: 2 },
     });
     expect(result.changedFields).toEqual(["description", "owner", "metadata"]);
     expect(result.task).toMatchObject({
       description: "Patched bounded JSON",
       owner: "root",
-      metadata: { keep: true, add: [1, 2] },
+      metadata: { keep: true, estimate: 2 },
     });
     expect((result.task as { metadata: Record<string, unknown> }).metadata).not.toHaveProperty("remove");
     expect((await state.execute("TaskUpdate", { taskId: "task-1" })).isError).toBe(true);

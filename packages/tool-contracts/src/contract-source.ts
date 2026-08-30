@@ -5,7 +5,7 @@ import {
   TOOL_CONTRACT_LIMITS,
   attachmentReference,
   boundedIdentifier,
-  boundedJsonMetadata,
+  boundedTaskMetadata,
   boundedPath,
   boundedText,
   checkpointReceipt,
@@ -773,7 +773,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
       subject: Type.String({ minLength: 1, maxLength: 512 }),
       description: Type.String({ minLength: 1, maxLength: 65_536 }),
       activeForm: Type.Optional(Type.String({ maxLength: 512 })),
-      metadata: Type.Optional(boundedJsonMetadata),
+      metadata: Type.Optional(boundedTaskMetadata),
     }),
     outputSchema: strictObject({ task: taskNode, revision }),
     concurrency: "session_serial",
@@ -792,7 +792,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskGet: contract({
     name: "TaskGet",
-    description: "Gets one task and its current dependency, owner, metadata, and revision snapshot from the Session-local TaskGraph.",
+    description: "Gets one task and its current dependency, owner, flat scalar metadata, and revision snapshot from the Session-local TaskGraph.",
     inputSchema: strictObject({ taskId: boundedIdentifier }),
     outputSchema: strictObject({ task: taskNode, revision }),
     concurrency: "parallel",
@@ -834,7 +834,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskUpdate: contract({
     name: "TaskUpdate",
-    description: "Atomically updates one Session-local task, including status, ownership, dependencies, text, and bounded metadata. Set owner to root in the same update (or earlier) before status can become in_progress. Dependencies must remain acyclic.",
+    description: "Atomically updates one Session-local task, including status, ownership, dependencies, text, and bounded flat scalar metadata. Set owner to root in the same update (or earlier) before status can become in_progress. Dependencies must remain acyclic.",
     inputSchema: strictObject({
       taskId: boundedIdentifier,
       status: Type.Optional(Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed"), Type.Literal("cancelled")])),
@@ -844,7 +844,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
       owner: Type.Optional(boundedIdentifier),
       addBlocks: Type.Optional(Type.Array(boundedIdentifier, { maxItems: 256, uniqueItems: true })),
       addBlockedBy: Type.Optional(Type.Array(boundedIdentifier, { maxItems: 256, uniqueItems: true })),
-      metadata: Type.Optional(boundedJsonMetadata),
+      metadata: Type.Optional(boundedTaskMetadata),
     }),
     outputSchema: strictObject({
       task: taskNode,
