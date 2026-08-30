@@ -23,7 +23,7 @@ This table is the architecture-level snapshot as of 2026-08-30. The active PRDs 
 | --- | --- | --- |
 | DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus seven isolated patches; artifact manifest `9c5ed754…` |
 | Standalone Runtime and native RPC | Portable `2.0.0` artifact built and independently verified | Link-free Runtime `5d87edae…` at source `7b9530a…`; protocol includes Host Plan, permission-rule control and durable prepare recovery |
-| Batch 3 integration handoff | Current `2.0.0` handoff sealed and independently verified | Handoff `eb9876ed…`, compatibility `4b2eb105…`; sibling MyAgents H0–H5 is complete at `72bb66b8…`, with H6 acceptance active |
+| Batch 3 integration handoff | Current `2.0.0` handoff sealed and independently verified | Handoff `eb9876ed…`, compatibility `4b2eb105…`; sibling MyAgents H0–H5 plus the direct ownership audit are complete at `f2aa6334…`, with H6 acceptance active |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
 | Platforms | All three implementations complete; current-artifact native validation pending | Current handoff binds pending claims for macOS arm64, Windows x64 and Linux x64; prior evidence remains historical |
