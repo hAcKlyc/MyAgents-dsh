@@ -22,8 +22,8 @@ This table is the architecture-level snapshot as of 2026-09-01. The active PRDs 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
 | DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus nine isolated patches; the current 56-package artifact identity is bound by the accepted manifest |
-| Standalone Runtime and native RPC | Protocol `2.2.0` source implementation complete; immutable Runtime refresh pending | `2.2.0` retains the 40/7/4 vocabulary and adds optional generic Host system-context contributions while preserving `2.1.0` genesis rewind behavior |
-| Batch 3 integration handoff | Previous `2.1.0` handoff remains historical; `2.2.0` refresh required | Sibling MyAgents implements the native contribution builder; a new source-bound Runtime/handoff must replace the old packaged input before acceptance |
+| Standalone Runtime and native RPC | Protocol `2.2.0` source implementation and immutable Runtime/handoff refresh complete | `2.2.0` retains the 40/7/4 vocabulary and adds optional generic Host system-context contributions while preserving `2.1.0` genesis rewind behavior |
+| Batch 3 integration handoff | Protocol `2.2.0` handoff ingested and accepted in a local unsigned macOS package | Handoff `a759b370…` binds Runtime `3265c982…` to source `1e1ba52c…`; signed and native Windows/Linux release gates remain open |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
 | Platforms | All three implementations complete; current-artifact native validation pending | Current handoff binds pending claims for macOS arm64, Windows x64 and Linux x64; prior evidence remains historical |
