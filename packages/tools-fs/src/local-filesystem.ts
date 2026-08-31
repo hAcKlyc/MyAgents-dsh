@@ -1813,7 +1813,14 @@ export class LocalWorkspaceFileSystem extends FileSystem {
           throw new FsError("Runtime output file changed before settlement", "FS_STALE_VERSION");
         }
         await handle.truncate(0);
-        await handle.writeFile(retained);
+        let offset = 0;
+        while (offset < retained.length) {
+          const result = await handle.write(retained, offset, retained.length - offset, offset);
+          if (result.bytesWritten < 1) {
+            throw new FsError("Runtime output file write made no progress", "FS_IO_ERROR");
+          }
+          offset += result.bytesWritten;
+        }
         await handle.sync();
         await handle.chmod(0o400);
         if (settle) {

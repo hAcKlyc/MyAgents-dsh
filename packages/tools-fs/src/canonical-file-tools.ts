@@ -1031,7 +1031,10 @@ export class CanonicalFileTools extends Service {
       }
       throw new ProductToolError("path_denied", `${tool} target is outside its operation-frozen roots`);
     }
-    return Object.freeze({ checkpointEligible: mode === "write", target });
+    // The v1 rollback claim is intentionally root-origin only. Child mutations still
+    // use the same governed file tool and permission path, but do not advertise a
+    // checkpoint receipt that the checkpoint service cannot restore as child work.
+    return Object.freeze({ checkpointEligible: mode === "write" && product.origin === "root", target });
   }
 
   async #regularFile(ctx: Context, target: FsTarget, signal: AbortSignal): Promise<FsInfo> {

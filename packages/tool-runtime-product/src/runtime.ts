@@ -5,6 +5,7 @@ import { HarnessError } from "@deepseek-ai/dsh-llm";
 import type { ToolExecution } from "@deepseek-ai/dsh-tools";
 import type { OperationBirthSnapshot, ProductOperationRecord } from "@myagents-dsh/operation-runtime";
 import {
+  CANONICAL_TOOL_CONTRACTS,
   validateEffectiveToolCatalog,
   type CanonicalToolName,
   type EffectiveToolCatalogSnapshot,
@@ -94,6 +95,7 @@ export interface ProductRetainedOutputAuthority {
 }
 
 export interface ProductToolContext {
+  /** Agent that issued the DSH tool call. */
   readonly agent: Agent;
   readonly birth: OperationBirthSnapshot;
   readonly callId: string;
@@ -101,11 +103,25 @@ export interface ProductToolContext {
   readonly clientOperationId: string;
   readonly dshTurn: number;
   readonly environment: ProductToolExecutionEnvironment;
-  readonly origin: "root";
+  readonly origin: ProductToolOrigin;
   readonly productTurnId: string;
+  /** Primary Product Session owner. Present on every production context. */
+  readonly rootAgent?: Agent;
   readonly rootCallId: string;
   readonly signal: AbortSignal;
 }
+
+export type ProductToolOrigin = "root" | "foreground_child" | "background_child";
+
+export interface ProductToolOperationAuthority {
+  readonly allowedTools?: readonly string[];
+  readonly dshTurn: number;
+  readonly operation: ProductOperationRecord;
+  readonly origin?: ProductToolOrigin;
+  readonly rootAgent?: Agent;
+}
+
+export const productRootAgent = (context: ProductToolContext): Agent => context.rootAgent ?? context.agent;
 
 export interface ProductToolPermissionRequest {
   readonly permissionClass: string;
@@ -151,10 +167,7 @@ export interface ProductToolRuntimeConfig {
     ): Promise<FsTarget | undefined>;
   }>;
   readonly requireAgent: () => Agent;
-  readonly resolveOperation: (agent: Agent) => Readonly<{
-    dshTurn: number;
-    operation: ProductOperationRecord;
-  }>;
+  readonly resolveOperation: (agent: Agent) => ProductToolOperationAuthority;
 }
 
 export interface ProductReadState {
@@ -308,10 +321,11 @@ const exactConfig = (value: unknown): ProductToolRuntimeConfig => {
       >,
     }),
     requireAgent: () => Reflect.apply(requireAgent, config, []) as Agent,
-    resolveOperation: (agent: Agent) => Reflect.apply(resolveOperation, config, [agent]) as Readonly<{
-      dshTurn: number;
-      operation: ProductOperationRecord;
-    }>,
+    resolveOperation: (agent: Agent) => Reflect.apply(
+      resolveOperation,
+      config,
+      [agent],
+    ) as ProductToolOperationAuthority,
   });
 };
 
@@ -374,16 +388,21 @@ export class ProductToolRuntime extends Service {
   }
 
   resolve(exec: Readonly<ToolExecution>): ProductToolContext {
-    if (exec.agent === undefined || exec.agent !== this.configValue.requireAgent()) {
-      throw new ProductToolError("tool_operation_denied", "tool call lacks official primary Agent ownership");
-    }
+    if (exec.agent === undefined) throw new ProductToolError("tool_operation_denied", "tool call lacks one Agent owner");
     if (exec.parent !== undefined || String(exec.callId) !== String(exec.rootCallId)) {
       throw new ProductToolError(
         "tool_operation_denied",
-        "root managed tools reject nested or relayed tool execution authority",
+        "managed tools reject nested or relayed tool execution authority",
       );
     }
-    const { dshTurn, operation } = this.configValue.resolveOperation(exec.agent);
+    const authority = this.configValue.resolveOperation(exec.agent);
+    const { dshTurn, operation } = authority;
+    const origin = authority.origin ?? "root";
+    const rootAgent = authority.rootAgent ?? exec.agent;
+    if (rootAgent !== this.configValue.requireAgent()
+      || (origin === "root" ? exec.agent !== rootAgent : exec.agent === rootAgent)) {
+      throw new ProductToolError("tool_operation_denied", "tool call lacks its exact Product Session owner");
+    }
     const environment = this.configValue.environment();
     if (operation.birth.executionEnvironmentRevision !== environment.revision
       || operation.birth.executionEnvironmentDigest !== environment.digest) {
@@ -392,8 +411,17 @@ export class ProductToolRuntime extends Service {
     const catalog = validateEffectiveToolCatalog(this.configValue.catalog());
     if (operation.birth.toolCatalogRevision !== catalog.revision
       || operation.birth.toolCatalogDigest !== catalog.digest
-      || !catalog.effectiveTools.includes(exec.name as CanonicalToolName)) {
+      || !catalog.effectiveTools.includes(exec.name as CanonicalToolName)
+      || (authority.allowedTools !== undefined && !authority.allowedTools.includes(exec.name))) {
       throw new ProductToolError("tool_catalog_stale", "tool call is absent from its operation-frozen effective catalog");
+    }
+    const originPolicy = CANONICAL_TOOL_CONTRACTS[exec.name as CanonicalToolName].originPolicy;
+    if ((originPolicy.mode === "root-only" && origin !== "root")
+      || (originPolicy.mode === "no-background-child" && origin === "background_child")) {
+      throw new ProductToolError(
+        originPolicy.denialCode ?? "tool_operation_denied",
+        `${exec.name} is unavailable to ${origin}`,
+      );
     }
     const context = Object.freeze({
       agent: exec.agent,
@@ -403,8 +431,9 @@ export class ProductToolRuntime extends Service {
       clientOperationId: operation.clientOperationId,
       dshTurn,
       environment,
-      origin: "root" as const,
+      origin,
       productTurnId: operation.productTurnId,
+      rootAgent,
       rootCallId: String(exec.rootCallId),
       signal: exec.signal,
     });
@@ -414,16 +443,24 @@ export class ProductToolRuntime extends Service {
 
   resolveExternal(exec: Readonly<ToolExecution>, expectedTool: string): ProductToolContext {
     const tool = boundedIdentifier(expectedTool, "external tool name");
-    if (exec.name !== tool || exec.agent === undefined || exec.agent !== this.configValue.requireAgent()) {
-      throw new ProductToolError("tool_operation_denied", "external tool lacks official primary Agent ownership");
+    if (exec.name !== tool || exec.agent === undefined) {
+      throw new ProductToolError("tool_operation_denied", "external tool lacks one Agent owner");
     }
     if (exec.parent !== undefined || String(exec.callId) !== String(exec.rootCallId)) {
       throw new ProductToolError(
         "tool_operation_denied",
-        "root external tools reject nested or relayed tool execution authority",
+        "external tools reject nested or relayed tool execution authority",
       );
     }
-    const { dshTurn, operation } = this.configValue.resolveOperation(exec.agent);
+    const authority = this.configValue.resolveOperation(exec.agent);
+    const { dshTurn, operation } = authority;
+    const origin = authority.origin ?? "root";
+    const rootAgent = authority.rootAgent ?? exec.agent;
+    if (rootAgent !== this.configValue.requireAgent()
+      || (origin === "root" ? exec.agent !== rootAgent : exec.agent === rootAgent)
+      || (authority.allowedTools !== undefined && !authority.allowedTools.includes(tool))) {
+      throw new ProductToolError("tool_operation_denied", "external tool lacks its exact Product Session owner");
+    }
     const environment = this.configValue.environment();
     if (operation.birth.executionEnvironmentRevision !== environment.revision
       || operation.birth.executionEnvironmentDigest !== environment.digest) {
@@ -442,8 +479,9 @@ export class ProductToolRuntime extends Service {
       clientOperationId: operation.clientOperationId,
       dshTurn,
       environment,
-      origin: "root" as const,
+      origin,
       productTurnId: operation.productTurnId,
+      rootAgent,
       rootCallId: String(exec.rootCallId),
       signal: exec.signal,
     });
@@ -483,11 +521,15 @@ export class ProductToolRuntime extends Service {
 
   assertExternalCurrent(context: ProductToolContext, toolName: string): void {
     boundedIdentifier(toolName, "external tool name");
-    if (this.configValue.requireAgent() !== context.agent) {
-      throw new ProductToolError("tool_operation_denied", "primary Agent authority changed during permission review");
-    }
-    const { dshTurn, operation } = this.configValue.resolveOperation(context.agent);
-    if (dshTurn !== context.dshTurn || operation.state !== "active"
+    const authority = this.configValue.resolveOperation(context.agent);
+    const { dshTurn, operation } = authority;
+    const origin = authority.origin ?? "root";
+    const rootAgent = authority.rootAgent ?? context.agent;
+    if (this.configValue.requireAgent() !== productRootAgent(context)
+      || rootAgent !== productRootAgent(context) || origin !== context.origin
+      || (authority.allowedTools !== undefined && !authority.allowedTools.includes(toolName))
+      || (context.origin === "root" && operation.state !== "active")
+      || dshTurn !== context.dshTurn
       || operation.clientOperationId !== context.clientOperationId
       || operation.productTurnId !== context.productTurnId
       || !isDeepStrictEqual(operation.birth, context.birth)) {
@@ -508,11 +550,15 @@ export class ProductToolRuntime extends Service {
   }
 
   assertCurrent(context: ProductToolContext, tool: CanonicalToolName): void {
-    if (this.configValue.requireAgent() !== context.agent) {
-      throw new ProductToolError("tool_operation_denied", "primary Agent authority changed during permission review");
-    }
-    const { dshTurn, operation } = this.configValue.resolveOperation(context.agent);
-    if (dshTurn !== context.dshTurn || operation.state !== "active"
+    const authority = this.configValue.resolveOperation(context.agent);
+    const { dshTurn, operation } = authority;
+    const origin = authority.origin ?? "root";
+    const rootAgent = authority.rootAgent ?? context.agent;
+    if (this.configValue.requireAgent() !== productRootAgent(context)
+      || rootAgent !== productRootAgent(context) || origin !== context.origin
+      || (authority.allowedTools !== undefined && !authority.allowedTools.includes(tool))
+      || (context.origin === "root" && operation.state !== "active")
+      || dshTurn !== context.dshTurn
       || operation.clientOperationId !== context.clientOperationId
       || operation.productTurnId !== context.productTurnId
       || !isDeepStrictEqual(operation.birth, context.birth)) {
@@ -530,6 +576,11 @@ export class ProductToolRuntime extends Service {
       || operation.birth.toolCatalogDigest !== catalog.digest
       || !catalog.effectiveTools.includes(tool)) {
       throw new ProductToolError("tool_catalog_stale", "tool catalog authority changed during permission review");
+    }
+    const originPolicy = CANONICAL_TOOL_CONTRACTS[tool].originPolicy;
+    if ((originPolicy.mode === "root-only" && context.origin !== "root")
+      || (originPolicy.mode === "no-background-child" && context.origin === "background_child")) {
+      throw new ProductToolError(originPolicy.denialCode ?? "tool_operation_denied", `${tool} is unavailable to ${context.origin}`);
     }
     this.configValue.plan.assert(context, tool);
   }

@@ -352,40 +352,10 @@ class FakeContinuableSubagents extends Service {
     const parentId = child.agent.session.header.parentSession;
     const parent = parentId === undefined ? undefined : this.ctx.agents.get(parentId);
     if (parent === undefined) throw new Error("fixture child lacks parent");
+    const replies = typeof output === "string" ? [output] : [...output];
+    for (const text of replies) this.emitReply(childId, text);
     const run = this.runs.get(childId);
     if (!run?.active) throw new Error("fixture child lacks an active epoch");
-    const replies = typeof output === "string" ? [output] : [...output];
-    const inbox = new Inbox(child.agent.session, {
-      claimed: () => undefined,
-      discarded: () => undefined,
-      inserted: () => undefined,
-    });
-    for (const [index, text] of replies.entries()) {
-      if (!inbox.hasPending) {
-        inbox.append("next-turn", freezeMessage({
-          id: MessageId(`epoch-${run.runId}-${String(index + 1)}`),
-          role: "user",
-          content: [Object.freeze({ type: "text", text: "Continue the active child run." })],
-          source: { kind: "coordinator", form: "relay", senderSessionId: parent.id },
-        }));
-      }
-      run.turn += 1;
-      child.agent.session.append("turn/start", { turn: run.turn });
-      inbox.claim("next-turn", run.turn);
-      child.agent.session.append("step/start", { turn: run.turn, step: 1 });
-      child.agent.session.append("assistant/message", {
-        turn: run.turn,
-        step: 1,
-        message: freezeMessage({
-          id: MessageId(`assistant-${run.runId}-${String(index + 1)}`),
-          role: "assistant",
-          source: { kind: "model", provider: "fixture-provider", model: "fixture-model" },
-          content: [Object.freeze({ type: "text", text })],
-        }),
-      }, { surfaceOp: "append", sourceEventSeqs: [] });
-      child.agent.session.append("step/end", { turn: run.turn, step: 1 });
-      child.agent.session.append("turn/end", { turn: run.turn, reason: { kind: "completed" } });
-    }
     run.active = false;
     const last = replies.at(-1);
     this.ctx.emit(scopeTarget(this as unknown as SubagentRuntime, parent), "subagent/end", {
@@ -399,6 +369,45 @@ class FakeContinuableSubagents extends Service {
       stopReason,
       ...(infrastructureFailure ? { infrastructureFailure: true as const } : {}),
     });
+  }
+
+  emitReply(childId: string, text: string): void {
+    const child = this.children.get(childId);
+    if (child === undefined) throw new Error("unknown fixture child");
+    const parentId = child.agent.session.header.parentSession;
+    const parent = parentId === undefined ? undefined : this.ctx.agents.get(parentId);
+    if (parent === undefined) throw new Error("fixture child lacks parent");
+    const run = this.runs.get(childId);
+    if (!run?.active) throw new Error("fixture child lacks an active epoch");
+    const inbox = new Inbox(child.agent.session, {
+      claimed: () => undefined,
+      discarded: () => undefined,
+      inserted: () => undefined,
+    });
+    if (!inbox.hasPending) {
+      inbox.append("next-turn", freezeMessage({
+        id: MessageId(`epoch-${run.runId}-${String(run.turn + 1)}`),
+        role: "user",
+        content: [Object.freeze({ type: "text", text: "Continue the active child run." })],
+        source: { kind: "coordinator", form: "relay", senderSessionId: parent.id },
+      }));
+    }
+    run.turn += 1;
+    child.agent.session.append("turn/start", { turn: run.turn });
+    inbox.claim("next-turn", run.turn);
+    child.agent.session.append("step/start", { turn: run.turn, step: 1 });
+    child.agent.session.append("assistant/message", {
+      turn: run.turn,
+      step: 1,
+      message: freezeMessage({
+        id: MessageId(`assistant-${run.runId}-${String(run.turn)}`),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture-provider", model: "fixture-model" },
+        content: [Object.freeze({ type: "text", text })],
+      }),
+    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    child.agent.session.append("step/end", { turn: run.turn, step: 1 });
+    child.agent.session.append("turn/end", { turn: run.turn, reason: { kind: "completed" } });
   }
 
   private startEpoch(child: Agent, provider: string): void {
@@ -629,9 +638,9 @@ const fixtureDescriptorDigest = (allowedReadRoots: readonly string[]): string =>
     modelProfileRevision: "model-profile-v1",
     network: "deny",
     persona: [
-      "You are a local delegated worker. Complete only the assigned task.",
-      "You have no credential, network, filesystem, interaction, checkpoint, plan-entry, or child-spawn authority.",
-      "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
+      "You are a delegated general-purpose worker. Complete only the assigned task.",
+      "Use the inherited tools normally, follow Product permissions, and report concise results to your parent.",
+      "You cannot spawn another child Agent.",
     ].join(" "),
     provider: "fixture-provider",
     type: "general",
@@ -773,9 +782,9 @@ const seedSettledForegroundWork = (
         parentSessionId: session.id,
         provider: "fixture-provider",
         persona: [
-          "You are a local delegated worker. Complete only the assigned task.",
-          "You have no credential, network, filesystem, interaction, checkpoint, plan-entry, or child-spawn authority.",
-          "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
+          "You are a delegated general-purpose worker. Complete only the assigned task.",
+          "Use the inherited tools normally, follow Product permissions, and report concise results to your parent.",
+          "You cannot spawn another child Agent.",
         ].join(" "),
         type: "general",
       },
@@ -801,6 +810,38 @@ const seedSettledForegroundWork = (
 };
 
 describe("canonical Agent Work projection", () => {
+  it("gives Explore the Claude Code-style read/search/Bash surface while hiding mutations and child spawn", async () => {
+    const state = await harness();
+    const disposers = ["Read", "Write", "Bash", "TaskCreate", "AskUserQuestion", "EnterPlanMode"].map((name) =>
+      state.context.tools.register(Object.freeze({
+        name,
+        description: `${name} fixture definition`,
+        parameters: Object.freeze({ type: "object" as const, properties: Object.freeze({}), additionalProperties: false }),
+        output: Object.freeze({
+          schema: Object.freeze({ type: "object" as const, properties: Object.freeze({}), additionalProperties: false }),
+          render: () => [],
+        }),
+        execute: () => Promise.resolve(Object.freeze({})),
+      })));
+    try {
+      const started = await state.execute("Agent", {
+        description: "探索运行时能力",
+        prompt: "只读检查当前实现。",
+        subagent_type: "Explore",
+      });
+      const childId = (started as { value: { agentId: string } }).value.agentId;
+      const child = state.subagents.childAgent(childId);
+      if (child === undefined) throw new Error("Explore fixture child was not published");
+      const descriptor = foldSubagentDescriptor(child.session.events);
+      if (descriptor?.mode !== "continuable") throw new Error("Explore fixture descriptor is not continuable");
+      const names = descriptor.toolFilter?.allow ?? [];
+      expect(names).toEqual(expect.arrayContaining(["Read", "Bash", "TaskStop", "SendMessage"]));
+      expect(names).not.toEqual(expect.arrayContaining(["Write", "TaskCreate", "AskUserQuestion", "EnterPlanMode", "Agent"]));
+    } finally {
+      for (const dispose of disposers.reverse()) dispose();
+    }
+  });
+
   it("makes the built-in general descriptor recoverable after an unknown type", async () => {
     const state = await harness();
     const result = await state.execute("Agent", {
@@ -1028,6 +1069,33 @@ describe("canonical Agent Work projection", () => {
     expect(epochs.map((event) => (event.data as { ordinal: number }).ordinal)).toEqual([1, 2]);
   });
 
+  it("publishes each durable background assistant reply before the child epoch ends", async () => {
+    const state = await harness();
+    const started = await state.execute("Agent", {
+      description: "Report live progress",
+      prompt: "Publish an intermediate result while continuing the delegated task.",
+    }, "live-output");
+    const value = (started as { value: { agentId: string; outputPath: string } }).value;
+
+    state.subagents.emitReply(value.agentId, "intermediate child result");
+
+    await vi.waitFor(() => {
+      expect(state.finalizedOutputs.get(value.outputPath)).toBe("intermediate child result");
+    });
+    expect(state.agent.session.events.filter((event) => event.type === "myagents/work/epoch")).toEqual([]);
+    expect(state.context.productWork.snapshot()).toEqual([expect.objectContaining({
+      state: "background",
+      outputPath: value.outputPath,
+    })]);
+
+    state.subagents.emitEnd(value.agentId, "closing child result");
+    await vi.waitFor(() => {
+      expect(state.finalizedOutputs.get(value.outputPath)).toBe(
+        "intermediate child result\n\n--- child follow-up ---\nclosing child result",
+      );
+    });
+  });
+
   it("recovers an unprojected closed epoch and wakes the exact durable pending Inbox identity", async () => {
     const childId = SessionId("recovered-child");
     const initialMessageId = MessageId("recovered-initial-message");
@@ -1049,9 +1117,9 @@ describe("canonical Agent Work projection", () => {
           label: taskId,
           mode: "continuable",
           persona: [
-            "You are a local delegated worker. Complete only the assigned task.",
-            "You have no credential, network, filesystem, interaction, checkpoint, plan-entry, or child-spawn authority.",
-            "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
+            "You are a delegated general-purpose worker. Complete only the assigned task.",
+            "Use the inherited tools normally, follow Product permissions, and report concise results to your parent.",
+            "You cannot spawn another child Agent.",
           ].join(" "),
           provider: "fixture-spawn",
           settlementDelivery: "external",
@@ -1129,9 +1197,9 @@ describe("canonical Agent Work projection", () => {
             parentSessionId: root.id,
             provider: "fixture-provider",
             persona: [
-              "You are a local delegated worker. Complete only the assigned task.",
-              "You have no credential, network, filesystem, interaction, checkpoint, plan-entry, or child-spawn authority.",
-              "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
+              "You are a delegated general-purpose worker. Complete only the assigned task.",
+              "Use the inherited tools normally, follow Product permissions, and report concise results to your parent.",
+              "You cannot spawn another child Agent.",
             ].join(" "),
             type: "general",
           },
@@ -1205,9 +1273,9 @@ describe("canonical Agent Work projection", () => {
           label: taskId,
           mode: "continuable",
           persona: [
-            "You are a local delegated worker. Complete only the assigned task.",
-            "You have no credential, network, filesystem, interaction, checkpoint, plan-entry, or child-spawn authority.",
-            "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
+            "You are a delegated general-purpose worker. Complete only the assigned task.",
+            "Use the inherited tools normally, follow Product permissions, and report concise results to your parent.",
+            "You cannot spawn another child Agent.",
           ].join(" "),
           provider: "fixture-spawn",
           settlementDelivery: "external",
@@ -1257,9 +1325,9 @@ describe("canonical Agent Work projection", () => {
             parentSessionId: root.id,
             provider: "fixture-provider",
             persona: [
-              "You are a local delegated worker. Complete only the assigned task.",
-              "You have no credential, network, filesystem, interaction, checkpoint, plan-entry, or child-spawn authority.",
-              "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
+              "You are a delegated general-purpose worker. Complete only the assigned task.",
+              "Use the inherited tools normally, follow Product permissions, and report concise results to your parent.",
+              "You cannot spawn another child Agent.",
             ].join(" "),
             type: "general",
           },
@@ -1327,9 +1395,9 @@ describe("canonical Agent Work projection", () => {
           label: taskId,
           mode: "continuable",
           persona: [
-            "You are a local delegated worker. Complete only the assigned task.",
-            "You have no credential, network, filesystem, interaction, checkpoint, plan-entry, or child-spawn authority.",
-            "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
+            "You are a delegated general-purpose worker. Complete only the assigned task.",
+            "Use the inherited tools normally, follow Product permissions, and report concise results to your parent.",
+            "You cannot spawn another child Agent.",
           ].join(" "),
           provider: "fixture-spawn",
           settlementDelivery: "external",
@@ -1417,9 +1485,9 @@ describe("canonical Agent Work projection", () => {
           label: taskId,
           mode: "continuable",
           persona: [
-            "You are a local delegated worker. Complete only the assigned task.",
-            "You have no credential, network, filesystem, interaction, checkpoint, plan-entry, or child-spawn authority.",
-            "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
+            "You are a delegated general-purpose worker. Complete only the assigned task.",
+            "Use the inherited tools normally, follow Product permissions, and report concise results to your parent.",
+            "You cannot spawn another child Agent.",
           ].join(" "),
           provider: "fixture-spawn",
           settlementDelivery: "external",
@@ -1691,7 +1759,7 @@ describe("canonical Agent Work projection", () => {
     });
     state.failNextReportAfterInsert();
     const parentReport = await state.executeAs(firstId, "SendMessage", {
-      to: state.agent.id,
+      to: "parent",
       summary: "First review",
       message: "The first invariant holds.",
     }, "child-parent-report");
@@ -1845,9 +1913,9 @@ describe("canonical Agent Work projection", () => {
           parentSessionId: session.id,
           provider: "fixture-provider",
           persona: [
-            "You are a local delegated worker. Complete only the assigned task.",
-            "You have no credential, network, filesystem, interaction, checkpoint, plan-entry, or child-spawn authority.",
-            "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
+            "You are a delegated general-purpose worker. Complete only the assigned task.",
+            "Use the inherited tools normally, follow Product permissions, and report concise results to your parent.",
+            "You cannot spawn another child Agent.",
           ].join(" "),
           type: "general",
         },

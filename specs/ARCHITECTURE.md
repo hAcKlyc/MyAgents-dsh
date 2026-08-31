@@ -154,7 +154,7 @@ MyAgents-owned plugins implement compatibility and product policy through DSH se
 - safe WebFetch and model/provider policy;
 - Host-backed attachment and declarative extension providers.
 
-TaskGraph is one of those product-owned plugins. Its canonical Task metadata is a bounded flat record of JSON scalar values; nested objects, arrays, and recursive schema references are not part of the model-visible contract. That portable schema is identical for Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses and is not rewritten per Provider. The exact rule and maintenance gate live in [Agent tools and policy](./tech_docs/agent-tools-and-policy.md).
+TaskGraph is one of those product-owned plugins. Its canonical Task metadata is a bounded flat record of JSON scalar values; nested objects, arrays, and recursive schema references are not part of the model-visible contract. That portable schema is identical for Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses and is not rewritten per Provider. Root and child Agents share this one root-Session TaskGraph; mutation events record their exact Product tool origin. The exact rule and maintenance gate live in [Agent tools and policy](./tech_docs/agent-tools-and-policy.md).
 
 The official model plane keeps two deliberately different adapter owners behind the one DSH `ctx.llm` service. `dsh-llm-deepseek` exclusively owns `deepseek-official` and its DeepSeek-native Files/search behavior. Exact public `dsh-llm-pi-ai@0.1.1-rc.2` is mounted dormant and owns only Host-declared Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes. Its required public `dsh-authorization@0.1.1-rc.2` peer is packaged explicitly but no authorization service/login flow is mounted or advertised. A root-only in-memory `HostSettingsProvider` atomically replaces its non-secret route document during Session/config admission; it is not a user configuration store. Request middleware holds one reverse-port credential scope across adapter iterator creation, each read and cleanup, and sanitizes both thrown failures and in-stream failure terminals before persistence. Failed admission restores the prior settings and credential binding.
 
@@ -335,7 +335,7 @@ The current public DSH persistence seam is append-only and has no delete, replac
 
 ## 10. Tool and policy architecture
 
-All model-visible tools use DSH `ctx.tools`. A product tool is considered native to this distribution when it registers into `ctx.tools`, even if its exact definition and executor are maintained by MyAgents.
+All model-visible tools use DSH `ctx.tools`. A product tool is considered native to this distribution when it registers into `ctx.tools`, even if its exact definition and executor are maintained by MyAgents. Root, foreground-child and background-child calls share this execution plane: WorkRegistry derives immutable child authority from the parent Product operation, while the common tool runtime rechecks visibility, origin, Hooks, permission and delayed execution policy. Child roles can narrow the parent catalog but cannot widen it or create another ToolRuntime.
 
 For each target tool:
 

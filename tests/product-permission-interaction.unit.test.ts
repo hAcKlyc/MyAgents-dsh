@@ -393,6 +393,38 @@ describe("product permission policy and local interaction provider", () => {
     expect(state.flushes).toEqual([]);
   });
 
+  it("routes child permission interaction through the executing child while persisting shared policy on root", async () => {
+    const local = provider("scenario-child", (pending, settlement) =>
+      response(pending, "always_allow", settlement));
+    const state = await mounted(local.provider);
+    const childSession = state.context.sessions.create(SessionId("permission-child"));
+    childSession.append("turn/start", { turn: 1 });
+    const child = Object.freeze({
+      ctx: state.context,
+      id: "permission-child",
+      session: childSession,
+    }) as unknown as Agent;
+    state.context.agents.enter(child, state.agent);
+    const root = state.product();
+    const childProduct: ProductToolContext = Object.freeze({
+      ...root,
+      agent: child,
+      origin: "background_child",
+      rootAgent: state.agent,
+    });
+
+    await expect(state.context.productPermission.authorize(childProduct, request()))
+      .resolves.toBe("allow");
+
+    expect(local.permissionRequests).toHaveLength(1);
+    expect(local.permissionRequests[0]?.agent).toBe(child);
+    expect(local.permissionRequests[0]?.origin).toBe("background_child");
+    expect(local.permissionRequests[0]?.tool).toBe("Bash");
+    expect(state.session.events.some(({ type }) => type === "myagents/permission/rule")).toBe(true);
+    expect(childSession.events.some(({ type }) => type === "myagents/permission/rule")).toBe(false);
+    expect(state.flushes).toEqual([String(state.session.id)]);
+  });
+
   it("binds external MCP and Host-tool permissions to exact namespaced targets", async () => {
     let calls = 0;
     const local = provider("scenario-mcp", (pending, settlement) => {

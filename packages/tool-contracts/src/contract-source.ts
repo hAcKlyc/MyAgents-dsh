@@ -687,9 +687,9 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Agent: contract({
     name: "Agent",
-    description: "Starts a supervised local child Agent with a fresh DSH context and the current bounded workspace/component snapshot. Omit subagent_type to use the built-in general descriptor. General children have coordination tools but no direct filesystem authority, so include the material to review in the prompt. Background returns a retained work handle; foreground waits for the child terminal.",
+    description: "Starts a supervised local child Agent with a fresh DSH context and the current bounded workspace/component snapshot. Omit subagent_type to use the built-in general descriptor, which inherits eligible parent tools. Explore keeps read/search/Web/Bash tools with a read-only role instruction. Custom descriptors may narrow inherited visibility. Background returns a retained work handle; foreground waits for the child terminal.",
     inputSchema: strictObject({
-      description: Type.String({ minLength: 1, maxLength: 80, pattern: "^(?:\\S+)(?:\\s+\\S+){2,4}$" }),
+      description: Type.String({ minLength: 1, maxLength: 80 }),
       prompt: Type.String({ minLength: 1, maxLength: 1_000_000 }),
       subagent_type: Type.Optional(boundedIdentifier),
       run_in_background: Type.Optional(Type.Boolean()),

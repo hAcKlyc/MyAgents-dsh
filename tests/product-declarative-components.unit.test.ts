@@ -182,7 +182,8 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
         maxTurns: 3,
         prompt: "You are a bounded release reviewer.",
         skills: ["review-skill"],
-        tools: ["TaskStop", "SendMessage"],
+        tools: ["Read", "Bash", "SendMessage"],
+        disallowedTools: ["Bash"],
       }),
       enabled: true,
       id: "release-reviewer",
@@ -198,14 +199,16 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
     const plan = await compiler.prepare(agent, source, new AbortController().signal, authority(agent.id));
     expect(observed).toMatchObject({
       componentId: "release-reviewer",
+      disallowedTools: ["Bash"],
       maxTurns: 3,
-      tools: ["TaskStop", "SendMessage"],
+      tools: ["Read", "Bash", "SendMessage"],
       type: "release-reviewer",
     });
     expect(observed?.persona).toContain("bounded release reviewer");
     expect(observed?.persona).toContain(skillContent);
     expect(Object.isFrozen(observed)).toBe(true);
     expect(Object.isFrozen(observed?.tools)).toBe(true);
+    expect(Object.isFrozen(observed?.disallowedTools)).toBe(true);
     expect(plan.contributions[0]?.catalog).toEqual({ kind: "agent", name: "release-reviewer" });
   });
 

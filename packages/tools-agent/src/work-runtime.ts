@@ -25,8 +25,10 @@ import {
   normalizeDshTokenUsage,
   type ModelRequestOperationAuthority,
   type OperationBirthSnapshot,
+  type ProductOperationRecord,
 } from "@myagents-dsh/operation-runtime";
 import {
+  CANONICAL_TOOL_NAMES,
   CANONICAL_TOOL_CONTRACTS,
   canonicalInputSchemaForDsh,
   canonicalOutputSchemaForDsh,
@@ -38,6 +40,7 @@ import {
 } from "@myagents-dsh/tool-contracts";
 import {
   ProductToolError,
+  type ProductToolOperationAuthority,
   type ProductRetainedOutputAuthority,
   type ProductRetainedOutputFile,
   type ProductToolContext,
@@ -55,11 +58,20 @@ const MAX_WORK_EPOCHS_TOTAL = MAX_WORK_ITEMS + MAX_WORK_MESSAGES;
 const MAX_WORK_MESSAGE_BYTES = 4 * 1_024 * 1_024;
 const LIVE_CHILD_REPLY_SEPARATOR = "\n\n--- child follow-up ---\n";
 const RESUMED_CHILD_RUN_SEPARATOR = "\n\n--- resumed child run ---\n";
-const CHILD_TOOL_NAMES = Object.freeze(["TaskStop", "SendMessage"] as const);
-const CHILD_PERSONA = [
-  "You are a local delegated worker. Complete only the assigned task.",
-  "You have no credential, network, filesystem, interaction, checkpoint, plan-entry, or child-spawn authority.",
-  "Use SendMessage only for explicit parent or sibling coordination and TaskStop only for work in the same parent Session.",
+const EXPLORE_CHILD_TOOLS = Object.freeze([
+  "Read", "Glob", "Grep", "ls", "Bash", "WebFetch", "WebSearch", "Skill",
+  "TaskGet", "TaskList", "SendMessage", "TaskStop",
+] as const);
+const GENERAL_CHILD_PERSONA = [
+  "You are a delegated general-purpose worker. Complete only the assigned task.",
+  "Use the inherited tools normally, follow Product permissions, and report concise results to your parent.",
+  "You cannot spawn another child Agent.",
+].join(" ");
+const EXPLORE_CHILD_PERSONA = [
+  "You are an Explore agent for codebase research and analysis.",
+  "Remain read-only: do not create, edit, delete, rename, or otherwise mutate files or Product state.",
+  "Bash is available for read-only inspection commands only. Report findings with paths and evidence to your parent.",
+  "You cannot spawn another child Agent.",
 ].join(" ");
 
 const hasControlCharacter = (value: string): boolean => {
@@ -269,7 +281,8 @@ export interface DynamicAgentRegistration {
   readonly maxTurns: number;
   readonly modelProfileRef?: string;
   readonly persona: string;
-  readonly tools: readonly string[];
+  readonly disallowedTools?: readonly string[];
+  readonly tools?: readonly string[];
   readonly type: string;
 }
 
@@ -335,6 +348,7 @@ type ChildCreationPermit = Readonly<{
   agentProvider: string;
   authority: WorkCreationAuthority;
   model: string;
+  mode: "continuable" | "foreground";
   parent: Agent;
   ready: NativeDeferred<WorkEntry>;
   taskId: string;
@@ -708,6 +722,26 @@ const accumulatedEpochOutput = (
   return output;
 };
 
+const accumulatedLiveOutput = (
+  events: readonly SessionEvent[],
+  entry: WorkEntry,
+  activeStartSeq: number,
+): string => {
+  let output = accumulatedEpochOutput(events, entry);
+  for (const [index, reply] of assistantReplies(events.slice(activeStartSeq)).entries()) {
+    output = appendBoundedUtf8(
+      output,
+      `${output.length === 0
+        ? ""
+        : entry.epochs.length > 0 && index === 0
+          ? RESUMED_CHILD_RUN_SEPARATOR
+          : LIVE_CHILD_REPLY_SEPARATOR}${reply}`,
+      MAX_AGENT_OUTPUT_BYTES,
+    );
+  }
+  return output;
+};
+
 type PendingInboxMessage = Readonly<{
   contentSha256: string;
   id: string;
@@ -1021,14 +1055,28 @@ export class ProductWorkService extends Service {
         const cancelPublication = this.config.publication.prepare(child, parent);
         try {
           this.usageFor(child.id);
-          const stopUsage = childCtx.on("session/event", (session, event) => {
-            if (session !== child.session || event.type !== "assistant/message" || event.data.usage === undefined) return;
-            const normalized = normalizeDshTokenUsage(event.data.usage);
-            const usage = this.usageFor(child.id);
-            usage.inputTokens = addUsage(usage.inputTokens, normalized.inputTokens);
-            usage.outputTokens = addUsage(usage.outputTokens, normalized.outputTokens);
-            usage.cacheReadTokens = addUsage(usage.cacheReadTokens, normalized.cacheReadTokens);
-            usage.cacheWriteTokens = addUsage(usage.cacheWriteTokens, normalized.cacheWriteTokens);
+          const stopUsage = this.ctx.on("session/event", (session, event) => {
+            if (session !== child.session || event.type !== "assistant/message") return;
+            if (event.data.usage !== undefined) {
+              const normalized = normalizeDshTokenUsage(event.data.usage);
+              const usage = this.usageFor(child.id);
+              usage.inputTokens = addUsage(usage.inputTokens, normalized.inputTokens);
+              usage.outputTokens = addUsage(usage.outputTokens, normalized.outputTokens);
+              usage.cacheReadTokens = addUsage(usage.cacheReadTokens, normalized.cacheReadTokens);
+              usage.cacheWriteTokens = addUsage(usage.cacheWriteTokens, normalized.cacheWriteTokens);
+            }
+            void this.trackExecution(async () => {
+              const liveEntry = await exactNativePromise(ready, "ProductWork child publication");
+              await this.withLock(liveEntry.taskId, async () => {
+                const observation = this.activeEpochs.get(child.id);
+                if (liveEntry.mode !== "continuable" || liveEntry.stopRequested
+                  || liveEntry.settlement !== undefined || observation?.session !== session) return;
+                const output = accumulatedLiveOutput(session.events, liveEntry, observation.startSeq);
+                if (output === liveEntry.latestOutput) return;
+                liveEntry.latestOutput = output;
+                await this.publishOutput(liveEntry, output);
+              });
+            }).catch((error: unknown) => { this.fence(error); });
           });
           const disposeStop = childCtx.tools.register(this.taskStopDefinition(child, ready));
           const disposeSend = childCtx.tools.register(this.sendMessageDefinition(child, ready));
@@ -1091,10 +1139,10 @@ export class ProductWorkService extends Service {
     }
     const normalized = normalizedValue as JsonObject;
     const keys = [
-      "componentId", "description", "generation", "maxTurns", "modelProfileRef", "persona", "tools", "type",
+      "componentId", "description", "disallowedTools", "generation", "maxTurns", "modelProfileRef", "persona", "tools", "type",
     ];
     if (Object.keys(normalized).some((key) => !keys.includes(key))
-      || ["componentId", "description", "generation", "maxTurns", "persona", "tools", "type"]
+      || ["componentId", "description", "generation", "maxTurns", "persona", "type"]
         .some((key) => !Object.hasOwn(normalized, key))) {
       throw new TypeError("dynamic Agent registration has an invalid exact shape");
     }
@@ -1124,25 +1172,31 @@ export class ProductWorkService extends Service {
       || normalized.persona.length > 1_000_000
       || !Number.isSafeInteger(normalized.maxTurns) || (normalized.maxTurns as number) < 1
       || (normalized.maxTurns as number) > 10_000
-      || !Array.isArray(normalized.tools) || normalized.tools.length > 256
-      || new Set(normalized.tools).size !== normalized.tools.length) {
+      || (normalized.tools !== undefined && (!Array.isArray(normalized.tools) || normalized.tools.length > 256
+        || new Set(normalized.tools).size !== normalized.tools.length))
+      || (normalized.disallowedTools !== undefined && (!Array.isArray(normalized.disallowedTools)
+        || normalized.disallowedTools.length > 256
+        || new Set(normalized.disallowedTools).size !== normalized.disallowedTools.length))) {
       throw new TypeError("dynamic Agent descriptor exceeds its bounded contract");
     }
-    const tools = Object.freeze(normalized.tools.map((tool) => identifier(tool, "dynamic Agent tool")));
-    if (tools.some((tool) => !(CHILD_TOOL_NAMES as readonly string[]).includes(tool))) {
-      throw new TypeError("dynamic Agent tool policy exceeds the supported child ToolRuntime surface");
-    }
+    const tools = normalized.tools === undefined
+      ? undefined
+      : Object.freeze(normalized.tools.map((tool) => identifier(tool, "dynamic Agent tool")));
+    const disallowedTools = normalized.disallowedTools === undefined
+      ? undefined
+      : Object.freeze(normalized.disallowedTools.map((tool) => identifier(tool, "dynamic Agent denied tool")));
     const modelProfileRef = normalized.modelProfileRef === undefined
       ? undefined
       : identifier(normalized.modelProfileRef, "dynamic Agent model profile reference");
     const registration: DynamicAgentRegistration = Object.freeze({
       componentId: identifier(normalized.componentId, "dynamic Agent component"),
       description: normalized.description,
+      ...(disallowedTools === undefined ? {} : { disallowedTools }),
       generation: Object.freeze({ digest: generation.digest, revision: generation.revision }),
       maxTurns: normalized.maxTurns as number,
       ...(modelProfileRef === undefined ? {} : { modelProfileRef }),
       persona: normalized.persona,
-      tools,
+      ...(tools === undefined ? {} : { tools }),
       type,
     });
     const key = this.dynamicGenerationKey(registration.generation);
@@ -1174,10 +1228,19 @@ export class ProductWorkService extends Service {
   }
 
   private resolveAgentTemplate(authority: WorkCreationAuthority, type: string): AgentBirthTemplate {
+    const inherited = this.ctx.tools.schemas(authority.agent).map(({ name }) => name)
+      .filter((name) => !CANONICAL_TOOL_NAMES.includes(name as (typeof CANONICAL_TOOL_NAMES)[number])
+        || CANONICAL_TOOL_CONTRACTS[name as keyof typeof CANONICAL_TOOL_CONTRACTS].originPolicy.mode !== "root-only");
     if (type === "general") return Object.freeze({
-      allowedTools: CHILD_TOOL_NAMES,
+      allowedTools: Object.freeze(inherited),
       maxTurns: 10_000,
-      persona: CHILD_PERSONA,
+      persona: GENERAL_CHILD_PERSONA,
+      type,
+    });
+    if (type === "Explore") return Object.freeze({
+      allowedTools: Object.freeze(EXPLORE_CHILD_TOOLS.filter((name) => inherited.includes(name))),
+      maxTurns: 10_000,
+      persona: EXPLORE_CHILD_PERSONA,
       type,
     });
     const registration = this.dynamicAgents.get(this.dynamicGenerationKey({
@@ -1190,8 +1253,13 @@ export class ProductWorkService extends Service {
         "requested child descriptor is unavailable; omit subagent_type to use the built-in general descriptor",
       );
     }
+    const requested = registration.tools ?? inherited;
+    const denied = new Set(registration.disallowedTools ?? []);
+    if (requested.some((tool) => !inherited.includes(tool))) {
+      throw new ProductToolError("agent_unavailable", "Agent descriptor requests a tool absent from the parent catalog");
+    }
     return Object.freeze({
-      allowedTools: registration.tools,
+      allowedTools: Object.freeze(requested.filter((tool) => !denied.has(tool))),
       maxTurns: registration.maxTurns,
       ...(registration.modelProfileRef === undefined ? {} : { modelProfileRef: registration.modelProfileRef }),
       persona: registration.persona,
@@ -1263,6 +1331,56 @@ export class ProductWorkService extends Service {
       modelRequestId,
       rootCallId: initial.callId,
       turnId: initial.productTurnId,
+    });
+  }
+
+  resolveActiveChildToolOperation(agent: Agent): ProductToolOperationAuthority {
+    this.assertHealthy();
+    const rootAgent = this.safePrimary();
+    const pending = this.pendingChildAuthorities.get(agent.id);
+    const entry = this.byAgent.get(agent.id);
+    if (rootAgent === undefined || this.ctx.agents.get(agent.id) !== agent
+      || agent.session.header.origin !== "subagent"
+      || agent.session.header.parentSession !== rootAgent.id
+      || (entry === undefined && pending === undefined)
+      || entry?.settlement !== undefined || entry?.stopRequested === true) {
+      throw new ProductToolError("tool_operation_denied", "child tool call lacks one live ProductWork owner");
+    }
+    const clientOperationId = pending?.authority.clientOperationId ?? entry?.created.authority.clientOperationId;
+    const productTurnId = pending?.authority.productTurnId ?? entry?.created.authority.productTurnId;
+    const componentDigest = pending?.authority.birth.componentDigest ?? entry?.created.birth.componentDigest;
+    const componentRevision = pending?.authority.birth.componentRevision ?? entry?.created.birth.componentRevision;
+    const catalogDigest = pending?.authority.catalog.digest ?? entry?.created.authority.toolCatalogDigest;
+    const catalogRevision = pending?.authority.catalog.revision ?? entry?.created.authority.toolCatalogRevision;
+    const parentDshTurn = pending?.authority.dshTurn ?? entry?.created.authority.dshTurn;
+    const allowedTools = pending?.template.allowedTools ?? entry?.created.birth.allowedTools;
+    const mode = pending?.mode ?? entry?.mode;
+    if (allowedTools === undefined || mode === undefined) {
+      throw new ProductToolError("tool_operation_denied", "child tool authority is incomplete");
+    }
+    const matches = foldProductOperations(rootAgent.session.events, rootAgent.id).operations
+      .filter((candidate) => candidate.clientOperationId === clientOperationId);
+    const operation: ProductOperationRecord | undefined = matches[0];
+    if (matches.length !== 1 || operation === undefined
+      || operation.productTurnId !== productTurnId
+      || operation.birth.componentDigest !== componentDigest
+      || operation.birth.componentRevision !== componentRevision
+      || operation.birth.toolCatalogDigest !== catalogDigest
+      || operation.birth.toolCatalogRevision !== catalogRevision
+      || !operation.dshTurns.includes(parentDshTurn ?? 0)) {
+      throw new ProductToolError("tool_operation_denied", "child tool call differs from its durable parent operation");
+    }
+    const observation = this.activeEpochs.get(agent.id);
+    const dshTurn = this.openDshTurn(agent);
+    if (observation?.session !== agent.session || dshTurn === undefined) {
+      throw new ProductToolError("tool_operation_denied", "child tool call lacks one active DSH turn");
+    }
+    return Object.freeze({
+      allowedTools: Object.freeze([...allowedTools]),
+      dshTurn,
+      operation,
+      origin: mode === "continuable" ? "background_child" as const : "foreground_child" as const,
+      rootAgent,
     });
   }
 
@@ -1705,6 +1823,7 @@ export class ProductWorkService extends Service {
           agentProvider,
           authority: call.authority,
           model,
+          mode,
           parent: root,
           ready: this.entryDeferred(),
           taskId: call.taskId,
@@ -2466,6 +2585,7 @@ export class ProductWorkService extends Service {
         agentProvider: parentProvider,
         authority,
         model: parentModel,
+        mode: background ? "continuable" as const : "foreground" as const,
         parent: product.agent,
         ready: this.entryDeferred(),
         taskId,
@@ -2789,10 +2909,13 @@ export class ProductWorkService extends Service {
 
   private async executeSendMessage(caller: Agent, args: JsonObject, exec: ToolRunContext): Promise<unknown> {
     await this.initialize();
-    const recipient = args.to as string;
     const summary = args.summary as string;
     const message = args.message as string;
     const root = this.rootForCaller(caller);
+    const requestedRecipient = args.to as string;
+    const recipient = requestedRecipient === "parent" && caller !== root
+      ? String(root.id)
+      : requestedRecipient;
     const messageId = `message-${sha256(
       "myagents-work-message-v2",
       root.id,

@@ -3,10 +3,10 @@
   "authority": "packages/tool-contracts/src/contract-source.ts",
   "behaviorFixtureCount": 100,
   "canonicalToolCount": 20,
-  "catalogSchemaSha256": "4b777a10af4c6f2c7fd4f9f981a5d4edd08887ed46d001ac55dfbdd2fee45e2f",
-  "contractSha256": "aa744d2f9477270342bef8ab6e5becc9b829f85fbc4cb39069974d3eecab21c2",
-  "documentationSha256": "016ae3fc1289870f3c5967297993ad0707d36deeb2c1e0e3440151ae1c1d99d7",
-  "fixturesSha256": "6f4837a99b3a348260517edeef9fa02da58501c681cbecb5f69bb23cc92fb6bc",
+  "catalogSchemaSha256": "2f6667e86a9c5fd51e42420fd6d1ef02aa7274a02d1819f8874f04204be2729b",
+  "contractSha256": "2182af7d88c9bced6c8e76ee61be8018de002c4f222626dd6716f236b468e066",
+  "documentationSha256": "afe98d5aaa29fccb1c6c619d45f4bb93a95e15b79170e5446751d5a0cdd17551",
+  "fixturesSha256": "9e526f7799cba4e827485810a02bf3f19ebe845622ad5e083b5c292689ebef8e",
   "generator": "scripts/generate-tool-contracts.ts",
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
@@ -14,9 +14,9 @@
     "packages/protocol/src/tool-catalog-schema.ts"
   ],
   "profile": "canonical-agent-experience-v1",
-  "reuseMatrixSha256": "c69e1da0aa7d9b5d1f402f6b18f6b62d6c864ebd6fbdc302de6758f22c60a357",
+  "reuseMatrixSha256": "164a19a80d44371b71be9bf56b518aa7677560fcb2080b23b793556a2a3306cb",
   "toolDigests": {
-    "Agent": "f21c0cdf1d942ec6ba4dadd1c06e032b38d37e4c321d7eee6d88de09e7b97020",
+    "Agent": "8142c7dc5e289224ff1ecaf5754e2e4ee7a4cfebbedb7e216363adf13d3d789c",
     "AskUserQuestion": "ef1c3e6f36371bb1c5c530be2280994b2b8fc2908a0cf586ada00784e1ca3c24",
     "Bash": "7d1db47ce0c84cca5b136910abc94c2f6d99e45d21033b4cadfbb823ce56507d",
     "Edit": "60e2001f5e649af7cb8bdbe1cf99b3b13c1265e5837dced0ed1f93bf4655e5f0",

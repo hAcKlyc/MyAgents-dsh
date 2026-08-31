@@ -2,11 +2,12 @@
 type: technical-architecture
 status: implemented
 module: agent-tools-and-policy
-updated: 2026-08-30
+updated: 2026-08-31
 product_scope: ../prd/prd_0.1_agent_runtime.md
 implementation_decisions:
   - ../prd/tech_rfc_0.1_agent_experience.md
   - ../prd/tech_rfc_0.1_dsh_capability_map.md
+  - ../prd/tech_rfc_0.3_myagents_dsh_runtime_capability_closure.md
 ---
 
 # Agent tools and policy
@@ -75,6 +76,16 @@ Plan mode has one product owner and contributes a monotonic guard to `ctx.tools`
 `TaskCreate` and `TaskUpdate` expose one bounded flat metadata record. Each key is non-empty and bounded, and each value is exactly one JSON scalar: string, finite number, boolean, or `null`. Arrays, nested objects, schema references, and recursive values are rejected. On `TaskUpdate`, `null` deletes the named key; the other scalar values replace it.
 
 This restriction is part of the canonical Runtime tool contract, not a Provider-specific rewrite. The same non-recursive model-visible schema is sent through Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses. Structured product meaning belongs in versioned named Task fields rather than an arbitrary nested metadata bag. The contract and TaskGraph packages own this rule; DSH Core supplies the common tool and Session seams but does not define Task metadata.
+
+### 5.2 Child roles and Product authority
+
+`Agent` creates a DSH child Session and records one immutable effective role. `general` inherits every eligible tool in the parent operation-frozen catalog except depth-one hard exclusions. `Explore` exposes Read, Glob, Grep, `ls`, Bash, WebFetch, WebSearch, Skill and read/coordination Task tools; Write, Edit, task mutation, Plan interaction and nested Agent creation are absent. Bash remains the ordinary governed Bash tool and the Explore persona restricts it to read-only inspection. The Runtime does not parse shell commands or claim an OS read-only sandbox in this phase.
+
+Declarative Agent roles may specify `tools`, `disallowedTools` and `maxTurns`. Omitted `tools` means inheritance; the allowlist can only select definitions already visible to the parent, and the denylist is applied afterward. Invocation selects a committed role name and cannot add an ad-hoc tool list.
+
+Root, foreground-child and background-child calls all execute through the same `ctx.tools` definitions, `ProductToolRuntime`, Hooks and permission service. The child authority binds the exact child Session, parent Product operation, component generation, tool catalog and active child DSH turn. Product-owned durable state—permission rules, Plan and TaskGraph—remains on the root Product Session. Permission UI identifies the executing child while `always_allow` persists the existing exact rule on that root Session. Background interaction-only tools still fail their individual call; they do not terminate the child, root turn or unrelated components.
+
+`SendMessage` accepts `parent` as a reserved alias from a child. Background output is published incrementally to its retained output before terminal settlement. Managed-file checkpoint coverage remains root-origin Write/Edit only even though child writes use the same governed file and permission path.
 
 ## 6. Changes and verification
 

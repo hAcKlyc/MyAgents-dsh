@@ -21,6 +21,7 @@ import {
 import {
   ProductPermissionError,
   ProductToolError,
+  productRootAgent,
   type ProductToolContext,
   type ProductToolExecutionEnvironment,
 } from "@myagents-dsh/tool-runtime-product";
@@ -745,7 +746,7 @@ export class ProductPlanService extends Service {
 
   assertTool(context: ProductToolContext, tool: CanonicalToolName): void {
     this.assertHealthy();
-    const snapshot = this.snapshot(context.agent);
+    const snapshot = this.snapshot(productRootAgent(context));
     if (context.birth.planRevision !== snapshot.revision
       && (snapshot.transitionOwner?.clientOperationId !== context.clientOperationId
         || snapshot.transitionOwner.productTurnId !== context.productTurnId)) {
@@ -762,7 +763,7 @@ export class ProductPlanService extends Service {
 
   assertExternalTool(context: ProductToolContext, toolName: string): void {
     this.assertHealthy();
-    const snapshot = this.snapshot(context.agent);
+    const snapshot = this.snapshot(productRootAgent(context));
     if (context.birth.planRevision !== snapshot.revision
       && (snapshot.transitionOwner?.clientOperationId !== context.clientOperationId
         || snapshot.transitionOwner.productTurnId !== context.productTurnId)) {
@@ -822,9 +823,10 @@ export class ProductPlanService extends Service {
     if ((tool === "Read") !== (mode === "read")) {
       throw new ProductToolError("plan_artifact_unavailable", "plan file operation mode is inconsistent");
     }
-    const snapshot = this.snapshot(context.agent);
+    const rootAgent = productRootAgent(context);
+    const snapshot = this.snapshot(rootAgent);
     const runtimeHome = planRuntimeHome(this.configValue.environment());
-    const sessionId = String(context.agent.session.id);
+    const sessionId = String(rootAgent.session.id);
     const managedPath = this.configValue.io.pathFor(runtimeHome, sessionId);
     if (snapshot.mode === "plan" && (tool === "Write" || tool === "Edit") && path !== managedPath) {
       throw new ProductToolError("plan_mode_side_effect_forbidden", "plan mode permits Write/Edit only on its managed artifact");
@@ -881,7 +883,7 @@ export class ProductPlanService extends Service {
       const seenQuestionText = new Set<string>();
       const interactionId = hash(
         "myagents-ask-user-v1",
-        String(context.agent.session.id),
+        String(productRootAgent(context).session.id),
         context.clientOperationId,
         context.callId,
         JSON.stringify(questions),
@@ -959,13 +961,14 @@ export class ProductPlanService extends Service {
       const context = this.ctx.productTools.resolve(exec);
       await this.ctx.productTools.authorize(context, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.EnterPlanMode.permissionClass,
-        target: `plan:${String(context.agent.session.id)}`,
+        target: `plan:${String(productRootAgent(context).session.id)}`,
         tool: "EnterPlanMode",
       });
       this.ctx.productTools.assertCurrent(context, "EnterPlanMode");
-      const before = this.snapshot(context.agent);
+      const rootAgent = productRootAgent(context);
+      const before = this.snapshot(rootAgent);
       const runtimeHome = planRuntimeHome(this.configValue.environment());
-      const sessionId = String(context.agent.session.id);
+      const sessionId = String(rootAgent.session.id);
       const controller = this.controller(context.signal);
       let transitionStarted = false;
       try {
@@ -982,9 +985,9 @@ export class ProductPlanService extends Service {
         }
         this.ctx.productTools.assertCurrent(context, "EnterPlanMode");
         transitionStarted = true;
-        this.appendMode(context.agent, before, true, context);
-        await this.flush(context.agent.session, "enter plan mode");
-        const after = this.snapshot(context.agent);
+        this.appendMode(rootAgent, before, true, context);
+        await this.flush(rootAgent.session, "enter plan mode");
+        const after = this.snapshot(rootAgent);
         if (after.mode !== "plan" || after.planPath !== target.displayPath) {
           throw new ProductToolError("plan_state_conflict", "durable plan entry did not fold to its exact artifact");
         }
@@ -1002,7 +1005,8 @@ export class ProductPlanService extends Service {
   private exitDefinition(): ToolDefinition {
     return this.definition("ExitPlanMode", async (_args, exec) => {
       const context = this.ctx.productTools.resolve(exec);
-      const before = this.snapshot(context.agent);
+      const rootAgent = productRootAgent(context);
+      const before = this.snapshot(rootAgent);
       if (before.mode !== "plan" || before.planPath === undefined) {
         throw new ProductToolError("stale_plan_revision", "plan approval is available only in active plan mode");
       }
@@ -1013,7 +1017,7 @@ export class ProductPlanService extends Service {
       });
       this.ctx.productTools.assertCurrent(context, "ExitPlanMode");
       const runtimeHome = planRuntimeHome(this.configValue.environment());
-      const sessionId = String(context.agent.session.id);
+      const sessionId = String(rootAgent.session.id);
       const controller = this.controller(context.signal);
       try {
         const approval = await this.readPlan(runtimeHome, sessionId, before.planPath, controller.signal);
@@ -1080,13 +1084,13 @@ export class ProductPlanService extends Service {
         let transitionStarted = false;
         try {
           transitionStarted = true;
-          this.appendMode(context.agent, before, false, context);
-          await this.flush(context.agent.session, "exit plan mode");
+          this.appendMode(rootAgent, before, false, context);
+          await this.flush(rootAgent.session, "exit plan mode");
         } catch (error) {
           if (transitionStarted) this.failure ??= error;
           throw new ProductToolError("stale_plan_revision", "approved plan exit durability became uncertain", { cause: error });
         }
-        const after = this.snapshot(context.agent);
+        const after = this.snapshot(rootAgent);
         if (after.mode !== "normal") {
           throw new ProductToolError("stale_plan_revision", "approved plan exit did not become durable");
         }

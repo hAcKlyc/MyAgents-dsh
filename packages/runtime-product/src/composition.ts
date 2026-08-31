@@ -103,6 +103,7 @@ import {
 import {
   ProductPermissionService,
   ProductToolRuntime,
+  productRootAgent,
   validateProductPermissionPlaneConfig,
   type ProductPermissionController,
   type ProductPermissionPlaneConfig,
@@ -969,7 +970,10 @@ export const createHostBackedInteractionProvider = (
     revision: normalized.revision as string,
     deadlineMs: normalized.deadlineMs as number,
     resolveAuthority: (agent, signal, expectedPermissionRevision, deadlineMs) => {
-      const initial = root.sdkOperations.resolveActiveToolOperation(agent);
+      const resolveOperation = () => agent === root.productSession.requireAgent()
+        ? root.sdkOperations.resolveActiveToolOperation(agent)
+        : root.productWork.resolveActiveChildToolOperation(agent);
+      const initial = resolveOperation();
       if (expectedPermissionRevision !== undefined
         && initial.operation.birth.permissionRevision !== expectedPermissionRevision) {
         throw new ProtocolError(
@@ -994,7 +998,7 @@ export const createHostBackedInteractionProvider = (
         );
       }
       const assertCurrent = (): void => {
-        const current = root.sdkOperations.resolveActiveToolOperation(agent);
+        const current = resolveOperation();
         const currentSession = root.productSession.snapshot();
         if (current.dshTurn !== initial.dshTurn
           || current.operation.clientOperationId !== initial.operation.clientOperationId
@@ -1264,6 +1268,10 @@ export const installCanonicalToolPlane = async (
       requireAgent: () => root.productSession.requireAgent(),
       store: () => authority.checkpointStore,
     }));
+    const resolveProductToolOperation: ProductToolRuntimeConfig["resolveOperation"] = (agent) =>
+      agent === root.productSession.requireAgent()
+        ? root.sdkOperations.resolveActiveToolOperation(agent)
+        : root.productWork.resolveActiveChildToolOperation(agent);
     fibers.push(await root.plugin(ProductToolRuntime, {
       catalog: normalized.catalog,
       checkpoint: Object.freeze({
@@ -1272,7 +1280,7 @@ export const installCanonicalToolPlane = async (
       environment: () => root.productSession.requireExecutionEnvironment(),
       plan: planAuthority,
       requireAgent: () => root.productSession.requireAgent(),
-      resolveOperation: (agent) => root.sdkOperations.resolveActiveToolOperation(agent),
+      resolveOperation: resolveProductToolOperation,
     }));
     fibers.push(await root.plugin(ProductHookRuntime, {
       registerController: (controller) => {
@@ -1293,7 +1301,7 @@ export const installCanonicalToolPlane = async (
         const scope = installedAttachmentController.createRequestScope(Object.freeze({
           assertCurrent: operation.assertCurrent,
           deadlineMs: 120_000,
-          runtimeSessionId: String(operation.agent.id),
+          runtimeSessionId: String(root.productSession.requireAgent().id),
           signal,
           stagingRoot: environment.attachmentStagingRoot,
         }));
@@ -1317,10 +1325,11 @@ export const installCanonicalToolPlane = async (
         return Object.freeze({ type: "image" as const, attachment });
       },
       resolveOperation: (agent: Agent) => {
-        const initial = root.sdkOperations.resolveActiveToolOperation(agent);
+        const initial = resolveProductToolOperation(agent);
         const assertCurrent = () => {
-          const current = root.sdkOperations.resolveActiveToolOperation(agent);
+          const current = resolveProductToolOperation(agent);
           if (current.dshTurn !== initial.dshTurn
+            || (current.origin ?? "root") !== (initial.origin ?? "root")
             || current.operation.clientOperationId !== initial.operation.clientOperationId
             || current.operation.productTurnId !== initial.operation.productTurnId
             || current.operation.birth.componentRevision !== initial.operation.birth.componentRevision
@@ -1333,7 +1342,7 @@ export const installCanonicalToolPlane = async (
           birth: initial.operation.birth,
           clientOperationId: initial.operation.clientOperationId,
           dshTurn: initial.dshTurn,
-          origin: "root" as const,
+          origin: initial.origin ?? "root",
           productTurnId: initial.operation.productTurnId,
           assertCurrent,
         });
@@ -1500,7 +1509,7 @@ export const installCanonicalToolPlane = async (
       retainedOutput: Object.freeze({
         resolve: async (context: ProductToolContext, path: string) => {
           await root.productWork.initialize();
-          return root.productWork.hasRetainedOutput(context.agent, path)
+          return root.productWork.hasRetainedOutput(productRootAgent(context), path)
             ? await root.productWork.resolveRetainedOutput(context, path)
             : await root.productProcesses.resolveRetainedOutput(context, path);
         },
@@ -1602,7 +1611,7 @@ export const createProductMcpComponentCompiler = (
       const scope = attachmentController.createRequestScope(Object.freeze({
         assertCurrent,
         deadlineMs: 120_000,
-        runtimeSessionId: String(context.agent.id),
+        runtimeSessionId: String(productRootAgent(context).id),
         signal: context.signal,
         stagingRoot: context.environment.attachmentStagingRoot,
       }));
@@ -1798,7 +1807,7 @@ export const createProductHostToolComponentCompiler = (
       signal: input.signal,
       assertCurrent: input.assertCurrent,
       deadlineMs: input.deadlineMs,
-      runtimeSessionId: String(input.context.agent.id),
+      runtimeSessionId: String(productRootAgent(input.context).id),
       clientOperationId: input.context.clientOperationId,
       turnId: input.context.productTurnId,
       dshTurn: input.context.dshTurn,
@@ -1821,7 +1830,7 @@ export const createProductHostToolComponentCompiler = (
       const scope = attachmentController.createRequestScope(Object.freeze({
         assertCurrent,
         deadlineMs: 120_000,
-        runtimeSessionId: String(context.agent.id),
+        runtimeSessionId: String(productRootAgent(context).id),
         signal,
         stagingRoot: context.environment.attachmentStagingRoot,
       }));
@@ -2505,10 +2514,8 @@ export const composeDshRootServices = async (
     await root.plugin(ProductComponentService, {
       authorizeToolExecution: async (identity, componentId, componentKind, toolName, target, execution) => {
         const context = root.productTools.resolveExternal(execution, toolName);
-        const { dshTurn, operation } = root.sdkOperations.resolveActiveToolOperation(context.agent);
-        if (operation.birth.componentRevision !== identity.revision
-          || operation.birth.componentDigest !== identity.digest
-          || !operation.dshTurns.includes(dshTurn)) {
+        if (context.birth.componentRevision !== identity.revision
+          || context.birth.componentDigest !== identity.digest) {
           throw new ProtocolError("extension_tool_stale", "component tool differs from operation birth authority", true);
         }
         root.productPlan.assertExternalTool(context, toolName);
@@ -2525,10 +2532,8 @@ export const composeDshRootServices = async (
       },
       assertToolExecution: (identity, _componentId, toolName, execution) => {
         const context = root.productTools.resolveExternal(execution, toolName);
-        const { dshTurn, operation } = root.sdkOperations.resolveActiveToolOperation(context.agent);
-        if (operation.birth.componentRevision !== identity.revision
-          || operation.birth.componentDigest !== identity.digest
-          || !operation.dshTurns.includes(dshTurn)) {
+        if (context.birth.componentRevision !== identity.revision
+          || context.birth.componentDigest !== identity.digest) {
           throw new ProtocolError("extension_tool_stale", "component tool differs from operation birth authority", true);
         }
         root.productPlan.assertExternalTool(context, toolName);

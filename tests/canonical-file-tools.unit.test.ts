@@ -82,6 +82,12 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
     id: "session-fixture",
     session,
   } as unknown as Agent;
+  const childSession = { id: "child-session-fixture" };
+  const childAgent = {
+    ctx: context,
+    id: "child-session-fixture",
+    session: childSession,
+  } as unknown as Agent;
   const environment = Object.freeze({
     attachmentStagingRoot: attachments,
     checkpoint: Object.freeze({
@@ -147,6 +153,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
   const checkpointRequests: ProductToolCheckpointRequest[] = [];
   const permissions: string[] = [];
   let permissionDecision: "allow" | "deny" = "allow";
+  let childAllowedTools: readonly string[] = Object.freeze(["Read", "Write", "Edit", "Glob", "Grep", "ls"]);
   let checkpointFailure: Error | undefined;
   let checkpointOverride: unknown = noOverride;
   let checkpointPrepareHook: ((request: ProductToolCheckpointRequest) => Promise<void>) | undefined;
@@ -192,7 +199,15 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
       resolveFileTarget: () => Promise.resolve(undefined),
     }),
     requireAgent: () => agent,
-    resolveOperation: () => Object.freeze({ dshTurn: 1, operation }),
+    resolveOperation: (owner) => owner === agent
+      ? Object.freeze({ dshTurn: 1, operation })
+      : Object.freeze({
+        allowedTools: childAllowedTools,
+        dshTurn: 1,
+        operation,
+        origin: "background_child" as const,
+        rootAgent: agent,
+      }),
   });
   context.provide("productProcesses", {
     resolveRetainedOutput: () => Promise.reject(
@@ -271,6 +286,33 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
     const { result } = execution;
     return result;
   };
+  const executeAsChild = async (
+    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls",
+    args: unknown,
+  ) => {
+    call += 1;
+    const callId = CallId(`child-call-${call}`);
+    const result = await context.tools.execute({
+      agent: childAgent,
+      arguments: args,
+      callId,
+      name,
+      signal: new AbortController().signal,
+    });
+    durableSequence += 1;
+    context.emit("session/event", childSession as never, Object.freeze({
+      data: Object.freeze({
+        message: createToolResultMessage({ callId, content: result.content, isError: result.isError }),
+        step: 1,
+        turn: 1,
+      }),
+      seq: durableSequence,
+      surfaceOp: "append" as const,
+      time: durableSequence,
+      type: "tool/result" as const,
+    }));
+    return result;
+  };
   return {
     agent,
     additionalReadRoot,
@@ -281,6 +323,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
     context,
     environment,
     execute,
+    executeAsChild,
     executeUncommitted,
     permissions,
     searchCommands,
@@ -294,6 +337,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
     },
     setCheckpointFailure: (error: Error | undefined) => { checkpointFailure = error; },
     setPermissionDecision: (decision: "allow" | "deny") => { permissionDecision = decision; },
+    setChildAllowedTools: (tools: readonly string[]) => { childAllowedTools = Object.freeze([...tools]); },
     setSearchResult: (value: ProductSearchResult) => { searchResult = value; },
     setSearchImplementation: (
       value: ((product: ProductToolContext) => Promise<ProductSearchResult>) | undefined,
@@ -303,6 +347,27 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
 };
 
 describe("canonical filesystem tools", () => {
+  it("executes child file calls through the common Product tool pipeline and honors its frozen allowlist", async () => {
+    const state = await harness();
+    const path = join(state.workspace, "child.txt");
+    await writeFile(path, "child input");
+
+    await expect(state.executeAsChild("Read", { file_path: path })).resolves.toMatchObject({
+      isError: false,
+      value: { content: "1\tchild input" },
+    });
+    await expect(state.executeAsChild("Write", { file_path: path, content: "child output" })).resolves.toMatchObject({
+      isError: false,
+      value: { path },
+    });
+    expect(await readFile(path, "utf8")).toBe("child output");
+    expect(state.checkpointRequests).toEqual([]);
+
+    state.setChildAllowedTools(["Read"]);
+    await expect(state.executeAsChild("Write", { file_path: join(state.workspace, "denied.txt"), content: "no" }))
+      .resolves.toMatchObject({ isError: true, error: { info: { code: "tool_catalog_stale" } } });
+  });
+
   it("treats a stable Runtime work directory without an Agent subdirectory as empty recovery", async () => {
     const state = await harness();
     await mkdir(join(state.environment.runtimeHome, "work"));
@@ -333,6 +398,24 @@ describe("canonical filesystem tools", () => {
     await resumed.publish("cold-resumed epoch", 8 * 1_024 * 1_024);
     expect(await readFile(output.path, "utf8")).toBe("cold-resumed epoch");
     await resumed.finalize("cold-resumed epoch", 8 * 1_024 * 1_024);
+  });
+
+  it("rewrites retained Agent output from byte zero without sparse NUL prefixes", async () => {
+    const state = await harness();
+    const authority = (state.context.fs as LocalWorkspaceFileSystem).createAgentOutputAuthority();
+    const output = await authority.create(
+      state.environment.runtimeHome,
+      "agent-work-rewrite",
+      new AbortController().signal,
+    );
+
+    await output.publish("a much longer first child progress value", 8 * 1_024 * 1_024);
+    await output.publish("short", 8 * 1_024 * 1_024);
+    expect(await readFile(output.path, "utf8")).toBe("short");
+    await output.finalize("a final value after the short rewrite", 8 * 1_024 * 1_024);
+    const final = await readFile(output.path, "utf8");
+    expect(final).toBe("a final value after the short rewrite");
+    expect(final).not.toContain("\u0000");
   });
 
   it("executes exact Read then checkpointed atomic Write through the one DSH ToolRuntime", async () => {

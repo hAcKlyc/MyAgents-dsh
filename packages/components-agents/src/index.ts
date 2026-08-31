@@ -12,7 +12,6 @@ import type {
 import { Buffer } from "node:buffer";
 import { isProxy } from "node:util/types";
 
-const SUPPORTED_CHILD_TOOLS = Object.freeze(["TaskStop", "SendMessage"] as const);
 const MAX_PERSONA_BYTES = 1_000_000;
 
 export interface AgentComponentCompilerConfig {
@@ -54,18 +53,6 @@ const agentPersona = (
   return persona;
 };
 
-const agentTools = (
-  component: Extract<ExtensionComponent, { kind: "agent" }>,
-): readonly string[] => {
-  const requested = component.descriptor.tools ?? SUPPORTED_CHILD_TOOLS;
-  const denied = new Set(component.descriptor.disallowedTools ?? []);
-  const result = requested.filter((tool) => !denied.has(tool));
-  if (result.some((tool) => !(SUPPORTED_CHILD_TOOLS as readonly string[]).includes(tool))) {
-    throw new TypeError("Agent descriptor requests a tool outside the supported child ToolRuntime surface");
-  }
-  return Object.freeze([...result]);
-};
-
 export const createAgentComponentCompiler = (
   config: AgentComponentCompilerConfig,
 ): ComponentCompiler => {
@@ -81,7 +68,7 @@ export const createAgentComponentCompiler = (
       signal.throwIfAborted();
       authority.assertCurrent();
       if (componentValue.kind !== "agent" || componentValue.id !== authority.componentId
-        || componentValue.id === "general") {
+        || componentValue.id === "general" || componentValue.id === "Explore") {
         throw new TypeError("Agent compiler received an invalid or reserved component authority");
       }
       const component = componentValue;
@@ -90,11 +77,16 @@ export const createAgentComponentCompiler = (
         description: component.descriptor.description,
         generation: Object.freeze({ digest: snapshot.digest, revision: snapshot.revision }),
         maxTurns: component.descriptor.maxTurns ?? 10_000,
+        ...(component.descriptor.disallowedTools === undefined
+          ? {}
+          : { disallowedTools: Object.freeze([...component.descriptor.disallowedTools]) }),
         ...(component.descriptor.modelProfileRef === undefined
           ? {}
           : { modelProfileRef: component.descriptor.modelProfileRef }),
         persona: agentPersona(component, snapshot),
-        tools: agentTools(component),
+        ...(component.descriptor.tools === undefined
+          ? {}
+          : { tools: Object.freeze([...component.descriptor.tools]) }),
         type: component.id,
       });
       const prepared = controller.prepare(registration);

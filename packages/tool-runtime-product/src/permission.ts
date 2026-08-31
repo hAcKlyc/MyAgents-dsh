@@ -20,7 +20,12 @@ import {
 } from "@myagents-dsh/tool-contracts";
 import { types as utilTypes } from "node:util";
 
-import type { ProductToolContext, ProductToolPermissionRequest } from "./runtime.js";
+import {
+  productRootAgent,
+  type ProductToolContext,
+  type ProductToolOrigin,
+  type ProductToolPermissionRequest,
+} from "./runtime.js";
 import { ProductKeyedLocks } from "./keyed-locks.js";
 
 declare module "@deepseek-ai/cordis" {
@@ -103,7 +108,7 @@ export interface ProductPermissionInteractionRequest {
   readonly tool: string;
   readonly permissionClass: ProductPermissionClass;
   readonly target: string;
-  readonly origin: "root";
+  readonly origin: ProductToolOrigin;
   readonly expectedPermissionRevision: string;
   readonly interactionScenarioRevision: string;
   readonly signal: AbortSignal;
@@ -1379,7 +1384,8 @@ export class ProductPermissionService extends Service {
         "operation interaction scenario differs from the local provider",
       );
     }
-    const fold = this.fold(context.agent.session);
+    const rootAgent = productRootAgent(context);
+    const fold = this.fold(rootAgent.session);
     const birth = fold.history.find(({ revision }) => revision === context.birth.permissionRevision);
     if (birth === undefined) {
       throw new ProductPermissionError(
@@ -1411,7 +1417,7 @@ export class ProductPermissionService extends Service {
     const release = await this.permissionLocks.acquire(tuple, context.signal);
     try {
       if (this.operationAlwaysAllowGrants.has(tuple)) return "allow";
-      const latest = this.fold(context.agent.session);
+      const latest = this.fold(rootAgent.session);
       const latestBirth = latest.history.find(
         ({ revision }) => revision === context.birth.permissionRevision,
       );
@@ -1493,7 +1499,7 @@ export class ProductPermissionService extends Service {
       tool: request.tool,
       permissionClass: request.permissionClass,
       target: request.target,
-      origin: "root" as const,
+      origin: context.origin,
       expectedPermissionRevision: context.birth.permissionRevision,
       interactionScenarioRevision: context.birth.interactionScenarioRevision,
       signal: controller.signal,
@@ -1525,7 +1531,7 @@ export class ProductPermissionService extends Service {
       }
       const response = pending.response;
       if (response.decision === "allow_once") {
-        this.assertLatestRevision(context.agent, context.birth.permissionRevision);
+        this.assertLatestRevision(productRootAgent(context), context.birth.permissionRevision);
         pending.effect?.apply({ effectivePolicyRevision: context.birth.permissionRevision });
         return "allow";
       }
@@ -1644,14 +1650,15 @@ export class ProductPermissionService extends Service {
     context: ProductToolContext,
     request: ProductPermissionRequest,
   ): Promise<ProductPermissionRule> {
-    const fold = this.foldInternal(context.agent.session);
+    const rootAgent = productRootAgent(context);
+    const fold = this.foldInternal(rootAgent.session);
     if (fold.latestRevision !== context.birth.permissionRevision) {
       throw new ProductPermissionError(
         "permission_revision_stale",
         "permission policy changed while always-allow was pending",
       );
     }
-    return await this.persistRuleForAgent(context.agent, fold, request);
+    return await this.persistRuleForAgent(rootAgent, fold, request);
   }
 
   private async persistRuleForAgent(

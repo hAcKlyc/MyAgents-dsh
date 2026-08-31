@@ -21,6 +21,7 @@ import {
 } from "@myagents-dsh/tool-contracts";
 import {
   ProductToolError,
+  productRootAgent,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
 
@@ -75,7 +76,11 @@ const taskMutationAuthoritySchema = strictObject({
   callId: eventIdentifierSchema,
   clientOperationId: eventIdentifierSchema,
   dshTurn: taskSequenceSchema,
-  origin: Type.Literal("root"),
+  origin: Type.Union([
+    Type.Literal("root"),
+    Type.Literal("foreground_child"),
+    Type.Literal("background_child"),
+  ]),
   productTurnId: eventIdentifierSchema,
   toolCatalogDigest: eventSha256Schema,
   toolCatalogRevision: eventIdentifierSchema,
@@ -379,7 +384,8 @@ const parseMutationAuthority = (value: unknown, description: string): TaskMutati
     "toolCatalogDigest", "toolCatalogRevision",
   ], [], description);
   if (!Number.isSafeInteger(authority.dshTurn) || (authority.dshTurn as number) < 1
-    || authority.origin !== "root") {
+    || (authority.origin !== "root" && authority.origin !== "foreground_child"
+      && authority.origin !== "background_child")) {
     throw new ProductTaskGraphFoldError(`${description} turn or origin is invalid`);
   }
   const toolCatalogDigest = boundedIdentifier(authority.toolCatalogDigest, `${description} catalog digest`);
@@ -390,7 +396,7 @@ const parseMutationAuthority = (value: unknown, description: string): TaskMutati
     callId: boundedIdentifier(authority.callId, `${description} call id`),
     clientOperationId: boundedIdentifier(authority.clientOperationId, `${description} operation id`),
     dshTurn: authority.dshTurn as number,
-    origin: "root",
+    origin: authority.origin,
     productTurnId: boundedIdentifier(authority.productTurnId, `${description} product turn id`),
     toolCatalogDigest,
     toolCatalogRevision: boundedIdentifier(authority.toolCatalogRevision, `${description} catalog revision`),
@@ -401,7 +407,7 @@ const authorityForContext = (context: ProductToolContext): TaskMutationAuthority
   callId: boundedIdentifier(context.callId, "TaskGraph call id"),
   clientOperationId: boundedIdentifier(context.clientOperationId, "TaskGraph operation id"),
   dshTurn: context.dshTurn,
-  origin: "root",
+  origin: context.origin,
   productTurnId: boundedIdentifier(context.productTurnId, "TaskGraph product turn id"),
   toolCatalogDigest: context.catalog.digest,
   toolCatalogRevision: context.catalog.revision,
@@ -913,9 +919,10 @@ export class ProductTaskGraphService extends Service {
   private createDefinition(): ToolDefinition {
     return this.definition("TaskCreate", false, async (args, exec) => {
       const context = this.ctx.productTools.resolve(exec);
+      const rootAgent = productRootAgent(context);
       await this.ctx.productTools.authorize(context, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.TaskCreate.permissionClass,
-        target: `task-graph:${String(context.agent.session.id)}`,
+        target: `task-graph:${String(rootAgent.session.id)}`,
         tool: "TaskCreate",
       });
       return this.mutate(context, "myagents/task/created", (before) => {
@@ -932,18 +939,18 @@ export class ProductTaskGraphService extends Service {
         };
         const revision = transitionRevision(
           before.revision,
-          String(context.agent.session.id),
+          String(rootAgent.session.id),
           taskSequence,
           "myagents/task/created",
-          { authority: authorityForContext(context), eventSeq: context.agent.session.seq, input: payload },
+          { authority: authorityForContext(context), eventSeq: rootAgent.session.seq, input: payload },
         );
         const data = Object.freeze({
           ...payload,
           authority: authorityForContext(context),
-          eventSeq: context.agent.session.seq,
+          eventSeq: rootAgent.session.seq,
           priorRevision: before.revision,
           revision,
-          sessionId: String(context.agent.session.id),
+          sessionId: String(rootAgent.session.id),
           taskId,
           taskSequence,
         });
@@ -963,12 +970,13 @@ export class ProductTaskGraphService extends Service {
   private getDefinition(): ToolDefinition {
     return this.definition("TaskGet", true, async (args, exec) => {
       const context = this.ctx.productTools.resolve(exec);
+      const rootAgent = productRootAgent(context);
       await this.ctx.productTools.authorize(context, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.TaskGet.permissionClass,
         target: `task:${String(args.taskId)}`,
         tool: "TaskGet",
       });
-      const snapshot = this.snapshot(context.agent);
+      const snapshot = this.snapshot(rootAgent);
       const task = snapshot.tasks.find((candidate) => candidate.id === args.taskId);
       if (task === undefined) throw new ProductToolError("task_not_found", `Task does not exist: ${String(args.taskId)}`);
       this.ctx.productTools.assertCurrent(context, "TaskGet");
@@ -979,12 +987,13 @@ export class ProductTaskGraphService extends Service {
   private listDefinition(): ToolDefinition {
     return this.definition("TaskList", true, async (_args, exec) => {
       const context = this.ctx.productTools.resolve(exec);
+      const rootAgent = productRootAgent(context);
       await this.ctx.productTools.authorize(context, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.TaskList.permissionClass,
-        target: `task-graph:${String(context.agent.session.id)}`,
+        target: `task-graph:${String(rootAgent.session.id)}`,
         tool: "TaskList",
       });
-      const snapshot = this.snapshot(context.agent);
+      const snapshot = this.snapshot(rootAgent);
       const ordered = [...snapshot.tasks].sort((left, right) =>
         statusRank(left.status) - statusRank(right.status)
         || left.createdSequence - right.createdSequence
@@ -1015,6 +1024,7 @@ export class ProductTaskGraphService extends Service {
   private updateDefinition(): ToolDefinition {
     return this.definition("TaskUpdate", false, async (args, exec) => {
       const context = this.ctx.productTools.resolve(exec);
+      const rootAgent = productRootAgent(context);
       await this.ctx.productTools.authorize(context, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.TaskUpdate.permissionClass,
         target: `task:${String(args.taskId)}`,
@@ -1032,19 +1042,19 @@ export class ProductTaskGraphService extends Service {
         const authority = authorityForContext(context);
         const revision = transitionRevision(
           before.revision,
-          String(context.agent.session.id),
+          String(rootAgent.session.id),
           taskSequence,
           "myagents/task/updated",
-          { ...transitionPayload, authority, eventSeq: context.agent.session.seq },
+          { ...transitionPayload, authority, eventSeq: rootAgent.session.seq },
         );
         const data = Object.freeze({
           authority,
           changedFields: Object.freeze([...changedFields]) as unknown as string[],
-          eventSeq: context.agent.session.seq,
+          eventSeq: rootAgent.session.seq,
           patch: Object.freeze(structuredClone(patch)),
           priorRevision: before.revision,
           revision,
-          sessionId: String(context.agent.session.id),
+          sessionId: String(rootAgent.session.id),
           taskId,
           taskSequence,
         });
@@ -1084,20 +1094,21 @@ export class ProductTaskGraphService extends Service {
       this.assertHealthy();
       context.signal.throwIfAborted();
       this.ctx.productTools.assertCurrent(context, type === "myagents/task/created" ? "TaskCreate" : "TaskUpdate");
-      const before = this.snapshot(context.agent);
+      const rootAgent = productRootAgent(context);
+      const before = this.snapshot(rootAgent);
       let plan: TPlan;
       try {
         plan = prepare(before);
         validateProductTaskEventData(type, plan.data);
         const synthetic: SessionEvent = Object.freeze({
           data: plan.data,
-          seq: context.agent.session.seq,
+          seq: rootAgent.session.seq,
           time: 0,
           type,
         }) as SessionEvent;
         const candidate = foldProductTaskGraph(
-          Object.freeze([...context.agent.session.events, synthetic]),
-          String(context.agent.session.id),
+          Object.freeze([...rootAgent.session.events, synthetic]),
+          String(rootAgent.session.id),
         );
         project(candidate, plan.revision, plan);
       } catch (error) {
@@ -1110,12 +1121,12 @@ export class ProductTaskGraphService extends Service {
       if (this.permit !== undefined) throw new ProductToolError("task_graph_conflict", "another TaskGraph append is in progress");
       this.permit = Object.freeze({
         dataDigest: sha256(canonicalJson(plan.data)),
-        eventSeq: context.agent.session.seq,
-        session: context.agent.session,
+        eventSeq: rootAgent.session.seq,
+        session: rootAgent.session,
         type,
       });
       try {
-        context.agent.session.append(type, plan.data as never);
+        rootAgent.session.append(type, plan.data as never);
         appended = true;
         if (this.hasPermit()) {
           throw new ProductTaskGraphFoldError("TaskGraph append was not observed at the Session boundary");
@@ -1125,12 +1136,12 @@ export class ProductTaskGraphService extends Service {
         throw error;
       }
       const flush = exactNativePromise<unknown>(
-        this.configValue.durability.flush(context.agent.session),
+        this.configValue.durability.flush(rootAgent.session),
         "TaskGraph durability flush",
       );
       const result = await this.track(flush);
       if (result !== true) throw new Error("no Session durability Provider participated in the TaskGraph flush");
-      const after = this.snapshot(context.agent);
+      const after = this.snapshot(rootAgent);
       return project(after, plan.revision, plan);
     } catch (error) {
       if (appended) this.failure ??= error;

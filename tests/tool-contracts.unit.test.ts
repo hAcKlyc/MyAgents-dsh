@@ -111,6 +111,13 @@ describe("canonical twenty-tool contract authority", () => {
       command: "fixture",
       timeout: 600_001,
     })).toBe(false);
+    expect(validateCanonicalToolInput("Agent", {
+      description: "调研子代理能力\n只读探索",
+      prompt: "检查当前实现并返回结论。",
+    })).toEqual({
+      description: "调研子代理能力\n只读探索",
+      prompt: "检查当前实现并返回结论。",
+    });
     expect(Value.Check(CANONICAL_TOOL_CONTRACTS.Glob.outputSchema, {
       ...CANONICAL_TOOL_SCHEMA_FIXTURES.Glob.output,
       filenames: Array.from({ length: 101 }, (_, index) => `file-${index}`),
