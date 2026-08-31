@@ -222,7 +222,12 @@ declare module "@deepseek-ai/cordis" {
 }
 
 declare module "@deepseek-ai/dsh-subagent" {
+  interface SubagentStartRequest {
+    readonly personaInterpolate?: boolean;
+  }
+
   interface ContinuableSubagentDescriptorData {
+    readonly personaInterpolate?: boolean;
     readonly settlementDelivery?: "external" | "parent";
   }
 
@@ -1030,6 +1035,7 @@ export class ProductWorkService extends Service {
           || expectedPersona === undefined || expectedTools === undefined
           || descriptor.agentModel !== expectedModel || descriptor.agentProvider !== expectedAgentProvider
           || descriptor.persona !== expectedPersona
+          || (descriptor.version >= 4 && descriptor.personaInterpolate !== false)
           || (descriptor.settlementDelivery !== undefined && descriptor.settlementDelivery !== "external")
           || (entry !== undefined && descriptor.settlementDelivery !== "external")
           || stableJson(descriptor.toolFilter) !== stableJson({ allow: expectedTools })) {
@@ -1633,6 +1639,7 @@ export class ProductWorkService extends Service {
           || descriptor.agentProvider !== entry.created.birth.provider
           || descriptor.persona !== entry.created.birth.persona
           || stableJson(descriptor.toolFilter) !== stableJson({ allow: entry.created.birth.allowedTools })
+          || (descriptor.version >= 4 && descriptor.personaInterpolate !== false)
           || (descriptor.version >= 3
             ? descriptor.settlementDelivery !== "external"
             : descriptor.settlementDelivery !== undefined)) {
@@ -1798,6 +1805,7 @@ export class ProductWorkService extends Service {
       || candidate.descriptor.agentModel !== model
       || candidate.descriptor.agentProvider !== agentProvider
       || candidate.descriptor.persona !== template.persona
+      || (candidate.descriptor.version >= 4 && candidate.descriptor.personaInterpolate !== false)
       || stableJson(candidate.descriptor.toolFilter) !== stableJson({ allow: template.allowedTools })
       || (candidate.descriptor.version >= 3
         ? candidate.descriptor.settlementDelivery !== "external"
@@ -2565,6 +2573,7 @@ export class ProductWorkService extends Service {
       maxDepth: 1,
       parent: product.agent,
       persona: template.persona,
+      personaInterpolate: false,
       prompt: messageText(args.description as string, args.prompt as string),
       toolFilter: Object.freeze({ allow: [...template.allowedTools] }),
     });

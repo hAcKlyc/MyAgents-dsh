@@ -2,6 +2,12 @@ import { Context, Service } from "@deepseek-ai/cordis";
 import type { Plugin } from "@deepseek-ai/cordis";
 import { AgentRegistry } from "@deepseek-ai/dsh-agent";
 import type { Agent, AgentFactory, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from "@deepseek-ai/dsh-agent";
+import {
+  Config as AgentInstructionsConfigValue,
+  apply as applyAgentInstructions,
+  name as agentInstructionsName,
+} from "@deepseek-ai/dsh-agent-instructions";
+import type { Config as AgentInstructionsConfig } from "@deepseek-ai/dsh-agent-instructions";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
 import { AttachmentId, AttachmentStore } from "@deepseek-ai/dsh-attachment";
@@ -106,6 +112,8 @@ import type { WebFetchProvider, WebSearchProvider } from "@deepseek-ai/dsh-web";
 export const dshPublicSurfaceValues = Object.freeze({
   AgentLoop,
   AgentRegistry,
+  AgentInstructionsConfigValue,
+  agentInstructionsName,
   ApprovalRequestId,
   ApprovalService,
   AttachmentId,
@@ -157,6 +165,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   UserQuestionService,
   WebRuntime,
   applyMcpClient,
+  applyAgentInstructions,
   applySubagentSpawnInProcess,
   applyToolCallTimeoutPolicy,
   assertUsableApiKey,
@@ -187,6 +196,7 @@ export const dshPublicSurfaceValues = Object.freeze({
 
 export interface DshPublicSurfaceTypes {
   agent: [Agent, AgentFactory, AgentHandle, CreateAgentOptions, ResumeAgentOptions];
+  agentInstructions: [AgentInstructionsConfig];
   agentLoop: [AgentLoopConfig];
   approval: [ApprovalOutcome, ApprovalRequest];
   attachment: [ImageAttachmentRef, StoredImageAttachment];

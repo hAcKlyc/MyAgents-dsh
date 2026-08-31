@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: current
-updated: 2026-08-31
+updated: 2026-09-01
 project: MyAgents-dsh
 ---
 
@@ -17,18 +17,18 @@ The compatibility target is the versioned MyAgents Agent experience admitted by 
 
 ### 1.1 Current implementation and acceptance state
 
-This table is the architecture-level snapshot as of 2026-08-31. The active PRDs remain the acceptance authority.
+This table is the architecture-level snapshot as of 2026-09-01. The active PRDs remain the acceptance authority.
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
-| DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus seven isolated patches; artifact manifest `9c5ed754…` |
-| Standalone Runtime and native RPC | Protocol `2.1.0` source implementation complete; immutable artifact refresh pending | `2.1.0` retains the 40/7/4 vocabulary and adds the opaque genesis rewind boundary; exact-tuple permission settlement now returns post-effect truth |
-| Batch 3 integration handoff | Previous `2.0.0` handoff remains historical; `2.1.0` refresh required | Sibling MyAgents H0–H5 are complete and interaction-reliability deterministic gates pass; a new source-bound Runtime/handoff must replace the old integration input before packaged acceptance |
+| DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus nine isolated patches; the current 56-package artifact identity is bound by the accepted manifest |
+| Standalone Runtime and native RPC | Protocol `2.2.0` source implementation complete; immutable Runtime refresh pending | `2.2.0` retains the 40/7/4 vocabulary and adds optional generic Host system-context contributions while preserving `2.1.0` genesis rewind behavior |
+| Batch 3 integration handoff | Previous `2.1.0` handoff remains historical; `2.2.0` refresh required | Sibling MyAgents implements the native contribution builder; a new source-bound Runtime/handoff must replace the old packaged input before acceptance |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
 | Platforms | All three implementations complete; current-artifact native validation pending | Current handoff binds pending claims for macOS arm64, Windows x64 and Linux x64; prior evidence remains historical |
 
-The previous draft.2, draft.3 and `2.0.0` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.1.0`. Every current consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
+The previous draft.2, draft.3, `2.0.0` and `2.1.0` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.2.0`. Every current consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
 
 ## 2. Product boundaries
 
@@ -96,6 +96,7 @@ The detailed current implementation is divided into a small set of maintained mo
 | --- | --- |
 | Runtime process, composition, operation and RPC | [Runtime core and native RPC](./tech_docs/runtime-core-and-rpc.md) |
 | Protocol intent and lifecycle | [Runtime protocol](./tech_docs/runtime-protocol.md) |
+| Ordered Runtime/Host/project/Skill Prompt composition | [System context](./tech_docs/system-context.md) |
 | Canonical tools, policy, tasks and child work | [Agent tools and policy](./tech_docs/agent-tools-and-policy.md) |
 | Permission modes, exact rules, interactions and Host Plan control | [Permissions and interactions](./tech_docs/permissions-and-interactions.md) |
 | Reverse Host ports and declarative extensions | [Host ports and components](./tech_docs/host-ports-and-components.md) |
@@ -170,6 +171,7 @@ The official profile directly consumes pinned public DSH packages for:
 - the concrete DSH AgentLoop;
 - `ctx.tools` registration, policy, dispatch, results, and presentation;
 - system-prompt assembly;
+- DSH-owned primary project-instruction discovery and durable reconciliation;
 - LLM adapter routing;
 - selected persistence, MCP, Skills, compaction, subagent, and jobs providers.
 

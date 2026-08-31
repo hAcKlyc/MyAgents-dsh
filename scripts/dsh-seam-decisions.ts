@@ -183,10 +183,52 @@ export const DSH_SEAM_SOURCE = Object.freeze({
       blob: "779bd8e2716d31584caf1f01568ba5a63d794694",
       sha256: "24f98b3447c523ce071495f64fac34cdfae974fa957205993d0dc1395fbb3597",
     }),
+    Object.freeze({
+      path: "packages/core/system-prompt/src/index.ts",
+      blob: "ffc052e0b9b1a7c1e3eefa0851ac1499266d02ea",
+      sha256: "a148facca99d8ae6ee2cb3376dcded586bbd4f0f82ba476148e846160b2a8fee",
+    }),
+    Object.freeze({
+      path: "packages/core/system-prompt/tests/system-prompt.spec.ts",
+      blob: "cf196892a767306588ce826c694ab5d3ba3fbf98",
+      sha256: "2682f5c374a492dbb431dee5438db2f2a619dd8c3a6fe6f8bc78a641a2e30e4d",
+    }),
+    Object.freeze({
+      path: "packages/subagent/subagent/src/child-agent.ts",
+      blob: "7582338858f470909494ef8640e06c4b09b81561",
+      sha256: "ea7b6f6fc209175d9a83154ef9f60ccb34ab3a87e966d34c908c5b7215612877",
+    }),
+    Object.freeze({
+      path: "packages/context/agent-instructions/src/config.ts",
+      blob: "f9edc9d4b8d88f1141c8aebc9dfdf0494a87ee74",
+      sha256: "721ffeb6743d9314f62f2636c4bd24fc9e871fafdd3a6a88f00f41fb1c1d9a40",
+    }),
+    Object.freeze({
+      path: "packages/context/agent-instructions/src/files.ts",
+      blob: "291619a983c87729f172c49b5a3d0d0e95773e79",
+      sha256: "28ed9f7fc2b65cbdf091d1e59783493fcf726aedc46e3391c83e4bf1612bb1a2",
+    }),
+    Object.freeze({
+      path: "packages/context/agent-instructions/src/index.ts",
+      blob: "1b00960adba1fde96f72a609d88abebf0f7c31fc",
+      sha256: "481e6a6b4b975af24b20231e320c489948ff9d13355f23bcc2959a49f682db5e",
+    }),
+    Object.freeze({
+      path: "packages/context/agent-instructions/src/state.ts",
+      blob: "30e700eda58e67557135bcbc619b446f9a449a21",
+      sha256: "498d29bdad965b8ce32dd5e3e5514f43c43760d67fe1b7fc33ca794c1372b7fa",
+    }),
+    Object.freeze({
+      path: "packages/context/agent-instructions/tests/agent-instructions.spec.ts",
+      blob: "4fc60bc78dd754502598181ab3f91ed541d90f69",
+      sha256: "fea67cb6812b434a73e9ae59e1aad7c13f41bca143af0508f50d73fb5d407f2a",
+    }),
   ]),
 });
 
 export const PATCHED_SOURCE_TESTS = Object.freeze([
+  "packages/core/system-prompt/tests/system-prompt.spec.ts",
+  "packages/context/agent-instructions/tests/agent-instructions.spec.ts",
   "packages/llm/llm-deepseek/tests/translate.spec.ts",
   "packages/core/agent-loop/tests/publication-guards.spec.ts",
   "packages/core/agent-loop/tests/cancel.spec.ts",
@@ -214,6 +256,8 @@ const PUBLICATION_GUARDS_PATCH = "specs/dsh/patches/0004-publication-guards.patc
 const PRODUCT_CONTINUABLE_LIFECYCLE_PATCH = "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch";
 const DEEPSEEK_STREAM_TOOL_IDENTITY_PATCH = "specs/dsh/patches/0006-deepseek-stream-tool-identity.patch";
 const CAPACITY_SAFE_COMPACTION_PATCH = "specs/dsh/patches/0007-capacity-safe-compaction.patch";
+const LITERAL_PROMPT_CONTRIBUTIONS_PATCH = "specs/dsh/patches/0008-literal-prompt-contributions.patch";
+const AGENT_INSTRUCTION_SELECTION_PATCH = "specs/dsh/patches/0009-agent-instruction-selection.patch";
 export const DSH_SEAM_PATCHES = Object.freeze([
   WAKE_PATCH,
   PRE_ASSISTANT_COMMIT_PATCH,
@@ -222,6 +266,8 @@ export const DSH_SEAM_PATCHES = Object.freeze([
   PRODUCT_CONTINUABLE_LIFECYCLE_PATCH,
   DEEPSEEK_STREAM_TOOL_IDENTITY_PATCH,
   CAPACITY_SAFE_COMPACTION_PATCH,
+  LITERAL_PROMPT_CONTRIBUTIONS_PATCH,
+  AGENT_INSTRUCTION_SELECTION_PATCH,
 ] as const);
 
 export interface DshSeamPatchSnapshot {
@@ -416,6 +462,39 @@ export function buildDshSeamDecisions(): object {
         ],
         removalCondition: "an installed DSH release exposes equivalent tested request estimation and capacity-safe structured compaction semantics",
       },
+      {
+        id: "DSH-SEAM-009",
+        seam: "literal-prompt-contributions",
+        status: "required_upstream_patch_accepted",
+        adr: "specs/adr/0009-literal-prompt-contributions.md",
+        rejected: "reject-or-escape-external-markdown-and-reimplement-prompt-rendering-in-product-code",
+        selectedPublicApi: "PromptSection/PromptContext.interpolate plus SubagentStartRequest.personaInterpolate, persisted for continuable cold resume",
+        patch: patch(LITERAL_PROMPT_CONTRIBUTIONS_PATCH),
+        executableEvidence: [
+          "sections and contexts preserve literal brace examples while omitted flags retain strict interpolation",
+          "one-shot in-process child personas preserve literal external text",
+          "continuable child persona interpolation choice survives descriptor persistence and cold resume",
+          "legacy descriptor version 3 remains readable with the original interpolated default",
+        ],
+        removalCondition: "an installed DSH release exposes equivalent literal section, context, and durable child-persona semantics",
+      },
+      {
+        id: "DSH-SEAM-010",
+        seam: "mutually-exclusive-agent-instruction-candidates",
+        status: "required_upstream_patch_accepted",
+        adr: "specs/adr/0010-agent-instruction-selection.md",
+        rejected: "a-second-host-crawler-or-watcher-for-primary-workspace-instructions",
+        selectedPublicApi: "agent-instructions Config.candidateSelection and Config.fileTouchToolNames",
+        patch: patch(AGENT_INSTRUCTION_SELECTION_PATCH),
+        executableEvidence: [
+          "first selection loads one non-empty candidate per directory and falls through confirmed empty files",
+          "unavailable higher-priority candidates never activate a lower-priority protocol",
+          "winner replacement emits old removal and new set in one durable context batch",
+          "configured canonical Read/Write/Edit results trigger nested reconciliation",
+          "omitted options retain stock all-candidates and lowercase tool-name behavior",
+        ],
+        removalCondition: "an installed DSH release exposes equivalent first-candidate and configurable filesystem-touch semantics",
+      },
     ],
     evidenceOwners: {
       runtimeSemantics: "tests/dsh-seam-spikes.unit.test.ts",
@@ -499,6 +578,8 @@ export function verifyDshSeamSource(
       "--frozen-lockfile",
       "--ignore-scripts",
       "--reporter=silent",
+      "--filter", "@deepseek-ai/dsh-system-prompt...",
+      "--filter", "@deepseek-ai/dsh-agent-instructions...",
       "--filter", "@deepseek-ai/dsh-agent-loop...",
       "--filter", "@deepseek-ai/dsh-session-persistence...",
       "--filter", "@deepseek-ai/dsh-subagent...",
@@ -512,6 +593,8 @@ export function verifyDshSeamSource(
     ], worktree);
     run("corepack", [
       "pnpm", "exec", "tsc", "-b",
+      "packages/core/system-prompt/tsconfig.json",
+      "packages/context/agent-instructions/tsconfig.json",
       "packages/core/agent/tsconfig.json",
       "packages/core/agent-loop/tsconfig.json",
       "packages/core/session/tsconfig.json",

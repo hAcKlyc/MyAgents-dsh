@@ -227,7 +227,7 @@ export const composeOfficialRuntimeServices = async (
       },
     }),
     systemPrompt: Object.freeze({
-      persona: "You are the governed MyAgents Root Agent. Follow the Host-frozen workspace and policy authorities.",
+      includeHarnessIdentity: false,
     }),
     tools: Object.freeze({ mode: "native" }),
   });

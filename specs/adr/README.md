@@ -2,7 +2,7 @@
 
 ADRs explain accepted durable choices that cannot be reconstructed safely from code alone. Product scope lives in `specs/prd/`, current running architecture in `specs/ARCHITECTURE.md` and `specs/tech_docs/`, and exact patch identity/order/removal conditions in `specs/dsh/seam-decisions-v1.json`.
 
-All eight recorded decisions are accepted for the current official DSH `0.1.1-rc.2` source authority. Seven require ordered upstream patches; ADR 0004 is implemented through the public persistence Provider plus product mutation companion.
+All ten recorded decisions are accepted for the current official DSH `0.1.1-rc.2` source authority. Nine require ordered upstream patches; ADR 0004 is implemented through the public persistence Provider plus product mutation companion.
 
 | Decision | Current disposition | Executable seam |
 | --- | --- | --- |
@@ -14,5 +14,7 @@ All eight recorded decisions are accepted for the current official DSH `0.1.1-rc
 | [ADR 0006](./0006-product-owned-continuable-lifecycle.md) product-owned continuable work | reduced against newer public seams and rebased | `DSH-SEAM-006`, patch 0005 |
 | [ADR 0007](./0007-deepseek-stream-tool-identity.md) preserve streamed tool identity | retained | `DSH-SEAM-007`, patch 0006 |
 | [ADR 0008](./0008-capacity-safe-compaction.md) capacity-safe official compaction engine | retained | `DSH-SEAM-008`, patch 0007 |
+| [ADR 0009](./0009-literal-prompt-contributions.md) literal external Prompt bodies | retained | `DSH-SEAM-009`, patch 0008 |
+| [ADR 0010](./0010-agent-instruction-selection.md) mutually exclusive project instructions | retained | `DSH-SEAM-010`, patch 0009 |
 
 An official DSH update does not silently carry these decisions forward. Use the repository maintenance skill, inspect the exact current upstream seam, and classify every patch as retire, reduce, or rebase. Update the ADR disposition, generated seam registry, patch bytes, artifacts, Runtime/platform evidence, and Host handoff as one attributable chain.

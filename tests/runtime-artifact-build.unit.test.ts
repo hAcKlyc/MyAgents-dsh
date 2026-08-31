@@ -14,7 +14,7 @@ describe("Runtime artifact public export projection", () => {
       "@deepseek-ai/dsh-llm-pi-ai": "0.1.1-rc.2",
       "@myagents-dsh/protocol": "0.0.0",
     }, "fixture dependencies")).toEqual({
-      "@deepseek-ai/dsh-agent": "0.1.1-rc.2.myagents.b150a551b8d4.8ac244cc6367",
+      "@deepseek-ai/dsh-agent": "0.1.1-rc.2.myagents.b150a551b8d4.56f8f4241def",
       "@deepseek-ai/dsh-llm-pi-ai": "0.1.1-rc.2",
       "@myagents-dsh/protocol": "0.0.0",
     });

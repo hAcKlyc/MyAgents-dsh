@@ -2,7 +2,6 @@ import { Service, symbols, type Context } from "@deepseek-ai/cordis";
 import type { Agent, AgentHandle, AgentSetup } from "@deepseek-ai/dsh-agent";
 import { isCompactCheckpointSource, type CompactionResult } from "@deepseek-ai/dsh-compaction";
 import { SessionId, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
-import { PERSONA_ORDER, PERSONA_SECTION } from "@deepseek-ai/dsh-system-prompt";
 import { selectPlatformAdapter, type PlatformTarget } from "@myagents-dsh/product-profile";
 import type { SettlementDeadlineAuthority } from "@myagents-dsh/operation-runtime";
 import {
@@ -28,6 +27,12 @@ import {
 } from "@myagents-dsh/persistence-product";
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
+import {
+  GlobalSystemContextRegistrar,
+  normalizeSystemContext,
+  registerRootSystemContext,
+  type EffectiveSystemContext,
+} from "./system-context.js";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -104,6 +109,7 @@ export interface PrimarySessionBackendRequest {
   readonly params: MethodParams<"session/create"> | MethodParams<"session/resume">;
   readonly runtimeSessionId: string;
   readonly signal: AbortSignal;
+  readonly systemContext: EffectiveSystemContext;
   readonly workspace: PrimarySessionWorkspace;
 }
 
@@ -206,6 +212,7 @@ export interface PrimarySessionConfigurationCandidate {
   readonly alreadyEffective: boolean;
   readonly mutationKey: string;
   readonly params: CanonicalResumeParams;
+  readonly systemContext: EffectiveSystemContext;
 }
 
 type AdmissionRecord = {
@@ -217,6 +224,7 @@ type AdmissionRecord = {
   readonly persistenceRef: string;
   readonly promise: Promise<PrimarySessionBinding>;
   readonly runtimeSessionId: string;
+  readonly systemContext: EffectiveSystemContext;
 };
 
 type JsonObject = Record<string, unknown>;
@@ -648,6 +656,7 @@ const admissionFingerprint = (
   mode: PrimarySessionMode,
   params: CanonicalCreateParams | CanonicalResumeParams,
   runtimeSessionId: string,
+  systemContext: EffectiveSystemContext,
   workspace: PrimarySessionWorkspace,
 ): string => sha256(JSON.stringify([
   "myagents-dsh-primary-session-v1",
@@ -658,7 +667,7 @@ const admissionFingerprint = (
   modelProfileFingerprint(params.provider),
   params.configRevision,
   params.extensionDigest,
-  params.systemPrompt,
+  systemContext.sha256,
   params.permissionMode,
   toolPolicyFingerprint(params.toolPolicy),
   params.interactionScenario,
@@ -1060,6 +1069,7 @@ export class PrimarySessionAdmission {
     mutate: () => Promise<unknown>,
     beforeDispose?: PrimarySessionRetirementGuard,
     replacementParams?: CanonicalResumeParams,
+    replacementSystemContext?: EffectiveSystemContext,
   ): Promise<PrimarySessionBinding> {
     boundedIdentifier(mutationKey, "primary Session mutation key");
     if (typeof mutate !== "function" || utilTypes.isProxy(mutate)) {
@@ -1082,20 +1092,28 @@ export class PrimarySessionAdmission {
       throw new ProtocolError("primary_session_not_ready", "primary Session is not ready for generation replacement");
     }
     const currentRecord = this.#record;
-    const nextRecord: AdmissionRecord = replacementParams === undefined
-      ? currentRecord
-      : Object.freeze({
-          ...currentRecord,
-          configRevision: replacementParams.configRevision,
-          fingerprint: admissionFingerprint(
-            "resume",
-            replacementParams,
-            currentRecord.runtimeSessionId,
-            this.#workspace,
-          ),
-          mode: "resume" as const,
-          params: replacementParams,
-        });
+    let nextRecord: AdmissionRecord = currentRecord;
+    if (replacementParams !== undefined) {
+      if (replacementSystemContext === undefined) {
+        throw new TypeError("primary Session replacement params and system context must be supplied together");
+      }
+      nextRecord = Object.freeze({
+        ...currentRecord,
+        configRevision: replacementParams.configRevision,
+        fingerprint: admissionFingerprint(
+          "resume",
+          replacementParams,
+          currentRecord.runtimeSessionId,
+          replacementSystemContext,
+          this.#workspace,
+        ),
+        mode: "resume" as const,
+        params: replacementParams,
+        systemContext: replacementSystemContext,
+      });
+    } else if (replacementSystemContext !== undefined) {
+      throw new TypeError("primary Session replacement params and system context must be supplied together");
+    }
     this.#mutationKey = mutationKey;
     this.#mutationSettled = false;
     this.#mutationPromise = canReplaceReady
@@ -1124,6 +1142,7 @@ export class PrimarySessionAdmission {
     }
     const retained = { ...record.params };
     Reflect.deleteProperty(retained, "toolPolicy");
+    Reflect.deleteProperty(retained, "systemContext");
     const replacement = Object.freeze({
       ...retained,
       configRevision: params.revision,
@@ -1132,12 +1151,15 @@ export class PrimarySessionAdmission {
       ...(params.toolPolicy === undefined ? {} : { toolPolicy: params.toolPolicy }),
       interactionScenario: params.interactionScenario,
       systemPrompt: params.systemPrompt,
+      ...(params.systemContext === undefined ? {} : { systemContext: params.systemContext }),
       runtimeSessionId: record.runtimeSessionId,
     }) as CanonicalResumeParams;
+    const systemContext = normalizeSystemContext(replacement);
     const replacementFingerprint = admissionFingerprint(
       "resume",
       replacement,
       record.runtimeSessionId,
+      systemContext,
       this.#workspace,
     );
     const currentAsResume = Object.freeze({
@@ -1148,6 +1170,7 @@ export class PrimarySessionAdmission {
       "resume",
       currentAsResume,
       record.runtimeSessionId,
+      record.systemContext,
       this.#workspace,
     );
     if (record.configRevision === params.revision && replacementFingerprint !== currentFingerprint) {
@@ -1161,6 +1184,7 @@ export class PrimarySessionAdmission {
         alreadyEffective: true,
         mutationKey: `config:${params.revision}`,
         params: replacement,
+        systemContext,
       });
     }
     const request = Object.freeze({
@@ -1168,6 +1192,7 @@ export class PrimarySessionAdmission {
       params: replacement,
       runtimeSessionId: record.runtimeSessionId,
       signal,
+      systemContext,
       workspace: this.#workspace,
     });
     await this.providerConfigurationGuard?.(request);
@@ -1176,6 +1201,7 @@ export class PrimarySessionAdmission {
       alreadyEffective: false,
       mutationKey: `config:${params.revision}`,
       params: replacement,
+      systemContext,
     });
   }
 
@@ -1207,7 +1233,14 @@ export class PrimarySessionAdmission {
     runtimeSessionId: string,
     sourceSignal: AbortSignal | undefined,
   ): Promise<PrimarySessionBinding> {
-    const fingerprint = admissionFingerprint(mode, params, runtimeSessionId, this.#workspace);
+    const systemContext = normalizeSystemContext(params);
+    const fingerprint = admissionFingerprint(
+      mode,
+      params,
+      runtimeSessionId,
+      systemContext,
+      this.#workspace,
+    );
     if (this.#record !== undefined) {
       if (this.#record.fingerprint === fingerprint && !this.#retiring) return this.#record.promise;
       throw new ProtocolError(
@@ -1229,6 +1262,7 @@ export class PrimarySessionAdmission {
       params,
       runtimeSessionId,
       signal: controller.signal,
+      systemContext,
       workspace: this.#workspace,
     });
     let providerPrepared = false;
@@ -1304,6 +1338,7 @@ export class PrimarySessionAdmission {
       persistenceRef: params.persistenceRef,
       promise,
       runtimeSessionId,
+      systemContext,
     };
     return promise;
   }
@@ -1382,6 +1417,7 @@ export class PrimarySessionAdmission {
         params,
         runtimeSessionId: record.runtimeSessionId,
         signal: controller.signal,
+        systemContext: record.systemContext,
         workspace: this.#workspace,
       });
       providerRequest = request;
@@ -1524,6 +1560,8 @@ export class PrimarySessionAdmission {
 }
 
 class DshPrimarySessionBackend implements PrimarySessionBackend {
+  private readonly globalSystemContext: GlobalSystemContextRegistrar;
+
   constructor(
     private readonly context: Context,
     private readonly publicationFence: PrimaryRootPublicationFence,
@@ -1539,9 +1577,16 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
     private readonly inspectResume?: (
       request: PrimarySessionBackendRequest,
     ) => Promise<PrimarySessionResumeInspection>,
-  ) {}
+  ) {
+    this.globalSystemContext = new GlobalSystemContextRegistrar(context);
+    context.effect(
+      () => () => this.globalSystemContext.dispose(),
+      "global-host-system-context",
+    );
+  }
 
   async create(request: PrimarySessionBackendRequest): Promise<PrimarySessionBackendResult> {
+    const globalContext = this.globalSystemContext.prepare(request.systemContext);
     const publication = this.publicationFence.prepare(request.runtimeSessionId);
     let rawHandle: AgentHandle | undefined;
     try {
@@ -1558,11 +1603,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
           if (agent?.id !== request.runtimeSessionId) {
             throw new Error("unpublished root Agent differs from the admitted primary Session");
           }
-          agentContext.systemPrompt.section(Object.freeze({
-            name: PERSONA_SECTION,
-            order: PERSONA_ORDER,
-            text: request.params.systemPrompt,
-          }));
+          registerRootSystemContext(agentContext, request.systemContext);
           request.signal.throwIfAborted();
           this.assertPublicationCurrent?.(agent, request);
           const preparedPublication = await publication.setup(agentContext);
@@ -1584,6 +1625,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
         throw new TypeError("DSH primary Session durable sequence is invalid");
       }
       const handle = rawHandle;
+      globalContext.commit();
       return {
         state: "ready",
         handle: Object.freeze({ agent: handle.agent, dispose: () => handle.dispose() }),
@@ -1592,18 +1634,21 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
         effectiveConfigRevision: request.params.configRevision,
       };
     } catch (error) {
+      const failures: unknown[] = [error];
       if (rawHandle !== undefined) {
         try {
           await rawHandle.dispose();
         } catch (cleanupError) {
-          throw new AggregateError(
-            [error, cleanupError],
-            "primary Session create and rollback both failed",
-            { cause: cleanupError },
-          );
+          failures.push(cleanupError);
         }
       }
-      throw error;
+      try {
+        globalContext.rollback();
+      } catch (rollbackError) {
+        failures.push(rollbackError);
+      }
+      if (failures.length === 1) throw error;
+      throw new AggregateError(failures, "primary Session create and rollback failed", { cause: error });
     } finally {
       publication.cancel();
     }
@@ -1614,6 +1659,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
     if (inspection?.state === "recovery_required") {
       return Object.freeze({ state: "recovery_required", recovery: inspection });
     }
+    const globalContext = this.globalSystemContext.prepare(request.systemContext);
     const publication = this.publicationFence.prepare(request.runtimeSessionId);
     let rawHandle: AgentHandle | undefined;
     try {
@@ -1629,11 +1675,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
           if (agent?.id !== request.runtimeSessionId) {
             throw new Error("unpublished resumed Agent differs from the admitted primary Session");
           }
-          agentContext.systemPrompt.section(Object.freeze({
-            name: PERSONA_SECTION,
-            order: PERSONA_ORDER,
-            text: request.params.systemPrompt,
-          }));
+          registerRootSystemContext(agentContext, request.systemContext);
           request.signal.throwIfAborted();
           await this.validateResume?.(agent, request);
           request.signal.throwIfAborted();
@@ -1660,6 +1702,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
         throw new TypeError("resumed DSH primary Session durable sequence is invalid");
       }
       const handle = rawHandle;
+      globalContext.commit();
       return Object.freeze({
         state: "ready" as const,
         handle: Object.freeze({ agent: handle.agent, dispose: () => handle.dispose() }),
@@ -1668,18 +1711,20 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
         effectiveConfigRevision: request.params.configRevision,
       });
     } catch (error) {
+      const failures: unknown[] = [error];
       if (rawHandle !== undefined) {
         try {
           await rawHandle.dispose();
         } catch (cleanupError) {
-          throw new AggregateError(
-            [error, cleanupError],
-            "primary Session resume and rollback both failed",
-            { cause: cleanupError },
-          );
+          failures.push(cleanupError);
         }
       }
-      if (rawHandle === undefined && !request.signal.aborted
+      try {
+        globalContext.rollback();
+      } catch (rollbackError) {
+        failures.push(rollbackError);
+      }
+      if (failures.length === 1 && rawHandle === undefined && !request.signal.aborted
         && inspection?.state === "resume_candidate") {
         return Object.freeze({
           state: "recovery_required" as const,
@@ -1694,7 +1739,8 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
           }),
         });
       }
-      throw error;
+      if (failures.length === 1) throw error;
+      throw new AggregateError(failures, "primary Session resume and rollback failed", { cause: error });
     } finally {
       publication.cancel();
     }
@@ -1734,7 +1780,7 @@ export interface ProductSessionServiceConfig {
 }
 
 export class ProductSessionService extends Service {
-  static inject = ["agents", "sessions"];
+  static inject = ["agents", "sessions", "systemPrompt"];
   private readonly backendValue: PrimarySessionBackend;
   private readonly childPublicationAuthorityValue: object | undefined;
   private readonly compactSessionValue: ProductSessionServiceConfig["compactSession"];
@@ -2050,6 +2096,7 @@ export class ProductSessionService extends Service {
         await retirementGuard?.(agent);
       },
       candidate.params,
+      candidate.systemContext,
     );
   }
 

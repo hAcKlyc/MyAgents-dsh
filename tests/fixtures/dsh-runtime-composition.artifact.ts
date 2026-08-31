@@ -2540,6 +2540,10 @@ await waitUntil(
 );
 
 const approvalRuntimeContext = "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n"
+  + "Available Skills:\n"
+  + "- fixture-audit — Audits the synthetic Runtime artifact and returns bounded evidence.\n"
+  + "- release-audit — Audit one accepted Runtime component generation\n\n"
+  + "Call Skill with `skill: <name>` to load the full instructions only when needed.\n\n"
   + "Approval policy: ask. Operations that require approval may ask through the configured answerers; "
   + "without an available answerer, the request fails closed.";
 const approvalContextMessage = {
@@ -4254,7 +4258,7 @@ assert.equal(
 );
 assert.match(
   resumedPrompt.sections.find(({ name }) => name === "compaction:continuity")?.text ?? "",
-  /old oversized tool results may retain only their beginning and end/u,
+  /earlier large tool results may retain only their beginning and end/u,
   "the product prompt must give bounded continuity guidance for deterministic pruning",
 );
 assert.equal(resumedPrimary.durableHead.sequence, resumedAgent.session.seq);

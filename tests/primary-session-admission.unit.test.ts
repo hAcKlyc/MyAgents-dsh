@@ -309,6 +309,7 @@ describe("one-primary-session admission", () => {
       () => Promise.resolve(),
       applyAuthorities,
       candidate.params,
+      candidate.systemContext,
     );
     expect(applyAuthorities).toHaveBeenCalledWith(source.handle.agent);
     expect(resume).toHaveBeenCalledOnce();

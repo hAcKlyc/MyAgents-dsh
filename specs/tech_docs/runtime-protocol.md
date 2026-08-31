@@ -2,8 +2,8 @@
 type: protocol-specification
 status: current
 module: runtime-core-and-rpc
-version: 2.1.0
-updated: 2026-08-31
+version: 2.2.0
+updated: 2026-09-01
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 product_scope: ../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../prd/tech_rfc_0.1_runtime_rpc.md
@@ -17,14 +17,14 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Protocol `2.1.0` is the current DSH Runtime compatibility contract. It retains the complete `2.0.0` method vocabulary and adds one optional, opaque `session/read.genesisBoundary` so a Host can transactionally rewind an admitted first turn to the verified pre-turn Session prefix. Protocol `2.0.0` remains the first frozen DSH contract and the historical MyAgents integration baseline. Pre-Batch P0-3 created the canonical TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and conformance tests. That source, generated digests, and tests are authoritative for exact shapes; this document remains the intent and ownership reference. If an illustrative shape below differs from generated code, generated code wins and this document must be repaired.
+Protocol `2.2.0` is the current DSH Runtime compatibility contract. It retains the complete `2.1.0` method vocabulary and genesis rewind behavior, and adds optional generic Host `SystemContextSnapshot` contributions to Session create/resume and configuration apply. Protocol `2.0.0` remains the first frozen DSH contract and `2.1.0` remains the historical interaction-reliability baseline. Pre-Batch P0-3 created the canonical TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and conformance tests. That source, generated digests, and tests are authoritative for exact shapes; this document remains the intent and ownership reference. If an illustrative shape below differs from generated code, generated code wins and this document must be repaired.
 
 ### 1.1 Compatibility versioning
 
-The official Runtime currently implements exactly `2.1.0`, and a MyAgents Host consuming the interaction-reliability refresh must pin that exact version and its artifact/compatibility digests. Versioning follows semantic compatibility:
+The official Runtime currently implements exactly `2.2.0`, and a MyAgents Host consuming system-context composition must pin that exact version and its artifact/compatibility digests. Versioning follows semantic compatibility:
 
 - `2.0.x` repairs implementation defects without changing required wire behavior;
-- `2.x.0` may add negotiated optional capabilities while retaining the complete `2.0.0` behavior for a Host that selects it; `2.1.0` uses this rule for the optional genesis boundary;
+- `2.x.0` may add negotiated optional capabilities while retaining the complete `2.0.0` behavior for a Host that selects it; `2.1.0` adds the optional genesis boundary and `2.2.0` adds optional structured system context;
 - `3.0.0` is required for a breaking method, required-field, lifecycle, persistence-meaning, or terminal-semantics change.
 
 A larger number is not evidence of compatibility by itself. A Runtime advertises a version range only when executable negotiation and conformance prove every version in that range; otherwise min and max remain the same exact version. Draft.1 through draft.3 evidence remains historical and must never be relabeled as the frozen release.
@@ -187,7 +187,7 @@ Secret values MUST be represented only by reverse-port references.
 
 ```ts
 type InitializeResult = {
-  protocolVersion: "2.1.0"
+  protocolVersion: "2.2.0"
   runtimeVersion: string
   runtimeGeneration: string
   runtimeEngine: {
@@ -209,7 +209,7 @@ type InitializeResult = {
 
 ## 7. Method inventory
 
-The contract exposes 47 request methods: 40 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 51 names. Draft.2 added `session/delete/purge`; draft.3 added `plan/apply` plus `permission/rules/list`, `permission/rules/add`, and `permission/rules/revoke`; `2.0.0` froze that vocabulary and `2.1.0` leaves it unchanged.
+The contract exposes 47 request methods: 40 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 51 names. Draft.2 added `session/delete/purge`; draft.3 added `plan/apply` plus `permission/rules/list`, `permission/rules/add`, and `permission/rules/revoke`; `2.0.0` froze that vocabulary and `2.1.0`/`2.2.0` leave it unchanged.
 
 ### 7.1 Host-to-Runtime methods: 40
 
@@ -274,11 +274,38 @@ Accepts an optional reason. Once committed, new work is rejected, active work is
 - model execution profile;
 - configuration revision;
 - extension digest;
-- system prompt;
+- normalized system context (or the legacy system-prompt migration field);
 - permission mode and tool visibility policy;
 - interaction scenario.
 
 The model execution profile may also carry one exact Host-authoritative USD rate card with disjoint per-million-token rates for uncached input, output, cache reads, and cache writes. Runtime freezes that card into every operation birth that uses it. A request containing `limits.maxCostUsd` is rejected before durable turn admission when the selected profile has no rate card; Runtime never guesses prices from provider names or mutable external metadata.
+
+Protocol `2.2.0` defines the optional structured input as:
+
+```ts
+type HostPromptContribution = {
+  id: string
+  order: number
+  scope: "global" | "root"
+  text: string
+}
+
+type SystemContextSnapshot = {
+  sections: HostPromptContribution[]
+  contexts?: HostPromptContribution[]
+}
+```
+
+The generated schemas own the exact identifier, array and byte bounds. Bodies are literal Markdown;
+the Host cannot select DSH variables, Providers, completion replacement, cache controls, tools or
+raw Cordis scopes. Runtime registers names as `host:<id>`. `global` contributions apply to the root
+and fresh child scopes; `root` contributions apply only to the primary root Agent.
+
+For wire migration, a request without `systemContext` normalizes non-empty `systemPrompt` into one
+root-scoped legacy section. A request containing `systemContext` must send an empty `systemPrompt`.
+Ambiguous input, duplicate ids within one contribution kind across scopes, or aggregate context
+overflow rejects before Session/config mutation. `utility/run` keeps its own isolated
+`systemPrompt` and is not a root Session.
 
 The result is:
 

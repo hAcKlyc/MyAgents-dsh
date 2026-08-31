@@ -7,6 +7,7 @@ type JsonObject = Record<string, unknown>;
 export const expectedDshDependencies = new Map([
   ["@deepseek-ai/cordis", "4.0.1"],
   ["@deepseek-ai/dsh-agent", "0.1.1-rc.2"],
+  ["@deepseek-ai/dsh-agent-instructions", "0.1.1-rc.2"],
   ["@deepseek-ai/dsh-agent-loop", "0.1.1-rc.2"],
   ["@deepseek-ai/dsh-agent-presets", "0.1.1-rc.2"],
   ["@deepseek-ai/dsh-attachment", "0.1.1-rc.2"],
@@ -72,6 +73,7 @@ export const publicSeams: PublicSeamEvidence[] = [
   { id: "scope", package: "@deepseek-ai/dsh-scope", importPath: "@deepseek-ai/dsh-scope", classification: "direct", batchUse: ["B1-W1", "B1-W2", "B1-W3"], values: ["createScope", "scopeOf"], types: ["Scope", "ScopeKey", "Scoped"] },
   { id: "session", package: "@deepseek-ai/dsh-session", importPath: "@deepseek-ai/dsh-session", classification: "direct", batchUse: ["B1-W1", "B1-W4"], values: ["Session", "SessionId", "SessionStore"], types: ["SessionEvent", "SessionHeader"] },
   { id: "agent", package: "@deepseek-ai/dsh-agent", importPath: "@deepseek-ai/dsh-agent", classification: "direct", batchUse: ["B1-W1"], values: ["AgentRegistry"], types: ["Agent", "AgentFactory", "AgentHandle", "CreateAgentOptions", "ResumeAgentOptions"] },
+  { id: "agent-instructions", package: "@deepseek-ai/dsh-agent-instructions", importPath: "@deepseek-ai/dsh-agent-instructions", classification: "provider", batchUse: ["B3-W1"], values: ["Config", "apply", "name"], types: ["Config"] },
   { id: "agent-loop", package: "@deepseek-ai/dsh-agent-loop", importPath: "@deepseek-ai/dsh-agent-loop", classification: "direct", batchUse: ["B1-W1"], values: ["AgentLoop"], types: ["Config"] },
   { id: "tools", package: "@deepseek-ai/dsh-tools", importPath: "@deepseek-ai/dsh-tools", classification: "direct", batchUse: ["B1-W1", "B1-W2", "B1-W3"], values: ["ToolRuntime", "defineTool"], types: ["ToolDefinition", "ToolExecution", "ToolExecutionResult", "ToolRunContext"] },
   { id: "llm", package: "@deepseek-ai/dsh-llm", importPath: "@deepseek-ai/dsh-llm", classification: "provider", batchUse: ["B1-W1", "B1-W3"], values: ["LlmAdapter", "LlmError", "LlmRuntime", "assertUsableApiKey", "resolveRetryPolicy"], types: ["GenerateOptions", "LlmModelInfo", "LlmProviderInfo", "LlmResolvedModelInfo", "StreamChunk"] },

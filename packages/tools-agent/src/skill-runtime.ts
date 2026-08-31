@@ -16,7 +16,9 @@ import {
   type SkillProviderControl,
   type SkillSummary,
 } from "@deepseek-ai/dsh-skill";
+import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
+import type { AssembleContext } from "@deepseek-ai/dsh-system-prompt";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import {
   CANONICAL_TOOL_CONTRACTS,
@@ -30,6 +32,7 @@ import {
 import {
   ProductToolError,
   type ProductToolContext,
+  type ProductToolOperationAuthority,
 } from "@myagents-dsh/tool-runtime-product";
 import { LocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 
@@ -63,6 +66,7 @@ export interface StaticSkillCatalog {
 export interface ProductSkillServiceConfig {
   readonly catalog: StaticSkillCatalog;
   readonly registerDynamicController?: (controller: ProductDynamicSkillController) => void;
+  readonly resolveOperation?: (agent: Agent) => ProductToolOperationAuthority;
 }
 
 export interface DynamicSkillGenerationIdentity {
@@ -92,6 +96,12 @@ export interface ProductDynamicSkillController {
 declare module "@deepseek-ai/cordis" {
   interface Context {
     productSkills: ProductSkillService;
+  }
+}
+
+declare module "@deepseek-ai/dsh-system-prompt" {
+  interface PromptContext {
+    readonly interpolate?: boolean;
   }
 }
 
@@ -803,7 +813,7 @@ const renderSkill = (
 };
 
 export class ProductSkillService extends Service {
-  static inject = ["fs", "productTools", "skills", "tools"];
+  static inject = ["fs", "productTools", "skills", "systemPrompt", "tools"];
 
   private readonly catalogValue: StaticSkillCatalog;
   private readonly candidatesValue: readonly SkillCandidate[];
@@ -815,12 +825,26 @@ export class ProductSkillService extends Service {
   readonly #dynamicByLocator = new WeakMap<object, DynamicSkillRecord>();
   readonly #dynamicByDefinition = new WeakMap<object, DynamicSkillRecord>();
   readonly #dynamicViewPermits = new WeakMap<AbortSignal, string>();
+  readonly #installedDynamic = new WeakSet<object>();
+  readonly #catalogProjectionByGeneration = new Map<string, string>();
+  readonly #resolveOperation: ((agent: Agent) => ProductToolOperationAuthority) | undefined;
   #invalidateDynamic: (() => void) | undefined;
 
   public constructor(ctx: Context, config: ProductSkillServiceConfig) {
     super(ctx, "productSkills");
-    const normalized = exactObject(config, ["catalog"], ["registerDynamicController"], "ProductSkillService config");
+    const normalized = exactObject(
+      config,
+      ["catalog"],
+      ["registerDynamicController", "resolveOperation"],
+      "ProductSkillService config",
+    );
     this.catalogValue = validateStaticSkillCatalog(normalized.catalog);
+    const resolveOperation = normalized.resolveOperation;
+    if (resolveOperation !== undefined
+      && (typeof resolveOperation !== "function" || isProxy(resolveOperation))) {
+      throw new TypeError("ProductSkillService operation resolver must be a non-proxy function");
+    }
+    this.#resolveOperation = resolveOperation as ((agent: Agent) => ProductToolOperationAuthority) | undefined;
     const registerDynamicController = normalized.registerDynamicController;
     if (registerDynamicController !== undefined
       && (typeof registerDynamicController !== "function" || isProxy(registerDynamicController))) {
@@ -849,6 +873,12 @@ export class ProductSkillService extends Service {
     this.candidatesValue = Object.freeze(candidates);
     this.descriptorsBySource = bySource;
     ctx.effect(() => {
+      const disposeCatalogContext = ctx.systemPrompt.context({
+        interpolate: false,
+        name: "capability:skills",
+        order: 105,
+        text: (context) => this.#catalogContext(ctx, context),
+      });
       const disposeProvider = ctx.skills.registerProvider((control) => this.provider(ctx, control));
       const disposeDynamicProvider = ctx.skills.registerProvider((control) => {
         this.#invalidateDynamic = control.invalidate;
@@ -860,10 +890,12 @@ export class ProductSkillService extends Service {
           disposeTool();
           disposeDynamicProvider();
           disposeProvider();
+          disposeCatalogContext();
         };
       } catch (error) {
         disposeDynamicProvider();
         disposeProvider();
+        disposeCatalogContext();
         throw error;
       }
     }, "product-static-skills-and-tool");
@@ -875,6 +907,74 @@ export class ProductSkillService extends Service {
   }
 
   public catalog(): StaticSkillCatalog { return this.catalogValue; }
+
+  #catalogContext(ctx: Context, context: AssembleContext): string {
+    const agent = context.agent;
+    if (agent === undefined || this.#resolveOperation === undefined
+      || ctx.tools.get("Skill", context.scope) === undefined) return "";
+    let authority: ProductToolOperationAuthority;
+    try {
+      authority = this.#resolveOperation(agent);
+    } catch {
+      return "";
+    }
+    if (authority.allowedTools !== undefined && !authority.allowedTools.includes("Skill")) return "";
+    const catalogMethod = (ctx.productTools as unknown as { catalog?: () => {
+      digest: string;
+      effectiveTools: readonly string[];
+    } }).catalog;
+    if (typeof catalogMethod !== "function") return "";
+    const toolCatalog = Reflect.apply(catalogMethod, ctx.productTools, []);
+    if (toolCatalog.digest !== authority.operation.birth.toolCatalogDigest
+      || !toolCatalog.effectiveTools.includes("Skill")) return "";
+    return this.#catalogProjection(Object.freeze({
+      digest: authority.operation.birth.componentDigest,
+      revision: authority.operation.birth.componentRevision,
+    }));
+  }
+
+  #catalogProjection(identity: DynamicSkillGenerationIdentity): string {
+    const key = this.#generationKey(identity);
+    const cached = this.#catalogProjectionByGeneration.get(key);
+    if (cached !== undefined) return cached;
+    const candidates = [
+      ...this.catalogValue.skills.map((skill, index) => ({
+        description: projectProductSkillDescription(skill.description, skill.name),
+        invocation: skill.invocation,
+        name: skill.name,
+        providerOrder: 0,
+        localOrder: index,
+        rank: skill.rank,
+      })),
+      ...[...(this.#dynamicByGeneration.get(key)?.values() ?? [])]
+        .filter((skill) => this.#installedDynamic.has(skill))
+        .map((skill, index) => ({
+          description: skill.description,
+          invocation: skill.invocation,
+          name: skill.name,
+          providerOrder: 1,
+          localOrder: index,
+          rank: skill.rank,
+        })),
+    ].sort((left, right) => left.rank - right.rank
+      || left.providerOrder - right.providerOrder
+      || left.localOrder - right.localOrder);
+    const winners = new Map<string, (typeof candidates)[number]>();
+    for (const candidate of candidates) {
+      if (!winners.has(candidate.name)) winners.set(candidate.name, candidate);
+    }
+    const visible = [...winners.values()]
+      .filter(({ invocation }) => invocation.modelInvocable)
+      .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    const text = visible.length === 0 ? "" : [
+      "Available Skills:",
+      ...visible.map(({ name, description }) => `- ${name} — ${description}`),
+      "",
+      "Call Skill with `skill: <name>` to load the full instructions only when needed.",
+    ].join("\n");
+    this.#catalogProjectionByGeneration.set(key, text);
+    return text;
+  }
 
   private provider(ctx: Context, control: SkillProviderControl): SkillProvider {
     return Object.freeze({
@@ -1011,17 +1111,22 @@ export class ProductSkillService extends Service {
         disposed = true;
         if (records.get(name) === record) records.delete(name);
         if (records.size === 0) this.#dynamicByGeneration.delete(key);
+        this.#catalogProjectionByGeneration.delete(key);
         this.#invalidateDynamic?.();
       },
       install: () => {
         if (disposed || installed) throw new Error("dynamic Skill is disposed or already published");
         installed = true;
+        this.#installedDynamic.add(record);
+        this.#catalogProjectionByGeneration.delete(key);
         this.#invalidateDynamic?.();
         let active = true;
         return () => {
           if (!active) return;
           active = false;
           installed = false;
+          this.#installedDynamic.delete(record);
+          this.#catalogProjectionByGeneration.delete(key);
           this.#invalidateDynamic?.();
         };
       },

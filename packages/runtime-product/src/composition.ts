@@ -3,6 +3,7 @@ import type { Plugin } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
 import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
+import * as AgentInstructions from "@deepseek-ai/dsh-agent-instructions";
 import { BasicCompactionEngine } from "@deepseek-ai/dsh-compaction-basic";
 import { ToolResultPruner } from "@deepseek-ai/dsh-compaction-tool-result-pruner";
 import { CommandId, CommandRuntime } from "@deepseek-ai/dsh-commands";
@@ -171,6 +172,19 @@ import {
 import { createHostDeepSeekWebSearchConfig } from "./host-web-search.js";
 import { createHostDeepSeekWebFetchConfig } from "./host-web-fetch.js";
 import { executeHostCanonicalWebTool } from "./host-web-bridge.js";
+import {
+  COMPACTION_CONTINUITY,
+  COMPACTION_CONTINUITY_ORDER,
+  RUNTIME_OPERATING_CONTRACT,
+  RUNTIME_OPERATING_CONTRACT_ORDER,
+} from "./system-context.js";
+
+declare module "@deepseek-ai/dsh-agent-instructions" {
+  interface Config {
+    candidateSelection?: "all" | "first";
+    fileTouchToolNames?: string[];
+  }
+}
 
 export type { HostBackedInteractionProviderConfig } from "./host-interaction.js";
 
@@ -1189,6 +1203,14 @@ export const installCanonicalToolPlane = async (
     }
     fibers.push(await root.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 10 }));
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
+    fibers.push(await root.plugin(AgentInstructions, {
+      candidateSelection: "first",
+      fileTouchToolNames: ["Read", "Write", "Edit"],
+      instructionFileCandidates: ["CLAUDE.md", "AGENTS.override.md", "AGENTS.md"],
+      localInstructionFileCandidates: [],
+      maxBytes: 512 * 1024,
+      maxSourceBytes: 256 * 1024,
+    }));
     const localFileSystem = requireLocalWorkspaceFileSystem(root.fs);
     const checkpointIo = localFileSystem.createCheckpointIoAuthority();
     const attachmentIo = localFileSystem.createAttachmentIoAuthority();
@@ -1384,6 +1406,7 @@ export const installCanonicalToolPlane = async (
     let dynamicSkills: ProductDynamicSkillController | undefined;
     fibers.push(await root.plugin(ProductSkillService, {
       catalog: skillCatalog,
+      resolveOperation: resolveProductToolOperation,
       registerDynamicController: (controller) => {
         if (dynamicSkills !== undefined) throw new Error("dynamic Skill controller may register exactly once");
         dynamicSkills = controller;
@@ -2115,9 +2138,14 @@ export const composeDshRootServices = async (
     await root.plugin(LlmRuntime);
     await root.plugin(SystemPrompt, systemPrompt);
     root.systemPrompt.section({
+      name: "runtime:operating-contract",
+      order: RUNTIME_OPERATING_CONTRACT_ORDER,
+      text: RUNTIME_OPERATING_CONTRACT,
+    });
+    root.systemPrompt.section({
       name: "compaction:continuity",
-      order: 118,
-      text: "Under context pressure, old oversized tool results may retain only their beginning and end. Record important exact conclusions, paths, identifiers, short errors, decisions, and pending work promptly so the task can continue correctly.",
+      order: COMPACTION_CONTINUITY_ORDER,
+      text: COMPACTION_CONTINUITY,
     });
     await root.plugin(ToolRuntime, tools);
     if (adapter !== undefined) await root.plugin(adapterPlugin(providers, adapter));

@@ -232,6 +232,32 @@ const buildFixtures = (schemaDigest: string): unknown => {
       roots: [{ sourceId: "project-skills", root: "/fixture/workspace/.agents/skills", enabledPaths: ["review"] }],
     },
   } as const;
+  const sessionCreateParams = {
+    clientOperationId: "session-create-1",
+    persistenceRef: "persistence-1",
+    provider: {
+      revision: "provider-v1",
+      providerRouteId: "fixture",
+      api: "openai-completions",
+      provider: "fixture",
+      modelId: "fixture-model",
+      credentialRef: "fixture-credential",
+      contextWindow: 8_192,
+      maxTokens: 1_024,
+    },
+    configRevision: "config-v1",
+    extensionDigest: digestFixture,
+    systemPrompt: "",
+    systemContext: {
+      sections: [
+        { id: "product:identity", order: -80, scope: "global", text: "Fixture product." },
+        { id: "session", order: 10, scope: "root", text: "Fixture session." },
+      ],
+      contexts: [{ id: "workspace", order: 100, scope: "global", text: "Keep {{literal}}." }],
+    },
+    permissionMode: "default",
+    interactionScenario: "fixture-interaction",
+  } as const;
   return {
   artifactFormatVersion: 1,
   protocolVersion: PROTOCOL_VERSION,
@@ -249,6 +275,16 @@ const buildFixtures = (schemaDigest: string): unknown => {
         jsonrpc: "2.0",
         id: "h:initialize-1",
         result: initializeResult,
+      },
+    },
+    {
+      name: "session-create-system-context-request",
+      target: { kind: "methodParams", name: "session/create" },
+      frame: {
+        jsonrpc: "2.0",
+        id: "h:session-create-1",
+        method: "session/create",
+        params: sessionCreateParams,
       },
     },
     {

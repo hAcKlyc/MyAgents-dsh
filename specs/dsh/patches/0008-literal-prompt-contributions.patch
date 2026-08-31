@@ -1,0 +1,500 @@
+diff --git a/packages/core/system-prompt/src/index.ts b/packages/core/system-prompt/src/index.ts
+index ffc052e0b9..190badb086 100644
+--- a/packages/core/system-prompt/src/index.ts
++++ b/packages/core/system-prompt/src/index.ts
+@@ -65,6 +65,8 @@ export interface PromptSection {
+    * interpolated later, by {@link renderPrompt}.
+    */
+   readonly text: string | ((context: AssembleContext) => string)
++  /** Whether strict `{{variable}}` interpolation applies after assembly (default true). */
++  readonly interpolate?: boolean
+   /**
+    * Treat this contribution as the complete system prompt. Assembly still
+    * runs the cooperative waterfall so tools, contexts, and variables can be
+@@ -82,6 +84,8 @@ export interface PromptContext {
+   readonly order: number
+   /** Static text or a provider evaluated for each assembly. Empty text contributes nothing. */
+   readonly text: string | ((context: AssembleContext) => string)
++  /** Whether strict `{{variable}}` interpolation applies after assembly (default true). */
++  readonly interpolate?: boolean
+ }
+ 
+ /** One section of an assembly: {@link PromptSection} with its text resolved. */
+@@ -90,6 +94,8 @@ export interface AssembledSection {
+   name: string
+   /** The resolved (but not yet interpolated) section text. */
+   text: string
++  /** Whether rendering applies strict variable interpolation (default true). */
++  interpolate?: boolean
+ }
+ 
+ /** One resolved dynamic context contribution. */
+@@ -98,6 +104,8 @@ export interface AssembledContext {
+   name: string
+   /** The resolved text before variable interpolation. */
+   text: string
++  /** Whether rendering applies strict variable interpolation (default true). */
++  interpolate?: boolean
+ }
+ 
+ /** Tool schemas visible in one assembly and their pre-restriction name set. */
+@@ -211,7 +219,9 @@ export interface Config {
+  */
+ export function renderPrompt(assembly: PromptAssembly): string {
+   return assembly.sections
+-    .map(section => interpolate(section, assembly.variables, 'section'))
++    .map(section => section.interpolate === false
++      ? section.text
++      : interpolate(section, assembly.variables, 'section'))
+     .filter(text => text.length > 0)
+     .join('\n\n')
+ }
+@@ -250,7 +260,12 @@ export function joinContextSections(sections: readonly ContextSnapshotSection[])
+  */
+ export function renderContextSections(assembly: PromptAssembly): ContextSnapshotSection[] {
+   return assembly.contexts
+-    .map(context => ({ name: context.name, text: interpolate(context, assembly.variables, 'context') }))
++    .map(context => ({
++      name: context.name,
++      text: context.interpolate === false
++        ? context.text
++        : interpolate(context, assembly.variables, 'context'),
++    }))
+     .filter(section => section.text.length > 0)
+ }
+ 
+@@ -512,6 +527,7 @@ export class SystemPrompt extends Service {
+         const assembled = {
+           name: section.name,
+           text: typeof section.text === 'function' ? section.text(context) : section.text,
++          ...section.interpolate === undefined ? {} : { interpolate: section.interpolate },
+         }
+         if (section.complete === true) completeSection = { ...assembled }
+         return assembled
+@@ -525,6 +541,7 @@ export class SystemPrompt extends Service {
+           .map(entry => ({
+             name: entry.name,
+             text: typeof entry.text === 'function' ? entry.text(context) : entry.text,
++            ...entry.interpolate === undefined ? {} : { interpolate: entry.interpolate },
+           })),
+       tools: orderTools(collected, this.toolOrder, knownNames),
+       variables,
+diff --git a/packages/core/system-prompt/tests/system-prompt.spec.ts b/packages/core/system-prompt/tests/system-prompt.spec.ts
+index cf196892a7..80f2d328b7 100644
+--- a/packages/core/system-prompt/tests/system-prompt.spec.ts
++++ b/packages/core/system-prompt/tests/system-prompt.spec.ts
+@@ -365,6 +365,25 @@ describe('SystemPrompt', () => {
+     })).toThrow('unknown prompt variable "{{missing}}" in context "policy"; registered variables: (none)')
+   })
+ 
++  it('keeps literal context braces without resolving prompt variables', async () => {
++    const ctx = new Context()
++    await ctx.plugin(SystemPrompt)
++    ctx.systemPrompt.variable('name', () => 'resolved')
++    ctx.systemPrompt.context({
++      name: 'external-markdown',
++      order: 0,
++      text: 'Example: {{name}} and {{ malformed }}.',
++      interpolate: false,
++    })
++    const assembly = await ctx.systemPrompt.assemble()
++    expect(assembly.contexts).toEqual([{
++      name: 'external-markdown',
++      text: 'Example: {{name}} and {{ malformed }}.',
++      interpolate: false,
++    }])
++    expect(renderContextSnapshot(assembly)).toContain('Example: {{name}} and {{ malformed }}.')
++  })
++
+   it('emits system-prompt/change when a tool provider is registered and disposed', async () => {
+     const ctx = new Context()
+     await ctx.plugin(SystemPrompt)
+@@ -485,6 +504,25 @@ describe('SystemPrompt', () => {
+       expect(renderPrompt(await ctx.systemPrompt.assemble())).toBe(`${IDENTITY}\n\nYou run on deepseek-v4 in /work.`)
+     })
+ 
++    it('keeps literal section braces without resolving prompt variables', async () => {
++      const ctx = new Context()
++      await ctx.plugin(SystemPrompt)
++      ctx.systemPrompt.variable('name', () => 'resolved')
++      ctx.systemPrompt.section({
++        name: 'external-markdown',
++        order: 1,
++        text: 'Example: {{name}} and {{ malformed }}.',
++        interpolate: false,
++      })
++      const assembly = await ctx.systemPrompt.assemble()
++      expect(assembly.sections.at(-1)).toEqual({
++        name: 'external-markdown',
++        text: 'Example: {{name}} and {{ malformed }}.',
++        interpolate: false,
++      })
++      expect(renderPrompt(assembly)).toContain('Example: {{name}} and {{ malformed }}.')
++    })
++
+     it('lets a waterfall listener add or override variables before render', async () => {
+       const ctx = new Context()
+       await ctx.plugin(SystemPrompt)
+diff --git a/packages/subagent/subagent-in-process-driver/src/index.ts b/packages/subagent/subagent-in-process-driver/src/index.ts
+index fd1ebff2be..1e4a63d0f0 100644
+--- a/packages/subagent/subagent-in-process-driver/src/index.ts
++++ b/packages/subagent/subagent-in-process-driver/src/index.ts
+@@ -121,6 +121,7 @@ export async function startInProcessRun(
+     appendDelegatedPolicyOverrides((childCtx.agent as Agent).session, inherited)
+     applyChildComposition(childCtx, parent, {
+       persona: request.persona,
++      personaInterpolate: request.personaInterpolate,
+       toolFilter: request.toolFilter,
+     })
+     if (request.outputSchema !== undefined) {
+diff --git a/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts b/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
+index 74aefb4ebd..714208abbc 100644
+--- a/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
++++ b/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
+@@ -402,6 +402,19 @@ describe('dsh-subagent-spawn-in-process', () => {
+       await run.dispose()
+     })
+ 
++    it('can keep an external child persona literal', async () => {
++      const { ctx, parent, adapter } = await setup([textResponse('child answer')])
++      const run = await start(ctx, 'spawn', {
++        prompt: [{ type: 'text', text: 'do X' }],
++        parent,
++        persona: 'Render {{name}} and {{ malformed }} literally.',
++        personaInterpolate: false,
++      })
++      await run.result
++      expect(adapter.requests[0]!.system).toContain('Render {{name}} and {{ malformed }} literally.')
++      await run.dispose()
++    })
++
+     it('toolFilter hides denied tools from the child prompt AND refuses their execution', async () => {
+       const { ctx, parent, adapter } = await setup([
+         // The child tries the denied tool anyway, then answers.
+diff --git a/packages/subagent/subagent/src/child-agent.ts b/packages/subagent/subagent/src/child-agent.ts
+index 7582338858..81ce7d094b 100644
+--- a/packages/subagent/subagent/src/child-agent.ts
++++ b/packages/subagent/subagent/src/child-agent.ts
+@@ -123,6 +123,8 @@ export function childSessionMeta(
+ export interface ChildComposition {
+   /** Per-child persona shadowing the deployment persona. */
+   readonly persona?: string | undefined
++  /** Whether the persona uses strict Prompt-variable interpolation (default true). */
++  readonly personaInterpolate?: boolean | undefined
+   /** Per-child tool scoping. */
+   readonly toolFilter?: ToolRestriction | undefined
+ }
+@@ -169,7 +171,14 @@ export function applyChildComposition(
+   // Order 120: after the sandbox:policy (110) and approval:policy (115) sentences.
+   childCtx.systemPrompt.context({ name: 'subagent:delegation', order: 120, text: SUBAGENT_DELEGATION_CONTEXT })
+   if (composition.persona !== undefined) {
+-    childCtx.systemPrompt.section({ name: 'deployment:persona', order: 0, text: composition.persona })
++    childCtx.systemPrompt.section({
++      name: 'deployment:persona',
++      order: 0,
++      text: composition.persona,
++      ...composition.personaInterpolate === undefined
++        ? {}
++        : { interpolate: composition.personaInterpolate },
++    })
+   }
+   if (composition.toolFilter !== undefined) childCtx.tools.restrict(composition.toolFilter)
+ }
+diff --git a/packages/subagent/subagent/src/continuation.ts b/packages/subagent/subagent/src/continuation.ts
+index 35ecac6e3a..9c7be54d4a 100644
+--- a/packages/subagent/subagent/src/continuation.ts
++++ b/packages/subagent/subagent/src/continuation.ts
+@@ -273,7 +273,11 @@ interface MaterializeInputs {
+     delegatedPolicies: DelegatedPolicyOverrides
+   }
+   agentOptions: AgentOptions
+-  composition: { persona?: string | undefined; toolFilter?: ToolRestriction | undefined }
++  composition: {
++    persona?: string | undefined
++    personaInterpolate?: boolean | undefined
++    toolFilter?: ToolRestriction | undefined
++  }
+   signal: AbortSignal
+ }
+ 
+@@ -441,6 +445,9 @@ export class SubagentContinuationManager {
+       ...agentProvider !== undefined ? { agentProvider } : {},
+       ...agentModel !== undefined ? { agentModel } : {},
+       ...request.persona !== undefined ? { persona: request.persona } : {},
++      ...request.personaInterpolate !== undefined
++        ? { personaInterpolate: request.personaInterpolate }
++        : {},
+       ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
+       settlementDelivery,
+     })
+@@ -478,7 +485,11 @@ export class SubagentContinuationManager {
+         parent,
+         create: { seed, meta: childSessionMeta(parent, childDepth, lineageSeedLength), delegatedPolicies },
+         agentOptions: resolveChildAgentOptions(parent, request.agentOptions, childDepth),
+-        composition: { persona: request.persona, toolFilter: request.toolFilter },
++        composition: {
++          persona: request.persona,
++          personaInterpolate: request.personaInterpolate,
++          toolFilter: request.toolFilter,
++        },
+         signal: spec.signal,
+       })
+       return this.submitMaterialized(
+@@ -1059,7 +1070,11 @@ export class SubagentContinuationManager {
+           ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
+           ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
+         },
+-        composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter },
++        composition: {
++          persona: descriptor.persona,
++          personaInterpolate: descriptor.personaInterpolate,
++          toolFilter: descriptor.toolFilter,
++        },
+         signal,
+       })
+     } catch (error: unknown) {
+diff --git a/packages/subagent/subagent/src/descriptor.ts b/packages/subagent/subagent/src/descriptor.ts
+index c01f1ad1a1..e21739ee72 100644
+--- a/packages/subagent/subagent/src/descriptor.ts
++++ b/packages/subagent/subagent/src/descriptor.ts
+@@ -44,7 +44,8 @@ declare module '@deepseek-ai/dsh-session/types' {
+  * Supporting another composition input is a deliberate version change, never
+  * an implicit extra field.
+  */
+-export const SUBAGENT_DESCRIPTOR_VERSION = 3
++export const SUBAGENT_DESCRIPTOR_VERSION = 4
++const LEGACY_SUBAGENT_DESCRIPTOR_VERSION = 3
+ 
+ /** Fields shared by every supported `subagent/descriptor` payload. */
+ interface SubagentDescriptorBase {
+@@ -78,6 +79,8 @@ export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBas
+   readonly agentModel?: string
+   /** Per-child persona that shadows the deployment persona on resume. */
+   readonly persona?: string
++  /** Whether the persona uses strict Prompt-variable interpolation; omitted means true. */
++  readonly personaInterpolate?: boolean
+   /** Child tool scoping reapplied on resume. */
+   readonly toolFilter?: ToolRestriction
+   /** Whether each residency epoch reports settlement to its parent or an external product owner. */
+@@ -115,6 +118,8 @@ export interface ContinuableSubagentDescriptorInput extends SubagentDescriptorIn
+   readonly agentModel?: string
+   /** Requested per-child persona. */
+   readonly persona?: string
++  /** Whether the persona uses strict Prompt-variable interpolation; omitted means true. */
++  readonly personaInterpolate?: boolean
+   /** Requested child tool scoping. */
+   readonly toolFilter?: ToolRestriction
+   /** Settlement owner selected at initial continuable admission. */
+@@ -133,7 +138,7 @@ const DESCRIPTOR_BASE_KEYS = [
+   'label',
+ ] as const
+ const ONE_SHOT_DESCRIPTOR_KEYS = new Set(DESCRIPTOR_BASE_KEYS)
+-const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
++const CONTINUABLE_DESCRIPTOR_KEYS_V3 = new Set([
+   ...DESCRIPTOR_BASE_KEYS,
+   'agentProvider',
+   'agentModel',
+@@ -141,6 +146,10 @@ const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
+   'toolFilter',
+   'settlementDelivery',
+ ])
++const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
++  ...CONTINUABLE_DESCRIPTOR_KEYS_V3,
++  'personaInterpolate',
++])
+ const TOOL_FILTER_KEYS = new Set(['allow', 'deny'])
+ 
+ /** Whether a persisted JSON value is an object record. */
+@@ -166,6 +175,16 @@ function optionalString(value: Record<string, unknown>, key: string): string | u
+   return field
+ }
+ 
++/** Read one optional boolean field from a persisted descriptor record. */
++function optionalBoolean(value: Record<string, unknown>, key: string): boolean | undefined {
++  if (!Object.hasOwn(value, key)) return undefined
++  const field = value[key]
++  if (typeof field !== 'boolean') {
++    throw new Error(`persisted subagent descriptor ${key} must be a boolean`)
++  }
++  return field
++}
++
+ /** Read one optional string-array field from a persisted tool restriction. */
+ function optionalStringArray(value: Record<string, unknown>, key: string): string[] | undefined {
+   if (!Object.hasOwn(value, key)) return undefined
+@@ -206,7 +225,9 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
+   if (typeof version !== 'number') {
+     throw new Error('persisted subagent descriptor version must be a number')
+   }
+-  if (version !== SUBAGENT_DESCRIPTOR_VERSION) return undefined
++  if (version !== SUBAGENT_DESCRIPTOR_VERSION && version !== LEGACY_SUBAGENT_DESCRIPTOR_VERSION) {
++    return undefined
++  }
+ 
+   const mode = value['mode']
+   if (mode !== 'one-shot' && mode !== 'continuable') {
+@@ -214,7 +235,11 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
+   }
+   assertKnownKeys(
+     value,
+-    mode === 'one-shot' ? ONE_SHOT_DESCRIPTOR_KEYS : CONTINUABLE_DESCRIPTOR_KEYS,
++    mode === 'one-shot'
++      ? ONE_SHOT_DESCRIPTOR_KEYS
++      : version === LEGACY_SUBAGENT_DESCRIPTOR_VERSION
++        ? CONTINUABLE_DESCRIPTOR_KEYS_V3
++        : CONTINUABLE_DESCRIPTOR_KEYS,
+     'payload',
+   )
+   const provider = value['provider']
+@@ -224,7 +249,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
+   if (mode === 'one-shot') {
+     const label = optionalString(value, 'label')
+     return {
+-      version: SUBAGENT_DESCRIPTOR_VERSION,
++      version,
+       mode,
+       provider,
+       ...label !== undefined ? { label } : {},
+@@ -237,6 +262,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
+   const agentProvider = optionalString(value, 'agentProvider')
+   const agentModel = optionalString(value, 'agentModel')
+   const persona = optionalString(value, 'persona')
++  const personaInterpolate = optionalBoolean(value, 'personaInterpolate')
+   const toolFilter = Object.hasOwn(value, 'toolFilter')
+     ? parseToolFilter(value['toolFilter'])
+     : undefined
+@@ -245,13 +271,14 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
+     throw new Error('persisted subagent descriptor settlementDelivery must be "parent" or "external"')
+   }
+   return {
+-    version: SUBAGENT_DESCRIPTOR_VERSION,
++    version,
+     mode,
+     provider,
+     label,
+     ...agentProvider !== undefined ? { agentProvider } : {},
+     ...agentModel !== undefined ? { agentModel } : {},
+     ...persona !== undefined ? { persona } : {},
++    ...personaInterpolate !== undefined ? { personaInterpolate } : {},
+     ...toolFilter !== undefined ? { toolFilter } : {},
+     ...settlementDelivery !== undefined ? { settlementDelivery } : {},
+   }
+@@ -294,6 +321,9 @@ export function snapshotSubagentDescriptor(input: SubagentDescriptorInput): Suba
+       ...input.agentProvider !== undefined ? { agentProvider: input.agentProvider } : {},
+       ...input.agentModel !== undefined ? { agentModel: input.agentModel } : {},
+       ...input.persona !== undefined ? { persona: input.persona } : {},
++      ...input.personaInterpolate !== undefined
++        ? { personaInterpolate: input.personaInterpolate }
++        : {},
+       ...input.toolFilter !== undefined ? { toolFilter: input.toolFilter } : {},
+       ...input.settlementDelivery !== undefined ? { settlementDelivery: input.settlementDelivery } : {},
+     }
+diff --git a/packages/subagent/subagent/src/types.ts b/packages/subagent/subagent/src/types.ts
+index b01c1ca984..4b7b2247e0 100644
+--- a/packages/subagent/subagent/src/types.ts
++++ b/packages/subagent/subagent/src/types.ts
+@@ -152,6 +152,11 @@ export interface SubagentStartRequest {
+    * persona (strict `{{…}}` interpolation against the registered variables).
+    */
+   readonly persona?: string
++  /**
++   * Whether the child persona uses strict Prompt-variable interpolation.
++   * Defaults to true; false preserves externally supplied persona text literally.
++   */
++  readonly personaInterpolate?: boolean
+ }
+ 
+ /**
+diff --git a/packages/subagent/subagent/tests/continuation.spec.ts b/packages/subagent/subagent/tests/continuation.spec.ts
+index c79fbbc925..eba76c715a 100644
+--- a/packages/subagent/subagent/tests/continuation.spec.ts
++++ b/packages/subagent/subagent/tests/continuation.spec.ts
+@@ -463,26 +463,37 @@ describe('SubagentRuntime.startContinuable', () => {
+   })
+ 
+   it('records the declared persona in the descriptor and reapplies it on cold resume', async () => {
+-    const { ctx, parent } = await setup([textResponse('scoped'), textResponse('resumed')])
++    const { ctx, parent, adapter } = await setup([
++      textResponse('scoped'),
++      textResponse('parent settlement'),
++      textResponse('resumed'),
++    ])
+     const started = await ctx.subagents.startContinuable({
+       ...startSpec(parent),
+       request: {
+         prompt: message('scoped work'),
+         parent,
+-        persona: 'You are scoped.',
++        persona: 'You are scoped with {{name}}.',
++        personaInterpolate: false,
+       },
+     })
+     await waitNoActivation(ctx, started.childId)
+ 
+     const loaded = await ctx.sessionPersistence.load(started.childId)
+     const descriptor = loaded.events.find(event => event.type === 'subagent/descriptor')
+-    expect(descriptor?.data).toMatchObject({ persona: 'You are scoped.' })
++    expect(descriptor?.data).toMatchObject({
++      persona: 'You are scoped with {{name}}.',
++      personaInterpolate: false,
++    })
++    expect(adapter.requests[0]!.system).toContain('You are scoped with {{name}}.')
+ 
+     // Cold resume reconstructs the declared composition from that descriptor.
+     await followup(ctx, parent, started.childId, message('resume it'))
+     await waitNoActivation(ctx, started.childId)
+     const resumed = await ctx.sessionPersistence.load(started.childId)
+     expect(hasUserText(resumed.events, 'resume it')).toBe(true)
++    expect(adapter.requests.filter(request =>
++      request.system?.includes('You are scoped with {{name}}.'))).toHaveLength(2)
+   })
+ })
+ 
+diff --git a/packages/subagent/subagent/tests/service.spec.ts b/packages/subagent/subagent/tests/service.spec.ts
+index 05e9785611..2a5b9c6fe4 100644
+--- a/packages/subagent/subagent/tests/service.spec.ts
++++ b/packages/subagent/subagent/tests/service.spec.ts
+@@ -349,6 +349,7 @@ describe('subagent descriptors', () => {
+       agentProvider: 'deepseek',
+       agentModel: 'chat',
+       persona: 'reviewer',
++      personaInterpolate: false,
+       toolFilter: { allow: ['read'], deny: ['bash'] },
+     }
+     expect(snapshotSubagentDescriptor({
+@@ -358,6 +359,7 @@ describe('subagent descriptors', () => {
+       agentProvider: complete.agentProvider,
+       agentModel: complete.agentModel,
+       persona: complete.persona,
++      personaInterpolate: complete.personaInterpolate,
+       toolFilter: complete.toolFilter,
+     })).toEqual(complete)
+     expect(foldSubagentDescriptor([event(complete)])).toEqual(complete)
+@@ -382,6 +384,13 @@ describe('subagent descriptors', () => {
+     expect(foldSubagentDescriptor([
+       event({ version: SUBAGENT_DESCRIPTOR_VERSION + 1, provider: 'spawn' }),
+     ])).toBeUndefined()
++    expect(foldSubagentDescriptor([event({
++      version: 3,
++      mode: 'continuable',
++      provider: 'spawn',
++      label: 'legacy child',
++      persona: 'legacy {{name}}',
++    })])).toMatchObject({ version: 3, persona: 'legacy {{name}}' })
+     expect(() => snapshotSubagentDescriptor({
+       mode: 'continuable',
+       provider: 'spawn',
+@@ -455,6 +464,13 @@ describe('subagent descriptors', () => {
+       label: 'l',
+       persona: {},
+     }, 'persona must be a string'],
++    ['invalid persona interpolation', {
++      version: SUBAGENT_DESCRIPTOR_VERSION,
++      mode: 'continuable',
++      provider: 'spawn',
++      label: 'l',
++      personaInterpolate: 'no',
++    }, 'personaInterpolate must be a boolean'],
+     ['non-object tool filter', {
+       version: SUBAGENT_DESCRIPTOR_VERSION,
+       mode: 'continuable',

@@ -10,9 +10,9 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "2.1.0" as const;
+export const PROTOCOL_VERSION = "2.2.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
-export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.8ac244cc6367" as const;
+export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.56f8f4241def" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
 export const DEEPSEEK_WEB_SEARCH_POLICY_REF = "deepseek-official-web-search-v1" as const;
@@ -37,6 +37,28 @@ const absolutePath = Type.String({
 });
 const nonNegativeInteger = Type.Integer({ minimum: 0 });
 const boundedText = Type.String({ maxLength: 65_536 });
+const hostPromptId = Type.String({
+  minLength: 1,
+  maxLength: 128,
+  pattern: "^[^\\u0000-\\u001F\\u007F]+$",
+});
+const hostPromptScope = Type.Union([Type.Literal("global"), Type.Literal("root")]);
+export const HostPromptSectionSchema = strictObject({
+  id: hostPromptId,
+  order: Type.Number(),
+  scope: hostPromptScope,
+  text: Type.String({ maxLength: 65_536 }),
+});
+export const HostPromptContextSchema = strictObject({
+  id: hostPromptId,
+  order: Type.Number(),
+  scope: hostPromptScope,
+  text: Type.String({ maxLength: 524_288 }),
+});
+export const SystemContextSnapshotSchema = strictObject({
+  sections: Type.Array(HostPromptSectionSchema, { maxItems: 32 }),
+  contexts: Type.Optional(Type.Array(HostPromptContextSchema, { maxItems: 32 })),
+});
 const jsonRecord = Type.Record(Type.String({ minLength: 1, maxLength: 256 }), Type.Unknown());
 const declarativeReference = Type.String({
   minLength: 1,
@@ -783,8 +805,8 @@ export const RPC_METHODS = {
   initialize: method("host_to_runtime", InitializeParamsSchema, InitializeResultSchema),
   "runtime/status": method("host_to_runtime", emptyParams, RuntimeStatusSchema),
   "runtime/shutdown": method("host_to_runtime", strictObject({ reason: Type.Optional(identifier) }), okResult),
-  "session/create": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: Type.Optional(identifier), persistenceRef: identifier, provider: ModelExecutionProfileSchema, configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
-  "session/resume": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: identifier, persistenceRef: identifier, provider: ModelExecutionProfileSchema, configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
+  "session/create": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: Type.Optional(identifier), persistenceRef: identifier, provider: ModelExecutionProfileSchema, configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
+  "session/resume": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: identifier, persistenceRef: identifier, provider: ModelExecutionProfileSchema, configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
   "session/read": method("host_to_runtime", strictObject({ cursor: Type.Optional(identifier) }), SessionReadResultSchema),
   "session/close": method("host_to_runtime", operationParams, okResult),
   "session/compact": method("host_to_runtime", operationParams, strictObject({ state: Type.Union([Type.Literal("accepted"), Type.Literal("already_known")]) })),
@@ -808,7 +830,7 @@ export const RPC_METHODS = {
   "turn/message/cancel": method("host_to_runtime", strictObject({ clientOperationId: identifier, messageId: identifier }), strictObject({ messageId: identifier, state: queuedMessageState })),
   "turn/interrupt": method("host_to_runtime", strictObject({ clientOperationId: identifier, cancelQueued: Type.Optional(Type.Boolean()) }), strictObject({ ok: Type.Literal(true), stillQueuedMessageIds: Type.Array(identifier, { maxItems: 4_096 }), cancelledMessageIds: Type.Array(identifier, { maxItems: 4_096 }) })),
   "command/invoke": method("host_to_runtime", strictObject({ clientOperationId: identifier, clientUserMessageId: identifier, commandId: identifier, arguments: Type.Array(boundedText, { maxItems: 256 }), configRevision: revision, extensionDigest: sha256, executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256, limits: operationLimits, origin: turnOrigin }), turnStartResult),
-  "config/apply": method("host_to_runtime", strictObject({ revision, provider: ModelExecutionProfileSchema, permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier, systemPrompt: Type.String({ maxLength: 1_000_000 }), executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256 }), applyResult),
+  "config/apply": method("host_to_runtime", strictObject({ revision, provider: ModelExecutionProfileSchema, permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256 }), applyResult),
   "plan/apply": method("host_to_runtime", strictObject({ clientOperationId: identifier, expectedRevision: revision, mode: Type.Union([Type.Literal("normal"), Type.Literal("plan")]) }), planApplyResult),
   "permission/rules/list": method("host_to_runtime", emptyParams, strictObject({ permissionMode: identifier, autoAllowTools: Type.Array(identifier, { maxItems: 512, uniqueItems: true }), revision, rules: Type.Array(permissionRule, { maxItems: 512 }) })),
   "permission/rules/add": method("host_to_runtime", strictObject({ expectedRevision: revision, tool: identifier, permissionClass: identifier, target: Type.String({ minLength: 1, maxLength: 8_192 }) }), permissionRuleMutationResult),
@@ -845,6 +867,9 @@ export type ProtocolLimits = Static<typeof ProtocolLimitsSchema>;
 export type InitializeParams = Static<typeof InitializeParamsSchema>;
 export type InitializeResult = Static<typeof InitializeResultSchema>;
 export type RuntimeCapabilityProfile = Static<typeof RuntimeCapabilityProfileSchema>;
+export type HostPromptSection = Static<typeof HostPromptSectionSchema>;
+export type HostPromptContext = Static<typeof HostPromptContextSchema>;
+export type SystemContextSnapshot = Static<typeof SystemContextSnapshotSchema>;
 export type RuntimeEventEnvelope = Static<typeof RuntimeEventEnvelopeSchema>;
 export type TurnTerminal = Static<typeof TurnTerminalSchema>;
 export type SessionReadResult = Static<typeof SessionReadResultSchema>;

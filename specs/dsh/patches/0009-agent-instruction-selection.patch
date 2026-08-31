@@ -1,0 +1,436 @@
+diff --git a/packages/context/agent-instructions/src/config.ts b/packages/context/agent-instructions/src/config.ts
+index f9edc9d4b8..f75a022b24 100644
+--- a/packages/context/agent-instructions/src/config.ts
++++ b/packages/context/agent-instructions/src/config.ts
+@@ -11,6 +11,7 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+ const DEFAULT_PROJECT_ROOT_MARKERS = ['.git'] as const
+ const DEFAULT_INSTRUCTION_FILE_CANDIDATES = ['AGENTS.md', 'CLAUDE.md'] as const
+ const DEFAULT_LOCAL_INSTRUCTION_FILE_CANDIDATES = ['AGENTS.local.md', 'CLAUDE.local.md'] as const
++const DEFAULT_FILE_TOUCH_TOOL_NAMES = ['read', 'write', 'edit'] as const
+ const DEFAULT_MAX_SOURCE_BYTES = 1_048_576
+ const RESERVED_PATH_SEGMENTS = new Set(['', '.', '..'])
+ 
+@@ -34,6 +35,10 @@ export interface Config {
+    * under the same per-directory trimmed-content dedup; empty disables the overlay.
+    */
+   localInstructionFileCandidates?: string[]
++  /** Candidate loading mode; `all` preserves the original multi-file behavior. */
++  candidateSelection?: 'all' | 'first'
++  /** Successful tool names whose `file_path` argument triggers nested reconciliation. */
++  fileTouchToolNames?: string[]
+ }
+ 
+ export const Config: z<Config> = z.object({
+@@ -43,6 +48,8 @@ export const Config: z<Config> = z.object({
+   maxSourceBytes: z.number().step(1).min(1).default(DEFAULT_MAX_SOURCE_BYTES),
+   instructionFileCandidates: z.array(z.string()).default([...DEFAULT_INSTRUCTION_FILE_CANDIDATES]),
+   localInstructionFileCandidates: z.array(z.string()).default([...DEFAULT_LOCAL_INSTRUCTION_FILE_CANDIDATES]),
++  candidateSelection: z.union(['all', 'first'] as const).default('all'),
++  fileTouchToolNames: z.array(z.string()).default([...DEFAULT_FILE_TOUCH_TOOL_NAMES]),
+ })
+ 
+ /** Normalized instruction discovery configuration. */
+@@ -51,12 +58,14 @@ export interface ResolvedDiscoveryConfig {
+   projectRootMarkers: string[]
+   instructionFileCandidates: string[]
+   localInstructionFileCandidates: string[]
++  candidateSelection: 'all' | 'first'
+ }
+ 
+ /** Normalized configuration used by discovery and reconciliation. */
+ export interface ResolvedConfig extends ResolvedDiscoveryConfig {
+   maxBytes: number
+   maxSourceBytes: number
++  fileTouchToolNames: string[]
+ }
+ 
+ /**
+@@ -78,6 +87,8 @@ export function workspaceBaselineIdentity(
+     maxSourceBytes: config.maxSourceBytes,
+     instructionFileCandidates: config.instructionFileCandidates,
+     localInstructionFileCandidates: config.localInstructionFileCandidates,
++    candidateSelection: config.candidateSelection,
++    fileTouchToolNames: config.fileTouchToolNames,
+   })
+ }
+ 
+@@ -91,6 +102,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
+     ...resolveDiscoveryConfig(config),
+     maxBytes: config.maxBytes,
+     maxSourceBytes: config.maxSourceBytes ?? DEFAULT_MAX_SOURCE_BYTES,
++    fileTouchToolNames: [...new Set(config.fileTouchToolNames ?? DEFAULT_FILE_TOUCH_TOOL_NAMES)],
+   }
+ }
+ 
+@@ -100,7 +112,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
+  * @returns normalized home, root markers, and instruction candidates.
+  */
+ export function resolveDiscoveryConfig(
+-  config: Pick<Config, 'dshHome' | 'projectRootMarkers' | 'instructionFileCandidates' | 'localInstructionFileCandidates'>,
++  config: Pick<Config, 'dshHome' | 'projectRootMarkers' | 'instructionFileCandidates' | 'localInstructionFileCandidates' | 'candidateSelection'>,
+ ): ResolvedDiscoveryConfig {
+   return {
+     dshHome: resolveDshHome(config.dshHome),
+@@ -113,6 +125,7 @@ export function resolveDiscoveryConfig(
+       config.localInstructionFileCandidates,
+       DEFAULT_LOCAL_INSTRUCTION_FILE_CANDIDATES,
+     ),
++    candidateSelection: config.candidateSelection ?? 'all',
+   }
+ }
+ 
+diff --git a/packages/context/agent-instructions/src/files.ts b/packages/context/agent-instructions/src/files.ts
+index 291619a983..c584fa91ba 100644
+--- a/packages/context/agent-instructions/src/files.ts
++++ b/packages/context/agent-instructions/src/files.ts
+@@ -52,6 +52,7 @@ interface DiscoverOptions {
+   projectRootMarkers?: string[]
+   instructionFileCandidates?: string[]
+   localInstructionFileCandidates?: string[]
++  candidateSelection?: 'all' | 'first'
+   projectRoot?: string
+   signal?: AbortSignal
+ }
+@@ -356,6 +357,61 @@ async function readBounded(
+   }
+ }
+ 
++/** Load at most one confirmed non-empty project instruction per directory. */
++async function loadFirstBaselineInstructionFiles(
++  options: LoadOptions,
++  config: ResolvedConfig,
++  fileSystem?: FileSystem,
++): Promise<LoadedInstructionFile[]> {
++  const loaded: LoadedInstructionFile[] = []
++  const loadProbed = async (
++    file: DiscoveredInstructionFile,
++  ): Promise<LoadedInstructionFile | 'unavailable' | 'empty'> => {
++    const content = await readBounded(file, config.maxSourceBytes, fileSystem, options.signal)
++    if (content === undefined) return 'unavailable'
++    if (content.trim().length === 0) return 'empty'
++    return {
++      absolutePath: file.absolutePath,
++      displayPath: file.displayPath,
++      content,
++      ...file.version === undefined ? {} : { version: file.version },
++    }
++  }
++
++  const userGlobal = join(config.dshHome, USER_GLOBAL_FILE)
++  const userGlobalProbe = await statFile(userGlobal, fileSystem, options.signal)
++  if (userGlobalProbe.kind === 'present') {
++    const result = await loadProbed({
++      absolutePath: userGlobal,
++      displayPath: userGlobalDisplayPath(config.dshHome),
++      ...userGlobalProbe.info,
++    })
++    if (result !== 'unavailable' && result !== 'empty') loaded.push(result)
++  }
++
++  const cwd = resolve(options.cwd)
++  const projectRoot = options.projectRoot
++    ?? await findProjectRoot(cwd, config.projectRootMarkers, fileSystem, options.signal)
++  const candidates = [...config.instructionFileCandidates, ...config.localInstructionFileCandidates]
++  for (const dir of ancestorChain(projectRoot, cwd)) {
++    for (const candidate of candidates) {
++      const absolutePath = join(dir, candidate)
++      const probe = await statFile(absolutePath, fileSystem, options.signal)
++      if (probe.kind === 'absent') continue
++      if (probe.kind === 'unavailable') break
++      const result = await loadProbed({
++        absolutePath,
++        displayPath: relativeDisplay(projectRoot, absolutePath),
++        ...probe.info,
++      })
++      if (result === 'empty') continue
++      if (result !== 'unavailable') loaded.push(result)
++      break
++    }
++  }
++  return loaded
++}
++
+ /**
+  * Drop later candidates whose trimmed content duplicates an earlier sibling in
+  * the same directory. Different directories never collapse even when identical;
+@@ -409,17 +465,21 @@ export async function loadBaselineInstructionSet(
+   const config = resolveConfig(options)
+   if (config.maxBytes <= 0 || !Number.isFinite(config.maxBytes)) return undefined
+   if (config.maxSourceBytes <= 0 || !Number.isFinite(config.maxSourceBytes)) return undefined
+-  const discovered = await discoverInstructionFiles(options, fileSystem)
+   const loaded: LoadedInstructionFile[] = []
+-  for (const file of discovered) {
+-    const content = await readBounded(file, config.maxSourceBytes, fileSystem, options.signal)
+-    if (content !== undefined) {
+-      loaded.push({
+-        absolutePath: file.absolutePath,
+-        displayPath: file.displayPath,
+-        content,
+-        ...file.version === undefined ? {} : { version: file.version },
+-      })
++  if (config.candidateSelection === 'first') {
++    loaded.push(...await loadFirstBaselineInstructionFiles(options, config, fileSystem))
++  } else {
++    const discovered = await discoverInstructionFiles(options, fileSystem)
++    for (const file of discovered) {
++      const content = await readBounded(file, config.maxSourceBytes, fileSystem, options.signal)
++      if (content !== undefined) {
++        loaded.push({
++          absolutePath: file.absolutePath,
++          displayPath: file.displayPath,
++          content,
++          ...file.version === undefined ? {} : { version: file.version },
++        })
++      }
+     }
+   }
+   const deduped = dedupInstructionFilesByDirectory(loaded)
+diff --git a/packages/context/agent-instructions/src/index.ts b/packages/context/agent-instructions/src/index.ts
+index 1b00960adb..c542b3b9e7 100644
+--- a/packages/context/agent-instructions/src/index.ts
++++ b/packages/context/agent-instructions/src/index.ts
+@@ -67,10 +67,8 @@ function sameContextPayload(left: UserMessage, right: UserMessage): boolean {
+     && isDeepStrictEqual(left.source, right.source)
+ }
+ 
+-const FILE_TOUCH_TOOL_NAMES = new Set(['read', 'write', 'edit'])
+-
+-function filePathFromExecution(exec: ToolExecution): string | undefined {
+-  if (!FILE_TOUCH_TOOL_NAMES.has(exec.name)) return undefined
++function filePathFromExecution(exec: ToolExecution, toolNames: ReadonlySet<string>): string | undefined {
++  if (!toolNames.has(exec.name)) return undefined
+   if (typeof exec.arguments !== 'object' || exec.arguments === null) return undefined
+   if (!('file_path' in exec.arguments) || typeof exec.arguments.file_path !== 'string') return undefined
+   const filePath = exec.arguments.file_path.trim()
+@@ -79,6 +77,7 @@ function filePathFromExecution(exec: ToolExecution): string | undefined {
+ 
+ export function apply(ctx: Context, config: Config): void {
+   const resolved: ResolvedConfig = resolveConfig(config)
++  const fileTouchToolNames = new Set(resolved.fileTouchToolNames)
+   const instructionVersions: InstructionVersionCache = new WeakMap()
+   const baselinePreparations = new WeakMap<Session, {
+     identity: string
+@@ -351,7 +350,7 @@ export function apply(ctx: Context, config: Config): void {
+     const touches = executionTouches.get(exec.token) ?? []
+     executionTouches.delete(exec.token)
+     if (!result.isError && exec.agent !== undefined && !exec.signal.aborted) {
+-      const ownPath = filePathFromExecution(exec)
++      const ownPath = filePathFromExecution(exec, fileTouchToolNames)
+       if (ownPath !== undefined) touches.push({ agent: exec.agent, path: ownPath })
+     }
+     if (exec.parent !== undefined) {
+diff --git a/packages/context/agent-instructions/src/state.ts b/packages/context/agent-instructions/src/state.ts
+index 30e700eda5..5cfd11d8c7 100644
+--- a/packages/context/agent-instructions/src/state.ts
++++ b/packages/context/agent-instructions/src/state.ts
+@@ -345,6 +345,106 @@ export async function reconcileInstructionContext(
+     const versionUpdateStart = versionUpdates.length
+     const addedAbsolutePaths: string[] = []
+     const priorVersions = new Map(probedScopes.map(scope => [scope, versions.get(scope)]))
++    if (resolved.candidateSelection === 'first' && directory !== USER_GLOBAL_DIRECTORY) {
++      let unavailable = false
++      let winner: {
++        file: LoadedInstructionFile
++        scope: string
++        state: InstructionVersionState
++        unchanged: boolean
++      } | undefined
++      for (const scope of probedScopes) {
++        const previous = effective.get(scope)
++        const probe = await probeScopeInstruction(scope, projectRoot, resolved, fileSystem, options.signal)
++        if (probe.kind === 'unavailable') {
++          unavailable = true
++          break
++        }
++        if (probe.kind === 'absent') {
++          versions.delete(scope)
++          continue
++        }
++        const { file: probedFile } = probe
++        const cached = versions.get(scope)
++        if (
++          cached !== undefined
++          && cached.path === probedFile.displayPath
++          && cached.version === probedFile.version
++          && previous !== undefined
++          && previous.action !== 'remove'
++          && previous.path === cached.path
++          && previous.digest === cached.digest
++        ) {
++          winner = {
++            file: {
++              absolutePath: probedFile.absolutePath,
++              displayPath: probedFile.displayPath,
++              content: '',
++              version: probedFile.version,
++            },
++            scope,
++            state: cached,
++            unchanged: true,
++          }
++          break
++        }
++        const file = await readScopeInstruction(probedFile, resolved.maxSourceBytes, fileSystem, options.signal)
++        if (file === undefined) {
++          unavailable = true
++          break
++        }
++        if (file.content.trim().length === 0) {
++          versions.delete(scope)
++          continue
++        }
++        const digest = instructionContentSha1(file.content)
++        const state: InstructionVersionState = {
++          path: file.displayPath,
++          version: probedFile.version,
++          digest,
++          trimmedDigest: trimmedInstructionDigest(file.content),
++        }
++        winner = {
++          file,
++          scope,
++          state,
++          unchanged: previous !== undefined
++            && previous.action !== 'remove'
++            && previous.path === file.displayPath
++            && previous.digest === digest,
++        }
++        break
++      }
++      if (unavailable) {
++        items.splice(itemStart)
++        versionUpdates.splice(versionUpdateStart)
++        for (const [candidateScope, prior] of priorVersions) {
++          if (prior === undefined) versions.delete(candidateScope)
++          else versions.set(candidateScope, prior)
++        }
++        continue
++      }
++      for (const scope of probedScopes) {
++        if (scope === winner?.scope) continue
++        const previous = effective.get(scope)
++        if (previous === undefined || previous.action === 'remove') versions.delete(scope)
++        else pushRemoval(scope, previous.path)
++      }
++      if (winner === undefined) continue
++      versions.set(winner.scope, winner.state)
++      if (winner.unchanged) continue
++      const previous = effective.get(winner.scope)
++      const action = previous === undefined || previous.action === 'remove' ? 'set' : 'replace'
++      const change: AgentInstructionChange = {
++        action,
++        scope: winner.scope,
++        path: winner.file.displayPath,
++        digest: winner.state.digest,
++      }
++      items.push({ change, file: winner.file })
++      versionUpdates.push({ change, state: winner.state })
++      continue
++    }
+     for (const scope of probedScopes) {
+       const previous = effective.get(scope)
+       const probe = await probeScopeInstruction(scope, projectRoot, resolved, fileSystem, options.signal)
+diff --git a/packages/context/agent-instructions/tests/agent-instructions.spec.ts b/packages/context/agent-instructions/tests/agent-instructions.spec.ts
+index 4fc60bc78d..bd73b3fd3c 100644
+--- a/packages/context/agent-instructions/tests/agent-instructions.spec.ts
++++ b/packages/context/agent-instructions/tests/agent-instructions.spec.ts
+@@ -554,6 +554,42 @@ describe('workspace context instruction discovery', () => {
+     }
+   })
+ 
++  it('loads only the first non-empty configured candidate per directory when selected', async () => {
++    const root = await tempRepo()
++    const home = await tempRepo()
++    try {
++      await mkdir(join(root, '.git'), { recursive: true })
++      await write(join(root, 'CLAUDE.md'), 'claude rule')
++      await write(join(root, 'AGENTS.md'), 'agents rule')
++
++      const first = await loadBaselineInstructions({
++        cwd: root,
++        dshHome: home,
++        maxBytes: 65536,
++        candidateSelection: 'first',
++        instructionFileCandidates: ['CLAUDE.md', 'AGENTS.md'],
++        localInstructionFileCandidates: [],
++      })
++      expect(first?.text).toContain('claude rule')
++      expect(first?.text).not.toContain('agents rule')
++
++      await write(join(root, 'CLAUDE.md'), '  \n')
++      const fallback = await loadBaselineInstructions({
++        cwd: root,
++        dshHome: home,
++        maxBytes: 65536,
++        candidateSelection: 'first',
++        instructionFileCandidates: ['CLAUDE.md', 'AGENTS.md'],
++        localInstructionFileCandidates: [],
++      })
++      expect(fallback?.text).toContain('agents rule')
++      expect(fallback?.text).not.toContain('claude rule')
++    } finally {
++      await rm(root, { recursive: true, force: true })
++      await rm(home, { recursive: true, force: true })
++    }
++  })
++
+   it('ignores configured instruction candidates that are not same-directory file names', async () => {
+     const root = await tempRepo()
+     const home = await tempRepo()
+@@ -2488,6 +2524,56 @@ describe('workspace context request injection', () => {
+ })
+ 
+ describe('dynamic nested workspace context injection', () => {
++  it('uses configured canonical touch names and atomically switches the first candidate winner', async () => {
++    const root = await tempRepo()
++    const home = await tempRepo()
++    const ctx = new Context()
++    try {
++      await mkdir(join(root, '.git'), { recursive: true })
++      await write(join(root, 'pkg/CLAUDE.md'), 'claude nested rule')
++      await write(join(root, 'pkg/AGENTS.md'), 'agents nested rule')
++      await mountWorkspaceContext(ctx, {
++        dshHome: home,
++        maxBytes: 65536,
++        candidateSelection: 'first',
++        instructionFileCandidates: ['CLAUDE.md', 'AGENTS.md'],
++        localInstructionFileCandidates: [],
++        fileTouchToolNames: ['Read', 'Write', 'Edit'],
++      })
++      const agent = stubAgent(root)
++      const emitRead = (callId: string) => ctx.emit('tools/result', stubToolExecution({
++        signal: testToolSignal,
++        callId: CallId(callId),
++        name: 'Read',
++        arguments: { file_path: join('pkg', 'file.txt') },
++        agent,
++      }), { content: [{ type: 'text', text: 'ok' }], isError: false, value: null })
++
++      emitRead('canonical-read-first-winner')
++      const first = await syncedWorkspaceContext(ctx, agent)
++      expect(first.source).toMatchObject({
++        changes: [{ action: 'set', scope: sk('pkg', 'CLAUDE.md'), path: join('pkg', 'CLAUDE.md') }],
++      })
++      expect(blocksText(first.content)).toContain('claude nested rule')
++      await appendAdditionalContexts(ctx, agent)
++
++      await rm(join(root, 'pkg/CLAUDE.md'))
++      emitRead('canonical-read-fallback-winner')
++      const replacement = await syncedWorkspaceContext(ctx, agent)
++      expect(replacement.source).toMatchObject({
++        changes: [
++          { action: 'remove', scope: sk('pkg', 'CLAUDE.md'), path: join('pkg', 'CLAUDE.md') },
++          { action: 'set', scope: sk('pkg', 'AGENTS.md'), path: join('pkg', 'AGENTS.md') },
++        ],
++      })
++      expect(blocksText(replacement.content)).toContain('agents nested rule')
++    } finally {
++      await ctx.fiber.dispose()
++      await rm(root, { recursive: true, force: true })
++      await rm(home, { recursive: true, force: true })
++    }
++  })
++
+   it('projects a successful file result even when a later sibling aborts the step', async () => {
+     const root = await tempRepo()
+     const home = await tempRepo()

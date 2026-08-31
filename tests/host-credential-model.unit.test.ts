@@ -12,6 +12,7 @@ import {
   HostDeepSeekLlmAdapter,
   HostDeepSeekModelAuthority,
   HOST_DEEPSEEK_BASE_URL,
+  normalizeSystemContext,
   validateHostDeepSeekProfile,
   type PrimarySessionBackendRequest,
 } from "@myagents-dsh/runtime-product";
@@ -56,6 +57,7 @@ const sessionRequest = (signal = controller.signal): PrimarySessionBackendReques
   }),
   runtimeSessionId: "runtime-session-1",
   signal,
+  systemContext: normalizeSystemContext({ systemPrompt: "fixture" }),
   workspace: Object.freeze({
     identity: "workspace-v1",
     path: "/fixture/workspace",

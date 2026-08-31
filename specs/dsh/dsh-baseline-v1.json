@@ -17,8 +17,8 @@
     "registry": "https://registry.npmjs.org",
     "dshRelease": "0.1.1-rc.2",
     "sourceAssociation": "unproven",
-    "directPackageCount": 49,
-    "productionPackageCount": 314
+    "directPackageCount": 50,
+    "productionPackageCount": 315
   },
   "publicCompileFixture": "packages/product-profile/src/dsh-public-surface.compile.ts",
   "publicSeams": [
@@ -94,6 +94,23 @@
         "AgentHandle",
         "CreateAgentOptions",
         "ResumeAgentOptions"
+      ]
+    },
+    {
+      "id": "agent-instructions",
+      "package": "@deepseek-ai/dsh-agent-instructions",
+      "importPath": "@deepseek-ai/dsh-agent-instructions",
+      "classification": "provider",
+      "batchUse": [
+        "B3-W1"
+      ],
+      "values": [
+        "Config",
+        "apply",
+        "name"
+      ],
+      "types": [
+        "Config"
       ]
     },
     {
@@ -783,7 +800,7 @@
     },
     {
       "license": "MIT",
-      "count": 214
+      "count": 215
     },
     {
       "license": "Python-2.0",
@@ -1159,6 +1176,16 @@
       "version": "0.1.1-rc.2",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-agent/-/dsh-agent-0.1.1-rc.2.tgz",
       "integrity": "sha512-cC7lnJe7JgPFcreNXxcxLMxQd78LnpVO9ZXROjZsGRQN1zGH6i/DduI892F1am85IfzzO+XTxMwwUHmfwamb0g==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-agent-instructions",
+      "name": "@deepseek-ai/dsh-agent-instructions",
+      "version": "0.1.1-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-agent-instructions/-/dsh-agent-instructions-0.1.1-rc.2.tgz",
+      "integrity": "sha512-a3xKsOsqmlWZaGxXfIr97ULJlXSI1clZt0DCSjCaULW4Z1y67DzG8w/kRsb+/Z1pksRMrJE7faLMC/i9S5Y2Ew==",
       "license": "MIT",
       "direct": true,
       "optional": false

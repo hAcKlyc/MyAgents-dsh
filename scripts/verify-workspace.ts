@@ -218,6 +218,7 @@ const expectedWorkspaceFiles = new Map([
     "src/host-web-search.ts",
     "src/index.ts",
     "src/primary-session.ts",
+    "src/system-context.ts",
     "src/utility.ts",
   ]],
   ["packages/task-graph", ["src/index.ts", "src/runtime.ts"]],

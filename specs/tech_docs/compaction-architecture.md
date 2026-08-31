@@ -244,7 +244,7 @@ This telemetry is diagnostic metadata, not a Session event or native transcript.
 
 ## 12. Current acceptance evidence
 
-The currently accepted source authority is official DSH `0.1.1-rc.2` at commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`. Patch 0007 participates in the seven-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.8ac244cc6367`.
+The currently accepted source authority is official DSH `0.1.1-rc.2` at commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`. Patch 0007 participates in the nine-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.56f8f4241def`.
 
 The exact accepted DSH artifact, Runtime, native campaign, dynamic campaign, and Batch 3 handoff identities are recorded in the [implemented compaction RFC](../prd/tech_rfc_0.1_context_compaction.md#10-implemented-evidence), [project plan](../prd/plan.md), release ledgers, and generated manifests. Do not copy those identities into a new release without rebuilding them.
 
@@ -302,5 +302,4 @@ The official `ToolResultPruner`, the Session append-only replacement model, auto
 
 The patch file is source-controlled in this repository. Build tooling verifies the exact official commit/tree and original file blobs, freezes the ordered patch bytes, applies them to an isolated temporary source worktree, compiles the required upstream package graph, and packs content-addressed installable packages. It does not modify the sibling official checkout, registry tarballs, or `node_modules` in place.
 
-The Runtime consumes only the recorded patched artifact. The complete seven-patch inventory and per-patch retirement rules live in [`seam-decisions-v1.json`](../dsh/seam-decisions-v1.json) and the upstream-maintenance skill's [patch inventory](../../.agents/skills/dsh-upstream-maintenance/references/patch-inventory.md). Compaction maintainers must review patch 0007 in the context of that complete ordered series because any earlier patch change also changes the executable artifact identity.
-
+The Runtime consumes only the recorded patched artifact. The complete nine-patch inventory and per-patch retirement rules live in [`seam-decisions-v1.json`](../dsh/seam-decisions-v1.json) and the upstream-maintenance skill's [patch inventory](../../.agents/skills/dsh-upstream-maintenance/references/patch-inventory.md). Compaction maintainers must review patch 0007 in the context of that complete ordered series because any patch change also changes the executable artifact identity.
