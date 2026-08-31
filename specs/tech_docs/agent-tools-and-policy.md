@@ -65,6 +65,12 @@ The generated `specs/contracts/canonical-tools-v1.md` is a readable projection, 
 
 Operation birth freezes the catalog, permission, component, workspace, execution-environment, plan, and origin revisions used by every call. Tool concurrency follows the contract: independent reads may run in parallel, canonical-path mutations serialize, and Session-state changes use Session-level admission. Cancellation flows through the same owned call record and cleanup path.
 
+Grep accepts either a file or directory. Search authorization records stable filesystem identity;
+normal child creation, Edit publication, or mtime changes inside an authorized directory do not
+invalidate a parallel search, while replacement of the authorized root/file still does. Bash uses
+the explicit non-secret environment admitted at Session birth. A TaskStop signal settles a
+background Bash job as `aborted`; a natural non-zero exit settles as `failed`.
+
 `Write` and `Edit` can participate in root managed-file checkpoints. Bash, Host tools, MCP, child work, and external filesystem effects are deliberately outside that rollback claim.
 
 ## 5. Plan, task and child work

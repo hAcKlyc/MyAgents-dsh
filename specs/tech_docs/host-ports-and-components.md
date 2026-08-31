@@ -60,6 +60,11 @@ Host Skill source content is never rewritten. Only its effective catalog/provide
 
 MCP and canonical web access use composition-owned network policy, DNS/address checks, origin confinement, redirect policy, byte/concurrency/deadline limits, cancellation, and bounded cleanup. Attachment bytes cross an explicit lease port, become read-only staged files under the composition-selected root, and release once on every success/failure/cancel path. Browser or Host-local backing paths are never projected into the Runtime conversation.
 
+A failed Host tool may include one protocol-bounded text block beside its stable error code. The
+canonical Web bridge preserves that message as the individual tool failure, so quota, credential,
+connect and policy failures remain actionable. The Host never copies raw upstream bodies or
+credentials into that block or into logs.
+
 ## 6. Change rules
 
 - Ordinary Host input remains declarative; executable plugins are installed only by trusted Runtime builders.

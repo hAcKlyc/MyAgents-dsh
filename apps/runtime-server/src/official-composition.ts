@@ -123,6 +123,20 @@ const resolveExecutable = async (name: string, target: PlatformTarget): Promise<
 const sha256File = async (path: string): Promise<string> =>
   createHash("sha256").update(await readFile(path)).digest("hex");
 
+const PROCESS_ENVIRONMENT_KEYS = Object.freeze([
+  "PATH", "HOME", "USER", "LOGNAME", "SHELL",
+  "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USERNAME",
+  "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TMPDIR", "TEMP", "TMP",
+  "SYSTEMROOT", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT",
+]);
+
+const processEnvironmentValues = (): Readonly<Record<string, string>> => Object.freeze(
+  Object.fromEntries(PROCESS_ENVIRONMENT_KEYS.flatMap((key) => {
+    const value = process.env[key];
+    return typeof value === "string" && value.length > 0 ? [[key, value]] : [];
+  })),
+);
+
 const processAuthority = async (target: PlatformTarget) => {
   const platform = selectPlatformAdapter(target);
   if (target !== resolveRuntimePlatformTarget(process.platform, process.arch)) {
@@ -140,7 +154,7 @@ const processAuthority = async (target: PlatformTarget) => {
     ]);
     return Object.freeze({
       allowedCommandRefs: Object.freeze(["bundled-bash", "bundled-node", "bundled-ripgrep"]),
-      environmentValues: Object.freeze({}),
+      environmentValues: processEnvironmentValues(),
       executablePaths: Object.freeze({ bash, bundledNode, ripgrep }),
       executableRefs: Object.freeze({
         bash: "bundled-bash",
@@ -165,7 +179,7 @@ const processAuthority = async (target: PlatformTarget) => {
     allowedCommandRefs: Object.freeze([
       "bundled-bash", "bundled-node", "bundled-powershell", "bundled-ripgrep",
     ]),
-    environmentValues: Object.freeze({}),
+    environmentValues: processEnvironmentValues(),
     executablePaths: Object.freeze({ bash, bundledNode, ripgrep, windowsPowerShell }),
     executableRefs: Object.freeze({
       bash: "bundled-bash",

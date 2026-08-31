@@ -530,7 +530,7 @@ class ProductSearchProvider implements WebSearchProvider {
       assertSearchDomainPolicy(results, store.allowedDomains, store.blockedDomains, "WebSearch result");
     } catch (error) {
       if (store.context.signal.aborted) throw store.context.signal.reason;
-      if (error instanceof ProductToolError && error.code === "web_search_unavailable") throw error;
+      if (error instanceof ProductToolError) throw error;
       throw new ProductToolError("provider_search_failed", "WebSearch Provider returned an invalid result", { cause: error });
     } finally {
       release();

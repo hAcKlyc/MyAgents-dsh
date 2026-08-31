@@ -11,6 +11,16 @@ type JsonObject = Record<string, unknown>;
 
 const COMPONENT_GENERATION_ID = "myagents-host-canonical-web-v1";
 
+const failedHostMessage = (value: unknown, fallback: string): string => {
+  if (!Array.isArray(value)) return fallback;
+  const first = value.find((item) => item !== null && typeof item === "object"
+    && !Array.isArray(item) && (item as JsonObject).type === "text"
+    && typeof (item as JsonObject).text === "string") as JsonObject | undefined;
+  return typeof first?.text === "string" && first.text.length > 0
+    ? first.text.slice(0, 4_096)
+    : fallback;
+};
+
 const exactStructuredResult = (value: unknown, tool: CanonicalHostWebTool): JsonObject => {
   if (value === null || typeof value !== "object" || Array.isArray(value) || isProxy(value)) {
     throw new ProductToolError("host_web_failed", `${tool} Host result is not a plain object`);
@@ -72,7 +82,7 @@ export const executeHostCanonicalWebTool = (
     if (result.state !== "succeeded") {
       throw new ProductToolError(
         result.code ?? "host_web_failed",
-        `${tool} Host reverse request did not succeed`,
+        failedHostMessage(result.content, `${tool} Host reverse request did not succeed`),
       );
     }
     if (result.structured === undefined) {

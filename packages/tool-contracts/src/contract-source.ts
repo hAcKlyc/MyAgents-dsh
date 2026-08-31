@@ -405,7 +405,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Grep: contract({
     name: "Grep",
-    description: "Searches file content with the artifact-pinned ripgrep executable. Supports content, file-name, and count modes without invoking a shell.",
+    description: "Searches file content with the artifact-pinned ripgrep executable. The optional path may name a file or directory. Supports content, file-name, and count modes without invoking a shell.",
     inputSchema: strictObject({
       pattern: Type.String({ minLength: 1, maxLength: 65_536 }),
       path: Type.Optional(boundedPath),

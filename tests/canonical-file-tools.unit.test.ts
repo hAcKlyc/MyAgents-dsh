@@ -969,6 +969,30 @@ describe("canonical filesystem tools", () => {
     });
     expect(state.searchWorkdirs.at(-1)).toBe(join(state.workspace, "nested"));
 
+    state.setSearchResult(Object.freeze({
+      durationMs: 1,
+      exitCode: 0,
+      stderr: "",
+      stdout: JSON.stringify({
+        type: "match",
+        data: {
+          path: { text: "match.ts" },
+          line_number: 1,
+          lines: { text: "fixture\n" },
+        },
+      }),
+    }));
+    await expect(state.execute("Grep", {
+      path: "nested/match.ts",
+      pattern: "fixture",
+      output_mode: "content",
+    })).resolves.toMatchObject({
+      isError: false,
+      value: { records: [{ path: "nested/match.ts", line: 1, text: "fixture" }] },
+    });
+    expect(state.searchWorkdirs.at(-1)).toBe(join(state.workspace, "nested"));
+    expect(state.searchCommands.at(-1)).toContain("match.ts");
+
     await expect(state.execute("Glob", { pattern: "   " })).resolves.toMatchObject({
       isError: true,
       error: { info: { code: "invalid_pattern" } },

@@ -2,7 +2,7 @@
 
 # Canonical tool contract and DSH reuse projection
 
-Contract SHA-256: `2182af7d88c9bced6c8e76ee61be8018de002c4f222626dd6716f236b468e066`
+Contract SHA-256: `36fc628d9375211b93203003232d67deec6d4f6733766a2d34f8e9cfea2789b9`
 
 | Tool | Concurrency | Side effect | Permission | Checkpoint | Public DSH reuse | Product owner |
 | --- | --- | --- | --- | --- | --- | --- |

@@ -6,7 +6,7 @@
     "packages/protocol/generated/protocol-meta.json",
     "packages/product-profile/manifests/batch-1-candidate-profile-v1.json"
   ],
-  "contractSha256": "2182af7d88c9bced6c8e76ee61be8018de002c4f222626dd6716f236b468e066",
+  "contractSha256": "36fc628d9375211b93203003232d67deec6d4f6733766a2d34f8e9cfea2789b9",
   "generator": "scripts/generate-tool-contracts.ts",
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
@@ -20,13 +20,13 @@
     "stockModelDefinitionCount": 0
   },
   "outputs": {
-    "canonical-tool-contracts-v1.json": "2182af7d88c9bced6c8e76ee61be8018de002c4f222626dd6716f236b468e066",
-    "canonical-tools-v1.md": "afe98d5aaa29fccb1c6c619d45f4bb93a95e15b79170e5446751d5a0cdd17551",
-    "canonical-tools.generated.ts": "3f12e3921d61803608ebbda46c629171c4136d0352b0a033bfaa1134a728b5b2",
-    "catalog-fixtures-v1.json": "9e526f7799cba4e827485810a02bf3f19ebe845622ad5e083b5c292689ebef8e",
-    "dsh-reuse-matrix-v1.json": "164a19a80d44371b71be9bf56b518aa7677560fcb2080b23b793556a2a3306cb",
-    "tool-catalog.schema.json": "2f6667e86a9c5fd51e42420fd6d1ef02aa7274a02d1819f8874f04204be2729b",
-    "tool-contract-meta.json": "b8b9ceb10599a32a817088008dd5fd0f9f634481481367dc57d030a064c32604"
+    "canonical-tool-contracts-v1.json": "36fc628d9375211b93203003232d67deec6d4f6733766a2d34f8e9cfea2789b9",
+    "canonical-tools-v1.md": "f463ecf454b3aea37b30a089336ec4c7eb3d08dc8333080d01a9227f05c635ff",
+    "canonical-tools.generated.ts": "f34d2db8951d0cb094abd71c518626b332e10f3883264c3c7e575b673a53a070",
+    "catalog-fixtures-v1.json": "385ac5fafbf1112db494fc379d5f56b5870294105e26f0f92c34eb71a521b5d0",
+    "dsh-reuse-matrix-v1.json": "63a827279a959e36d607185c29b669109884b28511cbb1c64d3015714dd39db8",
+    "tool-catalog.schema.json": "a3ab8f4c97b3edc1615720e6dd13fdcb6d219f4eab9a134c9f8fc2f2d3bcdc54",
+    "tool-contract-meta.json": "4af92728b47d9c2181c86fe1be68e067b72ec0a49c08874a57ca4ce1aff566e3"
   },
   "profile": "canonical-agent-experience-v1",
   "source": {
@@ -52,7 +52,7 @@
     "EnterPlanMode": "c7e2086759b14b3c6db40a7dfd95934ab152bf547ca2824bc8071f7093a6d60e",
     "ExitPlanMode": "83e3ff67a5ee4c37f74d94772e39f084897d0dc6fad57da715412c83177d212c",
     "Glob": "e79552254b95814520b0241ba63fd683f26cf51161b67742bcd867591c56f68a",
-    "Grep": "86623b51c368634e42ee6ce508c559e4e79cd48eeddaff479c0022292f6815ef",
+    "Grep": "249712b19283b0a151d9b36cd4f930b8ee5aab65e15f508594ecc7de967a4930",
     "Read": "55e2d64f5e3c5279c1ff805d0fef091f64741627e0f4a0ba243b843340d347b4",
     "SendMessage": "78c04af3578a2fc42ae2767f8141df64a04eaca5e44d2da55f33c3da9fa91f73",
     "Skill": "a43e9355096068e2f1d903391f118ed06103a992f8228a92f709a242d471e063",

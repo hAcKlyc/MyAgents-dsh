@@ -158,6 +158,15 @@ export interface LocalDirectoryAuthority {
   readonly version: string;
 }
 
+export interface LocalSearchTargetAuthority {
+  readonly argument: string;
+  readonly authorizationTarget: FsTarget;
+  readonly identity: string;
+  readonly root: FsTarget;
+  readonly rootIdentity: string;
+  readonly type: "directory" | "file";
+}
+
 export interface LocalAttachmentStagingFile {
   readonly path: string;
   readonly sha256: string;
@@ -313,6 +322,39 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     const relative = this.pathValue.relative(this.targetPath(parent), this.targetPath(child));
     return relative === "" || (!relative.startsWith(`..${this.pathValue.sep}`)
       && relative !== ".." && !this.pathValue.isAbsolute(relative));
+  }
+
+  async captureSearchTarget(
+    target: FsTarget,
+    allowFile: boolean,
+    signal: AbortSignal,
+  ): Promise<LocalSearchTargetAuthority> {
+    abortError(signal);
+    const path = this.targetPath(target);
+    const info = await lstat(path).catch((error: unknown) =>
+      fsError(error, "search target is unavailable"));
+    if (info.isSymbolicLink() || (!info.isDirectory() && !(allowFile && info.isFile()))) {
+      throw new FsError("search target is not a readable file or directory", "FS_NOT_FOUND");
+    }
+    const root = info.isDirectory()
+      ? target
+      : await this.resolve(this.pathValue.dirname(path), { signal });
+    const rootInfo = info.isDirectory()
+      ? info
+      : await lstat(this.targetPath(root)).catch((error: unknown) =>
+        fsError(error, "search root is unavailable"));
+    if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) {
+      throw new FsError("search root is not a readable directory", "FS_NOT_FOUND");
+    }
+    abortError(signal);
+    return Object.freeze({
+      argument: info.isDirectory() ? "." : this.pathValue.basename(path),
+      authorizationTarget: target,
+      identity: directoryIdentityOf(info),
+      root,
+      rootIdentity: directoryIdentityOf(rootInfo),
+      type: info.isDirectory() ? "directory" : "file",
+    });
   }
 
   override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
@@ -1463,9 +1505,13 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     if (!this.adapterValue.samePath(target.displayPath, path)) {
       throw new FsError("workspace identity differs from its canonical authority", "FS_STALE_VERSION");
     }
-    const info = await this.stat(target, signal);
-    if (info?.type !== "directory") throw new FsError("workspace is unavailable", "FS_NOT_FOUND");
-    return Object.freeze({ target, version: String(info.version) });
+    const info = await lstat(this.targetPath(target)).catch((error: unknown) =>
+      fsError(error, "workspace is unavailable"));
+    if (!info.isDirectory() || info.isSymbolicLink()) {
+      throw new FsError("workspace is unavailable", "FS_NOT_FOUND");
+    }
+    abortError(signal);
+    return Object.freeze({ target, identity: directoryIdentityOf(info) });
   }
 
   private async revalidateWorkspace(
@@ -1476,7 +1522,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     const current = await this.captureWorkspace(path, signal);
     if (current.target.targetKey !== authority.target.targetKey
       || current.target.displayPath !== authority.target.displayPath
-      || current.version !== authority.version) {
+      || current.identity !== authority.identity) {
       throw new FsError("workspace identity changed after authorization", "FS_STALE_VERSION");
     }
   }

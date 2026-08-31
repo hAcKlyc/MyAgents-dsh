@@ -9,6 +9,7 @@ import {
   CANONICAL_TOOL_CONTRACTS,
 } from "@myagents-dsh/tool-contracts";
 import {
+  ProductToolError,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
 import {
@@ -704,6 +705,30 @@ describe("safe Web Providers and canonical Web tools", () => {
     await expect(Promise.all(admitted)).resolves.toSatisfy((outcomes: readonly unknown[]) =>
       outcomes.every((outcome) => !(outcome as { isError: boolean }).isError));
     expect(run).toHaveBeenCalledTimes(36);
+    await harness.context.fiber.dispose();
+  });
+
+  it("preserves an actionable Host WebSearch failure", async () => {
+    const harness = await createWebHarness({
+      search: Object.freeze({
+        available: () => true,
+        credentialRef: "credential-ref-v1",
+        policyRef: policy.policyRef,
+        providerId: "approved-search",
+        run: () => Promise.reject(new ProductToolError(
+          "provider_search_failed",
+          "Zhipu WebSearch has no available search resource package or balance",
+        )),
+      }),
+    });
+
+    await expect(harness.execute("WebSearch", { query: "quota check" })).resolves.toMatchObject({
+      isError: true,
+      error: {
+        message: "Zhipu WebSearch has no available search resource package or balance",
+        info: { code: "provider_search_failed" },
+      },
+    });
     await harness.context.fiber.dispose();
   });
 

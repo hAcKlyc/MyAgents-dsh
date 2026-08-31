@@ -24,6 +24,7 @@ import {
   LocalWorkspaceFileSystem,
   requireLocalWorkspaceFileSystem,
   type LocalDirectoryEntry,
+  type LocalSearchTargetAuthority,
 } from "./local-filesystem.js";
 
 export interface AttachmentPublicationRequest {
@@ -184,10 +185,7 @@ interface RipgrepLineRecord {
   readonly text: string;
 }
 
-interface SearchRootAuthority {
-  readonly target: FsTarget;
-  readonly version: string;
-}
+type SearchRootAuthority = LocalSearchTargetAuthority;
 
 const ripgrepText = (value: unknown, description: string): string => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -680,7 +678,7 @@ export class CanonicalFileTools extends Service {
       const rootBefore = await this.#searchRoot(ctx, product, "Glob", args.path as string | undefined);
       await ctx.productTools.authorize(product, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.Glob.permissionClass,
-        target: rootBefore.target.displayPath,
+        target: rootBefore.authorizationTarget.displayPath,
         tool: "Glob",
       });
       const root = await this.#revalidateSearchRoot(
@@ -702,7 +700,7 @@ export class CanonicalFileTools extends Service {
       else command.splice(separator, 0, "--null");
       const result = await ctx.productProcesses.runSearch(
         product,
-        root,
+        Object.freeze({ target: root.root, identity: root.rootIdentity }),
         "Glob",
         command,
         8 * 1_024 * 1_024,
@@ -719,7 +717,7 @@ export class CanonicalFileTools extends Service {
       const filenames: string[] = [];
       const seen = new Set<string>();
       for (const value of raw) {
-        const path = await this.#searchResultPath(ctx, product, root.target, value);
+        const path = await this.#searchResultPath(ctx, product, root.root, value);
         if (seen.has(path)) continue;
         seen.add(path);
         if (filenames.length < 100) filenames.push(path);
@@ -740,7 +738,7 @@ export class CanonicalFileTools extends Service {
       const rootBefore = await this.#searchRoot(ctx, product, "Grep", args.path as string | undefined);
       await ctx.productTools.authorize(product, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.Grep.permissionClass,
-        target: rootBefore.target.displayPath,
+        target: rootBefore.authorizationTarget.displayPath,
         tool: "Grep",
       });
       const root = await this.#revalidateSearchRoot(
@@ -754,7 +752,7 @@ export class CanonicalFileTools extends Service {
       try {
         base = buildGrepCommand(parseGrepArgs({
           pattern: args.pattern as string,
-          path: ".",
+          path: root.argument,
           ...(args.glob === undefined ? {} : { include: args.glob as string }),
         }));
       } catch (error) {
@@ -785,7 +783,7 @@ export class CanonicalFileTools extends Service {
         : [...base.slice(0, separator), ...options, ...base.slice(separator)];
       const result = await ctx.productProcesses.runSearch(
         product,
-        root,
+        Object.freeze({ target: root.root, identity: root.rootIdentity }),
         "Grep",
         command,
         8 * 1_024 * 1_024,
@@ -800,7 +798,7 @@ export class CanonicalFileTools extends Service {
       const transport = parseRipgrepLines(result.stdout);
       const pathRecords = await Promise.all(transport.map(async (record) => Object.freeze({
         ...record,
-        path: await this.#searchResultPath(ctx, product, root.target, record.path),
+        path: await this.#searchResultPath(ctx, product, root.root, record.path),
       })));
       const matches = pathRecords.filter((record) => !record.context);
       let allRecords: JsonObject[];
@@ -874,7 +872,7 @@ export class CanonicalFileTools extends Service {
       const rootBefore = await this.#searchRoot(ctx, product, "ls", requestedPath);
       await ctx.productTools.authorize(product, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.ls.permissionClass,
-        target: rootBefore.target.displayPath,
+        target: rootBefore.authorizationTarget.displayPath,
         tool: "ls",
       });
       const rootAuthority = await this.#revalidateSearchRoot(
@@ -884,7 +882,7 @@ export class CanonicalFileTools extends Service {
         requestedPath,
         rootBefore,
       );
-      const info = await ctx.fs.stat(rootAuthority.target, product.signal);
+      const info = await ctx.fs.stat(rootAuthority.root, product.signal);
       if (info?.type !== "directory") {
         throw new ProductToolError("directory_not_found", "ls target is not a readable directory");
       }
@@ -893,7 +891,10 @@ export class CanonicalFileTools extends Service {
       }
       let entries: readonly LocalDirectoryEntry[];
       try {
-        entries = await ctx.fs.listDirectoryEntries(rootAuthority, 100_001, product.signal);
+        entries = await ctx.fs.listDirectoryEntries({
+          target: rootAuthority.root,
+          version: String(info.version),
+        }, 100_001, product.signal);
       } catch (error) {
         product.signal.throwIfAborted();
         throw new ProductToolError("list_failed", "bounded directory enumeration failed", { cause: error });
@@ -946,11 +947,24 @@ export class CanonicalFileTools extends Service {
       if (ctx.fs.contains(allowed, target)) contained = true;
     }
     if (!contained) throw new ProductToolError("path_denied", `${tool} root is outside allowed read roots`);
-    const info = await ctx.fs.stat(target, product.signal);
-    if (info?.type !== "directory") {
-      throw new ProductToolError("directory_not_found", `${tool} root is not a readable directory`);
+    const local = requireLocalWorkspaceFileSystem(ctx.fs);
+    try {
+      const authority = await local.captureSearchTarget(target, tool === "Grep", product.signal);
+      if (tool !== "Grep" && authority.type !== "directory") {
+        throw new ProductToolError("directory_not_found", `${tool} root is not a readable directory`);
+      }
+      return authority;
+    } catch (error) {
+      product.signal.throwIfAborted();
+      if (error instanceof ProductToolError) throw error;
+      throw new ProductToolError(
+        tool === "Grep" ? "path_denied" : "directory_not_found",
+        tool === "Grep"
+          ? "Grep path is not a readable file or directory"
+          : `${tool} root is not a readable directory`,
+        { cause: error },
+      );
     }
-    return Object.freeze({ target, version: String(info.version) });
   }
 
   async #revalidateSearchRoot(
@@ -961,9 +975,14 @@ export class CanonicalFileTools extends Service {
     before: SearchRootAuthority,
   ): Promise<SearchRootAuthority> {
     const after = await this.#searchRoot(ctx, product, tool, path);
-    if (after.target.targetKey !== before.target.targetKey
-      || after.target.displayPath !== before.target.displayPath
-      || after.version !== before.version) {
+    if (after.authorizationTarget.targetKey !== before.authorizationTarget.targetKey
+      || after.authorizationTarget.displayPath !== before.authorizationTarget.displayPath
+      || after.root.targetKey !== before.root.targetKey
+      || after.root.displayPath !== before.root.displayPath
+      || after.argument !== before.argument
+      || after.identity !== before.identity
+      || after.rootIdentity !== before.rootIdentity
+      || after.type !== before.type) {
       throw new ProductToolError("path_denied", `${tool} root changed during authorization`);
     }
     return after;

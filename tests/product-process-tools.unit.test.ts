@@ -576,7 +576,8 @@ describe("canonical process tools", () => {
     expect(state.context.jobs.list(state.agent)).toMatchObject([{ id: "bash-1", status: "running" }]);
     expect((await stat(value.outputPath)).mode & 0o777).toBe(0o400);
     expect(state.context.jobs.kill(value.taskId, state.agent, "fixture-stop")).toBe("requested");
-    await state.context.jobs.wait(value.taskId, 1_000, state.agent);
+    await expect(state.context.jobs.wait(value.taskId, 1_000, state.agent))
+      .resolves.toMatchObject({ status: "killed" });
     expect(await readFile(value.outputPath, "utf8")).toBe("background output\n");
     expect((await stat(value.outputPath)).mode & 0o777).toBe(0o400);
     expect(state.fakeSubprocess.specs).toHaveLength(1);
@@ -981,6 +982,39 @@ describe("canonical process tools", () => {
     await rejection;
     expect(state.fakeSubprocess.specs).toHaveLength(0);
     expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
+    await state.context.fiber.dispose();
+  });
+
+  it("keeps directory searches valid while sibling files are edited", async () => {
+    const state = await harness();
+    const signal = new AbortController().signal;
+    const product = Object.freeze({
+      agent: state.agent,
+      birth: state.operation.birth,
+      callId: "search-directory-metadata",
+      catalog,
+      clientOperationId: state.operation.clientOperationId,
+      dshTurn: 1,
+      environment: state.environment,
+      origin: "root" as const,
+      productTurnId: state.operation.productTurnId,
+      rootCallId: "search-directory-metadata",
+      signal,
+    }) satisfies ProductToolContext;
+    const authority = await state.processIo.captureWorkspace(state.workspace, signal);
+    await writeFile(join(state.workspace, "edited-during-search.txt"), "changed\n");
+    state.fakeSubprocess.plans.push(Object.freeze({
+      outcome: Object.freeze({ exitCode: 0, signal: null }),
+      stderr: "",
+      stdout: "",
+    }));
+    await expect(state.context.productProcesses.runSearch(
+      product,
+      authority,
+      "Grep",
+      ["--files"],
+      1_024,
+    )).resolves.toMatchObject({ exitCode: 0 });
     await state.context.fiber.dispose();
   });
 

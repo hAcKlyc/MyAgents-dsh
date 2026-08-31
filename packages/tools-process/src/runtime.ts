@@ -78,7 +78,7 @@ export interface ProductProcessOutputFile {
 
 export interface ProductProcessWorkspaceAuthority {
   readonly target: FsTarget;
-  readonly version: string;
+  readonly identity: string;
 }
 
 export interface ProductProcessIoAuthority {
@@ -1033,7 +1033,11 @@ export class ProductProcessRuntime extends Service {
         return Object.freeze({
           detail: outcome.exitCode === null ? `signal: ${String(outcome.signal)}` : `exit code: ${outcome.exitCode}`,
           output: [retained.stdout, retained.stderr].filter((part) => part.length > 0).join("\n[stderr]\n"),
-          status: outcome.exitCode === 0 ? "completed" as const : "failed" as const,
+          status: outcome.exitCode === 0
+            ? "completed" as const
+            : outcome.exitCode === null || outcome.signal !== null
+              ? "killed" as const
+              : "failed" as const,
         });
       } catch (error) {
         process.kill();
