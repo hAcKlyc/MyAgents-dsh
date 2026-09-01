@@ -74,11 +74,10 @@ and retirement use this same ownership predicate, so a child report cannot be ac
 then rejected by the next cold or terminal fold.
 
 A fresh generation validates persisted operations before it publishes the replacement ProductWork
-primary. ProductWork therefore owns one synchronous candidate-root validation scope around that
-fold. The scope requires a pristine projection, accepts only the exact non-subagent resume
-candidate, and is cleared in `finally`; the message still needs the complete durable ProductWork
-creation/intent/Inbox proof. Outside that scope the predicate requires the published live primary.
-This lifecycle bridge is authority, not a fallback based on the source label.
+primary. The operation service supplies that candidate root Agent, and ProductWork rejects a
+subagent candidate before proving the complete durable creation/intent/Inbox lineage from the
+candidate's own Session. The proof deliberately does not depend on a warm ProductWork registry or
+live-primary publication. This is durable ownership, not a fallback based on the source label.
 ProductWork also passes its internal durable proof explicitly whenever it folds parent operations
 for child tool/model lineage or cold recovery. Calling the operation fold with its default
 no-owner predicate is correct only for consumers that truly do not own root-context messages.

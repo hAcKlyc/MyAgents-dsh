@@ -975,7 +975,6 @@ export class ProductWorkService extends Service {
   private messageBytes = 0;
   private messageSequence = 0;
   private nextModelRequest = 1;
-  private persistedRootContextOwner: Agent | undefined;
   private primary: Agent | undefined;
   private serial: Promise<void> = Promise.resolve();
   private workReservations = 0;
@@ -1491,22 +1490,6 @@ export class ProductWorkService extends Service {
       this.messageSequence = 0;
     }
     if (failure !== undefined) throw this.fence(failure);
-  }
-
-  withPersistedRootContextOwner<T>(agent: Agent, validate: () => T): T {
-    this.assertHealthy();
-    if (agent.session.header.origin === "subagent" || this.persistedRootContextOwner !== undefined
-      || this.primary !== undefined || this.initialization !== undefined
-      || this.byTask.size !== 0 || this.byAgent.size !== 0 || this.messages.size !== 0
-      || this.epochCount !== 0 || this.messageBytes !== 0 || this.messageSequence !== 0) {
-      throw this.fence(new Error("ProductWork persisted root ownership requires a pristine projection"));
-    }
-    this.persistedRootContextOwner = agent;
-    try {
-      return validate();
-    } finally {
-      this.persistedRootContextOwner = undefined;
-    }
   }
 
   prepareGenerationReplacement(agent: Agent): void {
@@ -2283,8 +2266,8 @@ export class ProductWorkService extends Service {
   }
 
   ownsRootContextMessage(agent: Agent, source: MessageSource | undefined, messageId: string): boolean {
-    const root = this.persistedRootContextOwner ?? this.safePrimary();
-    return agent === root && this.ownsPersistedRootContextMessage(agent, source, messageId);
+    return agent.session.header.origin !== "subagent"
+      && this.ownsPersistedRootContextMessage(agent, source, messageId);
   }
 
   private ownsPersistedRootContextMessage(
