@@ -3456,6 +3456,7 @@ childAdapter.enqueue({
 });
 childAdapter.enqueue({ kind: "await-abort" });
 adapter.enqueue({ kind: "complete", text: "background Agent admitted" });
+adapter.enqueue({ kind: "complete", text: "background Agent report reconciled" });
 await composition.context.sdkOperations.start({
   ...turnStartParams,
   clientOperationId: "artifact-background-agent-operation",
