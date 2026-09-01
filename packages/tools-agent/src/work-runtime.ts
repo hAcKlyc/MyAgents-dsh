@@ -1426,7 +1426,11 @@ export class ProductWorkService extends Service {
     if (allowedTools === undefined || mode === undefined) {
       throw new ProductToolError("tool_operation_denied", "child tool authority is incomplete");
     }
-    const matches = foldProductOperations(rootAgent.session.events, rootAgent.id).operations
+    const matches = foldProductOperations(
+      rootAgent.session.events,
+      rootAgent.id,
+      (source, messageId) => this.ownsPersistedRootContextMessage(rootAgent, source, messageId),
+    ).operations
       .filter((candidate) => candidate.clientOperationId === clientOperationId);
     const operation: ProductOperationRecord | undefined = matches[0];
     if (matches.length !== 1 || operation === undefined
@@ -1583,7 +1587,11 @@ export class ProductWorkService extends Service {
         "child model route differs from its ProductWork birth authority",
       );
     }
-    const operationMatches = foldProductOperations(primary.session.events, primary.id).operations
+    const operationMatches = foldProductOperations(
+      primary.session.events,
+      primary.id,
+      (source, messageId) => this.ownsPersistedRootContextMessage(primary, source, messageId),
+    ).operations
       .filter(({ clientOperationId }) => clientOperationId === authority.clientOperationId);
     const operation = operationMatches[0];
     if (operationMatches.length !== 1 || operation?.productTurnId !== authority.productTurnId
@@ -1784,7 +1792,11 @@ export class ProductWorkService extends Service {
   }
 
   private recoverableAgentCalls(root: Agent): ReadonlyMap<string, RecoverableAgentCallSeed> {
-    const operations = foldProductOperations(root.session.events, root.id).operations;
+    const operations = foldProductOperations(
+      root.session.events,
+      root.id,
+      (source, messageId) => this.ownsPersistedRootContextMessage(root, source, messageId),
+    ).operations;
     const rejected = new Set<string>();
     for (const event of root.session.events) {
       if (event.type !== "tool/result"
@@ -2272,7 +2284,15 @@ export class ProductWorkService extends Service {
 
   ownsRootContextMessage(agent: Agent, source: MessageSource | undefined, messageId: string): boolean {
     const root = this.persistedRootContextOwner ?? this.safePrimary();
-    if (agent !== root || source?.kind !== "subagent-report") return false;
+    return agent === root && this.ownsPersistedRootContextMessage(agent, source, messageId);
+  }
+
+  private ownsPersistedRootContextMessage(
+    agent: Agent,
+    source: MessageSource | undefined,
+    messageId: string,
+  ): boolean {
+    if (source?.kind !== "subagent-report") return false;
     try {
       const insertions = correlatedInboxMessages(agent.session.events, agent.id, "subagent-report")
         .filter((candidate) => candidate.id === messageId && candidate.sender === source.senderSessionId);

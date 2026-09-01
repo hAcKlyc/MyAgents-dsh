@@ -79,6 +79,9 @@ fold. The scope requires a pristine projection, accepts only the exact non-subag
 candidate, and is cleared in `finally`; the message still needs the complete durable ProductWork
 creation/intent/Inbox proof. Outside that scope the predicate requires the published live primary.
 This lifecycle bridge is authority, not a fallback based on the source label.
+ProductWork also passes its internal durable proof explicitly whenever it folds parent operations
+for child tool/model lineage or cold recovery. Calling the operation fold with its default
+no-owner predicate is correct only for consumers that truly do not own root-context messages.
 
 ## 6. Resume and recovery
 
