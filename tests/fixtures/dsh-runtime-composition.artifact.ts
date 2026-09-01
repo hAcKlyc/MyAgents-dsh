@@ -2540,6 +2540,10 @@ await waitUntil(
 );
 
 const approvalRuntimeContext = "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n"
+  + "Current workspace root:\n"
+  + `${fixtureWorkspace}\n\n`
+  + "Use this exact absolute path for file and search tools that require one. Bash already runs in this workspace. "
+  + "Do not infer access outside it.\n\n"
   + "Available Skills:\n"
   + "- fixture-audit — Audits the synthetic Runtime artifact and returns bounded evidence.\n"
   + "- release-audit — Audit one accepted Runtime component generation\n\n"
