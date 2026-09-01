@@ -2,9 +2,9 @@
 type: technical-architecture
 status: implemented
 module: compaction
-updated: 2026-08-29
-product_scope: ../prd/prd_0.1_context_compaction.md
-implementation_decision: ../prd/tech_rfc_0.1_context_compaction.md
+updated: 2026-09-02
+product_scope: ../../prd/prd_0.1_context_compaction.md
+implementation_decision: ../../prd/tech_rfc_0.1_context_compaction.md
 upstream_seam: DSH-SEAM-008
 ---
 
@@ -16,13 +16,20 @@ This document is the canonical maintenance guide for context compaction in MyAge
 
 Use the following authorities together:
 
-- the [P0 compaction PRD](../prd/prd_0.1_context_compaction.md) owns product behavior and acceptance;
-- the [P0 compaction RFC](../prd/tech_rfc_0.1_context_compaction.md) owns the accepted implementation decision;
-- [ADR 0008](../adr/0008-capacity-safe-compaction.md) owns the decision to patch the official engine instead of creating a product engine;
-- [`seam-decisions-v1.json`](../dsh/seam-decisions-v1.json) owns the exact patch order, hashes, source authority, evidence, and removal condition;
+- the [P0 compaction PRD](../../prd/prd_0.1_context_compaction.md) owns product behavior and acceptance;
+- the [P0 compaction RFC](../../prd/tech_rfc_0.1_context_compaction.md) owns the accepted implementation decision;
+- [ADR 0008](../../adr/0008-capacity-safe-compaction.md) owns the decision to patch the official engine instead of creating a product engine;
+- [`seam-decisions-v1.json`](../../dsh/seam-decisions-v1.json) owns the exact patch order, hashes, source authority, evidence, and removal condition;
 - code, tests, package manifests, locks, and artifact manifests own the exact installed and executable bytes.
 
 This document does not create another compaction policy owner. If it conflicts with executable evidence, fix the document and the higher-fidelity authority in the same reviewable change.
+
+### 1.1 Relationships
+
+- **Owns:** current automatic/explicit compaction composition, trigger/capacity policy, summary acceptance, durable transaction correlation and patch maintenance rule.
+- **Depends on:** DSH TokenMeter/pruner/BasicCompactionEngine, active Provider binding, DSH Session persistence and product operation quiescence.
+- **Consumed by:** AgentLoop context management, explicit compaction RPC, resume recovery, artifact acceptance and DSH upgrade adjudication.
+- **Does not own:** general Session mutation, Provider configuration, UI transcript, token pricing or release promotion.
 
 ## 2. Architectural conclusion
 
@@ -183,17 +190,22 @@ The summary is a continuation checkpoint, not a transcript. Prompt v2 requires e
 
 The prompt distinguishes verified work from plans, records corrections over stale assumptions, preserves exact identifiers and failures needed to continue, and removes obsolete next actions. It intentionally does not demand a complete historical transcript.
 
-The shallow validator rejects:
+The prompt asks for one `Next Action` item or an explicit `(none)`. The shallow structural validator
+does not enforce that semantic cardinality; after trimming heading/bullet markers it only requires
+the section to contain text. It rejects:
 
 - image output;
 - empty text;
 - missing, duplicate, or out-of-order required headings;
 - missing progress subheadings;
-- empty `Next Action` without an explicit `(none)`;
+- an empty `Next Action` section;
 - a checkpoint whose estimate exceeds the effective output cap;
-- a summary that does not shrink its selected source region.
 
-One structural failure may make one repair call. The repair request uses a fixed bounded correction instruction and the original source prefix; it does not feed the invalid summary back into the model. Provider errors, cancellation, image output, empty output, output-limit failures, and a second invalid result are not retried as repair.
+Region shrink is checked separately after structural acceptance and before replacement. One
+repairable structural failure—including empty text—may make one repair call. The repair request
+uses a fixed bounded correction instruction and the original source prefix; it does not feed the
+invalid summary back into the model. Provider errors, cancellation/abort, image output,
+output-limit failures, and a second invalid result bypass repair.
 
 Usage is aggregated across one or two calls. Durable provenance records the direct stream-call count while remaining backward-compatible with older events where absence means one call.
 
@@ -213,20 +225,30 @@ The summary and replacement become the current replay surface; the source events
 
 Automatic pressure permits the configured default `compactionRetries = 1`, meaning at most two semantic compaction attempts in one pressure pass when the result still does not converge below threshold. Provider overflow has its separate one-retry budget. Neither budget is a generic model retry policy.
 
-On restart, DSH reconstructs the visible surface from durable replacement facts. MyAgents-dsh reconstructs explicit-operation receipts and refuses duplicate, partial, reordered, or mismatched transactions. A crash does not authorize truncating the log or inventing success.
+On restart, DSH reconstructs the visible surface from durable replacement facts. MyAgents-dsh's
+`foldProductCompactions` validates receipt shape, sequence placement and duplicate
+`clientOperationId`. Exact correlation between a Product receipt and the DSH compaction
+transaction is revalidated when the same explicit `session/compact` operation is replayed; resume
+alone does not universally prove that correlation. A crash does not authorize truncating the log
+or inventing success.
 
 ## 10. Observability and security
 
 DSH durable compaction events remain the content-bearing transaction authority. Patch 0007 also emits process-local `compaction/telemetry` containing bounded scalar facts such as:
 
-- trigger, phase, status, stable error category, and duration;
+- trigger, `kind`, status, stable error category, and duration;
 - provider/model identity and resolved capacity numbers;
 - threshold, retain, pre/post token counts, and convergence;
 - pruned result count and character savings;
 - selected sequence range/count;
-- summary input estimate, output cap, call/repair count, and aggregate usage.
+- summary input estimate, output cap, `streamCalls`, `repairAttempts`, `inputTokens` and
+  `outputTokens`.
 
-This telemetry is diagnostic metadata, not a Session event or native transcript. It must never include prompt or summary text, model messages, reasoning, tool input/output, attachment bytes, credentials, or reverse-port payloads. Secret-canary scanning is part of packed and credential-backed evidence.
+Full aggregate usage remains in the durable compaction/summary facts rather than this scalar
+process-local telemetry. The telemetry is not a Session event or native transcript. It must never
+include prompt or summary text, model messages, reasoning, tool input/output, attachment bytes,
+credentials, or reverse-port payloads. Secret-canary scanning is part of packed and
+credential-backed evidence.
 
 ## 11. Failure behavior
 
@@ -246,7 +268,7 @@ This telemetry is diagnostic metadata, not a Session event or native transcript.
 
 The currently accepted source authority is official DSH `0.1.1-rc.2` at commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`. Patch 0007 participates in the nine-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.56f8f4241def`.
 
-The exact accepted DSH artifact, Runtime, native campaign, dynamic campaign, and Batch 3 handoff identities are recorded in the [implemented compaction RFC](../prd/tech_rfc_0.1_context_compaction.md#10-implemented-evidence), [project plan](../prd/plan.md), release ledgers, and generated manifests. Do not copy those identities into a new release without rebuilding them.
+The exact accepted DSH artifact, Runtime, native campaign, dynamic campaign, and Batch 3 handoff identities are recorded in the [implemented compaction RFC](../../prd/tech_rfc_0.1_context_compaction.md#10-implemented-evidence), [project plan](../../prd/plan.md), release ledgers, and generated manifests. Do not copy those identities into a new release without rebuilding them.
 
 Current executable coverage includes:
 
@@ -254,7 +276,8 @@ Current executable coverage includes:
 - estimator equality, range fit, no-call capacity failure, validation/repair, provenance, and telemetry tests in patched DSH source;
 - public package-root composition and packaged dependency-closure checks;
 - repeated compaction, restart equality, overflow, crash-boundary, concurrency, and secret-canary campaigns;
-- a credential-backed macOS arm64 continuity journey that completed eight automatic pressure compactions.
+- credential-backed native continuity journeys whose exact counts and identities are owned by
+  their release ledgers and immutable evidence.
 
 Windows and Linux remain `implementation-complete_pending-native-validation` until their exact native artifact campaigns pass.
 
@@ -276,7 +299,7 @@ These can be reconsidered only through product evidence and the existing DSH own
 
 ## 14. Official-update rule
 
-An official DSH update is not a normal package-version bump. It changes the source against which every accepted seam and patch was proven. For each entry in [`seam-decisions-v1.json`](../dsh/seam-decisions-v1.json), maintainers must compare executable semantics and classify the disposition:
+An official DSH update is not a normal package-version bump. It changes the source against which every accepted seam and patch was proven. For each entry in [`seam-decisions-v1.json`](../../dsh/seam-decisions-v1.json), maintainers must compare executable semantics and classify the disposition:
 
 - **retire** — official public APIs and tests now provide the complete required semantic, so remove the patch and its product dependency;
 - **reduce** — official DSH provides part of the semantic, so shrink the patch to the smallest still-missing behavior;
@@ -284,7 +307,7 @@ An official DSH update is not a normal package-version bump. It changes the sour
 
 Patch applicability alone is not evidence. Never use a fuzzy apply, never edit `node_modules`, and never preserve a patch merely because it still compiles. Update the source baseline, blob/digest registry, patch series, ADR status, upstream refresh report, artifact/profile manifests, Runtime, platform evidence, and integration handoff as one attributable chain. Old evidence remains historical evidence for old bytes only.
 
-Use the repository skill at [`.agents/skills/dsh-upstream-maintenance/SKILL.md`](../../.agents/skills/dsh-upstream-maintenance/SKILL.md) for the complete audit and rebuild workflow.
+Use the repository skill at [`.agents/skills/dsh-upstream-maintenance/SKILL.md`](../../../.agents/skills/dsh-upstream-maintenance/SKILL.md) for the complete audit and rebuild workflow.
 
 ## 15. Patch and official-modification boundary
 
@@ -294,7 +317,7 @@ Only one patch in the current series modifies compaction behavior:
 
 | Patch | Official packages touched | Added semantic | Removal condition |
 | --- | --- | --- | --- |
-| [`0007-capacity-safe-compaction.patch`](../dsh/patches/0007-capacity-safe-compaction.patch) | `dsh-token-meter`, `dsh-compaction`, `dsh-compaction-basic`, plus upstream tests | complete request estimation, summary-model output clamp/input budget, largest fitting balanced range, Prompt v2 validation/one repair, call provenance, and content-free telemetry | an installed DSH release exposes equivalent tested request estimation and capacity-safe structured compaction semantics |
+| [`0007-capacity-safe-compaction.patch`](../../dsh/patches/0007-capacity-safe-compaction.patch) | `dsh-token-meter`, `dsh-compaction`, `dsh-compaction-basic`, plus upstream tests | complete request estimation, summary-model output clamp/input budget, largest fitting balanced range, Prompt v2 validation/one repair, call provenance, and content-free telemetry | an installed DSH release exposes equivalent tested request estimation and capacity-safe structured compaction semantics |
 
 The official `ToolResultPruner`, the Session append-only replacement model, automatic pressure/overflow hooks, basic range/transaction engine, retry budgets, and manual compaction lifecycle are reused rather than copied. MyAgents-dsh changes only composition, bounded system guidance, explicit-operation correlation/receipt, packaging, and evidence around that official graph.
 
@@ -302,4 +325,4 @@ The official `ToolResultPruner`, the Session append-only replacement model, auto
 
 The patch file is source-controlled in this repository. Build tooling verifies the exact official commit/tree and original file blobs, freezes the ordered patch bytes, applies them to an isolated temporary source worktree, compiles the required upstream package graph, and packs content-addressed installable packages. It does not modify the sibling official checkout, registry tarballs, or `node_modules` in place.
 
-The Runtime consumes only the recorded patched artifact. The complete nine-patch inventory and per-patch retirement rules live in [`seam-decisions-v1.json`](../dsh/seam-decisions-v1.json) and the upstream-maintenance skill's [patch inventory](../../.agents/skills/dsh-upstream-maintenance/references/patch-inventory.md). Compaction maintainers must review patch 0007 in the context of that complete ordered series because any patch change also changes the executable artifact identity.
+The Runtime consumes only the recorded patched artifact. The complete nine-patch inventory and per-patch retirement rules live in [`seam-decisions-v1.json`](../../dsh/seam-decisions-v1.json) and the upstream-maintenance skill's [patch inventory](../../../.agents/skills/dsh-upstream-maintenance/references/patch-inventory.md). Compaction maintainers must review patch 0007 in the context of that complete ordered series because any patch change also changes the executable artifact identity.

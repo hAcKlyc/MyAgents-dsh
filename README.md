@@ -57,7 +57,7 @@ The implemented Runtime provides:
 - DSH-owned automatic compaction using routed model context metadata, pressure preflight, output-budget clamping, tool-result pruning, durable summaries, and one overflow retry;
 - content-addressed artifacts, compatibility contracts, dynamic/native evidence, and a fail-closed Batch 3 handoff.
 
-See [Architecture](./specs/ARCHITECTURE.md) for ownership and data flow, and [Compaction module architecture](./specs/tech_docs/compaction-architecture.md) for the complete compaction strategy and patch boundary.
+See [Architecture](./specs/ARCHITECTURE.md) for ownership and data flow, and [Compaction module architecture](./specs/tech_docs/execution/compaction.md) for the complete compaction strategy and patch boundary.
 
 ## Use the Reference Web Host on macOS
 
@@ -112,7 +112,7 @@ On the new machine:
 ## Specifications
 
 - [Architecture](./specs/ARCHITECTURE.md)
-- [Runtime RPC protocol intent](./specs/tech_docs/runtime-protocol.md)
+- [Runtime RPC protocol intent](./specs/tech_docs/runtime/protocol.md)
 - [Development plan and current status](./specs/prd/plan.md)
 - [Versioned PRDs and technical RFCs](./specs/prd/README.md)
 - [Core-module technical guides](./specs/tech_docs/README.md)

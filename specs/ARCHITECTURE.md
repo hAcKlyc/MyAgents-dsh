@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: current
-updated: 2026-09-01
+updated: 2026-09-02
 project: MyAgents-dsh
 ---
 
@@ -17,18 +17,18 @@ The compatibility target is the versioned MyAgents Agent experience admitted by 
 
 ### 1.1 Current implementation and acceptance state
 
-This table is the architecture-level snapshot as of 2026-09-01. The active PRDs remain the acceptance authority.
+This table is the architecture-level snapshot as of 2026-09-02. The active PRDs remain the acceptance authority.
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
 | DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus nine isolated patches; the current 56-package artifact identity is bound by the accepted manifest |
-| Standalone Runtime and native RPC | Protocol `2.3.0` implementation and immutable handoff accepted | `2.3.0` retains the 40/7/4 vocabulary and adds non-secret generation-owned stdio MCP launch profiles while preserving `2.2.0` system context and `2.1.0` genesis rewind behavior |
+| Standalone Runtime and native RPC | Protocol `2.3.0` implementation and immutable handoff accepted; `2.4.0` source candidate unaccepted | The candidate retains the 40/7/4 vocabulary but changes `runtime/event` to typed Tool/status projections and adds a ready baseline; no `2.4.0` Runtime/native/handoff evidence is accepted yet |
 | Batch 3 integration handoff | Protocol `2.3.0` handoff ingested by MyAgents and accepted in a refreshed local unsigned macOS package | Handoff `999a80f5…` binds Runtime `4b3bc9de…` to source `1a77619…` and MyAgents commit `80df5aa4…`; deterministic Host/Runtime, final-App/updater verification, native restart/resume and lifecycle-soak gates pass |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
 | Platforms | All three implementations complete; product release promotion pending | Current handoff keeps all product claims pending; exact macOS Runtime native evidence passes, while signed MyAgents and native Windows/Linux acceptance remain open |
 
-The previous draft.2, draft.3, `2.0.0`, `2.1.0` and `2.2.0` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.3.0`. Every new consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
+The previous draft.2, draft.3, `2.0.0`, `2.1.0` and `2.2.0` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.3.0`. The accepted `2.3.0` handoff likewise cannot prove the current `2.4.0` source candidate. Every new consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
 
 ## 2. Product boundaries
 
@@ -90,20 +90,16 @@ The Reference Web Host is a third Host of the same contract. It may expose an ep
 
 ## 4. Layer model
 
-The detailed current implementation is divided into a small set of maintained module guides:
+The detailed current implementation is divided by authority and lifecycle domain. Domain indexes are navigation; the linked module guides own current subsystem explanation.
 
-| Module | Guide |
+| Domain | Module guides |
 | --- | --- |
-| Runtime process, composition, operation and RPC | [Runtime core and native RPC](./tech_docs/runtime-core-and-rpc.md) |
-| Protocol intent and lifecycle | [Runtime protocol](./tech_docs/runtime-protocol.md) |
-| Ordered Runtime/Host/project/Skill Prompt composition | [System context](./tech_docs/system-context.md) |
-| Canonical tools, policy, tasks and child work | [Agent tools and policy](./tech_docs/agent-tools-and-policy.md) |
-| Permission modes, exact rules, interactions and Host Plan control | [Permissions and interactions](./tech_docs/permissions-and-interactions.md) |
-| Reverse Host ports and declarative extensions | [Host ports and components](./tech_docs/host-ports-and-components.md) |
-| Durable Sessions, storage and mutations | [Sessions, persistence and mutations](./tech_docs/sessions-persistence-and-mutations.md) |
-| Automatic and explicit context compaction | [Compaction architecture](./tech_docs/compaction-architecture.md) |
-| Content-addressed artifacts and Host handoff | [Artifact verification and handoff](./tech_docs/artifact-verification-and-handoff.md) |
-| Local browser product | [Reference Web Host](./tech_docs/reference-web-host.md) |
+| Runtime control | [Process lifecycle and native RPC](./tech_docs/runtime/process-lifecycle-and-rpc.md), [Plugin composition](./tech_docs/runtime/plugin-composition.md), [Configuration and generations](./tech_docs/runtime/configuration-and-generations.md), [Operations/messages/turns](./tech_docs/runtime/operations-messages-and-turns.md), [Event projection/reconciliation](./tech_docs/runtime/event-projection-and-reconciliation.md), [Protocol](./tech_docs/runtime/protocol.md) |
+| Execution | [Model Provider plane](./tech_docs/execution/model-provider-plane.md), [Tool Runtime and policy](./tech_docs/execution/tool-runtime-and-policy.md), [Permissions/interactions/Plan](./tech_docs/execution/permissions-interactions-and-plan.md), [Child agents/background work](./tech_docs/execution/child-agents-and-background-work.md), [System context/instructions](./tech_docs/execution/system-context-and-instructions.md), [Compaction](./tech_docs/execution/compaction.md) |
+| Durable state | [Sessions/persistence/recovery](./tech_docs/state/sessions-persistence-and-recovery.md), [Mutations/checkpoints](./tech_docs/state/mutations-and-checkpoints.md) |
+| Host and platform boundaries | [Host reverse ports](./tech_docs/boundaries/host-reverse-ports.md), [Declarative components](./tech_docs/boundaries/declarative-components.md), [Platform/local execution](./tech_docs/boundaries/platform-and-local-execution.md), [Web/network](./tech_docs/boundaries/web-and-network.md) |
+| Assurance | [Compatibility/capability truth](./tech_docs/assurance/compatibility-and-capability-truth.md), [Security/trust boundaries](./tech_docs/assurance/security-and-trust-boundaries.md), [Verification/artifacts/handoff](./tech_docs/assurance/verification-artifacts-and-handoff.md) |
+| Host implementations | [Reference Web Host](./tech_docs/hosts/reference-web-host.md) |
 
 These guides own module-level current explanation. The sections below retain the cross-module boundaries and authority model.
 
@@ -155,7 +151,7 @@ MyAgents-owned plugins implement compatibility and product policy through DSH se
 - safe WebFetch and model/provider policy;
 - Host-backed attachment and declarative extension providers.
 
-TaskGraph is one of those product-owned plugins. Its canonical Task metadata is a bounded flat record of JSON scalar values; nested objects, arrays, and recursive schema references are not part of the model-visible contract. That portable schema is identical for Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses and is not rewritten per Provider. Root and child Agents share this one root-Session TaskGraph; mutation events record their exact Product tool origin. The exact rule and maintenance gate live in [Agent tools and policy](./tech_docs/agent-tools-and-policy.md).
+TaskGraph is one of those product-owned plugins. Its canonical Task metadata is a bounded flat record of JSON scalar values; nested objects, arrays, and recursive schema references are not part of the model-visible contract. That portable schema is identical for Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses and is not rewritten per Provider. Root and child Agents share this one root-Session TaskGraph; mutation events record their exact Product tool origin. The exact rule and maintenance gate live in [Agent tools and policy](./tech_docs/execution/tool-runtime-and-policy.md).
 
 The official model plane keeps two deliberately different adapter owners behind the one DSH `ctx.llm` service. `dsh-llm-deepseek` exclusively owns `deepseek-official` and its DeepSeek-native Files/search behavior. Exact public `dsh-llm-pi-ai@0.1.1-rc.2` is mounted dormant and owns only Host-declared Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes. Its required public `dsh-authorization@0.1.1-rc.2` peer is packaged explicitly but no authorization service/login flow is mounted or advertised. A root-only in-memory `HostSettingsProvider` atomically replaces its non-secret route document during Session/config admission; it is not a user configuration store. Request middleware holds one reverse-port credential scope across adapter iterator creation, each read and cleanup, and sanitizes both thrown failures and in-stream failure terminals before persistence. Failed admission restores the prior settings and credential binding.
 
@@ -191,7 +187,7 @@ remain durable DSH Session facts.
 
 The complete running strategy, official-vs-product ownership, persistence and
 recovery model, current core-patch boundary, and upstream-update procedure are
-maintained in [Compaction module architecture](./tech_docs/compaction-architecture.md).
+maintained in [Compaction module architecture](./tech_docs/execution/compaction.md).
 
 ### 4.6 Distribution and verification
 
@@ -386,7 +382,7 @@ Current DSH does not expose an authoritative pre-dispatch argument-rewrite seam.
 
 Plan-mode transition and policy ownership belongs to the single `ProductPlanService`. It records one product ownership fact adjacent to each public DSH `plan/mode` event and verifies the resulting state with `foldPlanMode`; it does not install the broader stock `PlanModeController`, whose stock tool, prompt, and pending-state ownership are not contract-equivalent. The service contributes one monotonic global `ctx.tools` guard derived from the canonical twenty-tool contract. Consequently definitions registered later through trusted Host/MCP composition are denied by default while plan mode is active unless they carry an exact current product-operation authority and declared plan policy. The operation that owns a durable transition may continue under the new revision, while older concurrent births fail closed.
 
-Permission mode is the fallback policy after hard guards, PermissionRequest Hooks, safe classes, tool-level auto-allow policy and unexpired exact rules. `default` asks, `acceptEdits` additionally auto-allows governed `Write`/`Edit`, `dontAsk` denies anything not pre-authorized without opening an interaction, and `bypassPermissions` skips permission prompting without bypassing hard policy. Exact rules and revocations are chained durable DSH Session facts. Same-operation calls for one exact tuple are single-flight; a durably settled `always_allow` adds only that operation-local exact proof while preserving the frozen birth for every unrelated decision. A replacement Runtime generation restores the Host-requested effective permission configuration before validating this durable chain; the restore is read-only and does not manufacture a new configuration event. Protocol `2.1.0` retains the Host list/add/revoke rule methods and quiescent `plan/apply`, and `interaction/respond` reports the actual post-effect revision. Both model-driven and Host-driven Plan transitions still use the one `ProductPlanService`. The complete ordering, security boundary and MyAgents mapping are maintained in [Permissions and interactions](./tech_docs/permissions-and-interactions.md).
+Permission mode is the fallback policy after hard guards, PermissionRequest Hooks, safe classes, tool-level auto-allow policy and unexpired exact rules. `default` asks, `acceptEdits` additionally auto-allows governed `Write`/`Edit`, `dontAsk` denies anything not pre-authorized without opening an interaction, and `bypassPermissions` skips permission prompting without bypassing hard policy. Exact rules and revocations are chained durable DSH Session facts. Same-operation calls for one exact tuple are single-flight; a durably settled `always_allow` adds only that operation-local exact proof while preserving the frozen birth for every unrelated decision. A replacement Runtime generation restores the Host-requested effective permission configuration before validating this durable chain; the restore is read-only and does not manufacture a new configuration event. Protocol `2.1.0` retains the Host list/add/revoke rule methods and quiescent `plan/apply`, and `interaction/respond` reports the actual post-effect revision. Both model-driven and Host-driven Plan transitions still use the one `ProductPlanService`. The complete ordering, security boundary and MyAgents mapping are maintained in [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md).
 
 ## 11. Declarative component lifecycle
 

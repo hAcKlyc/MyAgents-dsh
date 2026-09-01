@@ -1,20 +1,27 @@
 ---
 type: technical-architecture
 status: implemented
-module: agent-tools-and-policy
-updated: 2026-08-31
-product_scope: ../prd/prd_0.1_agent_runtime.md
+module: tool-runtime-and-policy
+updated: 2026-09-02
+product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decisions:
-  - ../prd/tech_rfc_0.1_agent_experience.md
-  - ../prd/tech_rfc_0.1_dsh_capability_map.md
-  - ../prd/tech_rfc_0.3_myagents_dsh_runtime_capability_closure.md
+  - ../../prd/tech_rfc_0.1_agent_experience.md
+  - ../../prd/tech_rfc_0.1_dsh_capability_map.md
+  - ../../prd/tech_rfc_0.3_myagents_dsh_runtime_capability_closure.md
 ---
 
-# Agent tools and policy
+# Tool runtime and policy
 
 ## 1. Purpose and authority
 
 This module owns the canonical Agent experience exposed by the official Runtime: tool definitions, visibility, policy, permissions, execution, output, plan/task state, and child/background work. Exact tool schemas and behavior fixtures come from `packages/tool-contracts/src/contract-source.ts` and generated artifacts.
+
+### 1.1 Relationships
+
+- **Owns:** canonical model-visible tool definitions, common execution context, schema validation, hard policy, origin/workspace checks and dispatch through DSH `ctx.tools`.
+- **Depends on:** operation birth authority, permissions/Hooks/Plan, canonical executor plugins, component contributions and DSH ToolRuntime.
+- **Consumed by:** root/child Agents, Host catalogs, compatibility manifests and tool acceptance campaigns.
+- **Does not own:** model routing, OS containment, Host Tool implementation, Session persistence or permission UI.
 
 ## 2. Single execution pipeline
 
@@ -22,20 +29,24 @@ All model-visible tools register into the one DSH `ctx.tools` registry and execu
 
 ```text
 visible definition + frozen operation scope
-  -> validate original input
+  -> parse and losslessly snapshot original model input
   -> governed PreToolUse transform
-  -> validate transformed input
-  -> workspace / plan / origin hard guards
-  -> permission and interaction
-  -> bounded DSH ToolRuntime dispatch
-  -> canonical output
-  -> PostToolUse transform
+  -> validate transformed input against the visible definition
+  -> commit authoritative assistant/tool-call representation
+  -> bounded DSH ToolRuntime scheduling and body dispatch
+       -> canonical input validation
+       -> operation / catalog / origin / Plan guards
+       -> tool-specific workspace / identity guards
+       -> permission, PermissionRequest Hook and interaction
+       -> current-authority revalidation and execution
+       -> canonical output validation
+  -> PostToolUse transform and transformed-output validation
   -> durable DSH tool result
 ```
 
 Visibility and permission remain separate. Hiding a tool does not authorize execution, and a visible definition still revalidates workspace, revision, mode, origin, and hard policy at the delayed execution boundary.
 
-The four permission modes, durable exact-rule lifecycle, blocking interaction path and Host-controlled Plan transition are specified in [Permissions and interactions](./permissions-and-interactions.md). This guide owns their placement in the tool pipeline; that guide owns their detailed policy semantics.
+The four permission modes, durable exact-rule lifecycle, blocking interaction path and Host-controlled Plan transition are specified in [Permissions and interactions](./permissions-interactions-and-plan.md). This guide owns their placement in the tool pipeline; that guide owns their detailed policy semantics.
 
 ## 3. Canonical catalog and owners
 
@@ -53,7 +64,7 @@ TaskCreate, TaskGet, TaskList, TaskUpdate
 | Contract generation and catalog digest | `packages/tool-contracts/` |
 | Common locking, policy and permission pipeline | `packages/tool-runtime-product/` |
 | Filesystem tools | `packages/tools-fs/` |
-| Process/search tools | `packages/tools-process/` |
+| Bash and managed process/search executor | `packages/tools-process/` |
 | Web tools | `packages/tools-web/` |
 | Questions and plan transitions | `packages/tools-interaction/` |
 | Skills, agents and background work tools | `packages/tools-agent/` |
@@ -89,7 +100,7 @@ This restriction is part of the canonical Runtime tool contract, not a Provider-
 
 Declarative Agent roles may specify `tools`, `disallowedTools` and `maxTurns`. Omitted `tools` means inheritance; the allowlist can only select definitions already visible to the parent, and the denylist is applied afterward. Invocation selects a committed role name and cannot add an ad-hoc tool list.
 
-Root, foreground-child and background-child calls all execute through the same `ctx.tools` definitions, `ProductToolRuntime`, Hooks and permission service. The child authority binds the exact child Session, parent Product operation, component generation, tool catalog and active child DSH turn. Product-owned durable state—permission rules, Plan and TaskGraph—remains on the root Product Session. Permission UI identifies the executing child while `always_allow` persists the existing exact rule on that root Session. Background interaction-only tools still fail their individual call; they do not terminate the child, root turn or unrelated components.
+Root, foreground-child and background-child calls all remain in the one DSH `ctx.tools`/ToolRuntime and PreToolUse/PostToolUse Hook pipeline. Inherited canonical and component tools also pass through `ProductToolRuntime`, Plan/origin guards and permission service. Two child-scope coordination definitions are deliberate exceptions: child `TaskStop` and `SendMessage` authorize through exact WorkRegistry lineage rather than Product permission/PermissionRequest/Plan. The child authority binds the exact child Session, parent Product operation, component generation, tool catalog and active child DSH turn. Product-owned durable state—permission rules, Plan and TaskGraph—remains on the root Product Session. Permission UI identifies the executing child while `always_allow` persists the shared root-Session rule. Background interaction-only tools still fail their individual call; they do not terminate the child, root turn or unrelated components.
 
 `SendMessage` accepts `parent` as a reserved alias from a child. Background output is published incrementally to its retained output before terminal settlement. Managed-file checkpoint coverage remains root-origin Write/Edit only even though child writes use the same governed file and permission path.
 

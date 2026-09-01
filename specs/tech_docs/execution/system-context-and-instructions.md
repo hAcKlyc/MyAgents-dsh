@@ -1,36 +1,47 @@
 ---
-type: module-guide
-status: current
-updated: 2026-09-01
-module: system-context
-product_scope: ../prd/prd_0.3_myagents_dsh_system_context.md
+type: technical-architecture
+status: implemented
+updated: 2026-09-02
+module: system-context-and-instructions
+product_scope: ../../prd/prd_0.3_myagents_dsh_system_context.md
 ---
 
-# System context composition
+# System context and instructions
 
-## Purpose
+## 1. Purpose and authority
 
 The Runtime assembles one DSH-native model context from independently owned contributions. It does
 not contain MyAgents business fields and it does not add a second Prompt engine. DSH remains the
 only assembler; the Host supplies bounded declarative data and product modules register their own
 capability truth.
 
-The stable-to-volatile order is:
+DSH assembles four distinct contribution planes for each model request:
 
-1. DSH/provider base behavior;
-2. Runtime operating contract and compaction continuity;
-3. Host global product contributions;
-4. root-Session Host contributions;
-5. initialized Runtime Workspace context, effective Skill catalog and other named Runtime contexts;
-6. DSH project-instruction user context;
-7. tools and conversation history.
+1. SystemPrompt sections, ordered numerically within that collection;
+2. Runtime contexts, independently ordered numerically within their collection;
+3. durable project-instruction and ordinary conversation messages;
+4. tool schemas, carried as a separate request field.
 
-Changing a later owner does not rebuild an earlier contribution. This is both the lifecycle model
-and the prefix-cache strategy; no Provider-specific cache API is exposed in the protocol.
+The Runtime does not enforce one global order across those planes or reserve Host order ranges. The
+MyAgents profile uses stable numeric conventions inside the relevant collection—for example Plan
+policy at system-section order `50`, Workspace context at `90`, Skill catalog at `105`, and child
+context at `120`—but those numbers do not move project instructions or tools into that same list.
+DSH reassembles the effective request after owner changes. Stable byte prefixes may still benefit
+Provider caching, but the protocol exposes no Provider-specific cache API and the Runtime makes no
+"later changes never rebuild earlier content" guarantee. The production profile also disables the
+optional generic harness-identity contribution.
 
-## Host contract and normalization
+## 2. Relationships
 
-Protocol `2.3.0` retains the optional `SystemContextSnapshot` added in `2.2.0` for `session/create`, `session/resume` and
+- **Owns:** ordered non-secret Host/project/Skill/child instruction contributions, normalization, scope and reconciliation into DSH SystemPrompt.
+- **Depends on:** Host system-context snapshot, DSH SystemPrompt/AgentInstructions, declarative Skills and canonical workspace identity.
+- **Consumed by:** root/child model requests, utility behavior, Host diagnostics and prompt-evidence campaigns.
+- **Does not own:** model messages, credentials, tool permissions, recursive Skill resources, product memory storage or exact protocol shapes.
+
+## 3. Host contract and normalization
+
+Source-candidate protocol `2.4.0` retains unchanged the optional `SystemContextSnapshot` added in
+`2.2.0` for `session/create`, `session/resume` and
 `config/apply`. A snapshot contains up to 32 ordered sections and 32 ordered contexts. Every entry
 has a Host id, numeric order, `global` or `root` scope, and literal UTF-8 Markdown text. Context text
 has a 512 KiB aggregate Runtime bound in addition to the generated per-field bounds.
@@ -42,13 +53,14 @@ has a 512 KiB aggregate Runtime bound in addition to the generated per-field bou
   section at order `0`;
 - ids are unique per contribution kind across both scopes;
 - arrays and entries are cloned, frozen and deterministically hashed;
-- Host bodies are registered with DSH literal interpolation disabled and namespaced as `host:<id>`.
+- Host bodies are registered with DSH literal interpolation disabled and namespaced as `host:<id>`;
+  the legacy `systemPrompt` compatibility path retains the historical `deployment:persona` name.
 
 The generic schema deliberately has no required `product`, `persona`, `session` or `workspace`
 field. A Host may evolve its product composition without a Runtime release. The focused PRD records
 the recommended MyAgents profile, but it is not a Runtime schema.
 
-## Scope and lifecycle owners
+## 4. Scope and lifecycle owners
 
 | Contribution | Owner | Lifetime |
 | --- | --- | --- |
@@ -58,22 +70,30 @@ the recommended MyAgents profile, but it is not a Runtime schema.
 | Host `root` sections/contexts | primary root Agent scope | current root Agent only |
 | effective Skill catalog | `ProductSkillService` | component generation and Agent visibility |
 | Plan policy | `ProductPlanService` | effective Plan mode |
+| user-global project instruction | DSH Agent Instructions plugin | DSH home discovery and Session instruction events |
 | primary project instructions | DSH Agent Instructions plugin | DSH Session events, filesystem touches, resume and compaction |
 | ProductWork persona | ProductWork child scope | fresh continuable child and cold resume |
 
-Global Host registration uses one small prepare/commit/rollback effect group. Create, resume or
-configuration failure restores the prior registrations; success disposes the old registrations
-only after the new Session/config state is accepted. Root registrations live in the scoped Agent
-setup and disappear with that Agent. An admitted operation keeps its frozen effective snapshot.
+Global Host registration uses one small prepare/commit/rollback effect group after operation
+quiescence. `prepare()` disposes the previous registration group and installs the candidate
+immediately; `commit()` records the candidate as current, while `rollback()` disposes it and
+re-registers the previous snapshot. Root registrations live in the scoped Agent setup and
+disappear with that Agent. An admitted operation keeps its frozen effective snapshot.
 
 The backend registers `runtime:workspace` as literal global context at order `90` before root
 admission. Its body contains the exact canonical Workspace root already accepted by initialize and
 tells absolute-path tools where to operate. It is intentionally not a stable system section and
 does not alter execution-environment roots, visibility or permission authority.
 
-## Project instruction policy
+## 5. Project instruction policy
 
-The official profile composes DSH Agent Instructions with first-non-empty selection per directory:
+DSH independently discovers the user-global `<DSH_HOME>/AGENTS.md` first. The official composition
+does not override `dshHome`, so DSH's normal local home resolution applies (typically
+`~/.dsh/AGENTS.md`). This user-owned file is outside the Workspace trust boundary, is not supplied
+by a Host snapshot, and follows the DSH Agent Instructions lifecycle.
+
+For the project root and nested project directories, the official profile composes DSH Agent
+Instructions with first-non-empty selection per directory:
 
 ```text
 CLAUDE.md
@@ -81,7 +101,8 @@ AGENTS.override.md
 AGENTS.md
 ```
 
-This is mutual exclusion at each root or nested directory, not one repository-wide winner. DSH
+This three-file choice is mutual exclusion at each project root or nested directory, not one
+repository-wide winner and not an exclusion of the user-global instruction. DSH
 owns baseline discovery, durable replacement/tombstone events, resume and compaction replay. A
 successful canonical `Read`, `Write` or `Edit` carrying `file_path` triggers its existing nested
 reconciliation. A transiently unavailable higher-priority candidate preserves the last-known-good
@@ -91,7 +112,7 @@ MyAgents may additionally freeze `.claude/CLAUDE.md` and deterministic `.claude/
 content into one Host context at create/resume/config apply. That companion supplement is separate
 from the primary per-directory winner and has no live watcher in Runtime.
 
-## Child and utility behavior
+## 6. Child and utility behavior
 
 Global Runtime and Host contributions, including the initialized Workspace root, are inherited through DSH scope. Root-scoped Host content is
 not. ProductWork continues to create a fresh, continuable child conversation with inherited
@@ -102,7 +123,7 @@ byte-identical.
 `utility/run` remains an explicitly isolated model call with its own `systemPrompt`; it is not a
 hidden root Session and does not consume the root snapshot.
 
-## Capability truth and observability
+## 7. Capability truth and observability
 
 The Skill catalog is derived synchronously from the frozen effective component generation and
 filtered through current Agent tool visibility. It lists only model-invocable effective Skills;
@@ -124,7 +145,7 @@ Production diagnostics may record contribution names, orders, scopes and SHA-256
 not record Prompt, project-instruction, Skill, transcript or tool-payload bodies. Deterministic
 tests use public DSH assembly to assert literal rendering, ordering, inheritance and rollback.
 
-## DSH seam boundary
+## 8. DSH seam boundary
 
 Two narrow pinned-source seams are carried as patches 0008 and 0009:
 
@@ -132,12 +153,12 @@ Two narrow pinned-source seams are carried as patches 0008 and 0009:
 - first-candidate Agent Instructions selection plus configurable filesystem-touch tool names.
 
 Defaults preserve upstream behavior. The patch inventory, exact blobs, tests and retirement rules
-remain governed by `specs/dsh/seam-decisions-v1.json` and ADRs 0009/0010. The credentialed
-eight-scenario campaign found automatic cache reads on all 75 model calls, including each
-scenario's first call, so this workstream explicitly declines a Provider-specific cache seam. A
-future seam requires new evidence of a material gap; it is not speculative follow-up work.
+remain governed by `specs/dsh/seam-decisions-v1.json` and ADRs 0009/0010. Credential-backed
+campaigns observe Provider cache behavior externally; their exact scenario/call counts belong to
+their sealed evidence and release ledger rather than this module guide. Current evidence does not
+justify a Provider-specific cache seam. A future seam requires new evidence of a material gap.
 
-## Maintenance map
+## 9. Architecture-correct maintenance map
 
 - wire authority: `packages/protocol/src/contract-source.ts`;
 - normalization/registration: `packages/runtime-product/src/system-context.ts`;

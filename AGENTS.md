@@ -8,10 +8,10 @@ Documentation governance starts at `specs/README.md`. That index owns document p
 
 1. Exact installed APIs, versions, scripts, and executable constraints: code, tests, `package.json`, and the lockfile.
 2. Current owners, process boundaries, lifecycle placement, and data flow: `specs/ARCHITECTURE.md`.
-3. Exact wire behavior: `packages/protocol/src/contract-source.ts`, with generated schema/client/fixtures as deterministic projections. `specs/tech_docs/runtime-protocol.md` records protocol intent and ownership, not competing exact shapes.
+3. Exact wire behavior: `packages/protocol/src/contract-source.ts`, with generated schema/client/fixtures as deterministic projections. `specs/tech_docs/runtime/protocol.md` records protocol intent and ownership, not competing exact shapes.
 4. Development entry, repository/migration relationships, milestone/Batch scope, status, and acceptance: `specs/prd/README.md`, `specs/prd/plan.md`, and the active `prd_<milestone>_*.md`. Paired `tech_rfc_<milestone>_*.md` files preserve implementation decisions but do not create independent product gates.
 5. Compatibility claims: versioned compatibility manifests and executable fixtures, never README prose alone.
-6. Implemented core-module maintenance guides: `specs/tech_docs/`; compaction architecture and evolution: `specs/tech_docs/compaction-architecture.md`.
+6. Implemented core-module maintenance guides: `specs/tech_docs/`; compaction architecture and evolution: `specs/tech_docs/execution/compaction.md`.
 
 ## Architecture invariants
 

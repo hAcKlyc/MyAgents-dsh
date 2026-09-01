@@ -4,7 +4,7 @@
 - Date: 2026-08-29
 - Scope: `B1-W4-A11`, `CP-P0-03` through `CP-P0-07`
 
-Current disposition (2026-08-29): retained as `DSH-SEAM-008` / patch 0007 in the current seven-patch artifact and documented by `specs/tech_docs/compaction-architecture.md`.
+Current disposition (2026-08-29): retained as `DSH-SEAM-008` / patch 0007 in the current seven-patch artifact and documented by `specs/tech_docs/execution/compaction.md`.
 
 ## Context
 

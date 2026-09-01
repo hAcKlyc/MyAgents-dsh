@@ -1,12 +1,12 @@
 ---
 type: protocol-specification
-status: current
-module: runtime-core-and-rpc
-version: 2.3.0
-updated: 2026-09-01
+status: source-candidate
+module: runtime-protocol
+version: 2.4.0
+updated: 2026-09-02
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
-product_scope: ../prd/prd_0.1_agent_runtime.md
-implementation_decision: ../prd/tech_rfc_0.1_runtime_rpc.md
+product_scope: ../../prd/prd_0.1_agent_runtime.md
+implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
 ---
 
 # Runtime protocol intent and ownership
@@ -17,30 +17,32 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Protocol `2.3.0` is the current source compatibility contract. It retains the complete `2.2.0`
-method vocabulary and structured system context and adds an optional bounded, non-secret stdio MCP
-launch policy to declarative extension snapshots. Protocol `2.0.0` remains the first frozen DSH
-contract, `2.1.0` the historical interaction-reliability baseline, and `2.2.0` the currently
-accepted system-context handoff until its replacement is built. Pre-Batch P0-3 created the canonical
-TypeBox source at `packages/protocol/src/contract-source.ts`, deterministic projections, and
-conformance tests. That source, generated digests, and tests are authoritative for exact shapes;
-this document remains the intent and ownership reference. If an illustrative shape below differs
-from generated code, generated code wins and this document must be repaired.
+Protocol `2.4.0` is the current source candidate. It keeps the complete `2.3.0` method/notification
+vocabulary but replaces several `runtime/event` payloads with typed Tool and status snapshots and
+adds a ready baseline before create/resume settlement. `2.0.0` is the first frozen DSH contract;
+`2.1.0` added interaction reliability, `2.2.0` structured system context and `2.3.0` declarative MCP
+launch policy. The TypeBox source, generated digests and tests are authoritative for exact shapes.
+No older Runtime artifact/handoff is evidence for `2.4.0`, and the current source is not accepted
+until Runtime projector/composition gates and a new artifact/evidence chain pass.
 
 ### 1.1 Compatibility versioning
 
-The active official Runtime source implements exactly `2.3.0`; a MyAgents Host must pin that exact
-version and the replacement artifact/compatibility digests before consuming it. The last accepted
-handoff remains exactly `2.2.0` until the `2.3.0` delivery gates pass. Versioning follows semantic
-compatibility:
-
-- `2.0.x` repairs implementation defects without changing required wire behavior;
-- `2.x.0` may add negotiated optional capabilities while retaining the complete `2.0.0` behavior for a Host that selects it; `2.1.0` adds the optional genesis boundary, `2.2.0` adds optional structured system context, and `2.3.0` adds optional extension-owned MCP launch policy;
-- `3.0.0` is required for a breaking method, required-field, lifecycle, persistence-meaning, or terminal-semantics change.
-
-A larger number is not evidence of compatibility by itself. A Runtime advertises a version range only when executable negotiation and conformance prove every version in that range; otherwise min and max remain the same exact version. Draft.1 through draft.3 evidence remains historical and must never be relabeled as the frozen release.
+The active source implements exactly `2.4.0`. Initialization accepts a Host range only when it
+contains `2.4.0`; it neither negotiates down nor emulates earlier behavior. Current version strings
+are exact wire-mode selectors, not a promise that a `2.x` Host accepts every later `2.x` payload.
+That distinction matters because `2.4.0` removes old event `detail` shapes and adds required typed
+fields; a `2.3.0` Host schema will reject them. A Runtime may advertise a wider range only after it
+implements and proves each mode. A larger number, generated schema or source test is not artifact
+acceptance, and historical draft/release evidence cannot be relabeled.
 
 This wire is independent of `@deepseek-ai/dsh-sdk-protocol`. The DSH SDK protocol's three request methods and four notifications are not a base version of this contract, and its JSON-RPC server is not loaded in the official profile. Both protocols may use NDJSON JSON-RPC and DSH event values without sharing method or lifecycle authority.
+
+### 1.2 Relationships
+
+- **Owns:** native protocol intent, direction, lifecycle, method/notification vocabulary, cancellation/error semantics and security requirements.
+- **Depends on:** the canonical TypeBox contract source, deterministic generated projections and implementing Runtime/Host state machines.
+- **Consumed by:** generated clients, Runtime RPC, MyAgents, Reference Web, future SDK and conformance/evidence builders.
+- **Does not own:** exact executable shapes when prose differs, DSH internal SDK protocol, Host UI behavior, implementation status or release acceptance.
 
 The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are normative.
 
@@ -198,7 +200,7 @@ Secret values MUST be represented only by reverse-port references.
 
 ```ts
 type InitializeResult = {
-  protocolVersion: "2.3.0"
+  protocolVersion: "2.4.0"
   runtimeVersion: string
   runtimeGeneration: string
   runtimeEngine: {
@@ -216,11 +218,12 @@ type InitializeResult = {
 }
 ```
 
-`runtimeEngine` replaces the Pi-specific `piVersion` field. `profileDigest` identifies the exact official plugin composition and canonical contract manifest.
+`runtimeEngine` replaces the Pi-specific `piVersion` field. `profileDigest` is the exact
+`BATCH1_CANDIDATE_PROFILE_SHA256`, not the foundation profile digest.
 
 ## 7. Method inventory
 
-The contract exposes 47 request methods: 40 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 51 names. Draft.2 added `session/delete/purge`; draft.3 added `plan/apply` plus `permission/rules/list`, `permission/rules/add`, and `permission/rules/revoke`; `2.0.0` froze that vocabulary and `2.1.0` through `2.3.0` leave it unchanged.
+The contract exposes 47 request methods: 40 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 51 names. Draft.2 added `session/delete/purge`; draft.3 added `plan/apply` plus `permission/rules/list`, `permission/rules/add`, and `permission/rules/revoke`; `2.0.0` froze that vocabulary and `2.1.0` through `2.4.0` leave it unchanged.
 
 ### 7.1 Host-to-Runtime methods: 40
 
@@ -262,7 +265,7 @@ host/interaction/cancel      Runtime -> Host
 
 ### 8.1 `runtime/status`
 
-Returns generation identity, initialization state, primary-session state, desired/effective configuration revisions, and bounded activity counts for root turns, queued inputs, child agents, tool/MCP calls, interactions, compactions, mutations, extension reconciliation, and utility runs.
+Returns generation identity, initialization state, primary-session state, desired/effective configuration revisions, and bounded activity fields. In the current implementation `rootTurns`, `queuedInputs`, `compactions`, and `utilityRuns` are connected to live owners. `childAgents`, `toolCalls`, `mcpCalls`, `interactions`, `mutations`, and `extensionReconciles` are reserved fields currently reported as zero and MUST NOT be used to decide quiescence.
 
 Session state is one of:
 
@@ -318,24 +321,32 @@ Ambiguous input, duplicate ids within one contribution kind across scopes, or ag
 overflow rejects before Session/config mutation. `utility/run` keeps its own isolated
 `systemPrompt` and is not a root Session.
 
-The result is:
+The result is a discriminated union. A ready binding carries history/head/config/catalog state; a recovery binding carries the exact recovery generation and unsettled mutation state instead of pretending those ready fields exist:
 
 ```ts
-type SessionBindingResult = {
-  state: "ready" | "recovery_required"
-  runtimeSessionId: string
-  historyFormat: "dsh-session-events-v1"
-  durableHead: {
-    sequence: number
-    stableBoundaryId?: string
+type SessionBindingResult =
+  | {
+      state: "ready"
+      runtimeSessionId: string
+      historyFormat: "dsh-session-events-v1"
+      durableHead: { sequence: number; stableBoundaryId?: string }
+      effectiveConfigRevision: string
+      toolCatalog: ToolCatalog
+      extensionCatalog: ExtensionCatalog
+    }
+  | {
+      state: "recovery_required"
+      runtimeSessionId: string
+      persistenceRef: string
+      reason: string
+      retryable: boolean
+      generation: unknown
+      unsettledMutations: unknown[]
   }
-  effectiveConfigRevision: string
-  toolCatalog: ToolCatalog
-  extensionCatalog: ExtensionCatalog
-}
 ```
 
 `durableHead` replaces Pi `nativeLeafId`. A stable boundary identifies a completed DSH turn/session prefix suitable for fork or rewind; it is opaque to Host.
+`recovery_required` is a binding outcome and permits only its exact recovery workflow until a later resume reaches `ready`.
 
 ### 9.2 `session/read`
 
@@ -519,13 +530,13 @@ type TurnTerminal =
 - `turn/message/cancel` cancels a queued message that has not reached a non-cancellable delivered state.
 - `turn/interrupt` cancels the active operation and optionally queued follow-ups.
 
-Queued states are:
+Method receipts use:
 
 ```text
 queued | admitted | delivered | cancelled
 ```
 
-All state changes emit identified `queued_message` events.
+The durable Product message event records `queued` or `cancelled`. Runtime projection emits those states and emits `delivered` when the DSH Inbox claim is durable; it does not emit an `admitted` `queued_message` event. `admitted` is principally an immediate method receipt after Inbox insertion.
 
 ## 12. Command, configuration, and extensions
 
@@ -548,7 +559,7 @@ type ApplyResult = {
 
 Configuration becomes effective according to the negotiated capability profile and never changes an admitted operation's frozen birth snapshot.
 
-Configuration may tighten initialize-frozen workspace, execution-environment, credential, network, process, and artifact authorities, but it cannot widen them within the process generation.
+The initialize-frozen execution environment is immutable for the entire process generation. `config/apply` carries its revision/digest only as an equality fence; any change—narrower or wider—requires a new Runtime generation.
 
 ### 12.3 Host Plan and exact permission policy
 
@@ -556,7 +567,7 @@ Configuration may tighten initialize-frozen workspace, execution-environment, cr
 
 `permission/rules/list` returns the effective mode, tool-level auto-allow list, latest policy revision and unexpired exact rules. `permission/rules/add` pre-authorizes one exact tool/class/target tuple; `permission/rules/revoke` appends a durable revocation. Mutations require the expected revision, flush through the Session durability Provider before success, and return retry-safe `already_effective` or `already_absent` where the requested end state already holds. These methods manage the same rules created by `always_allow`; they do not create a Host policy database.
 
-The complete semantics and security boundary are in [Permissions and interactions](./permissions-and-interactions.md).
+The complete semantics and security boundary are in [Permissions and interactions](../execution/permissions-interactions-and-plan.md).
 
 ### 12.4 Extension methods
 
@@ -592,6 +603,10 @@ governed tools; the directory tree is not serialized into the snapshot.
 Every structurally valid Skill, Command, Agent, Hook, MCP, and Host Tool is compatibility-optional inside the snapshot. A missing compiler returns `unsupported`; a prepare failure returns `degraded` with `<kind>_prepare_failed`; a non-ready prepared plan is omitted with its own status/reason; a deterministic contribution/catalog conflict omits the later component with `component_catalog_conflict`; and a locally reversible install failure returns `degraded` with `<kind>_install_failed`. The desired revision may therefore become effective with a smaller catalog, and the Host must consume and log the exact component receipts instead of treating catalog omission as a Session failure. Snapshot schema/digest/reference ambiguity, failed prepare cleanup, or failed install isolation rollback remains a generation-level failure.
 
 `extension/status`, `extension/catalog`, and `extension/reload` expose desired/effective and catalog state without making Host infer readiness from tool events.
+
+### 12.5 MCP credential reconciliation
+
+`credential/reconcile` carries no credential material. It reconciles one MCP server's credential revision under the exact extension digest and a `rotated`, `revoked`, or `logged_out` reason. The Runtime returns `applied`, `already_effective`, `restart_when_idle`, or a bounded `failed` result; Provider model credentials remain request-scoped and are not managed by this method.
 
 ## 13. Interaction and utility
 
@@ -715,7 +730,23 @@ warning
 
 `message_event` replaces Pi-oriented `message_entry`; it references the durable DSH event/message identity and may carry the originating queued-message ID.
 
-Tool start/update/end events are observations. The durable DSH `tool/result` event remains the conversation authority.
+Protocol `2.4.0` tightens these observation shapes:
+
+- `tool/start` requires `name` and raw bounded-wire `input` projected from durable `tool/call`;
+- `tool/update` has optional `progress`, but the current projector has no producer;
+- `tool/end` requires `{ state, isError, content, metadata? }`, where content is text or an
+  attachment-backed `image_ref`; durable DSH `tool/result` remains conversation authority;
+- `context` requires nonnegative `contextOccupiedTokens`; absence of reliable occupancy suppresses
+  this event, although the separate billing `usage` event may retain a nullable occupancy;
+- `plan` carries `{ mode, revision }`, `task_graph` a full revisioned task snapshot and `work` a full
+  child/background-work snapshot.
+
+When a root Session reaches ready, Runtime sends a bounded baseline in the order
+`context? -> task_graph -> work* -> plan` before returning the create/resume result. Subsequent
+status changes are incremental snapshots. The baseline is not transcript replay and its Runtime
+sequence is not a durable DSH sequence. Exact mapping, currently missing runtime evidence and known
+source-candidate bounds are documented in
+[Event projection and Host reconciliation](./event-projection-and-reconciliation.md).
 
 ## 16. Cancellation
 
@@ -736,7 +767,7 @@ Every domain failure has:
 - `retryable` boolean;
 - optional bounded, non-sensitive detail.
 
-Error classes include:
+Representative error prefixes include:
 
 ```text
 protocol_*          framing, version, schema, capacity
@@ -751,6 +782,8 @@ checkpoint_*        managed-file precondition and recovery
 mutation_*          prepare/commit/rollback/status
 host_*              reverse-port unavailable/stale/failure
 ```
+
+This list is non-exhaustive and is not an executable error registry. The wire accepts a bounded identifier, and current owners also emit credential, interaction, Plan, operation, Provider, utility, attachment, network, primary-Session and other focused codes. A future exact taxonomy would need a generated source rather than an expanded prose list.
 
 Unknown internal exceptions MUST be normalized without stack traces, paths outside the authorized workspace/runtime roots, request bodies, environment values, or credentials.
 
@@ -787,16 +820,19 @@ Host MUST branch on negotiated capability values, not runtime name or version gu
 
 ## 20. Generated artifacts and conformance
 
-The completed Pre-Batch Foundation generates from one contract source:
+The protocol generator emits five byte-stable projections from one contract source:
 
 ```text
 protocol.schema.json
 protocol-meta.json
 protocol-fixtures.json
 host-client.generated.ts
-runtime-client.generated.ts, if separately required
-protocol-2.0.0-evidence.json
+specs/contracts/protocol-2.4.0-evidence.json
 ```
+
+`canonical-tools.generated.ts` belongs to the separate Tool-contract generator and is consumed by
+the protocol source. There is no current `runtime-client.generated.ts`; Runtime handlers consume the
+same canonical method metadata and validators directly.
 
 Conformance tests must prove:
 
@@ -809,3 +845,9 @@ Conformance tests must prove:
 - every reverse port is wired by the standard test Host;
 - terminal delivery remains possible under event pressure;
 - no fixture or diagnostic includes a secret.
+
+The current static generator and candidate Profile checks pass, as do 29 focused projector/native-RPC
+tests for the registry, ready baseline and changed event shapes. That does not yet constitute
+`2.4.0` Runtime acceptance: the DSH baseline gate still rejects the stale checked-in baseline and a
+dynamic test import, artifact-consuming composition/native gates have no accepted `2.4.0` Runtime
+input, and a new Runtime artifact, platform evidence and handoff remain required.

@@ -1,12 +1,12 @@
 ---
 type: technical-architecture
-status: implemented_pending-handoff-refresh
-module: permissions-and-interactions
-updated: 2026-08-31
+status: implemented
+module: permissions-interactions-and-plan
+updated: 2026-09-02
 product_scope:
-  - ../prd/prd_0.1_agent_runtime.md
-  - ../prd/prd_0.3_myagents_integration.md
-wire_authority: ../../packages/protocol/src/contract-source.ts
+  - ../../prd/prd_0.1_agent_runtime.md
+  - ../../prd/prd_0.3_myagents_integration.md
+wire_authority: ../../../packages/protocol/src/contract-source.ts
 ---
 
 # Permissions, interactions, and Host-controlled Plan state
@@ -22,6 +22,13 @@ Exact current behavior is owned by:
 - `packages/tools-interaction/src/runtime.ts` for AskUserQuestion and ProductPlanService;
 - `packages/protocol/src/contract-source.ts` for Host methods and generated wire shapes;
 - focused tests in `tests/product-permission-interaction.unit.test.ts`, `tests/product-interaction-plan.unit.test.ts`, `tests/native-rpc-server.unit.test.ts` and `tests/protocol-contract.unit.test.ts`.
+
+### 1.1 Relationships
+
+- **Owns:** Product permission decision order, durable exact rules, interaction registration/settlement and the one durable normal/plan state.
+- **Depends on:** tool execution context, Hooks, Host interaction reverse port, primary Session events and operation cancellation.
+- **Consumed by:** every governed root/child tool call, AskUserQuestion, Plan tools, Host permission UI and resume recovery.
+- **Does not own:** tool visibility, hard OS sandboxing, Host UI policy, model execution or TaskGraph state.
 
 ## 2. Permission modes
 
@@ -47,31 +54,29 @@ visible current tool + frozen operation birth
        deny       -> deny
        allow_once -> allow this call
        continue   -> continue
-  -> safe permission class
-  -> configured autoAllowTools
-  -> unexpired exact durable rule
-  -> acceptEdits Write/Edit allowance
-  -> bypassPermissions allowance
+  -> bypassPermissions / safe class / configured autoAllowTools / acceptEdits Write/Edit allowance
+  -> unexpired exact durable rule from the operation-birth permission revision
   -> dontAsk denial
-  -> operation-local exact Always Allow grant
+  -> executing-Agent + operation-local exact Always Allow grant
   -> exact-tuple single-flight gate and authority re-check
   -> default/acceptEdits blocking Host permission interaction
   -> execution-time current-authority revalidation
 ```
 
-An operation freezes its permission revision at birth. A policy change is a next-operation boundary; delayed answers cannot authorize a stale operation. The one exception is not a new policy snapshot: a successful inline `always_allow` installs an operation-local proof for the exact root-operation/origin/tool/class/target tuple after the durable rule has flushed. It cannot authorize another tuple or adopt unrelated policy changes.
+An operation freezes its permission revision at birth. A policy change is a next-operation boundary; delayed answers cannot authorize a stale operation. The one exception is not a new policy snapshot: a successful inline `always_allow` installs an operation-local proof for the exact executing-Agent/client-operation/origin/tool/class/target tuple after the durable rule has flushed. It cannot authorize a sibling child, another tuple or unrelated policy changes.
 
 ## 4. Durable exact rules
 
-An exact rule is bound to one DSH Session and the tuple:
+An exact rule is owned by the primary root DSH Session and matches the tuple:
 
 ```text
-tool + permissionClass + target + root origin
+tool + permissionClass + target + expiry
 ```
 
-It carries a deterministic rule ID, chained policy revision, creation time and bounded expiry. The official composition permits at most 128 grant events and 128 revocation events and uses a 24-hour TTL. Configuration-base changes clear effective exact rules through the durable revision chain.
+Its persisted `origin: root` denotes root-Session ownership, not a caller-origin restriction: a child `always_allow` writes the same shared root policy and later eligible root/child calls may match it. It carries a deterministic rule ID, chained policy revision, creation time and bounded expiry. The official composition permits at most 128 grant events and 128 revocation events and uses a 24-hour TTL. Configuration-base changes clear effective exact rules through the durable revision chain.
 
-Protocol `2.0.0` exposes:
+Current source-candidate protocol `2.4.0` exposes the same permission and interaction vocabulary
+accepted in `2.3.0`:
 
 | Method | Semantics |
 | --- | --- |
@@ -85,19 +90,28 @@ The effective configuration base is also durable history. On process resume the 
 
 `always_allow` from an inline permission interaction uses the same grant implementation. Its effect receipt returns the actual durable rule revision after append, flush and fold; a durability failure rejects the interaction effect and installs no operation-local grant. The Host management RPC is therefore not a parallel policy store.
 
-Target granularity depends on the tool contract. File rules bind the canonical display path; WebFetch binds its governed target; external Host/MCP tools bind a namespaced component identity. Bash currently binds the workspace command target and is not an OS-sandbox guarantee.
+Target granularity depends on the tool contract. File rules bind the canonical display path; WebFetch binds its governed target; external Host/MCP tools bind a namespaced component identity. Bash binds the operation-frozen canonical workspace root, so `always_allow` authorizes Bash at that workspace/tool granularity rather than one command string; it is not an OS-sandbox guarantee.
 
 ## 5. Blocking interactions
 
 Permission, AskUserQuestion and plan approval register through `host/interaction/request`. Registration acknowledgment does not settle the interaction. The Runtime blocks the owning AgentLoop path until `interaction/respond`, cancellation, timeout or teardown settles it exactly once. Duplicate, late, stale-revision and wrong-operation responses fail closed. Runtime cancellation is projected through `host/interaction/cancel`.
 
-Permission decisions are `deny`, `allow_once`, `always_allow` and `cancelled`. AskUser and plan approval use `answered` or `cancelled`. Calls sharing the same root operation and exact authorization tuple serialize behind one gate: one prompt is pending at a time, an `always_allow` leader releases waiters through the exact operation-local proof, while `allow_once`, deny and cancellation remain call-scoped and allow a later waiter to ask independently. Different tuples never share settlement. Approval audit events and product permission/Plan facts remain in the single DSH Session history; the Host UI is a disposable projection.
+Permission decisions are `deny`, `allow_once`, `always_allow` and `cancelled`. AskUser and plan approval use `answered` or `cancelled`. Calls sharing the same executing Agent, client operation, origin and exact authorization tuple serialize behind one gate: one prompt is pending at a time, an `always_allow` leader releases matching waiters through the exact operation-local proof, while `allow_once`, deny and cancellation remain call-scoped and allow a later waiter to ask independently. Different Agents or tuples never share settlement.
+
+Model-driven interaction tools can deliberately produce two Host interactions. `AskUserQuestion` first authorizes `interaction.ask`, then opens `ask_user`; `ExitPlanMode` first authorizes `session.plan.exit`, then reads exact managed Plan bytes and opens `plan_approval`. `EnterPlanMode` uses the safe `session.plan.enter` class and normally skips a permission card. DSH approval audit facts are written in the executing root or child Session, while durable permission rules and Plan ownership remain in the primary root Session. The Host UI is a disposable projection.
 
 ## 6. Host-controlled Plan state
 
 Plan is not a fifth permission mode. `ProductPlanService` owns one durable `normal | plan` state, the managed plan artifact, prompt contribution and monotonic tool guard. Model-visible `EnterPlanMode` and `ExitPlanMode` continue to use that service.
 
-Protocol `2.1.0` retains `plan/apply` so a first-party Host can apply the product's Plan selector at a quiescent boundary. The request carries a client operation identity, expected Plan revision and desired mode. It prepares the same managed artifact, appends the same adjacent product ownership plus public DSH `plan/mode` facts, flushes them, and returns `applied` or retry-safe `already_effective`.
+Current source-candidate protocol `2.4.0` retains `plan/apply` unchanged so a first-party Host can
+apply the product's Plan selector at a quiescent boundary. The request carries a client operation
+identity, expected Plan revision and desired mode. Entering `plan` prepares the managed artifact;
+exiting does not prepare or read it. A real transition appends adjacent product ownership plus public
+DSH `plan/mode` facts, flushes them, and returns `applied`. A same-mode call returns
+`already_effective` before expected-revision validation.
+
+There is no separate `plan/get`. A Host that lacks the current Plan revision may use the same-mode `already_effective` result as a revision probe, then apply the desired transition. This is Host orchestration over the one Runtime Plan authority, not a second state store.
 
 A Host-initiated exit is itself the explicit user/product decision and does not open a second plan-approval interaction. Agent-initiated `ExitPlanMode` still reads the exact managed bytes and requires the existing inline plan review.
 
@@ -113,13 +127,13 @@ The first MyAgents integration keeps its existing universal product vocabulary:
 
 `default` and `dontAsk` remain available Runtime modes but are not required as ordinary MyAgents desktop choices. A future headless/enterprise policy surface may expose `dontAsk` with `permission/rules/*`; it must not reinterpret `disallowedTools` as a permission-rule blacklist.
 
-MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. The prior frozen `2.0.0` handoffs remain historical; the `2.1.0` interaction-reliability handoff is the required current input once sealed.
+MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. Exact current Runtime/handoff identity belongs to the [verification and handoff guide](../assurance/verification-artifacts-and-handoff.md) and active release ledger, not this policy chapter.
 
 ## 8. Security and platform boundary
 
 The protocol truth remains `execution=trusted-local-user-process` and `osSandbox=false` on every platform. Application-level governed file tools enforce canonical roots and symlink/identity checks. Web tools enforce the selected Host network policy. Bash runs as a real local-user process; process groups on POSIX and a Windows Job Object own cancellation/tree cleanup, not security isolation. Bash may reach resources available to the local user, including network paths outside Web tool policy.
 
-Product permission semantics are platform-neutral. macOS arm64, Windows x64 and Linux x64 retain `implementation-complete_pending-native-validation` until a complete native campaign passes against the exact frozen `2.0.0` Runtime. The preceding draft.3 Runtime `a99c7d80…` had two credential-backed macOS campaigns that exercised every scenario successfully across the pair but each sealed at least one wall-time timeout, so neither is a verified-platform report. No new OS-sandbox claim is introduced by this module.
+Product permission semantics are platform-neutral. A platform is not promoted beyond `implementation-complete_pending-native-validation` until its complete native campaign passes against the exact current Runtime artifact; historical Runtime/campaign results cannot be inherited. No new OS-sandbox claim is introduced by this module.
 
 ## 9. Change and release discipline
 
