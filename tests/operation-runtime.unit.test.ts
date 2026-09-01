@@ -75,6 +75,7 @@ interface MountedService {
   readonly service: SdkOperationService;
   readonly wakePendingCalls: readonly string[];
   failFollowup: boolean;
+  livePrimaryReady: boolean;
 }
 
 const mounted: Context[] = [];
@@ -120,7 +121,7 @@ const mountService = async (
     },
     inserted: () => undefined,
   });
-  const state = { failFollowup: false };
+  const state = { failFollowup: false, livePrimaryReady: true };
   const wakePendingCalls: string[] = [];
   const agent = {
     id: session.id,
@@ -158,7 +159,12 @@ const mountService = async (
     ownsRootContextMessage,
     registerRetirementGuard: (guard) => { retirementGuard = guard; },
     registerLifecycleController: (controller) => { lifecycle = controller; },
-    requireAgent: () => agent,
+    requireAgent: () => {
+      if (!state.livePrimaryReady) {
+        throw new ProtocolError("primary_session_not_ready", "synthetic primary Session is not ready");
+      }
+      return agent;
+    },
     retirePrimary: () => {
       if (retirementGuard === undefined) throw new Error("operation retirement guard was not registered");
       return retirePrimary(agent, retirementGuard);
@@ -190,6 +196,12 @@ const mountService = async (
     },
     set failFollowup(value: boolean) {
       state.failFollowup = value;
+    },
+    get livePrimaryReady() {
+      return state.livePrimaryReady;
+    },
+    set livePrimaryReady(value: boolean) {
+      state.livePrimaryReady = value;
     },
   };
 };
@@ -573,6 +585,28 @@ describe("durable product-operation fold", () => {
       phase: "completed",
     });
     expect(restored.inbox.nextTurn).toHaveLength(1);
+  });
+
+  it("settles terminal truth while the resumed candidate is not yet the live primary", async () => {
+    const original = await mountService();
+    await original.service.start(params());
+    original.agent.session.append("turn/start", { turn: 1 });
+    original.inbox.claim("next-turn", 1);
+    original.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    const seed = structuredClone(original.agent.session.events);
+    expect(seed.some((event) => event.type === "myagents/operation/terminal")).toBe(false);
+
+    const restored = await mountService(Object.freeze({ capture: () => birth() }), seed);
+    restored.livePrimaryReady = false;
+    await restored.service.reconcileResumed(restored.agent);
+
+    expect(restored.service.validatePersisted(restored.agent).operations[0]).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "failed", code: "no_final_assistant", retryable: false },
+    });
+    expect(restored.agent.session.events.filter(
+      (event) => event.type === "myagents/operation/terminal",
+    )).toHaveLength(1);
   });
 
   it("settles a resumed continuation at maxTurns without waking it across the boundary", async () => {

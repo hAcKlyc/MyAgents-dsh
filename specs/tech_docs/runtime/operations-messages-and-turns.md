@@ -82,6 +82,13 @@ and retirement, ProductWork's child tool/model/recovery folds, and Runtime event
 that pure proof to the Session they already hold. Calling the operation fold with its default
 no-owner predicate is correct only for consumers that truly do not own root-context messages.
 
+Resume may derive an exact pending terminal after the candidate Agent has passed persisted
+validation but before ProductSession publishes it as the live primary. `reconcileResumed(agent)`
+owns that candidate identity for its bounded callback and may settle terminal truth without calling
+`requireAgent()`; retirement has the same lifecycle-owned rule. Ordinary live settlement still
+requires equality with the published primary. This avoids a circular publication dependency while
+preserving fail-closed identity checks at every non-lifecycle entry.
+
 ## 6. Resume and recovery
 
 On resume the fold validates Product events against exact DSH Inbox splice/claim, turn, request-context, assistant and usage facts. Incomplete but recoverable work is reconstructed under the exact primary generation. When an accepted DSH message remains pending, the Runtime appends an explicit recovery-wake fact and calls the accepted patched `Agent.wakePending(MessageId)` seam. A mismatched Agent, missing birth authority or contradictory fold/terminal first fences `SdkOperationService`; if encountered while binding/resuming the primary Session it yields `recovery_required` rather than fabricating completion.

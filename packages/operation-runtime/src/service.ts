@@ -1355,15 +1355,15 @@ export class SdkOperationService extends Service {
     });
   }
 
-  private async reconcileAgent(agent: Agent, allowClosing = false): Promise<void> {
+  private async reconcileAgent(agent: Agent, lifecycleOwnsAgent = false): Promise<void> {
     try {
-      await this.settleEligibleOperations(agent, allowClosing);
+      await this.settleEligibleOperations(agent, lifecycleOwnsAgent);
     } catch (error) {
       throw this.fence(error);
     }
   }
 
-  private async settleEligibleOperations(agent: Agent, allowClosing: boolean): Promise<void> {
+  private async settleEligibleOperations(agent: Agent, lifecycleOwnsAgent: boolean): Promise<void> {
     let fold = this.foldValue(agent);
     for (const operation of fold.operations) {
       if (operation.state !== "terminal") this.reserveTerminal(operation.clientOperationId);
@@ -1377,9 +1377,9 @@ export class SdkOperationService extends Service {
       agent.whenIdle(),
       "operation terminal idle settlement",
     );
-    if ((!this.acceptingValue && !allowClosing) || !agentIsIdle(agent)) return;
+    if ((!this.acceptingValue && !lifecycleOwnsAgent) || !agentIsIdle(agent)) return;
     this.assertHealthy();
-    if (!allowClosing && agent !== this.configValue.requireAgent()) {
+    if (!lifecycleOwnsAgent && agent !== this.configValue.requireAgent()) {
       throw new Error("primary Session changed before product-operation terminal settlement");
     }
     fold = this.foldValue(agent);
@@ -1637,6 +1637,7 @@ export class SdkOperationService extends Service {
     agent: Agent,
     clientOperationId: string,
     deadline: number,
+    lifecycleOwnsAgent = false,
   ): Promise<void> {
     this.assertHealthy();
     let operation = findProductOperation(this.foldValue(agent), clientOperationId);
@@ -1670,7 +1671,7 @@ export class SdkOperationService extends Service {
         "operation duration-limit Agent settlement",
       );
     }
-    await this.reconcileAgent(agent);
+    await this.reconcileAgent(agent, lifecycleOwnsAgent);
   }
 
   private clearDurationTimer(clientOperationId: string): void {
@@ -1724,6 +1725,7 @@ export class SdkOperationService extends Service {
           agent,
           operation.clientOperationId,
           operation.acceptedAt + duration,
+          true,
         );
       }
     }
@@ -1755,7 +1757,7 @@ export class SdkOperationService extends Service {
         messageId: message.id,
       }), false);
     }
-    await this.reconcileAgent(agent);
+    await this.reconcileAgent(agent, true);
     for (const operation of this.foldValue(agent).operations) {
       if (operation.state !== "terminal") this.armDurationTimer(agent, operation);
     }
