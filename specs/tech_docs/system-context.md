@@ -121,8 +121,10 @@ Two narrow pinned-source seams are carried as patches 0008 and 0009:
 - first-candidate Agent Instructions selection plus configurable filesystem-touch tool names.
 
 Defaults preserve upstream behavior. The patch inventory, exact blobs, tests and retirement rules
-remain governed by `specs/dsh/seam-decisions-v1.json` and ADRs 0009/0010. No Provider cache seam is
-part of P0; it can be added only if credentialed cache-read/write and TTFT evidence justify it.
+remain governed by `specs/dsh/seam-decisions-v1.json` and ADRs 0009/0010. The credentialed
+eight-scenario campaign found automatic cache reads on all 75 model calls, including each
+scenario's first call, so this workstream explicitly declines a Provider-specific cache seam. A
+future seam requires new evidence of a material gap; it is not speculative follow-up work.
 
 ## Maintenance map
 

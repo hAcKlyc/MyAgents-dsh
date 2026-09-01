@@ -23,10 +23,10 @@ This table is the architecture-level snapshot as of 2026-09-01. The active PRDs 
 | --- | --- | --- |
 | DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus nine isolated patches; the current 56-package artifact identity is bound by the accepted manifest |
 | Standalone Runtime and native RPC | Protocol `2.2.0` source implementation and immutable Runtime/handoff refresh complete | `2.2.0` retains the 40/7/4 vocabulary and adds optional generic Host system-context contributions while preserving `2.1.0` genesis rewind behavior |
-| Batch 3 integration handoff | Protocol `2.2.0` handoff ingested and accepted in a local unsigned macOS package | Handoff `a759b370…` binds Runtime `3265c982…` to source `1e1ba52c…`; signed and native Windows/Linux release gates remain open |
+| Batch 3 integration handoff | Protocol `2.2.0` handoff ingested and accepted in a local unsigned macOS package | Handoff `e6932d5c…` binds Runtime `43a5a1c3…` to source `b4eb9da…`; credentialed Runtime quality passes 8/8, while signed and native Windows/Linux release gates remain open |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
-| Platforms | All three implementations complete; current-artifact native validation pending | Current handoff binds pending claims for macOS arm64, Windows x64 and Linux x64; prior evidence remains historical |
+| Platforms | All three implementations complete; product release promotion pending | Current handoff keeps all product claims pending; exact macOS Runtime native evidence passes, while signed MyAgents and native Windows/Linux acceptance remain open |
 
 The previous draft.2, draft.3, `2.0.0` and `2.1.0` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.2.0`. Every current consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
 
