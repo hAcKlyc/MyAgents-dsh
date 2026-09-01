@@ -3618,9 +3618,9 @@ assert.deepEqual(stoppedAgentStableSnapshot, {
   usage: {
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
+    inputTokens: 1,
+    outputTokens: 1,
+    totalTokens: 2,
   },
 });
 
