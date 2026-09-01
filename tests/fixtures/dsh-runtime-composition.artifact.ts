@@ -3555,7 +3555,7 @@ assert.equal(
 const messageReceipt = JSON.parse(durableToolText("artifact-send-message-call")) as Record<string, unknown>;
 assert.equal(messageReceipt.recipient, backgroundAgentId);
 assert.equal(messageReceipt.state, "queued");
-assert.equal(messageReceipt.sequence, 1);
+assert.equal(messageReceipt.sequence, 2);
 assert.equal(typeof messageReceipt.messageId, "string");
 
 adapter.enqueue({
