@@ -3469,14 +3469,21 @@ assert.equal(typeof backgroundAgentAdmission.outputPath, "string");
 const backgroundAgentTaskId = backgroundAgentAdmission.taskId as string;
 const backgroundAgentId = backgroundAgentAdmission.agentId as string;
 const backgroundAgentOutputPath = backgroundAgentAdmission.outputPath as string;
-assert.deepEqual(composition.context.productWork.snapshot(), [{
+const [backgroundAgentSnapshot] = composition.context.productWork.snapshot();
+assert.ok(backgroundAgentSnapshot);
+const { startedAt: backgroundAgentStartedAt, ...backgroundAgentStableSnapshot } = backgroundAgentSnapshot;
+assert.match(backgroundAgentStartedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
+assert.deepEqual(backgroundAgentStableSnapshot, {
   agentId: backgroundAgentId,
+  agentType: "release-reviewer",
+  description: "Audit retained worker output",
   mode: "continuable",
   model: "fixture-model",
   outputPath: backgroundAgentOutputPath,
-  state: "background",
+  parentToolCallId: "artifact-background-agent-call",
+  state: "running",
   taskId: backgroundAgentTaskId,
-}]);
+});
 const childRequest = childAdapter.requests.find(({ sessionId }) => sessionId === backgroundAgentId);
 assert.ok(composition.context.agents.get(SessionId(backgroundAgentId)));
 assert.equal(composition.context.agents.get(SessionId(backgroundAgentId))?.status, "running");
