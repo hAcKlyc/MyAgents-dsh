@@ -2428,7 +2428,8 @@ export const composeDshRootServices = async (
         foldProductCompactions(agent.session.events);
         root.sdkOperations.prepareGenerationReplacement(agent);
         root.productWork.prepareGenerationReplacement(agent);
-        root.sdkOperations.validatePersisted(agent);
+        root.productWork.withPersistedRootContextOwner(agent, () =>
+          root.sdkOperations.validatePersisted(agent));
         root.productPermission.fold(agent.session);
         root.productPlan.validatePersisted(agent);
         root.productTaskGraph.validatePersisted(agent);

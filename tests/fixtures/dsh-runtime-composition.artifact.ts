@@ -3442,6 +3442,18 @@ adapter.enqueue({
   }],
   kind: "tool-calls",
 });
+childAdapter.enqueue({
+  calls: [{
+    id: "artifact-background-agent-report-call",
+    name: "SendMessage",
+    arguments: JSON.stringify({
+      to: "parent",
+      summary: "Background release evidence",
+      message: "The background release invariant is ready for parent reconciliation.",
+    }),
+  }],
+  kind: "tool-calls",
+});
 childAdapter.enqueue({ kind: "await-abort" });
 adapter.enqueue({ kind: "complete", text: "background Agent admitted" });
 await composition.context.sdkOperations.start({
@@ -3494,6 +3506,12 @@ assert.equal(composition.context.agents.get(SessionId(backgroundAgentId))?.statu
 assert.deepEqual(childRequest?.toolNames, ["SendMessage", "TaskStop"]);
 assert.match(childRequest.system ?? "", /bounded declarative release reviewer/u);
 assert.match(childRequest.system ?? "", /frozen declarative Skill document/u);
+await waitUntil(
+  () => primaryAgent.session.events.some((event) => event.type === "agent/inbox/spliced"
+    && event.data.inserted.some((message) => message.source.kind === "subagent-report"
+      && message.source.senderSessionId === backgroundAgentId)),
+  "background child report insertion",
+);
 const dynamicAgentCreated = primaryAgent.session.events.find((event) =>
   event.type === "myagents/work/created"
   && event.data.authority.callId === "artifact-background-agent-call");
@@ -3636,6 +3654,8 @@ assert.match(
 const workEvents = primaryAgent.session.events.filter(({ type }) => type.startsWith("myagents/work/"));
 assert.deepEqual(workEvents.map(({ type }) => type), [
   "myagents/work/created",
+  "myagents/work/message-intent",
+  "myagents/work/message",
   "myagents/work/message-intent",
   "myagents/work/message",
   "myagents/work/stopping",

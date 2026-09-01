@@ -73,6 +73,13 @@ root-context source remains unowned and fences. Persisted validation, live claim
 and retirement use this same ownership predicate, so a child report cannot be accepted live and
 then rejected by the next cold or terminal fold.
 
+A fresh generation validates persisted operations before it publishes the replacement ProductWork
+primary. ProductWork therefore owns one synchronous candidate-root validation scope around that
+fold. The scope requires a pristine projection, accepts only the exact non-subagent resume
+candidate, and is cleared in `finally`; the message still needs the complete durable ProductWork
+creation/intent/Inbox proof. Outside that scope the predicate requires the published live primary.
+This lifecycle bridge is authority, not a fallback based on the source label.
+
 ## 6. Resume and recovery
 
 On resume the fold validates Product events against exact DSH Inbox splice/claim, turn, request-context, assistant and usage facts. Incomplete but recoverable work is reconstructed under the exact primary generation. When an accepted DSH message remains pending, the Runtime appends an explicit recovery-wake fact and calls the accepted patched `Agent.wakePending(MessageId)` seam. A mismatched Agent, missing birth authority or contradictory fold/terminal first fences `SdkOperationService`; if encountered while binding/resuming the primary Session it yields `recovery_required` rather than fabricating completion.
