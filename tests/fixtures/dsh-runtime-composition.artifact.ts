@@ -3566,14 +3566,40 @@ assert.deepEqual(JSON.parse(durableToolText("artifact-task-stop-agent-call")), {
   alreadyTerminal: false,
 });
 assert.equal(composition.context.agents.get(SessionId(backgroundAgentId)), undefined);
-assert.deepEqual(composition.context.productWork.snapshot(), [{
+const [stoppedAgentSnapshot] = composition.context.productWork.snapshot();
+assert.ok(stoppedAgentSnapshot);
+const {
+  finishedAt: stoppedAgentFinishedAt,
+  result: stoppedAgentResult,
+  startedAt: stoppedAgentStartedAt,
+  ...stoppedAgentStableSnapshot
+} = stoppedAgentSnapshot;
+assert.match(stoppedAgentStartedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
+assert.match(stoppedAgentFinishedAt ?? "", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
+assert.ok(stoppedAgentFinishedAt !== undefined && stoppedAgentFinishedAt >= stoppedAgentStartedAt);
+assert.equal(
+  stoppedAgentResult,
+  `subagent ${backgroundAgentId} settled without a closing message (aborted)`,
+);
+assert.deepEqual(stoppedAgentStableSnapshot, {
   agentId: backgroundAgentId,
+  agentType: "release-reviewer",
+  description: "Audit retained worker output",
   mode: "continuable",
   model: "fixture-model",
   outputPath: backgroundAgentOutputPath,
+  parentToolCallId: "artifact-background-agent-call",
+  resultTruncated: false,
   state: "aborted",
   taskId: backgroundAgentTaskId,
-}]);
+  usage: {
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+  },
+});
 
 adapter.enqueue({
   calls: [{
