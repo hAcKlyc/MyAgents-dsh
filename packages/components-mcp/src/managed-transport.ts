@@ -15,11 +15,9 @@ import { createSdkMcpConnectionFactory } from "./sdk-connection.js";
 export interface ManagedMcpLaunchProfile {
   readonly argv: readonly string[];
   readonly cwd: string;
-  readonly env?: Readonly<Record<string, string>>;
 }
 
 export interface ManagedMcpTransportConfig {
-  readonly launchProfiles: Readonly<Record<string, ManagedMcpLaunchProfile>>;
   readonly networkFetch: typeof globalThis.fetch;
 }
 
@@ -48,60 +46,17 @@ const boundedString = (value: unknown, maximum: number, description: string): st
   return value;
 };
 
-const normalizeLaunchProfiles = (
-  value: unknown,
-): Readonly<Record<string, ManagedMcpLaunchProfile>> => {
-  const profiles = exactObject(value, "MCP launch-profile catalog");
-  if (Reflect.ownKeys(profiles).length > 128) {
-    throw new TypeError("MCP launch-profile catalog exceeds its bound");
-  }
-  const normalized: Record<string, ManagedMcpLaunchProfile> = Object.create(null) as Record<
-    string,
-    ManagedMcpLaunchProfile
-  >;
-  for (const [reference, candidate] of Object.entries(profiles)) {
-    boundedString(reference, 256, "MCP launch-profile reference");
-    const profile = exactObject(candidate, `MCP launch profile ${reference}`);
-    if (Reflect.ownKeys(profile).some((key) => key !== "argv" && key !== "cwd" && key !== "env")
-      || !Object.hasOwn(profile, "argv") || !Object.hasOwn(profile, "cwd")) {
-      throw new TypeError(`MCP launch profile ${reference} has an invalid exact shape`);
-    }
-    if (!Array.isArray(profile.argv) || isProxy(profile.argv) || profile.argv.length < 1
-      || profile.argv.length > 256 || Reflect.ownKeys(profile.argv).length !== profile.argv.length + 1) {
-      throw new TypeError(`MCP launch profile ${reference} argv is invalid`);
-    }
-    const argv = Object.freeze(profile.argv.map((entry, index) =>
-      boundedString(entry, 262_144, `MCP launch profile ${reference} argv[${String(index)}]`)));
-    const cwd = boundedString(profile.cwd, 8_192, `MCP launch profile ${reference} cwd`);
-    let env: Readonly<Record<string, string>> | undefined;
-    if (Object.hasOwn(profile, "env")) {
-      const entries = exactObject(profile.env, `MCP launch profile ${reference} environment`);
-      if (Reflect.ownKeys(entries).length > 256) {
-        throw new TypeError(`MCP launch profile ${reference} environment exceeds its bound`);
-      }
-      env = Object.freeze(Object.fromEntries(Object.entries(entries).map(([key, entry]) => [
-        boundedString(key, 256, `MCP launch profile ${reference} environment key`),
-        boundedString(entry, 65_536, `MCP launch profile ${reference} environment value`),
-      ])));
-    }
-    normalized[reference] = Object.freeze({ argv, cwd, ...(env === undefined ? {} : { env }) });
-  }
-  return Object.freeze(normalized);
-};
-
 const normalizeConfig = (value: unknown): Readonly<{
-  launchProfiles: Readonly<Record<string, ManagedMcpLaunchProfile>>;
   networkFetch: typeof globalThis.fetch;
 }> => {
   const config = exactObject(value, "managed MCP transport config");
-  if (Reflect.ownKeys(config).length !== 2 || !Object.hasOwn(config, "launchProfiles")
+  if (Reflect.ownKeys(config).length !== 1
     || !Object.hasOwn(config, "networkFetch") || typeof config.networkFetch !== "function"
     || isProxy(config.networkFetch)) {
     throw new TypeError("managed MCP transport config has an invalid exact shape");
   }
   const networkFetch = config.networkFetch as typeof globalThis.fetch;
   return Object.freeze({
-    launchProfiles: normalizeLaunchProfiles(config.launchProfiles),
     networkFetch: (input, init) => Reflect.apply(networkFetch, config, [input, init]),
   });
 };
@@ -318,7 +273,7 @@ class ManagedStdioTransport implements Transport {
   onerror?: (error: Error) => void;
   onmessage?: (message: JSONRPCMessage) => void;
   readonly #context: Context;
-  readonly #profile: ManagedMcpLaunchProfile;
+  readonly #profile: Readonly<{ argv: readonly string[]; cwd: string }>;
   readonly #material: Readonly<Record<string, string>>;
   readonly #signal: AbortSignal;
   #handle: SubprocessHandle | undefined;
@@ -328,7 +283,7 @@ class ManagedStdioTransport implements Transport {
 
   constructor(
     context: Context,
-    profile: ManagedMcpLaunchProfile,
+    profile: Readonly<{ argv: readonly string[]; cwd: string }>,
     material: Readonly<Record<string, string>>,
     signal: AbortSignal,
   ) {
@@ -345,14 +300,14 @@ class ManagedStdioTransport implements Transport {
     if (command === undefined) throw new Error("managed MCP launch profile lost its executable");
     const executable = await this.#context.subprocess.resolveExecutable(
       command,
-      { ...this.#profile.env, ...this.#material },
+      this.#material,
       this.#signal,
     );
     this.#signal.throwIfAborted();
     const handle = this.#context.subprocess.spawn({
       argv: Object.freeze([executable, ...this.#profile.argv.slice(1)]),
       cwd: this.#profile.cwd,
-      env: Object.freeze({ ...this.#profile.env, ...this.#material }),
+      env: this.#material,
       graceMs: 2_000,
       signal: this.#signal,
       stdio: Object.freeze({
@@ -443,9 +398,10 @@ export const createManagedMcpConnectionFactory = (
     createTransport: (input: McpConnectionFactoryInput): Promise<Transport> => {
       input.signal.throwIfAborted();
       if (input.descriptor.transport === "stdio") {
-        const profile = config.launchProfiles[input.descriptor.launchProfileRef];
-        if (profile === undefined) throw new Error("MCP stdio launch profile is not approved by this Runtime build");
-        return Promise.resolve(new ManagedStdioTransport(context, profile, input.material, input.signal));
+        if (input.launchProfile === undefined) {
+          throw new Error("MCP stdio launch profile is absent from the admitted extension generation");
+        }
+        return Promise.resolve(new ManagedStdioTransport(context, input.launchProfile, input.material, input.signal));
       }
       const endpoint = remoteEndpoint(input.descriptor.url);
       const headers = credentialHeaders(input.material);

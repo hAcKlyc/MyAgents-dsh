@@ -53,6 +53,7 @@ export interface McpConnection {
 
 export interface McpConnectionFactoryInput {
   readonly descriptor: McpComponentDescriptor;
+  readonly launchProfile?: Readonly<{ argv: readonly string[]; cwd: string }>;
   readonly material: Readonly<Record<string, string>>;
   readonly serverId: string;
   readonly signal: AbortSignal;
@@ -507,8 +508,19 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
           authority.assertCurrent();
         }
         const redactions = materialRedactions(material);
+        const launchProfileRef = component.descriptor.transport === "stdio"
+          ? component.descriptor.launchProfileRef
+          : undefined;
+        const launchProfiles = launchProfileRef === undefined
+          ? []
+          : (snapshot.mcpLaunchPolicy?.profiles ?? []).filter(({ ref }) => ref === launchProfileRef);
+        if (launchProfileRef !== undefined && launchProfiles.length !== 1) {
+          throw new TypeError("MCP stdio launch profile is missing or ambiguous");
+        }
+        const launchProfile = launchProfiles[0];
         const connection = normalizeConnection(await exactPromise<McpConnection>(connectMcp(Object.freeze({
           descriptor: component.descriptor,
+          ...(launchProfile === undefined ? {} : { launchProfile }),
           material,
           serverId: component.id,
           signal: deadline.signal,

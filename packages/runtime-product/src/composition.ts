@@ -55,7 +55,6 @@ import {
   createMcpComponentCompiler,
   createManagedMcpConnectionFactory,
   type McpConnectionFactory,
-  type ManagedMcpTransportConfig,
 } from "@myagents-dsh/components-mcp";
 import {
   createHostToolComponentCompiler,
@@ -1802,11 +1801,9 @@ const createManagedMcpNetworkFetch = (composition: DshRootComposition): typeof g
 
 export const createProductManagedMcpComponentCompiler = (
   composition: DshRootComposition,
-  config: Omit<ManagedMcpTransportConfig, "networkFetch">,
 ): ComponentCompiler => createProductMcpComponentCompiler(
   composition,
   createManagedMcpConnectionFactory(composition.context, Object.freeze({
-    ...config,
     networkFetch: createManagedMcpNetworkFetch(composition),
   })),
 );

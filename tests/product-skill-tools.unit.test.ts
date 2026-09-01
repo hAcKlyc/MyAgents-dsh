@@ -17,6 +17,7 @@ import {
   ProductSkillService,
   staticSkillCatalogDigest,
   validateStaticSkillCatalog,
+  type ProductDynamicSkillController,
   type StaticSkillCatalog,
   type StaticSkillDescriptor,
 } from "@myagents-dsh/tools-agent";
@@ -121,7 +122,10 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
       if (exec.agent !== agent) throw new Error("Skill execution lacks primary Agent authority");
       return Object.freeze({
         agent,
-        birth: Object.freeze({}),
+        birth: Object.freeze({
+          componentDigest: "d".repeat(64),
+          componentRevision: "dynamic-skills-v1",
+        }),
         callId: String(exec.callId),
         catalog: Object.freeze({ digest: "c".repeat(64), revision: "tool-catalog-v1" }),
         clientOperationId: "skill-operation",
@@ -150,7 +154,11 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
     },
   }) as never);
   const skillCatalog = catalog(descriptors);
-  await context.plugin(ProductSkillService, { catalog: skillCatalog });
+  let dynamicController: ProductDynamicSkillController | undefined;
+  await context.plugin(ProductSkillService, {
+    catalog: skillCatalog,
+    registerDynamicController: (controller) => { dynamicController = controller; },
+  });
   let callNumber = 0;
   const execute = (input: unknown, signal = new AbortController().signal) => {
     callNumber += 1;
@@ -169,6 +177,7 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
     catalog: skillCatalog,
     context,
     descriptors: Object.freeze(descriptors),
+    dynamicController: () => dynamicController,
     execute,
     permissions,
     setCurrent: (value: boolean) => { current = value; },
@@ -238,6 +247,67 @@ describe("static declarative Skill tool", () => {
       tool: "Skill",
     }]);
     expect(state.context.productSkills.catalog()).toEqual(state.catalog);
+  });
+
+  it("loads a dynamic workspace Skill as a package and exposes its directory on demand", async () => {
+    const state = await mounted([]);
+    const resourceRoot = join(state.workspace, ".agents", "skills", "package-skill");
+    await mkdir(join(resourceRoot, "references"), { recursive: true });
+    const sourcePath = join(resourceRoot, "SKILL.md");
+    const source = [
+      "---",
+      "name: package-skill",
+      "description: Uses package resources.",
+      "arguments: focus",
+      "metadata:",
+      "  author: fixture",
+      "---",
+      "",
+      "Inspect ${CLAUDE_SKILL_DIR}/references/checklist.md for $focus.",
+    ].join("\n");
+    await writeFile(sourcePath, source, "utf8");
+    const prepared = state.dynamicController()?.prepare(Object.freeze({
+      componentId: "package-skill",
+      content: source,
+      description: "Uses package resources.",
+      generation: Object.freeze({ digest: "d".repeat(64), revision: "dynamic-skills-v1" }),
+      invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
+      name: "package-skill",
+      rank: 300,
+      resourceRoot,
+      sourcePath,
+      sourceSha256: createHash("sha256").update(source).digest("hex"),
+    }));
+    const unpublish = prepared?.install();
+
+    const result = await state.execute({ skill: "package-skill", args: "runtime" });
+
+    expect(result).toMatchObject({
+      isError: false,
+      value: {
+        skill: "package-skill",
+        argumentsExpanded: true,
+        content: `Inspect ${resourceRoot}/references/checklist.md for runtime.`,
+        source: sourcePath,
+      },
+    });
+    expect(result.content).toEqual([{
+      type: "text",
+      text: [
+        '<skill_content name="package-skill">',
+        "<skill_resources>",
+        `Base directory for this skill: ${resourceRoot}`,
+        "Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.",
+        "</skill_resources>",
+        "",
+        "<skill_instructions>",
+        `Inspect ${resourceRoot}/references/checklist.md for runtime.`,
+        "</skill_instructions>",
+        "</skill_content>",
+      ].join("\n"),
+    }]);
+    unpublish?.();
+    prepared?.dispose();
   });
 
   it("rejects unknown and non-model-invocable skills before reading content", async () => {

@@ -184,6 +184,10 @@ export const compileReferenceWebComponents = (
       revision: `${revision}-skill-policy`,
       roots: [],
     },
+    mcpLaunchPolicy: {
+      revision: `${revision}-mcp-launch-policy`,
+      profiles: [],
+    },
   };
   return validateMethodParams("extension/replace", {
     ...authority,

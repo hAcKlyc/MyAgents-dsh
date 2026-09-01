@@ -1,3 +1,6 @@
+import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isProxy } from "node:util/types";
+
 import type {
   ComponentCompiler,
   ComponentPrepareAuthority,
@@ -10,7 +13,6 @@ import type {
   ProductDynamicSkillController,
 } from "@myagents-dsh/tools-agent";
 import { projectProductSkillDescription } from "@myagents-dsh/tools-agent";
-import { isProxy } from "node:util/types";
 
 export interface SkillComponentCompilerConfig {
   readonly controller: ProductDynamicSkillController;
@@ -56,6 +58,27 @@ export const createSkillComponentCompiler = (
         throw new TypeError("Skill component lacks its exact declarative document");
       }
       const description = projectProductSkillDescription(component.descriptor.description, component.id);
+      const sourceRoots = snapshot.skillSourcePolicy.roots.filter(({ sourceId }) => sourceId === component.id);
+      if (sourceRoots.length > 1) throw new TypeError("Skill component has ambiguous source-root authority");
+      const sourceRoot = sourceRoots[0];
+      let filesystemSource: Readonly<{ resourceRoot: string; sourcePath: string }> | undefined;
+      if (sourceRoot !== undefined) {
+        if (sourceRoot.enabledPaths.length !== 1) {
+          throw new TypeError("Skill component source root must enable exactly one SKILL.md");
+        }
+        const [enabledPath] = sourceRoot.enabledPaths;
+        if (enabledPath === undefined) throw new TypeError("Skill component source path is missing");
+        if (enabledPath !== "SKILL.md") {
+          throw new TypeError("Skill component source root must enable SKILL.md");
+        }
+        const resourceRoot = resolve(sourceRoot.root);
+        const sourcePath = resolve(resourceRoot, enabledPath);
+        const rel = relative(resourceRoot, sourcePath);
+        if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+          throw new TypeError("Skill component source path escapes its resource root");
+        }
+        filesystemSource = Object.freeze({ resourceRoot, sourcePath });
+      }
       const registration: DynamicSkillRegistration = Object.freeze({
         componentId: component.id,
         content: resource.content,
@@ -64,6 +87,7 @@ export const createSkillComponentCompiler = (
         invocation: Object.freeze({ ...component.descriptor.invocation }),
         name: component.id,
         rank: component.descriptor.rank ?? 100,
+        ...(filesystemSource ?? {}),
         sourceSha256: resource.sha256,
         ...(component.descriptor.whenToUse === undefined
           ? {}

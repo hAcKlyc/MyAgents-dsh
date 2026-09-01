@@ -10,7 +10,7 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "2.2.0" as const;
+export const PROTOCOL_VERSION = "2.3.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.56f8f4241def" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
@@ -694,8 +694,16 @@ const extensionSnapshot = strictObject({
       sourceId: declarativeReference,
       root: absolutePath,
       enabledPaths: Type.Array(relativeDeclarativePath, { maxItems: 2_048, uniqueItems: true }),
-    }), { maxItems: 64 }),
+    }), { maxItems: 128 }),
   }),
+  mcpLaunchPolicy: Type.Optional(strictObject({
+    revision,
+    profiles: Type.Array(strictObject({
+      ref: declarativeReference,
+      argv: Type.Array(boundedText, { minItems: 1, maxItems: 256 }),
+      cwd: absolutePath,
+    }), { maxItems: 128 }),
+  })),
 });
 const componentStatus = strictObject({ key: identifier, state: componentState, reason: Type.Optional(identifier) });
 const applyResult = strictObject({

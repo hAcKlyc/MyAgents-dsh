@@ -82,6 +82,8 @@ export interface DynamicSkillRegistration {
   readonly invocation: SkillInvocationPolicy;
   readonly name: string;
   readonly rank: number;
+  readonly resourceRoot?: string;
+  readonly sourcePath?: string;
   readonly sourceSha256: string;
   readonly whenToUse?: string;
 }
@@ -332,7 +334,9 @@ interface StaticSkillLoadPermit {
   readonly root: StaticSkillRootAuthority;
 }
 
-type DynamicSkillRecord = Readonly<DynamicSkillRegistration & {
+type DynamicSkillRecord = Readonly<Omit<DynamicSkillRegistration, "content"> & {
+  readonly argumentNames: readonly string[];
+  readonly content: string;
   readonly locator: object;
   readonly source: string;
 }>;
@@ -447,6 +451,26 @@ const parseSkillDocument = (
   const body = normalized.slice(end + 5).trim();
   if (body.length === 0 || Buffer.byteLength(body, "utf8") > MAX_SKILL_SOURCE_BYTES) {
     throw new TypeError("Skill instruction body is empty or too large");
+  }
+  return Object.freeze({ argumentNames, body });
+};
+
+const parseWorkspaceSkillDocument = (source: string): ParsedSkillDocument => {
+  const normalized = source.replaceAll("\r\n", "\n");
+  if (!normalized.startsWith("---\n")) {
+    return Object.freeze({ argumentNames: Object.freeze([]), body: normalized.trim() });
+  }
+  const end = normalized.indexOf("\n---\n", 4);
+  if (end < 0) throw new TypeError("workspace Skill frontmatter is unterminated");
+  const frontmatter = normalized.slice(4, end);
+  const argumentsLine = frontmatter.split("\n")
+    .find((line) => /^arguments\s*:/u.test(line));
+  const argumentNames = argumentsLine === undefined
+    ? Object.freeze([])
+    : parseArgumentNames(argumentsLine.slice(argumentsLine.indexOf(":") + 1));
+  const body = normalized.slice(end + 5).trim();
+  if (body.length === 0 || Buffer.byteLength(body, "utf8") > MAX_SKILL_SOURCE_BYTES) {
+    throw new TypeError("workspace Skill instruction body is empty or too large");
   }
   return Object.freeze({ argumentNames, body });
 };
@@ -644,7 +668,11 @@ const expandSkillArguments = (
   body: string,
   input: string,
   argumentNames: readonly string[],
+  resourceRoot?: string,
 ): Readonly<{ content: string; expanded: boolean }> => {
+  const withSkillDirectory = resourceRoot === undefined
+    ? body
+    : body.replaceAll("${CLAUDE_SKILL_DIR}", resourceRoot);
   const positional = parseArguments(input);
   const named = new Map(argumentNames.map((name, index) => [name, positional[index] ?? ""] as const));
   let substituted = false;
@@ -652,8 +680,8 @@ const expandSkillArguments = (
   let cursor = 0;
   const pieces: string[] = [];
   const pattern = /\$ARGUMENTS(?:\[([0-9]+)\])?|\$([0-9]+)|\$([A-Za-z_][A-Za-z0-9_]*)/gu;
-  for (let match = pattern.exec(body); match !== null; match = pattern.exec(body)) {
-    const unchanged = body.slice(cursor, match.index);
+  for (let match = pattern.exec(withSkillDirectory); match !== null; match = pattern.exec(withSkillDirectory)) {
+    const unchanged = withSkillDirectory.slice(cursor, match.index);
     const [whole, indexed, shortIndex, namedArgument] = match;
     let replacement = whole;
     if (whole.startsWith("$ARGUMENTS")) {
@@ -671,7 +699,7 @@ const expandSkillArguments = (
     pieces.push(unchanged, replacement);
     cursor = match.index + whole.length;
   }
-  const tail = body.slice(cursor);
+  const tail = withSkillDirectory.slice(cursor);
   bytes += Buffer.byteLength(tail, "utf8");
   if (bytes > MAX_EXPANDED_SKILL_BYTES) throw new TypeError("expanded Skill instructions exceed the byte bound");
   pieces.push(tail);
@@ -684,7 +712,7 @@ const expandSkillArguments = (
     }
     content += suffix;
   }
-  return Object.freeze({ content, expanded: input.length > 0 && content !== body });
+  return Object.freeze({ content, expanded: input.length > 0 && content !== withSkillDirectory });
 };
 
 const exactArgumentNames = (definition: SkillDefinition): readonly string[] => {
@@ -1016,8 +1044,12 @@ export class ProductSkillService extends Service {
           invocation: record.invocation,
           source: "runtime" as const,
           provider: PRODUCT_COMPONENT_SKILL_PROVIDER,
+          ...(record.resourceRoot === undefined ? {} : {
+            resourceBase: Object.freeze({ kind: "directory" as const, path: record.resourceRoot }),
+          }),
           rank: record.rank,
           locator: record.locator,
+          ...(record.sourcePath === undefined ? {} : { path: record.sourcePath }),
           metadata: Object.freeze({ sourceSha256: record.sourceSha256 }),
         }))));
       },
@@ -1036,8 +1068,12 @@ export class ProductSkillService extends Service {
           invocation: record.invocation,
           source: "runtime" as const,
           provider: PRODUCT_COMPONENT_SKILL_PROVIDER,
+          ...(record.resourceRoot === undefined ? {} : {
+            resourceBase: Object.freeze({ kind: "directory" as const, path: record.resourceRoot }),
+          }),
           content: record.content,
-          metadata: Object.freeze({ argumentNames: Object.freeze([]), sourceSha256: record.sourceSha256 }),
+          ...(record.sourcePath === undefined ? {} : { path: record.sourcePath }),
+          metadata: Object.freeze({ argumentNames: record.argumentNames, sourceSha256: record.sourceSha256 }),
         });
         this.#dynamicByDefinition.set(definition, record);
         return Promise.resolve(definition);
@@ -1055,7 +1091,7 @@ export class ProductSkillService extends Service {
   }> {
     const registration = exactObject(value, [
       "componentId", "content", "description", "generation", "invocation", "name", "rank", "sourceSha256",
-    ], ["whenToUse"], "dynamic Skill registration");
+    ], ["resourceRoot", "sourcePath", "whenToUse"], "dynamic Skill registration");
     const generation = exactObject(registration.generation, ["digest", "revision"], [], "dynamic Skill generation");
     const identity = Object.freeze({
       digest: boundedIdentifier(generation.digest, "dynamic Skill generation digest"),
@@ -1075,20 +1111,35 @@ export class ProductSkillService extends Service {
       throw new TypeError("dynamic Skill source digest is invalid");
     }
     if (sha256(content) !== registration.sourceSha256) throw new TypeError("dynamic Skill content digest differs");
+    const resourceRoot = registration.resourceRoot === undefined
+      ? undefined
+      : boundedText(registration.resourceRoot, 8_192, "dynamic Skill resource root");
+    const sourcePath = registration.sourcePath === undefined
+      ? undefined
+      : boundedText(registration.sourcePath, 8_192, "dynamic Skill source path");
+    if ((resourceRoot === undefined) !== (sourcePath === undefined)) {
+      throw new TypeError("dynamic Skill filesystem source must include both root and path");
+    }
+    const parsed = resourceRoot === undefined
+      ? Object.freeze({ argumentNames: Object.freeze([]), body: content })
+      : parseWorkspaceSkillDocument(content);
     const key = this.#generationKey(identity);
     const records = this.#dynamicByGeneration.get(key) ?? new Map<string, DynamicSkillRecord>();
     if (records.has(name)) throw new TypeError("dynamic Skill names must be unique within one generation");
     const locator = Object.freeze({});
     const record: DynamicSkillRecord = Object.freeze({
       componentId: boundedIdentifier(registration.componentId, "dynamic Skill component"),
-      content,
+      argumentNames: parsed.argumentNames,
+      content: parsed.body,
       description: projectProductSkillDescription(registration.description, name),
       generation: identity,
       invocation: freezeInvocation(registration.invocation, "dynamic Skill invocation"),
       locator,
       name,
       rank: registration.rank as number,
-      source: `extension:${identity.digest}:${name}`,
+      ...(resourceRoot === undefined ? {} : { resourceRoot }),
+      source: sourcePath ?? `extension:${identity.digest}:${name}`,
+      ...(sourcePath === undefined ? {} : { sourcePath }),
       sourceSha256: registration.sourceSha256,
       ...(registration.whenToUse === undefined ? {} : {
         whenToUse: projectSkillText(
@@ -1186,15 +1237,19 @@ export class ProductSkillService extends Service {
           if (staticAuthority === undefined && dynamicAuthority === undefined) {
             throw new ProductToolError("skill_invalid", "Skill catalog winner lacks product authority");
           }
-          const rootAuthority = staticAuthority === undefined ? undefined : await captureApprovedSkillRoot(
-            ctx, product, staticAuthority.resourceRoot,
-          );
+          const resourceRoot = staticAuthority?.resourceRoot ?? dynamicAuthority?.resourceRoot;
+          const rootAuthority = resourceRoot === undefined
+            ? undefined
+            : await captureApprovedSkillRoot(ctx, product, resourceRoot);
           await ctx.productTools.authorize(product, {
             permissionClass: contract.permissionClass,
             target: `skill:${input.skill}`,
             tool: "Skill",
           });
           ctx.productTools.assertCurrent(product, "Skill");
+          if (dynamicAuthority?.resourceRoot !== undefined && rootAuthority !== undefined) {
+            await revalidateSkillRoot(ctx, rootAuthority, product.signal);
+          }
           if (rootAuthority !== undefined) this.loadPermits.set(lookupSignal, Object.freeze({ root: rootAuthority }));
           let definition: SkillDefinition | undefined;
           try {
@@ -1219,6 +1274,9 @@ export class ProductSkillService extends Service {
               && definition.whenToUse === dynamic.whenToUse
               && definition.provider === PRODUCT_COMPONENT_SKILL_PROVIDER
               && definition.content === dynamic.content
+              && definition.path === dynamic.sourcePath
+              && definition.resourceBase?.kind === (dynamic.resourceRoot === undefined ? undefined : "directory")
+              && definition.resourceBase?.path === dynamic.resourceRoot
               && (definition.metadata as Readonly<{ sourceSha256?: unknown }> | undefined)?.sourceSha256
                 === dynamic.sourceSha256
             : definitionMatches(definition, summary, descriptor);
@@ -1229,6 +1287,7 @@ export class ProductSkillService extends Service {
             definition.content,
             input.args ?? "",
             exactArgumentNames(definition),
+            descriptor?.resourceRoot ?? dynamic?.resourceRoot,
           );
           const output = Object.freeze({
             skill: descriptor?.name ?? dynamic?.name,
@@ -1265,6 +1324,9 @@ export class ProductSkillService extends Service {
       text: renderSkillContent({
         name: output.skill,
         provider: PRODUCT_COMPONENT_SKILL_PROVIDER,
+        ...(dynamic.resourceRoot === undefined ? {} : {
+          resourceBase: { kind: "directory" as const, path: dynamic.resourceRoot },
+        }),
         content: output.content,
       }),
     }];

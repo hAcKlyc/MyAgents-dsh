@@ -28,6 +28,7 @@ import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { CommandRuntime } from "@deepseek-ai/dsh-commands";
 import { createHash } from "node:crypto";
+import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
@@ -44,13 +45,15 @@ const authority = (componentId: string): ComponentPrepareAuthority => Object.fre
 const snapshot = (
   components: readonly ExtensionComponent[],
   resources: ExtensionSnapshot["resources"],
+  roots: ExtensionSnapshot["skillSourcePolicy"]["roots"] = [],
 ): ExtensionSnapshot => Object.freeze({
   components: [...components],
   digest: "a".repeat(64),
   formatVersion: 1,
   resources: [...resources],
   revision: "extension-v1",
-  skillSourcePolicy: { revision: "skills-v1", roots: [] },
+  skillSourcePolicy: { revision: "skills-v1", roots },
+  mcpLaunchPolicy: { revision: "mcp-launch-v1", profiles: [] },
 });
 
 describe("declarative Skill, Agent, and Command component compilers", () => {
@@ -153,6 +156,92 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
       kind: "skill",
       value: { name: "portable-skill", description: expected },
     });
+  });
+
+  it("links a workspace Skill component to its approved package directory", async () => {
+    let observed: DynamicSkillRegistration | undefined;
+    const compiler = createSkillComponentCompiler({
+      controller: Object.freeze({
+        prepare: (registration: DynamicSkillRegistration) => {
+          observed = registration;
+          return Object.freeze({ dispose: vi.fn(), install: () => vi.fn() });
+        },
+      }),
+    });
+    const content = [
+      "---",
+      "name: package-skill",
+      "description: Uses package resources.",
+      "---",
+      "",
+      "Read references/checklist.md only when needed.",
+    ].join("\n");
+    const component: ExtensionComponent = Object.freeze({
+      descriptor: Object.freeze({
+        description: "Uses package resources.",
+        invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
+        resourceId: "package-skill-document",
+      }),
+      enabled: true,
+      id: "package-skill",
+      kind: "skill",
+    });
+    const resourceRoot = resolve("workspace-fixture", ".agents", "skills", "package-skill");
+    const source = snapshot([component], [Object.freeze({
+      content,
+      id: "package-skill-document",
+      kind: "skill_document",
+      mediaType: "text/markdown",
+      sha256: sha256(content),
+    })], [Object.freeze({
+      sourceId: component.id,
+      root: resourceRoot,
+      enabledPaths: ["SKILL.md"],
+    })]);
+
+    await compiler.prepare(component, source, new AbortController().signal, authority(component.id));
+
+    expect(observed).toMatchObject({
+      resourceRoot,
+      sourcePath: join(resourceRoot, "SKILL.md"),
+    });
+  });
+
+  it("rejects a Skill source policy that does not name the package SKILL.md", () => {
+    const compiler = createSkillComponentCompiler({
+      controller: Object.freeze({
+        prepare: vi.fn(() => Object.freeze({ dispose: vi.fn(), install: () => vi.fn() })),
+      }),
+    });
+    const content = "Use the package Skill.";
+    const component: ExtensionComponent = Object.freeze({
+      descriptor: Object.freeze({
+        description: "Uses package resources.",
+        invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
+        resourceId: "package-skill-document",
+      }),
+      enabled: true,
+      id: "package-skill",
+      kind: "skill",
+    });
+    const source = snapshot([component], [Object.freeze({
+      content,
+      id: "package-skill-document",
+      kind: "skill_document",
+      mediaType: "text/markdown",
+      sha256: sha256(content),
+    })], [Object.freeze({
+      sourceId: component.id,
+      root: resolve("workspace-fixture", ".agents", "skills", "package-skill"),
+      enabledPaths: ["docs/instructions.md"],
+    })]);
+
+    expect(() => compiler.prepare(
+      component,
+      source,
+      new AbortController().signal,
+      authority(component.id),
+    )).toThrow(/must enable SKILL\.md/u);
   });
 
   it("compiles one immutable Agent birth template from its prompt and referenced Skills", async () => {

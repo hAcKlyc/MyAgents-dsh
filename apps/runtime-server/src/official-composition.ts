@@ -75,6 +75,10 @@ const extensionAuthority: Omit<MethodParams<"extension/replace">, "digest"> = Ob
     revision: "official-skill-source-policy-v1",
     roots: [],
   }),
+  mcpLaunchPolicy: Object.freeze({
+    revision: "official-mcp-launch-policy-v1",
+    profiles: [],
+  }),
 });
 
 export const OFFICIAL_EXTENSION_SNAPSHOT = Object.freeze({
@@ -267,9 +271,7 @@ export const composeOfficialRuntimeServices = async (
     const componentConfig = Object.freeze({
       catalog: OFFICIAL_TOOL_CATALOG,
       compilers: Object.freeze([
-        createProductManagedMcpComponentCompiler(configured, Object.freeze({
-          launchProfiles: Object.freeze({}),
-        })),
+        createProductManagedMcpComponentCompiler(configured),
         createProductSkillComponentCompiler(configured),
         createProductAgentComponentCompiler(configured),
         createProductCommandComponentCompiler(configured),

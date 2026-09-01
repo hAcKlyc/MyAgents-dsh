@@ -10,6 +10,7 @@ import {
 } from "@deepseek-ai/dsh-subprocess";
 import {
   ProductComponentService,
+  type ComponentPrepareAuthority,
   type ProductComponentServiceController,
 } from "@myagents-dsh/component-runtime";
 import {
@@ -17,6 +18,7 @@ import {
   createManagedMcpConnectionFactory,
   type McpConnection,
   type McpConnectionFactory,
+  type McpConnectionFactoryInput,
 } from "@myagents-dsh/components-mcp";
 import { createSdkMcpConnectionFactory } from "@myagents-dsh/components-mcp/sdk";
 import {
@@ -140,6 +142,7 @@ const snapshot = (revision: string, includeMcp = true): MethodParams<"extension/
     })] : [],
     resources: [],
     skillSourcePolicy: { revision: "skills-v1", roots: [] },
+    mcpLaunchPolicy: { revision: "mcp-launch-v1", profiles: [] },
   };
   return Object.freeze({ ...authority, digest: extensionSnapshotDigest(authority) });
 };
@@ -150,19 +153,16 @@ describe("generation-owned MCP component compiler", () => {
     contexts.push(root);
     await root.plugin(FixtureManagedSubprocess);
     const factory = createManagedMcpConnectionFactory(root, Object.freeze({
-      launchProfiles: Object.freeze({
-        fixture: Object.freeze({
-          argv: Object.freeze(["fixture-mcp", "--stdio"]),
-          cwd: "/approved/workspace",
-          env: Object.freeze({ FIXTURE_MODE: "1" }),
-        }),
-      }),
       networkFetch: () => Promise.reject(new Error("stdio fixture must not use network")),
     }));
     const signal = new AbortController().signal;
     const connection = await factory.connect({
       descriptor: { transport: "stdio", launchProfileRef: "fixture" },
-      material: Object.freeze({ MCP_TOKEN: "fixture-secret" }),
+      launchProfile: Object.freeze({
+        argv: Object.freeze(["fixture-mcp", "--stdio"]),
+        cwd: "/approved/workspace",
+      }),
+      material: Object.freeze({ FIXTURE_MODE: "1", MCP_TOKEN: "fixture-secret" }),
       serverId: "fixture",
       signal,
     });
@@ -179,6 +179,63 @@ describe("generation-owned MCP component compiler", () => {
       env: { FIXTURE_MODE: "1", MCP_TOKEN: "fixture-secret" },
       stdio: { stdin: "pipe", stdout: "pipe" },
     });
+  });
+
+  it("binds a stdio component to the launch profile in its exact extension generation", async () => {
+    const root = new Context();
+    contexts.push(root);
+    let observedProfile: unknown;
+    const close = vi.fn(() => Promise.resolve());
+    const factory: McpConnectionFactory = Object.freeze({
+      connect: (input: McpConnectionFactoryInput) => {
+        observedProfile = input.launchProfile;
+        return Promise.resolve(Object.freeze({
+          callTool: () => Promise.resolve({ content: [] }),
+          close,
+          listTools: () => Promise.resolve([]),
+        }));
+      },
+    });
+    const component = Object.freeze({
+      id: "local-tools",
+      enabled: true,
+      kind: "mcp" as const,
+      descriptor: Object.freeze({ transport: "stdio" as const, launchProfileRef: "local-profile" }),
+    });
+    const snapshotAuthority = {
+      formatVersion: 1 as const,
+      revision: "stdio-extension-v1",
+      components: [component],
+      resources: [],
+      skillSourcePolicy: { revision: "skills-v1", roots: [] },
+      mcpLaunchPolicy: {
+        revision: "mcp-launch-v1",
+        profiles: [{ ref: "local-profile", argv: ["node", "server.mjs"], cwd: "/workspace" }],
+      },
+    };
+    const extension = Object.freeze({
+      ...snapshotAuthority,
+      digest: extensionSnapshotDigest(snapshotAuthority),
+    });
+    const authority: ComponentPrepareAuthority = Object.freeze({
+      assertCurrent: vi.fn(),
+      assertToolExecution: vi.fn(),
+      authorizeToolExecution: vi.fn(() => Promise.resolve()),
+      componentGenerationId: `stdio-extension-v1:${extension.digest}`,
+      componentId: component.id,
+      signal: new AbortController().signal,
+    });
+
+    const plan = await createMcpComponentCompiler({ connectionFactory: factory, context: root })
+      .prepare(component, extension, authority.signal, authority);
+
+    expect(observedProfile).toEqual({
+      ref: "local-profile",
+      argv: ["node", "server.mjs"],
+      cwd: "/workspace",
+    });
+    await plan.dispose();
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it("runs remote HTTP through bounded same-origin requests with connection-scoped headers", async () => {
@@ -214,7 +271,6 @@ describe("generation-owned MCP component compiler", () => {
       }));
     });
     const factory = createManagedMcpConnectionFactory(root, Object.freeze({
-      launchProfiles: Object.freeze({}),
       networkFetch,
     }));
     const signal = new AbortController().signal;
@@ -473,6 +529,7 @@ describe("generation-owned MCP component compiler", () => {
     await root.plugin(SystemPrompt);
     await root.plugin(ToolRuntime, { mode: "native" });
     const base = snapshot("credential-v1");
+    if (base.mcpLaunchPolicy === undefined) throw new Error("fixture MCP launch policy is missing");
     const authority = {
       formatVersion: base.formatVersion,
       revision: base.revision,
@@ -492,6 +549,7 @@ describe("generation-owned MCP component compiler", () => {
       })],
       resources: base.resources,
       skillSourcePolicy: base.skillSourcePolicy,
+      mcpLaunchPolicy: base.mcpLaunchPolicy,
     };
     const credentialSnapshot = Object.freeze({ ...authority, digest: extensionSnapshotDigest(authority) });
     const observations: string[] = [];

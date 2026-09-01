@@ -171,6 +171,10 @@ const artifactExtensionAuthority: Omit<MethodParams<"extension/replace">, "diges
     revision: "artifact-skill-policy-v1",
     roots: [],
   },
+  mcpLaunchPolicy: {
+    revision: "artifact-mcp-launch-policy-v1",
+    profiles: [],
+  },
 };
 const artifactExtensionSnapshot = Object.freeze({
   ...artifactExtensionAuthority,
@@ -270,6 +274,10 @@ const artifactDeclarativeExtensionAuthority: Omit<MethodParams<"extension/replac
   skillSourcePolicy: {
     revision: "artifact-declarative-skills-v1",
     roots: [],
+  },
+  mcpLaunchPolicy: {
+    revision: "artifact-declarative-mcp-launch-v1",
+    profiles: [],
   },
 };
 const artifactDeclarativeExtensionSnapshot = Object.freeze({
@@ -519,6 +527,10 @@ const lifecycleMcpSnapshot = (revision: string): MethodParams<"extension/replace
     skillSourcePolicy: {
       revision: `${revision}-skills`,
       roots: [],
+    },
+    mcpLaunchPolicy: {
+      revision: `${revision}-mcp-launch`,
+      profiles: [],
     },
   };
   return Object.freeze({ ...authority, digest: extensionSnapshotDigest(authority) });

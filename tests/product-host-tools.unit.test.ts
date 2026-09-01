@@ -81,6 +81,7 @@ const snapshot = (
     components,
     resources: [],
     skillSourcePolicy: { revision: "skills-v1", roots: [] },
+    mcpLaunchPolicy: { revision: "mcp-launch-v1", profiles: [] },
   };
   return Object.freeze({ ...authority, digest: extensionSnapshotDigest(authority) });
 };

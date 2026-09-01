@@ -231,6 +231,10 @@ const buildFixtures = (schemaDigest: string): unknown => {
       revision: "skills-v1",
       roots: [{ sourceId: "project-skills", root: "/fixture/workspace/.agents/skills", enabledPaths: ["review"] }],
     },
+    mcpLaunchPolicy: {
+      revision: "mcp-launch-v1",
+      profiles: [{ ref: "local-tools", argv: ["node", "server.mjs"], cwd: "/fixture/workspace" }],
+    },
   } as const;
   const sessionCreateParams = {
     clientOperationId: "session-create-1",

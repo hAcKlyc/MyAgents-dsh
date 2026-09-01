@@ -30,7 +30,7 @@ and the prefix-cache strategy; no Provider-specific cache API is exposed in the 
 
 ## Host contract and normalization
 
-Protocol `2.2.0` adds optional `SystemContextSnapshot` to `session/create`, `session/resume` and
+Protocol `2.3.0` retains the optional `SystemContextSnapshot` added in `2.2.0` for `session/create`, `session/resume` and
 `config/apply`. A snapshot contains up to 32 ordered sections and 32 ordered contexts. Every entry
 has a Host id, numeric order, `global` or `root` scope, and literal UTF-8 Markdown text. Context text
 has a 512 KiB aggregate Runtime bound in addition to the generated per-field bounds.
@@ -108,6 +108,17 @@ The Skill catalog is derived synchronously from the frozen effective component g
 filtered through current Agent tool visibility. It lists only model-invocable effective Skills;
 install/uninstall invalidates the precomputed projection. Tools still come exclusively from
 `ctx.tools`, so Prompt text never grants execution authority.
+
+Project Skill packages can be linked to an approved workspace source root in the same extension
+generation. The catalog still exposes only name and short description. On invocation, the DSH
+Skill renderer returns the instruction body and exact package base, telling the Agent to resolve
+and load `references/`, `scripts/`, `assets/` or other relative resources only as needed through
+ordinary governed tools. Full directories and absolute package paths do not enter the stable
+system prefix.
+
+Workspace capability authority is deliberately repository-scoped in this workstream. Native
+user/admin/system Skill roots retained by a compatibility Runtime are not projected into this DSH
+context and are not treated as repository winners.
 
 Production diagnostics may record contribution names, orders, scopes and SHA-256 digests. They do
 not record Prompt, project-instruction, Skill, transcript or tool-payload bodies. Deterministic

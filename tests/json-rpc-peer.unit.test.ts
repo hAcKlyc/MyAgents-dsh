@@ -460,6 +460,7 @@ describe("strict bidirectional JSON-RPC peer", () => {
       }],
       resources: [],
       skillSourcePolicy: { revision: "skills-v1", roots: [] },
+      mcpLaunchPolicy: { revision: "mcp-launch-v1", profiles: [] },
     })).toThrow(expect.objectContaining({ code: "protocol_invalid_params" }));
 
     let toJsonReads = 0;

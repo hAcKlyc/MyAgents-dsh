@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: host-ports-and-components
-updated: 2026-08-29
+updated: 2026-09-01
 product_scope: ../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../prd/tech_rfc_0.1_host_ports_components.md
 ---
@@ -56,9 +56,25 @@ Every call revalidates the operation-frozen component generation and relevant po
 
 Host Skill source content is never rewritten. Only its effective catalog/provider description is projected for portable discovery: ASCII control/whitespace runs collapse to one space and the value is truncated by Unicode code point to 1,024 characters, matching the open Agent Skills description bound. The effective catalog and DSH Skill provider receive the same projected value.
 
+A project Skill may additionally carry one exact generation-owned source root. Its admitted
+`SKILL.md` remains the immutable component resource; the directory becomes the public DSH Skill
+`resourceBase`, so invocation exposes the base while referenced files remain on-demand inputs to
+the normal governed file/process tools. No directory tree is recursively serialized into the
+extension snapshot or Prompt. This binding is emitted only for a canonical package directory that
+remains inside the admitted workspace; an outside-resolving project symlink receives no additional
+filesystem authority and is reported as a body-only compatibility result.
+
 ## 5. Network and attachment safety
 
 MCP and canonical web access use composition-owned network policy, DNS/address checks, origin confinement, redirect policy, byte/concurrency/deadline limits, cancellation, and bounded cleanup. Attachment bytes cross an explicit lease port, become read-only staged files under the composition-selected root, and release once on every success/failure/cancel path. Browser or Host-local backing paths are never projected into the Runtime conversation.
+
+Protocol `2.3.0` carries stdio MCP `argv` and `cwd` in a bounded non-secret launch profile owned by
+the exact extension generation. Environment material remains behind `host/credential/resolve` with
+an opaque revision. The managed MCP transport resolves and spawns through DSH's composition-selected
+subprocess service, while discovered definitions still commit only through `ctx.tools`. The stock
+DSH MCP plugin remains source/behavioral evidence rather than the official profile owner because
+its literal env/header configuration and immediately visible registration do not meet the existing
+Host-secret and unpublished-generation boundaries.
 
 A failed Host tool may include one protocol-bounded text block beside its stable error code. The
 canonical Web bridge preserves that message as the individual tool failure, so quota, credential,
