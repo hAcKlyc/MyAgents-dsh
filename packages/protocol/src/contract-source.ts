@@ -10,7 +10,7 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "2.3.0" as const;
+export const PROTOCOL_VERSION = "2.4.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.56f8f4241def" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
@@ -766,6 +766,64 @@ const usageEvent = strictObject({
   runtimeContextWindow: Type.Integer({ minimum: 1 }),
   modelProfileRevision: revision,
 });
+const taskStatusSnapshot = strictObject({
+  revision,
+  tasks: Type.Array(strictObject({
+    id: identifier,
+    subject: Type.String({ minLength: 1, maxLength: 512 }),
+    activeForm: Type.Optional(Type.String({ maxLength: 512 })),
+    status: Type.Union([
+      Type.Literal("pending"),
+      Type.Literal("in_progress"),
+      Type.Literal("completed"),
+      Type.Literal("cancelled"),
+    ]),
+  }), { maxItems: 256 }),
+});
+const toolResultContent = Type.Union([
+  strictObject({
+    type: Type.Literal("text"),
+    text: Type.String({ maxLength: 262_144 }),
+  }),
+  strictObject({
+    type: Type.Literal("image_ref"),
+    attachmentId: identifier,
+    mimeType: identifier,
+    sizeBytes: nonNegativeInteger,
+    sha256,
+    width: Type.Optional(nonNegativeInteger),
+    height: Type.Optional(nonNegativeInteger),
+    name: Type.Optional(Type.String({ maxLength: 512 })),
+  }),
+]);
+const toolResultMetadata = strictObject({
+  exitCode: Type.Optional(Type.Union([Type.Integer(), Type.Null()])),
+  durationMs: Type.Optional(Type.Union([nonNegativeInteger, Type.Null()])),
+  cwd: Type.Optional(Type.String({ maxLength: 8_192 })),
+  processId: Type.Optional(Type.Union([identifier, Type.Null()])),
+  status: Type.Optional(identifier),
+});
+const workStatusSnapshot = strictObject({
+  taskId: identifier,
+  parentToolCallId: identifier,
+  agentId: identifier,
+  agentType: identifier,
+  description: Type.String({ minLength: 1, maxLength: 512 }),
+  mode: Type.Union([Type.Literal("foreground"), Type.Literal("continuable")]),
+  model: identifier,
+  state: Type.Union([
+    Type.Literal("running"),
+    Type.Literal("stopping"),
+    Type.Literal("succeeded"),
+    Type.Literal("failed"),
+    Type.Literal("aborted"),
+  ]),
+  startedAt: Type.String({ format: "date-time" }),
+  finishedAt: Type.Optional(Type.String({ format: "date-time" })),
+  result: Type.Optional(Type.String({ maxLength: 262_144 })),
+  resultTruncated: Type.Optional(Type.Boolean()),
+  usage: Type.Optional(TokenUsageSchema),
+});
 export const RuntimeEventSchema = Type.Union([
   strictObject({ kind: Type.Literal("session"), phase: identifier, detail: Type.Optional(jsonRecord) }),
   strictObject({ kind: Type.Literal("turn_admitted"), admission: turnAdmission }),
@@ -775,13 +833,25 @@ export const RuntimeEventSchema = Type.Union([
   strictObject({ kind: Type.Literal("thinking_delta"), delta: Type.String({ maxLength: 262_144 }) }),
   strictObject({ kind: Type.Literal("message_event"), role: Type.Union([Type.Literal("assistant"), Type.Literal("user"), Type.Literal("tool_result")]), eventId: identifier, messageId: Type.Optional(identifier) }),
   strictObject({ kind: Type.Literal("queued_message"), messageId: identifier, state: queuedMessageState, eventId: Type.Optional(identifier) }),
-  strictObject({ kind: Type.Literal("tool"), phase: Type.Union([Type.Literal("start"), Type.Literal("update"), Type.Literal("end")]), name: identifier, detail: Type.Optional(jsonRecord) }),
+  strictObject({ kind: Type.Literal("tool"), phase: Type.Literal("start"), name: identifier, input: Type.Unknown() }),
+  strictObject({ kind: Type.Literal("tool"), phase: Type.Literal("update"), name: identifier, progress: Type.Optional(jsonRecord) }),
+  strictObject({
+    kind: Type.Literal("tool"),
+    phase: Type.Literal("end"),
+    name: identifier,
+    result: strictObject({
+      state: Type.Union([Type.Literal("succeeded"), Type.Literal("failed"), Type.Literal("aborted")]),
+      isError: Type.Boolean(),
+      content: Type.Array(toolResultContent, { maxItems: 1_024 }),
+      metadata: Type.Optional(toolResultMetadata),
+    }),
+  }),
   usageEvent,
-  strictObject({ kind: Type.Literal("context"), contextOccupiedTokens: Type.Union([nonNegativeInteger, Type.Null()]), runtimeContextWindow: Type.Integer({ minimum: 1 }), modelProfileRevision: revision }),
+  strictObject({ kind: Type.Literal("context"), contextOccupiedTokens: nonNegativeInteger, runtimeContextWindow: Type.Integer({ minimum: 1 }), modelProfileRevision: revision }),
   strictObject({ kind: Type.Literal("interaction"), phase: identifier, interactionId: identifier }),
-  strictObject({ kind: Type.Literal("plan"), revision, detail: jsonRecord }),
-  strictObject({ kind: Type.Literal("task_graph"), revision, detail: jsonRecord }),
-  strictObject({ kind: Type.Literal("work"), taskId: identifier, phase: identifier, detail: Type.Optional(jsonRecord) }),
+  strictObject({ kind: Type.Literal("plan"), mode: Type.Union([Type.Literal("normal"), Type.Literal("plan")]), revision }),
+  strictObject({ kind: Type.Literal("task_graph"), snapshot: taskStatusSnapshot }),
+  strictObject({ kind: Type.Literal("work"), snapshot: workStatusSnapshot }),
   strictObject({ kind: Type.Literal("component"), component: componentStatus }),
   strictObject({ kind: Type.Literal("catalog"), catalog: ExtensionCatalogSchema }),
   strictObject({ kind: Type.Literal("checkpoint"), phase: identifier, receipt: Type.Optional(jsonRecord) }),

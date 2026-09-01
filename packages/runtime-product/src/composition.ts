@@ -189,6 +189,7 @@ export type { HostBackedInteractionProviderConfig } from "./host-interaction.js"
 
 export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "session-store",
+  "session-projection-registry",
   "agent-registry",
   "llm-runtime",
   "system-prompt",
@@ -233,6 +234,16 @@ export interface DshRootCompositionSnapshot {
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 
 const PI_AI_PLUGIN_SPECIFIER = "@deepseek-ai/dsh-llm-pi-ai";
+const SESSION_PROJECTION_PLUGIN_SPECIFIER = "@deepseek-ai/dsh-session-projection";
+export const loadSessionProjectionRegistry = async (): Promise<Plugin> => {
+  const candidate = await import(SESSION_PROJECTION_PLUGIN_SPECIFIER) as Record<string, unknown>;
+  if (typeof candidate.SessionProjectionRegistry !== "function"
+    || candidate.default !== candidate.SessionProjectionRegistry) {
+    throw new Error("official Session projection package-root exports differ from the locked contract");
+  }
+  return candidate.SessionProjectionRegistry as Plugin;
+};
+
 const loadPiAiPlugin = async (): Promise<Plugin> => {
   // Runtime package-root validation is the explicit fallback while the exact
   // upstream vendor declaration graph contains broken relative undici imports.
@@ -2131,6 +2142,7 @@ export const composeDshRootServices = async (
   let operationLifecycleController: OperationLifecycleController | undefined;
   try {
     await root.plugin(SessionStore);
+    await root.plugin(await loadSessionProjectionRegistry());
     await root.plugin(AgentRegistry);
     await root.plugin(LlmRuntime);
     await root.plugin(SystemPrompt, systemPrompt);

@@ -1,4 +1,5 @@
 import type { Context } from "@deepseek-ai/cordis";
+import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import {
   durableSessionEventId,
@@ -9,6 +10,7 @@ import {
   priceDshTokenUsage,
   requestContextAtOwnedEvent,
   type ProductOperationRecord,
+  type RootContextMessageOwnership,
 } from "@myagents-dsh/operation-runtime";
 import {
   ProtocolError,
@@ -17,6 +19,9 @@ import {
   type TerminalNotificationReservation,
 } from "@myagents-dsh/protocol";
 import type { ProductSessionService } from "@myagents-dsh/runtime-product";
+import type { ProductTaskGraphSnapshot } from "@myagents-dsh/task-graph";
+import type { ProductWorkSnapshot } from "@myagents-dsh/tools-agent";
+import type { ProductPlanSnapshot } from "@myagents-dsh/tools-interaction";
 
 type RuntimeEvent = RuntimeEventEnvelope["event"];
 
@@ -32,10 +37,24 @@ export interface RuntimeEventProjectorConfig {
   readonly context: Context;
   readonly peer: JsonRpcPeer;
   readonly productSession: ProductSessionService;
+  readonly ownsRootContextMessage?: RootContextMessageOwnership;
   readonly runtimeGeneration: string;
   readonly productSessionId: () => string | undefined;
   readonly onFailure: (error: ProtocolError) => void;
 }
+
+type SessionProjectionRegistryRead = Readonly<{
+  onChanged(listener: (
+    session: Session,
+    key: string,
+    value: unknown,
+    sequence: number,
+  ) => void): () => void;
+  snapshot(session: Session): Readonly<{
+    asOfSeq: number;
+    values: Readonly<Record<string, unknown>>;
+  }>;
+}>;
 
 const toProtocolError = (error: unknown): ProtocolError => error instanceof ProtocolError
   ? error
@@ -48,22 +67,14 @@ const operationForTurn = (
   session: Session,
   turn: number,
   throughSequence: number,
+  ownsRootContextMessage: RootContextMessageOwnership,
 ): ProductOperationRecord | undefined => foldProductOperations(
   session.events.slice(0, throughSequence + 1),
   session.id,
+  ownsRootContextMessage,
 ).operations.find(
   ({ dshTurns }) => dshTurns.includes(turn),
 );
-
-const openTurnAt = (events: readonly SessionEvent[], sequence: number): number | undefined => {
-  let open: number | undefined;
-  for (const event of events) {
-    if (event.seq > sequence) break;
-    if (event.type === "turn/start") open = event.data.turn;
-    else if (event.type === "turn/end" && event.data.turn === open) open = undefined;
-  }
-  return open;
-};
 
 const toolInputDetail = (rawArguments: string): Readonly<Record<string, unknown>> => {
   try {
@@ -84,6 +95,145 @@ const protocolToolName = (name: string): string => {
     if (codeUnit <= 0x1f || codeUnit === 0x7f) return "Tool";
   }
   return name;
+};
+
+const MAX_TOOL_RESULT_TEXT = 262_144;
+const MAX_TOOL_RESULT_CONTENT_BYTES = 524_288;
+const MAX_TOOL_RESULT_BLOCKS = 1_024;
+const TOOL_RESULT_TRUNCATION = "[tool result content truncated by Runtime]";
+
+const boundedTextBlock = (
+  text: string,
+  byteBudget: number,
+): Readonly<{ type: "text"; text: string }> | undefined => {
+  const charBounded = text.length <= MAX_TOOL_RESULT_TEXT
+    ? text
+    : `${text.slice(0, MAX_TOOL_RESULT_TEXT - TOOL_RESULT_TRUNCATION.length - 1)}\n${TOOL_RESULT_TRUNCATION}`;
+  const candidate = (value: string): Readonly<{ type: "text"; text: string }> =>
+    Object.freeze({ type: "text", text: value });
+  if (Buffer.byteLength(JSON.stringify(candidate(charBounded))) <= byteBudget) {
+    return candidate(charBounded);
+  }
+  const suffix = `\n${TOOL_RESULT_TRUNCATION}`;
+  if (Buffer.byteLength(JSON.stringify(candidate(suffix))) > byteBudget) return undefined;
+  let lower = 0;
+  let upper = charBounded.length;
+  while (lower < upper) {
+    const middle = Math.ceil((lower + upper) / 2);
+    const value = `${charBounded.slice(0, middle)}${suffix}`;
+    if (Buffer.byteLength(JSON.stringify(candidate(value))) <= byteBudget) lower = middle;
+    else upper = middle - 1;
+  }
+  return candidate(`${charBounded.slice(0, lower)}${suffix}`);
+};
+
+const toolResultContent = (
+  blocks: readonly ContentBlock[],
+): Extract<RuntimeEvent, { kind: "tool"; phase: "end" }>["result"]["content"] => {
+  const content: Extract<RuntimeEvent, { kind: "tool"; phase: "end" }>["result"]["content"] = [];
+  let contentBytes = 2;
+  let complete = blocks.length <= MAX_TOOL_RESULT_BLOCKS;
+  let markerEmbedded = false;
+  const append = (block: (typeof content)[number]): boolean => {
+    const bytes = Buffer.byteLength(JSON.stringify(block)) + (content.length === 0 ? 0 : 1);
+    if (contentBytes > MAX_TOOL_RESULT_CONTENT_BYTES - bytes) return false;
+    content.push(block);
+    contentBytes += bytes;
+    return true;
+  };
+  for (const block of blocks.slice(0, MAX_TOOL_RESULT_BLOCKS)) {
+    if (block.type === "text") {
+      const projected = boundedTextBlock(
+        block.text,
+        MAX_TOOL_RESULT_CONTENT_BYTES - contentBytes - (content.length === 0 ? 0 : 1),
+      );
+      if (projected === undefined) {
+        complete = false;
+        break;
+      }
+      append(projected);
+      if (projected.text !== block.text) {
+        complete = false;
+        markerEmbedded = true;
+        break;
+      }
+      continue;
+    }
+    if (block.type === "image") {
+      const attachmentId = String(block.attachment.attachmentId);
+      const digest = /^sha256:([a-f0-9]{64})$/u.exec(attachmentId)?.[1];
+      if (digest === undefined) {
+        if (!append(Object.freeze({
+          type: "text" as const,
+          text: "[unsupported tool-result image: attachment identity is not content-addressed]",
+        }))) {
+          complete = false;
+          break;
+        }
+        continue;
+      }
+      if (!append(Object.freeze({
+        type: "image_ref" as const,
+        attachmentId,
+        mimeType: block.attachment.mediaType,
+        sizeBytes: block.attachment.bytes,
+        sha256: digest,
+        width: block.attachment.width,
+        height: block.attachment.height,
+        ...(block.attachment.name === undefined ? {} : {
+          name: block.attachment.name.slice(0, 512),
+        }),
+      }))) {
+        complete = false;
+        break;
+      }
+      continue;
+    }
+    if (!append(Object.freeze({
+      type: "text" as const,
+      text: `[unsupported tool-result content: ${block.type}]`,
+    }))) {
+      complete = false;
+      break;
+    }
+  }
+  if (content.length < Math.min(blocks.length, MAX_TOOL_RESULT_BLOCKS)) complete = false;
+  if (!complete && !markerEmbedded) {
+    const marker = Object.freeze({ type: "text" as const, text: TOOL_RESULT_TRUNCATION });
+    if (!append(marker) && content.length > 0) {
+      content.pop();
+      contentBytes = Buffer.byteLength(JSON.stringify(content));
+      append(marker);
+    }
+  }
+  return content;
+};
+
+const toolResultMetadata = (
+  value: unknown,
+): Extract<RuntimeEvent, { kind: "tool"; phase: "end" }>["result"]["metadata"] => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Readonly<Record<string, unknown>>;
+  const metadata: Record<string, unknown> = {};
+  if (record.exitCode === null || Number.isSafeInteger(record.exitCode)) metadata.exitCode = record.exitCode;
+  if (record.durationMs === null
+    || (Number.isSafeInteger(record.durationMs) && (record.durationMs as number) >= 0)) {
+    metadata.durationMs = record.durationMs;
+  }
+  if (typeof record.cwd === "string" && record.cwd.length <= 8_192) metadata.cwd = record.cwd;
+  const processId = record.processId;
+  if (processId === null) metadata.processId = null;
+  else if (typeof processId === "string" && processId.length > 0 && processId.length <= 256) {
+    metadata.processId = processId;
+  } else if (typeof processId === "number" && Number.isSafeInteger(processId)) {
+    metadata.processId = String(processId);
+  }
+  if (typeof record.status === "string" && record.status.length > 0 && record.status.length <= 256) {
+    metadata.status = record.status;
+  }
+  return Object.keys(metadata).length === 0
+    ? undefined
+    : Object.freeze(metadata);
 };
 
 const toolNameForCall = (
@@ -149,9 +299,132 @@ const tokenUsage = (
   });
 };
 
+type ContextPressureValue = Readonly<{
+  contextWindow?: number;
+  projectedTokens?: number;
+}>;
+
+const isNonNegativeSafeInteger = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+
+const latestRequestContext = (
+  events: readonly SessionEvent[],
+  throughSequence: number,
+): Extract<SessionEvent, { type: "request/context" }> | undefined => {
+  for (let sequence = Math.min(throughSequence, events.length - 1); sequence >= 0; sequence -= 1) {
+    const event = events[sequence];
+    if (event?.type === "request/context") return event;
+  }
+  return undefined;
+};
+
+const contextProjection = (
+  session: Session,
+  value: ContextPressureValue,
+  throughSequence: number,
+  ownsRootContextMessage: RootContextMessageOwnership,
+): RuntimeEventProjection | undefined => {
+  const projectedTokens = value.projectedTokens;
+  const contextWindow = value.contextWindow;
+  if (!isNonNegativeSafeInteger(projectedTokens)
+    || !isNonNegativeSafeInteger(contextWindow) || contextWindow === 0) return undefined;
+  for (let sequence = Math.min(throughSequence, session.events.length - 1); sequence >= 0; sequence -= 1) {
+    const sample = session.events[sequence];
+    const hasUsage = sample?.type === "assistant/message"
+      ? sample.data.usage !== undefined
+      : sample?.type === "assistant/chunk" && sample.data.chunk.type === "usage";
+    if (!hasUsage || (sample?.type !== "assistant/message" && sample?.type !== "assistant/chunk")) continue;
+    const operation = operationForTurn(
+      session,
+      sample.data.turn,
+      sample.seq,
+      ownsRootContextMessage,
+    );
+    if (operation === undefined) continue;
+    const sampleRoute = latestRequestContext(session.events, sample.seq);
+    const currentRoute = latestRequestContext(session.events, throughSequence);
+    if (sampleRoute === undefined) return undefined;
+    const currentRouteData = currentRoute?.data;
+    if (currentRouteData === undefined) return undefined;
+    if (sampleRoute.data.provider !== currentRouteData.provider
+      || sampleRoute.data.model !== currentRouteData.model
+      || sampleRoute.data.contextWindow !== currentRouteData.contextWindow
+      || currentRouteData.contextWindow !== contextWindow) return undefined;
+    return Object.freeze({
+      turnId: operation.productTurnId,
+      itemId: durableSessionEventId(session.id, throughSequence),
+      event: Object.freeze({
+        kind: "context",
+        contextOccupiedTokens: projectedTokens,
+        runtimeContextWindow: contextWindow,
+        modelProfileRevision: operation.birth.modelProfileRevision,
+      }),
+    });
+  }
+  return undefined;
+};
+
+const taskGraphProjection = (
+  snapshot: ProductTaskGraphSnapshot,
+): RuntimeEventProjection => Object.freeze({
+  event: Object.freeze({
+    kind: "task_graph",
+    snapshot: Object.freeze({
+      revision: snapshot.revision,
+      tasks: snapshot.tasks.map((task) => Object.freeze({
+        id: task.id,
+        subject: task.subject,
+        ...(task.activeForm === undefined ? {} : { activeForm: task.activeForm }),
+        status: task.status,
+      })),
+    }),
+  }),
+});
+
+const workProjection = (
+  snapshot: ProductWorkSnapshot,
+): RuntimeEventProjection => Object.freeze({
+  toolCallId: snapshot.parentToolCallId,
+  event: Object.freeze({
+    kind: "work",
+    snapshot: Object.freeze({
+      taskId: snapshot.taskId,
+      parentToolCallId: snapshot.parentToolCallId,
+      agentId: snapshot.agentId,
+      agentType: snapshot.agentType,
+      description: snapshot.description,
+      mode: snapshot.mode,
+      model: snapshot.model,
+      state: snapshot.state,
+      startedAt: snapshot.startedAt,
+      ...(snapshot.finishedAt === undefined ? {} : { finishedAt: snapshot.finishedAt }),
+      ...(snapshot.result === undefined ? {} : { result: snapshot.result }),
+      ...(snapshot.resultTruncated === undefined ? {} : {
+        resultTruncated: snapshot.resultTruncated,
+      }),
+      ...(snapshot.usage === undefined ? {} : {
+        usage: Object.freeze({ ...snapshot.usage, costUsd: null }),
+      }),
+    }),
+  }),
+});
+
+const planProjection = (
+  snapshot: ProductPlanSnapshot,
+): RuntimeEventProjection => Object.freeze({
+  event: Object.freeze({
+    kind: "plan",
+    mode: snapshot.mode,
+    revision: snapshot.revision,
+  }),
+});
+
+const ownsNoRootContextMessage: RootContextMessageOwnership = () => false;
+
 export const projectSessionEvent = (
   session: Session,
   source: SessionEvent,
+  ownsRootContextMessage: RootContextMessageOwnership = ownsNoRootContextMessage,
 ): readonly RuntimeEventProjection[] => {
   const events = session.events;
   if (events[source.seq] !== source) {
@@ -172,7 +445,11 @@ export const projectSessionEvent = (
       })]);
     case "myagents/operation/message": {
       const operation = findProductOperation(
-        foldProductOperations(events.slice(0, source.seq + 1), session.id),
+        foldProductOperations(
+          events.slice(0, source.seq + 1),
+          session.id,
+          ownsRootContextMessage,
+        ),
         source.data.clientOperationId,
       );
       if (operation === undefined) throw new TypeError("projected operation message has no durable owner");
@@ -189,7 +466,11 @@ export const projectSessionEvent = (
     }
     case "myagents/operation/claimed": {
       const operation = findProductOperation(
-        foldProductOperations(events.slice(0, source.seq + 1), session.id),
+        foldProductOperations(
+          events.slice(0, source.seq + 1),
+          session.id,
+          ownsRootContextMessage,
+        ),
         source.data.clientOperationId,
       );
       if (operation === undefined) throw new TypeError("projected operation claim has no durable owner");
@@ -211,7 +492,12 @@ export const projectSessionEvent = (
       ]);
     }
     case "assistant/chunk": {
-      const operation = operationForTurn(session, source.data.turn, source.seq);
+      const operation = operationForTurn(
+        session,
+        source.data.turn,
+        source.seq,
+        ownsRootContextMessage,
+      );
       if (operation === undefined) return Object.freeze([]);
       const boundary = operationTurnBoundary(events, operation, source.data.turn);
       if (source.seq <= boundary.start.seq
@@ -236,7 +522,12 @@ export const projectSessionEvent = (
       return Object.freeze([]);
     }
     case "assistant/message": {
-      const operation = operationForTurn(session, source.data.turn, source.seq);
+      const operation = operationForTurn(
+        session,
+        source.data.turn,
+        source.seq,
+        ownsRootContextMessage,
+      );
       if (operation === undefined) return Object.freeze([]);
       const boundary = operationTurnBoundary(events, operation, source.data.turn);
       if (source.seq <= boundary.start.seq
@@ -257,7 +548,12 @@ export const projectSessionEvent = (
       return Object.freeze(projected);
     }
     case "tool/call": {
-      const operation = operationForTurn(session, source.data.turn, source.seq);
+      const operation = operationForTurn(
+        session,
+        source.data.turn,
+        source.seq,
+        ownsRootContextMessage,
+      );
       if (operation === undefined) return Object.freeze([]);
       const boundary = operationTurnBoundary(events, operation, source.data.turn);
       if (source.seq <= boundary.start.seq
@@ -272,12 +568,17 @@ export const projectSessionEvent = (
           kind: "tool",
           phase: "start",
           name: protocolToolName(source.data.name),
-          detail: toolInputDetail(source.data.arguments),
+          input: toolInputDetail(source.data.arguments),
         }),
       })]);
     }
     case "tool/result": {
-      const operation = operationForTurn(session, source.data.turn, source.seq);
+      const operation = operationForTurn(
+        session,
+        source.data.turn,
+        source.seq,
+        ownsRootContextMessage,
+      );
       if (operation === undefined) return Object.freeze([]);
       const boundary = operationTurnBoundary(events, operation, source.data.turn);
       if (source.seq <= boundary.start.seq
@@ -286,12 +587,18 @@ export const projectSessionEvent = (
       }
       const result = source.data.message.content[0];
       const failed = source.data.error !== undefined || result.isError === true;
-      const detail = Object.freeze({
-        state: failed ? "failed" : "succeeded",
+      const status = source.data.meta !== null && typeof source.data.meta === "object"
+        && !Array.isArray(source.data.meta)
+        ? (source.data.meta as Readonly<Record<string, unknown>>).status
+        : undefined;
+      const aborted = typeof status === "string"
+        && (status === "aborted" || status === "cancelled" || status === "interrupted");
+      const metadata = toolResultMetadata(source.data.meta);
+      const projectedResult = Object.freeze({
+        state: aborted ? "aborted" as const : failed ? "failed" as const : "succeeded" as const,
         isError: failed,
-        content: result.content,
-        ...(source.data.error === undefined ? {} : { error: source.data.error }),
-        ...(source.data.meta === undefined ? {} : { meta: source.data.meta }),
+        content: toolResultContent(result.content),
+        ...(metadata === undefined ? {} : { metadata }),
       });
       return Object.freeze([Object.freeze({
         turnId: operation.productTurnId,
@@ -301,13 +608,17 @@ export const projectSessionEvent = (
           kind: "tool",
           phase: "end",
           name: toolNameForCall(events, result.toolCallId, source.seq),
-          detail,
+          result: projectedResult,
         }),
       })]);
     }
     case "myagents/operation/request-context": {
       const operation = findProductOperation(
-        foldProductOperations(events.slice(0, source.seq + 1), session.id),
+        foldProductOperations(
+          events.slice(0, source.seq + 1),
+          session.id,
+          ownsRootContextMessage,
+        ),
         source.data.clientOperationId,
       );
       if (operation === undefined) {
@@ -343,29 +654,13 @@ export const projectSessionEvent = (
         }),
       })]);
     }
-    case "request/context": {
-      if (source.data.contextWindow === undefined) return Object.freeze([]);
-      const turn = openTurnAt(events, source.seq);
-      if (turn === undefined) return Object.freeze([]);
-      const operation = operationForTurn(session, turn, source.seq);
-      if (operation === undefined) return Object.freeze([]);
-      if (!Number.isSafeInteger(source.data.contextWindow) || source.data.contextWindow < 1) {
-        throw new TypeError("DSH request context window must be a positive safe integer");
-      }
-      return Object.freeze([Object.freeze({
-        turnId: operation.productTurnId,
-        itemId: durableSessionEventId(session.id, source.seq),
-        event: Object.freeze({
-          kind: "context",
-          contextOccupiedTokens: null,
-          runtimeContextWindow: source.data.contextWindow,
-          modelProfileRevision: operation.birth.modelProfileRevision,
-        }),
-      })]);
-    }
     case "myagents/operation/terminal": {
       const operation = findProductOperation(
-        foldProductOperations(events.slice(0, source.seq + 1), session.id),
+        foldProductOperations(
+          events.slice(0, source.seq + 1),
+          session.id,
+          ownsRootContextMessage,
+        ),
         source.data.clientOperationId,
       );
       if (operation?.state !== "terminal" || operation.terminal === undefined) {
@@ -381,6 +676,17 @@ export const projectSessionEvent = (
         }),
       })]);
     }
+    case "compaction/start":
+      return Object.freeze([Object.freeze({
+        event: Object.freeze({ kind: "compaction", phase: "started" }),
+      })]);
+    case "compaction/end":
+      return Object.freeze([Object.freeze({
+        event: Object.freeze({
+          kind: "compaction",
+          phase: source.data.error === undefined ? "completed" : "failed",
+        }),
+      })]);
     default:
       return Object.freeze([]);
   }
@@ -391,7 +697,10 @@ const requiresDurabilityBarrier = (event: SessionEvent): boolean =>
 
 export class RuntimeEventProjector {
   readonly #config: RuntimeEventProjectorConfig;
+  readonly #ownsRootContextMessage: RootContextMessageOwnership;
+  readonly #capturedProjections = new Map<number, RuntimeEventProjection[]>();
   readonly #terminalReservations = new Map<string, TerminalNotificationReservation>();
+  readonly #stopProjectionChanged: () => void;
   readonly #stopSessionEvent: () => void;
   #closed = false;
   #drainPromise: Promise<void> | undefined;
@@ -399,15 +708,178 @@ export class RuntimeEventProjector {
   #hydratingSourceSession: Session | undefined;
   #nextSourceSequence: number | undefined;
   #observedSourceSequence: number | undefined;
+  #publishingReady = false;
+  #readySnapshotPromise: Promise<void> | undefined;
   #sequence = 0;
   #sourceSession: Session | undefined;
   #stopped = false;
 
   constructor(config: RuntimeEventProjectorConfig) {
     this.#config = config;
-    this.#stopSessionEvent = config.context.on("session/event", (session, event) => {
-      if (this.#ownsSession(session)) this.#observe(session, event);
+    this.#ownsRootContextMessage = config.ownsRootContextMessage ?? ownsNoRootContextMessage;
+    const projections = config.context.get("sessionProjections") as unknown as
+      SessionProjectionRegistryRead | undefined;
+    if (projections === undefined) {
+      throw new Error("Runtime event projection requires the DSH SessionProjectionRegistry");
+    }
+    this.#stopProjectionChanged = projections.onChanged((session, key, value, sequence) => {
+      if (key !== "contextPressure" || !this.#ownsSession(session)
+        || this.#config.productSession.snapshot().state !== "ready") return;
+      try {
+        const projection = contextProjection(
+          session,
+          value as ContextPressureValue,
+          sequence,
+          this.#ownsRootContextMessage,
+        );
+        if (projection !== undefined) this.#capture(sequence, projection);
+      } catch (error) {
+        this.#fail(error);
+      }
     });
+    this.#stopSessionEvent = config.context.on("session/event", (session, event) => {
+      if (!this.#ownsSession(session)) return;
+      try {
+        if (this.#config.productSession.snapshot().state === "ready") {
+          this.#captureProductStatus(session, event);
+        }
+        this.#observe(session, event);
+      } catch (error) {
+        this.#fail(error);
+      }
+    });
+  }
+
+  publishReadySnapshot(): Promise<void> {
+    if (this.#readySnapshotPromise !== undefined) return this.#readySnapshotPromise;
+    const task = this.#publishReadySnapshot();
+    this.#readySnapshotPromise = task;
+    void task.finally(() => {
+      if (this.#readySnapshotPromise === task) this.#readySnapshotPromise = undefined;
+    }).catch(() => undefined);
+    return task;
+  }
+
+  async #publishReadySnapshot(): Promise<void> {
+    while (this.#drainPromise !== undefined) await this.#drainPromise;
+    if (this.#failure !== undefined) throw this.#failure;
+    if (this.#stopped || this.#closed) {
+      throw new ProtocolError(
+        "runtime_event_projection_unavailable",
+        "Runtime event projection cannot publish a ready snapshot after shutdown",
+        true,
+      );
+    }
+    this.#publishingReady = true;
+    try {
+      const product = this.#config.productSession.snapshot();
+      const agent = this.#config.productSession.requireAgent();
+      const session = agent.session;
+      if (product.state !== "ready" || product.runtimeSessionId !== session.id) {
+        throw new ProtocolError(
+          "runtime_event_projection_uninitialized",
+          "Runtime ready snapshot requires the exact bound primary Session",
+        );
+      }
+      const head = session.seq;
+      if (!Number.isSafeInteger(head) || head < 0) {
+        throw new TypeError("Runtime ready snapshot observed an invalid Session head");
+      }
+      const registry = this.#config.context.get("sessionProjections") as unknown as
+        SessionProjectionRegistryRead;
+      const projectionCut = registry.snapshot(session);
+      const taskGraph = this.#config.context.productTaskGraph.snapshot(agent);
+      const work = this.#config.context.productWork.snapshot();
+      const plan = this.#config.context.productPlan.snapshot(agent);
+      if (session.seq !== head || projectionCut.asOfSeq !== head - 1) {
+        throw new ProtocolError(
+          "runtime_event_projection_sequence_gap",
+          "Runtime ready snapshot could not freeze one exact Session projection cut",
+        );
+      }
+      const previousDrained = this.#nextSourceSequence === undefined
+          || this.#observedSourceSequence === undefined
+          || this.#nextSourceSequence > this.#observedSourceSequence;
+      if (this.#sourceSession !== undefined && this.#sourceSession !== session
+        && (!previousDrained || this.#terminalReservations.size !== 0)) {
+        throw new ProtocolError(
+          "runtime_event_projection_session_changed",
+          "Runtime ready snapshot cannot replace a non-quiescent Session generation",
+        );
+      }
+      this.#sourceSession = session;
+      this.#nextSourceSequence = head;
+      this.#observedSourceSequence = head === 0 ? undefined : head - 1;
+      this.#hydratingSourceSession = undefined;
+      for (const sequence of this.#capturedProjections.keys()) {
+        if (sequence < head) this.#capturedProjections.delete(sequence);
+      }
+      const baseline: RuntimeEventProjection[] = [];
+      const pressure = projectionCut.values.contextPressure as ContextPressureValue | undefined;
+      const context = pressure === undefined
+        ? undefined
+        : contextProjection(
+            session,
+            pressure,
+            projectionCut.asOfSeq,
+            this.#ownsRootContextMessage,
+          );
+      if (context !== undefined) baseline.push(context);
+      baseline.push(taskGraphProjection(taskGraph));
+      for (const snapshot of work) baseline.push(workProjection(snapshot));
+      baseline.push(planProjection(plan));
+      const emittedAt = new Date().toISOString();
+      for (const projection of baseline) {
+        await this.#deliverProjection(session, projection, emittedAt);
+      }
+    } catch (error) {
+      const failure = toProtocolError(error);
+      this.#fail(failure);
+      throw failure;
+    } finally {
+      this.#publishingReady = false;
+      if (this.#nextSourceSequence !== undefined
+        && this.#observedSourceSequence !== undefined
+        && this.#nextSourceSequence <= this.#observedSourceSequence) {
+        this.#scheduleDrain();
+      }
+    }
+  }
+
+  #capture(sequence: number, projection: RuntimeEventProjection): void {
+    if (!Number.isSafeInteger(sequence) || sequence < 0) {
+      throw new TypeError("captured Runtime projection has an invalid source sequence");
+    }
+    const existing = this.#capturedProjections.get(sequence) ?? [];
+    existing.push(projection);
+    this.#capturedProjections.set(sequence, existing);
+  }
+
+  #captureProductStatus(session: Session, source: SessionEvent): void {
+    const isTask = source.type === "myagents/task/created" || source.type === "myagents/task/updated";
+    const isWork = source.type === "myagents/work/created"
+      || source.type === "myagents/work/stopping"
+      || source.type === "myagents/work/settled";
+    const sourceType: string = source.type;
+    const isPlan = sourceType === "plan/mode";
+    if (!isTask && !isWork && !isPlan) return;
+    const agent = this.#config.productSession.requireAgent();
+    if (agent.session !== session) {
+      throw new ProtocolError(
+        "runtime_event_projection_session_changed",
+        "Product status projection differs from the bound root Session",
+      );
+    }
+    if (isTask) {
+      this.#capture(source.seq, taskGraphProjection(
+        this.#config.context.productTaskGraph.snapshot(agent),
+      ));
+    } else if (isWork) {
+      const snapshot = this.#config.context.productWork.snapshotForEvent(source);
+      if (snapshot !== undefined) this.#capture(source.seq, workProjection(snapshot));
+    } else if (isPlan) {
+      this.#capture(source.seq, planProjection(this.#config.context.productPlan.snapshot(agent)));
+    }
   }
 
   reserve(clientOperationId: string): void {
@@ -450,6 +922,7 @@ export class RuntimeEventProjector {
   stopAccepting(): void {
     if (this.#stopped) return;
     this.#stopped = true;
+    this.#stopProjectionChanged();
     this.#stopSessionEvent();
   }
 
@@ -466,6 +939,7 @@ export class RuntimeEventProjector {
   }
 
   async whenIdle(): Promise<void> {
+    while (this.#readySnapshotPromise !== undefined) await this.#readySnapshotPromise;
     while (this.#drainPromise !== undefined) await this.#drainPromise;
     if (this.#failure !== undefined) throw this.#failure;
   }
@@ -530,7 +1004,7 @@ export class RuntimeEventProjector {
   }
 
   #scheduleDrain(): void {
-    if (this.#drainPromise !== undefined || this.#failure !== undefined) return;
+    if (this.#publishingReady || this.#drainPromise !== undefined || this.#failure !== undefined) return;
     const task = Promise.resolve()
       .then(() => this.#drain())
       .catch((error: unknown) => this.#fail(error));
@@ -564,15 +1038,12 @@ export class RuntimeEventProjector {
   }
 
   async #project(session: Session, source: SessionEvent): Promise<void> {
-    const projections = projectSessionEvent(session, source);
+    const projections = Object.freeze([
+      ...projectSessionEvent(session, source, this.#ownsRootContextMessage),
+      ...(this.#capturedProjections.get(source.seq) ?? []),
+    ]);
+    this.#capturedProjections.delete(source.seq);
     if (projections.length === 0) return;
-    const productSessionId = this.#config.productSessionId();
-    if (productSessionId === undefined) {
-      throw new ProtocolError(
-        "runtime_event_projection_uninitialized",
-        "Runtime cannot project Session events before initialize commits a product Session identity",
-      );
-    }
     if (requiresDurabilityBarrier(source) && !await this.#config.context.sessions.flush(session)) {
       throw new ProtocolError(
         "runtime_event_durability_unavailable",
@@ -580,33 +1051,48 @@ export class RuntimeEventProjector {
       );
     }
     for (const projection of projections) {
-      const envelope: RuntimeEventEnvelope = {
-        runtimeGeneration: this.#config.runtimeGeneration,
-        productSessionId,
-        runtimeSessionId: session.id,
-        sequence: ++this.#sequence,
-        emittedAt: new Date(source.time).toISOString(),
-        event: projection.event,
-        ...(projection.turnId === undefined ? {} : { turnId: projection.turnId }),
-        ...(projection.itemId === undefined ? {} : { itemId: projection.itemId }),
-        ...(projection.toolCallId === undefined ? {} : { toolCallId: projection.toolCallId }),
-      };
-      if (projection.event.kind === "turn_terminal") {
-        const reservationId = projection.terminalReservationId;
-        const reservation = reservationId === undefined
-          ? undefined
-          : this.#terminalReservations.get(reservationId);
-        if (reservation === undefined) {
-          throw new ProtocolError(
-            "terminal_delivery_unreserved",
-            "Durable operation terminal lacks its admission-time notification reservation",
-          );
-        }
-        await reservation.deliver(envelope);
-        if (reservationId !== undefined) this.#terminalReservations.delete(reservationId);
-      } else {
-        await this.#config.peer.notify("runtime/event", envelope);
+      await this.#deliverProjection(session, projection, new Date(source.time).toISOString());
+    }
+  }
+
+  async #deliverProjection(
+    session: Session,
+    projection: RuntimeEventProjection,
+    emittedAt: string,
+  ): Promise<void> {
+    const productSessionId = this.#config.productSessionId();
+    if (productSessionId === undefined) {
+      throw new ProtocolError(
+        "runtime_event_projection_uninitialized",
+        "Runtime cannot project Session events before initialize commits a product Session identity",
+      );
+    }
+    const envelope: RuntimeEventEnvelope = {
+      runtimeGeneration: this.#config.runtimeGeneration,
+      productSessionId,
+      runtimeSessionId: session.id,
+      sequence: ++this.#sequence,
+      emittedAt,
+      event: projection.event,
+      ...(projection.turnId === undefined ? {} : { turnId: projection.turnId }),
+      ...(projection.itemId === undefined ? {} : { itemId: projection.itemId }),
+      ...(projection.toolCallId === undefined ? {} : { toolCallId: projection.toolCallId }),
+    };
+    if (projection.event.kind === "turn_terminal") {
+      const reservationId = projection.terminalReservationId;
+      const reservation = reservationId === undefined
+        ? undefined
+        : this.#terminalReservations.get(reservationId);
+      if (reservation === undefined) {
+        throw new ProtocolError(
+          "terminal_delivery_unreserved",
+          "Durable operation terminal lacks its admission-time notification reservation",
+        );
       }
+      await reservation.deliver(envelope);
+      if (reservationId !== undefined) this.#terminalReservations.delete(reservationId);
+    } else {
+      await this.#config.peer.notify("runtime/event", envelope);
     }
   }
 

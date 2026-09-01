@@ -100,26 +100,21 @@ a new baseline. It fails closed rather than continue an ambiguous stream.
 
 Diagnostics may report sanitized event types, identities and revisions. They must not log credentials, attachment bytes, private prompt content or raw upstream failures.
 
-## 7. Current source-candidate gaps
+## 7. Current source-candidate acceptance boundary
 
-The static `2.4.0` protocol/profile generation is byte-stable, but this projection implementation is
-not yet accepted Runtime truth:
+Protocol/profile `2.4.0`, the official projection-registry seam and the checked-in DSH baseline are
+byte-stable. The final source state passes the complete MyAgents-dsh typecheck, zero-warning lint,
+69-file / 640-test and production-build gates. Focused tests cover ready ordering,
+zero/route-switch/failed contexts, usage chunks without a final assistant message, Task/Work/Plan
+live and ready snapshots, compaction, rich and aggregate-oversized Tool results, sequence gaps and
+restart. MyAgents source consumers independently pass their exact-toolchain full tests and builds.
 
-- context correlation searches only usage-bearing `assistant/message`, while official TokenMeter
-  can sample `assistant/chunk`; a chunk may be attributed to an older operation and a failed request
-  with no final assistant message may never project occupancy;
-- Tool result projection bounds each text block but does not first enforce aggregate block/frame
-  limits, and image `name` is not clamped to the wire's 512-character bound. Oversized valid DSH
-  content can therefore fail peer validation and terminate the generation;
-- the focused projector/native-RPC suite passes 29 tests for the required registry and ready
-  baseline, but the repository DSH baseline gate still rejects the stale checked-in baseline and a
-  dynamic test import. Artifact-consuming composition/native gates have no current `2.4.0` artifact
-  input, and no `2.4.0` Runtime artifact/handoff evidence has been accepted.
-
-The architecture-correct repair anchors the latest usage-bearing chunk **or** message to its exact
-turn/operation and normalizes aggregate Tool result content before the peer. Evidence must cover
-ready ordering, zero/route-switch/failed contexts, Task/Work/Plan live snapshots, compaction, rich and
-oversized Tool results, gaps/restart and actual MyAgents consumption.
+This remains a source candidate because MyAgents still contains the correctly verified historical
+protocol `2.3.0` Runtime resource. No current `2.4.0` Runtime/platform/handoff evidence has been
+accepted, and the split repository tests do not satisfy the required staged producer-to-consumer
+journey. The joint REC/CAP artifact campaign must build the current source, create a new immutable
+handoff with its own three-platform evidence, ingest those exact bytes and exercise the packaged
+client before this module becomes accepted Runtime delivery truth.
 
 ## 8. Architecture-correct change path
 

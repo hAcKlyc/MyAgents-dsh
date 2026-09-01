@@ -917,7 +917,7 @@ describe("canonical Agent Work projection", () => {
     expect(state.context.productWork.snapshot()).toEqual([expect.objectContaining({
       taskId: value.taskId,
       outputPath: value.outputPath,
-      state: "background",
+      state: "running",
     })]);
     const agentId = (started as { value: { agentId: string } }).value.agentId;
     state.subagents.emitEnd(agentId, "fixture review complete");
@@ -1084,7 +1084,7 @@ describe("canonical Agent Work projection", () => {
     });
     expect(state.agent.session.events.filter((event) => event.type === "myagents/work/epoch")).toEqual([]);
     expect(state.context.productWork.snapshot()).toEqual([expect.objectContaining({
-      state: "background",
+      state: "running",
       outputPath: value.outputPath,
     })]);
 

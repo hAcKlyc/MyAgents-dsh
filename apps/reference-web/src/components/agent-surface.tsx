@@ -74,11 +74,11 @@ const activityFor = (envelope: RuntimeEnvelope): Extract<FlowBlock, { kind: "act
   const event = envelope.event;
   const id = `${envelope.runtimeGeneration}:${envelope.sequence}`;
   switch (event.kind) {
-    case "plan": return { kind: "activity", id, label: "计划", title: `计划已更新 · ${event.revision}`, detail: event.detail };
-    case "task_graph": return { kind: "activity", id, label: "任务", title: `任务图已更新 · ${event.revision}`, detail: event.detail };
-    case "work": return { kind: "activity", id, label: "协作", title: `${event.taskId} · ${event.phase}`, detail: event.detail };
+    case "plan": return { kind: "activity", id, label: "计划", title: `计划已更新 · ${event.revision}`, detail: { mode: event.mode } };
+    case "task_graph": return { kind: "activity", id, label: "任务", title: `任务图已更新 · ${event.snapshot.revision}`, detail: event.snapshot };
+    case "work": return { kind: "activity", id, label: "协作", title: `${event.snapshot.taskId} · ${event.snapshot.state}`, detail: event.snapshot };
     case "warning": return { kind: "activity", id, label: "警告", title: event.message, detail: { code: event.code }, tone: "warning" };
-    case "compaction": return { kind: "activity", id, label: "上下文", title: `压缩${event.phase.replaceAll("_", " ")}`, detail: event.detail };
+    case "compaction": return { kind: "activity", id, label: "上下文", title: `压缩${event.phase.replaceAll("_", " ")}` };
     case "retry": return { kind: "activity", id, label: "重试", title: event.phase, detail: event.detail };
     case "queued_message": return {
       kind: "activity",
@@ -136,14 +136,16 @@ const foldRuntimeTurns = (events: readonly RuntimeEnvelope[]): AssistantTurn[] =
       const id = envelope.toolCallId ?? `${event.name}:${eventId}`;
       const index = turn.blocks.findIndex((block) => block.kind === "tool" && block.id === id);
       const prior = index < 0 ? undefined : turn.blocks[index];
-      const isError = record(event.detail)?.isError === true || record(event.detail)?.state === "failed";
+      const isError = event.phase === "end" && event.result.state !== "succeeded";
       const next: FlowBlock = {
         kind: "tool",
         id,
         name: event.name,
         state: event.phase === "end" ? (isError ? "failed" : "succeeded") : "running",
-        ...(event.phase === "start" ? { input: event.detail } : prior?.kind === "tool" && prior.input !== undefined ? { input: prior.input } : {}),
-        ...(event.phase === "start" ? {} : { output: event.detail }),
+        ...(event.phase === "start" ? { input: event.input } : prior?.kind === "tool" && prior.input !== undefined ? { input: prior.input } : {}),
+        ...(event.phase === "start" ? {} : {
+          output: event.phase === "end" ? event.result : event.progress,
+        }),
       };
       if (index < 0) turn.blocks.push(next);
       else turn.blocks[index] = next;

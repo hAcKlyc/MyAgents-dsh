@@ -1378,6 +1378,33 @@
                             "required": [
                               "kind",
                               "phase",
+                              "name",
+                              "input"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "tool"
+                              },
+                              "phase": {
+                                "type": "string",
+                                "const": "start"
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "input": {}
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "phase",
                               "name"
                             ],
                             "properties": {
@@ -1386,20 +1413,8 @@
                                 "const": "tool"
                               },
                               "phase": {
-                                "anyOf": [
-                                  {
-                                    "type": "string",
-                                    "const": "start"
-                                  },
-                                  {
-                                    "type": "string",
-                                    "const": "update"
-                                  },
-                                  {
-                                    "type": "string",
-                                    "const": "end"
-                                  }
-                                ]
+                                "type": "string",
+                                "const": "update"
                               },
                               "name": {
                                 "type": "string",
@@ -1407,11 +1422,192 @@
                                 "maxLength": 256,
                                 "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
                               },
-                              "detail": {
+                              "progress": {
                                 "type": "object",
                                 "patternProperties": {
                                   "^.*$": {}
                                 }
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "phase",
+                              "name",
+                              "result"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "tool"
+                              },
+                              "phase": {
+                                "type": "string",
+                                "const": "end"
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "result": {
+                                "type": "object",
+                                "required": [
+                                  "state",
+                                  "isError",
+                                  "content"
+                                ],
+                                "properties": {
+                                  "state": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "const": "succeeded"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "failed"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "aborted"
+                                      }
+                                    ]
+                                  },
+                                  "isError": {
+                                    "type": "boolean"
+                                  },
+                                  "content": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "required": [
+                                            "type",
+                                            "text"
+                                          ],
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "const": "text"
+                                            },
+                                            "text": {
+                                              "type": "string",
+                                              "maxLength": 262144
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "required": [
+                                            "type",
+                                            "attachmentId",
+                                            "mimeType",
+                                            "sizeBytes",
+                                            "sha256"
+                                          ],
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "const": "image_ref"
+                                            },
+                                            "attachmentId": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 256,
+                                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                            },
+                                            "mimeType": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 256,
+                                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                            },
+                                            "sizeBytes": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "sha256": {
+                                              "type": "string",
+                                              "pattern": "^[a-f0-9]{64}$"
+                                            },
+                                            "width": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "height": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 512
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "maxItems": 1024
+                                  },
+                                  "metadata": {
+                                    "type": "object",
+                                    "properties": {
+                                      "exitCode": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "durationMs": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "cwd": {
+                                        "type": "string",
+                                        "maxLength": 8192
+                                      },
+                                      "processId": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "status": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "additionalProperties": false
                               }
                             },
                             "additionalProperties": false
@@ -1551,15 +1747,8 @@
                                 "const": "context"
                               },
                               "contextOccupiedTokens": {
-                                "anyOf": [
-                                  {
-                                    "type": "integer",
-                                    "minimum": 0
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
+                                "type": "integer",
+                                "minimum": 0
                               },
                               "runtimeContextWindow": {
                                 "type": "integer",
@@ -1605,25 +1794,31 @@
                             "type": "object",
                             "required": [
                               "kind",
-                              "revision",
-                              "detail"
+                              "mode",
+                              "revision"
                             ],
                             "properties": {
                               "kind": {
                                 "type": "string",
                                 "const": "plan"
                               },
+                              "mode": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "const": "normal"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "plan"
+                                  }
+                                ]
+                              },
                               "revision": {
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 256,
                                 "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                              },
-                              "detail": {
-                                "type": "object",
-                                "patternProperties": {
-                                  "^.*$": {}
-                                }
                               }
                             },
                             "additionalProperties": false
@@ -1632,25 +1827,78 @@
                             "type": "object",
                             "required": [
                               "kind",
-                              "revision",
-                              "detail"
+                              "snapshot"
                             ],
                             "properties": {
                               "kind": {
                                 "type": "string",
                                 "const": "task_graph"
                               },
-                              "revision": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 256,
-                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                              },
-                              "detail": {
+                              "snapshot": {
                                 "type": "object",
-                                "patternProperties": {
-                                  "^.*$": {}
-                                }
+                                "required": [
+                                  "revision",
+                                  "tasks"
+                                ],
+                                "properties": {
+                                  "revision": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "tasks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "required": [
+                                        "id",
+                                        "subject",
+                                        "status"
+                                      ],
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 256,
+                                          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                        },
+                                        "subject": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 512
+                                        },
+                                        "activeForm": {
+                                          "type": "string",
+                                          "maxLength": 512
+                                        },
+                                        "status": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "const": "pending"
+                                            },
+                                            {
+                                              "type": "string",
+                                              "const": "in_progress"
+                                            },
+                                            {
+                                              "type": "string",
+                                              "const": "completed"
+                                            },
+                                            {
+                                              "type": "string",
+                                              "const": "cancelled"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "additionalProperties": false
+                                    },
+                                    "maxItems": 256
+                                  }
+                                },
+                                "additionalProperties": false
                               }
                             },
                             "additionalProperties": false
@@ -1659,31 +1907,160 @@
                             "type": "object",
                             "required": [
                               "kind",
-                              "taskId",
-                              "phase"
+                              "snapshot"
                             ],
                             "properties": {
                               "kind": {
                                 "type": "string",
                                 "const": "work"
                               },
-                              "taskId": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 256,
-                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                              },
-                              "phase": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 256,
-                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                              },
-                              "detail": {
+                              "snapshot": {
                                 "type": "object",
-                                "patternProperties": {
-                                  "^.*$": {}
-                                }
+                                "required": [
+                                  "taskId",
+                                  "parentToolCallId",
+                                  "agentId",
+                                  "agentType",
+                                  "description",
+                                  "mode",
+                                  "model",
+                                  "state",
+                                  "startedAt"
+                                ],
+                                "properties": {
+                                  "taskId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "parentToolCallId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "agentId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "agentType": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "description": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 512
+                                  },
+                                  "mode": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "const": "foreground"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "continuable"
+                                      }
+                                    ]
+                                  },
+                                  "model": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "state": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "const": "running"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "stopping"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "succeeded"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "failed"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "aborted"
+                                      }
+                                    ]
+                                  },
+                                  "startedAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  },
+                                  "finishedAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  },
+                                  "result": {
+                                    "type": "string",
+                                    "maxLength": 262144
+                                  },
+                                  "resultTruncated": {
+                                    "type": "boolean"
+                                  },
+                                  "usage": {
+                                    "type": "object",
+                                    "required": [
+                                      "inputTokens",
+                                      "outputTokens",
+                                      "cacheReadTokens",
+                                      "cacheWriteTokens",
+                                      "totalTokens",
+                                      "costUsd"
+                                    ],
+                                    "properties": {
+                                      "inputTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "outputTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "cacheReadTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "cacheWriteTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "totalTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "costUsd": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number",
+                                            "minimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "additionalProperties": false
                               }
                             },
                             "additionalProperties": false
@@ -5119,6 +5496,33 @@
                                 "required": [
                                   "kind",
                                   "phase",
+                                  "name",
+                                  "input"
+                                ],
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "tool"
+                                  },
+                                  "phase": {
+                                    "type": "string",
+                                    "const": "start"
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "input": {}
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "kind",
+                                  "phase",
                                   "name"
                                 ],
                                 "properties": {
@@ -5127,20 +5531,8 @@
                                     "const": "tool"
                                   },
                                   "phase": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string",
-                                        "const": "start"
-                                      },
-                                      {
-                                        "type": "string",
-                                        "const": "update"
-                                      },
-                                      {
-                                        "type": "string",
-                                        "const": "end"
-                                      }
-                                    ]
+                                    "type": "string",
+                                    "const": "update"
                                   },
                                   "name": {
                                     "type": "string",
@@ -5148,11 +5540,192 @@
                                     "maxLength": 256,
                                     "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
                                   },
-                                  "detail": {
+                                  "progress": {
                                     "type": "object",
                                     "patternProperties": {
                                       "^.*$": {}
                                     }
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "kind",
+                                  "phase",
+                                  "name",
+                                  "result"
+                                ],
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "tool"
+                                  },
+                                  "phase": {
+                                    "type": "string",
+                                    "const": "end"
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "result": {
+                                    "type": "object",
+                                    "required": [
+                                      "state",
+                                      "isError",
+                                      "content"
+                                    ],
+                                    "properties": {
+                                      "state": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "const": "succeeded"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "failed"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "aborted"
+                                          }
+                                        ]
+                                      },
+                                      "isError": {
+                                        "type": "boolean"
+                                      },
+                                      "content": {
+                                        "type": "array",
+                                        "items": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "required": [
+                                                "type",
+                                                "text"
+                                              ],
+                                              "properties": {
+                                                "type": {
+                                                  "type": "string",
+                                                  "const": "text"
+                                                },
+                                                "text": {
+                                                  "type": "string",
+                                                  "maxLength": 262144
+                                                }
+                                              },
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "required": [
+                                                "type",
+                                                "attachmentId",
+                                                "mimeType",
+                                                "sizeBytes",
+                                                "sha256"
+                                              ],
+                                              "properties": {
+                                                "type": {
+                                                  "type": "string",
+                                                  "const": "image_ref"
+                                                },
+                                                "attachmentId": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 256,
+                                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                                },
+                                                "mimeType": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 256,
+                                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                                },
+                                                "sizeBytes": {
+                                                  "type": "integer",
+                                                  "minimum": 0
+                                                },
+                                                "sha256": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-f0-9]{64}$"
+                                                },
+                                                "width": {
+                                                  "type": "integer",
+                                                  "minimum": 0
+                                                },
+                                                "height": {
+                                                  "type": "integer",
+                                                  "minimum": 0
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "maxLength": 512
+                                                }
+                                              },
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "maxItems": 1024
+                                      },
+                                      "metadata": {
+                                        "type": "object",
+                                        "properties": {
+                                          "exitCode": {
+                                            "anyOf": [
+                                              {
+                                                "type": "integer"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "durationMs": {
+                                            "anyOf": [
+                                              {
+                                                "type": "integer",
+                                                "minimum": 0
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "cwd": {
+                                            "type": "string",
+                                            "maxLength": 8192
+                                          },
+                                          "processId": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 256,
+                                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "status": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "additionalProperties": false
                                   }
                                 },
                                 "additionalProperties": false
@@ -5292,15 +5865,8 @@
                                     "const": "context"
                                   },
                                   "contextOccupiedTokens": {
-                                    "anyOf": [
-                                      {
-                                        "type": "integer",
-                                        "minimum": 0
-                                      },
-                                      {
-                                        "type": "null"
-                                      }
-                                    ]
+                                    "type": "integer",
+                                    "minimum": 0
                                   },
                                   "runtimeContextWindow": {
                                     "type": "integer",
@@ -5346,25 +5912,31 @@
                                 "type": "object",
                                 "required": [
                                   "kind",
-                                  "revision",
-                                  "detail"
+                                  "mode",
+                                  "revision"
                                 ],
                                 "properties": {
                                   "kind": {
                                     "type": "string",
                                     "const": "plan"
                                   },
+                                  "mode": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "const": "normal"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "plan"
+                                      }
+                                    ]
+                                  },
                                   "revision": {
                                     "type": "string",
                                     "minLength": 1,
                                     "maxLength": 256,
                                     "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                                  },
-                                  "detail": {
-                                    "type": "object",
-                                    "patternProperties": {
-                                      "^.*$": {}
-                                    }
                                   }
                                 },
                                 "additionalProperties": false
@@ -5373,25 +5945,78 @@
                                 "type": "object",
                                 "required": [
                                   "kind",
-                                  "revision",
-                                  "detail"
+                                  "snapshot"
                                 ],
                                 "properties": {
                                   "kind": {
                                     "type": "string",
                                     "const": "task_graph"
                                   },
-                                  "revision": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 256,
-                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                                  },
-                                  "detail": {
+                                  "snapshot": {
                                     "type": "object",
-                                    "patternProperties": {
-                                      "^.*$": {}
-                                    }
+                                    "required": [
+                                      "revision",
+                                      "tasks"
+                                    ],
+                                    "properties": {
+                                      "revision": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "tasks": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "required": [
+                                            "id",
+                                            "subject",
+                                            "status"
+                                          ],
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 256,
+                                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                            },
+                                            "subject": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 512
+                                            },
+                                            "activeForm": {
+                                              "type": "string",
+                                              "maxLength": 512
+                                            },
+                                            "status": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "const": "pending"
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "const": "in_progress"
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "const": "completed"
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "const": "cancelled"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        },
+                                        "maxItems": 256
+                                      }
+                                    },
+                                    "additionalProperties": false
                                   }
                                 },
                                 "additionalProperties": false
@@ -5400,31 +6025,160 @@
                                 "type": "object",
                                 "required": [
                                   "kind",
-                                  "taskId",
-                                  "phase"
+                                  "snapshot"
                                 ],
                                 "properties": {
                                   "kind": {
                                     "type": "string",
                                     "const": "work"
                                   },
-                                  "taskId": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 256,
-                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                                  },
-                                  "phase": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 256,
-                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                                  },
-                                  "detail": {
+                                  "snapshot": {
                                     "type": "object",
-                                    "patternProperties": {
-                                      "^.*$": {}
-                                    }
+                                    "required": [
+                                      "taskId",
+                                      "parentToolCallId",
+                                      "agentId",
+                                      "agentType",
+                                      "description",
+                                      "mode",
+                                      "model",
+                                      "state",
+                                      "startedAt"
+                                    ],
+                                    "properties": {
+                                      "taskId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "parentToolCallId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "agentId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "agentType": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "description": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 512
+                                      },
+                                      "mode": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "const": "foreground"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "continuable"
+                                          }
+                                        ]
+                                      },
+                                      "model": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "state": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "const": "running"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "stopping"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "succeeded"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "failed"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "aborted"
+                                          }
+                                        ]
+                                      },
+                                      "startedAt": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                      },
+                                      "finishedAt": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                      },
+                                      "result": {
+                                        "type": "string",
+                                        "maxLength": 262144
+                                      },
+                                      "resultTruncated": {
+                                        "type": "boolean"
+                                      },
+                                      "usage": {
+                                        "type": "object",
+                                        "required": [
+                                          "inputTokens",
+                                          "outputTokens",
+                                          "cacheReadTokens",
+                                          "cacheWriteTokens",
+                                          "totalTokens",
+                                          "costUsd"
+                                        ],
+                                        "properties": {
+                                          "inputTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "outputTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "cacheReadTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "cacheWriteTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "totalTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "costUsd": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number",
+                                                "minimum": 0
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "additionalProperties": false
                                   }
                                 },
                                 "additionalProperties": false
@@ -7761,6 +8515,33 @@
                           "required": [
                             "kind",
                             "phase",
+                            "name",
+                            "input"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "tool"
+                            },
+                            "phase": {
+                              "type": "string",
+                              "const": "start"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "input": {}
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "phase",
                             "name"
                           ],
                           "properties": {
@@ -7769,20 +8550,8 @@
                               "const": "tool"
                             },
                             "phase": {
-                              "anyOf": [
-                                {
-                                  "type": "string",
-                                  "const": "start"
-                                },
-                                {
-                                  "type": "string",
-                                  "const": "update"
-                                },
-                                {
-                                  "type": "string",
-                                  "const": "end"
-                                }
-                              ]
+                              "type": "string",
+                              "const": "update"
                             },
                             "name": {
                               "type": "string",
@@ -7790,11 +8559,192 @@
                               "maxLength": 256,
                               "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
                             },
-                            "detail": {
+                            "progress": {
                               "type": "object",
                               "patternProperties": {
                                 "^.*$": {}
                               }
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "phase",
+                            "name",
+                            "result"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "tool"
+                            },
+                            "phase": {
+                              "type": "string",
+                              "const": "end"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "result": {
+                              "type": "object",
+                              "required": [
+                                "state",
+                                "isError",
+                                "content"
+                              ],
+                              "properties": {
+                                "state": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "const": "succeeded"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "failed"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "aborted"
+                                    }
+                                  ]
+                                },
+                                "isError": {
+                                  "type": "boolean"
+                                },
+                                "content": {
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "required": [
+                                          "type",
+                                          "text"
+                                        ],
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "const": "text"
+                                          },
+                                          "text": {
+                                            "type": "string",
+                                            "maxLength": 262144
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "required": [
+                                          "type",
+                                          "attachmentId",
+                                          "mimeType",
+                                          "sizeBytes",
+                                          "sha256"
+                                        ],
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "const": "image_ref"
+                                          },
+                                          "attachmentId": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "mimeType": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "sizeBytes": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "sha256": {
+                                            "type": "string",
+                                            "pattern": "^[a-f0-9]{64}$"
+                                          },
+                                          "width": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "height": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "maxLength": 512
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "maxItems": 1024
+                                },
+                                "metadata": {
+                                  "type": "object",
+                                  "properties": {
+                                    "exitCode": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "durationMs": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "cwd": {
+                                      "type": "string",
+                                      "maxLength": 8192
+                                    },
+                                    "processId": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 256,
+                                          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "status": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 256,
+                                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                }
+                              },
+                              "additionalProperties": false
                             }
                           },
                           "additionalProperties": false
@@ -7934,15 +8884,8 @@
                               "const": "context"
                             },
                             "contextOccupiedTokens": {
-                              "anyOf": [
-                                {
-                                  "type": "integer",
-                                  "minimum": 0
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
+                              "type": "integer",
+                              "minimum": 0
                             },
                             "runtimeContextWindow": {
                               "type": "integer",
@@ -7988,25 +8931,31 @@
                           "type": "object",
                           "required": [
                             "kind",
-                            "revision",
-                            "detail"
+                            "mode",
+                            "revision"
                           ],
                           "properties": {
                             "kind": {
                               "type": "string",
                               "const": "plan"
                             },
+                            "mode": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "const": "normal"
+                                },
+                                {
+                                  "type": "string",
+                                  "const": "plan"
+                                }
+                              ]
+                            },
                             "revision": {
                               "type": "string",
                               "minLength": 1,
                               "maxLength": 256,
                               "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                            },
-                            "detail": {
-                              "type": "object",
-                              "patternProperties": {
-                                "^.*$": {}
-                              }
                             }
                           },
                           "additionalProperties": false
@@ -8015,25 +8964,78 @@
                           "type": "object",
                           "required": [
                             "kind",
-                            "revision",
-                            "detail"
+                            "snapshot"
                           ],
                           "properties": {
                             "kind": {
                               "type": "string",
                               "const": "task_graph"
                             },
-                            "revision": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256,
-                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                            },
-                            "detail": {
+                            "snapshot": {
                               "type": "object",
-                              "patternProperties": {
-                                "^.*$": {}
-                              }
+                              "required": [
+                                "revision",
+                                "tasks"
+                              ],
+                              "properties": {
+                                "revision": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256,
+                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                },
+                                "tasks": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "required": [
+                                      "id",
+                                      "subject",
+                                      "status"
+                                    ],
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "subject": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 512
+                                      },
+                                      "activeForm": {
+                                        "type": "string",
+                                        "maxLength": 512
+                                      },
+                                      "status": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "const": "pending"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "in_progress"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "completed"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "cancelled"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 256
+                                }
+                              },
+                              "additionalProperties": false
                             }
                           },
                           "additionalProperties": false
@@ -8042,31 +9044,160 @@
                           "type": "object",
                           "required": [
                             "kind",
-                            "taskId",
-                            "phase"
+                            "snapshot"
                           ],
                           "properties": {
                             "kind": {
                               "type": "string",
                               "const": "work"
                             },
-                            "taskId": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256,
-                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                            },
-                            "phase": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256,
-                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-                            },
-                            "detail": {
+                            "snapshot": {
                               "type": "object",
-                              "patternProperties": {
-                                "^.*$": {}
-                              }
+                              "required": [
+                                "taskId",
+                                "parentToolCallId",
+                                "agentId",
+                                "agentType",
+                                "description",
+                                "mode",
+                                "model",
+                                "state",
+                                "startedAt"
+                              ],
+                              "properties": {
+                                "taskId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256,
+                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                },
+                                "parentToolCallId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256,
+                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                },
+                                "agentId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256,
+                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                },
+                                "agentType": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256,
+                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 512
+                                },
+                                "mode": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "const": "foreground"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "continuable"
+                                    }
+                                  ]
+                                },
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 256,
+                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                },
+                                "state": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "const": "running"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "stopping"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "succeeded"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "failed"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "aborted"
+                                    }
+                                  ]
+                                },
+                                "startedAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
+                                "finishedAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
+                                "result": {
+                                  "type": "string",
+                                  "maxLength": 262144
+                                },
+                                "resultTruncated": {
+                                  "type": "boolean"
+                                },
+                                "usage": {
+                                  "type": "object",
+                                  "required": [
+                                    "inputTokens",
+                                    "outputTokens",
+                                    "cacheReadTokens",
+                                    "cacheWriteTokens",
+                                    "totalTokens",
+                                    "costUsd"
+                                  ],
+                                  "properties": {
+                                    "inputTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "outputTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "cacheReadTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "cacheWriteTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "totalTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "costUsd": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                }
+                              },
+                              "additionalProperties": false
                             }
                           },
                           "additionalProperties": false

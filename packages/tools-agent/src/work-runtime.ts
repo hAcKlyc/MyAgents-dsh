@@ -300,11 +300,25 @@ export interface ProductDynamicAgentController {
 
 export interface ProductWorkSnapshot {
   readonly agentId: string;
+  readonly agentType: string;
+  readonly description: string;
+  readonly finishedAt?: string;
   readonly mode: "continuable" | "foreground";
   readonly model: string;
   readonly outputPath?: string;
-  readonly state: "background" | WorkTerminal;
+  readonly parentToolCallId: string;
+  readonly result?: string;
+  readonly resultTruncated?: boolean;
+  readonly startedAt: string;
+  readonly state: "running" | "stopping" | WorkTerminal;
   readonly taskId: string;
+  readonly usage?: Readonly<{
+    readonly cacheReadTokens: number;
+    readonly cacheWriteTokens: number;
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly totalTokens: number;
+  }>;
 }
 
 type NativeDeferred<T> = ReturnType<typeof Promise.withResolvers<T>>;
@@ -1275,14 +1289,61 @@ export class ProductWorkService extends Service {
 
   snapshot(): readonly ProductWorkSnapshot[] {
     this.assertHealthy();
-    return Object.freeze([...this.byTask.values()].map((entry) => Object.freeze({
+    return Object.freeze([...this.byTask.values()].map((entry) => this.statusSnapshot(entry)));
+  }
+
+  snapshotForEvent(source: SessionEvent): ProductWorkSnapshot | undefined {
+    this.assertHealthy();
+    if (source.type !== "myagents/work/created"
+      && source.type !== "myagents/work/stopping"
+      && source.type !== "myagents/work/settled") return undefined;
+    const entry = this.byTask.get(source.data.taskId);
+    if (entry?.parent.session.events[source.seq] !== source
+      || source.data.eventSeq !== source.seq || source.data.sessionId !== entry.parent.id
+      || source.data.agentId !== entry.agentId) {
+      throw new Error("ProductWork status source lacks its exact live registry owner");
+    }
+    return this.statusSnapshot(entry, source);
+  }
+
+  private statusSnapshot(entry: WorkEntry, source?: SessionEvent): ProductWorkSnapshot {
+    const createdSource = entry.parent.session.events[entry.created.eventSeq];
+    if (createdSource?.type !== "myagents/work/created"
+      || createdSource.data.taskId !== entry.taskId
+      || createdSource.data.agentId !== entry.agentId) {
+      throw new Error("ProductWork status lacks its exact durable creation fact");
+    }
+    const sourceSettlement = source?.type === "myagents/work/settled" ? source.data : undefined;
+    const settlement = sourceSettlement ?? entry.settlement;
+    const stopping = source?.type === "myagents/work/stopping"
+      || (settlement === undefined && entry.stopRequested);
+    const finishedSource = settlement === undefined
+      ? undefined
+      : entry.parent.session.events[settlement.eventSeq];
+    if (settlement !== undefined && (finishedSource?.type !== "myagents/work/settled"
+      || finishedSource.data.taskId !== entry.taskId
+      || finishedSource.data.agentId !== entry.agentId)) {
+      throw new Error("ProductWork status lacks its exact durable settlement fact");
+    }
+    const usage = settlement?.usage;
+    return Object.freeze({
       agentId: entry.agentId,
+      agentType: entry.created.birth.type,
+      description: entry.created.description,
+      ...(finishedSource === undefined ? {} : {
+        finishedAt: new Date(finishedSource.time).toISOString(),
+      }),
       mode: entry.mode,
       model: entry.created.model,
       ...(entry.created.outputPath === undefined ? {} : { outputPath: entry.created.outputPath }),
-      state: entry.settlement?.terminal ?? "background",
+      parentToolCallId: entry.created.authority.callId,
+      ...(settlement === undefined ? {} : { result: settlement.result }),
+      ...(settlement === undefined ? {} : { resultTruncated: settlement.resultTruncated }),
+      startedAt: new Date(createdSource.time).toISOString(),
+      state: settlement?.terminal ?? (stopping ? "stopping" : "running"),
       taskId: entry.taskId,
-    })));
+      ...(usage === undefined ? {} : { usage: Object.freeze({ ...usage }) }),
+    });
   }
 
   whenComponentGenerationIdle(revision: string, digest: string): Promise<void> {

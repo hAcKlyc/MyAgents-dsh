@@ -666,6 +666,7 @@ describe("strict bidirectional JSON-RPC peer", () => {
     const peer = new JsonRpcPeer({ input, output, role: "runtime", limits });
     const normal = peer.notify("runtime/event", eventEnvelope({
       kind: "tool", phase: "end", name: "Read",
+      result: { state: "succeeded", isError: false, content: [] },
     })).catch((error: unknown) => error);
     await tick();
     await expect(peer.notify("runtime/event", eventEnvelope({

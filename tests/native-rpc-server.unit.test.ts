@@ -1,4 +1,5 @@
 import { Context } from "@deepseek-ai/cordis";
+import { Session, SessionId } from "@deepseek-ai/dsh-session";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_CANDIDATE_PROFILE_SHA256,
@@ -190,6 +191,7 @@ const createRoot = (
   hostPortLifecycleState.current = hostPorts;
   terminalReservationState.bindings.length = 0;
   const root = new Context();
+  let primaryAgent: Readonly<{ id: SessionId; session: Session }> | undefined;
   let sessionSnapshot: Record<string, unknown> = Object.freeze({
     activeCompactions: 0,
     state: "unbound" as const,
@@ -197,9 +199,27 @@ const createRoot = (
   root.provide("sessions", {
     flush: () => Promise.resolve(true),
   } as never);
+  root.provide("sessionProjections", {
+    onChanged: () => () => undefined,
+    snapshot: (session: Session) => Object.freeze({ asOfSeq: session.seq - 1, values: {} }),
+  } as never);
+  root.provide("productTaskGraph", {
+    snapshot: () => Object.freeze({ revision: digest, sequence: 0, tasks: [] }),
+  } as never);
+  root.provide("productWork", {
+    ownsRootContextMessage: () => false,
+    snapshot: () => Object.freeze([]),
+  } as never);
+  root.provide("productPlan", {
+    snapshot: () => Object.freeze({ mode: "normal" as const, revision: "plan-v1" }),
+  } as never);
   root.provide("productSession", {
     bindCreate: (params: MethodParams<"session/create">) => {
       const runtimeSessionId = params.runtimeSessionId ?? "synthetic-generated-session";
+      primaryAgent = Object.freeze({
+        id: SessionId(runtimeSessionId),
+        session: Session.create(SessionId(runtimeSessionId)),
+      });
       sessionSnapshot = Object.freeze({
         activeCompactions: 0,
         state: "ready" as const,
@@ -255,6 +275,10 @@ const createRoot = (
           recovery,
         }));
       }
+      primaryAgent = Object.freeze({
+        id: SessionId(params.runtimeSessionId),
+        session: Session.create(SessionId(params.runtimeSessionId)),
+      });
       sessionSnapshot = Object.freeze({
         activeCompactions: 0,
         state: "ready" as const,
@@ -308,6 +332,10 @@ const createRoot = (
     },
     retire,
     snapshot: () => sessionSnapshot,
+    requireAgent: () => {
+      if (primaryAgent === undefined) throw new Error("synthetic primary Agent is not bound");
+      return primaryAgent;
+    },
     whenSettlementFailed: () => settlementFailure,
   } as unknown as ProductSessionService);
   const syntheticOperations = new Map<string, Readonly<{

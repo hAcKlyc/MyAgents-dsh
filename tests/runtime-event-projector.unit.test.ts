@@ -8,6 +8,7 @@ import {
 } from "@deepseek-ai/dsh-llm";
 import { Session, SessionId } from "@deepseek-ai/dsh-session";
 import SessionStore from "@deepseek-ai/dsh-session";
+import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 import type { OperationBirthSnapshot } from "@myagents-dsh/operation-runtime";
 import {
   ProtocolError,
@@ -20,7 +21,10 @@ import {
   projectSessionEvent,
 } from "@myagents-dsh/rpc-server";
 import { durableSessionEventId } from "@myagents-dsh/operation-runtime";
-import type { ProductSessionService } from "@myagents-dsh/runtime-product";
+import {
+  loadSessionProjectionRegistry,
+  type ProductSessionService,
+} from "@myagents-dsh/runtime-product";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const digest = (character: string): string => character.repeat(64);
@@ -156,6 +160,10 @@ const appendCompletedTurn = (fixture: OperationFixture): void => {
 
 const mounted: Context[] = [];
 
+const mountSessionProjections = async (context: Context): Promise<void> => {
+  await context.plugin(await loadSessionProjectionRegistry());
+};
+
 afterEach(async () => {
   await Promise.all(mounted.splice(0).map((context) => context.fiber.dispose()));
 });
@@ -262,7 +270,7 @@ describe("Runtime event projection", () => {
         kind: "tool",
         phase: "start",
         name: "Read",
-        detail: { path: "README.md" },
+        input: { path: "README.md" },
       },
     }]);
     expect(projectSessionEvent(session, result)).toEqual([{
@@ -273,20 +281,123 @@ describe("Runtime event projection", () => {
         kind: "tool",
         phase: "end",
         name: "Read",
-        detail: {
+        result: {
           state: "succeeded",
           isError: false,
           content: [{ type: "text", text: "12 lines" }],
-          meta: { lines: 12 },
         },
       },
     }]);
+  });
+
+  it("bounds aggregate rich Tool results before native delivery", () => {
+    const session = Session.create(SessionId("projection-rich-tool-result"));
+    const fixture = appendAcceptedOperation(session);
+    session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    session.append("step/start", { turn: 1, step: 1 });
+    const callId = CallId("rich-tool-call-1");
+    const call = session.append("tool/call", {
+      turn: 1,
+      step: 1,
+      callId,
+      name: "Render",
+      arguments: "{}",
+    });
+    const result = session.append("tool/result", {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId,
+        content: [
+          {
+            type: "image",
+            attachment: {
+              attachmentId: `sha256:${digest("c")}` as never,
+              mediaType: "image/png",
+              bytes: 1,
+              width: 1,
+              height: 1,
+              name: "n".repeat(600),
+            },
+          },
+          { type: "text", text: "界".repeat(300_000) },
+        ],
+        isError: false,
+      }),
+    }, { sourceEventSeqs: [call.seq], surfaceOp: "append" });
+
+    const projection = projectSessionEvent(session, result)[0];
+    if (projection?.event.kind !== "tool" || projection.event.phase !== "end") {
+      throw new Error("rich Tool result projection is missing");
+    }
+    const content = projection.event.result.content;
+    expect(content[0]).toMatchObject({ type: "image_ref", name: "n".repeat(512) });
+    expect(content.at(-1)).toMatchObject({ type: "text" });
+    expect(Buffer.byteLength(JSON.stringify(content))).toBeLessThanOrEqual(524_288);
+  });
+
+  it("projects context pressure from a usage chunk even when the request has no assistant message", async () => {
+    const context = new Context();
+    mounted.push(context);
+    await context.plugin(SessionStore);
+    await mountSessionProjections(context);
+    await context.plugin(TokenMeter);
+    context.on("session/flush", () => undefined);
+    const session = context.sessions.create(SessionId("projection-failed-request-context"), {
+      meta: { cwd: "/tmp/myagents-dsh-projection-test" },
+    });
+    const delivered: RuntimeEventEnvelope[] = [];
+    const projector = new RuntimeEventProjector({
+      context,
+      peer: {
+        notify: (_method: string, envelope: RuntimeEventEnvelope) => {
+          delivered.push(envelope);
+          return Promise.resolve();
+        },
+        reserveTerminalNotification: () => {
+          throw new Error("failed-request context fixture does not reserve a terminal");
+        },
+      } as unknown as JsonRpcPeer,
+      productSession: {
+        snapshot: () => Object.freeze({ state: "ready" as const, runtimeSessionId: session.id }),
+      } as unknown as ProductSessionService,
+      runtimeGeneration: "projection-generation",
+      productSessionId: () => "product-session-1",
+      onFailure: vi.fn(),
+    });
+
+    const fixture = appendAcceptedOperation(session);
+    session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    session.append("step/start", { turn: 1, step: 1 });
+    session.append("request/context", {
+      provider: "fixture",
+      model: "fixture-model",
+      contextWindow: 8_192,
+    });
+    session.append("assistant/chunk", {
+      turn: 1,
+      step: 1,
+      chunk: {
+        type: "usage",
+        usage: { inputTokens: 10, outputTokens: 0, cacheReadTokens: 3, cacheWriteTokens: 0 },
+      },
+    });
+    await projector.whenIdle();
+
+    expect(delivered.some(({ event }) => event.kind === "context"
+      && event.contextOccupiedTokens === 13
+      && event.runtimeContextWindow === 8_192)).toBe(true);
+    expect(delivered.some(({ event }) => event.kind === "usage")).toBe(false);
+    await projector.close();
   });
 
   it("projects usage only after the durable request-context anchor arrives", async () => {
     const context = new Context();
     mounted.push(context);
     await context.plugin(SessionStore);
+    await mountSessionProjections(context);
     context.on("session/flush", () => undefined);
     const session = context.sessions.create(SessionId("projection-context-barrier"), {
       meta: { cwd: "/tmp/myagents-dsh-projection-test" },
@@ -380,6 +491,7 @@ describe("Runtime event projection", () => {
     const context = new Context();
     mounted.push(context);
     await context.plugin(SessionStore);
+    await mountSessionProjections(context);
     context.on("session/flush", () => undefined);
     const session = context.sessions.create(SessionId("projection-pressure"), {
       meta: { cwd: "/tmp/myagents-dsh-projection-test" },
@@ -427,6 +539,7 @@ describe("Runtime event projection", () => {
     const context = new Context();
     mounted.push(context);
     await context.plugin(SessionStore);
+    await mountSessionProjections(context);
     context.on("session/flush", () => undefined);
     const sessionId = SessionId("projection-generation-replacement");
     const first = Session.create(sessionId);
@@ -483,6 +596,7 @@ describe("Runtime event projection", () => {
     const context = new Context();
     mounted.push(context);
     await context.plugin(SessionStore);
+    await mountSessionProjections(context);
     context.on("session/flush", () => undefined);
     const session = context.sessions.create(SessionId("projection-close-drain"), {
       meta: { cwd: "/tmp/myagents-dsh-projection-test" },

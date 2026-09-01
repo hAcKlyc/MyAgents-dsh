@@ -78,6 +78,22 @@
       ]
     },
     {
+      "id": "session-projection",
+      "package": "@deepseek-ai/dsh-session-projection",
+      "importPath": "@deepseek-ai/dsh-session-projection",
+      "classification": "direct",
+      "batchUse": [
+        "B3-W1"
+      ],
+      "values": [
+        "SessionProjectionRegistry"
+      ],
+      "types": [
+        "ProjectionSnapshot"
+      ],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
       "id": "agent",
       "package": "@deepseek-ai/dsh-agent",
       "importPath": "@deepseek-ai/dsh-agent",

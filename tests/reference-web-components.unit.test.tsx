@@ -552,12 +552,14 @@ describe("Reference Web React shell", () => {
           {
             runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
             sequence: 3, emittedAt: now, turnId: "turn-1", toolCallId: "tool-1",
-            event: { kind: "tool", phase: "start", name: "Read", detail: { path: "README.md" } },
+            event: { kind: "tool", phase: "start", name: "Read", input: { path: "README.md" } },
           },
           {
             runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
             sequence: 4, emittedAt: now, turnId: "turn-1", toolCallId: "tool-1",
-            event: { kind: "tool", phase: "end", name: "Read", detail: { state: "succeeded", lines: 12 } },
+            event: { kind: "tool", phase: "end", name: "Read", result: {
+              state: "succeeded", isError: false, content: [{ type: "text", text: "Read 12 lines" }],
+            } },
           },
           {
             runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
