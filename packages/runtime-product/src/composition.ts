@@ -2446,7 +2446,7 @@ export const composeDshRootServices = async (
         },
       }),
       drainOwnedWork: async (agent) => {
-        await root.productWork.preparePrimaryRetirement(agent);
+        await root.get("productWork")?.preparePrimaryRetirement(agent);
       },
       inputAuthority: Object.freeze({
         prepare: async (
