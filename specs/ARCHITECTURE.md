@@ -315,6 +315,12 @@ client operation accepted
 
 `SdkOperationService` correlates the SDK `clientOperationId`, its set of DSH `MessageId` values, one or more durable DSH turn numbers/boundaries, one optional first-limit fact, and one terminal. `turn/followUp` remains inside the owning product operation and may cause another DSH turn before quiescence. Exact retries return the known admission or terminal; the same ID with different immutable input is a conflict. Turn-count and priced-budget limits are adjudicated at DSH request/turn boundaries; duration is scheduled from the durable acceptance timestamp and reconstructed from that timestamp after recovery. Limit truth is appended into the same Session log, not held in a second scheduler ledger.
 
+The root DSH Inbox is shared infrastructure, not operation-owned storage. Operation-source messages
+require an exact operation claim; ProductWork child reports are excluded only after durable work
+creation, message intent, optional delivery and Inbox insertion prove their separate ownership;
+unknown root messages fence. The same classification is used by live listeners and persisted
+folds.
+
 Success requires a finalized assistant completion anchor owned by DSH. Idle, enqueue acknowledgement, EOF, or the last observed assistant message is insufficient. Aborted, failed, context-exhausted, output-limited, turn-limited, budget-limited, and transport-uncertain outcomes remain distinct.
 
 Operation birth freezes the effective model profile, optional Host-authoritative rate card, component revision, tool-catalog digest, execution-environment revision, permission revision, plan state, and origin used by that operation. A USD limit without a frozen rate card fails before durable admission; Runtime does not infer provider pricing. Product component changes become effective only at a defined boundary and never rewrite an admitted operation.
@@ -324,6 +330,11 @@ Operation birth freezes the effective model profile, optional Host-authoritative
 DSH append-only Session events are the single durable model-conversation source. MyAgents product events declaration-merge into the same Session event vocabulary; they do not create another transcript database. The persistence profile must also register the frozen product event vocabulary as known required events. The pinned stock coordinator's build-generated event set does not include downstream declaration merges, so the official profile requires a minimal known-event predicate seam or an equivalent public-contract coordinator; recovery-critical events are never marked ignorable to bypass validation.
 
 The native RPC `session/read` projection exposes versioned, engine-neutral durable events or bounded chunks. Protocol `2.1.0` additionally exposes one opaque, postcondition-bound genesis prefix before the first product operation, so an admitted first turn can use the same transactional rewind owner as later turns. It does not expose Pi native entry types or pretend that a DSH session has a Pi leaf identity.
+
+MyAgents retains a Host-side pending DSH root-admission journal across Runtime process loss. A new
+query may queue behind that uncertainty, but queued admission starts one recovery process and
+force-send joins it; only authoritative native terminal reconciliation clears the journal and
+opens ordinary FIFO drain. Watchdog process termination never guesses that terminal.
 
 The initial persistence provider must support:
 

@@ -1,6 +1,6 @@
 import { Context } from "@deepseek-ai/cordis";
 import { Inbox, type Agent } from "@deepseek-ai/dsh-agent";
-import { CallId, freezeMessage, MessageId } from "@deepseek-ai/dsh-llm";
+import { CallId, freezeMessage, MessageId, type MessageSource } from "@deepseek-ai/dsh-llm";
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import SessionStore from "@deepseek-ai/dsh-session";
 import {
@@ -94,6 +94,11 @@ const mountService = async (
   bindTerminalReservation = true,
   inputAuthority?: OperationInputAuthority,
   clock: () => number = () => 1_800_000_000_000,
+  ownsRootContextMessage: (
+    agent: Agent,
+    source: MessageSource | undefined,
+    messageId: string,
+  ) => boolean = () => false,
 ): Promise<MountedService> => {
   const context = new Context();
   mounted.push(context);
@@ -150,7 +155,7 @@ const mountService = async (
     birthAuthority,
     drainOwnedWork: () => Promise.resolve(),
     ...(inputAuthority === undefined ? {} : { inputAuthority }),
-    ownsRootContextMessage: () => false,
+    ownsRootContextMessage,
     registerRetirementGuard: (guard) => { retirementGuard = guard; },
     registerLifecycleController: (controller) => { lifecycle = controller; },
     requireAgent: () => agent,
@@ -420,6 +425,83 @@ describe("durable product-operation fold", () => {
         ?? "missing-message",
       dshTurn: 1,
     }), fixture.agent.id)).toThrow("open DSH turn boundary");
+  });
+
+  it("keeps owned root-context Inbox changes outside the operation fold through one terminal", async () => {
+    const reportId = MessageId("owned-subagent-report");
+    const discardedReportId = MessageId("owned-discarded-subagent-report");
+    const ownedReportIds = new Set([reportId, discardedReportId]);
+    const fixture = await mountService(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      undefined,
+      undefined,
+      (_agent, source, messageId) =>
+        source?.kind === "subagent-report" && ownedReportIds.has(MessageId(messageId)),
+    );
+    await fixture.service.start(params());
+    fixture.agent.steer(freezeMessage({
+      id: discardedReportId,
+      role: "user",
+      content: [{ type: "text", text: "synthetic discarded child result" }],
+      source: Object.freeze({
+        kind: "subagent-report",
+        form: "relay",
+        senderSessionId: SessionId("synthetic-child-session"),
+      }),
+    }));
+    expect(fixture.inbox.remove(discardedReportId)).toBe(true);
+    fixture.agent.steer(freezeMessage({
+      id: reportId,
+      role: "user",
+      content: [{ type: "text", text: "synthetic child result" }],
+      source: Object.freeze({
+        kind: "subagent-report",
+        form: "relay",
+        senderSessionId: SessionId("synthetic-child-session"),
+      }),
+    }));
+    fixture.agent.session.append("turn/start", { turn: 1 });
+
+    expect(() => fixture.inbox.claim("next-turn", 1)).not.toThrow();
+    expect(() => fixture.inbox.claim("next-step", 1)).not.toThrow();
+    fixture.agent.session.append("step/start", { turn: 1, step: 1 });
+    fixture.agent.session.append("request/context", {
+      provider: "fixture",
+      model: "fixture-model",
+      contextWindow: 8_192,
+    });
+    fixture.agent.session.append("assistant/message", {
+      turn: 1,
+      step: 1,
+      message: freezeMessage({
+        id: MessageId("assistant-after-owned-report"),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture-model" },
+        content: [{ type: "text", text: "durable answer after child result" }],
+      }),
+      usage: { inputTokens: 7, outputTokens: 2 },
+    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    fixture.agent.session.append("step/end", { turn: 1, step: 1 });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+
+    await vi.waitFor(() => expect(fixture.service.lookup("operation-1")).toMatchObject({
+      state: "terminal",
+      terminal: { kind: "succeeded" },
+    }));
+
+    expect(() => fixture.service.validatePersisted(fixture.agent)).not.toThrow();
+    expect(fixture.agent.session.events.filter(
+      (event) => event.type === "myagents/operation/claimed",
+    )).toHaveLength(1);
+    expect(fixture.agent.session.events.filter(
+      (event) => event.type === "myagents/operation/terminal",
+    )).toHaveLength(1);
+    expect(fixture.service.snapshot().recoveryRequired).toBe(false);
   });
 
   it("accepts recovery-wake completion after the synchronous wake claimed its message", async () => {

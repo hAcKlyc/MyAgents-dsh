@@ -30,6 +30,7 @@ This file is the canonical documentation-governance guide referenced by `AGENTS.
 ## Document lifecycle
 
 - PRDs answer **what and why**. Technical RFCs answer **how we decided to implement it**. Each pair links both directions.
+- When the user explicitly requests one self-contained corrective document, a focused `prd_*.md` may embed its implementation-design addendum. It must name the governing parent PRD/RFC, remain a child workstream rather than a competing architecture authority, and link current module guides after implementation.
 - `tech_docs` answer **how the accepted system works now** and must point to real code. When implementation changes, update the relevant module guide and the Architecture link in the same change.
 - ADRs explain decisions that cannot be reconstructed safely from code. They are not status ledgers.
 - `contracts/`, `dsh/patches/`, generated evidence JSON, and migration inventories are executable inputs, not prose to rewrite for readability.

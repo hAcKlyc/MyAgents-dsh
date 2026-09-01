@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: runtime-core-and-rpc
-updated: 2026-08-29
+updated: 2026-09-02
 product_scope: ../prd/prd_0.1_agent_runtime.md
 implementation_decisions:
   - ../prd/tech_rfc_0.1_runtime_architecture.md
@@ -54,6 +54,11 @@ Shutdown closes admission, cancels or settles owned work according to the protoc
 A product operation is a durable correlation envelope, not another model loop. `operation-runtime` binds one client operation identity to one or more DSH message/turn identities, immutable birth configuration, limits, and exactly one product terminal. Steering and follow-up can extend the same operation across multiple DSH turns.
 
 Success requires an owned durable assistant completion and a quiescent operation boundary. Interrupt, failure, context exhaustion, output limit, turn limit, budget limit, and transport uncertainty remain distinct terminal states. Exact retries return the recorded admission or terminal; conflicting input under the same id fails closed.
+
+The root DSH Inbox is shared infrastructure. Operation-source messages require an exact operation
+claim. A child report is excluded from the operation fold only when ProductWork proves its exact
+durable creation, message intent, optional delivery and Inbox insertion lineage; unknown root
+messages still fence. Live, persisted, discard and retirement folds use the same predicate.
 
 ## 6. Protocol and event projection
 

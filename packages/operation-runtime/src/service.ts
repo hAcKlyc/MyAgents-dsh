@@ -420,7 +420,8 @@ export class SdkOperationService extends Service {
           const fold = foldProductOperationsForLiveClaim(agent.session.events, {
             messageId: message.id,
             dshTurn: turn,
-          }, agent.id);
+          }, agent.id, (candidateSource, messageId) =>
+            this.configValue.ownsRootContextMessage(agent, candidateSource, messageId));
           const operation = findProductOperation(fold, source.clientOperationId);
           const ownedMessage = operation?.messages.find(({ messageId }) => messageId === message.id);
           if (operation === undefined || ownedMessage?.clientMessageId !== source.clientMessageId
@@ -476,7 +477,8 @@ export class SdkOperationService extends Service {
           }
           const fold = foldProductOperationsForLiveDiscard(agent.session.events, {
             messageId: message.id,
-          }, agent.id);
+          }, agent.id, (candidateSource, messageId) =>
+            this.configValue.ownsRootContextMessage(agent, candidateSource, messageId));
           const operation = findProductOperation(fold, source.clientOperationId);
           const ownedMessage = operation?.messages.find(({ messageId }) => messageId === message.id);
           if (operation === undefined || ownedMessage?.clientMessageId !== source.clientMessageId
@@ -1464,6 +1466,8 @@ export class SdkOperationService extends Service {
             agent.session.events,
             { messageId: message.messageId },
             agent.id,
+            (source, messageId) =>
+              this.configValue.ownsRootContextMessage(agent, source, messageId),
           ),
           operation.clientOperationId,
         )?.messages.find(({ messageId }) => messageId === message.messageId);
@@ -1787,7 +1791,11 @@ export class SdkOperationService extends Service {
 
   private foldValue(agent: Agent): ProductOperationFold {
     try {
-      return foldProductOperations(agent.session.events, agent.id);
+      return foldProductOperations(
+        agent.session.events,
+        agent.id,
+        (source, messageId) => this.configValue.ownsRootContextMessage(agent, source, messageId),
+      );
     } catch (error) {
       throw this.fence(error);
     }

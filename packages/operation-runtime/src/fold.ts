@@ -1,3 +1,4 @@
+import type { MessageSource } from "@deepseek-ai/dsh-llm";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { validateTurnTerminal, type TurnTerminal } from "@myagents-dsh/protocol";
 import { isDeepStrictEqual, types as utilTypes } from "node:util";
@@ -66,7 +67,8 @@ type InboxTarget = "next-step" | "next-turn";
 
 type PendingInboxMessage = {
   readonly id: string;
-  readonly source: MyAgentsOperationMessageSource | undefined;
+  readonly source: MessageSource | undefined;
+  readonly operationSource: MyAgentsOperationMessageSource | undefined;
 };
 
 type RemovedClaimCandidate = PendingInboxMessage & {
@@ -103,6 +105,13 @@ export class ProductOperationFoldError extends Error {
     this.name = "ProductOperationFoldError";
   }
 }
+
+export type RootContextMessageOwnership = (
+  source: MessageSource | undefined,
+  messageId: string,
+) => boolean;
+
+const ownsNoRootContextMessage: RootContextMessageOwnership = () => false;
 
 const fail = (message: string): never => {
   throw new ProductOperationFoldError(message);
@@ -487,7 +496,8 @@ const readPendingInboxMessage = (value: unknown): PendingInboxMessage => {
   }
   return {
     id: boundedIdentifier(id.value, "DSH inbox message identity"),
-    source: readOperationMessageSource(source.value),
+    source: source.value as MessageSource | undefined,
+    operationSource: readOperationMessageSource(source.value),
   };
 };
 
@@ -544,6 +554,7 @@ const foldProductOperationsValue = (
   runtimeSessionId: string,
   liveClaim: LiveOperationClaimCandidate | undefined,
   liveDiscard: LiveOperationDiscardCandidate | undefined,
+  ownsRootContextMessage: RootContextMessageOwnership,
 ): ProductOperationFold => {
   boundedIdentifier(runtimeSessionId, "operation fold runtime Session identity");
   const operations = new Map<string, MutableOperation>();
@@ -631,8 +642,8 @@ const foldProductOperationsValue = (
             return fail("operation cancellation does not match one pending owned message");
           }
           const discarded = removedDiscardCandidates.get(messageEvent.messageId);
-          if (discarded?.source?.clientOperationId !== messageEvent.clientOperationId
-            || discarded.source.clientMessageId !== messageEvent.clientMessageId) {
+          if (discarded?.operationSource?.clientOperationId !== messageEvent.clientOperationId
+            || discarded.operationSource.clientMessageId !== messageEvent.clientMessageId) {
             return fail("operation cancellation lacks its exact durable Inbox discard");
           }
           existing.state = "cancelled";
@@ -657,8 +668,8 @@ const foldProductOperationsValue = (
         }
         const removed = removedClaimCandidates.get(claim.messageId);
         if (removed?.dshTurn !== claim.dshTurn
-          || removed.source?.clientOperationId !== claim.clientOperationId
-          || removed.source.clientMessageId !== message.clientMessageId) {
+          || removed.operationSource?.clientOperationId !== claim.clientOperationId
+          || removed.operationSource.clientMessageId !== message.clientMessageId) {
           return fail("operation claim lacks its exact durable Inbox pure-delete");
         }
         const turnOwner = dshTurnOwners.get(claim.dshTurn);
@@ -861,6 +872,10 @@ const foldProductOperationsValue = (
         if (splice.outcome === undefined && removed.length > 0) {
           if (openTurn === undefined) return fail("DSH Inbox pure-delete occurred outside an open turn");
           for (const pending of removed) {
+            if (pending.operationSource === undefined
+              && ownsRootContextMessage(pending.source, pending.id)) {
+              continue;
+            }
             if (removedClaimCandidates.has(pending.id)) {
               return fail("DSH Inbox message has more than one unowned pure-delete");
             }
@@ -868,6 +883,10 @@ const foldProductOperationsValue = (
           }
         } else if (splice.outcome === "canceled") {
           for (const pending of removed) {
+            if (pending.operationSource === undefined
+              && ownsRootContextMessage(pending.source, pending.id)) {
+              continue;
+            }
             if (removedDiscardCandidates.has(pending.id)) {
               return fail("DSH Inbox message has more than one unowned discard");
             }
@@ -875,7 +894,7 @@ const foldProductOperationsValue = (
           }
         }
         for (const inserted of insertedMessages) {
-          const source = inserted.source;
+          const source = inserted.operationSource;
           if (source === undefined) continue;
           const ownerId = messageOwners.get(inserted.id);
           if (ownerId !== source.clientOperationId) {
@@ -969,24 +988,33 @@ const foldProductOperationsValue = (
 export const foldProductOperations = (
   events: readonly SessionEvent[],
   runtimeSessionId: string,
-): ProductOperationFold => foldProductOperationsValue(events, runtimeSessionId, undefined, undefined);
+  ownsRootContextMessage: RootContextMessageOwnership = ownsNoRootContextMessage,
+): ProductOperationFold => foldProductOperationsValue(
+  events,
+  runtimeSessionId,
+  undefined,
+  undefined,
+  ownsRootContextMessage,
+);
 
 export const foldProductOperationsForLiveClaim = (
   events: readonly SessionEvent[],
   candidate: LiveOperationClaimCandidate,
   runtimeSessionId: string,
+  ownsRootContextMessage: RootContextMessageOwnership = ownsNoRootContextMessage,
 ): ProductOperationFold => foldProductOperationsValue(events, runtimeSessionId, Object.freeze({
   messageId: boundedIdentifier(candidate.messageId, "live claim message identity"),
   dshTurn: positiveTurn(candidate.dshTurn, "live claim DSH turn"),
-}), undefined);
+}), undefined, ownsRootContextMessage);
 
 export const foldProductOperationsForLiveDiscard = (
   events: readonly SessionEvent[],
   candidate: LiveOperationDiscardCandidate,
   runtimeSessionId: string,
+  ownsRootContextMessage: RootContextMessageOwnership = ownsNoRootContextMessage,
 ): ProductOperationFold => foldProductOperationsValue(events, runtimeSessionId, undefined, Object.freeze({
   messageId: boundedIdentifier(candidate.messageId, "live discard message identity"),
-}));
+}), ownsRootContextMessage);
 
 export const findProductOperation = (
   fold: ProductOperationFold,

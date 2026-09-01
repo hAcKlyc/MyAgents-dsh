@@ -2200,14 +2200,45 @@ export class ProductWorkService extends Service {
       if (insertions.length !== 1) return false;
       const insertion = insertions[0];
       if (insertion === undefined) return false;
-      const matches = [...this.messages.values()].filter((candidate) =>
-        candidate.intent.sender === source.senderSessionId
-        && candidate.intent.recipient === agent.id
-        && candidate.intent.contentSha256 === insertion.contentSha256
-        && (candidate.delivery === undefined || candidate.delivery.dshMessageId === messageId));
-      if (matches.length !== 1) return false;
-      const known = matches[0];
-      return known !== undefined && this.byAgent.get(source.senderSessionId)?.taskId === known.intent.taskId;
+      const intents = agent.session.events.flatMap((event) => {
+        if (event.type !== "myagents/work/message-intent") return [];
+        const intent = validateEventData(event.type, event.data);
+        if (intent.eventSeq !== event.seq || intent.sessionId !== agent.id) {
+          throw new Error("persisted ProductWork message intent differs from its DSH Session position");
+        }
+        return intent.sender === source.senderSessionId && intent.recipient === agent.id
+          && intent.contentSha256 === insertion.contentSha256 ? [intent] : [];
+      });
+      if (intents.length !== 1) return false;
+      const intent = intents[0];
+      if (intent === undefined) return false;
+      const deliveries = agent.session.events.flatMap((event) => {
+        if (event.type !== "myagents/work/message") return [];
+        const delivery = validateEventData(event.type, event.data);
+        if (delivery.eventSeq !== event.seq || delivery.sessionId !== agent.id) {
+          throw new Error("persisted ProductWork message differs from its DSH Session position");
+        }
+        return delivery.messageId === intent.messageId || delivery.dshMessageId === messageId
+          ? [delivery]
+          : [];
+      });
+      if (deliveries.length > 1) return false;
+      const delivery = deliveries[0];
+      if (delivery !== undefined && (delivery.dshMessageId !== messageId
+        || intent.agentId !== delivery.agentId || intent.taskId !== delivery.taskId
+        || intent.recipient !== delivery.recipient || intent.sender !== delivery.sender
+        || intent.sequence !== delivery.sequence || intent.summary !== delivery.summary)) return false;
+      const creations = agent.session.events.flatMap((event) => {
+        if (event.type !== "myagents/work/created") return [];
+        const created = validateEventData(event.type, event.data);
+        if (created.eventSeq !== event.seq || created.sessionId !== agent.id) {
+          throw new Error("persisted ProductWork creation differs from its DSH Session position");
+        }
+        return created.taskId === intent.taskId && created.agentId === intent.agentId
+          ? [created]
+          : [];
+      });
+      return creations.length === 1 && intent.agentId === source.senderSessionId;
     } catch (error) {
       throw this.fence(error);
     }
