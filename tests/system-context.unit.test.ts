@@ -5,6 +5,7 @@ import {
   GlobalSystemContextRegistrar,
   MAX_HOST_CONTEXT_BYTES,
   normalizeSystemContext,
+  registerRuntimeWorkspaceContext,
   registerRootSystemContext,
 } from "@myagents-dsh/runtime-product";
 import { afterEach, describe, expect, it } from "vitest";
@@ -81,6 +82,17 @@ describe("Host system context normalization", () => {
 });
 
 describe("Host system context registration", () => {
+  it("shares the exact Runtime workspace context with root and child scopes", async () => {
+    const root = await mounted();
+    const dispose = registerRuntimeWorkspaceContext(root, "/fixture/workspace");
+    for (const scope of [Object.freeze({ root: true }), Object.freeze({ child: true })]) {
+      const workspace = (await root.systemPrompt.assemble({ scope })).contexts
+        .find(({ name }) => name === "runtime:workspace");
+      expect(workspace?.text).toContain("/fixture/workspace");
+    }
+    dispose();
+  });
+
   it("shares global contributions while keeping root contributions on the primary scope", async () => {
     const root = await mounted();
     const effective = normalizeSystemContext({

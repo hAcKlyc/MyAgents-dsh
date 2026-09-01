@@ -30,6 +30,7 @@ import { types as utilTypes } from "node:util";
 import {
   GlobalSystemContextRegistrar,
   normalizeSystemContext,
+  registerRuntimeWorkspaceContext,
   registerRootSystemContext,
   type EffectiveSystemContext,
 } from "./system-context.js";
@@ -1561,6 +1562,8 @@ export class PrimarySessionAdmission {
 
 class DshPrimarySessionBackend implements PrimarySessionBackend {
   private readonly globalSystemContext: GlobalSystemContextRegistrar;
+  private workspaceContextDispose: (() => void) | undefined;
+  private workspaceContextRoot: string | undefined;
 
   constructor(
     private readonly context: Context,
@@ -1580,12 +1583,30 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
   ) {
     this.globalSystemContext = new GlobalSystemContextRegistrar(context);
     context.effect(
-      () => () => this.globalSystemContext.dispose(),
-      "global-host-system-context",
+      () => () => {
+        this.workspaceContextDispose?.();
+        this.workspaceContextDispose = undefined;
+        this.workspaceContextRoot = undefined;
+        this.globalSystemContext.dispose();
+      },
+      "global-runtime-and-host-system-context",
     );
   }
 
+  private ensureWorkspaceContext(canonicalRoot: string): void {
+    if (this.workspaceContextRoot === canonicalRoot) return;
+    if (this.workspaceContextRoot !== undefined) {
+      throw new ProtocolError(
+        "protocol_environment_mismatch",
+        "primary Session workspace context changed within one Runtime generation",
+      );
+    }
+    this.workspaceContextDispose = registerRuntimeWorkspaceContext(this.context, canonicalRoot);
+    this.workspaceContextRoot = canonicalRoot;
+  }
+
   async create(request: PrimarySessionBackendRequest): Promise<PrimarySessionBackendResult> {
+    this.ensureWorkspaceContext(request.workspace.path);
     const globalContext = this.globalSystemContext.prepare(request.systemContext);
     const publication = this.publicationFence.prepare(request.runtimeSessionId);
     let rawHandle: AgentHandle | undefined;
@@ -1655,6 +1676,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
   }
 
   async resume(request: PrimarySessionBackendRequest): Promise<PrimarySessionBackendResult> {
+    this.ensureWorkspaceContext(request.workspace.path);
     const inspection = await this.inspectResume?.(request);
     if (inspection?.state === "recovery_required") {
       return Object.freeze({ state: "recovery_required", recovery: inspection });

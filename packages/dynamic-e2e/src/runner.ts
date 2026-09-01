@@ -228,7 +228,11 @@ const createInitializeParams = (
           : ["bundled-bash", "bundled-node", "bundled-ripgrep"],
         pathPolicy: "sealed",
       },
-      environment: { allowedKeys: [], inheritedKeys: [], secretValues: "reverse-port-only" },
+      environment: {
+        allowedKeys: ["PATH", "TMPDIR"],
+        inheritedKeys: [],
+        secretValues: "reverse-port-only",
+      },
       network: options?.permitNetwork === true
         ? { mode: "host-policy", policyRef: options.networkPolicyRef }
         : { mode: "deny" },

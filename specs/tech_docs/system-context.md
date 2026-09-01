@@ -21,9 +21,9 @@ The stable-to-volatile order is:
 2. Runtime operating contract and compaction continuity;
 3. Host global product contributions;
 4. root-Session Host contributions;
-5. effective Skill catalog and other named Runtime contexts;
+5. initialized Runtime Workspace context, effective Skill catalog and other named Runtime contexts;
 6. DSH project-instruction user context;
-7. Plan policy, tools and conversation history.
+7. tools and conversation history.
 
 Changing a later owner does not rebuild an earlier contribution. This is both the lifecycle model
 and the prefix-cache strategy; no Provider-specific cache API is exposed in the protocol.
@@ -53,6 +53,7 @@ the recommended MyAgents profile, but it is not a Runtime schema.
 | Contribution | Owner | Lifetime |
 | --- | --- | --- |
 | Runtime operating contract | official composition | process generation |
+| Runtime Workspace context | primary Session backend | initialized Workspace binding; inherited by children |
 | Host `global` sections/contexts | primary Session backend effect group | current admitted configuration; inherited by children |
 | Host `root` sections/contexts | primary root Agent scope | current root Agent only |
 | effective Skill catalog | `ProductSkillService` | component generation and Agent visibility |
@@ -64,6 +65,11 @@ Global Host registration uses one small prepare/commit/rollback effect group. Cr
 configuration failure restores the prior registrations; success disposes the old registrations
 only after the new Session/config state is accepted. Root registrations live in the scoped Agent
 setup and disappear with that Agent. An admitted operation keeps its frozen effective snapshot.
+
+The backend registers `runtime:workspace` as literal global context at order `90` before root
+admission. Its body contains the exact canonical Workspace root already accepted by initialize and
+tells absolute-path tools where to operate. It is intentionally not a stable system section and
+does not alter execution-environment roots, visibility or permission authority.
 
 ## Project instruction policy
 
@@ -87,7 +93,7 @@ from the primary per-directory winner and has no live watcher in Runtime.
 
 ## Child and utility behavior
 
-Global Runtime and Host contributions are inherited through DSH scope. Root-scoped Host content is
+Global Runtime and Host contributions, including the initialized Workspace root, are inherited through DSH scope. Root-scoped Host content is
 not. ProductWork continues to create a fresh, continuable child conversation with inherited
 cwd/model, delegated policy, narrowed tools and a scoped persona. External child persona text is
 literal and the interpolation choice is stored in the durable child descriptor so cold resume is

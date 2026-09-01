@@ -30,7 +30,25 @@ export const COMPACTION_CONTINUITY = "Under context pressure, earlier large tool
 
 export const RUNTIME_OPERATING_CONTRACT_ORDER = -100;
 export const COMPACTION_CONTINUITY_ORDER = -90;
+export const RUNTIME_WORKSPACE_CONTEXT_ORDER = 90;
 export const MAX_HOST_CONTEXT_BYTES = 512 * 1024;
+
+export const runtimeWorkspaceContextText = (canonicalRoot: string): string => [
+  "Current workspace root:",
+  canonicalRoot,
+  "",
+  "Use this exact absolute path for file and search tools that require one. Bash already runs in this workspace. Do not infer access outside it.",
+].join("\n");
+
+export const registerRuntimeWorkspaceContext = (
+  context: Context,
+  canonicalRoot: string,
+): (() => void) => context.systemPrompt.context({
+  interpolate: false,
+  name: "runtime:workspace",
+  order: RUNTIME_WORKSPACE_CONTEXT_ORDER,
+  text: runtimeWorkspaceContextText(canonicalRoot),
+});
 
 export interface EffectiveSystemContext {
   readonly sections: readonly Readonly<HostPromptSection>[];
