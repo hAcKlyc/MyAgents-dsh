@@ -1759,6 +1759,15 @@ const main = (): void => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
       return (result as Record<string, unknown>).ok === true;
     });
+    const resumedRuntimeEvents = resumeFrames
+      .filter(({ method }) => method === "runtime/event")
+      .map(({ params }, index) => {
+        const envelope = exactObject(params, `observed resumed Runtime event ${String(index)}`);
+        return exactObject(envelope.event, `observed resumed Runtime event payload ${String(index)}`);
+      });
+    const resumedCompactionPhases = resumedRuntimeEvents
+      .filter(({ kind }) => kind === "compaction")
+      .map(({ phase }) => phase);
     const deleteFrames = resumeFrames.filter(({ result }) => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
       return typeof (result as Record<string, unknown>).token === "string"
@@ -1787,6 +1796,12 @@ const main = (): void => {
       || !Number.isSafeInteger(resumedDurableHead.sequence)
       || resumedDurableHead.sequence !== persistenceEvidence.eventCount + 1) {
       throw new Error("observed restart/resume RPC frames differ from the exact W4-A2 contract");
+    }
+    if (!resumedCompactionPhases.includes("started")
+      || !resumedCompactionPhases.includes("completed")) {
+      throw new Error(
+        `resumed Runtime compaction projection is incomplete: ${JSON.stringify(resumedCompactionPhases)}`,
+      );
     }
     if (sessionReadFrames.length !== persistenceEvidence.sessionReadPages) {
       throw new Error("observed session/read response count differs from the W4-A3 evidence");
@@ -1887,19 +1902,82 @@ const main = (): void => {
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
     ];
     const actualEventKinds = projectedEvents.map(({ kind }) => kind);
-    const nonToolEventKinds = actualEventKinds.filter((kind) => kind !== "tool");
-    if (JSON.stringify(nonToolEventKinds) !== JSON.stringify(expectedEventKinds)) {
+    const productProjectionKinds = new Set([
+      "compaction",
+      "context",
+      "plan",
+      "task_graph",
+      "work",
+    ]);
+    const productProjectionEvents = projectedEvents.filter(
+      ({ kind }) => typeof kind === "string" && productProjectionKinds.has(kind),
+    );
+    const expectedOperationEventKinds = expectedEventKinds.filter(
+      (kind) => !productProjectionKinds.has(kind),
+    );
+    const operationEventKinds = actualEventKinds.filter(
+      (kind) => kind !== "tool" && !productProjectionKinds.has(String(kind)),
+    );
+    if (JSON.stringify(operationEventKinds) !== JSON.stringify(expectedOperationEventKinds)) {
       const firstDifference = Array.from(
-        { length: Math.max(nonToolEventKinds.length, expectedEventKinds.length) },
+        { length: Math.max(operationEventKinds.length, expectedOperationEventKinds.length) },
         (_, index) => index,
-      ).find((index) => nonToolEventKinds[index] !== expectedEventKinds[index]);
+      ).find((index) => operationEventKinds[index] !== expectedOperationEventKinds[index]);
       const contextStart = Math.max(0, (firstDifference ?? 0) - 5);
       const contextEnd = (firstDifference ?? 0) + 8;
       throw new Error(
-        `Runtime non-tool workstream event sequence differs from exact evidence at ${String(firstDifference)}: `
-        + `expected=${JSON.stringify(expectedEventKinds.slice(contextStart, contextEnd))}, `
-        + `actual=${JSON.stringify(nonToolEventKinds.slice(contextStart, contextEnd))}, `
-        + `lengths=${String(expectedEventKinds.length)}/${String(nonToolEventKinds.length)}`,
+        `Runtime operation workstream event sequence differs from exact evidence at ${String(firstDifference)}: `
+        + `expected=${JSON.stringify(expectedOperationEventKinds.slice(contextStart, contextEnd))}, `
+        + `actual=${JSON.stringify(operationEventKinds.slice(contextStart, contextEnd))}, `
+        + `lengths=${String(expectedOperationEventKinds.length)}/${String(operationEventKinds.length)}`,
+      );
+    }
+    const projectionEvents = (kind: string): JsonObject[] => productProjectionEvents.filter(
+      (event) => event.kind === kind,
+    );
+    const contextEvents = projectionEvents("context");
+    const taskGraphEvents = projectionEvents("task_graph");
+    const workEvents = projectionEvents("work");
+    const planEvents = projectionEvents("plan");
+    const compactionEvents = projectionEvents("compaction");
+    const firstTurnAdmission = actualEventKinds.indexOf("turn_admitted");
+    if (firstTurnAdmission < 0
+      || actualEventKinds.indexOf("task_graph") >= firstTurnAdmission
+      || actualEventKinds.indexOf("plan") >= firstTurnAdmission
+      || contextEvents.length === 0
+      || !contextEvents.some((event) =>
+        typeof event.contextOccupiedTokens === "number" && event.contextOccupiedTokens > 0
+        && event.runtimeContextWindow === 1_000_000)
+      || !taskGraphEvents.some((event) => {
+        const snapshot = event.snapshot;
+        return snapshot !== null && typeof snapshot === "object" && !Array.isArray(snapshot)
+          && Array.isArray((snapshot as JsonObject).tasks)
+          && ((snapshot as JsonObject).tasks as unknown[]).length > 0;
+      })
+      || !workEvents.some((event) => {
+        const snapshot = event.snapshot;
+        return snapshot !== null && typeof snapshot === "object" && !Array.isArray(snapshot)
+          && (snapshot as JsonObject).state === "running";
+      })
+      || !workEvents.some((event) => {
+        const snapshot = event.snapshot;
+        return snapshot !== null && typeof snapshot === "object" && !Array.isArray(snapshot)
+          && (snapshot as JsonObject).state === "aborted";
+      })
+      || !planEvents.some(({ mode }) => mode === "normal")
+      || !planEvents.some(({ mode }) => mode === "plan")) {
+      throw new Error(
+        "Runtime product projection evidence lacks a ready baseline or a live "
+        + `context/task/work/plan/compaction lifecycle: ${JSON.stringify({
+          compaction: compactionEvents.map(({ phase }) => phase),
+          context: contextEvents.length,
+          plan: planEvents.map(({ mode }) => mode),
+          taskGraph: taskGraphEvents.length,
+          work: workEvents.map(({ snapshot }) =>
+            snapshot !== null && typeof snapshot === "object" && !Array.isArray(snapshot)
+              ? (snapshot as JsonObject).state
+              : undefined),
+        })}`,
       );
     }
     const toolLifecycles = new Map<string, {
@@ -1916,7 +1994,6 @@ const main = (): void => {
         || typeof event.name !== "string" || event.name.length === 0) {
         throw new Error(`Runtime tool event ${String(index)} lacks exact correlation authority`);
       }
-      const detail = exactObject(event.detail, `observed Runtime tool detail ${String(index)}`);
       const known = toolLifecycles.get(envelope.toolCallId);
       if (event.phase === "start") {
         if (known !== undefined) {
@@ -1929,9 +2006,11 @@ const main = (): void => {
         });
         continue;
       }
+      const result = exactObject(event.result, `observed Runtime tool result ${String(index)}`);
       if (event.phase !== "end" || known === undefined || known.endIndex !== undefined
         || known.name !== event.name || known.turnId !== envelope.turnId
-        || detail.state !== (detail.isError === true ? "failed" : "succeeded")) {
+        || result.state !== (result.isError === true ? "failed" : "succeeded")
+        || !Array.isArray(result.content)) {
         throw new Error(`Runtime tool call ${envelope.toolCallId} has an invalid terminal projection`);
       }
       known.endIndex = index;
@@ -1940,10 +2019,11 @@ const main = (): void => {
       ([, lifecycle]) => lifecycle.endIndex === undefined || lifecycle.endIndex <= lifecycle.startIndex,
     );
     if (toolLifecycles.size !== 38 || incompleteToolLifecycle !== undefined
-      || actualEventKinds.length !== expectedEventKinds.length + toolLifecycles.size * 2) {
+      || actualEventKinds.length
+        !== expectedOperationEventKinds.length + toolLifecycles.size * 2 + productProjectionEvents.length) {
       throw new Error(
         `Runtime tool lifecycle evidence differs: calls=${String(toolLifecycles.size)}, `
-        + `events=${String(actualEventKinds.length - nonToolEventKinds.length)}, `
+        + `events=${String(actualEventKinds.filter((kind) => kind === "tool").length)}, `
         + `incomplete=${incompleteToolLifecycle?.[0] ?? "none"}`,
       );
     }

@@ -3484,6 +3484,10 @@ assert.deepEqual(backgroundAgentStableSnapshot, {
   state: "running",
   taskId: backgroundAgentTaskId,
 });
+await waitUntil(
+  () => childAdapter.requests.some(({ sessionId }) => sessionId === backgroundAgentId),
+  "background child model request",
+);
 const childRequest = childAdapter.requests.find(({ sessionId }) => sessionId === backgroundAgentId);
 assert.ok(composition.context.agents.get(SessionId(backgroundAgentId)));
 assert.equal(composition.context.agents.get(SessionId(backgroundAgentId))?.status, "running");
