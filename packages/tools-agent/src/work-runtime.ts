@@ -886,6 +886,58 @@ const correlatedInboxMessages = (
   return Object.freeze(result);
 };
 
+export const ownsProductWorkRootContextMessage = (
+  session: Session,
+  source: MessageSource | undefined,
+  messageId: string,
+): boolean => {
+  if (session.header.origin === "subagent" || source?.kind !== "subagent-report") return false;
+  const insertions = correlatedInboxMessages(session.events, session.id, "subagent-report")
+    .filter((candidate) => candidate.id === messageId && candidate.sender === source.senderSessionId);
+  if (insertions.length !== 1) return false;
+  const insertion = insertions[0];
+  if (insertion === undefined) return false;
+  const intents = session.events.flatMap((event) => {
+    if (event.type !== "myagents/work/message-intent") return [];
+    const intent = validateEventData(event.type, event.data);
+    if (intent.eventSeq !== event.seq || intent.sessionId !== session.id) {
+      throw new Error("persisted ProductWork message intent differs from its DSH Session position");
+    }
+    return intent.sender === source.senderSessionId && intent.recipient === session.id
+      && intent.contentSha256 === insertion.contentSha256 ? [intent] : [];
+  });
+  if (intents.length !== 1) return false;
+  const intent = intents[0];
+  if (intent === undefined) return false;
+  const deliveries = session.events.flatMap((event) => {
+    if (event.type !== "myagents/work/message") return [];
+    const delivery = validateEventData(event.type, event.data);
+    if (delivery.eventSeq !== event.seq || delivery.sessionId !== session.id) {
+      throw new Error("persisted ProductWork message differs from its DSH Session position");
+    }
+    return delivery.messageId === intent.messageId || delivery.dshMessageId === messageId
+      ? [delivery]
+      : [];
+  });
+  if (deliveries.length > 1) return false;
+  const delivery = deliveries[0];
+  if (delivery !== undefined && (delivery.dshMessageId !== messageId
+    || intent.agentId !== delivery.agentId || intent.taskId !== delivery.taskId
+    || intent.recipient !== delivery.recipient || intent.sender !== delivery.sender
+    || intent.sequence !== delivery.sequence || intent.summary !== delivery.summary)) return false;
+  const creations = session.events.flatMap((event) => {
+    if (event.type !== "myagents/work/created") return [];
+    const created = validateEventData(event.type, event.data);
+    if (created.eventSeq !== event.seq || created.sessionId !== session.id) {
+      throw new Error("persisted ProductWork creation differs from its DSH Session position");
+    }
+    return created.taskId === intent.taskId && created.agentId === intent.agentId
+      ? [created]
+      : [];
+  });
+  return creations.length === 1 && intent.agentId === source.senderSessionId;
+};
+
 const boundedInline = (value: string): Readonly<{ result: string; truncated: boolean }> => {
   const bytes = Buffer.from(value, "utf8");
   if (bytes.length <= MAX_INLINE_OUTPUT_BYTES) return Object.freeze({ result: value, truncated: false });
@@ -2266,8 +2318,7 @@ export class ProductWorkService extends Service {
   }
 
   ownsRootContextMessage(agent: Agent, source: MessageSource | undefined, messageId: string): boolean {
-    return agent.session.header.origin !== "subagent"
-      && this.ownsPersistedRootContextMessage(agent, source, messageId);
+    return this.ownsPersistedRootContextMessage(agent, source, messageId);
   }
 
   private ownsPersistedRootContextMessage(
@@ -2275,52 +2326,8 @@ export class ProductWorkService extends Service {
     source: MessageSource | undefined,
     messageId: string,
   ): boolean {
-    if (source?.kind !== "subagent-report") return false;
     try {
-      const insertions = correlatedInboxMessages(agent.session.events, agent.id, "subagent-report")
-        .filter((candidate) => candidate.id === messageId && candidate.sender === source.senderSessionId);
-      if (insertions.length !== 1) return false;
-      const insertion = insertions[0];
-      if (insertion === undefined) return false;
-      const intents = agent.session.events.flatMap((event) => {
-        if (event.type !== "myagents/work/message-intent") return [];
-        const intent = validateEventData(event.type, event.data);
-        if (intent.eventSeq !== event.seq || intent.sessionId !== agent.id) {
-          throw new Error("persisted ProductWork message intent differs from its DSH Session position");
-        }
-        return intent.sender === source.senderSessionId && intent.recipient === agent.id
-          && intent.contentSha256 === insertion.contentSha256 ? [intent] : [];
-      });
-      if (intents.length !== 1) return false;
-      const intent = intents[0];
-      if (intent === undefined) return false;
-      const deliveries = agent.session.events.flatMap((event) => {
-        if (event.type !== "myagents/work/message") return [];
-        const delivery = validateEventData(event.type, event.data);
-        if (delivery.eventSeq !== event.seq || delivery.sessionId !== agent.id) {
-          throw new Error("persisted ProductWork message differs from its DSH Session position");
-        }
-        return delivery.messageId === intent.messageId || delivery.dshMessageId === messageId
-          ? [delivery]
-          : [];
-      });
-      if (deliveries.length > 1) return false;
-      const delivery = deliveries[0];
-      if (delivery !== undefined && (delivery.dshMessageId !== messageId
-        || intent.agentId !== delivery.agentId || intent.taskId !== delivery.taskId
-        || intent.recipient !== delivery.recipient || intent.sender !== delivery.sender
-        || intent.sequence !== delivery.sequence || intent.summary !== delivery.summary)) return false;
-      const creations = agent.session.events.flatMap((event) => {
-        if (event.type !== "myagents/work/created") return [];
-        const created = validateEventData(event.type, event.data);
-        if (created.eventSeq !== event.seq || created.sessionId !== agent.id) {
-          throw new Error("persisted ProductWork creation differs from its DSH Session position");
-        }
-        return created.taskId === intent.taskId && created.agentId === intent.agentId
-          ? [created]
-          : [];
-      });
-      return creations.length === 1 && intent.agentId === source.senderSessionId;
+      return ownsProductWorkRootContextMessage(agent.session, source, messageId);
     } catch (error) {
       throw this.fence(error);
     }

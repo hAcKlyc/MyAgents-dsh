@@ -117,6 +117,7 @@ import { ProductTaskGraphService } from "@myagents-dsh/task-graph";
 import {
   ProductSkillService,
   ProductWorkService,
+  ownsProductWorkRootContextMessage,
   validateStaticSkillCatalog,
   type StaticSkillCatalog,
   type ProductDynamicSkillController,
@@ -2445,7 +2446,7 @@ export const composeDshRootServices = async (
         },
       }),
       drainOwnedWork: async (agent) => {
-        await root.get("productWork")?.preparePrimaryRetirement(agent);
+        await root.productWork.preparePrimaryRetirement(agent);
       },
       inputAuthority: Object.freeze({
         prepare: async (
@@ -2531,7 +2532,7 @@ export const composeDshRootServices = async (
         },
       }),
       ownsRootContextMessage: (agent, source, messageId) =>
-        root.get("productWork")?.ownsRootContextMessage(agent, source, messageId) ?? false,
+        ownsProductWorkRootContextMessage(agent.session, source, messageId),
       registerRetirementGuard: (guard) => root.productSession.registerRetirementGuard(guard),
       requireAgent: () => root.productSession.requireAgent(),
       retirePrimary: (cause) => root.productSession.retire(cause),

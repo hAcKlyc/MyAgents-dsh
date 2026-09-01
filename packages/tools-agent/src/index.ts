@@ -20,6 +20,7 @@ export {
   PRODUCT_WORK_EVENT_TYPES,
   ProductWorkService,
   isProductWorkEventType,
+  ownsProductWorkRootContextMessage,
   validateProductWorkEventData,
 } from "./work-runtime.js";
 export type {

@@ -26,6 +26,7 @@ import {
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime, type ToolRunContext } from "@deepseek-ai/dsh-tools";
 import {
+  ownsProductWorkRootContextMessage,
   ProductWorkService,
   validateProductWorkEventData,
   type ProductWorkSettledEventData,
@@ -1773,6 +1774,11 @@ describe("canonical Agent Work projection", () => {
     expect(delivery).toBeDefined();
     expect(state.context.productWork.ownsRootContextMessage(
       state.agent,
+      Object.freeze({ kind: "subagent-report", form: "relay", senderSessionId: SessionId(firstId) }),
+      (delivery?.data as { dshMessageId: string }).dshMessageId,
+    )).toBe(true);
+    expect(ownsProductWorkRootContextMessage(
+      state.agent.session,
       Object.freeze({ kind: "subagent-report", form: "relay", senderSessionId: SessionId(firstId) }),
       (delivery?.data as { dshMessageId: string }).dshMessageId,
     )).toBe(true);

@@ -74,12 +74,12 @@ and retirement use this same ownership predicate, so a child report cannot be ac
 then rejected by the next cold or terminal fold.
 
 A fresh generation validates persisted operations before it publishes the replacement ProductWork
-primary. The operation service supplies that candidate root Agent, and ProductWork rejects a
-subagent candidate before proving the complete durable creation/intent/Inbox lineage from the
-candidate's own Session. The proof deliberately does not depend on a warm ProductWork registry or
-live-primary publication. This is durable ownership, not a fallback based on the source label.
-ProductWork also passes its internal durable proof explicitly whenever it folds parent operations
-for child tool/model lineage or cold recovery. Calling the operation fold with its default
+primary, and teardown may continue folding after that primary enters closing. The shared
+ProductWork proof therefore accepts the exact candidate Session, rejects a subagent Session and
+proves the complete durable creation/intent/Inbox lineage without consulting a warm ProductWork
+registry, live-primary publication or dynamically available Cordis service. Operation validation
+and retirement, ProductWork's child tool/model/recovery folds, and Runtime event projection all bind
+that pure proof to the Session they already hold. Calling the operation fold with its default
 no-owner predicate is correct only for consumers that truly do not own root-context messages.
 
 ## 6. Resume and recovery

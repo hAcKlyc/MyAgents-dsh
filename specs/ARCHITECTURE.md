@@ -314,8 +314,9 @@ client operation accepted
 The root DSH Inbox is shared infrastructure, not operation-owned storage. Operation-source messages
 require an exact operation claim; ProductWork child reports are excluded only after durable work
 creation, message intent, optional delivery and Inbox insertion prove their separate ownership;
-unknown root messages fence. The same classification is used by live listeners and persisted
-folds.
+unknown root messages fence. The shared proof consumes only the exact root Session history, so the
+same classification is used by live listeners, persisted validation, event projection and teardown
+without depending on live-primary or Cordis service availability.
 
 Success requires a finalized assistant completion anchor owned by DSH. Idle, enqueue acknowledgement, EOF, or the last observed assistant message is insufficient. Aborted, failed, context-exhausted, output-limited, turn-limited, budget-limited, and transport-uncertain outcomes remain distinct.
 

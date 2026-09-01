@@ -38,6 +38,11 @@ and Plan. Ownership is split:
 - RuntimeEventProjector correlates those facts with the bound root Session and maps them to wire;
 - protocol `RuntimeEventSchema` owns exact required fields.
 
+Operation correlation during live projection and close uses ProductWork's exported Session-only
+root-context proof. It never calls `ProductSessionService.requireAgent()` or dynamically resolves
+ProductWork merely to interpret durable history; a closing generation therefore uses the same
+fail-closed ownership rule as cold validation and operation retirement.
+
 `tool/update`, general `session`, user/tool-result `message_event`, interaction,
 component/catalog, checkpoint, retry and warning remain schema-only in this projector. Billing
 `usage.contextOccupiedTokens` may still be `null`; the separate `context` event is emitted only with

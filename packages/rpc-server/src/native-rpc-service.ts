@@ -493,12 +493,6 @@ export class NativeRpcServer extends Service {
       const eventProjector = new RuntimeEventProjector({
         context: compositionAuthority.context,
         onFailure: (error) => this.onEventProjectionFailure(error),
-        ownsRootContextMessage: (source, messageId) =>
-          compositionAuthority.context.productWork.ownsRootContextMessage(
-            this.productSessionValue.requireAgent(),
-            source,
-            messageId,
-          ),
         peer: this.peerValue,
         productSession: this.productSessionValue,
         productSessionId: () => this.productSessionIdValue,

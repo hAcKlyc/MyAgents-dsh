@@ -20,7 +20,10 @@ import {
 } from "@myagents-dsh/protocol";
 import type { ProductSessionService } from "@myagents-dsh/runtime-product";
 import type { ProductTaskGraphSnapshot } from "@myagents-dsh/task-graph";
-import type { ProductWorkSnapshot } from "@myagents-dsh/tools-agent";
+import {
+  ownsProductWorkRootContextMessage,
+  type ProductWorkSnapshot,
+} from "@myagents-dsh/tools-agent";
 import type { ProductPlanSnapshot } from "@myagents-dsh/tools-interaction";
 
 type RuntimeEvent = RuntimeEventEnvelope["event"];
@@ -37,7 +40,6 @@ export interface RuntimeEventProjectorConfig {
   readonly context: Context;
   readonly peer: JsonRpcPeer;
   readonly productSession: ProductSessionService;
-  readonly ownsRootContextMessage?: RootContextMessageOwnership;
   readonly runtimeGeneration: string;
   readonly productSessionId: () => string | undefined;
   readonly onFailure: (error: ProtocolError) => void;
@@ -697,7 +699,6 @@ const requiresDurabilityBarrier = (event: SessionEvent): boolean =>
 
 export class RuntimeEventProjector {
   readonly #config: RuntimeEventProjectorConfig;
-  readonly #ownsRootContextMessage: RootContextMessageOwnership;
   readonly #capturedProjections = new Map<number, RuntimeEventProjection[]>();
   readonly #terminalReservations = new Map<string, TerminalNotificationReservation>();
   readonly #stopProjectionChanged: () => void;
@@ -716,7 +717,6 @@ export class RuntimeEventProjector {
 
   constructor(config: RuntimeEventProjectorConfig) {
     this.#config = config;
-    this.#ownsRootContextMessage = config.ownsRootContextMessage ?? ownsNoRootContextMessage;
     const projections = config.context.get("sessionProjections") as unknown as
       SessionProjectionRegistryRead | undefined;
     if (projections === undefined) {
@@ -730,7 +730,7 @@ export class RuntimeEventProjector {
           session,
           value as ContextPressureValue,
           sequence,
-          this.#ownsRootContextMessage,
+          (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId),
         );
         if (projection !== undefined) this.#capture(sequence, projection);
       } catch (error) {
@@ -822,7 +822,7 @@ export class RuntimeEventProjector {
             session,
             pressure,
             projectionCut.asOfSeq,
-            this.#ownsRootContextMessage,
+            (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId),
           );
       if (context !== undefined) baseline.push(context);
       baseline.push(taskGraphProjection(taskGraph));
@@ -1039,7 +1039,15 @@ export class RuntimeEventProjector {
 
   async #project(session: Session, source: SessionEvent): Promise<void> {
     const projections = Object.freeze([
-      ...projectSessionEvent(session, source, this.#ownsRootContextMessage),
+      ...projectSessionEvent(
+        session,
+        source,
+        (messageSource, messageId) => ownsProductWorkRootContextMessage(
+          session,
+          messageSource,
+          messageId,
+        ),
+      ),
       ...(this.#capturedProjections.get(source.seq) ?? []),
     ]);
     this.#capturedProjections.delete(source.seq);
