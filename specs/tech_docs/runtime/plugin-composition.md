@@ -168,7 +168,7 @@ Therefore:
 - a future maintenance change must either make the allowlist exhaustive or rename and define it as a deliberately partial release-identity set;
 - a plugin-management feature must distinguish immutable build-time services from declarative Session components instead of presenting all 47 entries as user-swappable.
 
-The current `2.4.0` source and generated candidate/official profile agree on the 22-entry partial
+The current `2.4.1` source and generated candidate/official profile agree on the 22-entry partial
 allowlist and `SessionProjectionRegistry`, but that changes the profile/Runtime identity. No older
 Runtime artifact, platform report or integration handoff proves the 47-plugin graph. The source
 remains a candidate until repository DSH-baseline/composition tests and a new artifact/evidence chain

@@ -40,7 +40,7 @@ optional generic harness-identity contribution.
 
 ## 3. Host contract and normalization
 
-Source-candidate protocol `2.4.0` retains unchanged the optional `SystemContextSnapshot` added in
+Source-candidate protocol `2.4.1` retains unchanged the optional `SystemContextSnapshot` added in
 `2.2.0` for `session/create`, `session/resume` and
 `config/apply`. A snapshot contains up to 32 ordered sections and 32 ordered contexts. Every entry
 has a Host id, numeric order, `global` or `root` scope, and literal UTF-8 Markdown text. Context text

@@ -2,7 +2,7 @@
 type: protocol-specification
 status: source-candidate
 module: runtime-protocol
-version: 2.4.0
+version: 2.4.1
 updated: 2026-09-02
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 product_scope: ../../prd/prd_0.1_agent_runtime.md
@@ -17,23 +17,24 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Protocol `2.4.0` is the current source candidate. It keeps the complete `2.3.0` method/notification
-vocabulary but replaces several `runtime/event` payloads with typed Tool and status snapshots and
-adds a ready baseline before create/resume settlement. `2.0.0` is the first frozen DSH contract;
-`2.1.0` added interaction reliability, `2.2.0` structured system context and `2.3.0` declarative MCP
-launch policy. The TypeBox source, generated digests and tests are authoritative for exact shapes.
-No older Runtime artifact/handoff is evidence for `2.4.0`, and the current source is not accepted
-until Runtime projector/composition gates and a new artifact/evidence chain pass.
+Protocol `2.4.1` is the current source candidate. It keeps the complete `2.4.0` method/notification
+and event vocabulary while advancing the embedded canonical Tool-contract digest for the exact
+`Write.directory_not_found` error contract. `2.4.0` introduced typed Tool/status snapshots and the
+ready baseline; `2.1.0` through `2.3.0` remain historical predecessors. The TypeBox source,
+generated digests and tests are authoritative for exact shapes. No older Runtime artifact/handoff
+is evidence for `2.4.1`, and the current source is not accepted until Runtime composition gates and
+a new artifact/evidence chain pass.
 
 ### 1.1 Compatibility versioning
 
-The active source implements exactly `2.4.0`. Initialization accepts a Host range only when it
-contains `2.4.0`; it neither negotiates down nor emulates earlier behavior. Current version strings
+The active source implements exactly `2.4.1`. Initialization accepts a Host range only when it
+contains `2.4.1`; it neither negotiates down nor emulates earlier behavior. Current version strings
 are exact wire-mode selectors, not a promise that a `2.x` Host accepts every later `2.x` payload.
 That distinction matters because `2.4.0` removes old event `detail` shapes and adds required typed
-fields; a `2.3.0` Host schema will reject them. A Runtime may advertise a wider range only after it
-implements and proves each mode. A larger number, generated schema or source test is not artifact
-acceptance, and historical draft/release evidence cannot be relabeled.
+fields, while `2.4.1` changes the schema-bound canonical Tool digest; an older exact Host schema
+will reject either mismatch. A Runtime may advertise a wider range only after it implements and
+proves each mode. A larger number, generated schema or source test is not artifact acceptance, and
+historical draft/release evidence cannot be relabeled.
 
 This wire is independent of `@deepseek-ai/dsh-sdk-protocol`. The DSH SDK protocol's three request methods and four notifications are not a base version of this contract, and its JSON-RPC server is not loaded in the official profile. Both protocols may use NDJSON JSON-RPC and DSH event values without sharing method or lifecycle authority.
 
@@ -730,7 +731,7 @@ warning
 
 `message_event` replaces Pi-oriented `message_entry`; it references the durable DSH event/message identity and may carry the originating queued-message ID.
 
-Protocol `2.4.0` tightens these observation shapes:
+Protocol `2.4.0` tightened these observation shapes; `2.4.1` retains them unchanged:
 
 - `tool/start` requires `name` and raw bounded-wire `input` projected from durable `tool/call`;
 - `tool/update` has optional `progress`, but the current projector has no producer;
@@ -827,7 +828,7 @@ protocol.schema.json
 protocol-meta.json
 protocol-fixtures.json
 host-client.generated.ts
-specs/contracts/protocol-2.4.0-evidence.json
+specs/contracts/protocol-2.4.1-evidence.json
 ```
 
 `canonical-tools.generated.ts` belongs to the separate Tool-contract generator and is consumed by
@@ -848,6 +849,6 @@ Conformance tests must prove:
 
 The current static generator and candidate Profile checks pass, as do 29 focused projector/native-RPC
 tests for the registry, ready baseline and changed event shapes. That does not yet constitute
-`2.4.0` Runtime acceptance: the DSH baseline gate still rejects the stale checked-in baseline and a
-dynamic test import, artifact-consuming composition/native gates have no accepted `2.4.0` Runtime
-input, and a new Runtime artifact, platform evidence and handoff remain required.
+`2.4.1` Runtime acceptance still requires artifact-consuming composition/native gates against the
+new exact source identity. A new Runtime artifact, platform evidence and handoff remain required;
+accepted `2.4.0` bytes cannot be relabeled.

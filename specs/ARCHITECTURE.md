@@ -28,7 +28,7 @@ This table is the architecture-level snapshot as of 2026-09-02. The active PRDs 
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
 | Platforms | All three implementations complete; product release promotion pending | Current handoff keeps all product claims pending; exact macOS Runtime native evidence passes, while signed MyAgents and native Windows/Linux acceptance remain open |
 
-The previous draft.2, draft.3, `2.0.0`, `2.1.0` and `2.2.0` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.3.0`. The accepted `2.3.0` handoff likewise cannot prove the current `2.4.0` source candidate. Every new consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
+The previous draft.2, draft.3, `2.0.0`, `2.1.0` and `2.2.0` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.3.0`. The accepted `2.3.0` and `2.4.0` handoffs likewise cannot prove the current `2.4.1` source candidate. Every new consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
 
 ## 2. Product boundaries
 

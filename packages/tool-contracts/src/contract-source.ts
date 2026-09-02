@@ -344,6 +344,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     errorCodes: errors(
       ["read_required", false, "An existing target has no current complete Read receipt."],
       ["stale_read", true, "The target changed after its qualifying Read."],
+      ["directory_not_found", false, "The parent directory of a new target does not exist."],
       ["path_denied", false, "The target is outside an allowed write root or changes identity."],
       ["mutation_conflict", true, "The atomic commit precondition no longer matches."],
     ),

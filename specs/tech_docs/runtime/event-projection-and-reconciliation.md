@@ -27,7 +27,7 @@ admission/terminal and Product state events—live in the DSH Session sequence. 
 also have separate durable SQLite authority. Runtime notifications are a bounded carrier whitelist,
 not a projection of every durable fact or every schema event kind.
 
-The `2.4.0` source maps durable/live facts to `turn_admitted`, `queued_message`, `turn_started`,
+The `2.4.1` source maps durable/live facts to `turn_admitted`, `queued_message`, `turn_started`,
 assistant/thinking deltas, assistant `message_event`, structured Tool start/end, usage,
 `turn_terminal`, compaction start/end and full Product status snapshots for context, TaskGraph, work
 and Plan. Ownership is split:
@@ -107,7 +107,7 @@ Diagnostics may report sanitized event types, identities and revisions. They mus
 
 ## 7. Current source-candidate acceptance boundary
 
-Protocol/profile `2.4.0`, the official projection-registry seam and the checked-in DSH baseline are
+Protocol/profile `2.4.1`, the official projection-registry seam and the checked-in DSH baseline are
 byte-stable. The final source state passes the complete MyAgents-dsh typecheck, zero-warning lint,
 69-file / 640-test and production-build gates. Focused tests cover ready ordering,
 zero/route-switch/failed contexts, usage chunks without a final assistant message, Task/Work/Plan
@@ -115,7 +115,7 @@ live and ready snapshots, compaction, rich and aggregate-oversized Tool results,
 restart. MyAgents source consumers independently pass their exact-toolchain full tests and builds.
 
 This remains a source candidate because MyAgents still contains the correctly verified historical
-protocol `2.3.0` Runtime resource. No current `2.4.0` Runtime/platform/handoff evidence has been
+protocol `2.3.0` Runtime resource. No current `2.4.1` Runtime/platform/handoff evidence has been
 accepted, and the split repository tests do not satisfy the required staged producer-to-consumer
 journey. The joint REC/CAP artifact campaign must build the current source, create a new immutable
 handoff with its own three-platform evidence, ingest those exact bytes and exercise the packaged

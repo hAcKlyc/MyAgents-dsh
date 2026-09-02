@@ -82,6 +82,12 @@ invalidate a parallel search, while replacement of the authorized root/file stil
 the explicit non-secret environment admitted at Session birth. A TaskStop signal settles a
 background Bash job as `aborted`; a natural non-zero exit settles as `failed`.
 
+`Write` owns exactly one file mutation and never creates missing parent directories implicitly. A
+missing parent returns `directory_not_found`; callers that intend to create directory structure do
+so through a separately authorized capability. `ls` likewise returns `directory_not_found` for a
+missing root, distinct from an existing root that is not a readable directory. These codes are part
+of the generated canonical contract and must survive the common tool-result projection.
+
 `Write` and `Edit` can participate in root managed-file checkpoints. Bash, Host tools, MCP, child work, and external filesystem effects are deliberately outside that rollback claim.
 
 ## 5. Plan, task and child work

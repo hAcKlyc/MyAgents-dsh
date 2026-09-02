@@ -935,7 +935,13 @@ export class CanonicalFileTools extends Service {
     product.signal.throwIfAborted();
     const input = path ?? ".";
     const pathInfo = await ctx.fs.lstat(input, { cwd: product.environment.workspace.canonicalRoot }, product.signal);
-    if (pathInfo?.type === "symlink") throw new ProductToolError("path_denied", `${tool} rejects symbolic-link roots`);
+    if (pathInfo === undefined) {
+      throw new ProductToolError(
+        tool === "Grep" ? "path_denied" : "directory_not_found",
+        tool === "Grep" ? "Grep path does not exist" : `${tool} root does not exist`,
+      );
+    }
+    if (pathInfo.type === "symlink") throw new ProductToolError("path_denied", `${tool} rejects symbolic-link roots`);
     const target = await ctx.fs.resolve(input, {
       cwd: product.environment.workspace.canonicalRoot,
       signal: product.signal,
@@ -1022,7 +1028,20 @@ export class CanonicalFileTools extends Service {
     if (planTarget !== undefined) return Object.freeze({ checkpointEligible: false, target: planTarget });
     const pathInfo = await ctx.fs.lstat(path, undefined, product.signal);
     if (pathInfo?.type === "symlink") throw new ProductToolError("path_denied", `${tool} rejects symbolic links`);
-    const target = await ctx.fs.resolve(path, { cwd: product.environment.workspace.canonicalRoot, signal: product.signal });
+    let target: FsTarget;
+    try {
+      target = await ctx.fs.resolve(path, { cwd: product.environment.workspace.canonicalRoot, signal: product.signal });
+    } catch (error) {
+      product.signal.throwIfAborted();
+      if (tool === "Write" && error instanceof FsError && error.code === "FS_NOT_FOUND") {
+        throw new ProductToolError(
+          "directory_not_found",
+          "Write parent directory does not exist",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
     if (target.displayPath !== path) {
       throw new ProductToolError("path_denied", `${tool} requires the exact canonical path without aliases`);
     }

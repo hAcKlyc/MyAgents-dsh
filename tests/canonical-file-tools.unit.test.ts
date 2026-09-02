@@ -444,6 +444,29 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
+  it("distinguishes an absent Write parent and ls root without creating directories", async () => {
+    const state = await harness();
+    const missingDirectory = join(state.workspace, "missing-parent");
+    const write = await state.execute("Write", {
+      file_path: join(missingDirectory, "new.txt"),
+      content: "content",
+    });
+    expect(write).toMatchObject({
+      isError: true,
+      error: { info: { code: "directory_not_found" } },
+    });
+    expect(JSON.stringify(write)).toContain("Write parent directory does not exist");
+    await expect(realpath(missingDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const list = await state.execute("ls", { path: "missing-root" });
+    expect(list).toMatchObject({
+      isError: true,
+      error: { info: { code: "directory_not_found" } },
+    });
+    expect(JSON.stringify(list)).toContain("ls root does not exist");
+    await state.context.fiber.dispose();
+  });
+
   it("fails closed on partial/stale reads, symlink aliases, traversal, denial, and cancellation", async () => {
     const state = await harness();
     const path = join(state.workspace, "guarded.txt");

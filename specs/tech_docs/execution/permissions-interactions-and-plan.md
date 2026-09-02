@@ -75,7 +75,7 @@ tool + permissionClass + target + expiry
 
 Its persisted `origin: root` denotes root-Session ownership, not a caller-origin restriction: a child `always_allow` writes the same shared root policy and later eligible root/child calls may match it. It carries a deterministic rule ID, chained policy revision, creation time and bounded expiry. The official composition permits at most 128 grant events and 128 revocation events and uses a 24-hour TTL. Configuration-base changes clear effective exact rules through the durable revision chain.
 
-Current source-candidate protocol `2.4.0` exposes the same permission and interaction vocabulary
+Current source-candidate protocol `2.4.1` exposes the same permission and interaction vocabulary
 accepted in `2.3.0`:
 
 | Method | Semantics |
@@ -104,7 +104,7 @@ Model-driven interaction tools can deliberately produce two Host interactions. `
 
 Plan is not a fifth permission mode. `ProductPlanService` owns one durable `normal | plan` state, the managed plan artifact, prompt contribution and monotonic tool guard. Model-visible `EnterPlanMode` and `ExitPlanMode` continue to use that service.
 
-Current source-candidate protocol `2.4.0` retains `plan/apply` unchanged so a first-party Host can
+Current source-candidate protocol `2.4.1` retains `plan/apply` unchanged so a first-party Host can
 apply the product's Plan selector at a quiescent boundary. The request carries a client operation
 identity, expected Plan revision and desired mode. Entering `plan` prepares the managed artifact;
 exiting does not prepare or read it. A real transition appends adjacent product ownership plus public
