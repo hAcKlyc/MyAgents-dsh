@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: current
-updated: 2026-09-02
+updated: 2026-09-03
 project: MyAgents-dsh
 ---
 
@@ -17,18 +17,18 @@ The compatibility target is the versioned MyAgents Agent experience admitted by 
 
 ### 1.1 Current implementation and acceptance state
 
-This table is the architecture-level snapshot as of 2026-09-02. The active PRDs remain the acceptance authority.
+This table is the architecture-level snapshot as of 2026-09-03. The active PRDs remain the acceptance authority.
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
-| DSH source distribution | Implemented | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus nine isolated patches; the current 56-package artifact identity is bound by the accepted manifest |
-| Standalone Runtime and native RPC | Protocol `2.3.0` implementation and immutable handoff accepted; `2.4.0` source candidate unaccepted | The candidate retains the 40/7/4 vocabulary but changes `runtime/event` to typed Tool/status projections and adds a ready baseline; no `2.4.0` Runtime/native/handoff evidence is accepted yet |
+| DSH source distribution | Implemented source/artifact candidate | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus ten isolated patches; the accepted 58-package DSH artifact is `0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a` / manifest `b42f4c59…`, with separately pinned patched pi-ai `0.82.1` |
+| Standalone Runtime and native RPC | Protocol `2.3.0` immutable handoff remains the installed historical authority; `2.5.0` source candidate passes isolated composition | The candidate retains 40/7/4 methods/notifications, carries typed Tool/status projections and ready baseline, and adds generic non-canonical `provider_tool`; commit-bound Runtime/native/handoff evidence is not accepted yet |
 | Batch 3 integration handoff | Protocol `2.3.0` handoff ingested by MyAgents and accepted in a refreshed local unsigned macOS package | Handoff `999a80f5…` binds Runtime `4b3bc9de…` to source `1a77619…` and MyAgents commit `80df5aa4…`; deterministic Host/Runtime, final-App/updater verification, native restart/resume and lifecycle-soak gates pass |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
 | Platforms | All three implementations complete; product release promotion pending | Current handoff keeps all product claims pending; exact macOS Runtime native evidence passes, while signed MyAgents and native Windows/Linux acceptance remain open |
 
-The previous draft.2, draft.3, `2.0.0`, `2.1.0` and `2.2.0` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.3.0`. The accepted `2.3.0` and `2.4.0` handoffs likewise cannot prove the current `2.4.1` source candidate. Every new consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
+The previous draft.2, draft.3, `2.0.0`, `2.1.0`, `2.2.0` and `2.4.x` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.3.0` or `2.5.0`. The accepted `2.3.0` handoff cannot prove the current `2.5.0` source candidate. Every new consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
 
 ## 2. Product boundaries
 
@@ -153,9 +153,9 @@ MyAgents-owned plugins implement compatibility and product policy through DSH se
 
 TaskGraph is one of those product-owned plugins. Its canonical Task metadata is a bounded flat record of JSON scalar values; nested objects, arrays, and recursive schema references are not part of the model-visible contract. That portable schema is identical for Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses and is not rewritten per Provider. Root and child Agents share this one root-Session TaskGraph; mutation events record their exact Product tool origin. The exact rule and maintenance gate live in [Agent tools and policy](./tech_docs/execution/tool-runtime-and-policy.md).
 
-The official model plane keeps two deliberately different adapter owners behind the one DSH `ctx.llm` service. `dsh-llm-deepseek` exclusively owns `deepseek-official` and its DeepSeek-native Files/search behavior. Exact public `dsh-llm-pi-ai@0.1.1-rc.2` is mounted dormant and owns only Host-declared Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes. Its required public `dsh-authorization@0.1.1-rc.2` peer is packaged explicitly but no authorization service/login flow is mounted or advertised. A root-only in-memory `HostSettingsProvider` atomically replaces its non-secret route document during Session/config admission; it is not a user configuration store. Request middleware holds one reverse-port credential scope across adapter iterator creation, each read and cleanup, and sanitizes both thrown failures and in-stream failure terminals before persistence. Failed admission restores the prior settings and credential binding.
+The official model plane keeps two deliberately different adapter owners behind the one DSH `ctx.llm` service. `dsh-llm-deepseek` exclusively owns `deepseek-official` and its DeepSeek-native Files/search behavior. The accepted patched `dsh-llm-pi-ai@0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a` and separately pinned/patched pi-ai `0.82.1` are mounted dormant and own only Host-declared Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes. The adapter patches preserve generic Provider-owned content through the one DSH conversation; they add no second transport or loop. The required patched `dsh-authorization` peer is packaged explicitly but no authorization service/login flow is mounted or advertised. A root-only in-memory `HostSettingsProvider` atomically replaces its non-secret route document during Session/config admission; it is not a user configuration store. Request middleware holds one reverse-port credential scope across adapter iterator creation, each read and cleanup, and sanitizes both thrown failures and in-stream failure terminals before persistence. Failed admission restores the prior settings and credential binding.
 
-Canonical Web tools remain in the same `ctx.tools` pipeline. `deepseek-official` uses the native DeepSeek web plane; a non-DeepSeek route can exist only when initialization advertises the versioned Host canonical-web capability, in which case `WebSearch` and `WebFetch` dispatch through the existing `host/tool/execute` reverse port after normal schema, policy, permission, Hook and operation-authority checks.
+Canonical Web tools remain in the same `ctx.tools` pipeline. `deepseek-official` uses the native DeepSeek web plane; a non-DeepSeek route can exist only when initialization advertises the versioned Host canonical-web capability, in which case `WebSearch` and `WebFetch` dispatch through the existing `host/tool/execute` reverse port after normal schema, policy, permission, Hook and operation-authority checks. The Host selects Search by API family: every admitted Anthropic Messages route uses the Claude Code-compatible nested Messages server tool, while standalone Search products require explicit non-Anthropic cells. Provider-owned activity returned inside a model request remains distinct durable assistant content and projects as `provider_tool`; it does not claim canonical permission/Hooks or drive root loading/terminal state.
 
 ### 4.5 DSH foundation
 
@@ -243,6 +243,7 @@ Shared conformance suites run against every platform adapter. A target that has 
 | Managed file checkpoints | MyAgents checkpoint plugin | Runtime-home journal and content-addressed preimages |
 | Attachment bytes | Host | Runtime owns only leases and verified read-only paths |
 | Runtime event sequence | RPC event projector | Generation-local FIFO; Host deduplicates durable effects |
+| Provider-owned tool activity | Provider response preserved in the DSH assistant stream | Runtime projects bounded correlated `provider_tool`; Host renders it as Provider-owned and never treats it as canonical execution authority |
 | Reference Web Host Session catalog | Reference Web Host | Persists only bounded launch/routing metadata and exact Runtime/persistence identities; never message or tool history |
 | Reference WebUI projection and drafts | Browser client | Rebuilt from bounded Host snapshots plus Runtime events; disposable and never durable conversation authority |
 

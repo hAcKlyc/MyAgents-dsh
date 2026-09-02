@@ -10,9 +10,9 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "2.4.1" as const;
+export const PROTOCOL_VERSION = "2.5.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
-export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.56f8f4241def" as const;
+export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
 export const DEEPSEEK_WEB_SEARCH_POLICY_REF = "deepseek-official-web-search-v1" as const;
@@ -844,6 +844,28 @@ export const RuntimeEventSchema = Type.Union([
       isError: Type.Boolean(),
       content: Type.Array(toolResultContent, { maxItems: 1_024 }),
       metadata: Type.Optional(toolResultMetadata),
+    }),
+  }),
+  strictObject({
+    kind: Type.Literal("provider_tool"),
+    phase: Type.Literal("start"),
+    providerRouteId: identifier,
+    providerToolCallId: identifier,
+    providerBlockType: identifier,
+    name: identifier,
+    input: jsonRecord,
+  }),
+  strictObject({
+    kind: Type.Literal("provider_tool"),
+    phase: Type.Literal("end"),
+    providerRouteId: identifier,
+    providerToolCallId: identifier,
+    providerBlockType: identifier,
+    name: identifier,
+    result: strictObject({
+      state: Type.Union([Type.Literal("succeeded"), Type.Literal("failed")]),
+      isError: Type.Boolean(),
+      content: Type.Array(toolResultContent, { maxItems: 1_024 }),
     }),
   }),
   usageEvent,

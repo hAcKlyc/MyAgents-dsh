@@ -71,7 +71,7 @@ const expectedScripts = new Map([
   ["generate:profile", "tsx scripts/generate-product-profile.ts"],
   ["check:profile", "tsx scripts/generate-product-profile.ts --check"],
   ["check:security", "tsx scripts/verify-repository-security.ts"],
-  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:dsh-seams && npm run check:tool-contracts && npm run check:protocol && npm run check:web-host-contract && npm run check:web-host-foundation && npm run check:compatibility && npm run check:profile && npm run check:security"],
+  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:dsh-seams && npm run check:pi-ai-seam && npm run check:tool-contracts && npm run check:protocol && npm run check:web-host-contract && npm run check:web-host-foundation && npm run check:compatibility && npm run check:profile && npm run check:security"],
   ["typecheck", "npm run check:foundation && tsc -b --pretty false"],
   ["lint", "eslint . --max-warnings 0"],
   ["test", "npm run check:foundation && vitest run --maxWorkers=1 --no-file-parallelism"],

@@ -237,6 +237,141 @@ describe("Runtime event projection", () => {
     ]);
   });
 
+  it("projects Provider-owned blocks without manufacturing canonical tool events", () => {
+    const session = Session.create(SessionId("provider-tool-projection"));
+    const fixture = appendAcceptedOperation(session);
+    session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    session.append("step/start", { turn: 1, step: 1 });
+    session.append("request/context", {
+      provider: "fixture-provider",
+      model: "fixture-model",
+      contextWindow: 8_192,
+    });
+    const call = session.append("assistant/chunk", {
+      turn: 1,
+      step: 1,
+      chunk: {
+        type: "block-end",
+        index: 0,
+        block: {
+          type: "provider-tool-call",
+          id: "provider-call-1",
+          name: "web_search",
+          input: { query: "public reference" },
+          providerType: "server_tool_use",
+          raw: {
+            type: "server_tool_use",
+            id: "provider-call-1",
+            name: "web_search",
+            input: { query: "public reference" },
+          },
+        },
+      } as never,
+    });
+    const result = session.append("assistant/chunk", {
+      turn: 1,
+      step: 1,
+      chunk: {
+        type: "block-end",
+        index: 1,
+        block: {
+          type: "provider-tool-result",
+          toolCallId: "provider-call-1",
+          providerType: "web_search_tool_result",
+          content: [{ type: "web_search_result", title: "Reference" }],
+          raw: {
+            type: "web_search_tool_result",
+            tool_use_id: "provider-call-1",
+            content: [{ type: "web_search_result", title: "Reference" }],
+          },
+        },
+      } as never,
+    });
+
+    expect(projectSessionEvent(session, call)).toMatchObject([{
+      toolCallId: "provider-call-1",
+      event: {
+        kind: "provider_tool",
+        phase: "start",
+        providerRouteId: "fixture-provider",
+        providerToolCallId: "provider-call-1",
+        providerBlockType: "server_tool_use",
+        name: "web_search",
+        input: { query: "public reference" },
+      },
+    }]);
+    expect(projectSessionEvent(session, result)).toMatchObject([{
+      toolCallId: "provider-call-1",
+      event: {
+        kind: "provider_tool",
+        phase: "end",
+        providerRouteId: "fixture-provider",
+        providerToolCallId: "provider-call-1",
+        providerBlockType: "web_search_tool_result",
+        name: "web_search",
+        result: {
+          state: "succeeded",
+          isError: false,
+          content: [{ type: "text", text: expect.stringContaining("Reference") as string }],
+        },
+      },
+    }]);
+    expect(session.events.some((event) => event.type === "tool/call" || event.type === "tool/result")).toBe(false);
+  });
+
+  it("fails Provider result projection closed across route changes", () => {
+    const session = Session.create(SessionId("provider-tool-route-fence"));
+    const fixture = appendAcceptedOperation(session);
+    session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    session.append("step/start", { turn: 1, step: 1 });
+    session.append("request/context", {
+      provider: "provider-a",
+      model: "fixture-model",
+      contextWindow: 8_192,
+    });
+    session.append("assistant/chunk", {
+      turn: 1,
+      step: 1,
+      chunk: {
+        type: "block-end",
+        index: 0,
+        block: {
+          type: "provider-tool-call",
+          id: "provider-call-1",
+          name: "web_search",
+          input: {},
+          providerType: "server_tool_use",
+          raw: {},
+        },
+      } as never,
+    });
+    session.append("request/context", {
+      provider: "provider-b",
+      model: "fixture-model",
+      contextWindow: 8_192,
+    });
+    const result = session.append("assistant/chunk", {
+      turn: 1,
+      step: 1,
+      chunk: {
+        type: "block-end",
+        index: 1,
+        block: {
+          type: "provider-tool-result",
+          toolCallId: "provider-call-1",
+          providerType: "web_search_tool_result",
+          content: [],
+          raw: {},
+        },
+      } as never,
+    });
+
+    expect(() => projectSessionEvent(session, result))
+      .toThrow("Provider tool result route does not match its correlated call");
+  });
+
   it("projects one correlated Runtime tool lifecycle from durable DSH call and result facts", () => {
     const session = Session.create(SessionId("projection-tool-lifecycle"));
     const fixture = appendAcceptedOperation(session);

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { Context } from "@deepseek-ai/cordis";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
@@ -97,6 +99,119 @@ const protocolToolName = (name: string): string => {
     if (codeUnit <= 0x1f || codeUnit === 0x7f) return "Tool";
   }
   return name;
+};
+
+const protocolProviderIdentity = (value: string, prefix: string): string => {
+  if (protocolToolName(value) === value) return value;
+  return `${prefix}-${createHash("sha256").update(value).digest("hex").slice(0, 32)}`;
+};
+
+type ProviderToolCallBlock = Readonly<{
+  type: "provider-tool-call";
+  id: string;
+  name: string;
+  input: Readonly<Record<string, unknown>>;
+  providerType: string;
+}>;
+
+type ProviderToolResultBlock = Readonly<{
+  type: "provider-tool-result";
+  toolCallId: string;
+  providerType: string;
+  content: unknown;
+  isError?: boolean;
+}>;
+
+const providerToolBlock = (
+  source: Extract<SessionEvent, { type: "assistant/chunk" }>,
+): ProviderToolCallBlock | ProviderToolResultBlock | undefined => {
+  if (source.data.chunk.type !== "block-end") return undefined;
+  const block = source.data.chunk.block as unknown;
+  if (block === null || typeof block !== "object" || Array.isArray(block)) return undefined;
+  const record = block as Readonly<Record<string, unknown>>;
+  if (record.type === "provider-tool-call"
+    && typeof record.id === "string"
+    && typeof record.name === "string"
+    && record.input !== null
+    && typeof record.input === "object"
+    && !Array.isArray(record.input)
+    && typeof record.providerType === "string") {
+    return record as unknown as ProviderToolCallBlock;
+  }
+  if (record.type === "provider-tool-result"
+    && typeof record.toolCallId === "string"
+    && typeof record.providerType === "string"
+    && (record.isError === undefined || typeof record.isError === "boolean")) {
+    return record as unknown as ProviderToolResultBlock;
+  }
+  return undefined;
+};
+
+const providerRouteForChunk = (
+  events: readonly SessionEvent[],
+  source: Extract<SessionEvent, { type: "assistant/chunk" }>,
+): string => {
+  for (let sequence = source.seq - 1; sequence >= 0; sequence -= 1) {
+    const event = events[sequence];
+    if (event?.type === "request/context") {
+      return protocolProviderIdentity(event.data.provider, "provider");
+    }
+    if (event?.type === "turn/start" && event.data.turn === source.data.turn) break;
+  }
+  throw new TypeError("Provider tool block lacks its request route authority");
+};
+
+const providerToolCallForResult = (
+  events: readonly SessionEvent[],
+  source: Extract<SessionEvent, { type: "assistant/chunk" }>,
+  toolCallId: string,
+): Readonly<{ name: string; providerRouteId: string }> => {
+  for (let sequence = source.seq - 1; sequence >= 0; sequence -= 1) {
+    const event = events[sequence];
+    if (event?.type === "turn/start" && event.data.turn === source.data.turn) break;
+    if (event?.type !== "assistant/chunk" || event.data.turn !== source.data.turn) continue;
+    const block = providerToolBlock(event);
+    if (block?.type === "provider-tool-call" && block.id === toolCallId) {
+      return Object.freeze({
+        name: protocolToolName(block.name),
+        providerRouteId: providerRouteForChunk(events, event),
+      });
+    }
+  }
+  throw new TypeError("Provider tool result lacks its correlated call");
+};
+
+const MAX_PROVIDER_INPUT_BYTES = 262_144;
+const boundedProviderInput = (
+  value: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> => {
+  try {
+    if (Buffer.byteLength(JSON.stringify(value)) <= MAX_PROVIDER_INPUT_BYTES) {
+      return Object.freeze(structuredClone(value));
+    }
+  } catch {
+    // Durable Provider content must be JSON; fail the Product projection closed.
+  }
+  return Object.freeze({ truncated: true });
+};
+
+const providerResultText = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (value === undefined) return "(no output)";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "[Provider tool result is not serializable]";
+  }
+};
+
+const providerResultFailed = (block: ProviderToolResultBlock): boolean => {
+  if (block.isError === true) return true;
+  if (block.content === null || typeof block.content !== "object" || Array.isArray(block.content)) {
+    return false;
+  }
+  const type = (block.content as Readonly<Record<string, unknown>>).type;
+  return typeof type === "string" && type.endsWith("_error");
 };
 
 const MAX_TOOL_RESULT_TEXT = 262_144;
@@ -507,6 +622,53 @@ export const projectSessionEvent = (
         throw new TypeError("assistant chunk is outside its owned DSH turn boundary");
       }
       const itemId = durableSessionEventId(session.id, source.seq);
+      const providerBlock = providerToolBlock(source);
+      if (providerBlock?.type === "provider-tool-call") {
+        const providerToolCallId = protocolProviderIdentity(providerBlock.id, "provider-call");
+        return Object.freeze([Object.freeze({
+          turnId: operation.productTurnId,
+          itemId,
+          toolCallId: providerToolCallId,
+          event: Object.freeze({
+            kind: "provider_tool",
+            phase: "start",
+            providerRouteId: providerRouteForChunk(events, source),
+            providerToolCallId,
+            providerBlockType: protocolProviderIdentity(providerBlock.providerType, "provider-block"),
+            name: protocolToolName(providerBlock.name),
+            input: boundedProviderInput(providerBlock.input),
+          }),
+        })]);
+      }
+      if (providerBlock?.type === "provider-tool-result") {
+        const providerToolCallId = protocolProviderIdentity(providerBlock.toolCallId, "provider-call");
+        const providerRouteId = providerRouteForChunk(events, source);
+        const correlatedCall = providerToolCallForResult(events, source, providerBlock.toolCallId);
+        if (correlatedCall.providerRouteId !== providerRouteId) {
+          throw new TypeError("Provider tool result route does not match its correlated call");
+        }
+        const failed = providerResultFailed(providerBlock);
+        const text = boundedTextBlock(providerResultText(providerBlock.content), MAX_TOOL_RESULT_CONTENT_BYTES)
+          ?? Object.freeze({ type: "text" as const, text: TOOL_RESULT_TRUNCATION });
+        return Object.freeze([Object.freeze({
+          turnId: operation.productTurnId,
+          itemId,
+          toolCallId: providerToolCallId,
+          event: Object.freeze({
+            kind: "provider_tool",
+            phase: "end",
+            providerRouteId,
+            providerToolCallId,
+            providerBlockType: protocolProviderIdentity(providerBlock.providerType, "provider-block"),
+            name: correlatedCall.name,
+            result: Object.freeze({
+              state: failed ? "failed" as const : "succeeded" as const,
+              isError: failed,
+              content: [text],
+            }),
+          }),
+        })]);
+      }
       if (source.data.chunk.type === "text-delta") {
         return Object.freeze([Object.freeze({
           turnId: operation.productTurnId,

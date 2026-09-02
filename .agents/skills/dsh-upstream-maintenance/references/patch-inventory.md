@@ -7,6 +7,7 @@ This reference is a readable maintenance projection of `specs/dsh/seam-decisions
 - Official source/design authority: DeepSeek Harness `0.1.1-rc.2`, commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`.
 - Development dependency authority: exact public npm `0.1.1-rc.2` package set plus exact Cordis, locked independently because registry manifests do not prove `gitHead` association.
 - Executable product authority: the official source plus the complete ordered patch series, compiled and packed into a content-addressed DSH artifact.
+- Anthropic adapter authority: pi-ai `0.82.1`, commit `b4f293684bba718d59cc1157679bcf6157b3a7f5`, plus its separately verified one-patch Provider-content series; exact values live in `specs/pi-ai/seam-evidence-v1.json`.
 - Application method: verify original blobs, freeze patch bytes, apply in an isolated temporary worktree, compile, and pack. Do not modify the sibling checkout, registry packages, or `node_modules`.
 
 Always read current values from `specs/dsh/seam-decisions-v1.json`, `specs/dsh/dsh-baseline-v1.json`, package manifests, locks, and accepted artifact manifests before reporting an update.
@@ -24,6 +25,7 @@ Always read current values from `specs/dsh/seam-decisions-v1.json`, `specs/dsh/d
 | 7 / `DSH-SEAM-008` | `0007-capacity-safe-compaction.patch`; ADR 0008 | Use one exact request estimator; fit summaries to the resolved model; choose the largest fitting balanced range; validate/repair Prompt v2 once; preserve call provenance; emit content-free telemetry | token meter, compaction contracts, basic engine/range/summarizer, tests | official public APIs and engine provide equivalent tested request estimation and capacity-safe structured compaction semantics |
 | 8 / `DSH-SEAM-009` | `0008-literal-prompt-contributions.patch`; ADR 0009 | Preserve external Host, Skill and child-persona Markdown literally while retaining strict interpolation as the default and in legacy child descriptors | system-prompt assembly, child composition, subagent descriptor/continuation, tests | official public APIs provide equivalent literal section/context and durable child-persona semantics |
 | 9 / `DSH-SEAM-010` | `0009-agent-instruction-selection.patch`; ADR 0010 | Select the first non-empty project instruction candidate per directory and observe configurable canonical filesystem-touch tool names with last-known-good failure behavior | Agent Instructions config/files/state/service, tests | official Agent Instructions provides equivalent mutually exclusive candidate and configurable touch semantics |
+| 10 / `DSH-SEAM-011` | `0010-pi-ai-provider-content.patch`; ADR 0011 | Preserve generic Provider-owned Anthropic content through pi-ai conversion, DSH chunks and exact same-route replay without manufacturing canonical tool execution | pi-ai adapter bridge/content map, conversion and replay tests | official DSH/pi-ai releases preserve equivalent generic Provider content and correlated replay |
 
 Patch numbers and seam numbers differ after seam 004 because `DSH-SEAM-004` needs no core patch.
 
@@ -44,6 +46,7 @@ Patch numbers and seam numbers differ after seam 004 because `DSH-SEAM-004` need
 - Patch 0007 spans TokenMeter and BasicCompactionEngine. Retiring only one side can reintroduce estimator drift or an unsafe summary envelope.
 - Patch 0008 changes both Prompt assembly and persisted continuable-child descriptors; retirement must preserve version-3 resume behavior as well as new literal bodies.
 - Patch 0009 extends the existing Agent Instructions lifecycle; retirement must preserve per-directory atomic winner replacement, transient-unavailable last-known-good behavior and canonical `Read`/`Write`/`Edit` touches.
+- Patch 0010 depends on the separately pinned pi-ai patch. Retiring either side must preserve the same generic content map, block order, call/result correlation and same-route replay rule without converting Provider activity into canonical DSH tool events.
 - Any patch change alters the combined patch digest, all packed DSH package versions, artifact manifest, Runtime identity, native evidence, and Batch handoff.
 
 ## Official vs MyAgents-dsh compaction boundary
@@ -68,7 +71,8 @@ Read `specs/tech_docs/compaction-architecture.md` before changing this boundary.
 | Generated seam/patch source | `scripts/dsh-seam-decisions.ts` |
 | Generated registry | `specs/dsh/seam-decisions-v1.json` |
 | Patch bytes | `specs/dsh/patches/*.patch` |
-| Seam decisions | `specs/adr/0001-*.md` through `specs/adr/0010-*.md` |
+| Seam decisions | `specs/adr/0001-*.md` through `specs/adr/0011-*.md` |
+| pi-ai source/patch authority | `specs/pi-ai/seam-evidence-v1.json`, `specs/pi-ai/README.md` |
 | DSH source/package baseline | `specs/dsh/dsh-baseline-v1.json`, `specs/dsh/README.md` |
 | Patch verification | `npm run check:dsh-seams`, `npm run check:dsh-seams-source` |
 | Artifact build/verification | `npm run build:dsh-artifact`, `npm run verify:dsh-artifact` |

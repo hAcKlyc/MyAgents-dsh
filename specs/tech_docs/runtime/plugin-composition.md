@@ -2,7 +2,7 @@
 type: technical-architecture
 status: source-candidate
 module: runtime-plugin-composition
-updated: 2026-09-02
+updated: 2026-09-03
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_integration.md
@@ -23,7 +23,7 @@ It is a maintained projection, not a competing executable inventory. Exact insta
 - `packages/product-profile/src/candidate-runtime-profile.ts` for the separately maintained profile allowlist;
 - `specs/dsh/seam-decisions-v1.json` for exact DSH patch order, hashes and removal conditions.
 
-The current source baseline is official DeepSeek Harness `0.1.1-rc.2` at `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, composed with nine isolated patches. A `.myagents...` package-version suffix identifies the content-addressed patched artifact as a whole; it does not mean every packed DSH package has source changes.
+The current source baseline is official DeepSeek Harness `0.1.1-rc.2` at `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, composed with ten isolated patches. A `.myagents...` package-version suffix identifies the content-addressed patched artifact as a whole; it does not mean every packed DSH package has source changes. The installed pi-ai core is separately pinned and patched under `specs/pi-ai/`; it remains one adapter dependency, not another AgentLoop.
 
 ### 1.1 Relationships
 
@@ -43,7 +43,7 @@ The following rules keep that count distinct from adjacent inventories:
 3. Count `NativeRpcServer` after process lifecycle installation and `ProductSqliteSessionPersistence` after initialization installs the production persistence plane.
 4. Do not count the twenty model-visible tool definitions separately. Their owning plugins register them through the single DSH `ctx.tools` pipeline.
 5. Do not count MCP, Skill, Agent, Command, Hook or Host Tool descriptors as executable Cordis plugins. They are declarative components compiled inside one `ProductComponentService` generation.
-6. Do not count ordinary helper objects, Provider profiles, generated contracts, package dependencies or the 56-package DSH artifact inventory as plugin instances.
+6. Do not count ordinary helper objects, Provider profiles, generated contracts, package dependencies or the 58-package DSH artifact inventory as plugin instances.
 
 On macOS arm64 and Linux x64 the resulting steady-state graph is:
 
@@ -96,7 +96,7 @@ The inventory uses five relationship terms:
 | 14 | `@myagents-dsh/component-runtime:ProductComponentService` | Prepare, atomically promote, drain and report declarative component generations | MyAgents | Add product capability | No |
 | 15 | `@myagents-dsh/host-ports:HostCredentialProvider` | Resolve secrets from the Host only inside a request or connection scope | MyAgents | Replace a Runtime-local credential owner | No |
 | 16 | `@myagents-dsh/runtime-product:HostSettingsProvider` | Project the admitted non-secret Host model route into in-memory DSH Settings | MyAgents | Replace a file-backed/local Settings owner | No |
-| 17 | `@deepseek-ai/dsh-llm-pi-ai:llm-pi-ai` | Implement Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes | DSH official | Enable at its exact version | No |
+| 17 | `@deepseek-ai/dsh-llm-pi-ai:llm-pi-ai` | Implement Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes while retaining Provider-owned content | DSH official | Enable at its exact patched-artifact version with separately pinned pi-ai core | Direct: 0010 Provider content |
 | 18 | `@myagents-dsh/runtime-product:adapterRegistration` (`HostDeepSeekLlmAdapter`) | Bind the Host profile and credentials to the official native DeepSeek adapter | MyAgents | Replace stock static DeepSeek composition, while retaining the official adapter implementation | Indirect: 0006 DeepSeek stream identity |
 | 19 | `@myagents-dsh/runtime-product:ProductUtilityService` | Execute bounded idempotent non-conversation model utility requests | MyAgents | Add product capability | No |
 
@@ -168,7 +168,7 @@ Therefore:
 - a future maintenance change must either make the allowlist exhaustive or rename and define it as a deliberately partial release-identity set;
 - a plugin-management feature must distinguish immutable build-time services from declarative Session components instead of presenting all 47 entries as user-swappable.
 
-The current `2.4.1` source and generated candidate/official profile agree on the 22-entry partial
+The current `2.5.0` source and generated candidate/official profile agree on the 22-entry partial
 allowlist and `SessionProjectionRegistry`, but that changes the profile/Runtime identity. No older
 Runtime artifact, platform report or integration handoff proves the 47-plugin graph. The source
 remains a candidate until repository DSH-baseline/composition tests and a new artifact/evidence chain
@@ -176,7 +176,7 @@ close.
 
 ## 9. Current patch relationship
 
-The nine-patch series is:
+The ten-patch series is:
 
 | Patch | Protected semantic | Installed plugin surfaces |
 | --- | --- | --- |
@@ -189,6 +189,7 @@ The nine-patch series is:
 | 0007 | Capacity-safe request estimation and compaction | `TokenMeter`, `BasicCompactionEngine` and compaction contracts |
 | 0008 | Preserve external prompt bodies literally | `SystemPrompt`, Subagent runtime/driver; consumed by `ProductSessionService`, Skill and Work services |
 | 0009 | Select mutually exclusive project instruction candidates | `AgentInstructions` |
+| 0010 | Preserve generic Provider-owned content and exact same-route replay | `dsh-llm-pi-ai`; consumed by the native Runtime event projector through durable assistant chunks |
 
 Patch 0003 and the product SQLite Provider are distinct owners: the patch only adds the public known-event predicate; MyAgents owns storage and mutation journals. Patch 0007 likewise strengthens the official compaction engine; MyAgents does not install a second compaction plugin.
 

@@ -2,7 +2,7 @@
 type: technical-architecture
 status: source-candidate
 module: event-projection-and-reconciliation
-updated: 2026-09-02
+updated: 2026-09-03
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
 ---
@@ -27,16 +27,24 @@ admission/terminal and Product state events—live in the DSH Session sequence. 
 also have separate durable SQLite authority. Runtime notifications are a bounded carrier whitelist,
 not a projection of every durable fact or every schema event kind.
 
-The `2.4.1` source maps durable/live facts to `turn_admitted`, `queued_message`, `turn_started`,
+The `2.5.0` source maps durable/live facts to `turn_admitted`, `queued_message`, `turn_started`,
 assistant/thinking deltas, assistant `message_event`, structured Tool start/end, usage,
 `turn_terminal`, compaction start/end and full Product status snapshots for context, TaskGraph, work
-and Plan. Ownership is split:
+and Plan. It also maps generic Provider-owned call/result blocks to the distinct `provider_tool`
+event only after same-turn, same-route correlation; it never emits canonical `tool` for them.
+Ownership is split:
 
 - TokenMeter publishes `contextPressure` into `SessionProjectionRegistry`; it owns the projected-token
   math, while the registry owns the consistent cut/change feed;
 - `ProductTaskGraphService`, `ProductWorkService` and `ProductPlanService` own their snapshots;
 - RuntimeEventProjector correlates those facts with the bound root Session and maps them to wire;
 - protocol `RuntimeEventSchema` owns exact required fields.
+
+Provider-tool structure is durable assistant content owned by DSH. The projector derives stable
+wire-safe identities from exact durable fields, bounds input/result projection, fails closed on an
+uncorrelated or cross-route result, and preserves ordinary assistant text independently. Provider
+activity is observational: it cannot settle Product operations or mutate permission, interaction,
+TaskGraph, ProductWork, Plan, queue or root loading state.
 
 Operation correlation during live projection and close uses ProductWork's exported Session-only
 root-context proof. It never calls `ProductSessionService.requireAgent()` or dynamically resolves
@@ -107,19 +115,19 @@ Diagnostics may report sanitized event types, identities and revisions. They mus
 
 ## 7. Current source-candidate acceptance boundary
 
-Protocol/profile `2.4.1`, the official projection-registry seam and the checked-in DSH baseline are
-byte-stable. The final source state passes the complete MyAgents-dsh typecheck, zero-warning lint,
-69-file / 640-test and production-build gates. Focused tests cover ready ordering,
+Protocol/profile `2.5.0`, the official projection-registry seam and the checked-in DSH/pi-ai
+authorities are byte-stable. Focused tests cover ready ordering,
 zero/route-switch/failed contexts, usage chunks without a final assistant message, Task/Work/Plan
 live and ready snapshots, compaction, rich and aggregate-oversized Tool results, sequence gaps and
-restart. MyAgents source consumers independently pass their exact-toolchain full tests and builds.
+restart, plus Provider-content conversion, same-route replay and non-canonical projection. The
+isolated 58-package Runtime composition gate passes with the patched adapter graph.
 
 This remains a source candidate because MyAgents still contains the correctly verified historical
-protocol `2.3.0` Runtime resource. No current `2.4.1` Runtime/platform/handoff evidence has been
-accepted, and the split repository tests do not satisfy the required staged producer-to-consumer
-journey. The joint REC/CAP artifact campaign must build the current source, create a new immutable
-handoff with its own three-platform evidence, ingest those exact bytes and exercise the packaged
-client before this module becomes accepted Runtime delivery truth.
+Runtime resource. No current `2.5.0` commit-bound Runtime/platform/handoff evidence has been
+accepted, and split source tests do not satisfy the required staged producer-to-consumer journey.
+The joint REC/CAP/PST artifact campaign must build the final committed source, create a new immutable
+handoff with its own three-platform evidence, ingest those exact bytes and exercise live plus cold
+Provider-tool journeys in the packaged client before this module becomes accepted delivery truth.
 
 ## 8. Architecture-correct change path
 

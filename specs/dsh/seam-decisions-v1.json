@@ -217,6 +217,21 @@
         "path": "packages/context/agent-instructions/tests/agent-instructions.spec.ts",
         "blob": "4fc60bc78dd754502598181ab3f91ed541d90f69",
         "sha256": "fea67cb6812b434a73e9ae59e1aad7c13f41bca143af0508f50d73fb5d407f2a"
+      },
+      {
+        "path": "packages/llm/llm-pi-ai/src/replay.ts",
+        "blob": "aa9d542e335bf793b9b4ccebe0e548ce966655f3",
+        "sha256": "dc5203bc43e707f5f469d35272a533631c4dbf4adc57332e7acbdd7d33345e8a"
+      },
+      {
+        "path": "packages/llm/llm-pi-ai/src/stream.ts",
+        "blob": "d45df45a39b80b555cecab8741c66dbff1654442",
+        "sha256": "5375a5be66ddbc65893c0af544b788cb9e3c56e8d2e4b53a99eacd539aae2be4"
+      },
+      {
+        "path": "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "blob": "c540f2d50b281a030a6007e66a2b5624df8659dc",
+        "sha256": "4350556d679ee126bc58a1d9f583b016da61756f33dd91b2a13924717f0ca446"
       }
     ]
   },
@@ -266,6 +281,11 @@
       "order": 9,
       "path": "specs/dsh/patches/0009-agent-instruction-selection.patch",
       "sha256": "d093c06fd8e272849888f64869022ed61df93524bb1bb68fc17045d5dd39edc9"
+    },
+    {
+      "order": 10,
+      "path": "specs/dsh/patches/0010-pi-ai-provider-content.patch",
+      "sha256": "0a4b4cfe7dbb6843a6a07dc9a79fd8c88c13d6c239d6436a4de474243236509c"
     }
   ],
   "decisions": [
@@ -477,6 +497,26 @@
         "omitted options retain stock all-candidates and lowercase tool-name behavior"
       ],
       "removalCondition": "an installed DSH release exposes equivalent first-candidate and configurable filesystem-touch semantics"
+    },
+    {
+      "id": "DSH-SEAM-011",
+      "seam": "pi-ai-provider-owned-content-preservation",
+      "status": "required_upstream_patch_accepted",
+      "adr": "specs/adr/0011-provider-owned-content-preservation.md",
+      "rejected": "flatten-provider-blocks-to-markdown-or-manufacture-local-tool-calls",
+      "selectedPublicApi": "@deepseek-ai/dsh-llm ContentBlockMap augmentation plus stock llm-pi-ai stream/replay adapters",
+      "patch": {
+        "order": 10,
+        "path": "specs/dsh/patches/0010-pi-ai-provider-content.patch",
+        "sha256": "0a4b4cfe7dbb6843a6a07dc9a79fd8c88c13d6c239d6436a4de474243236509c"
+      },
+      "executableEvidence": [
+        "Provider call and result blocks remain ordered structured non-executable content",
+        "native replay reconstructs exact Provider raw blocks only for the matching pi-ai route",
+        "unknown Provider block types remain generic and do not require tool-name heuristics",
+        "canonical local tool calls continue through the unchanged DSH tool execution pipeline"
+      ],
+      "removalCondition": "an installed DSH release preserves generic Provider-owned pi-ai content and exact matching-route replay"
     }
   ],
   "evidenceOwners": {
@@ -486,6 +526,7 @@
       "packages/core/system-prompt/tests/system-prompt.spec.ts",
       "packages/context/agent-instructions/tests/agent-instructions.spec.ts",
       "packages/llm/llm-deepseek/tests/translate.spec.ts",
+      "packages/llm/llm-pi-ai/tests/convert.spec.ts",
       "packages/core/agent-loop/tests/publication-guards.spec.ts",
       "packages/core/agent-loop/tests/cancel.spec.ts",
       "packages/core/agent-loop/tests/pre-assistant-commit.spec.ts",

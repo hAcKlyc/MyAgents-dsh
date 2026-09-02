@@ -1616,6 +1616,207 @@
                             "type": "object",
                             "required": [
                               "kind",
+                              "phase",
+                              "providerRouteId",
+                              "providerToolCallId",
+                              "providerBlockType",
+                              "name",
+                              "input"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "provider_tool"
+                              },
+                              "phase": {
+                                "type": "string",
+                                "const": "start"
+                              },
+                              "providerRouteId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "providerToolCallId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "providerBlockType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "input": {
+                                "type": "object",
+                                "patternProperties": {
+                                  "^.*$": {}
+                                }
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "phase",
+                              "providerRouteId",
+                              "providerToolCallId",
+                              "providerBlockType",
+                              "name",
+                              "result"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "provider_tool"
+                              },
+                              "phase": {
+                                "type": "string",
+                                "const": "end"
+                              },
+                              "providerRouteId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "providerToolCallId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "providerBlockType": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "result": {
+                                "type": "object",
+                                "required": [
+                                  "state",
+                                  "isError",
+                                  "content"
+                                ],
+                                "properties": {
+                                  "state": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "const": "succeeded"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "failed"
+                                      }
+                                    ]
+                                  },
+                                  "isError": {
+                                    "type": "boolean"
+                                  },
+                                  "content": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "required": [
+                                            "type",
+                                            "text"
+                                          ],
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "const": "text"
+                                            },
+                                            "text": {
+                                              "type": "string",
+                                              "maxLength": 262144
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "required": [
+                                            "type",
+                                            "attachmentId",
+                                            "mimeType",
+                                            "sizeBytes",
+                                            "sha256"
+                                          ],
+                                          "properties": {
+                                            "type": {
+                                              "type": "string",
+                                              "const": "image_ref"
+                                            },
+                                            "attachmentId": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 256,
+                                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                            },
+                                            "mimeType": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 256,
+                                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                            },
+                                            "sizeBytes": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "sha256": {
+                                              "type": "string",
+                                              "pattern": "^[a-f0-9]{64}$"
+                                            },
+                                            "width": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "height": {
+                                              "type": "integer",
+                                              "minimum": 0
+                                            },
+                                            "name": {
+                                              "type": "string",
+                                              "maxLength": 512
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "maxItems": 1024
+                                  }
+                                },
+                                "additionalProperties": false
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
                               "usageRecordId",
                               "turnId",
                               "meteringScopeId",
@@ -5734,6 +5935,207 @@
                                 "type": "object",
                                 "required": [
                                   "kind",
+                                  "phase",
+                                  "providerRouteId",
+                                  "providerToolCallId",
+                                  "providerBlockType",
+                                  "name",
+                                  "input"
+                                ],
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "provider_tool"
+                                  },
+                                  "phase": {
+                                    "type": "string",
+                                    "const": "start"
+                                  },
+                                  "providerRouteId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "providerToolCallId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "providerBlockType": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "input": {
+                                    "type": "object",
+                                    "patternProperties": {
+                                      "^.*$": {}
+                                    }
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "kind",
+                                  "phase",
+                                  "providerRouteId",
+                                  "providerToolCallId",
+                                  "providerBlockType",
+                                  "name",
+                                  "result"
+                                ],
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "provider_tool"
+                                  },
+                                  "phase": {
+                                    "type": "string",
+                                    "const": "end"
+                                  },
+                                  "providerRouteId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "providerToolCallId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "providerBlockType": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "result": {
+                                    "type": "object",
+                                    "required": [
+                                      "state",
+                                      "isError",
+                                      "content"
+                                    ],
+                                    "properties": {
+                                      "state": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "const": "succeeded"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "failed"
+                                          }
+                                        ]
+                                      },
+                                      "isError": {
+                                        "type": "boolean"
+                                      },
+                                      "content": {
+                                        "type": "array",
+                                        "items": {
+                                          "anyOf": [
+                                            {
+                                              "type": "object",
+                                              "required": [
+                                                "type",
+                                                "text"
+                                              ],
+                                              "properties": {
+                                                "type": {
+                                                  "type": "string",
+                                                  "const": "text"
+                                                },
+                                                "text": {
+                                                  "type": "string",
+                                                  "maxLength": 262144
+                                                }
+                                              },
+                                              "additionalProperties": false
+                                            },
+                                            {
+                                              "type": "object",
+                                              "required": [
+                                                "type",
+                                                "attachmentId",
+                                                "mimeType",
+                                                "sizeBytes",
+                                                "sha256"
+                                              ],
+                                              "properties": {
+                                                "type": {
+                                                  "type": "string",
+                                                  "const": "image_ref"
+                                                },
+                                                "attachmentId": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 256,
+                                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                                },
+                                                "mimeType": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 256,
+                                                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                                },
+                                                "sizeBytes": {
+                                                  "type": "integer",
+                                                  "minimum": 0
+                                                },
+                                                "sha256": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-f0-9]{64}$"
+                                                },
+                                                "width": {
+                                                  "type": "integer",
+                                                  "minimum": 0
+                                                },
+                                                "height": {
+                                                  "type": "integer",
+                                                  "minimum": 0
+                                                },
+                                                "name": {
+                                                  "type": "string",
+                                                  "maxLength": 512
+                                                }
+                                              },
+                                              "additionalProperties": false
+                                            }
+                                          ]
+                                        },
+                                        "maxItems": 1024
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "kind",
                                   "usageRecordId",
                                   "turnId",
                                   "meteringScopeId",
@@ -8742,6 +9144,207 @@
                                     }
                                   },
                                   "additionalProperties": false
+                                }
+                              },
+                              "additionalProperties": false
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "phase",
+                            "providerRouteId",
+                            "providerToolCallId",
+                            "providerBlockType",
+                            "name",
+                            "input"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "provider_tool"
+                            },
+                            "phase": {
+                              "type": "string",
+                              "const": "start"
+                            },
+                            "providerRouteId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "providerToolCallId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "providerBlockType": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "input": {
+                              "type": "object",
+                              "patternProperties": {
+                                "^.*$": {}
+                              }
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "phase",
+                            "providerRouteId",
+                            "providerToolCallId",
+                            "providerBlockType",
+                            "name",
+                            "result"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "provider_tool"
+                            },
+                            "phase": {
+                              "type": "string",
+                              "const": "end"
+                            },
+                            "providerRouteId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "providerToolCallId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "providerBlockType": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "result": {
+                              "type": "object",
+                              "required": [
+                                "state",
+                                "isError",
+                                "content"
+                              ],
+                              "properties": {
+                                "state": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "const": "succeeded"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "failed"
+                                    }
+                                  ]
+                                },
+                                "isError": {
+                                  "type": "boolean"
+                                },
+                                "content": {
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "required": [
+                                          "type",
+                                          "text"
+                                        ],
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "const": "text"
+                                          },
+                                          "text": {
+                                            "type": "string",
+                                            "maxLength": 262144
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "required": [
+                                          "type",
+                                          "attachmentId",
+                                          "mimeType",
+                                          "sizeBytes",
+                                          "sha256"
+                                        ],
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "const": "image_ref"
+                                          },
+                                          "attachmentId": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "mimeType": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "sizeBytes": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "sha256": {
+                                            "type": "string",
+                                            "pattern": "^[a-f0-9]{64}$"
+                                          },
+                                          "width": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "height": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "maxLength": 512
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "maxItems": 1024
                                 }
                               },
                               "additionalProperties": false

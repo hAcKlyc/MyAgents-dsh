@@ -1,0 +1,451 @@
+diff --git a/packages/ai/src/api/anthropic-messages.ts b/packages/ai/src/api/anthropic-messages.ts
+index 99f698b..d3de2eb 100644
+--- a/packages/ai/src/api/anthropic-messages.ts
++++ b/packages/ai/src/api/anthropic-messages.ts
+@@ -19,6 +19,8 @@ import type {
+ 	Model,
+ 	ProviderEnv,
+ 	ProviderHeaders,
++	ProviderToolCall,
++	ProviderToolResult,
+ 	SimpleStreamOptions,
+ 	StopReason,
+ 	StreamFunction,
+@@ -313,6 +315,59 @@ const ANTHROPIC_MESSAGE_EVENTS: ReadonlySet<string> = new Set([
+ 	"content_block_stop",
+ ]);
+ 
++type RawProviderToolCall = Record<string, unknown> & {
++	type: "server_tool_use" | "mcp_tool_use";
++	id: string;
++	name: string;
++	input?: unknown;
++};
++
++type RawProviderToolResult = Record<string, unknown> & {
++	type: string;
++	tool_use_id: string;
++	content?: unknown;
++	is_error?: boolean;
++};
++
++function providerToolInput(value: unknown): Record<string, unknown> {
++	if (value !== null && typeof value === "object" && !Array.isArray(value)) {
++		return value as Record<string, unknown>;
++	}
++	if (typeof value === "string") {
++		try {
++			const parsed: unknown = JSON.parse(value);
++			if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
++				return parsed as Record<string, unknown>;
++			}
++		} catch {
++			// Preserve a non-JSON compatible-provider input without inventing fields.
++		}
++		return { raw: value };
++	}
++	return {};
++}
++
++function isProviderToolCallBlock(value: unknown): value is RawProviderToolCall {
++	if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
++	const block = value as Record<string, unknown>;
++	return (block.type === "server_tool_use" || block.type === "mcp_tool_use")
++		&& typeof block.id === "string"
++		&& block.id.length > 0
++		&& typeof block.name === "string"
++		&& block.name.length > 0;
++}
++
++function isProviderToolResultBlock(value: unknown): value is RawProviderToolResult {
++	if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
++	const block = value as Record<string, unknown>;
++	return typeof block.type === "string"
++		&& block.type !== "tool_result"
++		&& block.type.endsWith("_tool_result")
++		&& typeof block.tool_use_id === "string"
++		&& block.tool_use_id.length > 0
++		&& (block.is_error === undefined || typeof block.is_error === "boolean");
++}
++
+ function flushSseEvent(state: SseDecoderState): ServerSentEvent | null {
+ 	if (!state.event && state.data.length === 0) {
+ 		return null;
+@@ -567,7 +622,8 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+ 			stream.push({ type: "start", partial: output });
+ 
+ 			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
+-			const blocks = output.content as Block[];
++			type ProviderBlock = (ProviderToolCall | ProviderToolResult) & { index: number; partialJson?: string };
++			const blocks = output.content as (Block | ProviderBlock)[];
+ 
+ 			for await (const event of iterateAnthropicEvents(response, options?.signal)) {
+ 				if (event.type === "message_start") {
+@@ -624,6 +680,34 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+ 						};
+ 						output.content.push(block);
+ 						stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
++					} else if (isProviderToolCallBlock(event.content_block)) {
++						const raw = { ...event.content_block } as Record<string, unknown>;
++						const input = providerToolInput(event.content_block.input);
++						const block: ProviderBlock = {
++							type: "providerToolCall",
++							id: event.content_block.id,
++							name: event.content_block.name,
++							input,
++							providerType: event.content_block.type,
++							raw,
++							partialJson: "",
++							index: event.index,
++						};
++						output.content.push(block);
++						stream.push({ type: "provider_tool_start", contentIndex: output.content.length - 1, partial: output });
++					} else if (isProviderToolResultBlock(event.content_block)) {
++						const raw = { ...event.content_block } as Record<string, unknown>;
++						const block: ProviderBlock = {
++							type: "providerToolResult",
++							toolCallId: event.content_block.tool_use_id,
++							providerType: event.content_block.type,
++							content: event.content_block.content,
++							...(event.content_block.is_error === undefined ? {} : { isError: event.content_block.is_error }),
++							raw,
++							index: event.index,
++						};
++						output.content.push(block);
++						stream.push({ type: "provider_tool_start", contentIndex: output.content.length - 1, partial: output });
+ 					}
+ 				} else if (event.type === "content_block_delta") {
+ 					if (event.delta.type === "text_delta") {
+@@ -662,6 +746,10 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+ 								delta: event.delta.partial_json,
+ 								partial: output,
+ 							});
++						} else if (block && block.type === "providerToolCall") {
++							block.partialJson = (block.partialJson ?? "") + event.delta.partial_json;
++							block.input = providerToolInput(parseStreamingJson(block.partialJson));
++							block.raw = { ...block.raw, input: block.input };
+ 						}
+ 					} else if (event.delta.type === "signature_delta") {
+ 						const index = blocks.findIndex((b) => b.index === event.index);
+@@ -701,6 +789,20 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+ 								toolCall: block,
+ 								partial: output,
+ 							});
++						} else if (block.type === "providerToolCall" || block.type === "providerToolResult") {
++							if (block.type === "providerToolCall") {
++								if (block.partialJson) {
++									block.input = providerToolInput(parseStreamingJson(block.partialJson));
++									block.raw = { ...block.raw, input: block.input };
++								}
++								delete block.partialJson;
++							}
++							stream.push({
++								type: "provider_tool_end",
++								contentIndex: index,
++								content: block,
++								partial: output,
++							});
+ 						}
+ 					}
+ 				} else if (event.type === "message_delta") {
+@@ -1208,6 +1310,8 @@ function convertMessages(
+ 						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
+ 						input: block.arguments ?? {},
+ 					});
++				} else if (block.type === "providerToolCall" || block.type === "providerToolResult") {
++					blocks.push(block.raw as unknown as ContentBlockParam);
+ 				}
+ 			}
+ 			if (blocks.length === 0) continue;
+diff --git a/packages/ai/src/api/mistral-conversations.ts b/packages/ai/src/api/mistral-conversations.ts
+index 3a5e59d..992aea4 100644
+--- a/packages/ai/src/api/mistral-conversations.ts
++++ b/packages/ai/src/api/mistral-conversations.ts
+@@ -560,6 +560,7 @@ function toChatMessages(messages: Message[], supportsImages: boolean): ChatCompl
+ 					}
+ 					continue;
+ 				}
++				if (block.type !== "toolCall") continue;
+ 				toolCalls.push({
+ 					id: block.id,
+ 					type: "function",
+diff --git a/packages/ai/src/providers/faux.ts b/packages/ai/src/providers/faux.ts
+index 4a26f1a..566b1ca 100644
+--- a/packages/ai/src/providers/faux.ts
++++ b/packages/ai/src/providers/faux.ts
+@@ -1,5 +1,6 @@
+ import { createProvider, type Provider } from "../models.ts";
+ import type {
++	AssistantContent,
+ 	AssistantMessage,
+ 	AssistantMessageEventStream,
+ 	Context,
+@@ -159,7 +160,7 @@ function contentToText(content: string | Array<TextContent | ImageContent>): str
+ 		.join("\n");
+ }
+ 
+-function assistantContentToText(content: Array<TextContent | ThinkingContent | ToolCall>): string {
++function assistantContentToText(content: AssistantContent[]): string {
+ 	return content
+ 		.map((block) => {
+ 			if (block.type === "text") {
+@@ -168,7 +169,10 @@ function assistantContentToText(content: Array<TextContent | ThinkingContent | T
+ 			if (block.type === "thinking") {
+ 				return block.thinking;
+ 			}
+-			return `${block.name}:${JSON.stringify(block.arguments)}`;
++			if (block.type === "toolCall") {
++				return `${block.name}:${JSON.stringify(block.arguments)}`;
++			}
++			return JSON.stringify(block.raw);
+ 		})
+ 		.join("\n");
+ }
+@@ -374,6 +378,13 @@ async function streamWithDeltas(
+ 			continue;
+ 		}
+ 
++		if (block.type === "providerToolCall" || block.type === "providerToolResult") {
++			partial.content = [...partial.content, block];
++			stream.push({ type: "provider_tool_start", contentIndex: index, partial: { ...partial } });
++			stream.push({ type: "provider_tool_end", contentIndex: index, content: block, partial: { ...partial } });
++			continue;
++		}
++
+ 		partial.content = [...partial.content, { type: "toolCall", id: block.id, name: block.name, arguments: {} }];
+ 		stream.push({ type: "toolcall_start", contentIndex: index, partial: { ...partial } });
+ 		for (const chunk of splitStringByTokenSize(JSON.stringify(block.arguments), minTokenSize, maxTokenSize)) {
+diff --git a/packages/ai/src/types.ts b/packages/ai/src/types.ts
+index 1d8fcfd..e0b1cfa 100644
+--- a/packages/ai/src/types.ts
++++ b/packages/ai/src/types.ts
+@@ -356,6 +356,32 @@ export interface ToolCall {
+ 	thoughtSignature?: string; // Google-specific: opaque signature for reusing thought context
+ }
+ 
++/** A tool invocation executed by the upstream Provider, not by the client tool runtime. */
++export interface ProviderToolCall {
++	type: "providerToolCall";
++	id: string;
++	name: string;
++	input: Record<string, unknown>;
++	/** Original Anthropic-compatible content-block discriminator. */
++	providerType: string;
++	/** Exact JSON content block used for same-route assistant-history replay. */
++	raw: Record<string, unknown>;
++}
++
++/** A result produced by an upstream Provider tool inside an assistant response. */
++export interface ProviderToolResult {
++	type: "providerToolResult";
++	toolCallId: string;
++	/** Original Anthropic-compatible content-block discriminator. */
++	providerType: string;
++	content: unknown;
++	isError?: boolean;
++	/** Exact JSON content block used for same-route assistant-history replay. */
++	raw: Record<string, unknown>;
++}
++
++export type AssistantContent = TextContent | ThinkingContent | ToolCall | ProviderToolCall | ProviderToolResult;
++
+ export interface Usage {
+ 	input: number;
+ 	output: number;
+@@ -389,7 +415,7 @@ export interface UserMessage {
+ 
+ export interface AssistantMessage {
+ 	role: "assistant";
+-	content: (TextContent | ThinkingContent | ToolCall)[];
++	content: AssistantContent[];
+ 	api: Api;
+ 	provider: ProviderId;
+ 	model: string;
+@@ -499,6 +525,13 @@ export type AssistantMessageEvent =
+ 	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
+ 	| { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
+ 	| { type: "toolcall_end"; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
++	| { type: "provider_tool_start"; contentIndex: number; partial: AssistantMessage }
++	| {
++			type: "provider_tool_end";
++			contentIndex: number;
++			content: ProviderToolCall | ProviderToolResult;
++			partial: AssistantMessage;
++	  }
+ 	| { type: "done"; reason: Extract<StopReason, "stop" | "length" | "toolUse">; message: AssistantMessage }
+ 	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
+ 
+diff --git a/packages/ai/src/utils/estimate.ts b/packages/ai/src/utils/estimate.ts
+index b434969..506cc49 100644
+--- a/packages/ai/src/utils/estimate.ts
++++ b/packages/ai/src/utils/estimate.ts
+@@ -53,8 +53,10 @@ export function estimateMessageTokens(message: Message): number {
+ 			chars += block.text.length;
+ 		} else if (block.type === "thinking") {
+ 			chars += block.thinking.length;
+-		} else {
++		} else if (block.type === "toolCall") {
+ 			chars += block.name.length + safeJsonStringify(block.arguments).length;
++		} else {
++			chars += safeJsonStringify(block.raw).length;
+ 		}
+ 	}
+ 	return Math.ceil(chars / CHARS_PER_TOKEN);
+diff --git a/packages/ai/test/anthropic-sse-parsing.test.ts b/packages/ai/test/anthropic-sse-parsing.test.ts
+index 0cdd057..54e8fdd 100644
+--- a/packages/ai/test/anthropic-sse-parsing.test.ts
++++ b/packages/ai/test/anthropic-sse-parsing.test.ts
+@@ -3,7 +3,7 @@ import { Type } from "typebox";
+ import { describe, expect, it } from "vitest";
+ import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
+ import { getModel } from "../src/compat.ts";
+-import type { Context, ToolCall } from "../src/types.ts";
++import type { Context, ProviderToolCall, ProviderToolResult, ToolCall } from "../src/types.ts";
+ 
+ function createSseResponse(events: Array<{ event: string; data: string }>): Response {
+ 	const body = events.map(({ event, data }) => `event: ${event}\ndata: ${data}\n`).join("\n");
+@@ -68,17 +68,141 @@ const minimalAnthropicEvents = [
+ 	},
+ ];
+ 
+-function createFakeAnthropicClient(response: Response): Anthropic {
++function createFakeAnthropicClient(response: Response, onCreate?: (params: unknown) => void): Anthropic {
+ 	return {
+ 		messages: {
+-			create: () => ({
++			create: (params: unknown) => {
++				onCreate?.(params);
++				return ({
+ 				asResponse: async () => response,
+-			}),
++				});
++			},
+ 		},
+ 	} as unknown as Anthropic;
+ }
+ 
+ describe("Anthropic raw SSE parsing", () => {
++	it("preserves Provider tool calls and results as ordered structured assistant content", async () => {
++		const model = getModel("anthropic", "claude-haiku-4-5");
++		const context: Context = {
++			messages: [{ role: "user", content: "Find a public reference.", timestamp: Date.now() }],
++		};
++		const providerEvents = [
++			{
++				event: "message_start",
++				data: JSON.stringify({
++					type: "message_start",
++					message: {
++						id: "msg_provider_tool",
++						usage: { input_tokens: 8, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
++					},
++				}),
++			},
++			{
++				event: "content_block_start",
++				data: JSON.stringify({
++					type: "content_block_start",
++					index: 0,
++					content_block: { type: "server_tool_use", id: "provider_call_1", name: "web_search", input: {} },
++				}),
++			},
++			{
++				event: "content_block_delta",
++				data: JSON.stringify({
++					type: "content_block_delta",
++					index: 0,
++					delta: { type: "input_json_delta", partial_json: '{"query":"public reference"}' },
++				}),
++			},
++			{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 0 }) },
++			{
++				event: "content_block_start",
++				data: JSON.stringify({
++					type: "content_block_start",
++					index: 1,
++					content_block: {
++						type: "web_search_tool_result",
++						tool_use_id: "provider_call_1",
++						content: [{ type: "web_search_result", title: "Reference", url: "https://example.test/reference" }],
++					},
++				}),
++			},
++			{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 1 }) },
++			{
++				event: "content_block_start",
++				data: JSON.stringify({ type: "content_block_start", index: 2, content_block: { type: "text", text: "" } }),
++			},
++			{
++				event: "content_block_delta",
++				data: JSON.stringify({ type: "content_block_delta", index: 2, delta: { type: "text_delta", text: "Found it." } }),
++			},
++			{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 2 }) },
++			{
++				event: "message_delta",
++				data: JSON.stringify({
++					type: "message_delta",
++					delta: { stop_reason: "end_turn" },
++					usage: { input_tokens: 8, output_tokens: 7, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
++				}),
++			},
++			{ event: "message_stop", data: JSON.stringify({ type: "message_stop" }) },
++		];
++
++		const stream = streamAnthropic(model, context, {
++			client: createFakeAnthropicClient(createSseResponse(providerEvents)),
++		});
++		const observed = [];
++		for await (const event of stream) observed.push(event);
++		const result = await stream.result();
++
++		expect(observed.map((event) => event.type)).toEqual([
++			"start",
++			"provider_tool_start",
++			"provider_tool_end",
++			"provider_tool_start",
++			"provider_tool_end",
++			"text_start",
++			"text_delta",
++			"text_end",
++			"done",
++		]);
++		const call = result.content[0] as ProviderToolCall;
++		const toolResult = result.content[1] as ProviderToolResult;
++		expect(call).toMatchObject({
++			type: "providerToolCall",
++			id: "provider_call_1",
++			name: "web_search",
++			input: { query: "public reference" },
++			providerType: "server_tool_use",
++			raw: { type: "server_tool_use", id: "provider_call_1", name: "web_search", input: { query: "public reference" } },
++		});
++		expect(toolResult).toMatchObject({
++			type: "providerToolResult",
++			toolCallId: "provider_call_1",
++			providerType: "web_search_tool_result",
++		});
++		expect(result.content[2]).toEqual({ type: "text", text: "Found it." });
++
++		let replayPayload: unknown;
++		const replayContext: Context = {
++			messages: [
++				context.messages[0],
++				result,
++				{ role: "user", content: "Continue.", timestamp: Date.now() },
++			],
++		};
++		await streamAnthropic(model, replayContext, {
++			client: createFakeAnthropicClient(createSseResponse(minimalAnthropicEvents), (params) => {
++				replayPayload = params;
++			}),
++		}).result();
++		const replayMessages = (replayPayload as { messages: Array<{ role: string; content: unknown }> }).messages;
++		expect(replayMessages[1]).toEqual({
++			role: "assistant",
++			content: [call.raw, toolResult.raw, { type: "text", text: "Found it." }],
++		});
++	});
++
+ 	it("repairs malformed SSE JSON and malformed streamed tool JSON", async () => {
+ 		const model = getModel("anthropic", "claude-haiku-4-5");
+ 		const context: Context = {

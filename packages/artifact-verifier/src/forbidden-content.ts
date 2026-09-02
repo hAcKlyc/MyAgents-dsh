@@ -32,7 +32,7 @@ const secretPatterns = [
     expression: new RegExp(
       [
         "(?:API[_-]?KEY|ACCESS[_-]?TOKEN|CLIENT[_-]?SECRET|PASSWORD|GH[_-]?PAT|CI[_-]?JOB[_-]?JWT|NPM[_-]?CONFIG[_-]+AUTH)",
-        "[\"']?\\s*[:=]\\s*[\"']?[A-Za-z0-9+/=_-]{12,}",
+        "[\"']?\\s*[:=]\\s*(?:[\"'][A-Za-z0-9+/=_-]{12,}[\"']|[A-Za-z0-9+/=_-]{12,}(?=$|[\\s,;}\\]]))",
       ].join(""),
       "iu",
     ),

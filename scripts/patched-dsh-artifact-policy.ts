@@ -44,7 +44,7 @@ const runtimeDependencySections = Object.freeze([
 ] as const);
 
 export const PATCHED_DSH_ARTIFACT_SCHEMA_VERSION = 1;
-export const PATCHED_DSH_ARTIFACT_PACKAGE_COUNT = 56;
+export const PATCHED_DSH_ARTIFACT_PACKAGE_COUNT = 58;
 const patchedDshPnpmVersion = "11.7.0";
 export const PATCHED_DSH_EXTERNAL_ROOT_COMPATIBILITY_PACKAGES = Object.freeze([
   "@img/sharp-wasm32",
@@ -363,8 +363,7 @@ const packageIndex = (packages: readonly DshWorkspacePackage[]): Map<string, Dsh
 };
 
 const rootDshPackages = (): string[] => [...expectedDshDependencies.keys()]
-  .filter((name) => name.startsWith("@deepseek-ai/dsh-")
-    && name !== "@deepseek-ai/dsh-llm-pi-ai")
+  .filter((name) => name.startsWith("@deepseek-ai/dsh-"))
   .sort(compareCodePoints);
 export const PATCHED_DSH_ROOT_PACKAGES = Object.freeze(rootDshPackages());
 

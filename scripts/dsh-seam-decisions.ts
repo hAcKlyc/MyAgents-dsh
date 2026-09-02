@@ -223,6 +223,21 @@ export const DSH_SEAM_SOURCE = Object.freeze({
       blob: "4fc60bc78dd754502598181ab3f91ed541d90f69",
       sha256: "fea67cb6812b434a73e9ae59e1aad7c13f41bca143af0508f50d73fb5d407f2a",
     }),
+    Object.freeze({
+      path: "packages/llm/llm-pi-ai/src/replay.ts",
+      blob: "aa9d542e335bf793b9b4ccebe0e548ce966655f3",
+      sha256: "dc5203bc43e707f5f469d35272a533631c4dbf4adc57332e7acbdd7d33345e8a",
+    }),
+    Object.freeze({
+      path: "packages/llm/llm-pi-ai/src/stream.ts",
+      blob: "d45df45a39b80b555cecab8741c66dbff1654442",
+      sha256: "5375a5be66ddbc65893c0af544b788cb9e3c56e8d2e4b53a99eacd539aae2be4",
+    }),
+    Object.freeze({
+      path: "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+      blob: "c540f2d50b281a030a6007e66a2b5624df8659dc",
+      sha256: "4350556d679ee126bc58a1d9f583b016da61756f33dd91b2a13924717f0ca446",
+    }),
   ]),
 });
 
@@ -230,6 +245,7 @@ export const PATCHED_SOURCE_TESTS = Object.freeze([
   "packages/core/system-prompt/tests/system-prompt.spec.ts",
   "packages/context/agent-instructions/tests/agent-instructions.spec.ts",
   "packages/llm/llm-deepseek/tests/translate.spec.ts",
+  "packages/llm/llm-pi-ai/tests/convert.spec.ts",
   "packages/core/agent-loop/tests/publication-guards.spec.ts",
   "packages/core/agent-loop/tests/cancel.spec.ts",
   "packages/core/agent-loop/tests/pre-assistant-commit.spec.ts",
@@ -258,6 +274,7 @@ const DEEPSEEK_STREAM_TOOL_IDENTITY_PATCH = "specs/dsh/patches/0006-deepseek-str
 const CAPACITY_SAFE_COMPACTION_PATCH = "specs/dsh/patches/0007-capacity-safe-compaction.patch";
 const LITERAL_PROMPT_CONTRIBUTIONS_PATCH = "specs/dsh/patches/0008-literal-prompt-contributions.patch";
 const AGENT_INSTRUCTION_SELECTION_PATCH = "specs/dsh/patches/0009-agent-instruction-selection.patch";
+const PI_AI_PROVIDER_CONTENT_PATCH = "specs/dsh/patches/0010-pi-ai-provider-content.patch";
 export const DSH_SEAM_PATCHES = Object.freeze([
   WAKE_PATCH,
   PRE_ASSISTANT_COMMIT_PATCH,
@@ -268,6 +285,7 @@ export const DSH_SEAM_PATCHES = Object.freeze([
   CAPACITY_SAFE_COMPACTION_PATCH,
   LITERAL_PROMPT_CONTRIBUTIONS_PATCH,
   AGENT_INSTRUCTION_SELECTION_PATCH,
+  PI_AI_PROVIDER_CONTENT_PATCH,
 ] as const);
 
 export interface DshSeamPatchSnapshot {
@@ -495,6 +513,22 @@ export function buildDshSeamDecisions(): object {
         ],
         removalCondition: "an installed DSH release exposes equivalent first-candidate and configurable filesystem-touch semantics",
       },
+      {
+        id: "DSH-SEAM-011",
+        seam: "pi-ai-provider-owned-content-preservation",
+        status: "required_upstream_patch_accepted",
+        adr: "specs/adr/0011-provider-owned-content-preservation.md",
+        rejected: "flatten-provider-blocks-to-markdown-or-manufacture-local-tool-calls",
+        selectedPublicApi: "@deepseek-ai/dsh-llm ContentBlockMap augmentation plus stock llm-pi-ai stream/replay adapters",
+        patch: patch(PI_AI_PROVIDER_CONTENT_PATCH),
+        executableEvidence: [
+          "Provider call and result blocks remain ordered structured non-executable content",
+          "native replay reconstructs exact Provider raw blocks only for the matching pi-ai route",
+          "unknown Provider block types remain generic and do not require tool-name heuristics",
+          "canonical local tool calls continue through the unchanged DSH tool execution pipeline",
+        ],
+        removalCondition: "an installed DSH release preserves generic Provider-owned pi-ai content and exact matching-route replay",
+      },
     ],
     evidenceOwners: {
       runtimeSemantics: "tests/dsh-seam-spikes.unit.test.ts",
@@ -587,6 +621,7 @@ export function verifyDshSeamSource(
       "--filter", "@deepseek-ai/dsh-subagent-spawn-in-process...",
       "--filter", "@deepseek-ai/dsh-subagent-fork-in-process...",
       "--filter", "@deepseek-ai/dsh-llm-deepseek...",
+      "--filter", "@deepseek-ai/dsh-llm-pi-ai...",
       "--filter", "@deepseek-ai/dsh-compaction-basic...",
       "--filter", "@deepseek-ai/dsh-compaction...",
       "--filter", "@deepseek-ai/dsh-token-meter...",
@@ -605,6 +640,7 @@ export function verifyDshSeamSource(
       "packages/subagent/subagent-spawn-in-process/tsconfig.json",
       "packages/subagent/subagent-fork-in-process/tsconfig.json",
       "packages/llm/llm-deepseek/tsconfig.json",
+      "packages/llm/llm-pi-ai/tsconfig.json",
       "packages/llm/token-meter/tsconfig.json",
       "packages/compaction/compaction/tsconfig.json",
       "packages/compaction/compaction-basic/tsconfig.json",

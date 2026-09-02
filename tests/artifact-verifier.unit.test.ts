@@ -217,6 +217,10 @@ describe("repository and packed-artifact forbidden-content policy", () => {
       "url-userinfo-credential",
       "private-key-material",
     ]);
+    expect(scanForbiddenContent(
+      "fixture/adapter.js",
+      "return { apiKey: harnessApiKeyAuth(spec.displayName) };",
+    )).toEqual([]);
     const utf16 = Buffer.from(["{\"API_", "KEY\":\"", "G".repeat(24), "\"}"].join(""), "utf16le");
     expect(scanForbiddenContent("fixture/safe.json", utf16)).toContainEqual({
       rule: "assigned-secret-value",

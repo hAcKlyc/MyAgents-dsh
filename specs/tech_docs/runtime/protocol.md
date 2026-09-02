@@ -2,8 +2,8 @@
 type: protocol-specification
 status: source-candidate
 module: runtime-protocol
-version: 2.4.1
-updated: 2026-09-02
+version: 2.5.0
+updated: 2026-09-03
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
@@ -17,22 +17,23 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Protocol `2.4.1` is the current source candidate. It keeps the complete `2.4.0` method/notification
-and event vocabulary while advancing the embedded canonical Tool-contract digest for the exact
-`Write.directory_not_found` error contract. `2.4.0` introduced typed Tool/status snapshots and the
-ready baseline; `2.1.0` through `2.3.0` remain historical predecessors. The TypeBox source,
-generated digests and tests are authoritative for exact shapes. No older Runtime artifact/handoff
-is evidence for `2.4.1`, and the current source is not accepted until Runtime composition gates and
-a new artifact/evidence chain pass.
+Protocol `2.5.0` is the current source candidate. It retains the complete `2.4.1` method and
+notification vocabulary and adds one distinct `provider_tool` observation for structured
+Provider-owned activity preserved by an Anthropic-compatible model route. It does not reinterpret
+that activity as canonical `tool` execution. `2.4.1` advanced the canonical Tool digest after
+`2.4.0` introduced typed Tool/status snapshots and the ready baseline; `2.1.0` through `2.4.1`
+remain historical predecessors. The TypeBox source, generated digests and tests are authoritative
+for exact shapes. No older Runtime artifact/handoff is evidence for `2.5.0`; the current isolated
+Runtime composition gate passes, while commit-bound Runtime/platform/handoff evidence remains.
 
 ### 1.1 Compatibility versioning
 
-The active source implements exactly `2.4.1`. Initialization accepts a Host range only when it
-contains `2.4.1`; it neither negotiates down nor emulates earlier behavior. Current version strings
+The active source implements exactly `2.5.0`. Initialization accepts a Host range only when it
+contains `2.5.0`; it neither negotiates down nor emulates earlier behavior. Current version strings
 are exact wire-mode selectors, not a promise that a `2.x` Host accepts every later `2.x` payload.
 That distinction matters because `2.4.0` removes old event `detail` shapes and adds required typed
-fields, while `2.4.1` changes the schema-bound canonical Tool digest; an older exact Host schema
-will reject either mismatch. A Runtime may advertise a wider range only after it implements and
+fields, `2.4.1` changes the schema-bound canonical Tool digest, and `2.5.0` adds a required tagged
+union member; an older exact Host schema will reject any mismatch. A Runtime may advertise a wider range only after it implements and
 proves each mode. A larger number, generated schema or source test is not artifact acceptance, and
 historical draft/release evidence cannot be relabeled.
 
@@ -715,6 +716,7 @@ thinking_delta
 message_event
 queued_message
 tool
+provider_tool
 usage
 context
 interaction
@@ -731,7 +733,17 @@ warning
 
 `message_event` replaces Pi-oriented `message_entry`; it references the durable DSH event/message identity and may carry the originating queued-message ID.
 
-Protocol `2.4.0` tightened these observation shapes; `2.4.1` retains them unchanged:
+Protocol `2.4.0` tightened the canonical observation shapes and `2.4.1` retained them unchanged.
+Protocol `2.5.0` additionally defines:
+
+- `provider_tool/start` with exact Provider route, Provider call identity, raw Provider block type,
+  Provider tool name and bounded JSON-object input;
+- `provider_tool/end` with the same route/call identity, result block type, correlated tool name and
+  bounded result content/state; and
+- no canonical permission, Hook or execution claim. A Provider observation never substitutes for
+  `tool/start|end` and does not drive root terminal, queue or loading state.
+
+The retained canonical shapes are:
 
 - `tool/start` requires `name` and raw bounded-wire `input` projected from durable `tool/call`;
 - `tool/update` has optional `progress`, but the current projector has no producer;
@@ -828,7 +840,7 @@ protocol.schema.json
 protocol-meta.json
 protocol-fixtures.json
 host-client.generated.ts
-specs/contracts/protocol-2.4.1-evidence.json
+specs/contracts/protocol-2.5.0-evidence.json
 ```
 
 `canonical-tools.generated.ts` belongs to the separate Tool-contract generator and is consumed by
@@ -847,8 +859,8 @@ Conformance tests must prove:
 - terminal delivery remains possible under event pressure;
 - no fixture or diagnostic includes a secret.
 
-The current static generator and candidate Profile checks pass, as do 29 focused projector/native-RPC
-tests for the registry, ready baseline and changed event shapes. That does not yet constitute
-`2.4.1` Runtime acceptance still requires artifact-consuming composition/native gates against the
-new exact source identity. A new Runtime artifact, platform evidence and handoff remain required;
-accepted `2.4.0` bytes cannot be relabeled.
+The current static generator, candidate Profile, focused projector/native-RPC tests and isolated
+artifact-consuming Runtime composition gate pass, including the patched DSH/pi-ai dependency graph.
+That does not yet constitute release acceptance: a commit-bound Runtime artifact, platform evidence,
+immutable handoff and exact Host ingestion remain required. Accepted `2.4.x` bytes cannot be
+relabeled.

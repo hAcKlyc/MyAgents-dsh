@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-03",
+  "authority": {
+    "repository": "https://github.com/earendil-works/pi.git",
+    "commit": "b4f293684bba718d59cc1157679bcf6157b3a7f5",
+    "tree": "33235f8a1b7a50de1dea72d39ee3f3a2adbd5806",
+    "tag": "v0.82.1",
+    "packageName": "@earendil-works/pi-ai",
+    "packageVersion": "0.82.1",
+    "registryIntegrity": "sha512-3WFYRhEp3lQB3444EhPMBcM7zSaEUE3eJgHOR7s4081NLqbw/FsWilIKWXSua0Gv3sRr7m9xMidR3pPDE7jI/A==",
+    "files": [
+      {
+        "path": "packages/ai/src/api/anthropic-messages.ts",
+        "blob": "99f698b4002ffd83427cc351770c2ad43a0ae20f",
+        "sha256": "9a0828bef6720b1ff2b34274e1ee53ce2edf8ed5aad5bf0fdbe7f1cc095b4f04"
+      },
+      {
+        "path": "packages/ai/src/api/mistral-conversations.ts",
+        "blob": "3a5e59dd7f975735356b82889762b4bc1990f63f",
+        "sha256": "38e965bb08cab0aff182edd5e301dc24fae0c0d9a04d01fc3026728be9e817fb"
+      },
+      {
+        "path": "packages/ai/src/providers/faux.ts",
+        "blob": "4a26f1ad67b62150010fc51767a787560a1ad820",
+        "sha256": "eea5c33e3a3553adf4d8216e2660dac19a69663d3ac295dd61c4e35a346ed535"
+      },
+      {
+        "path": "packages/ai/src/types.ts",
+        "blob": "1d8fcfd3af2e5dc02094604e7f5c62ac5f390407",
+        "sha256": "9ce10d9c21fd23d7b7cd1854648e82f86e37fa5e2743b4d2a345dbd82c64bbdf"
+      },
+      {
+        "path": "packages/ai/src/utils/estimate.ts",
+        "blob": "b434969ecc1e9cb767b558cd09d9b485d6400d2f",
+        "sha256": "8334f683185cc11d7e867f30963dfc4b9d89c3db79e852364e89a24cb89b316a"
+      },
+      {
+        "path": "packages/ai/test/anthropic-sse-parsing.test.ts",
+        "blob": "0cdd0577cf77fa3349f99ff107f555035658331e",
+        "sha256": "42ddf157cfbf48e6168c22fb7c094dc16fdd6fdc3c9b7c1896a5714f257ab8ed"
+      }
+    ]
+  },
+  "patch": {
+    "order": 1,
+    "path": "specs/pi-ai/patches/0001-anthropic-provider-content.patch",
+    "sha256": "474580e54f4b06b0115f503da2a40edc265d45842d46ea859d0c22de30217de2"
+  },
+  "disposition": "required_upstream_patch_accepted",
+  "removalCondition": "an installed pi-ai release preserves generic Anthropic Provider-owned content and exact matching-route replay"
+}

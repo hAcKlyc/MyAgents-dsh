@@ -2,8 +2,10 @@
 type: technical-architecture
 status: implemented
 module: web-and-network
-updated: 2026-09-02
-product_scope: ../../prd/prd_0.1_agent_runtime.md
+updated: 2026-09-03
+product_scope:
+  - ../../prd/prd_0.1_agent_runtime.md
+  - ../../prd/prd_0.3_myagents_dsh_provider_server_tools.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_architecture.md
 ---
 
@@ -28,7 +30,7 @@ Canonical tools always register through DSH `ctx.tools`; only their backend vari
 | --- | --- |
 | `deepseek-official` `WebSearch` | Runtime sends a fixed DeepSeek server-side-search request to `https://api.deepseek.com/anthropic/v1/messages`, resolving the Provider credential only for that request |
 | `deepseek-official` `WebFetch` | Runtime safe-fetches/converts HTTP, HTML, PDF or text content and optionally runs a no-tools utility model |
-| admitted non-DeepSeek route | versioned Host canonical-web adapter through `host/tool/execute` |
+| admitted non-DeepSeek route | versioned Host canonical-web adapter through `host/tool/execute`; Anthropic Messages selects Claude Code-compatible nested server search, while any native Search product requires an explicit non-Anthropic compatibility cell |
 
 Non-DeepSeek Provider admission requires that Host capability so the official 20-tool profile remains coherent. Backend identity is frozen into the operation; changing Provider/config affects a later operation, not an in-flight call. `policyRef` is an operation/session policy identity and revision, not Host-supplied dynamic allow/deny rules; trusted composition owns actual public-host, port, redirect, concurrency and byte policy, and components cannot widen it.
 
@@ -78,6 +80,13 @@ stabilized, but a contract-valid Host failed-result message is only bounded (4,0
 secret-scanned; the Host owns redaction.
 
 Current web availability is route/capability dependent. Passing MCP webReader or image tools is not evidence that canonical WebSearch works; they are separate component/backend paths and require separate evidence.
+
+The MyAgents Host safe-HTTP implementation owns one reusable proxy dispatcher generation per
+normalized proxy configuration. A configuration change retires the prior generation after active
+requests drain; Runtime/session shutdown closes the owner. It never falls back to direct network
+when an explicit proxy was selected. Stable Product errors retain a bounded request phase and safe
+system-error class so DNS, proxy connect, TLS and deadline failures do not collapse into a false
+claim that the configured network service itself is unavailable.
 
 ## 8. Architecture-correct change path
 

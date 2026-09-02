@@ -2,11 +2,14 @@
 type: technical-architecture
 status: implemented
 module: model-provider-plane
-updated: 2026-09-02
+updated: 2026-09-03
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_integration.md
-implementation_decision: ../../prd/tech_rfc_0.1_runtime_architecture.md
+  - ../../prd/prd_0.3_myagents_dsh_provider_server_tools.md
+implementation_decisions:
+  - ../../prd/tech_rfc_0.1_runtime_architecture.md
+  - ../../adr/0011-provider-owned-content-preservation.md
 ---
 
 # Model Provider plane
@@ -29,11 +32,11 @@ The official composition registers two deliberately different routes behind DSH 
 | Route | Active implementation | API behavior |
 | --- | --- | --- |
 | `deepseek-official` | MyAgents `HostDeepSeekLlmAdapter` wrapping the official DSH DeepSeek adapter | fixed official DeepSeek route using its accepted `openai-completions` profile, DeepSeek-native streaming and Files/attachments |
-| Host-declared non-DeepSeek route | official `@deepseek-ai/dsh-llm-pi-ai@0.1.1-rc.2` using in-memory `HostSettingsProvider` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile |
+| Host-declared non-DeepSeek route | `@deepseek-ai/dsh-llm-pi-ai@0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a` using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `0.82.1` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
 
 The configured API family is preserved. Anthropic-compatible profiles use Anthropic Messages; OpenAI Chat Completions and Responses profiles use their corresponding direct pi-ai transports. This Runtime does not route those families through the historical MyAgents Anthropic bridge when the installed adapter supports them.
 
-The installed pi-ai package contains a broader advisory catalog, but it is dormant until an exact Host profile is admitted. Package support alone never makes a Provider/model visible or compatible.
+The installed pi-ai package contains a broader advisory catalog, but it is dormant until an exact Host profile is admitted. Package support alone never makes a Provider/model visible or compatible. The minimal pi-ai and DSH adapter patches preserve Provider-owned Anthropic content through the same message stream and exact matching-route replay; they do not add a transport or model loop.
 
 ## 4. Admission and request flow
 
@@ -53,9 +56,14 @@ The Runtime never persists the API key. `HostSettingsProvider` contains non-secr
 
 ## 5. Route-dependent web behavior
 
-All web definitions enter the canonical `ctx.tools` pipeline. Under `deepseek-official`, Runtime-owned `WebSearch` calls the DeepSeek Anthropic Messages search endpoint through the safe HTTP client and Provider credential request scope; Runtime-owned `WebFetch` performs safe HTTP retrieval/content conversion and uses a tool-free utility model to summarize. Under a non-DeepSeek profile, both tools cross `host/tool/execute` using the operation-frozen Provider authority.
+All canonical web definitions enter the canonical `ctx.tools` pipeline. Under `deepseek-official`, Runtime-owned `WebSearch` calls the DeepSeek Anthropic Messages search endpoint through the safe HTTP client and Provider credential request scope; Runtime-owned `WebFetch` performs safe HTTP retrieval/content conversion and uses a tool-free utility model to summarize. Under a non-DeepSeek profile, both canonical tools cross `host/tool/execute` using the operation-frozen Provider authority. The Host selects canonical Search by API family: every admitted `anthropic-messages` route uses the Claude Code-compatible nested Messages request with `web_search_20250305`; a standalone Provider Search endpoint is eligible only for an explicitly admitted non-Anthropic cell.
 
 A non-DeepSeek profile is admitted only if initialization advertised the versioned Host canonical-web adapter; a missing capability rejects Session/config Provider admission. After admission, stale operation authority, reverse-request failure or an invalid Host result fails the individual Web tool call. Neither case creates an ambient Runtime network path.
+
+Provider-owned tools executed inside a model request are a separate observation class. Their call and
+result blocks remain in the one durable DSH assistant stream and project as protocol
+`provider_tool`; they never claim canonical ToolRuntime admission, permission or Hooks and never
+drive root loading or terminal truth.
 
 ## 6. Current capabilities and limits
 
@@ -63,6 +71,7 @@ A non-DeepSeek profile is admitted only if initialization advertised the version
 - Credentials are API-key references resolved per request; native cloud, subscription OAuth and account-login routes are not advertised.
 - Stop sequences are not supported by the locked pi-ai route.
 - Pi-ai exposes reasoning content but does not project provider reasoning-token counts into DSH `TokenUsage`.
+- Structured Anthropic Provider blocks are retained generically. Exact Provider/API cells still need wire and packaged evidence; decorative assistant Markdown is never parsed into structure.
 - A child currently inherits the parent's exact Provider/model. If the `Agent` call includes `model`, it must equal the parent model; a declarative `modelProfileRef` can only require the operation-birth profile revision. Different child-model routing is not implemented.
 - Utility calls are bounded, idempotent and non-conversation work. Compaction requests remain attached to the owning Session/operation context.
 
@@ -81,5 +90,6 @@ Prefer an installed DSH/public adapter that natively supports the Host-selected 
 | Adapter composition | `packages/runtime-product/src/composition.ts` |
 | Credential reverse implementation | `packages/host-ports/src/credential-provider.ts` |
 | Family compatibility facts/limits and cell requirement | `packages/artifact-verifier/src/integration-compatibility.ts` |
-| Upstream request conformance | `tests/pi-ai-provider-conformance.unit.test.ts`, official Provider composition/profile tests |
+| Upstream request and Provider-content conformance | `tests/pi-ai-provider-conformance.unit.test.ts`, `specs/pi-ai/seam-evidence-v1.json`, official Provider composition/profile tests |
+| DSH adapter patch authority | `specs/dsh/seam-decisions-v1.json`, ADR 0011 |
 | Product cell evidence | Host policy/conformance plus packed/native/live Provider campaigns |

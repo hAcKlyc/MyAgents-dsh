@@ -47,6 +47,7 @@ import {
   verifyExistingBundle,
 } from "./build-patched-dsh-artifact.js";
 import { readDshSeamPatchSet } from "./dsh-seam-decisions.js";
+import { verifyPiAiSource } from "./pi-ai-seam.js";
 import { materializeRuntimeArtifactFileLinks } from "./runtime-artifact-packaging.js";
 import { evaluateToolchain } from "./toolchain-policy.mjs";
 
@@ -208,22 +209,14 @@ const runtimePackageWorkspaces = [
   ["packages/artifact-verifier", "@myagents-dsh/artifact-verifier"],
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
 ] as const;
-const runtimeVendoredExternalPackages = ["typebox"] as const;
+const runtimeVendoredExternalPackages = ["typebox", "@earendil-works/pi-ai"] as const;
 const runtimeVendoredExternalRoots = ["typebox@1.3.7"] as const;
 const officialPiAiTypeboxVersion = "1.1.38" as const;
 const runtimeNodeTypesVersion = "24.13.3" as const;
 const officialPiAiAdapterPackage = "@deepseek-ai/dsh-llm-pi-ai" as const;
-const officialPiAiAdapterVersion = "0.1.1-rc.2" as const;
 const officialPiAiAuthorizationPeerPackage = "@deepseek-ai/dsh-authorization" as const;
-const officialPiAiAuthorizationPeerVersion = "0.1.1-rc.2" as const;
 const officialPiAiCorePackage = "@earendil-works/pi-ai" as const;
 const officialPiAiCoreVersion = "0.82.1" as const;
-const runtimePublicExternalRoots = Object.freeze([
-  `${officialPiAiAdapterPackage}@${officialPiAiAdapterVersion}`,
-  `${officialPiAiAuthorizationPeerPackage}@${officialPiAiAuthorizationPeerVersion}`,
-  `${officialPiAiCorePackage}@${officialPiAiCoreVersion}`,
-] as const);
-
 const run = (
   command: string,
   args: readonly string[],
@@ -338,13 +331,13 @@ export const assertRuntimeProviderVersions = (versions: Map<string, Set<string>>
   if (piAiVersions?.size !== 1) {
     throw new Error("installed Runtime lacks the exact public pi-ai adapter authority");
   }
-  if (!piAiVersions.has(officialPiAiAdapterVersion)) {
-    throw new Error("installed Runtime lacks the exact public pi-ai adapter authority");
+  if (!piAiVersions.has(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion)) {
+    throw new Error("installed Runtime lacks the exact patched pi-ai adapter authority");
   }
   const authorizationVersions = versions.get(officialPiAiAuthorizationPeerPackage);
   if (authorizationVersions?.size !== 1
-    || !authorizationVersions.has(officialPiAiAuthorizationPeerVersion)) {
-    throw new Error("installed Runtime lacks the exact public pi-ai authorization peer authority");
+    || !authorizationVersions.has(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion)) {
+    throw new Error("installed Runtime lacks the exact patched pi-ai authorization peer authority");
   }
   const piAiCoreVersions = versions.get(officialPiAiCorePackage);
   if (piAiCoreVersions?.size !== 1) {
@@ -354,8 +347,6 @@ export const assertRuntimeProviderVersions = (versions: Map<string, Set<string>>
     throw new Error("installed Runtime lacks the exact public pi-ai core authority");
   }
   const patchedVersions = new Map(versions);
-  patchedVersions.delete(officialPiAiAdapterPackage);
-  patchedVersions.delete(officialPiAiAuthorizationPeerPackage);
   patchedVersions.delete(officialPiAiCorePackage);
   if (patchedVersions.size !== ACCEPTED_PATCHED_DSH_ARTIFACT.packageCount) {
     throw new Error(
@@ -381,9 +372,7 @@ export const projectRuntimeDependencySection = (
     if (typeof range !== "string") throw new TypeError(`${description}.${name} must be a string`);
     result[name] = name.startsWith("@myagents-dsh/")
       ? "0.0.0"
-      : name === officialPiAiAdapterPackage
-        ? officialPiAiAdapterVersion
-        : name.startsWith("@deepseek-ai/dsh-")
+      : name.startsWith("@deepseek-ai/dsh-")
           ? ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
           : range;
   }
@@ -681,7 +670,6 @@ export const projectRuntimeConsumerOverrides = (value: unknown): Record<string, 
     throw new Error("patched DSH consumer typebox override differs from the public pi-ai graph");
   }
   return {
-    [officialPiAiCorePackage]: officialPiAiCoreVersion,
     "@types/node": runtimeNodeTypesVersion,
   };
 };
@@ -697,6 +685,9 @@ const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
   "scripts/patched-dsh-artifact-policy.ts",
   "scripts/dsh-baseline-policy.ts",
   "scripts/dsh-seam-decisions.ts",
+  "scripts/pi-ai-seam.ts",
+  "specs/pi-ai/seam-evidence-v1.json",
+  "specs/pi-ai/patches/0001-anthropic-provider-content.patch",
   "scripts/toolchain-policy.mjs",
   "scripts/generate-tool-contracts.ts",
   "scripts/tool-contract-generation.ts",
@@ -883,6 +874,7 @@ const buildInstalledRuntimeCandidate = (
     Object.entries(dependencies).sort(([left], [right]) => compareCodePoint(left, right)),
   );
   const orderedOverrides = Object.fromEntries(Object.entries(stagedOverrides)
+    .filter(([name]) => name !== officialPiAiCorePackage)
     .sort(([left], [right]) => compareCodePoint(left, right)));
   writeFileSync(resolve(candidateRoot, "package.json"), `${JSON.stringify({
     name: "@myagents-dsh/w1-runtime-candidate",
@@ -1014,6 +1006,7 @@ const main = (): void => {
       "expected-manifest-sha256": { type: "string" },
       "expected-runtime-manifest-sha256": { type: "string" },
       "npm-cache": { type: "string" },
+      "pi-ai-source": { type: "string" },
       "runtime-artifact": { type: "string" },
       "runtime-artifact-out": { type: "string" },
     },
@@ -1076,9 +1069,9 @@ const main = (): void => {
     throw new Error("--expected-runtime-manifest-sha256 is valid only with --runtime-artifact");
   }
   if (values.artifact === undefined || values["expected-manifest-sha256"] === undefined
-    || values["npm-cache"] === undefined) {
+    || values["npm-cache"] === undefined || values["pi-ai-source"] === undefined) {
     throw new Error(
-      "usage: verify-dsh-runtime-composition --artifact <bundle> --expected-manifest-sha256 <digest> --npm-cache <primed cache> [--runtime-artifact-out <new directory>]",
+      "usage: verify-dsh-runtime-composition --artifact <bundle> --expected-manifest-sha256 <digest> --npm-cache <primed cache> --pi-ai-source <fixed checkout> [--runtime-artifact-out <new directory>]",
     );
   }
   if (values["expected-manifest-sha256"] !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256) {
@@ -1090,6 +1083,11 @@ const main = (): void => {
     throw new Error("patched DSH artifact path must not contain a symlink alias");
   }
   verifyExistingBundle(artifactRoot, values["expected-manifest-sha256"], process.env);
+  const requestedPiAiSourceRoot = resolve(values["pi-ai-source"]);
+  const piAiSourceRoot = realpathSync(requestedPiAiSourceRoot);
+  if (piAiSourceRoot !== requestedPiAiSourceRoot) {
+    throw new Error("pi-ai source path must not contain a symlink alias");
+  }
   const temporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), "myagents-dsh-runtime-composition-")));
   try {
     const bundleRoot = resolve(temporaryRoot, "bundle");
@@ -1100,6 +1098,12 @@ const main = (): void => {
     const buildRoot = cleanBuildRuntimeComposition(temporaryRoot, environment);
     run("npm", ["ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], consumerRoot, environment);
     prepareRuntimeConsumerOverrides(consumerRoot);
+    const patchedPiAiTarball = resolve(bundleRoot, "earendil-works-pi-ai-patched-0.82.1.tgz");
+    verifyPiAiSource(piAiSourceRoot, {
+      compileAndTest: true,
+      npmCache: values["npm-cache"],
+      packageTarballTo: patchedPiAiTarball,
+    });
     run("npm", [
       "install",
       "--offline",
@@ -1107,7 +1111,7 @@ const main = (): void => {
       "--no-audit",
       "--no-fund",
       "--save-exact",
-      ...runtimePublicExternalRoots,
+      patchedPiAiTarball,
       ...runtimeVendoredExternalRoots,
     ], consumerRoot, environment);
     assertContainedNodeModules(consumerRoot);

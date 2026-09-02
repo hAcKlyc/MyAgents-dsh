@@ -1,0 +1,443 @@
+diff --git a/packages/llm/llm-pi-ai/src/provider-content.ts b/packages/llm/llm-pi-ai/src/provider-content.ts
+new file mode 100644
+index 0000000000..0be2525b9c
+--- /dev/null
++++ b/packages/llm/llm-pi-ai/src/provider-content.ts
+@@ -0,0 +1,64 @@
++/** Generic Provider-owned content carried by the pi-ai Anthropic Messages adapter. */
++
++import type { AssistantMessage } from '@earendil-works/pi-ai'
++
++export interface ProviderToolCallBlock {
++  type: 'provider-tool-call'
++  id: string
++  name: string
++  input: Readonly<Record<string, unknown>>
++  providerType: string
++  raw: Readonly<Record<string, unknown>>
++}
++
++export interface ProviderToolResultBlock {
++  type: 'provider-tool-result'
++  toolCallId: string
++  providerType: string
++  content: unknown
++  isError?: boolean
++  raw: Readonly<Record<string, unknown>>
++}
++
++declare module '@deepseek-ai/dsh-llm' {
++  interface ContentBlockMap {
++    'provider-tool-call': ProviderToolCallBlock
++    'provider-tool-result': ProviderToolResultBlock
++  }
++}
++
++export interface PiProviderToolCall {
++  type: 'providerToolCall'
++  id: string
++  name: string
++  input: Record<string, unknown>
++  providerType: string
++  raw: Record<string, unknown>
++}
++
++export interface PiProviderToolResult {
++  type: 'providerToolResult'
++  toolCallId: string
++  providerType: string
++  content: unknown
++  isError?: boolean
++  raw: Record<string, unknown>
++}
++
++export type PiProviderToolContent = PiProviderToolCall | PiProviderToolResult
++export type PiAssistantMessage = Omit<AssistantMessage, 'content'> & {
++  content: Array<AssistantMessage['content'][number] | PiProviderToolContent>
++}
++
++export type PiProviderToolEvent =
++  | { type: 'provider_tool_start'; contentIndex: number; partial: PiAssistantMessage }
++  | {
++    type: 'provider_tool_end'
++    contentIndex: number
++    content: PiProviderToolContent
++    partial: PiAssistantMessage
++  }
++
++export function asPiAssistantMessage(message: AssistantMessage): PiAssistantMessage {
++  return message as PiAssistantMessage
++}
+diff --git a/packages/llm/llm-pi-ai/src/replay.ts b/packages/llm/llm-pi-ai/src/replay.ts
+index aa9d542e33..7870ae17fa 100644
+--- a/packages/llm/llm-pi-ai/src/replay.ts
++++ b/packages/llm/llm-pi-ai/src/replay.ts
+@@ -11,12 +11,15 @@
+ import { LlmError } from '@deepseek-ai/dsh-llm'
+ import type { Message, ModelMessageSource, ReplayEnvelope } from '@deepseek-ai/dsh-llm'
+ import type { Api, AssistantMessage, Usage as PiUsage } from '@earendil-works/pi-ai'
++import type { PiAssistantMessage } from './provider-content.ts'
+ 
+ /** Per-block half of the pi-ai replay envelope, one entry per content block. */
+ export type PiAiReplayBlock =
+   | { type: 'text'; textSignature?: string }
+   | { type: 'reasoning'; thinkingSignature?: string; redacted?: boolean }
+   | { type: 'tool-call'; thoughtSignature?: string }
++  | { type: 'provider-tool-call' }
++  | { type: 'provider-tool-result' }
+ 
+ /** Versioned response-level half of the pi-ai replay envelope. */
+ export interface PiAiReplayResponse {
+@@ -69,7 +72,7 @@ function emptyPiUsage(): PiUsage {
+  * @param message - completed native pi-ai assistant response.
+  * @returns the versioned lossless-JSON replay projection.
+  */
+-export function toPiReplayState(message: AssistantMessage): ReplayEnvelope {
++export function toPiReplayState(message: PiAssistantMessage): ReplayEnvelope {
+   const response: PiAiReplayResponse = {
+     kind: 'pi-ai',
+     version: 2,
+@@ -97,6 +100,8 @@ export function toPiReplayState(message: AssistantMessage): ReplayEnvelope {
+           type: 'tool-call',
+           ...block.thoughtSignature === undefined ? {} : { thoughtSignature: block.thoughtSignature },
+         }
++        case 'providerToolCall': return { type: 'provider-tool-call' }
++        case 'providerToolResult': return { type: 'provider-tool-result' }
+       }
+     }),
+   }
+@@ -128,7 +133,9 @@ function readReplayState(value: unknown): PiAiReplayState {
+   for (const [index, value] of blocks.entries()) {
+     if (typeof value !== 'object' || value === null || Array.isArray(value)) return invalidReplay(`block ${index} must be an object`)
+     const block = value as Record<string, unknown>
+-    if (!['text', 'reasoning', 'tool-call'].includes(String(block['type']))) return invalidReplay(`block ${index} has an unknown type`)
++    if (!['text', 'reasoning', 'tool-call', 'provider-tool-call', 'provider-tool-result'].includes(String(block['type']))) {
++      return invalidReplay(`block ${index} has an unknown type`)
++    }
+     for (const signature of ['textSignature', 'thinkingSignature', 'thoughtSignature'] as const) {
+       if (block[signature] !== undefined && typeof block[signature] !== 'string') return invalidReplay(`block ${index} ${signature} must be a string`)
+     }
+@@ -176,12 +183,12 @@ function foreignAssistant(message: Message): AssistantMessage {
+ }
+ 
+ /** Recombine durable Harness content with validated pi-ai replay metadata. */
+-function replayedAssistant(message: Message, source: ModelMessageSource, rawState: unknown): AssistantMessage {
++function replayedAssistant(message: Message, source: ModelMessageSource, rawState: unknown): PiAssistantMessage {
+   const state = readReplayState(rawState)
+   if (state.response.provider !== source.provider) return invalidReplay('provider does not match assistant source')
+   if (state.response.model !== source.model) return invalidReplay('model does not match assistant source')
+   if (state.blocks.length !== message.content.length) return invalidReplay('block count does not match assistant content')
+-  const content: AssistantMessage['content'] = message.content.map((block, index) => {
++  const content: PiAssistantMessage['content'] = message.content.map((block, index) => {
+     const replay = state.blocks[index]
+     if (replay === undefined || replay.type !== block.type) return invalidReplay(`block ${index} does not match assistant content`)
+     switch (block.type) {
+@@ -203,6 +210,22 @@ function replayedAssistant(message: Message, source: ModelMessageSource, rawStat
+         arguments: parseArguments(block.arguments),
+         ...replay.type === 'tool-call' && replay.thoughtSignature !== undefined ? { thoughtSignature: replay.thoughtSignature } : {},
+       }
++      case 'provider-tool-call': return {
++        type: 'providerToolCall',
++        id: block.id,
++        name: block.name,
++        input: { ...block.input },
++        providerType: block.providerType,
++        raw: { ...block.raw },
++      }
++      case 'provider-tool-result': return {
++        type: 'providerToolResult',
++        toolCallId: block.toolCallId,
++        providerType: block.providerType,
++        content: block.content,
++        ...(block.isError === undefined ? {} : { isError: block.isError }),
++        raw: { ...block.raw },
++      }
+       /* v8 ignore next -- readReplayState rejects unknown replay tags, so an equal plugin-added Harness tag cannot reach this switch */
+       default: return invalidReplay(`block ${index} has an unsupported Harness type`)
+     }
+@@ -238,7 +261,7 @@ export function toPiAssistant(message: Message, onDegrade?: (reason: string) =>
+   const source = message.source
+   if (source.kind !== 'model' || source.replayState === undefined) return foreignAssistant(message)
+   try {
+-    return replayedAssistant(message, source, source.replayState)
++    return replayedAssistant(message, source, source.replayState) as unknown as AssistantMessage
+   } catch (error: unknown) {
+     /* v8 ignore next -- replayedAssistant throws only INVALID_REPLAY_STATE LlmErrors today; the
+        guard keeps a future non-replay failure loud instead of silently degrading it */
+diff --git a/packages/llm/llm-pi-ai/src/stream.ts b/packages/llm/llm-pi-ai/src/stream.ts
+index d45df45a39..537fd44ba0 100644
+--- a/packages/llm/llm-pi-ai/src/stream.ts
++++ b/packages/llm/llm-pi-ai/src/stream.ts
+@@ -12,6 +12,13 @@ import { CallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWin
+ import type { FinishReason, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
+ import { isContextOverflow } from '@earendil-works/pi-ai'
+ import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
++import {
++  asPiAssistantMessage,
++  type PiProviderToolContent,
++  type PiProviderToolEvent,
++  type ProviderToolCallBlock,
++  type ProviderToolResultBlock,
++} from './provider-content.ts'
+ import { toPiReplayState } from './replay.ts'
+ 
+ /**
+@@ -125,7 +132,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
+  *   `LlmError` (`STREAM_CLOSED`) if the source ends without a terminal event.
+  */
+ export async function* toStreamChunks(
+-  events: AsyncIterable<AssistantMessageEvent>,
++  events: AsyncIterable<AssistantMessageEvent | PiProviderToolEvent>,
+   contextWindow?: number,
+ ): AsyncGenerator<StreamChunk> {
+   // pi-ai contentIndex ↔ our block index map 1:1 (both count blocks from 0
+@@ -188,12 +195,31 @@ export async function* toStreamChunks(
+           },
+         }
+         break
++      case 'provider_tool_start': {
++        const block = event.partial.content[event.contentIndex]
++        if (block?.type !== 'providerToolCall' && block?.type !== 'providerToolResult') {
++          throw new LlmError('pi-ai Provider tool start lacks matching content', 'INVALID_PROVIDER_CONTENT')
++        }
++        yield {
++          type: 'block-start',
++          index: event.contentIndex,
++          blockType: block.type === 'providerToolCall' ? 'provider-tool-call' : 'provider-tool-result',
++        }
++        break
++      }
++      case 'provider_tool_end':
++        yield {
++          type: 'block-end',
++          index: event.contentIndex,
++          block: toProviderBlock(event.content),
++        }
++        break
+       case 'done':
+         yield { type: 'usage', usage: mapUsage(event.message.usage) }
+         yield {
+           type: 'finish',
+           reason: mapStopReason(event.message, contextWindow),
+-          replayState: toPiReplayState(event.message),
++          replayState: toPiReplayState(asPiAssistantMessage(event.message)),
+         }
+         return
+       case 'error':
+@@ -209,3 +235,38 @@ export async function* toStreamChunks(
+   }
+   throw new LlmError('pi-ai event stream ended without done/error', 'STREAM_CLOSED')
+ }
++
++function requiredString(value: unknown, description: string): string {
++  if (typeof value !== 'string' || value.length === 0) {
++    throw new LlmError(`pi-ai Provider content ${description} must be a non-empty string`, 'INVALID_PROVIDER_CONTENT')
++  }
++  return value
++}
++
++function record(value: unknown, description: string): Readonly<Record<string, unknown>> {
++  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
++    throw new LlmError(`pi-ai Provider content ${description} must be an object`, 'INVALID_PROVIDER_CONTENT')
++  }
++  return value as Readonly<Record<string, unknown>>
++}
++
++function toProviderBlock(content: PiProviderToolContent): ProviderToolCallBlock | ProviderToolResultBlock {
++  if (content.type === 'providerToolCall') {
++    return {
++      type: 'provider-tool-call',
++      id: requiredString(content.id, 'call id'),
++      name: requiredString(content.name, 'tool name'),
++      input: record(content.input, 'input'),
++      providerType: requiredString(content.providerType, 'block type'),
++      raw: record(content.raw, 'raw call'),
++    }
++  }
++  return {
++    type: 'provider-tool-result',
++    toolCallId: requiredString(content.toolCallId, 'result correlation id'),
++    providerType: requiredString(content.providerType, 'block type'),
++    content: content.content,
++    ...(content.isError === undefined ? {} : { isError: content.isError }),
++    raw: record(content.raw, 'raw result'),
++  }
++}
+diff --git a/packages/llm/llm-pi-ai/tests/convert.spec.ts b/packages/llm/llm-pi-ai/tests/convert.spec.ts
+index c540f2d50b..ce8c4cf2d9 100644
+--- a/packages/llm/llm-pi-ai/tests/convert.spec.ts
++++ b/packages/llm/llm-pi-ai/tests/convert.spec.ts
+@@ -5,6 +5,7 @@ import { createUserMessage, CallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE
+ import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
+ import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-works/pi-ai'
+ import { toPiContext } from '../src/context.ts'
++import type { PiAssistantMessage, PiProviderToolCall, PiProviderToolResult } from '../src/provider-content.ts'
+ import { toPiReplayState } from '../src/replay.ts'
+ import { mapStopReason, mapUsage, toStreamChunks } from '../src/stream.ts'
+ 
+@@ -33,6 +34,12 @@ function assistant(overrides: Partial<AssistantMessage> = {}): AssistantMessage
+   }
+ }
+ 
++function providerAssistant(
++  content: Array<PiProviderToolCall | PiProviderToolResult>,
++): PiAssistantMessage {
++  return { ...assistant({ content: [] }), content } as PiAssistantMessage
++}
++
+ async function* feed(...events: AssistantMessageEvent[]): AsyncGenerator<AssistantMessageEvent> {
+   for (const event of events) yield event
+ }
+@@ -448,6 +455,66 @@ describe('toPiContext', () => {
+     expect(context.messages[0]).not.toHaveProperty('responseId')
+   })
+ 
++  it('replays Provider-owned content only through matching native replay state', () => {
++    const call: PiProviderToolCall = {
++      type: 'providerToolCall',
++      id: 'provider-call-1',
++      name: 'web_search',
++      input: { query: 'public reference' },
++      providerType: 'server_tool_use',
++      raw: {
++        type: 'server_tool_use',
++        id: 'provider-call-1',
++        name: 'web_search',
++        input: { query: 'public reference' },
++      },
++    }
++    const result: PiProviderToolResult = {
++      type: 'providerToolResult',
++      toolCallId: 'provider-call-1',
++      providerType: 'web_search_tool_result',
++      content: [{ type: 'web_search_result', title: 'Reference' }],
++      raw: {
++        type: 'web_search_tool_result',
++        tool_use_id: 'provider-call-1',
++        content: [{ type: 'web_search_result', title: 'Reference' }],
++      },
++    }
++    const state = toPiReplayState(providerAssistant([call, result]))
++    const context = toPiContext({
++      provider: 'deepseek',
++      model: 'next-model',
++      messages: [createMessage({
++        role: 'assistant',
++        content: [
++          {
++            type: 'provider-tool-call',
++            id: call.id,
++            name: call.name,
++            input: call.input,
++            providerType: call.providerType,
++            raw: call.raw,
++          },
++          {
++            type: 'provider-tool-result',
++            toolCallId: result.toolCallId,
++            providerType: result.providerType,
++            content: result.content,
++            raw: result.raw,
++          },
++        ],
++        source: {
++          kind: 'model',
++          provider: 'deepseek',
++          model: 'deepseek-v4-flash',
++          replayState: state,
++        },
++      })],
++    })
++
++    expect((context.messages[0] as PiAssistantMessage).content).toEqual([call, result])
++  })
++
+   it('degrades unsupported replay-state versions to provider-neutral history', () => {
+     const onDegrade = vi.fn()
+     const context = toPiContext({
+@@ -709,6 +776,85 @@ describe('toStreamChunks', () => {
+     ])
+   })
+ 
++  it('maps Provider-owned calls/results to non-executable structured blocks', async () => {
++    const call: PiProviderToolCall = {
++      type: 'providerToolCall',
++      id: 'provider-call-1',
++      name: 'web_search',
++      input: { query: 'public reference' },
++      providerType: 'server_tool_use',
++      raw: {
++        type: 'server_tool_use',
++        id: 'provider-call-1',
++        name: 'web_search',
++        input: { query: 'public reference' },
++      },
++    }
++    const result: PiProviderToolResult = {
++      type: 'providerToolResult',
++      toolCallId: 'provider-call-1',
++      providerType: 'web_search_tool_result',
++      content: [{ type: 'web_search_result', title: 'Reference' }],
++      raw: {
++        type: 'web_search_tool_result',
++        tool_use_id: 'provider-call-1',
++        content: [{ type: 'web_search_result', title: 'Reference' }],
++      },
++    }
++    const partial = providerAssistant([call, result])
++    const events = [
++      { type: 'provider_tool_start', contentIndex: 0, partial },
++      { type: 'provider_tool_end', contentIndex: 0, content: call, partial },
++      { type: 'provider_tool_start', contentIndex: 1, partial },
++      { type: 'provider_tool_end', contentIndex: 1, content: result, partial },
++      { type: 'done', reason: 'stop', message: partial },
++    ] as unknown as AssistantMessageEvent[]
++
++    expect(await collect(toStreamChunks(feed(...events)))).toEqual([
++      { type: 'block-start', index: 0, blockType: 'provider-tool-call' },
++      {
++        type: 'block-end',
++        index: 0,
++        block: {
++          type: 'provider-tool-call',
++          id: 'provider-call-1',
++          name: 'web_search',
++          input: { query: 'public reference' },
++          providerType: 'server_tool_use',
++          raw: call.raw,
++        },
++      },
++      { type: 'block-start', index: 1, blockType: 'provider-tool-result' },
++      {
++        type: 'block-end',
++        index: 1,
++        block: {
++          type: 'provider-tool-result',
++          toolCallId: 'provider-call-1',
++          providerType: 'web_search_tool_result',
++          content: result.content,
++          raw: result.raw,
++        },
++      },
++      { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } },
++      {
++        type: 'finish',
++        reason: { kind: 'stop' },
++        replayState: {
++          response: {
++            kind: 'pi-ai',
++            version: 2,
++            api: 'openai-completions',
++            provider: 'deepseek',
++            model: 'deepseek-v4-flash',
++            stopReason: 'stop',
++          },
++          blocks: [{ type: 'provider-tool-call' }, { type: 'provider-tool-result' }],
++        },
++      },
++    ])
++  })
++
+   it('tolerates toolcall_start with a missing partial entry', async () => {
+     const chunks = await collect(toStreamChunks(feed(
+       { type: 'toolcall_start', contentIndex: 0, partial: assistant() },
