@@ -22,6 +22,7 @@ import {
   ProductPermissionError,
   ProductToolError,
   productRootAgent,
+  runWithProductToolExecutionDeadline,
   type ProductToolContext,
   type ProductToolExecutionEnvironment,
 } from "@myagents-dsh/tool-runtime-product";
@@ -871,7 +872,6 @@ export class ProductPlanService extends Service {
         schema: canonicalOutputSchemaForDsh(contract.outputSchema),
       }),
       parameters: canonicalInputSchemaForDsh(contract.inputSchema),
-      ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
     });
   }
 
@@ -964,41 +964,47 @@ export class ProductPlanService extends Service {
         target: `plan:${String(productRootAgent(context).session.id)}`,
         tool: "EnterPlanMode",
       });
-      this.ctx.productTools.assertCurrent(context, "EnterPlanMode");
-      const rootAgent = productRootAgent(context);
-      const before = this.snapshot(rootAgent);
-      const runtimeHome = planRuntimeHome(this.configValue.environment());
-      const sessionId = String(rootAgent.session.id);
-      const controller = this.controller(context.signal);
-      let transitionStarted = false;
-      try {
-        const target = snapshotFsTarget(await this.track(exactNativePromise<FsTarget>(
-          this.configValue.io.prepare(runtimeHome, sessionId, controller.signal),
-          "managed plan artifact preparation",
-        )), "managed plan artifact preparation result");
-        context.signal.throwIfAborted();
-        if (before.mode === "plan") {
-          if (target.displayPath !== before.planPath) {
-            throw new ProductToolError("plan_state_conflict", "managed plan artifact identity changed");
+      return await runWithProductToolExecutionDeadline(
+        context,
+        CANONICAL_TOOL_CONTRACTS.EnterPlanMode.timeoutMs,
+        async (context) => {
+          this.ctx.productTools.assertCurrent(context, "EnterPlanMode");
+          const rootAgent = productRootAgent(context);
+          const before = this.snapshot(rootAgent);
+          const runtimeHome = planRuntimeHome(this.configValue.environment());
+          const sessionId = String(rootAgent.session.id);
+          const controller = this.controller(context.signal);
+          let transitionStarted = false;
+          try {
+            const target = snapshotFsTarget(await this.track(exactNativePromise<FsTarget>(
+              this.configValue.io.prepare(runtimeHome, sessionId, controller.signal),
+              "managed plan artifact preparation",
+            )), "managed plan artifact preparation result");
+            context.signal.throwIfAborted();
+            if (before.mode === "plan") {
+              if (target.displayPath !== before.planPath) {
+                throw new ProductToolError("plan_state_conflict", "managed plan artifact identity changed");
+              }
+              return Object.freeze({ mode: "plan" as const, planPath: before.planPath, revision: before.revision });
+            }
+            this.ctx.productTools.assertCurrent(context, "EnterPlanMode");
+            transitionStarted = true;
+            this.appendMode(rootAgent, before, true, context);
+            await this.flush(rootAgent.session, "enter plan mode");
+            const after = this.snapshot(rootAgent);
+            if (after.mode !== "plan" || after.planPath !== target.displayPath) {
+              throw new ProductToolError("plan_state_conflict", "durable plan entry did not fold to its exact artifact");
+            }
+            return Object.freeze({ mode: "plan" as const, planPath: after.planPath, revision: after.revision });
+          } catch (error) {
+            if (transitionStarted) this.failure ??= error;
+            if (error instanceof ProductToolError) throw error;
+            throw new ProductToolError("plan_state_conflict", "plan entry durability became uncertain", { cause: error });
+          } finally {
+            this.releaseController(controller, context.signal);
           }
-          return Object.freeze({ mode: "plan" as const, planPath: before.planPath, revision: before.revision });
-        }
-        this.ctx.productTools.assertCurrent(context, "EnterPlanMode");
-        transitionStarted = true;
-        this.appendMode(rootAgent, before, true, context);
-        await this.flush(rootAgent.session, "enter plan mode");
-        const after = this.snapshot(rootAgent);
-        if (after.mode !== "plan" || after.planPath !== target.displayPath) {
-          throw new ProductToolError("plan_state_conflict", "durable plan entry did not fold to its exact artifact");
-        }
-        return Object.freeze({ mode: "plan" as const, planPath: after.planPath, revision: after.revision });
-      } catch (error) {
-        if (transitionStarted) this.failure ??= error;
-        if (error instanceof ProductToolError) throw error;
-        throw new ProductToolError("plan_state_conflict", "plan entry durability became uncertain", { cause: error });
-      } finally {
-        this.releaseController(controller, context.signal);
-      }
+        },
+      );
     });
   }
 
@@ -1010,17 +1016,22 @@ export class ProductPlanService extends Service {
       if (before.mode !== "plan" || before.planPath === undefined) {
         throw new ProductToolError("stale_plan_revision", "plan approval is available only in active plan mode");
       }
+      const planPath = before.planPath;
       await this.ctx.productTools.authorize(context, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.ExitPlanMode.permissionClass,
-        target: before.planPath,
+        target: planPath,
         tool: "ExitPlanMode",
       });
       this.ctx.productTools.assertCurrent(context, "ExitPlanMode");
       const runtimeHome = planRuntimeHome(this.configValue.environment());
       const sessionId = String(rootAgent.session.id);
+      const approval = await runWithProductToolExecutionDeadline(
+        context,
+        CANONICAL_TOOL_CONTRACTS.ExitPlanMode.timeoutMs,
+        async (execution) => this.readPlan(runtimeHome, sessionId, planPath, execution.signal),
+      );
       const controller = this.controller(context.signal);
       try {
-        const approval = await this.readPlan(runtimeHome, sessionId, before.planPath, controller.signal);
         const reviewId = `plan-review-${approval.revision.slice(0, 32)}`;
         let answer: AskUserQuestionAnswer;
         try {
@@ -1061,45 +1072,53 @@ export class ProductPlanService extends Service {
           );
         }
         context.signal.throwIfAborted();
-        this.ctx.productTools.assertCurrent(context, "ExitPlanMode");
-        const current = await this.readPlan(runtimeHome, sessionId, before.planPath, controller.signal);
-        if (current.revision !== approval.revision || current.content !== approval.content) {
-          throw new ProductToolError("stale_plan_revision", "managed plan changed while approval was pending");
-        }
-        const item = answer.answers.length === 1 && answer.answers[0]?.id === reviewId
-          ? answer.answers[0]
-          : undefined;
-        if (item === undefined) throw new ProductToolError("plan_approval_rejected", "plan approval response identity is stale");
-        const approved = item.selected.length === 1 && item.selected[0] === "Approve" && item.custom === undefined;
-        if (!approved) {
-          const feedback = item.custom;
-          return Object.freeze({
-            disposition: "rejected" as const,
-            plan: approval.content,
-            revision: approval.revision,
-            ...(feedback === undefined ? {} : { feedback }),
-            mode: "plan" as const,
-          });
-        }
-        let transitionStarted = false;
-        try {
-          transitionStarted = true;
-          this.appendMode(rootAgent, before, false, context);
-          await this.flush(rootAgent.session, "exit plan mode");
-        } catch (error) {
-          if (transitionStarted) this.failure ??= error;
-          throw new ProductToolError("stale_plan_revision", "approved plan exit durability became uncertain", { cause: error });
-        }
-        const after = this.snapshot(rootAgent);
-        if (after.mode !== "normal") {
-          throw new ProductToolError("stale_plan_revision", "approved plan exit did not become durable");
-        }
-        return Object.freeze({
-          disposition: "approved" as const,
-          plan: approval.content,
-          revision: approval.revision,
-          mode: "normal" as const,
-        });
+        return await runWithProductToolExecutionDeadline(
+          context,
+          CANONICAL_TOOL_CONTRACTS.ExitPlanMode.timeoutMs,
+          async (context) => {
+            this.ctx.productTools.assertCurrent(context, "ExitPlanMode");
+            const current = await this.readPlan(runtimeHome, sessionId, planPath, context.signal);
+            if (current.revision !== approval.revision || current.content !== approval.content) {
+              throw new ProductToolError("stale_plan_revision", "managed plan changed while approval was pending");
+            }
+            const item = answer.answers.length === 1 && answer.answers[0]?.id === reviewId
+              ? answer.answers[0]
+              : undefined;
+            if (item === undefined) {
+              throw new ProductToolError("plan_approval_rejected", "plan approval response identity is stale");
+            }
+            const approved = item.selected.length === 1 && item.selected[0] === "Approve" && item.custom === undefined;
+            if (!approved) {
+              const feedback = item.custom;
+              return Object.freeze({
+                disposition: "rejected" as const,
+                plan: approval.content,
+                revision: approval.revision,
+                ...(feedback === undefined ? {} : { feedback }),
+                mode: "plan" as const,
+              });
+            }
+            let transitionStarted = false;
+            try {
+              transitionStarted = true;
+              this.appendMode(rootAgent, before, false, context);
+              await this.flush(rootAgent.session, "exit plan mode");
+            } catch (error) {
+              if (transitionStarted) this.failure ??= error;
+              throw new ProductToolError("stale_plan_revision", "approved plan exit durability became uncertain", { cause: error });
+            }
+            const after = this.snapshot(rootAgent);
+            if (after.mode !== "normal") {
+              throw new ProductToolError("stale_plan_revision", "approved plan exit did not become durable");
+            }
+            return Object.freeze({
+              disposition: "approved" as const,
+              plan: approval.content,
+              revision: approval.revision,
+              mode: "normal" as const,
+            });
+          },
+        );
       } finally {
         this.releaseController(controller, context.signal);
       }

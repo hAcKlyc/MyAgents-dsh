@@ -18,11 +18,12 @@ import {
   type ProductToolContext,
   type ProductToolPermissionRequest,
 } from "@myagents-dsh/tool-runtime-product";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const contexts: Context[] = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.allSettled(contexts.splice(0).map((context) => context.fiber.dispose()));
 });
 
@@ -86,7 +87,7 @@ const mounted = async (
   interaction: ProductLocalInteractionProvider,
   overrides: Partial<Pick<
     ProductPermissionServiceConfig,
-    "autoAllowTools" | "hook" | "interactionTimeoutMs" | "maxRules" | "mode" | "ruleTtlMs"
+    "autoAllowTools" | "hook" | "interactionRegistrationDeadlineMs" | "maxRules" | "mode" | "ruleTtlMs"
   >> = {},
 ) => {
   const context = new Context();
@@ -112,7 +113,7 @@ const mounted = async (
     }),
     interaction,
     ...(overrides.hook === undefined ? {} : { hook: overrides.hook }),
-    interactionTimeoutMs: overrides.interactionTimeoutMs ?? 1_000,
+    interactionRegistrationDeadlineMs: overrides.interactionRegistrationDeadlineMs ?? 1_000,
     maxRules: overrides.maxRules ?? 8,
     mode: overrides.mode ?? "default",
     registerController: (controller) => { permissionController = controller; },
@@ -127,7 +128,10 @@ const mounted = async (
     session,
   }) as unknown as Agent;
   context.agents.enter(agent, undefined);
-  const product = (revision = context.productPermission.currentRevision(agent)): ProductToolContext => ({
+  const product = (
+    revision = context.productPermission.currentRevision(agent),
+    signal = new AbortController().signal,
+  ): ProductToolContext => ({
     agent,
     birth: Object.freeze({
       componentDigest: "a".repeat(64),
@@ -152,7 +156,7 @@ const mounted = async (
     origin: "root",
     productTurnId: "turn-v1",
     rootCallId: "permission-call",
-    signal: new AbortController().signal,
+    signal,
   });
   return Object.freeze({
     agent,
@@ -683,9 +687,10 @@ describe("product permission policy and local interaction provider", () => {
     }
   });
 
-  it("expires an interaction once and drains the cooperative local provider", async () => {
+  it("keeps a registered permission pending beyond the transport registration deadline", async () => {
+    vi.useFakeTimers();
     let abortHits = 0;
-    const local = provider("scenario-timeout", (pending) => {
+    const local = provider("scenario-no-human-timeout", (pending) => {
       const onAbort = () => {
         abortHits += 1;
         pending.signal.removeEventListener("abort", onAbort);
@@ -696,39 +701,43 @@ describe("product permission policy and local interaction provider", () => {
         if (pending.signal.aborted) abortHits += 1;
       };
     });
-    const state = await mounted(local.provider, { interactionTimeoutMs: 5 });
+    const state = await mounted(local.provider, { interactionRegistrationDeadlineMs: 5 });
+    const owner = new AbortController();
+    const authorization = state.context.productPermission.authorize(
+      state.product(undefined, owner.signal),
+      request(),
+    );
+    void authorization.catch(() => undefined);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(600_000);
 
-    await expect(state.context.productPermission.authorize(state.product(), request()))
-      .rejects.toMatchObject({ code: "interaction_timeout" });
+    expect(state.context.productPermission.pendingCount).toBe(1);
+    expect(abortHits).toBe(0);
+    owner.abort(new Error("operation stopped"));
+    await expect(authorization).rejects.toThrow("operation stopped");
     expect(abortHits).toBe(1);
     expect(state.context.productPermission.pendingCount).toBe(0);
     expect(state.session.events.at(-1)?.data).toMatchObject({ outcome: "cancelled" });
   });
 
-  it("settles silent local registrations at the product timeout and during disposal", async () => {
+  it("keeps silent questions pending without a decision timeout and settles them during disposal", async () => {
+    vi.useFakeTimers();
     const ignored = () => undefined;
-    const timed = await mounted(provider("scenario-ignored-timeout", ignored, ignored).provider, {
-      interactionTimeoutMs: 5,
+    const state = await mounted(provider("scenario-ignored", ignored, ignored).provider, {
+      interactionRegistrationDeadlineMs: 5,
     });
-    await expect(timed.context.productPermission.authorize(timed.product(), request()))
-      .rejects.toMatchObject({ code: "interaction_timeout" });
-    await expect(timed.context.userQuestions.ask({
-      agent: timed.agent,
-      questions: [{ id: "confirm", question: "Continue?", options: [{ label: "Yes" }] }],
-    })).rejects.toMatchObject({ code: "ASK_ABORTED" });
-    expect(timed.context.productPermission.pendingCount).toBe(0);
-
-    const disposing = await mounted(provider("scenario-ignored-dispose", ignored, ignored).provider);
-    const service = disposing.context.productPermission;
-    const permission = service.authorize(disposing.product(), request());
-    const question = disposing.context.userQuestions.ask({
-      agent: disposing.agent,
+    const permission = state.context.productPermission.authorize(state.product(), request());
+    const service = state.context.productPermission;
+    const question = state.context.userQuestions.ask({
+      agent: state.agent,
       questions: [{ id: "confirm", question: "Continue?", options: [{ label: "Yes" }] }],
     });
     void permission.catch(() => undefined);
     void question.catch(() => undefined);
     await Promise.resolve();
-    await disposing.context.fiber.dispose();
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(service.pendingCount).toBe(1);
+    await state.context.fiber.dispose();
     await expect(permission).rejects.toMatchObject({ code: "interaction_cancelled" });
     await expect(question).rejects.toMatchObject({ code: "ASK_ABORTED" });
     expect(service.pendingCount).toBe(0);
@@ -966,7 +975,7 @@ describe("product permission policy and local interaction provider", () => {
       clock: Date.now,
       durability: Object.freeze({ flush: () => Promise.resolve(true) }),
       interaction: proxy,
-      interactionTimeoutMs: 1_000,
+      interactionRegistrationDeadlineMs: 1_000,
       maxRules: 8,
       mode: "default",
       ruleTtlMs: 60_000,

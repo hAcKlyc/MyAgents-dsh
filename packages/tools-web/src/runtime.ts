@@ -22,6 +22,7 @@ import {
 } from "@myagents-dsh/tool-contracts";
 import {
   ProductToolError,
+  runWithProductToolExecutionDeadline,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
 import { ProductSafeHttpClient, type ProductSafeHttpResult } from "./safe-http.js";
@@ -438,16 +439,22 @@ class ProductFetchProvider implements WebFetchProvider {
     }
     let normalized: JsonObject;
     try {
-      const pending = this.convert(Object.freeze({
-        bytes: Uint8Array.from(fetched.bytes),
-        contentType: fetched.contentType,
-        finalUrl: redactUrl(fetched.finalUrl),
-        signal: store.context.signal,
-        statusCode: fetched.statusCode,
-      }));
-      const converted = await nativePromise<Readonly<{ content: string; kind: "html" | "text"; truncated: boolean }>>(
-        pending,
-        "WebFetch content converter",
+      const converted = await runWithProductToolExecutionDeadline(
+        store.context,
+        CANONICAL_TOOL_CONTRACTS.WebFetch.timeoutMs,
+        async (execution) => {
+          const pending = this.convert(Object.freeze({
+            bytes: Uint8Array.from(fetched.bytes),
+            contentType: fetched.contentType,
+            finalUrl: redactUrl(fetched.finalUrl),
+            signal: execution.signal,
+            statusCode: fetched.statusCode,
+          }));
+          return await nativePromise<Readonly<{ content: string; kind: "html" | "text"; truncated: boolean }>>(
+            pending,
+            "WebFetch content converter",
+          );
+        },
       );
       normalized = normalizeCanonicalJson(converted, "WebFetch converted content") as JsonObject;
       if (Reflect.ownKeys(normalized).length !== 3 || typeof normalized.content !== "string"
@@ -456,6 +463,7 @@ class ProductFetchProvider implements WebFetchProvider {
       }
     } catch (error) {
       if (store.context.signal.aborted) throw store.context.signal.reason;
+      if (error instanceof ProductToolError && error.code === "TOOL_TIMEOUT") throw error;
       throw new ProductToolError("unsupported_content", "WebFetch content conversion failed", { cause: error });
     }
     store.fetched = fetched;
@@ -712,46 +720,48 @@ export class CanonicalWebTools extends Service {
             target: requestedUrl.origin,
             tool: "WebFetch",
           });
-          try {
-            const pending = hostFetch.run(Object.freeze({
-              context: product,
-              prompt: args.prompt as string,
-              signal: product.signal,
-              url: requestedUrl.toString(),
-            }));
-            const result = normalizeCanonicalJson(
-              await nativePromise<unknown>(pending, "Host WebFetch reverse executor"),
-              "Host WebFetch result",
-            );
-            product.signal.throwIfAborted();
-            const output = validateCanonicalToolOutput("WebFetch", result) as JsonObject;
-            if (output.url !== requestedUrl.toString()) {
+          return await runWithProductToolExecutionDeadline(product, contract.timeoutMs, async (product) => {
+            try {
+              const pending = hostFetch.run(Object.freeze({
+                context: product,
+                prompt: args.prompt as string,
+                signal: product.signal,
+                url: requestedUrl.toString(),
+              }));
+              const result = normalizeCanonicalJson(
+                await nativePromise<unknown>(pending, "Host WebFetch reverse executor"),
+                "Host WebFetch result",
+              );
+              product.signal.throwIfAborted();
+              const output = validateCanonicalToolOutput("WebFetch", result) as JsonObject;
+              if (output.url !== requestedUrl.toString()) {
+                throw new ProductToolError(
+                  "utility_model_failed",
+                  "Host WebFetch result differs from the requested URL",
+                );
+              }
+              const finalUrl = typeof output.finalUrl === "string" ? redactUrl(output.finalUrl) : undefined;
+              if (finalUrl === undefined || finalUrl !== output.finalUrl) {
+                throw new ProductToolError("utility_model_failed", "Host WebFetch final URL is unsafe");
+              }
+              const citationUrls = assertHttpCitations(output.citations, "Host WebFetch");
+              if (citationUrls.some((url) => redactUrl(url) !== finalUrl)) {
+                throw new ProductToolError(
+                  "utility_model_failed",
+                  "Host WebFetch citations lack final-content provenance",
+                );
+              }
+              return output;
+            } catch (error) {
+              if (product.signal.aborted) throw product.signal.reason;
+              if (error instanceof ProductToolError) throw error;
               throw new ProductToolError(
                 "utility_model_failed",
-                "Host WebFetch result differs from the requested URL",
+                "Host WebFetch reverse executor returned an invalid result",
+                { cause: error },
               );
             }
-            const finalUrl = typeof output.finalUrl === "string" ? redactUrl(output.finalUrl) : undefined;
-            if (finalUrl === undefined || finalUrl !== output.finalUrl) {
-              throw new ProductToolError("utility_model_failed", "Host WebFetch final URL is unsafe");
-            }
-            const citationUrls = assertHttpCitations(output.citations, "Host WebFetch");
-            if (citationUrls.some((url) => redactUrl(url) !== finalUrl)) {
-              throw new ProductToolError(
-                "utility_model_failed",
-                "Host WebFetch citations lack final-content provenance",
-              );
-            }
-            return output;
-          } catch (error) {
-            if (product.signal.aborted) throw product.signal.reason;
-            if (error instanceof ProductToolError) throw error;
-            throw new ProductToolError(
-              "utility_model_failed",
-              "Host WebFetch reverse executor returned an invalid result",
-              { cause: error },
-            );
-          }
+          });
         }
         const store: FetchExecutionStore = { context: product };
         const fetched = await this.#fetchStorage.run(store, () => ctx.web.fetch({ url: args.url as string }, product.signal));
@@ -760,36 +770,38 @@ export class CanonicalWebTools extends Service {
           throw new ProductToolError("unsupported_content", "WebFetch Provider omitted exact retrieval provenance");
         }
         const source = truncateUtf8(fetched.body.content, 1_000_000);
-        try {
-          product.signal.throwIfAborted();
-          const utilityResult = await nativePromise<unknown>(runUtility(Object.freeze({
-            context: product,
-            finalUrl: redactUrl(fetched.url),
-            prompt: args.prompt as string,
-            signal: product.signal,
-            source: source.text,
-            statusCode: fetched.statusCode,
-          })), "WebFetch utility model");
-          product.signal.throwIfAborted();
-          const utility = normalizeCanonicalJson(utilityResult, "WebFetch utility result") as JsonObject;
-          const output = validateCanonicalToolOutput("WebFetch", {
-            answer: utility.answer,
-            citations: utility.citations,
-            finalUrl: redactUrl(fetched.url),
-            truncated: fetched.truncated || source.truncated || utility.truncated === true,
-            url: redactUrl(args.url as string),
-            usage: utility.usage,
-          }) as JsonObject;
-          const finalUrl = redactUrl(fetched.url);
-          const citationUrls = assertHttpCitations(output.citations, "WebFetch");
-          if (citationUrls.some((url) => redactUrl(url) !== finalUrl)) {
-            throw new ProductToolError("utility_model_failed", "WebFetch citations lack fetched-content provenance");
+        return await runWithProductToolExecutionDeadline(product, contract.timeoutMs, async (product) => {
+          try {
+            product.signal.throwIfAborted();
+            const utilityResult = await nativePromise<unknown>(runUtility(Object.freeze({
+              context: product,
+              finalUrl: redactUrl(fetched.url),
+              prompt: args.prompt as string,
+              signal: product.signal,
+              source: source.text,
+              statusCode: fetched.statusCode,
+            })), "WebFetch utility model");
+            product.signal.throwIfAborted();
+            const utility = normalizeCanonicalJson(utilityResult, "WebFetch utility result") as JsonObject;
+            const output = validateCanonicalToolOutput("WebFetch", {
+              answer: utility.answer,
+              citations: utility.citations,
+              finalUrl: redactUrl(fetched.url),
+              truncated: fetched.truncated || source.truncated || utility.truncated === true,
+              url: redactUrl(args.url as string),
+              usage: utility.usage,
+            }) as JsonObject;
+            const finalUrl = redactUrl(fetched.url);
+            const citationUrls = assertHttpCitations(output.citations, "WebFetch");
+            if (citationUrls.some((url) => redactUrl(url) !== finalUrl)) {
+              throw new ProductToolError("utility_model_failed", "WebFetch citations lack fetched-content provenance");
+            }
+            return output;
+          } catch (error) {
+            if (product.signal.aborted) throw product.signal.reason;
+            throw new ProductToolError("utility_model_failed", "WebFetch utility model returned an invalid result", { cause: error });
           }
-          return output;
-        } catch (error) {
-          if (product.signal.aborted) throw product.signal.reason;
-          throw new ProductToolError("utility_model_failed", "WebFetch utility model returned an invalid result", { cause: error });
-        }
+        });
       },
       isConcurrencySafe: () => true,
       name: "WebFetch",
@@ -798,7 +810,6 @@ export class CanonicalWebTools extends Service {
         schema: canonicalOutputSchemaForDsh(contract.outputSchema),
       }),
       parameters: canonicalInputSchemaForDsh(contract.inputSchema),
-      ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
     });
   }
 
@@ -823,21 +834,23 @@ export class CanonicalWebTools extends Service {
           target: `provider:${provider.id}`,
           tool: "WebSearch",
         });
-        const store: SearchExecutionStore = {
-          ...(allowedDomains === undefined ? {} : { allowedDomains }),
-          ...(blockedDomains === undefined ? {} : { blockedDomains }),
-          context: product,
-        };
-        await this.#searchStorage.run(store, () => ctx.web.search({
-          maxResults: 100,
-          query: args.query as string,
-        }, product.signal));
-        if (store.detail === undefined) {
-          throw new ProductToolError("provider_search_failed", "WebSearch Provider omitted exact result evidence");
-        }
-        return validateCanonicalToolOutput("WebSearch", {
-          query: args.query,
-          ...store.detail,
+        return await runWithProductToolExecutionDeadline(product, contract.timeoutMs, async (product) => {
+          const store: SearchExecutionStore = {
+            ...(allowedDomains === undefined ? {} : { allowedDomains }),
+            ...(blockedDomains === undefined ? {} : { blockedDomains }),
+            context: product,
+          };
+          await this.#searchStorage.run(store, () => ctx.web.search({
+            maxResults: 100,
+            query: args.query as string,
+          }, product.signal));
+          if (store.detail === undefined) {
+            throw new ProductToolError("provider_search_failed", "WebSearch Provider omitted exact result evidence");
+          }
+          return validateCanonicalToolOutput("WebSearch", {
+            query: args.query,
+            ...store.detail,
+          });
         });
       },
       isConcurrencySafe: () => true,
@@ -847,7 +860,6 @@ export class CanonicalWebTools extends Service {
         schema: canonicalOutputSchemaForDsh(contract.outputSchema),
       }),
       parameters: canonicalInputSchemaForDsh(contract.inputSchema),
-      ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
     });
   }
 }

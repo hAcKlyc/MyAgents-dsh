@@ -131,7 +131,7 @@ describe("Runtime artifact self-check", () => {
       expect(report.profile.stage).toBe("batch-1-w4-a11");
       expect(report.dsh.packageCount).toBe(58);
       expect(report.contracts).toEqual({
-        canonicalToolsSha256: "2c34c434385efee0cd040c9945b7a06e1ea4513c8fbd600b5a8af2c5302ffbcc",
+        canonicalToolsSha256: "dee6528e97bff11415526f6cc05d2327cab5df616e02aeb27039e135758bacc2",
         eventsSha256: "de142b081a543575a3a158380bce45d3e7c5703920c5a6f546f387f8981a7869",
         sessionFormat: "dsh-session-events-v1",
         persistenceFormat: "myagents-sqlite-session-v1",

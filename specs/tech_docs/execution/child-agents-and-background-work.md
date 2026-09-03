@@ -61,7 +61,7 @@ Background mode uses a continuable DSH child and retained output authority. Fore
 
 ## 5. Messaging and stopping
 
-`SendMessage` can deliver root-to-child, child-to-parent and child-to-sibling messages inside one exact root-work lineage. Intent and insertion identities are durable so replay cannot duplicate or redirect a message. A live follow-up starts another bounded child epoch; a report is correlated into the root Inbox and operation flow. It is not cross-Session messaging and does not provide broadcast, team or cloud delivery.
+`Agent` accepts no caller-defined display name. Its result returns a `taskId` for `TaskStop` and a separate live `agentId` for `SendMessage`. A root addresses one live child by that `agentId`; a child addresses a live sibling by its `agentId`, or its root with the reserved literal `parent`. Task IDs, names, broadcasts, team aliases, cross-Session recipients and stopping/terminal Agents are not messaging identities. A `queued` result is an ordered mailbox admission for the recipient's next child-turn boundary, not an interruption or terminal result. Intent and insertion identities are durable so replay cannot duplicate or redirect a message. A live follow-up starts another bounded child epoch; a report is correlated into the root Inbox and operation flow.
 
 `TaskStop` stops an owned child Agent or background process and waits for terminal cleanup. Child self-stop that would synchronously destroy its own active call is rejected. Process termination and child abort use different internal terminal vocabularies; Host presentation may normalize them, but recovery retains exact owner semantics.
 

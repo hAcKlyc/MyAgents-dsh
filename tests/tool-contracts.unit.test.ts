@@ -75,6 +75,11 @@ describe("canonical twenty-tool contract authority", () => {
       CANONICAL_TOOL_CONTRACTS[name].checkpoint === "root_managed_file")).toEqual(["Write", "Edit"]);
     expect(CANONICAL_TOOL_CONTRACTS.Agent.sideEffect).toBe("delegation");
     expect(CANONICAL_TOOL_CONTRACTS.SendMessage.sideEffect).toBe("delegation");
+    expect(CANONICAL_TOOL_CONTRACTS.AskUserQuestion.timeoutMs).toBeUndefined();
+    expect(CANONICAL_TOOL_CONTRACTS.Agent.inputSchema.properties).not.toHaveProperty("name");
+    expect(CANONICAL_TOOL_CONTRACTS.Agent.description).toContain("taskId is for TaskStop");
+    expect(CANONICAL_TOOL_CONTRACTS.SendMessage.description).toContain("agentId returned by Agent");
+    expect(CANONICAL_TOOL_CONTRACTS.SendMessage.description).toContain("literal parent");
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
       CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "managed-plan-file-only")).toEqual(["Write", "Edit"]);
     expect(CANONICAL_TOOL_NAMES.filter((name) =>

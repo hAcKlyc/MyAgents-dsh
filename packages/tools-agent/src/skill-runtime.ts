@@ -31,6 +31,7 @@ import {
 } from "@myagents-dsh/tool-contracts";
 import {
   ProductToolError,
+  runWithProductToolExecutionDeadline,
   type ProductToolContext,
   type ProductToolOperationAuthority,
 } from "@myagents-dsh/tool-runtime-product";
@@ -1194,7 +1195,6 @@ export class ProductSkillService extends Service {
         schema: canonicalOutputSchemaForDsh(contract.outputSchema),
         render: (_args: unknown, value: unknown) => this.#render(value),
       }),
-      ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
       isConcurrencySafe: () => false,
       execute: async (value: unknown, exec: ToolRunContext) => {
         const input = validateCanonicalToolInput("Skill", value) as Readonly<{ skill: string; args?: string }>;
@@ -1203,7 +1203,7 @@ export class ProductSkillService extends Service {
             digest: product.birth.componentDigest,
             revision: product.birth.componentRevision,
         });
-        const lookupSignal = AbortSignal.any([product.signal]);
+        let lookupSignal = AbortSignal.any([product.signal]);
         this.#dynamicViewPermits.set(lookupSignal, generationKey);
         try {
           const view = Object.freeze({
@@ -1246,6 +1246,13 @@ export class ProductSkillService extends Service {
             target: `skill:${input.skill}`,
             tool: "Skill",
           });
+          return await runWithProductToolExecutionDeadline(
+            product,
+            contract.timeoutMs,
+            async (product) => {
+          this.#dynamicViewPermits.delete(lookupSignal);
+          lookupSignal = AbortSignal.any([product.signal]);
+          this.#dynamicViewPermits.set(lookupSignal, generationKey);
           ctx.productTools.assertCurrent(product, "Skill");
           if (dynamicAuthority?.resourceRoot !== undefined && rootAuthority !== undefined) {
             await revalidateSkillRoot(ctx, rootAuthority, product.signal);
@@ -1299,6 +1306,8 @@ export class ProductSkillService extends Service {
           try { return validateCanonicalToolOutput("Skill", output); } catch (error) {
             throw new ProductToolError("skill_invalid", "expanded Skill exceeds its canonical result bounds", { cause: error });
           }
+            },
+          );
         } catch (error) {
           product.signal.throwIfAborted();
           if (error instanceof ProductToolError) throw error;

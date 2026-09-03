@@ -415,6 +415,31 @@ const prepareDeadline = (source: AbortSignal): Readonly<{
   });
 };
 
+const callDeadline = (source: AbortSignal): Readonly<{
+  readonly close: () => void;
+  readonly signal: AbortSignal;
+  readonly timedOut: () => boolean;
+}> => {
+  const controller = new AbortController();
+  let expired = false;
+  const abort = (): void => controller.abort(source.reason);
+  if (source.aborted) abort();
+  else source.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(() => {
+    expired = true;
+    controller.abort(new Error(`MCP tool call timed out after ${String(MCP_COMPONENT_LIMITS.callTimeoutMs)}ms`));
+  }, MCP_COMPONENT_LIMITS.callTimeoutMs);
+  timer.unref();
+  return Object.freeze({
+    close: () => {
+      clearTimeout(timer);
+      source.removeEventListener("abort", abort);
+    },
+    signal: controller.signal,
+    timedOut: () => expired,
+  });
+};
+
 const validateListedTools = (value: unknown): readonly McpListedTool[] => {
   const normalized = normalizeCanonicalJson(value, "MCP tool catalog");
   if (!Array.isArray(normalized) || normalized.length > MCP_COMPONENT_LIMITS.toolsPerServer) {
@@ -546,7 +571,9 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
               const input = exactObject(normalizeCanonicalJson(raw, `${name} input`), `${name} input`);
               await authority.authorizeToolExecution(name, tool.name, execution);
               authority.assertToolExecution(name, execution);
-              const callSignal = AbortSignal.any([execution.signal, lifetime.signal]);
+              const bounded = callDeadline(execution.signal);
+              const callSignal = AbortSignal.any([bounded.signal, lifetime.signal]);
+              const boundedExecution = Object.freeze({ ...execution, signal: callSignal });
               const assertCurrent = () => authority.assertToolExecution(name, execution);
               const pending = exactPromise(
                 connection.callTool(tool.name, Object.freeze(input), callSignal),
@@ -555,14 +582,14 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
               calls.add(pending);
               try {
                 const result = await pending;
-                execution.signal.throwIfAborted();
+                callSignal.throwIfAborted();
                 authority.assertToolExecution(name, execution);
                 const normalized = await normalizeResult(
                   result,
                   redactions,
                   publishImage,
                   normalizedConfig,
-                  execution,
+                  boundedExecution,
                   name,
                   assertCurrent,
                 );
@@ -570,7 +597,15 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
                   throw new Error(normalized.content.join("\n"));
                 }
                 return normalized;
+              } catch (error) {
+                if (bounded.timedOut()) {
+                  const timeout = new Error(`MCP tool call timed out after ${String(MCP_COMPONENT_LIMITS.callTimeoutMs)}ms`, { cause: error });
+                  Object.defineProperty(timeout, "code", { value: "TOOL_TIMEOUT", enumerable: true });
+                  throw timeout;
+                }
+                throw error;
               } finally {
+                bounded.close();
                 calls.delete(pending);
               }
             },
@@ -578,7 +613,6 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
             name,
             output: Object.freeze({ render: renderMcpResult, schema: MCP_OUTPUT_SCHEMA }),
             parameters: tool.inputSchema,
-            timeoutMs: MCP_COMPONENT_LIMITS.callTimeoutMs,
           });
           return Object.freeze({
             catalog: Object.freeze({ kind: "tool" as const, name }),

@@ -33,6 +33,31 @@ export interface ProductHttpResponse {
   dispose(): Promise<void>;
 }
 
+const boundedDeadline = (source: AbortSignal, timeoutMs: number): Readonly<{
+  readonly close: () => void;
+  readonly signal: AbortSignal;
+  readonly timedOut: () => boolean;
+}> => {
+  const controller = new AbortController();
+  let expired = false;
+  const abort = (): void => controller.abort(source.reason);
+  if (source.aborted) abort();
+  else source.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(() => {
+    expired = true;
+    controller.abort(new Error(`network request timed out after ${String(timeoutMs)}ms`));
+  }, timeoutMs);
+  timer.unref();
+  return Object.freeze({
+    close: () => {
+      clearTimeout(timer);
+      source.removeEventListener("abort", abort);
+    },
+    signal: controller.signal,
+    timedOut: () => expired,
+  });
+};
+
 export interface ProductHttpRequest {
   readonly body?: Uint8Array;
   readonly headers: Readonly<Record<string, string>>;
@@ -745,87 +770,96 @@ export class ProductSafeHttpClient {
       || context.environment.network.policyRef !== this.#policy.policyRef) {
       throw new ProductToolError("network_policy_denied", "operation-frozen network policy denies WebFetch");
     }
-    const deadline = AbortSignal.timeout(this.#policy.timeoutMs);
-    const signal = AbortSignal.any([context.signal, deadline]);
-    let releaseAtExit: () => void = () => undefined;
     try {
-      const release = await this.#acquire(signal);
-      releaseAtExit = release;
       let current = parseSafeUrl(rawUrl, this.#policy);
       const redirectOrigins: string[] = [];
       for (let redirectCount = 0; ; redirectCount += 1) {
-        signal.throwIfAborted();
+        context.signal.throwIfAborted();
         await authorizeHop(current, context);
-        signal.throwIfAborted();
-        const resolved = await this.#resolve(current.hostname, signal);
-        signal.throwIfAborted();
-        const address = selectPublicAddress(resolved.addresses, resolved.pref64s);
-        const dispatched = this.#transport.dispatch(current, address, signal);
-        if (!isPromise(dispatched) || isProxy(dispatched)) {
-          throw new ProductToolError("unsafe_destination", "WebFetch transport must return a native Promise");
-        }
-        const rawResponse = await dispatched;
-        let response: ProductHttpResponse;
+        context.signal.throwIfAborted();
+        // Human approval is outside both the network budget and concurrency
+        // reservation. Each bounded redirect hop acquires only when executable.
+        const network = boundedDeadline(context.signal, this.#policy.timeoutMs);
+        let release: (() => void) | undefined;
         try {
-          response = this.#validateResponse(rawResponse);
+          const signal = network.signal;
+          release = await this.#acquire(signal);
+          const resolved = await this.#resolve(current.hostname, signal);
+          signal.throwIfAborted();
+          const address = selectPublicAddress(resolved.addresses, resolved.pref64s);
+          const dispatched = this.#transport.dispatch(current, address, signal);
+          if (!isPromise(dispatched) || isProxy(dispatched)) {
+            throw new ProductToolError("unsafe_destination", "WebFetch transport must return a native Promise");
+          }
+          const rawResponse = await dispatched;
+          let response: ProductHttpResponse;
+          try {
+            response = this.#validateResponse(rawResponse);
+          } catch (error) {
+            const cleanupError = await this.#disposeInvalidResponse(rawResponse);
+            if (cleanupError !== undefined) {
+              throw new AggregateError(
+                [error, cleanupError],
+                "WebFetch response validation and cleanup failed",
+                { cause: error },
+              );
+            }
+            throw error;
+          }
+          try {
+            signal.throwIfAborted();
+            if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
+              if (redirectCount >= this.#policy.maxRedirects) {
+                throw new ProductToolError("unsafe_destination", "WebFetch exceeded its redirect bound");
+              }
+              const location = headerValue(response.headers.location);
+              if (location === undefined) {
+                throw new ProductToolError("unsafe_destination", "WebFetch redirect has no Location header");
+              }
+              const next = parseRedirectUrl(location, current, this.#policy);
+              if (next.origin !== current.origin) redirectOrigins.push(next.origin);
+              current = next;
+              continue;
+            }
+            if (response.statusCode < 200 || response.statusCode > 299) {
+              throw new ProductToolError("unsupported_content", "WebFetch response status is unsupported");
+            }
+            const declaredLength = headerValue(response.headers["content-length"]);
+            if (declaredLength !== undefined) {
+              const parsed = Number(declaredLength);
+              if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > this.#policy.maxCompressedBytes) {
+                throw new ProductToolError("unsupported_content", "WebFetch response length exceeds its bound");
+              }
+            }
+            const compressed = await this.#readBody(response.body, signal);
+            const bytes = decompress(compressed, headerValue(response.headers["content-encoding"]), this.#policy);
+            const contentType = (headerValue(response.headers["content-type"])?.split(";", 1)[0] ?? "application/octet-stream")
+              .trim().toLowerCase();
+            return Object.freeze({
+              bytes,
+              contentType,
+              finalUrl: current.toString(),
+              redirectOrigins: Object.freeze([...redirectOrigins]),
+              statusCode: response.statusCode,
+            });
+          } finally {
+            await response.dispose();
+          }
         } catch (error) {
-          const cleanupError = await this.#disposeInvalidResponse(rawResponse);
-          if (cleanupError !== undefined) {
-            throw new AggregateError(
-              [error, cleanupError],
-              "WebFetch response validation and cleanup failed",
-              { cause: error },
-            );
+          if (context.signal.aborted) throw context.signal.reason;
+          if (network.timedOut()) {
+            throw new ProductToolError("network_policy_denied", "WebFetch exceeded its network deadline", { cause: error });
           }
           throw error;
-        }
-        try {
-          signal.throwIfAborted();
-          if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
-            if (redirectCount >= this.#policy.maxRedirects) {
-              throw new ProductToolError("unsafe_destination", "WebFetch exceeded its redirect bound");
-            }
-            const location = headerValue(response.headers.location);
-            if (location === undefined) {
-              throw new ProductToolError("unsafe_destination", "WebFetch redirect has no Location header");
-            }
-            const next = parseRedirectUrl(location, current, this.#policy);
-            if (next.origin !== current.origin) redirectOrigins.push(next.origin);
-            current = next;
-            continue;
-          }
-          if (response.statusCode < 200 || response.statusCode > 299) {
-            throw new ProductToolError("unsupported_content", "WebFetch response status is unsupported");
-          }
-          const declaredLength = headerValue(response.headers["content-length"]);
-          if (declaredLength !== undefined) {
-            const parsed = Number(declaredLength);
-            if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > this.#policy.maxCompressedBytes) {
-              throw new ProductToolError("unsupported_content", "WebFetch response length exceeds its bound");
-            }
-          }
-          const compressed = await this.#readBody(response.body, signal);
-          const bytes = decompress(compressed, headerValue(response.headers["content-encoding"]), this.#policy);
-          const contentType = (headerValue(response.headers["content-type"])?.split(";", 1)[0] ?? "application/octet-stream")
-            .trim().toLowerCase();
-          return Object.freeze({
-            bytes,
-            contentType,
-            finalUrl: current.toString(),
-            redirectOrigins: Object.freeze([...redirectOrigins]),
-            statusCode: response.statusCode,
-          });
         } finally {
-          await response.dispose();
+          release?.();
+          network.close();
         }
       }
     } catch (error) {
       if (context.signal.aborted) throw context.signal.reason;
-      if (deadline.aborted) throw new ProductToolError("network_policy_denied", "WebFetch exceeded its network deadline");
       if (error instanceof ProductToolError) throw error;
       throw new ProductToolError("network_policy_denied", "WebFetch transport failed safely", { cause: error });
-    } finally {
-      releaseAtExit();
     }
   }
 

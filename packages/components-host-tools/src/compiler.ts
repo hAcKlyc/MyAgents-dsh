@@ -538,7 +538,6 @@ export const createHostToolComponentCompiler = (
         name: contract.name,
         output: Object.freeze({ render: renderResult, schema: HOST_TOOL_OUTPUT_SCHEMA }),
         parameters: contract.parameters,
-        timeoutMs: HOST_TOOL_COMPONENT_LIMITS.callTimeoutMs,
       });
       const contribution: PreparedContribution = Object.freeze({
         catalog: Object.freeze({ kind: "tool" as const, name: contract.name }),

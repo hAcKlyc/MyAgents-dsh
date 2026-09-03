@@ -3,6 +3,7 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { FsTarget } from "@deepseek-ai/dsh-fs";
 import { HarnessError } from "@deepseek-ai/dsh-llm";
 import type { ToolExecution } from "@deepseek-ai/dsh-tools";
+import { deadline, timeoutOf } from "@deepseek-ai/dsh-timeout";
 import type { OperationBirthSnapshot, ProductOperationRecord } from "@myagents-dsh/operation-runtime";
 import {
   CANONICAL_TOOL_CONTRACTS,
@@ -194,6 +195,53 @@ const exactNativePromise = <T>(value: unknown, description: string): Promise<T> 
     throw new TypeError(`${description} must return an exact native Promise`);
   }
   return value as Promise<T>;
+};
+
+/**
+ * Apply a cooperative executor deadline after any human authorization has
+ * settled. Permissionable definitions omit DSH's outer timeout because that
+ * timer starts before permission/interaction handling.
+ */
+export const runWithProductToolExecutionDeadline = async <T>(
+  context: ProductToolContext,
+  timeoutMs: number | undefined,
+  execute: (execution: ProductToolContext) => T | Promise<T>,
+): Promise<T> => {
+  if (typeof execute !== "function" || utilTypes.isProxy(execute)) {
+    throw new TypeError("tool executor must be a non-proxy function");
+  }
+  const settle = async (value: T | Promise<T>): Promise<T> => {
+    if (!utilTypes.isPromise(value)) return value;
+    return await exactNativePromise<T>(value, "tool executor");
+  };
+  if (timeoutMs === undefined) {
+    return await settle(execute(context));
+  }
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600_000) {
+    throw new TypeError("tool execution deadline must be a bounded positive integer");
+  }
+  const code = "TOOL_TIMEOUT";
+  const boundary = deadline(context.signal, timeoutMs, code);
+  const execution = Object.freeze({ ...context, signal: boundary.signal });
+  try {
+    try {
+      const result = await settle(execute(execution));
+      const timedOut = timeoutOf(boundary.signal, code);
+      if (timedOut !== undefined) {
+        throw new ProductToolError(code, `tool call timed out after ${String(timedOut.timeoutMs)}ms`);
+      }
+      context.signal.throwIfAborted();
+      return result;
+    } catch (error) {
+      const timedOut = timeoutOf(boundary.signal, code);
+      if (timedOut !== undefined && !(error instanceof ProductToolError && error.code === code)) {
+        throw new ProductToolError(code, `tool call timed out after ${String(timedOut.timeoutMs)}ms`, { cause: error });
+      }
+      throw error;
+    }
+  } finally {
+    boundary[Symbol.dispose]();
+  }
 };
 
 const snapshotFsTarget = (value: unknown, description: string): FsTarget => {

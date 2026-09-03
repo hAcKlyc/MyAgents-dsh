@@ -824,6 +824,15 @@ export class ProductProcessRuntime extends Service {
     if (args.run_in_background === true && initialAuthority.backgroundRetention !== "allow") {
       throw new ProductToolError("permission_denied", "background Bash retention is disabled by the operation-frozen policy");
     }
+    const workspace = await this.io.captureWorkspace(
+      upstreamProduct.environment.workspace.canonicalRoot,
+      upstreamProduct.signal,
+    );
+    await this.runtimeContext.productTools.authorize(upstreamProduct, {
+      permissionClass,
+      target: upstreamProduct.environment.workspace.canonicalRoot,
+      tool: "Bash",
+    });
     const timeoutMs = (args.timeout as number | undefined) ?? 120_000;
     const deadlineController = new AbortController();
     const callerSignal = upstreamProduct.signal;
@@ -858,15 +867,6 @@ export class ProductProcessRuntime extends Service {
     let process: ManagedShellProcess;
     try {
       const spawn = (async (): Promise<ManagedShellProcess> => {
-        const workspace = await this.io.captureWorkspace(
-          product.environment.workspace.canonicalRoot,
-          product.signal,
-        );
-        await this.runtimeContext.productTools.authorize(product, {
-          permissionClass,
-          target: product.environment.workspace.canonicalRoot,
-          tool: "Bash",
-        });
         await this.io.revalidateWorkspace(workspace, authority.cwd, product.signal);
         await Promise.all([this.resolveBash(product), this.resolveBundledNode(product)]);
         await this.io.revalidateWorkspace(workspace, authority.cwd, product.signal);

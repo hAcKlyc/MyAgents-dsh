@@ -215,7 +215,8 @@ describe("generation-owned Host tool component compiler", () => {
     });
     expect(configured.state, JSON.stringify(configured)).toBe("applied");
     const definition = harness.root.tools.get("mcp__fixture__echo");
-    expect(definition).toMatchObject({ name: "mcp__fixture__echo", timeoutMs: 120_000 });
+    expect(definition).toMatchObject({ name: "mcp__fixture__echo" });
+    expect(definition?.timeoutMs).toBeUndefined();
     expect(Object.isFrozen(definition?.parameters)).toBe(true);
     const result = await harness.root.tools.execute({
       arguments: Object.freeze({ value: "hello" }),

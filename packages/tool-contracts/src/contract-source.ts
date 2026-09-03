@@ -584,7 +584,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   AskUserQuestion: contract({
     name: "AskUserQuestion",
-    description: "Asks one to four structured questions and returns the single registered response to this tool call. Use only when the interaction owner is available.",
+    description: "Asks one to four structured questions and waits without a human-decision timeout for the single registered response to this tool call. Use only when the interaction owner is available; the wait ends on an answer, explicit cancellation, or authoritative operation/Session termination.",
     inputSchema: strictObject({
       questions: Type.Array(strictObject({
         question: Type.String({ minLength: 1, maxLength: 2_048 }),
@@ -608,7 +608,6 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     }),
     concurrency: "session_serial",
     sideEffect: "interaction",
-    timeoutMs: 600_000,
     outputLimits: outputLimits(65_536, 32),
     permissionClass: "interaction.ask",
     checkpoint: "none",
@@ -688,13 +687,12 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Agent: contract({
     name: "Agent",
-    description: "Starts a supervised local child Agent with a fresh DSH context and the current bounded workspace/component snapshot. Omit subagent_type to use the built-in general descriptor, which inherits eligible parent tools. Explore keeps read/search/Web/Bash tools with a read-only role instruction. Custom descriptors may narrow inherited visibility. Background returns a retained work handle; foreground waits for the child terminal.",
+    description: "Starts a supervised local child Agent with a fresh DSH context and the current bounded workspace/component snapshot. Omit subagent_type to use the built-in general descriptor, which inherits eligible parent tools. Explore keeps read/search/Web/Bash tools with a read-only role instruction. Custom descriptors may narrow inherited visibility. The result's taskId is for TaskStop; agentId addresses the live child with SendMessage. Background returns a retained work handle; foreground waits for the child terminal.",
     inputSchema: strictObject({
       description: Type.String({ minLength: 1, maxLength: 80 }),
       prompt: Type.String({ minLength: 1, maxLength: 1_000_000 }),
       subagent_type: Type.Optional(boundedIdentifier),
       run_in_background: Type.Optional(Type.Boolean()),
-      name: Type.Optional(boundedIdentifier),
       model: Type.Optional(boundedIdentifier),
     }),
     outputSchema: agentOutput,
@@ -740,7 +738,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   SendMessage: contract({
     name: "SendMessage",
-    description: "Delivers an ordered plain-text message to one resolvable parent, child, or sibling Agent in this Runtime Session. Cross-Session and broadcast delivery are unsupported.",
+    description: "Delivers an ordered plain-text message within the caller's root lineage. Use the agentId returned by Agent for one live child or sibling; a child may use the literal parent for the root. taskId, caller-defined names, broadcasts, team aliases, cross-Session recipients, and stopping or terminal Agents are unsupported. A queued receipt means admission for the recipient's next child-turn boundary, not interruption or completed work; delivered and queued are receipts, not terminal results.",
     inputSchema: strictObject({
       to: boundedIdentifier,
       summary: Type.String({ minLength: 1, maxLength: 200 }),
@@ -759,7 +757,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     permissionClass: "agent.message",
     checkpoint: "none",
     behaviorFixtureIds: ["parent_child_sibling_delivery", "ordered_sequence", "stopped_child_resume", "terminal_recipient_notification", "broadcast_and_cross_session_rejected"],
-    resultSemantics: "Return an ordered delivery receipt after resolving one in-scope collaborator.",
+    resultSemantics: "Return an ordered delivery receipt after resolving one exact live in-scope collaborator by agentId or the child-only parent alias.",
     errorCodes: errors(
       ["recipient_not_found", false, "The local recipient cannot be resolved."],
       ["recipient_out_of_scope", false, "The target is cross-Session, broadcast, team, or cloud-owned."],

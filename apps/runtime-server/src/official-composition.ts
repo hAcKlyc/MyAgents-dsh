@@ -247,7 +247,7 @@ export const composeOfficialRuntimeServices = async (
       permission: Object.freeze({
         autoAllowTools: Object.freeze([]),
         interaction,
-        interactionTimeoutMs: 120_000,
+        interactionRegistrationDeadlineMs: 120_000,
         maxRules: 128,
         mode: "default",
         ruleTtlMs: 86_400_000,

@@ -1044,7 +1044,7 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
   permission: Object.freeze({
     autoAllowTools: Object.freeze([]),
     interaction: hostInteractionProvider,
-    interactionTimeoutMs: 5_000,
+    interactionRegistrationDeadlineMs: 5_000,
     maxRules: 16,
     mode: "default",
     ruleTtlMs: 60_000,
@@ -1145,7 +1145,7 @@ const bindCanonicalToolPlaneConfig = (
     ...canonicalToolPlaneConfig.permission,
     interaction: createHostBackedInteractionProvider(targetComposition, Object.freeze({
       revision: "artifact-interaction-v1",
-      deadlineMs: canonicalToolPlaneConfig.permission.interactionTimeoutMs,
+      deadlineMs: canonicalToolPlaneConfig.permission.interactionRegistrationDeadlineMs,
     })),
   }),
 });

@@ -93,6 +93,8 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from "@deepseek-ai/dsh-sub
 import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { PromptAssembly, PromptContext, PromptSection } from "@deepseek-ai/dsh-system-prompt";
+import { deadline, timeoutOf } from "@deepseek-ai/dsh-timeout";
+import type { Deadline } from "@deepseek-ai/dsh-timeout";
 import { TOOL_TIMEOUT, apply as applyToolCallTimeoutPolicy } from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 import type { TokenMeasurement, TokenMeterConfig } from "@deepseek-ai/dsh-token-meter";
@@ -173,6 +175,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   buildGrepCommand,
   credentialRef,
   createScope,
+  deadline,
   defineTool,
   prepareImageFile,
   foldPlanMode,
@@ -192,6 +195,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   resolveRetryPolicy,
   settingsNamespace,
   startInProcessRun,
+  timeoutOf,
 });
 
 export interface DshPublicSurfaceTypes {
@@ -234,6 +238,7 @@ export interface DshPublicSurfaceTypes {
   subagentSpawnInProcess: [SubagentSpawnInProcessConfig];
   subprocess: [SubprocessHandle, SubprocessSpawnSpec];
   systemPrompt: [PromptAssembly, PromptContext, PromptSection];
+  timeout: [Deadline];
   tools: [ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext];
   tokenMeter: [TokenMeasurement, TokenMeterConfig];
   userQuestions: [AskUserQuestionRequest, UserQuestionProvider];

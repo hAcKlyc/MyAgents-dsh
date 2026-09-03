@@ -22,6 +22,7 @@ import {
 import {
   ProductToolError,
   productRootAgent,
+  runWithProductToolExecutionDeadline,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
 
@@ -912,7 +913,6 @@ export class ProductTaskGraphService extends Service {
         schema: canonicalOutputSchemaForDsh(contract.outputSchema),
       }),
       parameters: canonicalInputSchemaForDsh(contract.inputSchema),
-      ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
     });
   }
 
@@ -925,7 +925,10 @@ export class ProductTaskGraphService extends Service {
         target: `task-graph:${String(rootAgent.session.id)}`,
         tool: "TaskCreate",
       });
-      return this.mutate(context, "myagents/task/created", (before) => {
+      return await runWithProductToolExecutionDeadline(
+        context,
+        CANONICAL_TOOL_CONTRACTS.TaskCreate.timeoutMs,
+        async (context) => this.mutate(context, "myagents/task/created", (before) => {
         if (before.tasks.length >= MAX_TASKS) {
           throw new ProductToolError("task_graph_limit", "Session TaskGraph reached its bounded task limit");
         }
@@ -963,7 +966,8 @@ export class ProductTaskGraphService extends Service {
         const output = Object.freeze({ task, revision: after.revision });
         validateCanonicalToolOutput("TaskCreate", output);
         return output;
-      });
+        }),
+      );
     });
   }
 
@@ -976,11 +980,19 @@ export class ProductTaskGraphService extends Service {
         target: `task:${String(args.taskId)}`,
         tool: "TaskGet",
       });
-      const snapshot = this.snapshot(rootAgent);
-      const task = snapshot.tasks.find((candidate) => candidate.id === args.taskId);
-      if (task === undefined) throw new ProductToolError("task_not_found", `Task does not exist: ${String(args.taskId)}`);
-      this.ctx.productTools.assertCurrent(context, "TaskGet");
-      return Object.freeze({ task, revision: snapshot.revision });
+      return await runWithProductToolExecutionDeadline(
+        context,
+        CANONICAL_TOOL_CONTRACTS.TaskGet.timeoutMs,
+        (context) => {
+          const snapshot = this.snapshot(rootAgent);
+          const task = snapshot.tasks.find((candidate) => candidate.id === args.taskId);
+          if (task === undefined) {
+            throw new ProductToolError("task_not_found", `Task does not exist: ${String(args.taskId)}`);
+          }
+          this.ctx.productTools.assertCurrent(context, "TaskGet");
+          return Object.freeze({ task, revision: snapshot.revision });
+        },
+      );
     });
   }
 
@@ -993,31 +1005,37 @@ export class ProductTaskGraphService extends Service {
         target: `task-graph:${String(rootAgent.session.id)}`,
         tool: "TaskList",
       });
-      const snapshot = this.snapshot(rootAgent);
-      const ordered = [...snapshot.tasks].sort((left, right) =>
-        statusRank(left.status) - statusRank(right.status)
-        || left.createdSequence - right.createdSequence
-        || taskIdOrder(left.id, right.id));
-      let tasks = ordered.slice(0, MAX_LISTED_TASKS);
-      let truncated = ordered.length > tasks.length;
-      while (tasks.length > 0) {
-        const candidate = { tasks, revision: snapshot.revision, truncated };
-        try {
-          if (Buffer.byteLength(JSON.stringify(candidate), "utf8") <= MAX_LIST_OUTPUT_BYTES) {
-            validateCanonicalToolOutput("TaskList", candidate);
-            break;
+      return await runWithProductToolExecutionDeadline(
+        context,
+        CANONICAL_TOOL_CONTRACTS.TaskList.timeoutMs,
+        (context) => {
+          const snapshot = this.snapshot(rootAgent);
+          const ordered = [...snapshot.tasks].sort((left, right) =>
+            statusRank(left.status) - statusRank(right.status)
+            || left.createdSequence - right.createdSequence
+            || taskIdOrder(left.id, right.id));
+          let tasks = ordered.slice(0, MAX_LISTED_TASKS);
+          let truncated = ordered.length > tasks.length;
+          while (tasks.length > 0) {
+            const candidate = { tasks, revision: snapshot.revision, truncated };
+            try {
+              if (Buffer.byteLength(JSON.stringify(candidate), "utf8") <= MAX_LIST_OUTPUT_BYTES) {
+                validateCanonicalToolOutput("TaskList", candidate);
+                break;
+              }
+            } catch {
+              // Deterministically remove only the final ordered task until the canonical projection fits.
+            }
+            tasks = tasks.slice(0, -1);
+            truncated = true;
           }
-        } catch {
-          // Deterministically remove only the final ordered task until the canonical projection fits.
-        }
-        tasks = tasks.slice(0, -1);
-        truncated = true;
-      }
-      if (ordered.length > 0 && tasks.length === 0) {
-        throw new ProductToolError("task_graph_limit", "TaskGraph list cannot fit its canonical output budget");
-      }
-      this.ctx.productTools.assertCurrent(context, "TaskList");
-      return Object.freeze({ tasks: Object.freeze(tasks), revision: snapshot.revision, truncated });
+          if (ordered.length > 0 && tasks.length === 0) {
+            throw new ProductToolError("task_graph_limit", "TaskGraph list cannot fit its canonical output budget");
+          }
+          this.ctx.productTools.assertCurrent(context, "TaskList");
+          return Object.freeze({ tasks: Object.freeze(tasks), revision: snapshot.revision, truncated });
+        },
+      );
     });
   }
 
@@ -1030,7 +1048,10 @@ export class ProductTaskGraphService extends Service {
         target: `task:${String(args.taskId)}`,
         tool: "TaskUpdate",
       });
-      return this.mutate(context, "myagents/task/updated", (before) => {
+      return await runWithProductToolExecutionDeadline(
+        context,
+        CANONICAL_TOOL_CONTRACTS.TaskUpdate.timeoutMs,
+        async (context) => this.mutate(context, "myagents/task/updated", (before) => {
         const taskId = args.taskId as string;
         const patch: JsonObject = {};
         for (const field of TASK_UPDATE_FIELDS) {
@@ -1071,7 +1092,8 @@ export class ProductTaskGraphService extends Service {
         });
         validateCanonicalToolOutput("TaskUpdate", output);
         return output;
-      });
+        }),
+      );
     });
   }
 

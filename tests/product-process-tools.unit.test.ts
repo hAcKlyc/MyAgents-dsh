@@ -709,17 +709,23 @@ describe("canonical process tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("bounds stalled Bash admission and promotes the same process at the legal maximum timeout", async () => {
+  it("does not charge permission waiting to Bash execution and promotes at the legal maximum timeout", async () => {
     vi.useFakeTimers();
     const stalled = await harness();
-    stalled.setPermissionPromise(new Promise(() => undefined));
-    const denied = stalled.execute({ command: "never-spawned", timeout: 600_000 });
+    const permission = Promise.withResolvers<"allow" | "deny">();
+    stalled.setPermissionPromise(permission.promise);
+    const owner = new AbortController();
+    const denied = stalled.execute({ command: "never-spawned", timeout: 600_000 }, owner.signal);
+    let settled = false;
+    void denied.finally(() => { settled = true; });
     await vi.advanceTimersByTimeAsync(600_000);
+    expect(settled).toBe(false);
+    expect(stalled.fakeSubprocess.specs).toHaveLength(0);
+    owner.abort(new Error("operation stopped"));
+    permission.resolve("allow");
     await expect(denied).resolves.toMatchObject({
       isError: true,
-      error: { info: { code: "process_timeout" } },
     });
-    expect(stalled.fakeSubprocess.specs).toHaveLength(0);
     expect(stalled.context.tools.get("Bash")?.timeoutMs).toBeUndefined();
     await stalled.context.fiber.dispose();
 

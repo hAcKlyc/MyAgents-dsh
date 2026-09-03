@@ -144,13 +144,13 @@
       "host/attachment/acquire",
       "host/attachment/release"
     ],
-    "schemaSha256": "e4b9efe7fdaa4904a50ea9744310b98aef828fec9ddfecab9e8c228ab1dc95f8",
+    "schemaSha256": "73cc08a69bd13f47583e9b072ae2a21f1858b5589047676c1c89a77eac22f33c",
     "version": "2.5.0"
   },
   "runtimeActivation": "workstream-evidence-only",
   "stage": "batch-1-w4-a11",
   "tools": {
     "contractProfile": "canonical-agent-experience-v1",
-    "contractSha256": "2c34c434385efee0cd040c9945b7a06e1ea4513c8fbd600b5a8af2c5302ffbcc"
+    "contractSha256": "dee6528e97bff11415526f6cc05d2327cab5df616e02aeb27039e135758bacc2"
   }
 }

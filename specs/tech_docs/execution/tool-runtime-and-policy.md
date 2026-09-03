@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: tool-runtime-and-policy
-updated: 2026-09-02
+updated: 2026-09-04
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decisions:
   - ../../prd/tech_rfc_0.1_agent_experience.md
@@ -33,11 +33,12 @@ visible definition + frozen operation scope
   -> governed PreToolUse transform
   -> validate transformed input against the visible definition
   -> commit authoritative assistant/tool-call representation
-  -> bounded DSH ToolRuntime scheduling and body dispatch
+  -> DSH ToolRuntime scheduling and body dispatch
        -> canonical input validation
        -> operation / catalog / origin / Plan guards
        -> tool-specific workspace / identity guards
-       -> permission, PermissionRequest Hook and interaction
+       -> permission, PermissionRequest Hook and interaction without a human-decision deadline
+       -> post-authorization executor deadline
        -> current-authority revalidation and execution
        -> canonical output validation
   -> PostToolUse transform and transformed-output validation
@@ -45,6 +46,8 @@ visible definition + frozen operation scope
 ```
 
 Visibility and permission remain separate. Hiding a tool does not authorize execution, and a visible definition still revalidates workspace, revision, mode, origin, and hard policy at the delayed execution boundary.
+
+Human waiting is not execution time. Permissionable definitions do not publish a DSH outer timeout that would begin before authorization. Their implementation enters the bounded executor only after the exact permission decision settles. Transport registration/response, network/provider calls, MCP calls, process work and cleanup retain their own bounded owners.
 
 The four permission modes, durable exact-rule lifecycle, blocking interaction path and Host-controlled Plan transition are specified in [Permissions and interactions](./permissions-interactions-and-plan.md). This guide owns their placement in the tool pipeline; that guide owns their detailed policy semantics.
 

@@ -44,12 +44,13 @@ import { link, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setImmediate as yieldImmediate } from "node:timers/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const contexts: Context[] = [];
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.allSettled(contexts.splice(0).map((context) => context.fiber.dispose()));
   await Promise.all(temporaryRoots.splice(0).map((path) => rm(path, { force: true, recursive: true })));
 });
@@ -179,7 +180,7 @@ const mounted = async (options: MountedOptions = {}) => {
         return () => undefined;
       },
     }),
-    interactionTimeoutMs: 1_000,
+    interactionRegistrationDeadlineMs: 1_000,
     maxRules: 8,
     mode: "default",
     ruleTtlMs: 60_000,
@@ -316,6 +317,29 @@ const mounted = async (options: MountedOptions = {}) => {
 };
 
 describe("canonical interaction and DSH-backed plan mode", () => {
+  it("keeps plan approval pending beyond the former outer tool timeout", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const state = await mounted();
+    const entered = state.output(await state.execute("EnterPlanMode", {})) as Readonly<{ planPath: string }>;
+    expect((await state.execute("Write", {
+      content: "# Pending plan\n",
+      file_path: entered.planPath,
+    })).isError).toBe(false);
+    let settlement: ProductLocalInteractionSettlement<unknown> | undefined;
+    state.questionResponders.push((_request, pending) => { settlement = pending; });
+    const exit = state.execute("ExitPlanMode", {});
+    let settled = false;
+    void exit.finally(() => { settled = true; });
+    while (settlement === undefined) await yieldImmediate();
+    expect(settlement).toBeDefined();
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(settled).toBe(false);
+    const reviewId = state.questionRequests.at(-1)?.questions[0]?.id;
+    await settlement.resolve({ answers: [{ id: reviewId, selected: ["Keep planning"] }] });
+    expect(state.output(await exit)).toMatchObject({ disposition: "rejected", mode: "plan" });
+    expect(state.context.tools.get("ExitPlanMode")?.timeoutMs).toBeUndefined();
+  });
+
   it("lets the Host enter and leave durable plan mode at an explicit revision", async () => {
     const state = await mounted();
     const initial = state.planController.snapshot(state.agent);

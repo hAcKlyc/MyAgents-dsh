@@ -153,6 +153,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
   const checkpointRequests: ProductToolCheckpointRequest[] = [];
   const permissions: string[] = [];
   let permissionDecision: "allow" | "deny" = "allow";
+  let permissionPromise: Promise<"allow" | "deny"> | undefined;
   let childAllowedTools: readonly string[] = Object.freeze(["Read", "Write", "Edit", "Glob", "Grep", "ls"]);
   let checkpointFailure: Error | undefined;
   let checkpointOverride: unknown = noOverride;
@@ -171,7 +172,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
   context.provide("productPermission", {
     authorize: (_product: ProductToolContext, request: ProductToolPermissionRequest) => {
       permissions.push(`${request.tool}:${request.target}`);
-      return Promise.resolve(permissionDecision);
+      return permissionPromise ?? Promise.resolve(permissionDecision);
     },
   } as never);
   await context.plugin(ProductToolRuntime, {
@@ -337,6 +338,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
     },
     setCheckpointFailure: (error: Error | undefined) => { checkpointFailure = error; },
     setPermissionDecision: (decision: "allow" | "deny") => { permissionDecision = decision; },
+    setPermissionPromise: (pending: Promise<"allow" | "deny"> | undefined) => { permissionPromise = pending; },
     setChildAllowedTools: (tools: readonly string[]) => { childAllowedTools = Object.freeze([...tools]); },
     setSearchResult: (value: ProductSearchResult) => { searchResult = value; },
     setSearchImplementation: (
@@ -1115,6 +1117,61 @@ describe("canonical filesystem tools", () => {
     });
     expect(lsAbortHits).toBe(1);
     await lsState.context.fiber.dispose();
+  });
+
+  it("starts the canonical execution deadline only after permission settles", async () => {
+    vi.useFakeTimers();
+    const state = await harness();
+    const permission = Promise.withResolvers<"allow" | "deny">();
+    state.setPermissionPromise(permission.promise);
+    let searchAbortHits = 0;
+    let observeSearchStart!: () => void;
+    const searchStarted = new Promise<void>((resolve) => { observeSearchStart = resolve; });
+    state.setSearchImplementation((product) => new Promise((_resolve, reject) => {
+      observeSearchStart();
+      product.signal.addEventListener("abort", () => {
+        searchAbortHits += 1;
+        reject(product.signal.reason instanceof Error ? product.signal.reason : new Error("search aborted"));
+      }, { once: true });
+    }));
+
+    const search = state.execute("Glob", { pattern: "*.ts" });
+    let settled = false;
+    void search.finally(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(settled).toBe(false);
+    expect(searchAbortHits).toBe(0);
+
+    permission.resolve("allow");
+    await searchStarted;
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(search).resolves.toMatchObject({
+      isError: true,
+      error: { info: { code: "TOOL_TIMEOUT" } },
+    });
+    expect(searchAbortHits).toBe(1);
+    await state.context.fiber.dispose();
+  });
+
+  it("does not retain a mutation lock while waiting for human permission", async () => {
+    const state = await harness();
+    const path = join(state.workspace, "permission-lock.txt");
+    await writeFile(path, "before");
+    await state.execute("Read", { file_path: path });
+    const permission = Promise.withResolvers<"allow" | "deny">();
+    state.setPermissionPromise(permission.promise);
+
+    const write = state.execute("Write", { file_path: path, content: "after" });
+    while (!state.permissions.some((entry) => entry.startsWith("Write:"))) {
+      await new Promise<void>((resolve) => { setImmediate(resolve); });
+    }
+    expect(state.context.productTools.locks.size).toBe(0);
+
+    permission.resolve("allow");
+    await expect(write).resolves.toMatchObject({ isError: false });
+    expect(await readFile(path, "utf8")).toBe("after");
+    expect(state.context.productTools.locks.size).toBe(0);
+    await state.context.fiber.dispose();
   });
 
   it("keeps lowercase ls compatibility bounded and fail-closed at the workspace root", async () => {

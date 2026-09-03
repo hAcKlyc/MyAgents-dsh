@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: permissions-interactions-and-plan
-updated: 2026-09-02
+updated: 2026-09-04
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_integration.md
@@ -18,7 +18,7 @@ This module owns the Runtime enforcement plane for tool permission, durable exac
 Exact current behavior is owned by:
 
 - `packages/tool-runtime-product/src/permission.ts` for modes, ordering, durable rules and folds;
-- `packages/runtime-product/src/host-interaction.ts` for reverse interaction registration, settlement, timeout and cancellation;
+- `packages/runtime-product/src/host-interaction.ts` for bounded reverse interaction registration, settlement and cancellation;
 - `packages/tools-interaction/src/runtime.ts` for AskUserQuestion and ProductPlanService;
 - `packages/protocol/src/contract-source.ts` for Host methods and generated wire shapes;
 - focused tests in `tests/product-permission-interaction.unit.test.ts`, `tests/product-interaction-plan.unit.test.ts`, `tests/native-rpc-server.unit.test.ts` and `tests/protocol-contract.unit.test.ts`.
@@ -94,7 +94,11 @@ Target granularity depends on the tool contract. File rules bind the canonical d
 
 ## 5. Blocking interactions
 
-Permission, AskUserQuestion and plan approval register through `host/interaction/request`. Registration acknowledgment does not settle the interaction. The Runtime blocks the owning AgentLoop path until `interaction/respond`, cancellation, timeout or teardown settles it exactly once. Duplicate, late, stale-revision and wrong-operation responses fail closed. Runtime cancellation is projected through `host/interaction/cancel`.
+Permission, AskUserQuestion and plan approval register through `host/interaction/request`. Registration acknowledgment does not settle the interaction. Host registration and response transport are bounded, but an established desktop interaction has no elapsed human-decision timeout. The Runtime blocks the owning AgentLoop path until `interaction/respond`, explicit operation/Session cancellation or teardown settles it exactly once. Duplicate, late, stale-revision and wrong-operation responses fail closed. Runtime cancellation is projected through `host/interaction/cancel`.
+
+Tool execution time is a separate phase. Permissionable definitions omit DSH's outer tool-call timeout, authorize first, and then apply the canonical cooperative executor deadline through `runWithProductToolExecutionDeadline`. `AskUserQuestion` has no executor deadline because waiting for the answer is the tool's purpose. `ExitPlanMode` applies its executor budget independently to Plan reads/transitions on either side of the unbounded review wait. Bash starts its admission/foreground timer only after permission settles; Host tools use their reverse-request deadline, and MCP calls arm their call deadline after authorization. Operation cancellation remains authoritative in every phase.
+
+An unbounded human wait must not retain an execution resource. Governed file mutations release their preflight path lock before prompting and reacquire it under the post-authorization deadline, relying on exact target/version revalidation before publication. Safe HTTP authorizes each redirect origin before acquiring its bounded network slot, so neither a file lock nor Web concurrency capacity is reserved while the user decides.
 
 Permission decisions are `deny`, `allow_once`, `always_allow` and `cancelled`. AskUser and plan approval use `answered` or `cancelled`. Calls sharing the same executing Agent, client operation, origin and exact authorization tuple serialize behind one gate: one prompt is pending at a time, an `always_allow` leader releases matching waiters through the exact operation-local proof, while `allow_once`, deny and cancellation remain call-scoped and allow a later waiter to ask independently. Different Agents or tuples never share settlement.
 

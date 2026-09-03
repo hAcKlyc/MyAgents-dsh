@@ -648,6 +648,22 @@
       ]
     },
     {
+      "id": "timeout",
+      "package": "@deepseek-ai/dsh-timeout",
+      "importPath": "@deepseek-ai/dsh-timeout",
+      "classification": "helper",
+      "batchUse": [
+        "B3-XR-IWC"
+      ],
+      "values": [
+        "deadline",
+        "timeoutOf"
+      ],
+      "types": [
+        "Deadline"
+      ]
+    },
+    {
       "id": "tool-call-timeout-policy",
       "package": "@deepseek-ai/dsh-tool-call-timeout-policy",
       "importPath": "@deepseek-ai/dsh-tool-call-timeout-policy",

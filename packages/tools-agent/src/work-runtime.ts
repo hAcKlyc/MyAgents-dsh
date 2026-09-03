@@ -40,6 +40,7 @@ import {
 } from "@myagents-dsh/tool-contracts";
 import {
   ProductToolError,
+  runWithProductToolExecutionDeadline,
   type ProductToolOperationAuthority,
   type ProductRetainedOutputAuthority,
   type ProductRetainedOutputFile,
@@ -2488,7 +2489,6 @@ export class ProductWorkService extends Service {
       name: "Agent",
       output: Object.freeze({ render: renderJson, schema: canonicalOutputSchemaForDsh(contract.outputSchema) }),
       parameters: canonicalInputSchemaForDsh(contract.inputSchema),
-      ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
     });
   }
 
@@ -2499,8 +2499,9 @@ export class ProductWorkService extends Service {
       execute: (value: unknown, exec: ToolRunContext) => this.trackExecution(async () => {
         const args = validateCanonicalToolInput("TaskStop", value) as JsonObject;
         let caller: Agent;
+        let product: ProductToolContext | undefined;
         if (child === undefined) {
-          const product = this.ctx.productTools.resolve(exec);
+          product = this.ctx.productTools.resolve(exec);
           await this.ctx.productTools.authorize(product, {
             permissionClass: contract.permissionClass,
             target: args.task_id as string,
@@ -2511,7 +2512,13 @@ export class ProductWorkService extends Service {
           caller = await this.childCaller(exec, child, ready);
         }
         try {
-          const output = await this.executeTaskStop(caller, args.task_id as string, exec.signal);
+          const output = product === undefined
+            ? await this.executeTaskStop(caller, args.task_id as string, exec.signal)
+            : await runWithProductToolExecutionDeadline(
+              product,
+              contract.timeoutMs,
+              async (execution) => this.executeTaskStop(caller, args.task_id as string, execution.signal),
+            );
           return validateCanonicalToolOutput("TaskStop", output);
         } catch (error) {
           if (error instanceof ProductToolError) throw error;
@@ -2523,7 +2530,7 @@ export class ProductWorkService extends Service {
       name: "TaskStop",
       output: Object.freeze({ render: renderJson, schema: canonicalOutputSchemaForDsh(contract.outputSchema) }),
       parameters: canonicalInputSchemaForDsh(contract.inputSchema),
-      ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
+      ...(child === undefined || contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
     });
   }
 
@@ -2534,8 +2541,9 @@ export class ProductWorkService extends Service {
       execute: (value: unknown, exec: ToolRunContext) => this.trackExecution(async () => {
         const args = validateCanonicalToolInput("SendMessage", value) as JsonObject;
         let caller: Agent;
+        let product: ProductToolContext | undefined;
         if (child === undefined) {
-          const product = this.ctx.productTools.resolve(exec);
+          product = this.ctx.productTools.resolve(exec);
           await this.ctx.productTools.authorize(product, {
             permissionClass: contract.permissionClass,
             target: args.to as string,
@@ -2546,7 +2554,17 @@ export class ProductWorkService extends Service {
           caller = await this.childCaller(exec, child, ready);
         }
         try {
-          const output = await this.executeSendMessage(caller, args, exec);
+          const output = product === undefined
+            ? await this.executeSendMessage(caller, args, exec)
+            : await runWithProductToolExecutionDeadline(
+              product,
+              contract.timeoutMs,
+              async (execution) => this.executeSendMessage(caller, args, {
+                callId: exec.callId,
+                rootCallId: exec.rootCallId,
+                signal: execution.signal,
+              }),
+            );
           return validateCanonicalToolOutput("SendMessage", output);
         } catch (error) {
           if (error instanceof ProductToolError) throw error;
@@ -2556,7 +2574,7 @@ export class ProductWorkService extends Service {
       name: "SendMessage",
       output: Object.freeze({ render: renderJson, schema: canonicalOutputSchemaForDsh(contract.outputSchema) }),
       parameters: canonicalInputSchemaForDsh(contract.inputSchema),
-      ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
+      ...(child === undefined || contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
     });
   }
 
@@ -2574,39 +2592,50 @@ export class ProductWorkService extends Service {
     const authority = workCreationAuthority(product);
     const taskId = taskIdFor(product);
     const requestSha256 = agentRequestSha256(authority, args);
-    const entry = await this.withLock(taskId, async () => {
-      const existing = this.byTask.get(taskId);
-      if (existing !== undefined) {
-        if (existing.created.requestSha256 !== requestSha256) {
-          throw new ProductToolError("child_failed", "Agent tool call identity was reused with different immutable input");
-        }
-        await exactNativePromise(existing.published.promise, "known Agent creation publication");
-        return existing;
-      }
-      if (this.byTask.size + this.workReservations >= MAX_WORK_ITEMS) {
-        throw new ProductToolError("child_failed", "product work item quota is exhausted");
-      }
-      this.workReservations += 1;
-      try {
-        return await this.executeNewAgent(product, authority, args, taskId, requestSha256);
-      } finally {
-        this.workReservations -= 1;
-      }
+    await this.ctx.productTools.authorize(product, {
+      permissionClass: CANONICAL_TOOL_CONTRACTS.Agent.permissionClass,
+      target: args.description as string,
+      tool: "Agent",
     });
-    if (entry.mode === "continuable") {
-      if (entry.created.outputPath === undefined) {
-        throw new ProductToolError("child_failed", "known background Agent lacks retained output authority");
-      }
-      return Object.freeze({
-        taskId: entry.taskId,
-        agentId: entry.agentId,
-        state: "background" as const,
-        outputPath: entry.created.outputPath,
-        model: entry.created.model,
-      });
-    }
-    const settled = await this.awaitForegroundSettlement(entry, product.signal);
-    return this.foregroundResult(entry, settled);
+    return await runWithProductToolExecutionDeadline(
+      product,
+      CANONICAL_TOOL_CONTRACTS.Agent.timeoutMs,
+      async (product) => {
+        const entry = await this.withLock(taskId, async () => {
+          const existing = this.byTask.get(taskId);
+          if (existing !== undefined) {
+            if (existing.created.requestSha256 !== requestSha256) {
+              throw new ProductToolError("child_failed", "Agent tool call identity was reused with different immutable input");
+            }
+            await exactNativePromise(existing.published.promise, "known Agent creation publication");
+            return existing;
+          }
+          if (this.byTask.size + this.workReservations >= MAX_WORK_ITEMS) {
+            throw new ProductToolError("child_failed", "product work item quota is exhausted");
+          }
+          this.workReservations += 1;
+          try {
+            return await this.executeNewAgent(product, authority, args, taskId, requestSha256);
+          } finally {
+            this.workReservations -= 1;
+          }
+        });
+        if (entry.mode === "continuable") {
+          if (entry.created.outputPath === undefined) {
+            throw new ProductToolError("child_failed", "known background Agent lacks retained output authority");
+          }
+          return Object.freeze({
+            taskId: entry.taskId,
+            agentId: entry.agentId,
+            state: "background" as const,
+            outputPath: entry.created.outputPath,
+            model: entry.created.model,
+          });
+        }
+        const settled = await this.awaitForegroundSettlement(entry, product.signal);
+        return this.foregroundResult(entry, settled);
+      },
+    );
   }
 
   private async awaitForegroundSettlement(
@@ -2663,11 +2692,6 @@ export class ProductWorkService extends Service {
     requestSha256: string,
   ): Promise<WorkEntry> {
     this.assertAccepting();
-    await this.ctx.productTools.authorize(product, {
-      permissionClass: CANONICAL_TOOL_CONTRACTS.Agent.permissionClass,
-      target: args.description as string,
-      tool: "Agent",
-    });
     this.assertAccepting();
     const parentModel = product.agent.options.model;
     const parentProvider = product.agent.options.provider;
@@ -3036,7 +3060,11 @@ export class ProductWorkService extends Service {
     return usageFrom(inspection.events);
   }
 
-  private async executeSendMessage(caller: Agent, args: JsonObject, exec: ToolRunContext): Promise<unknown> {
+  private async executeSendMessage(
+    caller: Agent,
+    args: JsonObject,
+    exec: Pick<ToolRunContext, "callId" | "rootCallId" | "signal">,
+  ): Promise<unknown> {
     await this.initialize();
     const summary = args.summary as string;
     const message = args.message as string;

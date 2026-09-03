@@ -147,7 +147,8 @@ export interface ProductPermissionPlaneConfig {
   readonly mode: ProductPermissionMode;
   readonly autoAllowTools: readonly CanonicalToolName[];
   readonly interaction: ProductLocalInteractionProvider;
-  readonly interactionTimeoutMs: number;
+  /** Bounded deadline for registering an interaction with its Host owner. */
+  readonly interactionRegistrationDeadlineMs: number;
   readonly maxRules: number;
   readonly ruleTtlMs: number;
 }
@@ -454,7 +455,7 @@ const computeRuleRevocationRevision = (
 ]));
 
 export const permissionBaseRevision = (
-  config: Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction" | "interactionTimeoutMs" | "maxRules" | "ruleTtlMs">,
+  config: Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction" | "interactionRegistrationDeadlineMs" | "maxRules" | "ruleTtlMs">,
   sessionId: string,
 ): string => sha256(JSON.stringify([
   "myagents-permission-policy-v1",
@@ -462,7 +463,7 @@ export const permissionBaseRevision = (
   config.mode,
   config.autoAllowTools,
   config.interaction.revision,
-  config.interactionTimeoutMs,
+  config.interactionRegistrationDeadlineMs,
   config.maxRules,
   config.ruleTtlMs,
 ]));
@@ -761,7 +762,7 @@ const validateInteractionProvider = (value: unknown): ProductLocalInteractionPro
 
 export const validateProductPermissionPlaneConfig = (value: unknown): ProductPermissionPlaneConfig => {
   const config = exactOwnDataObject(value, [
-    "mode", "autoAllowTools", "interaction", "interactionTimeoutMs", "maxRules", "ruleTtlMs",
+    "mode", "autoAllowTools", "interaction", "interactionRegistrationDeadlineMs", "maxRules", "ruleTtlMs",
   ], [], "product permission plane config");
   if (typeof config.mode !== "string" || !permissionModes.has(config.mode as ProductPermissionMode)) {
     throw new TypeError("product permission mode is invalid");
@@ -782,7 +783,11 @@ export const validateProductPermissionPlaneConfig = (value: unknown): ProductPer
     mode: config.mode as ProductPermissionMode,
     autoAllowTools: Object.freeze(autoAllowTools),
     interaction: validateInteractionProvider(config.interaction),
-    interactionTimeoutMs: positiveInteger(config.interactionTimeoutMs, 600_000, "permission interaction timeout"),
+    interactionRegistrationDeadlineMs: positiveInteger(
+      config.interactionRegistrationDeadlineMs,
+      600_000,
+      "permission interaction registration deadline",
+    ),
     maxRules: positiveInteger(config.maxRules, 512, "permission maximum rule count"),
     ruleTtlMs: positiveInteger(config.ruleTtlMs, 86_400_000, "permission rule TTL"),
   });
@@ -790,14 +795,14 @@ export const validateProductPermissionPlaneConfig = (value: unknown): ProductPer
 
 const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig => {
   const config = exactOwnDataObject(value, [
-    "mode", "autoAllowTools", "interaction", "interactionTimeoutMs", "maxRules", "ruleTtlMs",
+    "mode", "autoAllowTools", "interaction", "interactionRegistrationDeadlineMs", "maxRules", "ruleTtlMs",
     "clock", "durability",
   ], ["hook", "registerController"], "product permission service config");
   const plane = validateProductPermissionPlaneConfig({
     mode: config.mode,
     autoAllowTools: config.autoAllowTools,
     interaction: config.interaction,
-    interactionTimeoutMs: config.interactionTimeoutMs,
+    interactionRegistrationDeadlineMs: config.interactionRegistrationDeadlineMs,
     maxRules: config.maxRules,
     ruleTtlMs: config.ruleTtlMs,
   });
@@ -1231,7 +1236,7 @@ export class ProductPermissionService extends Service {
       mode: next.mode,
       autoAllowTools: next.autoAllowTools,
       interaction: next.interaction,
-      interactionTimeoutMs: this.configValue.interactionTimeoutMs,
+      interactionRegistrationDeadlineMs: this.configValue.interactionRegistrationDeadlineMs,
       maxRules: this.configValue.maxRules,
       ruleTtlMs: this.configValue.ruleTtlMs,
     });
@@ -1280,7 +1285,7 @@ export class ProductPermissionService extends Service {
       mode: next.mode,
       autoAllowTools: next.autoAllowTools,
       interaction: next.interaction,
-      interactionTimeoutMs: this.configValue.interactionTimeoutMs,
+      interactionRegistrationDeadlineMs: this.configValue.interactionRegistrationDeadlineMs,
       maxRules: this.configValue.maxRules,
       ruleTtlMs: this.configValue.ruleTtlMs,
     });
@@ -1475,10 +1480,6 @@ export class ProductPermissionService extends Service {
     const onAbort = () => controller.abort(context.signal.reason);
     if (context.signal.aborted) controller.abort(context.signal.reason);
     else context.signal.addEventListener("abort", onAbort, { once: true });
-    const timer = setTimeout(
-      () => controller.abort(new ProductPermissionError("interaction_timeout", "permission interaction expired")),
-      this.configValue.interactionTimeoutMs,
-    );
     const interactionId = `permission-${sha256(JSON.stringify([
       context.clientOperationId,
       context.productTurnId,
@@ -1548,7 +1549,6 @@ export class ProductPermissionService extends Service {
       pending.effect?.rejectEffect(error instanceof Error ? error : new Error(String(error)));
       throw error;
     } finally {
-      clearTimeout(timer);
       context.signal.removeEventListener("abort", onAbort);
       this.pending.delete(key);
       if (!controller.signal.aborted) controller.abort(new Error("permission interaction settled"));
@@ -1604,10 +1604,6 @@ export class ProductPermissionService extends Service {
     const onAbort = () => controller.abort(callerSignal?.reason);
     if (callerSignal?.aborted === true) controller.abort(callerSignal.reason);
     else callerSignal?.addEventListener("abort", onAbort, { once: true });
-    const timer = setTimeout(
-      () => controller.abort(new ProductPermissionError("interaction_timeout", "user question interaction expired")),
-      this.configValue.interactionTimeoutMs,
-    );
     const borrowed: AskUserQuestionRequest = Object.freeze({
       questions,
       ...(Object.hasOwn(envelope, "agent") ? { agent: envelope.agent as Agent } : {}),
@@ -1639,7 +1635,6 @@ export class ProductPermissionService extends Service {
       }
       return answer;
     } finally {
-      clearTimeout(timer);
       callerSignal?.removeEventListener("abort", onAbort);
       if (!controller.signal.aborted) controller.abort(new Error("user question interaction settled"));
       this.activeControllers.delete(controller);

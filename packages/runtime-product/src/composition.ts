@@ -1171,7 +1171,7 @@ export const installCanonicalToolPlane = async (
   const permissionConfig = validateProductPermissionPlaneConfig(normalized.permission);
   if (normalized.permission.interaction !== authority.hostInteractionProvider
     || authority.hostInteractionRevision !== permissionConfig.interaction.revision
-    || authority.hostInteractionDeadlineMs !== permissionConfig.interactionTimeoutMs
+    || authority.hostInteractionDeadlineMs !== permissionConfig.interactionRegistrationDeadlineMs
     || authority.hostInteraction === undefined) {
     throw new TypeError(
       "canonical tool plane requires its exact composition-owned Host interaction Provider",

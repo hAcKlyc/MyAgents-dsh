@@ -13,6 +13,7 @@ import {
 } from "@myagents-dsh/tool-contracts";
 import {
   ProductToolError,
+  runWithProductToolExecutionDeadline,
   type ProductToolCheckpointHandle,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
@@ -358,7 +359,6 @@ export class CanonicalFileTools extends Service {
         schema: canonicalOutputSchemaForDsh(contract.outputSchema),
       }),
       parameters: canonicalInputSchemaForDsh(contract.inputSchema),
-      ...(contract.timeoutMs === undefined ? {} : { timeoutMs: contract.timeoutMs }),
     });
   }
 
@@ -372,6 +372,10 @@ export class CanonicalFileTools extends Service {
         target: target.displayPath,
         tool: "Read",
       });
+      return await runWithProductToolExecutionDeadline(
+        product,
+        CANONICAL_TOOL_CONTRACTS.Read.timeoutMs,
+        async (product) => {
       const info = await this.#regularFile(ctx, target, product.signal);
       const extension = extname(target.displayPath).toLowerCase();
       const binary = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf"].includes(extension);
@@ -467,6 +471,8 @@ export class CanonicalFileTools extends Service {
         path: target.displayPath,
         truncated,
       });
+        },
+      );
     });
   }
 
@@ -475,7 +481,7 @@ export class CanonicalFileTools extends Service {
       const product = ctx.productTools.resolve(exec);
       const authority = await this.#authorizedTarget(ctx, product, "Write", args.file_path as string, "write");
       const { target } = authority;
-      const release = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
+      let release = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
       try {
         const current = await ctx.fs.stat(target, product.signal);
         if (current !== undefined && current.type !== "file") {
@@ -495,11 +501,19 @@ export class CanonicalFileTools extends Service {
         if (current === undefined && prior !== undefined) {
           throw new ProductToolError("stale_read", "Write target was removed after its qualifying Read");
         }
+        release();
+        release = () => undefined;
         await ctx.productTools.authorize(product, {
           permissionClass: CANONICAL_TOOL_CONTRACTS.Write.permissionClass,
           target: target.displayPath,
           tool: "Write",
         });
+        return await runWithProductToolExecutionDeadline(
+          product,
+          CANONICAL_TOOL_CONTRACTS.Write.timeoutMs,
+          async (product) => {
+        const executionRelease = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
+        try {
         const content = args.content as string;
         const afterBytes = Buffer.from(content, "utf8");
         const afterSha256 = sha256(content);
@@ -563,6 +577,11 @@ export class CanonicalFileTools extends Service {
           }
           throw error;
         }
+        } finally {
+          executionRelease();
+        }
+          },
+        );
       } finally {
         release();
       }
@@ -578,7 +597,7 @@ export class CanonicalFileTools extends Service {
       }
       const authority = await this.#authorizedTarget(ctx, product, "Edit", path, "write");
       const { target } = authority;
-      const release = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
+      let release = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
       try {
         const info = await this.#regularFile(ctx, target, product.signal);
         const beforeBytes = await ctx.fs.readBytes(target, product.signal, 20 * 1_024 * 1_024);
@@ -605,11 +624,19 @@ export class CanonicalFileTools extends Service {
         if (Buffer.byteLength(next, "utf8") > 8 * 1_024 * 1_024) {
           throw new ProductToolError("mutation_conflict", "Edit result exceeds the mutation bound");
         }
+        release();
+        release = () => undefined;
         await ctx.productTools.authorize(product, {
           permissionClass: CANONICAL_TOOL_CONTRACTS.Edit.permissionClass,
           target: target.displayPath,
           tool: "Edit",
         });
+        return await runWithProductToolExecutionDeadline(
+          product,
+          CANONICAL_TOOL_CONTRACTS.Edit.timeoutMs,
+          async (product) => {
+        const executionRelease = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
+        try {
         const afterSha256 = sha256(next);
         const checkpoint = authority.checkpointEligible
           ? await ctx.productTools.prepareCheckpoint(product, {
@@ -666,6 +693,11 @@ export class CanonicalFileTools extends Service {
           }
           throw error;
         }
+        } finally {
+          executionRelease();
+        }
+          },
+        );
       } finally {
         release();
       }
@@ -681,6 +713,10 @@ export class CanonicalFileTools extends Service {
         target: rootBefore.authorizationTarget.displayPath,
         tool: "Glob",
       });
+      return await runWithProductToolExecutionDeadline(
+        product,
+        CANONICAL_TOOL_CONTRACTS.Glob.timeoutMs,
+        async (product) => {
       const root = await this.#revalidateSearchRoot(
         ctx,
         product,
@@ -729,6 +765,8 @@ export class CanonicalFileTools extends Service {
         numFiles: filenames.length,
         truncated: seen.size > filenames.length,
       });
+        },
+      );
     });
   }
 
@@ -741,6 +779,10 @@ export class CanonicalFileTools extends Service {
         target: rootBefore.authorizationTarget.displayPath,
         tool: "Grep",
       });
+      return await runWithProductToolExecutionDeadline(
+        product,
+        CANONICAL_TOOL_CONTRACTS.Grep.timeoutMs,
+        async (product) => {
       const root = await this.#revalidateSearchRoot(
         ctx,
         product,
@@ -860,6 +902,8 @@ export class CanonicalFileTools extends Service {
         records: Object.freeze(selected),
         truncated,
       });
+        },
+      );
     });
   }
 
@@ -875,6 +919,10 @@ export class CanonicalFileTools extends Service {
         target: rootBefore.authorizationTarget.displayPath,
         tool: "ls",
       });
+      return await runWithProductToolExecutionDeadline(
+        product,
+        CANONICAL_TOOL_CONTRACTS.ls.timeoutMs,
+        async (product) => {
       const rootAuthority = await this.#revalidateSearchRoot(
         ctx,
         product,
@@ -923,6 +971,8 @@ export class CanonicalFileTools extends Service {
       if (truncated.truncated) notices.push("50.0KB limit reached");
       const suffix = notices.length === 0 ? "" : `\n\n[${notices.join(". ")}]`;
       return `${truncated.text}${suffix}`;
+        },
+      );
     });
   }
 
