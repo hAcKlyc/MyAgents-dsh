@@ -227,7 +227,7 @@ Shared conformance suites run against every platform adapter. A target that has 
 | Provider route, model selection, credential references | Host snapshot | Runtime freezes effective profile per operation |
 | Non-secret pi-ai route settings | Root `HostSettingsProvider` projection of the admitted Host profile | In-memory only; atomic replace/rollback; no independent config authority |
 | Secret material | Host credential provider | Request/connection scoped; never persisted or emitted |
-| Provider/API/model compatibility truth | Artifact-bound MyAgents-dsh compatibility manifest plus exact Host profile cell | Runtime validates at admission; Host filters product choices |
+| Provider/API/model compatibility truth | Runtime manifest owns supported API families; Host Product registry owns enabled Providers, models and capabilities | Host compiles one frozen profile; Runtime validates its structure at admission |
 | Runtime generation and primary-session admission | Official runtime profile | Process lifetime |
 | AgentLoop and model-conversation execution | DSH concrete AgentLoop | DSH lifecycle and cancellation |
 | Durable model conversation | DSH Session event log | Persistence provider stores exact events |
