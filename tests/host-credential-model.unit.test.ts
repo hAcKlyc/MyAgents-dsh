@@ -526,6 +526,10 @@ describe("Host credential and model route", () => {
         cacheWriteUsdPerMillionTokens: 4,
       },
     })).toMatchObject({ pricing: { outputUsdPerMillionTokens: 2 } });
+    expect(validateHostDeepSeekProfile({
+      ...profile,
+      inputModalities: ["text"],
+    })).toMatchObject({ inputModalities: ["text"] });
     expect(() => validateHostDeepSeekProfile({
       ...profile,
       pricing: {

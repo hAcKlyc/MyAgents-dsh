@@ -268,10 +268,12 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
     );
   }
   if (candidate.inputModalities !== undefined
-    && JSON.stringify(candidate.inputModalities) !== JSON.stringify(["text", "image"])) {
+    && (candidate.inputModalities.length === 0
+      || candidate.inputModalities[0] !== "text"
+      || new Set(candidate.inputModalities).size !== candidate.inputModalities.length)) {
     throw new ProtocolError(
       "provider_profile_unsupported",
-      "the native DeepSeek route has the fixed text and image modality contract",
+      "the native DeepSeek route accepts a text-first subset of text and image modalities",
     );
   }
   validatePricing(candidate);
@@ -549,7 +551,7 @@ const connectionFor = (profile: ProviderProfile): DeepSeekConnectionOptions => O
     id: profile.modelId,
     imageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
     imagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
-    inputModalities: Object.freeze(["text", "image"] as const) as unknown as ModelModality[],
+    inputModalities: [...(profile.inputModalities ?? ["text", "image"])] as ModelModality[],
     maxTokens: profile.maxTokens,
   })]),
   maxRequestFilesBytes: DEFAULT_MAX_REQUEST_FILES_BYTES,
@@ -683,13 +685,6 @@ export class HostModelAuthority {
       );
     }
     const profile = validateHostProviderProfile(request.params.provider);
-    if (profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE
-      && !this.hostCanonicalWebAvailable()) {
-      throw new ProtocolError(
-        "provider_web_backend_unavailable",
-        "non-DeepSeek Provider admission requires the Host canonical web capability",
-      );
-    }
     const current = this.#binding;
     if (current?.runtimeSessionId === request.runtimeSessionId
       && current.configRevision === request.params.configRevision

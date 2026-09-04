@@ -54,9 +54,9 @@ export interface MyAgentsDshCompatibilityManifestV1 {
     piAiVersion: "0.82.1";
     compatibilityProfileVersion: 1;
     credentialMode: "request-scoped-api-key";
-    routeAdmission: "exact-host-profile";
-    modelCapabilities: "profile-cell-required";
-    webBackend: "host-canonical-web-required";
+    routeAdmission: "host-declared-api-family";
+    modelCapabilities: "host-profile";
+    webBackend: "route-dependent";
     liveApply: "next-turn";
     deterministicEvidence: readonly (
       "reasoning" | "stream" | "terminal" | "text" | "tool-call" | "usage"
@@ -143,9 +143,9 @@ const apiFamilies = Object.freeze(([
   piAiVersion: "0.82.1" as const,
   compatibilityProfileVersion: 1 as const,
   credentialMode: "request-scoped-api-key" as const,
-  routeAdmission: "exact-host-profile" as const,
-  modelCapabilities: "profile-cell-required" as const,
-  webBackend: "host-canonical-web-required" as const,
+  routeAdmission: "host-declared-api-family" as const,
+  modelCapabilities: "host-profile" as const,
+  webBackend: "route-dependent" as const,
   liveApply: "next-turn" as const,
   deterministicEvidence: Object.freeze([
     "reasoning", "stream", "terminal", "text", "tool-call", "usage",
@@ -177,10 +177,6 @@ const features = Object.freeze([
 
 const limitations = Object.freeze([
   Object.freeze({
-    id: "provider-route-cell-required",
-    statement: "An API family does not certify every Provider/model; each visible route requires one exact Host profile and conformance cell.",
-  }),
-  Object.freeze({
     id: "stop-sequences-unsupported-on-pi-ai",
     statement: "GenerateOptions.stop is not available on pi-ai routes in the locked adapter.",
   }),
@@ -197,8 +193,8 @@ const limitations = Object.freeze([
     statement: "The locked public pi-ai adapter exposes reasoning content but does not project provider reasoning-token counts into DSH TokenUsage.",
   }),
   Object.freeze({
-    id: "non-deepseek-web-requires-host",
-    statement: `Non-DeepSeek routes require Host capability ${HOST_CANONICAL_WEB_ADAPTER_ID} for the complete 20-tool catalog.`,
+    id: "canonical-web-route-dependent",
+    statement: `Base model execution does not require Web. Canonical Web tools use the native backend or optional Host capability ${HOST_CANONICAL_WEB_ADAPTER_ID} when available.`,
   }),
   Object.freeze({
     id: "checkpoint-coverage",

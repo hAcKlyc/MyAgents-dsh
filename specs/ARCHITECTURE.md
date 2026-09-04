@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: current
-updated: 2026-09-03
+updated: 2026-09-04
 project: MyAgents-dsh
 ---
 
@@ -17,7 +17,7 @@ The compatibility target is the versioned MyAgents Agent experience admitted by 
 
 ### 1.1 Current implementation and acceptance state
 
-This table is the architecture-level snapshot as of 2026-09-03. The active PRDs remain the acceptance authority.
+This table is the architecture-level snapshot as of 2026-09-04. The active PRDs remain the acceptance authority.
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
@@ -155,7 +155,7 @@ TaskGraph is one of those product-owned plugins. Its canonical Task metadata is 
 
 The official model plane keeps two deliberately different adapter owners behind the one DSH `ctx.llm` service. `dsh-llm-deepseek` exclusively owns `deepseek-official` and its DeepSeek-native Files/search behavior. The accepted patched `dsh-llm-pi-ai@0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a` and separately pinned/patched pi-ai `0.82.1` are mounted dormant and own only Host-declared Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes. The adapter patches preserve generic Provider-owned content through the one DSH conversation; they add no second transport or loop. The required patched `dsh-authorization` peer is packaged explicitly but no authorization service/login flow is mounted or advertised. A root-only in-memory `HostSettingsProvider` atomically replaces its non-secret route document during Session/config admission; it is not a user configuration store. Request middleware holds one reverse-port credential scope across adapter iterator creation, each read and cleanup, and sanitizes both thrown failures and in-stream failure terminals before persistence. Failed admission restores the prior settings and credential binding.
 
-Canonical Web tools remain in the same `ctx.tools` pipeline. `deepseek-official` uses the native DeepSeek web plane; a non-DeepSeek route can exist only when initialization advertises the versioned Host canonical-web capability, in which case `WebSearch` and `WebFetch` dispatch through the existing `host/tool/execute` reverse port after normal schema, policy, permission, Hook and operation-authority checks. The Host selects Search by API family: every admitted Anthropic Messages route uses the Claude Code-compatible nested Messages server tool, while standalone Search products require explicit non-Anthropic cells. Provider-owned activity returned inside a model request remains distinct durable assistant content and projects as `provider_tool`; it does not claim canonical permission/Hooks or drive root loading/terminal state.
+Canonical Web tools remain in the same `ctx.tools` pipeline. `deepseek-official` uses the native DeepSeek web plane; other ordinary API routes use the versioned Host canonical-web capability when it is available, dispatching through the existing `host/tool/execute` reverse port after normal schema, policy, permission, Hook and operation-authority checks. Web availability is route-dependent and never gates base model admission. The Host selects Search by API family: Anthropic Messages uses the Claude Code-compatible nested Messages server tool, while standalone Search products require an explicit backend. Provider-owned activity returned inside a model request remains distinct durable assistant content and projects as `provider_tool`; it does not claim canonical permission/Hooks or drive root loading/terminal state.
 
 ### 4.5 DSH foundation
 

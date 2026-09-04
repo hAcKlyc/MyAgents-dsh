@@ -2,10 +2,11 @@
 type: technical-architecture
 status: implemented
 module: web-and-network
-updated: 2026-09-03
+updated: 2026-09-04
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_dsh_provider_server_tools.md
+  - ../../prd/prd_0.3_myagents_dsh_api_family_provider_portability.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_architecture.md
 ---
 
@@ -30,9 +31,9 @@ Canonical tools always register through DSH `ctx.tools`; only their backend vari
 | --- | --- |
 | `deepseek-official` `WebSearch` | Runtime sends a fixed DeepSeek server-side-search request to `https://api.deepseek.com/anthropic/v1/messages`, resolving the Provider credential only for that request |
 | `deepseek-official` `WebFetch` | Runtime safe-fetches/converts HTTP, HTML, PDF or text content and optionally runs a no-tools utility model |
-| admitted non-DeepSeek route | versioned Host canonical-web adapter through `host/tool/execute`; Anthropic Messages selects Claude Code-compatible nested server search, while any native Search product requires an explicit non-Anthropic compatibility cell |
+| other ordinary API route | optional versioned Host canonical-web adapter through `host/tool/execute`; Anthropic Messages selects Claude Code-compatible nested server search, while any native Search product requires an explicit backend |
 
-Non-DeepSeek Provider admission requires that Host capability so the official 20-tool profile remains coherent. Backend identity is frozen into the operation; changing Provider/config affects a later operation, not an in-flight call. `policyRef` is an operation/session policy identity and revision, not Host-supplied dynamic allow/deny rules; trusted composition owns actual public-host, port, redirect, concurrency and byte policy, and components cannot widen it.
+Web capability does not gate Provider/model admission. Backend identity is frozen into the operation; changing Provider/config affects a later operation, not an in-flight call. `policyRef` is an operation/session policy identity and revision, not Host-supplied dynamic allow/deny rules; trusted composition owns actual public-host, port, redirect, concurrency and byte policy, and components cannot widen it.
 
 One current child-route defect limits the visible catalog: Provider binding is root-owned, but
 `runWebSearchRequest`, `runHostWebRequest` and the Host bridge currently compare/send
@@ -90,7 +91,7 @@ claim that the configured network service itself is unavailable.
 
 ## 8. Architecture-correct change path
 
-Add a backend behind the canonical web Provider/Host capability, not as a second model-visible tool definition. Preserve schemas, root operation authority, controlled provenance/citations and explicit safe-transport ownership. For any broader network feature, state separately whether Runtime or Host owns DNS, redirect, credentials, cancellation and byte limits; add adversarial destination, malformed wire/semantic result and root/foreground-child/background-child tests. Advertise it only in exact Provider/tool compatibility cells.
+Add a backend behind the canonical web Provider/Host capability, not as a second model-visible tool definition. Preserve schemas, root operation authority, controlled provenance/citations and explicit safe-transport ownership. For any broader network feature, state separately whether Runtime or Host owns DNS, redirect, credentials, cancellation and byte limits; add adversarial destination, malformed wire/semantic result and root/foreground-child/background-child tests. Advertise availability only for routes with an implemented backend.
 
 ## 9. Verification and implementation map
 

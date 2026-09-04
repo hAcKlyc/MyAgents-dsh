@@ -87,6 +87,12 @@ describe("MyAgents-dsh integration compatibility manifest", () => {
     expect(manifest.apiFamilies.map(({ id }) => id)).toEqual([
       "anthropic-messages", "openai-completions", "openai-responses",
     ]);
+    expect(manifest.apiFamilies).toMatchObject([
+      { id: "anthropic-messages", routeAdmission: "host-declared-api-family", modelCapabilities: "host-profile", webBackend: "route-dependent" },
+      { id: "openai-completions", routeAdmission: "host-declared-api-family", modelCapabilities: "host-profile", webBackend: "route-dependent" },
+      { id: "openai-responses", routeAdmission: "host-declared-api-family", modelCapabilities: "host-profile", webBackend: "route-dependent" },
+    ]);
+    expect(manifest.limitations.map(({ id }) => id)).not.toContain("provider-route-cell-required");
     expect(manifest.tools).toHaveLength(20);
     expect(manifest.tools.filter(({ availability }) => availability === "route-dependent")
       .map(({ name }) => name)).toEqual(["WebFetch", "WebSearch"]);

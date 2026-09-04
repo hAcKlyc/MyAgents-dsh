@@ -2,10 +2,11 @@
 type: technical-architecture
 status: implemented
 module: compatibility-and-capability-truth
-updated: 2026-09-02
+updated: 2026-09-04
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_integration.md
+  - ../../prd/prd_0.3_myagents_dsh_api_family_provider_portability.md
 implementation_decision: ../../prd/tech_rfc_0.1_verification_release.md
 ---
 
@@ -17,7 +18,7 @@ This guide explains when an installed DSH package or implemented MyAgents module
 
 ## 2. Relationships
 
-- **Owns:** claim-layer vocabulary, capability-intersection rule, Provider/model/tool cell requirements, limitation disclosure and evidence binding.
+- **Owns:** claim-layer vocabulary, capability-intersection rule, tool/route capability requirements, limitation disclosure and evidence binding.
 - **Depends on:** exact Runtime/profile/protocol identities, installed composition, deterministic/native/live evidence and Host capability policy.
 - **Consumed by:** MyAgents handoff ingestion, model/tool selectors, release gates, documentation status and support decisions.
 - **Does not own:** implementation behavior, UI configuration storage, Provider catalogs, test execution or release promotion.
@@ -29,7 +30,7 @@ available in upstream DSH/package
   -> installed by the official composition
   -> admitted by the exact product profile
   -> enabled by admitted Host capabilities/configuration
-  -> verified for one exact Runtime + Host + platform/provider cell
+  -> verified for the exact Runtime + Host + platform and representative routes
   -> eligible to advertise
 ```
 
@@ -40,32 +41,30 @@ capabilities; Runtime returns its fixed candidate capabilities, while numeric li
 by minimum. Provider execution profiles arrive later with create/resume/config apply. Runtime does
 not calculate a final UI surface: the Host owns advertised filtering across these facts.
 
-## 4. Provider and model cells
+## 4. Provider and model portability
 
 The generic pi-ai path supports three API families—Anthropic Messages, OpenAI Chat Completions and
-OpenAI Responses—but an API family is not a wildcard Provider claim. Native
-`deepseek-official` is a separate fixed DeepSeek Adapter route with the official base URL and
-OpenAI-completions wire; it rejects a pi-ai compatibility override. Each visible generic route
+OpenAI Responses. The Host Product registry decides which enabled ordinary API Providers and models
+are selectable, then supplies an exact frozen profile. Native `deepseek-official` is a separate
+DeepSeek adapter route selected only for the official Product endpoint; it rejects pi-ai
+compatibility overrides but accepts the selected Product model and capacity. Each admitted route
 requires:
 
 - one exact Host profile revision, route/model/API family and non-secret options;
 - one request-scoped API-key credential binding;
 - deterministic stream evidence for text, reasoning, tool call, usage and terminal behavior;
-- required Host canonical-web capability for non-DeepSeek routes;
+- structural validation by the installed adapter; and
 - platform/Host evidence at the level claimed by the release.
 
 The installed adapter catalog is advisory. Native cloud/OAuth/subscription routes remain
-unadvertised unless separately implemented and verified. Host UI aliases do not cross the Runtime
-wire. Child Agents inherit the exact parent Provider/model; an optional requested model must equal
-the parent and `modelProfileRef` must equal its birth revision, so a child is not a separate route
-compatibility cell.
+unadvertised unless separately implemented and assigned an execution owner. Host UI aliases do not
+cross the Runtime wire. Child Agents inherit the exact parent Provider/model; an optional requested
+model must equal the parent and `modelProfileRef` must equal its birth revision.
 
-The current Batch 3 integration manifest declares only the three API families plus the requirement
-that model capability be proven by a profile cell. Its `deterministicEvidence` labels are not bound
-to route/model/profile revision, Host identity or an evidence digest. The fake-fetch family tests
-are useful conformance tests, not a machine-verifiable per-Provider/model release matrix. Such
-route/model/Host cells are therefore an external Host/release gate today and cannot be inferred from
-the integration manifest or used alone to populate a selector.
+The Batch 3 integration manifest declares the three supported API families and the family-level
+deterministic evidence categories. Those labels establish adapter conformance, while representative
+packed/live campaigns establish release confidence. They do not own Provider/model selection and
+must never be used to populate a Product selector.
 
 ## 5. Tools, components and platform claims
 
@@ -103,10 +102,9 @@ may be substituted for the other.
 ## 7. Architecture-correct change path
 
 When adding a capability, first implement it in the owning module and official composition, then
-update generated profile/protocol contracts if necessary, declare the narrowest family or actual
-route/model/Host cell at the authority that can bind its evidence, run the required campaigns and
-finally let the active PRD ledger promote it. Do not fill the missing per-cell layer with prose.
-Remove or downgrade a claim whenever any required identity/evidence no longer matches.
+update generated profile/protocol contracts if necessary, declare the narrowest family or optional
+route capability, run the required representative campaigns and let the active PRD ledger promote
+it. Remove or downgrade a claim whenever any required identity/evidence no longer matches.
 
 ## 8. Verification and implementation map
 
