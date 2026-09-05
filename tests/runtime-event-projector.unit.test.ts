@@ -158,6 +158,58 @@ const appendCompletedTurn = (fixture: OperationFixture): void => {
   });
 };
 
+describe("atomic Inbox receipt projection", () => {
+  it.each(["claim", "cancel"] as const)("projects all three child reports after one batch %s", (action) => {
+    const session = Session.create(SessionId(`projection-child-batch-${action}`));
+    const fixture = appendAcceptedOperation(session);
+    session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    const ids = ["report-a", "report-b", "report-c"];
+    const inbox = new Inbox(session, {
+      inserted: () => undefined,
+      claimed: (message, turn) => { session.append("myagents/operation/claimed", {
+        clientOperationId: fixture.clientOperationId, messageId: message.id, dshTurn: turn,
+      }); },
+      discarded: (message) => { session.append("myagents/operation/message", {
+        clientOperationId: fixture.clientOperationId, clientMessageId: `client-${message.id}`,
+        messageId: message.id, kind: "follow_up", state: "cancelled", cancellationReason: "user",
+      }); },
+    });
+    for (const id of ids) {
+      session.append("myagents/operation/message", {
+        clientOperationId: fixture.clientOperationId, clientMessageId: `client-${id}`,
+        messageId: id, kind: "follow_up", state: "queued", contextMessage: true,
+        deliveryTiming: "realtime", inputFingerprint: digest("e"),
+      });
+      inbox.append("next-step", freezeMessage({
+        id: MessageId(id), role: "user", content: [{ type: "text", text: id }],
+        source: { kind: "subagent-report", form: "relay", senderSessionId: SessionId("child") },
+      }));
+    }
+    if (action === "claim") inbox.claim("next-step", 1);
+    else inbox.clear();
+    const receipts = session.snapshotEvents().filter((event) =>
+      (event.type === "myagents/operation/claimed" || event.type === "myagents/operation/message"
+        && event.data.state === "cancelled") && ids.includes(event.data.messageId));
+    expect(receipts).toHaveLength(3);
+    for (const receipt of receipts) {
+      expect(projectSessionEvent(session, receipt, (source, id) =>
+        ids.includes(id) && source?.kind === "subagent-report").filter(({ event }) => event.kind === "queued_message")).toMatchObject([{
+        turnId: fixture.productTurnId,
+        event: { kind: "queued_message", state: action === "claim" ? "delivered" : "cancelled" },
+      }]);
+    }
+    const first = receipts[0];
+    if (first === undefined) throw new Error("batch fixture lacks a receipt");
+    const incomplete = Session.create(SessionId(`projection-incomplete-${action}`));
+    for (const event of session.snapshotEvents().slice(0, first.seq + 1)) incomplete.append(event.type, event.data);
+    const last = incomplete.snapshotEvents().at(-1);
+    if (last === undefined) throw new Error("incomplete fixture lacks its receipt");
+    expect(() => projectSessionEvent(incomplete, last, (source, id) =>
+      ids.includes(id) && source?.kind === "subagent-report")).toThrow(/lacks durable product-operation/);
+  });
+});
+
 const mounted: Context[] = [];
 
 const mountSessionProjections = async (context: Context): Promise<void> => {

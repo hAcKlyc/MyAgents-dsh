@@ -77,6 +77,7 @@ const terminalReservationState = vi.hoisted<{
     whenIdle: () => Promise<void>;
   }>>;
 }>(() => ({ bindings: [] }));
+const disposeComposition = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
 vi.mock("@myagents-dsh/product-profile", async (importOriginal) => {
   const actual = await importOriginal<typeof ProductProfileExports>();
@@ -94,7 +95,7 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
       artifactManifestSha256: profile.ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256,
       artifactVersion: profile.ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion,
       context: context.root,
-      dispose: () => Promise.resolve(),
+      dispose: disposeComposition,
       bindAttachmentLeaseLimit: hostPortLifecycleState.current.bindAttachmentLeaseLimit,
       bindHostCapabilities: () => undefined,
       configApply: (params: MethodParams<"config/apply">) => Promise.resolve(Object.freeze({
@@ -704,6 +705,7 @@ describe("native RPC Cordis service", () => {
 
   it("binds, activates, stops, and drains the sole Host port owner in transport order", async () => {
     const events: string[] = [];
+    disposeComposition.mockImplementationOnce(() => { events.push("dispose-composition"); return Promise.resolve(); });
     const hostPorts: HostPortLifecycle = {
       activate: () => { events.push("activate"); },
       bindAttachmentLeaseLimit: (limit) => { events.push(`attachment-leases:${String(limit)}`); },
@@ -751,6 +753,7 @@ describe("native RPC Cordis service", () => {
     expect(events.indexOf("stop:shutdown")).toBeGreaterThan(events.indexOf("activate"));
     expect(events.indexOf("close-host-ports")).toBeGreaterThan(events.indexOf("stop:shutdown"));
     expect(events.indexOf("retire-session")).toBeGreaterThan(events.indexOf("close-host-ports"));
+    expect(events.indexOf("dispose-composition")).toBeGreaterThan(events.indexOf("retire-session"));
 
     await root.fiber.dispose();
     host.close();

@@ -2,7 +2,7 @@
 type: technical-architecture
 status: source-candidate
 module: event-projection-and-reconciliation
-updated: 2026-09-03
+updated: 2026-09-06
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
 ---
@@ -56,6 +56,12 @@ Operation correlation during live projection and close uses ProductWork's export
 root-context proof. It never calls `ProductSessionService.requireAgent()` or dynamically resolves
 ProductWork merely to interpret durable history; a closing generation therefore uses the same
 fail-closed ownership rule as cold validation and operation retirement.
+
+DSH removes an Inbox batch before publishing its synchronous per-message claim/cancellation
+receipts. Projection validates each receipt through the adjacent receipts of that same boundary,
+so the first of several simultaneous child reports is not mistaken for an incomplete durable
+claim. The strict fold still rejects a missing sibling receipt or contradictory ownership; it
+does not consume arbitrary future Session history.
 
 `tool/update`, general `session`, user/tool-result `message_event`, interaction,
 component/catalog, checkpoint, retry and warning remain schema-only in this projector. Billing

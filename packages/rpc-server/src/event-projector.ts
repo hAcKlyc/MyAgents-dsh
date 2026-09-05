@@ -558,6 +558,23 @@ const planProjection = (
 
 const ownsNoRootContextMessage: RootContextMessageOwnership = () => false;
 
+// DSH removes a whole Inbox batch before emitting its synchronous per-message
+// receipts. A prefix ending at the first receipt is intentionally incomplete.
+// Include only the adjacent receipts from that same claim/discard boundary;
+// the strict fold still rejects missing or contradictory ownership.
+const receiptBoundaryEvents = (events: readonly SessionEvent[], source: SessionEvent): readonly SessionEvent[] => {
+  let end = source.seq + 1;
+  for (; end < events.length; end += 1) {
+    const next = events[end];
+    if (source.type === "myagents/operation/claimed"
+      && next?.type === source.type && next.data.dshTurn === source.data.dshTurn) continue;
+    if (source.type === "myagents/operation/message" && source.data.state === "cancelled"
+      && next?.type === source.type && next.data.state === "cancelled") continue;
+    break;
+  }
+  return events.slice(0, end);
+};
+
 export const projectSessionEvent = (
   session: Session,
   source: SessionEvent,
@@ -584,7 +601,7 @@ export const projectSessionEvent = (
     case "myagents/operation/message": {
       const operation = findProductOperation(
         foldProductOperations(
-          events.slice(0, source.seq + 1),
+          receiptBoundaryEvents(events, source),
           session.id,
           ownsRootContextMessage,
         ),
@@ -605,7 +622,7 @@ export const projectSessionEvent = (
     case "myagents/operation/claimed": {
       const operation = findProductOperation(
         foldProductOperations(
-          events.slice(0, source.seq + 1),
+          receiptBoundaryEvents(events, source),
           session.id,
           ownsRootContextMessage,
         ),

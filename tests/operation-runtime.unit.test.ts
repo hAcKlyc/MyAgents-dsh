@@ -564,6 +564,33 @@ describe("durable product-operation fold", () => {
     expect(fixture.service.get({ clientOperationId: request.clientOperationId }).admission).toMatchObject({ origin: "collaboration" });
   });
 
+  it("claims three child reports together inside the active user operation", async () => {
+    const ids = ["child-report-a", "child-report-b", "child-report-c"];
+    const fixture = await mountService(undefined, undefined, undefined, undefined, undefined, true, undefined, undefined,
+      (agent, source, messageId) => ids.includes(messageId) && source?.kind === "subagent-report"
+        && source.senderSessionId === "actual-child"
+        && agent.session.snapshotEvents().some((event) => event.type === "agent/inbox/spliced"
+          && event.data.inserted.some((message) => message.id === messageId)));
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    for (const id of ids) {
+      const message = freezeMessage({ id: MessageId(id), role: "user", content: [{ type: "text", text: id }], source: {
+        kind: "subagent-report", form: "relay", senderSessionId: SessionId("actual-child"),
+      } });
+      await fixture.service.deliverContext(fixture.agent, {
+        ...params(`collaboration-${id}`), input: { parts: [{ kind: "text", text: id }] },
+      }, message, "realtime");
+    }
+    expect(fixture.inbox.claim("next-step", 1).map((message) => message.id)).toEqual(ids);
+    expect(fixture.service.lookup("operation-1")).toMatchObject({
+      dshTurns: [1], messages: [
+        { state: "claimed" },
+        ...ids.map((messageId) => ({ messageId, contextMessage: true, state: "claimed" })),
+      ],
+    });
+  });
+
   it("accepts recovery-wake completion after the synchronous wake claimed its message", async () => {
     const fixture = await mountService();
     await fixture.service.start(params());

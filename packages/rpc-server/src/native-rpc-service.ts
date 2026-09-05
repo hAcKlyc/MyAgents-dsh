@@ -463,12 +463,14 @@ export class NativeRpcServer extends Service {
     this.stoppedPromise = this.exitRequestedPromise.then(async (exit) => {
       const failures: unknown[] = [];
       try {
-        await compositionAuthority.dispose();
+        // Retire Product work while its DSH Session/persistence services still
+        // exist. Cordis scope disposal removes those services concurrently.
+        await this.disposeTransport();
       } catch (error) {
         failures.push(error);
       }
       try {
-        await this.disposeTransport();
+        await compositionAuthority.dispose();
       } catch (error) {
         if (!failures.includes(error)) failures.push(error);
       }

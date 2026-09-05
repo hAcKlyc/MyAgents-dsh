@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: process-lifecycle-and-rpc
-updated: 2026-09-02
+updated: 2026-09-06
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decisions:
   - ../../prd/tech_rfc_0.1_runtime_architecture.md
@@ -63,6 +63,10 @@ Lifecycle has three admission barriers:
 The exact native phases are `await_initialize`, `initialize_response_pending`, `await_initialized`, `ready`, shutdown/termination, and `disposed`. Requests outside their allowed phase fail rather than racing an unpublished authority. Native RPC consumes the direct-root composition authority once; it cannot be installed twice over the same graph.
 
 Shutdown closes admission, cancels or settles owned work according to the protocol, drains reverse requests and persistence, retires the root Agent/Session, disposes the Cordis scope, and exits. Persistence initialization failure, transport/event-projection/Session-settlement fatal, or failure to start native RPC commits process termination; lifecycle starts a bounded forced-exit deadline and cleans up an already built composition. EOF, browser disconnect, or transport loss is never interpreted as Turn success. Normal shutdown exits `0`, SIGINT `130`, SIGTERM `143`, and other fatal termination `1`.
+
+Fatal cleanup also retires Product work and drains native projection before disposing the
+composition scope. Session and persistence services remain available to retirement guards;
+their Cordis removal cannot race the child ledger's final durable settlements.
 
 ## 5. Product operation over DSH turns
 

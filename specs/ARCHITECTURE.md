@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: current
-updated: 2026-09-04
+updated: 2026-09-06
 project: MyAgents-dsh
 ---
 
@@ -296,6 +296,10 @@ process start
 One generation owns at most one primary root session. After the primary session is retired, the official v1 profile does not silently adopt an unrelated primary session; a new generation is started. Child and forked work may own subordinate DSH sessions according to their explicit owner.
 
 EOF, malformed stdout input, incompatible protocol, or an unrecoverable persistence invariant terminates the generation after bounded cleanup. No transport state is interpreted as an Agent turn success.
+
+[Native cleanup](./tech_docs/runtime/process-lifecycle-and-rpc.md) retires Product work before
+disposing its Cordis services. [Event projection](./tech_docs/runtime/event-projection-and-reconciliation.md)
+validates synchronous Inbox receipt batches as complete boundaries while preserving each message's identity.
 
 ## 8. Operation and turn model
 
