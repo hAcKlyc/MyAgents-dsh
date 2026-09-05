@@ -27,15 +27,15 @@ describe("Runtime artifact public export projection", () => {
     ]))).toThrow("authorization peer authority");
   });
 
-  it("projects the two-version typebox graph without floating Node types", () => {
+  it("projects the shared typebox graph without floating Node types", () => {
     expect(projectRuntimeConsumerOverrides({
       "@earendil-works/pi-ai": "0.84.2",
-      typebox: "1.1.38",
+      typebox: "1.3.7",
       zod: "4.4.3",
     })).toEqual({
       "@types/node": "24.13.3",
     });
-    expect(() => projectRuntimeConsumerOverrides({ typebox: "1.3.7" }))
+    expect(() => projectRuntimeConsumerOverrides({ typebox: "1.1.38" }))
       .toThrow("differs from the public pi-ai graph");
   });
 

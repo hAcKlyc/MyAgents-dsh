@@ -377,7 +377,7 @@ const fixturePlanPath = join(
   `${createHash("sha256").update("myagents-plan-artifact-v1\0").update("dsh-artifact-primary").digest("hex")}.md`,
 );
 await Promise.all([
-  mkdir(fixtureWorkspace),
+  mkdir(fixtureWorkspace, { recursive: true }),
   mkdir(fixtureRuntimeHome),
   mkdir(fixtureForkRuntimeHome),
   mkdir(fixtureAbortedForkRuntimeHome),
@@ -700,7 +700,7 @@ const workstream3LifecycleEvidence = Object.freeze({
 adapter.enqueue({
   kind: "complete",
   text: ["first ", "completion"],
-  usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3 },
+  usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 0 },
 });
 adapter.enqueue({
   kind: "complete",
@@ -2607,7 +2607,7 @@ const firstAssistant = primaryAgent.session.snapshotEvents().find(({ type }) => 
 assert.ok(firstAssistant?.type === "assistant/message");
 assert.deepEqual(
   firstAssistant.data.usage,
-  { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3 },
+  { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 0 },
 );
 
 const imageAttachmentEvidenceStart = hostAttachmentEvidence.length;
@@ -2655,7 +2655,7 @@ assert.deepEqual(imageInputMessage.content, [
     type: "image",
     attachment: {
       attachmentId: normalizedImageAttachmentId,
-      mediaType: "image/png",
+      mediaType: "image/webp",
       bytes: normalizedImageAttachment.bytes.byteLength,
       width: 1,
       height: 1,
@@ -3501,9 +3501,17 @@ const backgroundAgentId = backgroundAgentAdmission.agentId as string;
 const backgroundAgentOutputPath = backgroundAgentAdmission.outputPath as string;
 const [backgroundAgentSnapshot] = composition.context.productWork.snapshot();
 assert.ok(backgroundAgentSnapshot);
-const { startedAt: backgroundAgentStartedAt, ...backgroundAgentStableSnapshot } = backgroundAgentSnapshot;
+const { startedAt: backgroundAgentStartedAt, lastActivityAt: backgroundLastActivityAt, activation: backgroundActivation, handleRevision: backgroundHandleRevision, ...backgroundAgentStableSnapshot } = backgroundAgentSnapshot;
+assert.match(backgroundLastActivityAt, /^\d{4}-\d{2}-\d{2}T/u);
+assert.match(backgroundActivation.id, /^[a-f0-9]{64}$/u);
+assert.equal(backgroundActivation.ordinal, 1);
+assert.equal(backgroundActivation.state, "running");
+assert.ok(Number.isSafeInteger(backgroundHandleRevision) && backgroundHandleRevision >= 0);
 assert.match(backgroundAgentStartedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
 assert.deepEqual(backgroundAgentStableSnapshot, {
+  handleState: "open",
+  modelRoute: { provider: "fixture", profileRevision: "artifact-provider-v1", selection: "inherit" },
+  tree: { rootAgentId: primaryAgent.id, parentAgentId: primaryAgent.id, depth: 1 },
   agentId: backgroundAgentId,
   agentType: "release-reviewer",
   description: "Audit retained worker output",
@@ -3526,7 +3534,7 @@ assert.match(childRequest.system ?? "", /bounded declarative release reviewer/u)
 assert.match(childRequest.system ?? "", /frozen declarative Skill document/u);
 await waitUntil(
   () => primaryAgent.session.snapshotEvents().some((event) => event.type === "agent/inbox/spliced"
-    && event.data.inserted.some((message) => message.source.kind === "subagent-report"
+    && event.data.inserted.some((message) => message.source.kind === "agent-message"
       && message.source.senderSessionId === backgroundAgentId)),
   "background child report insertion",
 );
@@ -3612,6 +3620,9 @@ const {
   finishedAt: stoppedAgentFinishedAt,
   result: stoppedAgentResult,
   startedAt: stoppedAgentStartedAt,
+  lastActivityAt: stoppedLastActivityAt,
+  activation: stoppedActivation,
+  handleRevision: stoppedHandleRevision,
   ...stoppedAgentStableSnapshot
 } = stoppedAgentSnapshot;
 assert.match(stoppedAgentStartedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
@@ -3621,7 +3632,15 @@ assert.equal(
   stoppedAgentResult,
   `subagent ${backgroundAgentId} settled without a closing message (aborted)`,
 );
+assert.ok(stoppedLastActivityAt >= stoppedAgentFinishedAt);
+assert.equal(stoppedActivation.id, backgroundActivation.id);
+assert.equal(stoppedActivation.ordinal, 1);
+assert.equal(stoppedActivation.state, "aborted");
+assert.ok(stoppedHandleRevision > backgroundHandleRevision);
 assert.deepEqual(stoppedAgentStableSnapshot, {
+  handleState: "closed",
+  modelRoute: { provider: "fixture", profileRevision: "artifact-provider-v1", selection: "inherit" },
+  tree: { rootAgentId: primaryAgent.id, parentAgentId: primaryAgent.id, depth: 1 },
   agentId: backgroundAgentId,
   agentType: "release-reviewer",
   description: "Audit retained worker output",
@@ -3632,14 +3651,8 @@ assert.deepEqual(stoppedAgentStableSnapshot, {
   resultTruncated: false,
   state: "aborted",
   taskId: backgroundAgentTaskId,
-  usage: {
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    inputTokens: 1,
-    outputTokens: 1,
-    totalTokens: 2,
-  },
 });
+assert.equal(stoppedAgentSnapshot.usage, undefined, "an aborted unreported attempt must not become zero usage");
 
 adapter.enqueue({
   calls: [{
@@ -3672,12 +3685,18 @@ assert.match(
 const workEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type.startsWith("myagents/work/"));
 assert.deepEqual(workEvents.map(({ type }) => type), [
   "myagents/work/created",
+  "myagents/work/started",
+  "myagents/work/phase",
   "myagents/work/message-intent",
   "myagents/work/message",
+  "myagents/work/phase",
+  "myagents/work/phase",
   "myagents/work/message-intent",
   "myagents/work/message",
   "myagents/work/stopping",
   "myagents/work/epoch",
+  "myagents/work/message-intent",
+  "myagents/work/message",
   "myagents/work/settled",
 ]);
 const workEpoch = workEvents.find(({ type }) => type === "myagents/work/epoch");
@@ -3806,8 +3825,7 @@ const cancelledHostInteractionTerminal = composition.context.sdkOperations
 assert.equal(cancelledHostInteractionTerminal?.kind, "aborted");
 assert.equal(cancelledHostInteractionTerminal.reason, "user");
 const cancelledHostInteractionUsage = cancelledHostInteractionTerminal.usage;
-assert.ok(cancelledHostInteractionUsage);
-assert.equal(cancelledHostInteractionUsage.totalTokens, 2);
+assert.equal(cancelledHostInteractionUsage, undefined, "unreported cache buckets remain unknown after cancellation");
 hostInteractionResponses.push(await hostClient.interactionRespond({
   interactionId: heldHostInteraction.interactionId,
   expectedRevision: heldHostInteraction.desiredPolicyRevision,

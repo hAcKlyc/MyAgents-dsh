@@ -215,7 +215,7 @@ const runtimePackageWorkspaces = [
 ] as const;
 const runtimeVendoredExternalPackages = ["typebox", "@earendil-works/pi-ai"] as const;
 const runtimeVendoredExternalRoots = ["typebox@1.3.7"] as const;
-const officialPiAiTypeboxVersion = "1.1.38" as const;
+const officialPiAiTypeboxVersion = "1.3.7" as const;
 const runtimeNodeTypesVersion = "24.13.3" as const;
 const officialPiAiAdapterPackage = "@deepseek-ai/dsh-llm-pi-ai" as const;
 const officialPiAiAuthorizationPeerPackage = "@deepseek-ai/dsh-authorization" as const;
@@ -1857,55 +1857,59 @@ const main = (): void => {
     const projectedEvents = eventEnvelopes.map(({ event }, index) =>
       exactObject(event, `observed Runtime event payload ${String(index)}`));
     const expectedEventKinds = [
+      // Only the first request reports every usage bucket; all later usage is unknown.
       // Nominal success, follow-up success, and provider failure.
       "turn_admitted", "turn_started", "queued_message", "context",
       "assistant_delta", "assistant_delta", "message_event", "usage", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "assistant_delta",
-      "message_event", "usage", "turn_terminal",
+      "message_event", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "assistant_delta",
-      "message_event", "usage", "turn_terminal",
+      "message_event", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",
       // Canonical text/binary file, process-search, and Web tool operations.
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "message_event", "usage", "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "message_event", "usage", "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "message_event", "assistant_delta", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "message_event", "assistant_delta", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
       // Interaction, plan workflow, and Task graph operations.
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "message_event", "usage", "message_event", "usage", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "message_event", "usage", "message_event", "usage", "message_event", "usage",
-      "message_event", "usage", "message_event", "usage", "message_event", "usage",
-      "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "message_event", "message_event", "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "message_event", "message_event", "message_event",
+      "message_event", "message_event", "message_event",
+      "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
       // Declarative Command/Skill, Host tool, four ProductWork operations, and retained process output.
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage",
-      "assistant_delta", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
+      // Explicit child message is queued, then wakes a second native turn in the same operation.
+      "turn_admitted", "turn_started", "queued_message", "message_event", "queued_message",
+      "assistant_delta", "message_event", "turn_started", "queued_message",
+      "assistant_delta", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
+      // Stop emits one epoch report, queued and consumed before terminal publication.
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "queued_message", "turn_started", "queued_message",
+      "assistant_delta", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event",
+      "assistant_delta", "message_event", "turn_terminal",
       // Host-interaction cancellation, process abort, running/queued cancellation, and Session close.
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "usage", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "turn_terminal",
+      "turn_admitted", "turn_started", "queued_message", "message_event", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "assistant_delta",
       "turn_admitted", "queued_message", "message_event", "turn_terminal", "turn_terminal",
       "turn_admitted", "turn_started", "queued_message", "turn_terminal",

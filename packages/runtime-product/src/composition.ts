@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+import { AgentCollaborationPolicy } from "./collaboration-policy.js";
 import { Context } from "@deepseek-ai/cordis";
 import type { Plugin } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
@@ -1489,7 +1491,22 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(ProductWorkService, {
       durability: Object.freeze({
         flush: async (session: Session) => {
-          await permissionDeadline.wait(root.sessions.flush(session), "product work durability flush");
+          if (root.sessions.get(session.id) === session) {
+            if (!await permissionDeadline.wait(root.sessions.flush(session), "product work durability flush")) {
+              throw new Error("ProductWork has no participating persistence provider");
+            }
+          } else {
+            // DSH emits subagent/end after final flush and handle disposal. Verify
+            // the captured immutable prefix through persistence; a detached Session
+            // cannot be sent back through the live SessionStore flush entry point.
+            const persisted = await permissionDeadline.wait(root.sessionPersistence.inspect(session.id), "completed child durability inspection");
+            const captured = session.snapshotEvents();
+            if (session.header.origin !== "subagent" || !isDeepStrictEqual(persisted.meta, session.header)
+              || persisted.events.length < captured.length
+              || !isDeepStrictEqual(persisted.events.slice(0, captured.length), captured)) {
+              throw new Error("completed child differs from its durable Session prefix");
+            }
+          }
           return true as const;
         },
       }),
@@ -1539,8 +1556,9 @@ export const installCanonicalToolPlane = async (
         return config ?? { maxDepth: 1, maxActiveChildren: 32, maxRetainedChildren: 256 };
       },
       selectModel: (parent, role, requested, declaredProfileRef) => {
-        const policy = authority.hostModelAuthority?.collaborationPolicy();
-        if (policy === undefined || parent.options.provider === undefined || parent.options.model === undefined) {
+        const policy = authority.hostModelAuthority?.collaborationPolicy()
+          ?? new AgentCollaborationPolicy(root.productSession.requireOperationModelProfile());
+        if (parent.options.provider === undefined || parent.options.model === undefined) {
           throw new ProtocolError("child_model_unavailable", "Child model selection requires the admitted Host model policy");
         }
         const selected = policy.select({ provider: parent.options.provider, model: parent.options.model }, role, requested, declaredProfileRef);
@@ -1552,8 +1570,10 @@ export const installCanonicalToolPlane = async (
         });
       },
       assertModel: (binding) => {
-        const profile = authority.hostModelAuthority?.collaborationPolicy().requireProfile(binding.profileRevision);
-        if (profile?.modelId !== binding.model || profile.providerRouteId !== binding.provider) {
+        const policy = authority.hostModelAuthority?.collaborationPolicy()
+          ?? new AgentCollaborationPolicy(root.productSession.requireOperationModelProfile());
+        const profile = policy.requireProfile(binding.profileRevision);
+        if (profile.modelId !== binding.model || profile.providerRouteId !== binding.provider) {
           throw new ProtocolError("child_model_unauthorized", "The child's frozen model route is no longer authorized");
         }
       },

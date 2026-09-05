@@ -58,6 +58,8 @@ Agent tool call with exact operation authority
   -> retain the child identity/context for follow-up; TaskStop closes the handle
 ```
 
+Composition verifies a child completion against the public persistence provider when DSH has already flushed and disposed its Session handle before `subagent/end`. It requires the exact subagent header and complete captured event prefix; detached handles never re-enter SessionStore flush. Trusted builder adapters without a Host model plane inherit only the admitted root model profile through the same collaboration policy; they cannot select additional routes.
+
 Both modes use continuable DSH children. Omitted/true `run_in_background` returns a handle and retained output path; false waits for the first activation's durable result rather than handle closure. General, Explore, Plan and dynamic roles retain context after completion. Existing durable settlements remain closed facts. Protocol 2.6 source snapshots separate `activation` (stable child/start identity, ordinal and execution state) from `handleState` (open/stopping/closed). New reserved births use `myagents/work/created` before DSH materialization and `myagents/work/started` for the exact initial Inbox boundary. The initial activation identity is stable while queued; legacy child/start identities remain unchanged. Later native starts append `myagents/work/activated`, and durable epochs own completed output and usage. `myagents/work/phase` records the activation ordinal and queued/running/child/interaction/delivery wait transitions. An answered interaction may be queued for capacity before execution resumes. Closing an idle handle preserves the completed activation's result and timestamps.
 
 ## 5. Messaging and stopping
