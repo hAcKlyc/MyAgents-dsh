@@ -59,8 +59,8 @@ describe("candidate-v2 protocol authority", () => {
     expect(hostMethods).toHaveLength(44);
     expect(reverseMethods).toHaveLength(7);
     expect(Object.keys(RPC_NOTIFICATIONS)).toHaveLength(4);
-    expect(CANONICAL_TOOL_NAMES).toHaveLength(20);
-    expect(new Set(CANONICAL_TOOL_NAMES)).toHaveLength(20);
+    expect(CANONICAL_TOOL_NAMES).toHaveLength(24);
+    expect(new Set(CANONICAL_TOOL_NAMES)).toHaveLength(24);
   });
 
   it("regenerates every checked-in projection byte-for-byte", async () => {

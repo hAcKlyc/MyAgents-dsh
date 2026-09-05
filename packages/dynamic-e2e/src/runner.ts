@@ -216,16 +216,10 @@ const createInitializeParams = (
       },
       executables: {
         bundledNodeRef: "bundled-node",
-        bashRef: "bundled-bash",
+        shellRef: "runtime-shell",
         ripgrepRef: "bundled-ripgrep",
-        ...(target === "win32-x64" ? {
-          windowsPowerShellRef: "bundled-powershell",
-          windowsUtf8PreludeRef: "windows-utf8-v1",
-        } : {}),
-        bashDialect: "bash",
-        allowedCommandRefs: target === "win32-x64"
-          ? ["bundled-bash", "bundled-node", "bundled-powershell", "bundled-ripgrep"]
-          : ["bundled-bash", "bundled-node", "bundled-ripgrep"],
+        shellDialect: target === "win32-x64" ? "pwsh" : "bash",
+        allowedCommandRefs: ["runtime-shell", "bundled-node", "bundled-ripgrep"],
         pathPolicy: "sealed",
       },
       environment: {

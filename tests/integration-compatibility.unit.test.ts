@@ -80,7 +80,7 @@ beforeAll(() => {
 afterAll(() => { rmSync(root, { force: true, recursive: true }); });
 
 describe("MyAgents-dsh integration compatibility manifest", () => {
-  it("binds the exact artifact, three API families, 20 tools, methods, ports, and honest platforms", () => {
+  it("binds the exact artifact, three API families, 24 tools, methods, ports, and honest platforms", () => {
     const artifact = verifyInstalledRuntimeArtifact(root);
     const manifest = createMyAgentsDshCompatibilityManifest(artifact, generatedClientSha256, platforms);
     expect(manifest.runtime.artifactSha256).toBe(artifact.manifestSha256);
@@ -93,7 +93,7 @@ describe("MyAgents-dsh integration compatibility manifest", () => {
       { id: "openai-responses", routeAdmission: "host-declared-api-family", modelCapabilities: "host-profile", webBackend: "route-dependent" },
     ]);
     expect(manifest.limitations.map(({ id }) => id)).not.toContain("provider-route-cell-required");
-    expect(manifest.tools).toHaveLength(20);
+    expect(manifest.tools).toHaveLength(24);
     expect(manifest.tools.filter(({ availability }) => availability === "route-dependent")
       .map(({ name }) => name)).toEqual(["WebFetch", "WebSearch"]);
     expect(manifest.hostPorts).toHaveLength(7);

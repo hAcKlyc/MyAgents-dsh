@@ -18,6 +18,7 @@ const bootstrapSources = [
   "packages/protocol/src/tool-catalog-schema.ts",
   "packages/tool-contracts/src/contract-source.ts",
   "packages/tool-contracts/src/schema.ts",
+  "packages/tool-contracts/generated/official-shell-tools-v1.json",
 ] as const;
 
 const verifyMissingGeneratedBootstrap = async (): Promise<void> => {

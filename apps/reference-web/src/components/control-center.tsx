@@ -15,7 +15,7 @@ import type {
 
 const componentKinds = ["skill", "mcp", "agent", "command", "hook", "host_tool"] as const;
 const canonicalTools = [
-  "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls", "WebFetch", "WebSearch",
+  "Read", "Write", "Edit", "Glob", "Grep", "bash", "pwsh", "job_output", "job_list", "job_kill", "ls", "WebFetch", "WebSearch",
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "Skill", "Agent", "TaskStop",
   "SendMessage", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
 ] as const;

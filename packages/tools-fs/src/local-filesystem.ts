@@ -39,7 +39,6 @@ import {
 } from "@myagents-dsh/product-profile";
 import type {
   ProductProcessIoAuthority,
-  ProductProcessOutputFile,
   ProductProcessWorkspaceAuthority,
 } from "@myagents-dsh/tools-process";
 import type {
@@ -59,7 +58,6 @@ import type {
 } from "@myagents-dsh/tools-interaction";
 
 type BigStat = Awaited<ReturnType<typeof lstat>>;
-const MAX_RETAINED_OUTPUT_BYTES = 262_144;
 const MAX_PLAN_ARTIFACT_BYTES = 240_000;
 const MAX_WORK_ITEMS_FOR_OUTPUT_RECOVERY = 256;
 
@@ -194,7 +192,7 @@ export interface LocalAttachmentIoAuthority {
 export class LocalWorkspaceFileSystem extends FileSystem {
   private readonly adapterValue;
   private readonly pathValue;
-  private readonly retainedOutputVersionsValue = new Map<string, string>();
+  private readonly retainedOutputVersionsValue = new Map<string, Readonly<{ version: string; maxBytes: number }>>();
   private readonly attachmentRootIdentitiesValue = new Map<string, string>();
   private readonly planDirectoryIdentitiesValue = new Map<string, PlanDirectoryIdentity>();
   private readonly planTargetIdentitiesValue = new Map<string, PlanDirectoryIdentity>();
@@ -464,8 +462,8 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     if (enforceUnshared && before.nlink !== 1) {
       throw new FsError("filesystem target is not an unshared regular file", "FS_STALE_VERSION");
     }
-    if (retainedVersion !== undefined && (before.size > MAX_RETAINED_OUTPUT_BYTES
-      || beforeVersion !== retainedVersion)) {
+    if (retainedVersion !== undefined && (before.size > retainedVersion.maxBytes
+      || beforeVersion !== retainedVersion.version)) {
       throw new FsError("retained output identity or byte bound changed", "FS_STALE_VERSION");
     }
     if (before.size > maxBytes) throw new FsError("filesystem target exceeds byte bound", "FS_TOO_LARGE");
@@ -479,8 +477,8 @@ export class LocalWorkspaceFileSystem extends FileSystem {
         || (enforceUnshared && opened.nlink !== 1)
         || opened.size > maxBytes
         || (requireUnshared && String(versionOf(opened)) !== beforeVersion)
-        || (retainedVersion !== undefined && (opened.size > MAX_RETAINED_OUTPUT_BYTES
-          || String(versionOf(opened)) !== retainedVersion))) {
+        || (retainedVersion !== undefined && (opened.size > retainedVersion.maxBytes
+          || String(versionOf(opened)) !== retainedVersion.version))) {
         throw new FsError("filesystem target identity changed before read", "FS_STALE_VERSION");
       }
       await this.assertPlanTargetIdentity(path, signal);
@@ -491,8 +489,8 @@ export class LocalWorkspaceFileSystem extends FileSystem {
         || (enforceUnshared && settled.nlink !== 1)
         || settled.size > maxBytes
         || (requireUnshared && String(versionOf(settled)) !== beforeVersion)
-        || (retainedVersion !== undefined && (settled.size > MAX_RETAINED_OUTPUT_BYTES
-          || String(versionOf(settled)) !== retainedVersion))) {
+        || (retainedVersion !== undefined && (settled.size > retainedVersion.maxBytes
+          || String(versionOf(settled)) !== retainedVersion.version))) {
         throw new FsError("filesystem target identity changed during read", "FS_STALE_VERSION");
       }
       result = new Uint8Array(bytes);
@@ -504,7 +502,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       if (!after.isFile() || after.isSymbolicLink() || after.nlink !== 1
         || after.dev !== before.dev || after.ino !== before.ino
         || (requireUnshared && String(versionOf(after)) !== beforeVersion)
-        || (retainedVersion !== undefined && String(versionOf(after)) !== retainedVersion)) {
+        || (retainedVersion !== undefined && String(versionOf(after)) !== retainedVersion.version)) {
         throw new FsError("filesystem target path identity changed during read", "FS_STALE_VERSION");
       }
     }
@@ -971,12 +969,10 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     return Object.freeze({
       captureWorkspace: async (path: string, signal: AbortSignal) =>
         await this.captureWorkspace(path, signal),
-      createOutputFile: async (runtimeHome: string, operationId: string, signal: AbortSignal) =>
-        await this.createOutputFile(runtimeHome, operationId, "bash", signal),
       normalizeAbsolutePath: (path: string) => this.adapterValue.normalizeAbsolutePath(path),
       processPath: (target: FsTarget) => this.processPath(target),
-      resolveRetainedOutput: async (path: string, runtimeHome: string, signal: AbortSignal) =>
-        await this.resolveRetainedOutput(path, runtimeHome, "bash", MAX_RETAINED_OUTPUT_BYTES, signal),
+      captureShellOutput: async (path: string, signal: AbortSignal) =>
+        await this.captureOutputFile(path, this.pathValue.dirname(path), 64 * 1_024 * 1_024, signal),
       revalidateWorkspace: async (
         authority: ProductProcessWorkspaceAuthority,
         path: string,
@@ -1509,7 +1505,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   private async resolveRetainedOutput(
     path: string,
     runtimeHome: string,
-    namespace: "agent" | "bash",
+    namespace: "agent",
     maxBytes: number,
     signal: AbortSignal,
   ): Promise<FsTarget> {
@@ -1518,6 +1514,11 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     const outputRootPath = this.adapterValue.normalizeAbsolutePath(
       this.pathValue.join(canonicalHome, "work", namespace),
     );
+    return this.captureOutputFile(path, outputRootPath, maxBytes, signal);
+  }
+
+  private async captureOutputFile(path: string, outputRootPath: string, maxBytes: number, signal: AbortSignal): Promise<FsTarget> {
+    abortError(signal);
     if (this.adapterValue.normalizeAbsolutePath(path) !== path
       || this.pathValue.dirname(path) !== outputRootPath) {
       throw new FsError("retained output path is outside the owned output directory", "FS_SANDBOX_DENIED");
@@ -1557,7 +1558,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     if (after.nlink !== 1 || String(versionOf(after)) !== String(versionOf(before))) {
       throw new FsError("retained output identity changed during authorization", "FS_STALE_VERSION");
     }
-    this.retainedOutputVersionsValue.set(String(target.targetKey), String(versionOf(after)));
+    this.retainedOutputVersionsValue.set(String(target.targetKey), { version: String(versionOf(after)), maxBytes });
     return target;
   }
 
@@ -1640,9 +1641,9 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   private async createOutputFile(
     runtimeHome: string,
     operationId: string,
-    namespace: "agent" | "bash",
+    namespace: "agent",
     signal: AbortSignal,
-  ): Promise<ProductProcessOutputFile & ProductRetainedOutputFile> {
+  ): Promise<ProductRetainedOutputFile> {
     abortError(signal);
     const root = await this.resolve(runtimeHome, { signal });
     if (!this.adapterValue.samePath(root.displayPath, runtimeHome)) {
@@ -1719,7 +1720,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
       if (error instanceof FsError) throw error;
       return fsError(error, "Runtime output file permission sealing failed");
     }
-    const retainedSignal = namespace === "agent" ? new AbortController().signal : signal;
+    const retainedSignal = new AbortController().signal;
     return this.retainedOutputFile(path, directory, handle, opened, retainedSignal);
   }
 

@@ -10,7 +10,7 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "2.7.0" as const;
+export const PROTOCOL_VERSION = "3.0.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
@@ -92,11 +92,9 @@ export const ExecutionEnvironmentProfileSchema = strictObject({
   }),
   executables: strictObject({
     bundledNodeRef: identifier,
-    bashRef: identifier,
+    shellRef: identifier,
     ripgrepRef: identifier,
-    windowsPowerShellRef: Type.Optional(identifier),
-    bashDialect: Type.Literal("bash"),
-    windowsUtf8PreludeRef: Type.Optional(identifier),
+    shellDialect: Type.Union([Type.Literal("bash"), Type.Literal("pwsh")]),
     allowedCommandRefs: Type.Array(identifier, { maxItems: 128, uniqueItems: true }),
     pathPolicy: Type.Literal("sealed"),
   }),

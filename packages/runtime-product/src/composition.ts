@@ -1,3 +1,7 @@
+import * as ToolBash from "@deepseek-ai/dsh-tool-bash";
+import * as ToolPwsh from "@deepseek-ai/dsh-tool-pwsh";
+import * as ToolJobs from "@deepseek-ai/dsh-tool-jobs";
+import * as ShellEnv from "@deepseek-ai/dsh-shell-env";
 import { isDeepStrictEqual } from "node:util";
 import { AgentCollaborationPolicy } from "./collaboration-policy.js";
 import { Context } from "@deepseek-ai/cordis";
@@ -16,13 +20,13 @@ import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session"
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
 import * as SubagentSpawnInProcess from "@deepseek-ai/dsh-subagent-spawn-in-process";
-import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
+import { LocalBashExecutor } from "@deepseek-ai/dsh-bash-local";
+import { PwshLocalExecutor } from "@deepseek-ai/dsh-pwsh-local";
 import { SkillRegistry } from "@deepseek-ai/dsh-skill";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
-import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { ApprovalService } from "@deepseek-ai/dsh-user-approval";
 import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
 import { WebRuntime } from "@deepseek-ai/dsh-web";
@@ -129,9 +133,8 @@ import {
 } from "@myagents-dsh/tools-agent";
 import {
   ProductProcessRuntime,
-  SealedBashExecutor,
-  WindowsJobObjectSubprocessRuntime,
-  resolveProductProcessAuthority,
+  ProductSubprocessRuntime,
+  ShellPresentationToolRuntime,
   validateProductProcessRuntimeConfig,
   type ProductProcessRuntimeConfig,
 } from "@myagents-dsh/tools-process";
@@ -470,6 +473,7 @@ export interface NativeRpcLifecycleAuthority {
 type SessionBindingResult = Extract<MethodResult<"session/create">, { state: "ready" }>;
 
 type CompositionAuthorityState = {
+  configureShellHome?: (runtimeHome: string) => Promise<void>;
   readonly childPublicationAuthority: object;
   readonly composition: DshRootComposition;
   readonly context: Context;
@@ -692,6 +696,7 @@ const installProductPersistence = (
       if (!(state.context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
         throw new Error("product SQLite persistence did not install through the public DSH service seam");
       }
+      await state.configureShellHome?.(runtimeHome);
       state.persistencePlane = "installed";
       state.snapshot();
     } catch (error) {
@@ -1195,27 +1200,7 @@ export const installCanonicalToolPlane = async (
     if (temporaryRoot !== normalized.temporaryRoot) {
       throw new TypeError("canonical tool plane temporary root must be canonical for the selected platform");
     }
-    if (platform.target === "win32-x64") {
-      const powershellPath = processConfig.executablePaths.windowsPowerShell;
-      if (powershellPath === undefined || processConfig.executableRefs.windowsPowerShell === undefined
-        || processConfig.executableSha256.windowsPowerShell === undefined
-        || processConfig.executableRefs.windowsUtf8Prelude !== platform.shell.utf8PreludeRef) {
-        throw new TypeError("Windows canonical tool plane lacks its exact native process authority");
-      }
-      fibers.push(await root.plugin(WindowsJobObjectSubprocessRuntime, {
-        platform,
-        powershellPath,
-        powershellSha256: processConfig.executableSha256.windowsPowerShell,
-        temporaryRoot,
-      }));
-    } else {
-      if (processConfig.executablePaths.windowsPowerShell !== undefined
-        || processConfig.executableRefs.windowsPowerShell !== undefined
-        || processConfig.executableRefs.windowsUtf8Prelude !== undefined) {
-        throw new TypeError("POSIX canonical tool plane must not carry Windows process authority");
-      }
-      fibers.push(await root.plugin(LocalSubprocessRuntime));
-    }
+    fibers.push(await root.plugin(ProductSubprocessRuntime));
     fibers.push(await root.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 10 }));
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
     fibers.push(await root.plugin(AgentInstructions, {
@@ -1479,14 +1464,35 @@ export const installCanonicalToolPlane = async (
       },
       startOperation: (params, control) => root.sdkOperations.start(params, control),
     }));
-    fibers.push(await root.plugin(SealedBashExecutor, {
-      authority: () => resolveProductProcessAuthority(
-        root.productSession.requireExecutionEnvironment(),
-        processConfig,
-      ),
-      io: processIo,
-    }));
     fibers.push(await root.plugin(ProductProcessRuntime, { io: processIo, process: processConfig }));
+    const shellEnvFiber = await root.plugin(ShellEnv, { dshHome: normalized.temporaryRoot });
+    fibers.push(shellEnvFiber);
+    authority.configureShellHome = async (runtimeHome) => {
+      await shellEnvFiber.update({ dshHome: runtimeHome });
+      root.shellEnv.register({
+        name: "myagents-platform",
+        variables: {
+          DSH_PLATFORM: { description: "Current Runtime operating system and architecture." },
+          DSH_SHELL_DIALECT: { description: "Command syntax of the available Shell tool: bash or pwsh." },
+          DSH_SHELL_EXECUTABLE: { description: "Trusted absolute path of the selected Shell executable." },
+        },
+        resolve: () => ({ DSH_PLATFORM: platform.target, DSH_SHELL_DIALECT: platform.shell.dialect, DSH_SHELL_EXECUTABLE: processConfig.executablePaths.shell }),
+      });
+    };
+    root.systemPrompt.context({
+      name: "runtime:shell",
+      order: 91,
+      interpolate: false,
+      text: `Runtime platform: ${platform.target}. Available Shell tool: ${platform.shell.dialect}. Executable: ${processConfig.executablePaths.shell}. Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. Query the executable's version before relying on version-specific features.`,
+    });
+    if (platform.shell.dialect === "pwsh") {
+      fibers.push(await root.plugin(PwshLocalExecutor, { pwshPath: processConfig.executablePaths.shell }));
+      fibers.push(await root.plugin(ToolPwsh, { enableRunInBackground: true }));
+    } else {
+      fibers.push(await root.plugin(LocalBashExecutor));
+      fibers.push(await root.plugin(ToolBash, { enableRunInBackground: true }));
+    }
+    fibers.push(await root.plugin(ToolJobs, { completionDelivery: "quiet" }));
     let dynamicAgents: ProductDynamicAgentController | undefined;
     fibers.push(await root.plugin(ProductWorkService, {
       durability: Object.freeze({
@@ -2243,7 +2249,7 @@ export const composeDshRootServices = async (
       order: COMPACTION_CONTINUITY_ORDER,
       text: COMPACTION_CONTINUITY,
     });
-    await root.plugin(ToolRuntime, tools);
+    await root.plugin(ShellPresentationToolRuntime, tools);
     if (adapter !== undefined) await root.plugin(adapterPlugin(providers, adapter));
     await root.plugin(TokenMeter);
     await root.plugin(ToolResultPruner);

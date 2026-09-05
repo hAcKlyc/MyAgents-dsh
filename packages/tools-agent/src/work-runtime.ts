@@ -1,9 +1,9 @@
+import { ownsOfficialJobNotice } from "@myagents-dsh/operation-runtime";
 import { createHash } from "node:crypto";
 import { isPromise, isProxy } from "node:util/types";
 
 import { Service, type Context } from "@deepseek-ai/cordis";
 import { Inbox, foldConsumedWork, type Agent } from "@deepseek-ai/dsh-agent";
-import { JobId, type JobSnapshot } from "@deepseek-ai/dsh-jobs";
 import { MessageId, ToolCallId, freezeMessage, type ContentBlock, type MessageSource, type UserMessage } from "@deepseek-ai/dsh-llm";
 import { Session, SessionId, SessionLogOffset, type SessionEvent, type SessionHeader } from "@deepseek-ai/dsh-session";
 import type { SessionObservation } from "@deepseek-ai/dsh-session-query";
@@ -70,7 +70,7 @@ const MAX_WORK_MESSAGE_BYTES = 4 * 1_024 * 1_024;
 const LIVE_CHILD_REPLY_SEPARATOR = "\n\n--- child follow-up ---\n";
 const RESUMED_CHILD_RUN_SEPARATOR = "\n\n--- resumed child run ---\n";
 const EXPLORE_CHILD_TOOLS = Object.freeze([
-  "Read", "Glob", "Grep", "ls", "Bash", "WebFetch", "WebSearch", "Skill",
+  "Read", "Glob", "Grep", "ls", "bash", "pwsh", "job_output", "job_list", "job_kill", "WebFetch", "WebSearch", "Skill",
   "TaskGet", "TaskList", "SendMessage", "TaskStop",
 ] as const);
 const GENERAL_CHILD_PERSONA = [
@@ -1034,6 +1034,7 @@ export const ownsProductWorkRootContextMessage = (
   source: MessageSource | undefined,
   messageId: string,
 ): boolean => {
+  if (ownsOfficialJobNotice(session.snapshotEvents(), source, messageId)) return true;
   if (session.header.origin === "subagent"
     || (source?.kind !== "subagent-report" && source?.kind !== "agent-message")) return false;
   const insertions = correlatedInboxMessages(session.snapshotEvents(), session.id, "subagent-report")
@@ -1103,10 +1104,6 @@ const terminalForStopReason = (reason: string): WorkTerminal => reason === "comp
   ? "succeeded"
   : reason === "aborted" ? "aborted" : "failed";
 
-const terminalForJob = (snapshot: JobSnapshot): WorkTerminal => snapshot.status === "completed"
-  ? "succeeded"
-  : snapshot.status === "killed" ? "aborted" : "failed";
-
 const renderJson = (_args: unknown, value: unknown): ContentBlock[] => [
   Object.freeze({ type: "text", text: JSON.stringify(value) }),
 ];
@@ -1155,7 +1152,6 @@ export class ProductWorkService extends Service {
       prepare: (registration: DynamicAgentRegistration) => this.prepareDynamicAgent(registration),
     }));
     ctx.effect(() => {
-      const detachController = ctx.jobs.attachController("myagents-product-work");
       const stopStart = ctx.on("subagent/start", (info: SubagentRunInfo) => {
         if (info.provider !== this.config.provider) return;
         try {
@@ -1306,7 +1302,6 @@ export class ProductWorkService extends Service {
         for (const dispose of [childSetup, stopEnd, stopStart]) {
           try { dispose(); } catch (error) { errors.push(error); }
         }
-        try { detachController(); } catch (error) { errors.push(error); }
         if (errors.length > 0) throw new AggregateError(errors, "product work cleanup failed");
       };
     }, "product-work-runtime");
@@ -3853,23 +3848,7 @@ export class ProductWorkService extends Service {
         return Object.freeze({ taskId, kind: "agent" as const, terminal, alreadyTerminal });
       });
     }
-    const root = this.rootForCaller(caller);
-    let snapshot: JobSnapshot;
-    try {
-      snapshot = this.ctx.jobs.get(JobId(taskId), root);
-    } catch (error) {
-      throw new ProductToolError("task_not_found", "task is unknown or belongs to another Runtime Session", { cause: error });
-    }
-    if (snapshot.kind !== "bash") throw new ProductToolError("task_not_found", "task is not a product process or Agent work item");
-    const alreadyTerminal = snapshot.status !== "running" && snapshot.status !== "stopping";
-    if (!alreadyTerminal) {
-      this.ctx.jobs.kill(snapshot.id, root, "TaskStop");
-      snapshot = await this.ctx.jobs.wait(snapshot.id, 120_000, root, signal);
-    }
-    if (snapshot.status === "running" || snapshot.status === "stopping") {
-      throw new ProductToolError("task_stop_failed", "process task did not reach terminal cleanup");
-    }
-    return Object.freeze({ taskId, kind: "process" as const, terminal: terminalForJob(snapshot), alreadyTerminal });
+    throw new ProductToolError("task_not_found", "Agent work item is unknown; use job_kill for Shell jobs");
   }
 
   private async stopSubtree(entry: WorkEntry, signal: AbortSignal): Promise<void> {

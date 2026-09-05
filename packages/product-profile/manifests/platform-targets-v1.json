@@ -24,11 +24,11 @@
       "processTree": {
         "forceSignal": "SIGKILL",
         "gracefulSignal": "SIGTERM",
-        "owner": "process-group"
+        "owner": "dsh-local-subprocess"
       },
       "shell": {
         "dialect": "bash",
-        "executableRef": "bundled-bash"
+        "executableRef": "runtime-shell"
       },
       "sqlite": {
         "journalMode": "wal",
@@ -56,14 +56,13 @@
       "evidenceState": "implementation-complete_pending-native-validation",
       "pathFlavor": "win32",
       "processTree": {
-        "forceSignal": "TerminateJobObject",
-        "gracefulSignal": "CTRL_BREAK_EVENT",
-        "owner": "job-object"
+        "forceSignal": "taskkill",
+        "gracefulSignal": "taskkill",
+        "owner": "dsh-local-subprocess"
       },
       "shell": {
-        "dialect": "bash",
-        "executableRef": "bundled-bash",
-        "utf8PreludeRef": "windows-utf8-v1"
+        "dialect": "pwsh",
+        "executableRef": "runtime-shell"
       },
       "sqlite": {
         "journalMode": "wal",
@@ -93,11 +92,11 @@
       "processTree": {
         "forceSignal": "SIGKILL",
         "gracefulSignal": "SIGTERM",
-        "owner": "process-group"
+        "owner": "dsh-local-subprocess"
       },
       "shell": {
         "dialect": "bash",
-        "executableRef": "bundled-bash"
+        "executableRef": "runtime-shell"
       },
       "sqlite": {
         "journalMode": "wal",

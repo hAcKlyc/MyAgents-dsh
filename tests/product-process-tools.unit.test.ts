@@ -1,3 +1,9 @@
+import { LocalBashExecutor } from "@deepseek-ai/dsh-bash-local";
+import { PwshLocalExecutor } from "@deepseek-ai/dsh-pwsh-local";
+import * as ShellEnv from "@deepseek-ai/dsh-shell-env";
+import * as ToolBash from "@deepseek-ai/dsh-tool-bash";
+import * as ToolPwsh from "@deepseek-ai/dsh-tool-pwsh";
+import * as ToolJobs from "@deepseek-ai/dsh-tool-jobs";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
@@ -14,7 +20,6 @@ import type {
 } from "@deepseek-ai/dsh-subprocess";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
-import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import type { ProductOperationRecord } from "@myagents-dsh/operation-runtime";
 import {
   CANONICAL_TOOL_CONTRACT_SHA256,
@@ -28,21 +33,14 @@ import {
 } from "@myagents-dsh/tool-runtime-product";
 import {
   ProductProcessRuntime,
-  SealedBashExecutor,
-  WINDOWS_JOB_HOST_PATH,
-  WINDOWS_JOB_HOST_SHA256,
-  createSealedBashArgv,
-  createWindowsJobHostPlan,
-  createWindowsStagedArgvPlan,
+  ShellPresentationToolRuntime,
   resolveProductProcessAuthority,
-  type ProductProcessIoAuthority,
-  type ProductProcessOutputFile,
   type ProductProcessRuntimeConfig,
 } from "@myagents-dsh/tools-process";
 import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
 import { LocalWorkspaceFileSystem, requireLocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 import { createHash } from "node:crypto";
-import { access, chmod, link, mkdtemp, mkdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -147,6 +145,10 @@ class FakeSubprocessRuntime extends SubprocessRuntime {
   }
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    return this.ctx.get("productProcesses")?.spawnShell(spec, (next) => this.spawnFixture(next)) ?? this.spawnFixture(spec);
+  }
+
+  private spawnFixture(spec: SubprocessSpawnSpec): SubprocessHandle {
     if (spec.signal?.aborted === true) throw new Error("synthetic subprocess was aborted before spawn");
     const plan = this.plans.shift() ?? Object.freeze({
       outcome: Object.freeze({ exitCode: 0, signal: null }),
@@ -169,10 +171,10 @@ const catalogWithoutDigest = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
   implementationCatalog: CANONICAL_TOOL_NAMES,
-  effectiveTools: Object.freeze(["Bash"] as const),
+  effectiveTools: Object.freeze(["bash", "pwsh", "job_output", "job_list", "job_kill"] as const),
   revision: "process-tools-v1",
   diagnostics: Object.freeze(CANONICAL_TOOL_NAMES.map((tool) => Object.freeze(
-    tool === "Bash"
+    ["bash", "pwsh", "job_output", "job_list", "job_kill"].includes(tool)
       ? { tool, available: true as const }
       : { tool, available: false as const, reasonCode: "not-installed" },
   ))),
@@ -184,7 +186,7 @@ const catalog = Object.freeze({
 
 const harness = async (options: Readonly<{
   backgroundRetention?: "allow" | "deny";
-  outputCreation?: "delayed" | "late" | "normal" | "stall";
+  dialect?: "bash" | "pwsh";
 }> = {}) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-process-tools-")));
   temporaryRoots.push(root);
@@ -193,7 +195,7 @@ const harness = async (options: Readonly<{
   const attachments = join(root, "attachments");
   await Promise.all([mkdir(workspace), mkdir(runtimeHome), mkdir(attachments)]);
   const executablePaths = Object.freeze({
-    bash: join(root, "fixture-bash"),
+    shell: join(root, "fixture-shell"),
     bundledNode: join(root, "fixture-node"),
     ripgrep: join(root, "fixture-rg"),
   });
@@ -212,9 +214,12 @@ const harness = async (options: Readonly<{
   await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter("darwin-arm64") });
   await context.plugin(AgentRegistry);
   const fakeSubprocess = context.subprocess as FakeSubprocessRuntime;
+  const inject = vi.fn<(message: unknown) => void>();
   const agent = {
     id: "process-agent",
-    session: { id: "process-agent" },
+    session: { id: "process-agent", header: { id: "process-agent", cwd: workspace } },
+    status: "busy",
+    inject,
   } as unknown as Agent;
   const agentScope = createScope(context, agent);
   Object.defineProperty(agent, "ctx", {
@@ -240,8 +245,8 @@ const harness = async (options: Readonly<{
     }),
     executables: Object.freeze({
       allowedCommandRefs: Object.freeze(["bash-v1", "node-v1", "ripgrep-v1"]),
-      bashDialect: "bash" as const,
-      bashRef: "bash-v1",
+      shellDialect: options.dialect ?? "bash",
+      shellRef: "bash-v1",
       bundledNodeRef: "node-v1",
       pathPolicy: "sealed" as const,
       ripgrepRef: "ripgrep-v1",
@@ -288,18 +293,19 @@ const harness = async (options: Readonly<{
     state: "active" as const,
   }) satisfies ProductOperationRecord;
   const config: ProductProcessRuntimeConfig = Object.freeze({
+    shellDialect: options.dialect ?? "bash",
     allowedCommandRefs: Object.freeze(["bash-v1", "node-v1", "ripgrep-v1"]),
     environmentValues: Object.freeze({ PATH: "/usr/bin:/bin" }),
     executablePaths,
     executableRefs: Object.freeze({
-      bash: "bash-v1",
+      shell: "bash-v1",
       bundledNode: "node-v1",
       ripgrep: "ripgrep-v1",
     }),
     executableSha256,
   });
   await context.plugin(SystemPrompt);
-  await context.plugin(ToolRuntime, { mode: "native" });
+  await context.plugin(ShellPresentationToolRuntime, { mode: "native" });
   await context.plugin(ToolCallTimeoutPolicy);
   let permissionDecision: "allow" | "deny" = "allow";
   let permissionPromise: Promise<"allow" | "deny"> | undefined;
@@ -320,62 +326,31 @@ const harness = async (options: Readonly<{
     resolveOperation: () => Object.freeze({ dshTurn: 1, operation: currentOperation }),
   });
   await context.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 2 });
-  const baseProcessIo = requireLocalWorkspaceFileSystem(context.fs).createProcessIoAuthority();
-  const outputCreationStarted = Promise.withResolvers<boolean>();
-  const outputCreationRelease = Promise.withResolvers<boolean>();
-  let outputCreationAbortHits = 0;
-  let outputCreationDiscardHits = 0;
-  const lateOutputPath = join(root, "late-output.log");
-  const processIo: ProductProcessIoAuthority = options.outputCreation === undefined
-    || options.outputCreation === "normal"
-    ? baseProcessIo
-    : Object.freeze({
-      ...baseProcessIo,
-      createOutputFile: async (runtimeHomeValue: string, operationId: string, signal: AbortSignal) => {
-        outputCreationStarted.resolve(true);
-        if (options.outputCreation === "late") {
-          await outputCreationRelease.promise;
-          await writeFile(lateOutputPath, "late allocation\n");
-          return Object.freeze({
-            discard: async () => {
-              outputCreationDiscardHits += 1;
-              await rm(lateOutputPath, { force: true });
-            },
-            finalize: () => Promise.reject(new Error("late output must not be finalized")),
-            path: lateOutputPath,
-          }) satisfies ProductProcessOutputFile;
-        }
-        const aborted = new Promise<never>((_resolve, reject) => {
-          const onAbort = (): void => {
-            outputCreationAbortHits += 1;
-            reject(signal.reason instanceof Error ? signal.reason : new Error("output allocation aborted"));
-          };
-          signal.addEventListener("abort", onAbort, { once: true });
-          if (signal.aborted) onAbort();
-        });
-        if (options.outputCreation === "stall") return await aborted;
-        await Promise.race([outputCreationRelease.promise, aborted]);
-        return await baseProcessIo.createOutputFile(runtimeHomeValue, operationId, signal);
-      },
-    });
-  await context.plugin(
-    SealedBashExecutor,
-    { authority: () => resolveProductProcessAuthority(environment, config), io: processIo },
-  );
+  const processIo = requireLocalWorkspaceFileSystem(context.fs).createProcessIoAuthority();
   await context.plugin(ProductProcessRuntime, { io: processIo, process: config });
+  await context.plugin(ShellEnv, { dshHome: runtimeHome });
+  if (options.dialect === "pwsh") {
+    await context.plugin(PwshLocalExecutor, { pwshPath: executablePaths.shell });
+    await context.plugin(ToolPwsh, { enableRunInBackground: true });
+  } else {
+    await context.plugin(LocalBashExecutor);
+    await context.plugin(ToolBash, { enableRunInBackground: true });
+  }
+  await context.plugin(ToolJobs, { completionDelivery: "quiet" });
   let call = 0;
-  const execute = async (args: unknown, signal = new AbortController().signal) => {
+  const execute = async (args: Record<string, unknown>, signal = new AbortController().signal, name: string = options.dialect ?? "bash") => {
     call += 1;
     return context.tools.execute({
       agent,
-      arguments: args,
+      arguments: name === "bash" || name === "pwsh" ? { description: "Fixture command", ...args } : args,
       callId: ToolCallId(`bash-${call}`),
-      name: "Bash",
+      name,
       signal,
     });
   };
   return {
     agent,
+    inject,
     config,
     authorize,
     context,
@@ -384,29 +359,24 @@ const harness = async (options: Readonly<{
     execute,
     fakeSubprocess,
     operation,
-    lateOutputPath,
-    outputCreationStarted: outputCreationStarted.promise,
     processIo,
     runtimeHome,
     root,
     workspace,
     setOperation: (value: ProductOperationRecord) => { currentOperation = value; },
-    releaseOutputCreation: () => { outputCreationRelease.resolve(true); },
-    outputCreationAbortHits: () => outputCreationAbortHits,
-    outputCreationDiscardHits: () => outputCreationDiscardHits,
     setPermission: (value: "allow" | "deny") => { permissionDecision = value; },
     setPermissionPromise: (value: Promise<"allow" | "deny"> | undefined) => { permissionPromise = value; },
   };
 };
 
-describe("canonical process tools", () => {
+describe("official Shell tools with product policy", () => {
   it("presents the full Bash command and actual working directory before execution", async () => {
     const state = await harness();
     state.setPermission("deny");
     const command = `printf '%s' '${"example".repeat(160)}'`;
     await state.execute({ command, description: "Inspect an example" });
     expect(state.authorize).toHaveBeenCalledWith(expect.anything(), {
-      tool: "Bash",
+      tool: "bash",
       permissionClass: "process.execute",
       target: state.environment.workspace.canonicalRoot,
       display: { command, cwd: state.environment.workspace.canonicalRoot, description: "Inspect an example" },
@@ -430,466 +400,9 @@ describe("canonical process tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("builds the pinned Windows Job Object host plan and sealed platform Bash argv", async () => {
-    const plan = createWindowsJobHostPlan({
-      argv: ["C:\\runtime\\bash.exe", "-c", "echo ready"],
-      cwd: "C:\\workspace",
-      env: { PATH: "C:\\runtime" },
-      graceMs: 250,
-      stdio: { stdin: "ignore", stderr: { maxBytes: 1_024 }, stdout: { maxBytes: 1_024 } },
-    }, "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-    "C:\\runtime\\graceful-control", "C:\\runtime\\force-control",
-    "C:\\runtime\\attestation", "C:\\runtime\\payload.json",
-    "C:\\runtime\\windows-job-host.ps1");
-    expect(plan.argv).toEqual([
-      "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      "C:\\runtime\\windows-job-host.ps1",
-    ]);
-    const payload = JSON.parse(plan.payload) as unknown;
-    expect(payload).toEqual({
-      argv: ["C:\\runtime\\bash.exe", "-c", "echo ready"],
-      attestationPath: "C:\\runtime\\attestation",
-      cwd: "C:\\workspace",
-      forceControlPath: "C:\\runtime\\force-control",
-      gracefulControlPath: "C:\\runtime\\graceful-control",
-    });
-    expect(plan.environment).toMatchObject({
-      MYAGENTS_WINDOWS_JOB_PAYLOAD_PATH: "C:\\runtime\\payload.json",
-      MYAGENTS_WINDOWS_JOB_PAYLOAD_SHA256: createHash("sha256").update(plan.payload).digest("hex"),
-    });
-    expect(() => createWindowsJobHostPlan({
-      argv: ["C:\\runtime\\bash.exe"],
-      cwd: "C:\\workspace",
-      env: { MYAGENTS_WINDOWS_JOB_PAYLOAD_PATH: "C:\\forged.json" },
-      graceMs: 250,
-      stdio: { stdin: "ignore", stderr: { maxBytes: 1 }, stdout: { maxBytes: 1 } },
-    }, "C:\\powershell.exe", "C:\\graceful", "C:\\force", "C:\\attestation",
-    "C:\\payload.json", "C:\\host.ps1")).toThrow(/reserved/u);
-
-    const longBash = "x".repeat(262_144);
-    const windowsAuthority = Object.freeze({
-      backgroundRetention: "allow" as const,
-      bashPath: "C:\\runtime\\bash.exe",
-      cwd: "C:\\workspace",
-      env: Object.freeze({}),
-      maxChildren: 1,
-      ripgrepPath: "C:\\runtime\\rg.exe",
-      windowsUtf8Prelude: true,
-    });
-    const stagedBash = createWindowsStagedArgvPlan(
-      createSealedBashArgv(windowsAuthority, longBash),
-      "bash-command",
-      "C:\\runtime\\bash-command.txt",
-    );
-    expect(stagedBash.content.endsWith(longBash)).toBe(true);
-    expect(stagedBash.argv).toEqual([
-      "C:\\runtime\\bash.exe",
-      "-c",
-      "eval -- \"$(<\"$1\")\"",
-      "bash",
-      "C:\\runtime\\bash-command.txt",
-    ]);
-    expect(() => createWindowsStagedArgvPlan(
-      createSealedBashArgv(windowsAuthority, `${longBash}x`),
-      "bash-command",
-      "C:\\runtime\\bash-command.txt",
-    )).toThrow(/invalid/u);
-
-    const longPattern = "x".repeat(65_536);
-    const stagedRipgrep = createWindowsStagedArgvPlan(
-      ["C:\\runtime\\rg.exe", "--json", `--regexp=${longPattern}`, "--", "."],
-      "ripgrep-pattern",
-      "C:\\runtime\\pattern.txt",
-    );
-    expect(stagedRipgrep.argv).toContain("--file=C:\\runtime\\pattern.txt");
-    expect(stagedRipgrep.content).toBe(`${longPattern}\n`);
-    expect(() => createWindowsStagedArgvPlan(
-      ["C:\\runtime\\rg.exe", `--regexp=${longPattern}x`, "--", "."],
-      "ripgrep-pattern",
-      "C:\\runtime\\pattern.txt",
-    )).toThrow(/invalid/u);
-
-    const host = await readFile(WINDOWS_JOB_HOST_PATH, "utf8");
-    expect(createHash("sha256").update(host).digest("hex")).toBe(WINDOWS_JOB_HOST_SHA256);
-    for (const invariant of [
-      "CreateJobObject",
-      "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE",
-      "CREATE_SUSPENDED",
-      "AssignProcessToJobObject",
-      "CTRL_BREAK_EVENT",
-      "TerminateJobObject",
-      "QueryInformationJobObject",
-      "ActiveProcesses",
-      "JOB_EMPTY:",
-      "AggregateException",
-    ]) expect(host).toContain(invariant);
-
-    expect(createSealedBashArgv(Object.freeze({
-      backgroundRetention: "allow",
-      bashPath: "/runtime/bash",
-      cwd: "/workspace",
-      env: Object.freeze({}),
-      maxChildren: 1,
-      ripgrepPath: "/runtime/rg",
-      windowsUtf8Prelude: false,
-    }), "printf ready")).toEqual(["/runtime/bash", "-c", "printf ready"]);
-    expect(createSealedBashArgv(Object.freeze({
-      backgroundRetention: "allow",
-      bashPath: "C:\\runtime\\bash.exe",
-      cwd: "C:\\workspace",
-      env: Object.freeze({}),
-      maxChildren: 1,
-      ripgrepPath: "C:\\runtime\\rg.exe",
-      windowsUtf8Prelude: true,
-    }), "printf ready")[2]).toBe(
-      "export LANG=C.UTF-8 LC_ALL=C.UTF-8 PYTHONUTF8=1 PYTHONIOENCODING=utf-8; printf ready",
-    );
-  });
-
-  it("runs foreground Bash with exact argv, sealed environment, and bounded output", async () => {
-    const state = await harness();
-    state.fakeSubprocess.plans.push(Object.freeze({
-      outcome: Object.freeze({ exitCode: 7, signal: null }),
-      stderr: "warning\n",
-      stdout: "output\n",
-    }));
-    const foreground = await state.execute({ command: "printf output; exit 7" });
-    expect(foreground.isError ? foreground : null).toBeNull();
-    expect(foreground).toMatchObject({
-      isError: false,
-      value: {
-        background: false,
-        exitCode: 7,
-        interrupted: false,
-        stderr: "warning\n",
-        stdout: "output\n",
-      },
-    });
-    const spec = state.fakeSubprocess.specs.at(-1);
-    expect(spec?.argv).toEqual([state.config.executablePaths.bash, "-c", "printf output; exit 7"]);
-    expect(spec?.cwd.endsWith("/workspace")).toBe(true);
-    expect(spec?.env?.PATH).toBe("/usr/bin:/bin");
-    expect(Object.entries(spec?.env ?? {}).filter(([, value]) => value !== undefined))
-      .toEqual([["PATH", "/usr/bin:/bin"]]);
-    await state.context.fiber.dispose();
-  });
-
-  it("registers explicit background work once and waits for tree cleanup on kill", async () => {
-    const state = await harness();
-    state.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "background output\n" }));
-    const result = await state.execute({ command: "long-running", run_in_background: true });
-    expect(result.isError ? result : null).toBeNull();
-    expect(result).toMatchObject({
-      isError: false,
-      value: { background: true, taskId: "bash-1" },
-    });
-    const value = result.value as { outputPath: string; taskId: JobId };
-    expect(state.context.jobs.list(state.agent)).toMatchObject([{ id: "bash-1", status: "running" }]);
-    expect((await stat(value.outputPath)).mode & 0o777).toBe(0o400);
-    expect(state.context.jobs.kill(value.taskId, state.agent, "fixture-stop")).toBe("requested");
-    await expect(state.context.jobs.wait(value.taskId, 1_000, state.agent))
-      .resolves.toMatchObject({ status: "killed" });
-    expect(await readFile(value.outputPath, "utf8")).toBe("background output\n");
-    expect((await stat(value.outputPath)).mode & 0o777).toBe(0o400);
-    expect(state.fakeSubprocess.specs).toHaveLength(1);
-    await state.context.fiber.dispose();
-    await expect(access(value.outputPath)).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("settles jobs and discards retained output at the exact Agent scope boundary", async () => {
-    const state = await harness();
-    state.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "agent-scoped output\n" }));
-    const result = await state.execute({ command: "agent-owned", run_in_background: true });
-    expect(result).toMatchObject({ isError: false, value: { background: true } });
-    const value = result.value as { outputPath: string; taskId: JobId };
-    await expect(access(value.outputPath)).resolves.toBeUndefined();
-
-    await state.disposeAgent();
-
-    expect(state.fakeSubprocess.handles[0]?.terminateHits).toBe(1);
-    expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
-    await expect(access(value.outputPath)).rejects.toMatchObject({ code: "ENOENT" });
-    await state.context.fiber.dispose();
-  });
-
-  it("transfers background cancellation from the caller to the Session-owned job", async () => {
-    const state = await harness();
-    state.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "retained output\n" }));
-    const controller = new AbortController();
-    const result = await state.execute({ command: "retained", run_in_background: true }, controller.signal);
-    expect(result).toMatchObject({ isError: false, value: { background: true } });
-    const value = result.value as { outputPath: string; taskId: JobId };
-    controller.abort(new Error("parent operation completed"));
-    await new Promise<void>((resolve) => { setImmediate(resolve); });
-    expect(state.fakeSubprocess.handles[0]?.terminateHits).toBe(0);
-    expect(state.context.jobs.list(state.agent)).toMatchObject([{ id: value.taskId, status: "running" }]);
-    expect(state.context.jobs.kill(value.taskId, state.agent, "fixture-stop")).toBe("requested");
-    await state.context.jobs.wait(value.taskId, 1_000, state.agent);
-    expect(await readFile(value.outputPath, "utf8")).toBe("retained output\n");
-    await state.context.fiber.dispose();
-  });
-
-  it("bounds retained background lifetime independently of the completed caller", async () => {
-    const state = await harness();
-    state.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "bounded\n" }));
-    vi.useFakeTimers();
-    let result!: Awaited<ReturnType<typeof state.execute>>;
-    try {
-      result = await state.execute({ command: "bounded", run_in_background: true });
-      await vi.advanceTimersByTimeAsync(600_000);
-    } finally {
-      vi.useRealTimers();
-    }
-    const value = result.value as { taskId: JobId };
-    await state.context.jobs.wait(value.taskId, 1_000, state.agent);
-    expect(state.fakeSubprocess.handles[0]?.terminateHits).toBe(1);
-    expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
-    await state.context.fiber.dispose();
-  });
-
-  it("rejects unowned background spill paths without reading or deleting their bytes", async () => {
-    const state = await harness();
-    const spill = join(state.runtimeHome, "synthetic-stdout.spill");
-    const complete = `${"complete-output\n".repeat(20_000)}terminal\n`;
-    await writeFile(spill, complete);
-    state.fakeSubprocess.plans.push(Object.freeze({
-      outcome: Object.freeze({ exitCode: 0, signal: null }),
-      stderr: "",
-      stdout: "terminal\n",
-      stdoutLossy: true,
-      stdoutSpillPath: spill,
-    }));
-    const result = await state.execute({ command: "large-output", run_in_background: true });
-    expect(result).toMatchObject({ isError: false, value: { background: true } });
-    const value = result.value as { outputPath: string; taskId: JobId };
-    await state.context.jobs.wait(value.taskId, 1_000, state.agent);
-    await expect(access(value.outputPath)).rejects.toMatchObject({ code: "ENOENT" });
-    expect(await readFile(spill, "utf8")).toBe(complete);
-    await state.context.fiber.dispose();
-  });
-
-  it("marks bounded background output loss in both retained output surfaces", async () => {
-    const state = await harness();
-    const retainedTail = `${"x".repeat(119_990)}terminal`;
-    state.fakeSubprocess.plans.push(Object.freeze({
-      outcome: Object.freeze({ exitCode: 0, signal: null }),
-      stderr: "",
-      stdout: retainedTail,
-      stdoutLossy: true,
-      stdoutTotalBytes: 200_004,
-    }));
-    const result = await state.execute({ command: "output-flood", run_in_background: true });
-    expect(result).toMatchObject({ isError: false, value: { background: true } });
-    const value = result.value as { outputPath: string; taskId: JobId };
-    await state.context.jobs.wait(value.taskId, 1_000, state.agent);
-    const retained = await readFile(value.outputPath, "utf8");
-    expect(retained).toBe(
-      `[myagents: stdout truncated; ${String(200_004 - Buffer.byteLength(retainedTail))} earlier bytes omitted]\n${retainedTail}`,
-    );
-    expect(state.context.jobs.read(value.taskId, state.agent).text)
-      .toContain("[myagents: stdout truncated;");
-    expect(Buffer.byteLength(retained, "utf8")).toBeLessThanOrEqual(262_144);
-    await state.context.fiber.dispose();
-  });
-
-  it("rejects unowned foreground spill paths without deleting the referenced file", async () => {
-    const state = await harness();
-    const spill = join(state.runtimeHome, "synthetic-foreground.spill");
-    await writeFile(spill, `${"head\n".repeat(40_000)}tail\n`);
-    state.fakeSubprocess.plans.push(Object.freeze({
-      outcome: Object.freeze({ exitCode: 0, signal: null }),
-      stderr: "",
-      stdout: "tail\n",
-      stdoutLossy: true,
-      stdoutSpillPath: spill,
-    }));
-    await expect(state.execute({ command: "foreground-tail" })).resolves.toMatchObject({ isError: true });
-    await expect(access(spill)).resolves.toBeUndefined();
-    await state.context.fiber.dispose();
-  });
-
-  it("promotes the same foreground process to one JobRegistry entry on timeout", async () => {
-    const state = await harness();
-    state.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "late output\n" }));
-    const result = await state.execute({ command: "slow", timeout: 100 });
-    expect(result.isError ? result : null).toBeNull();
-    expect(result).toMatchObject({ isError: false, value: { background: true, taskId: "bash-1" } });
-    expect(state.fakeSubprocess.specs).toHaveLength(1);
-    state.fakeSubprocess.handles.at(-1)?.settle(Object.freeze({ exitCode: 0, signal: null }));
-    await state.context.jobs.wait((result.value as { taskId: JobId }).taskId, 1_000, state.agent);
-    await state.context.fiber.dispose();
-  });
-
-  it("does not charge permission waiting to Bash execution and promotes at the legal maximum timeout", async () => {
-    vi.useFakeTimers();
-    const stalled = await harness();
-    const permission = Promise.withResolvers<"allow" | "deny">();
-    stalled.setPermissionPromise(permission.promise);
-    const owner = new AbortController();
-    const denied = stalled.execute({ command: "never-spawned", timeout: 600_000 }, owner.signal);
-    let settled = false;
-    void denied.finally(() => { settled = true; });
-    await vi.advanceTimersByTimeAsync(600_000);
-    expect(settled).toBe(false);
-    expect(stalled.fakeSubprocess.specs).toHaveLength(0);
-    owner.abort(new Error("operation stopped"));
-    permission.resolve("allow");
-    await expect(denied).resolves.toMatchObject({
-      isError: true,
-    });
-    expect(stalled.context.tools.get("Bash")?.timeoutMs).toBeUndefined();
-    await stalled.context.fiber.dispose();
-
-    const promoted = await harness();
-    promoted.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "late\n" }));
-    const pending = promoted.execute({ command: "maximum", timeout: 600_000 });
-    for (let attempt = 0; attempt < 100 && promoted.fakeSubprocess.handles.length === 0; attempt += 1) {
-      await vi.advanceTimersByTimeAsync(0);
-      await Promise.resolve();
-    }
-    expect(promoted.fakeSubprocess.handles).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(600_000);
-    await expect(pending).resolves.toMatchObject({
-      isError: false,
-      value: { background: true, taskId: "bash-1" },
-    });
-    expect(promoted.fakeSubprocess.specs).toHaveLength(1);
-    promoted.fakeSubprocess.handles[0]?.settle(Object.freeze({ exitCode: 0, signal: null }));
-    await promoted.context.fiber.dispose();
-  });
-
-  it("kills timed-out foreground work and forbids explicit background when retention is disabled", async () => {
-    vi.useFakeTimers();
-    const state = await harness({ backgroundRetention: "deny" });
-    await expect(state.execute({ command: "forbidden-background", run_in_background: true })).resolves.toMatchObject({
-      isError: true,
-      error: { info: { code: "permission_denied" } },
-    });
-    expect(state.fakeSubprocess.specs).toHaveLength(0);
-
-    state.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "partial\n" }));
-    const pending = state.execute({ command: "bounded-foreground", timeout: 600_000 });
-    for (let attempt = 0; attempt < 100 && state.fakeSubprocess.handles.length === 0; attempt += 1) {
-      await vi.advanceTimersByTimeAsync(0);
-      await Promise.resolve();
-    }
-    expect(state.fakeSubprocess.handles).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(600_000);
-    await expect(pending).resolves.toMatchObject({
-      isError: true,
-      error: { info: { code: "process_timeout" } },
-    });
-    expect(state.fakeSubprocess.handles[0]).toMatchObject({ terminateHits: 1, waitHits: 1 });
-    expect(state.context.jobs.list(state.agent)).toEqual([]);
-    expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
-    await state.context.fiber.dispose();
-  });
-
-  it("bounds stalled output allocation and settles cancellation before background ownership transfer", async () => {
-    vi.useFakeTimers();
-    const stalled = await harness({ outputCreation: "stall" });
-    stalled.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "partial\n" }));
-    const timedOut = stalled.execute({ command: "stalled-output", run_in_background: true });
-    await stalled.outputCreationStarted;
-    await vi.advanceTimersByTimeAsync(5_000);
-    await expect(timedOut).resolves.toMatchObject({
-      isError: true,
-      error: { info: { code: "process_timeout" } },
-    });
-    expect(stalled.outputCreationAbortHits()).toBe(1);
-    expect(stalled.fakeSubprocess.handles[0]).toMatchObject({ terminateHits: 1, waitHits: 1 });
-    expect(stalled.context.jobs.list(stalled.agent)).toEqual([]);
-    expect(stalled.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
-    await stalled.context.fiber.dispose();
-
-    vi.useRealTimers();
-    const cancelled = await harness({ outputCreation: "delayed" });
-    cancelled.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "partial\n" }));
-    const controller = new AbortController();
-    const pending = cancelled.execute({ command: "cancelled-output", run_in_background: true }, controller.signal);
-    await cancelled.outputCreationStarted;
-    controller.abort(new Error("cancel during output allocation"));
-    await expect(pending).resolves.toMatchObject({ isError: true });
-    expect(cancelled.outputCreationAbortHits()).toBe(1);
-    expect(cancelled.fakeSubprocess.handles[0]).toMatchObject({ terminateHits: 1, waitHits: 1 });
-    expect(cancelled.context.jobs.list(cancelled.agent)).toEqual([]);
-    expect(cancelled.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
-    await cancelled.context.fiber.dispose();
-  });
-
-  it("waits for and discards a late output allocation after its deadline", async () => {
-    vi.useFakeTimers();
-    const state = await harness({ outputCreation: "late" });
-    state.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "partial\n" }));
-    const pending = state.execute({ command: "late-output", run_in_background: true });
-    await state.outputCreationStarted;
-    await vi.advanceTimersByTimeAsync(5_000);
-    let settled = false;
-    void pending.then(() => { settled = true; });
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    state.releaseOutputCreation();
-    await expect(pending).resolves.toMatchObject({
-      isError: true,
-      error: { info: { code: "process_timeout" } },
-    });
-    expect(state.outputCreationDiscardHits()).toBe(1);
-    await expect(access(state.lateOutputPath)).rejects.toMatchObject({ code: "ENOENT" });
-    expect(state.context.jobs.list(state.agent)).toEqual([]);
-    expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
-    await state.context.fiber.dispose();
-  });
-
-  it("rejects hardlinked and oversized retained-output files at the filesystem authority", async () => {
-    const state = await harness();
-    state.fakeSubprocess.plans.push(Object.freeze({
-      outcome: Object.freeze({ exitCode: 0, signal: null }),
-      stderr: "",
-      stdout: "retained\n",
-    }));
-    const result = await state.execute({ command: "retained", run_in_background: true });
-    const value = result.value as { outputPath: string; taskId: JobId };
-    await state.context.jobs.wait(value.taskId, 1_000, state.agent);
-    const signal = new AbortController().signal;
-    const hardlink = join(state.runtimeHome, "work", "bash", "hardlink.txt");
-    await link(value.outputPath, hardlink);
-    await expect(state.processIo.resolveRetainedOutput(value.outputPath, state.runtimeHome, signal))
-      .rejects.toThrow(/singly-linked/u);
-    const oversized = join(state.runtimeHome, "work", "bash", "oversized.txt");
-    await writeFile(oversized, Buffer.alloc(262_145, 0x61));
-    await expect(state.processIo.resolveRetainedOutput(oversized, state.runtimeHome, signal))
-      .rejects.toThrow(/singly-linked/u);
-    await state.context.fiber.dispose();
-  });
-
-  it("preserves failed output-finalization cleanup and permits an exact cleanup retry", async () => {
-    const state = await harness();
-    const controller = new AbortController();
-    const output = await state.processIo.createOutputFile(
-      state.runtimeHome,
-      "cleanup-failure",
-      controller.signal,
-    );
-    const outputDirectory = join(state.runtimeHome, "work", "bash");
-    await chmod(outputDirectory, 0o500);
-    controller.abort(new Error("synthetic finalize abort"));
-    const failure = output.finalize("must not persist", 262_144);
-    await expect(failure).rejects.toBeInstanceOf(AggregateError);
-    await chmod(outputDirectory, 0o700);
-    await expect(output.discard()).resolves.toBeUndefined();
-    await expect(access(output.path)).rejects.toMatchObject({ code: "ENOENT" });
-    await state.context.fiber.dispose();
-  });
-
   it("rejects invalid input, denied calls, and mismatched executable authority before spawn", async () => {
     const state = await harness();
-    await expect(state.execute({ command: "echo no", unexpected: true })).resolves.toMatchObject({
+    await expect(state.execute({ command: "" })).resolves.toMatchObject({
       isError: true,
     });
     state.setPermission("deny");
@@ -900,7 +413,7 @@ describe("canonical process tools", () => {
     expect(state.fakeSubprocess.specs).toHaveLength(0);
     expect(() => resolveProductProcessAuthority(Object.freeze({
       ...state.environment,
-      executables: Object.freeze({ ...state.environment.executables, bashRef: "forged-bash" }),
+      executables: Object.freeze({ ...state.environment.executables, shellRef: "forged-bash" }),
     }), state.config)).toThrow(/executable references differ|process execution environment is not sealed/u);
     await state.context.fiber.dispose();
   });
@@ -930,50 +443,6 @@ describe("canonical process tools", () => {
     releaseWorkspace("allow");
     await expect(staleWorkspace).resolves.toMatchObject({ isError: true });
     expect(state.fakeSubprocess.specs).toHaveLength(0);
-    await state.context.fiber.dispose();
-  });
-
-  it("settles rejected foreground and search processes before reopening quota", async () => {
-    const state = await harness();
-    state.fakeSubprocess.plans.push(Object.freeze({
-      error: new Error("synthetic foreground outcome failure"),
-      stderr: "",
-      stdout: "",
-    }));
-    await expect(state.execute({ command: "reject" })).resolves.toMatchObject({ isError: true });
-    expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
-    expect(state.fakeSubprocess.handles[0]).toMatchObject({ terminateHits: 1 });
-
-    state.fakeSubprocess.plans.push(Object.freeze({
-      error: new Error("synthetic search outcome failure"),
-      stderr: "",
-      stdout: "",
-    }));
-    const product = Object.freeze({
-      agent: state.agent,
-      birth: state.operation.birth,
-      callId: "search-failure",
-      catalog,
-      clientOperationId: state.operation.clientOperationId,
-      dshTurn: 1,
-      environment: state.environment,
-      origin: "root" as const,
-      productTurnId: state.operation.productTurnId,
-      rootCallId: "search-failure",
-      signal: new AbortController().signal,
-    }) satisfies ProductToolContext;
-    const workspace = await state.processIo.captureWorkspace(state.workspace, product.signal);
-    await expect(state.context.productProcesses.runSearch(product, workspace, "Grep", ["--files"], 1_024))
-      .rejects.toThrow(/search process/u);
-    expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
-    expect(state.fakeSubprocess.handles[1]).toMatchObject({ terminateHits: 1, waitHits: 1 });
-
-    state.fakeSubprocess.plans.push(Object.freeze({
-      outcome: Object.freeze({ exitCode: 0, signal: null }),
-      stderr: "",
-      stdout: "recovered\n",
-    }));
-    await expect(state.execute({ command: "recovered" })).resolves.toMatchObject({ isError: false });
     await state.context.fiber.dispose();
   });
 
@@ -1068,84 +537,9 @@ describe("canonical process tools", () => {
     }) satisfies ProductToolContext;
     const authority = await state.processIo.captureWorkspace(state.workspace, signal);
     await expect(state.context.productProcesses.runSearch(product, authority, "Grep", ["--files"], 1_024))
-      .rejects.toThrow(/ripgrep is unavailable/u);
+      .rejects.toThrow(/configured executable is unavailable/u);
     expect(state.fakeSubprocess.specs).toHaveLength(0);
     await state.context.fiber.dispose();
-  });
-
-  it("keeps foreground Bash within the joint JSON budget and rejects output-parent aliases", async () => {
-    const state = await harness();
-    const escaped = "\\\\\n".repeat(60_000);
-    state.fakeSubprocess.plans.push(Object.freeze({
-      outcome: Object.freeze({ exitCode: 0, signal: null }),
-      stderr: escaped,
-      stdout: escaped,
-    }));
-    const bounded = await state.execute({ command: "escaped" });
-    expect(bounded).toMatchObject({ isError: false, value: { outputTruncated: true } });
-    expect(Buffer.byteLength(JSON.stringify(bounded.value), "utf8")).toBeLessThanOrEqual(262_144);
-
-    const external = join(state.root, "external-work");
-    await mkdir(external);
-    await symlink(external, join(state.runtimeHome, "work"));
-    state.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "must-not-publish" }));
-    await expect(state.execute({ command: "aliased", run_in_background: true }))
-      .resolves.toMatchObject({ isError: true });
-    await expect(access(join(external, "bash"))).rejects.toMatchObject({ code: "ENOENT" });
-    expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
-    await state.context.fiber.dispose();
-  });
-
-  it("kills and awaits the owned process tree on caller cancellation", async () => {
-    const state = await harness();
-    state.fakeSubprocess.plans.push(Object.freeze({ stderr: "", stdout: "partial\n" }));
-    const controller = new AbortController();
-    const pending = state.execute({ command: "wait" }, controller.signal);
-    for (let attempt = 0; attempt < 100 && state.fakeSubprocess.handles.length === 0; attempt += 1) {
-      await new Promise<void>((resolve) => { setImmediate(resolve); });
-    }
-    expect(state.fakeSubprocess.handles).toHaveLength(1);
-    controller.abort(new Error("fixture cancellation"));
-    await expect(pending).resolves.toMatchObject({ isError: true });
-    await expect(state.fakeSubprocess.handles[0]?.done).resolves.toEqual({ exitCode: null, signal: "SIGTERM" });
-    expect(state.context.jobs.list(state.agent)).toEqual([]);
-    await state.context.fiber.dispose();
-  });
-
-  it("enforces the generation process quota and drains background trees on root disposal", async () => {
-    const state = await harness();
-    state.fakeSubprocess.plans.push(
-      Object.freeze({ stderr: "", stdout: "one\n" }),
-      Object.freeze({ stderr: "", stdout: "two\n" }),
-    );
-    await expect(state.execute({ command: "one", run_in_background: true })).resolves.toMatchObject({ isError: false });
-    await expect(state.execute({ command: "two", run_in_background: true })).resolves.toMatchObject({ isError: false });
-    const product = Object.freeze({
-      agent: state.agent,
-      birth: state.operation.birth,
-      callId: "quota-search",
-      catalog,
-      clientOperationId: state.operation.clientOperationId,
-      dshTurn: 1,
-      environment: state.environment,
-      origin: "root" as const,
-      productTurnId: state.operation.productTurnId,
-      rootCallId: "quota-search",
-      signal: new AbortController().signal,
-    }) satisfies ProductToolContext;
-    const workspace = await state.processIo.captureWorkspace(state.workspace, product.signal);
-    await expect(state.context.productProcesses.runSearch(product, workspace, "Glob", ["--files"], 1_024))
-      .rejects.toMatchObject({ code: "search_failed" });
-    await expect(state.execute({ command: "three", run_in_background: true })).resolves.toMatchObject({
-      isError: true,
-      error: { info: { code: "process_spawn_failed" } },
-    });
-    expect(state.fakeSubprocess.specs).toHaveLength(2);
-    await state.context.fiber.dispose();
-    await expect(Promise.all(state.fakeSubprocess.handles.map((handle) => handle.done))).resolves.toEqual([
-      { exitCode: null, signal: "SIGTERM" },
-      { exitCode: null, signal: "SIGTERM" },
-    ]);
   });
 
   it("maps sealed ripgrep failures to each canonical search contract", async () => {
@@ -1172,4 +566,113 @@ describe("canonical process tools", () => {
     expect(state.fakeSubprocess.specs).toHaveLength(0);
     await state.context.fiber.dispose();
   });
+  it("uses the official Bash definition and foreground result with a sealed environment", async () => {
+    const state = await harness();
+    state.fakeSubprocess.plans.push({ outcome: { exitCode: 7, signal: null }, stdout: "output\n", stderr: "warning\n" });
+    process.env.MYAGENTS_SHELL_PRIVATE_FIXTURE = "must-not-inherit";
+    try {
+      const result = await state.execute({ command: "printf output; exit 7" });
+      expect(result).toMatchObject({ isError: false, meta: { exitCode: 7, status: "failed" }, value: { kind: "foreground", exitCode: 7, timedOut: false, stdout: { text: "output\n" }, stderr: { text: "warning\n" } } });
+      const spec = state.fakeSubprocess.specs[0];
+      expect(spec?.argv).toEqual([state.config.executablePaths.shell, "-c", "printf output; exit 7"]);
+      expect(spec?.cwd).toBe(state.workspace);
+      expect(spec?.env).toMatchObject({ PATH: "/usr/bin:/bin", DSH_HOME: state.runtimeHome, DSH_SESSION_ID: state.agent.id, DSH_SHELL: "1" });
+      expect(spec?.env?.MYAGENTS_SHELL_PRIVATE_FIXTURE).toBeUndefined();
+    } finally {
+      delete process.env.MYAGENTS_SHELL_PRIVATE_FIXTURE;
+      await state.context.fiber.dispose();
+    }
+  });
+
+  it("uses official PowerShell argv and UTF-8 preamble without an intermediate Bash", async () => {
+    const state = await harness({ dialect: "pwsh" });
+    const result = await state.execute({ command: "Write-Output '中文'" });
+    expect(result.isError).toBe(false);
+    expect(state.context.tools.get("bash")).toBeUndefined();
+    const spec = state.fakeSubprocess.specs[0];
+    expect(spec?.argv.slice(0, 5)).toEqual([state.config.executablePaths.shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]);
+    expect(spec?.argv[5]).toContain("OutputEncoding");
+    expect(spec?.argv[5]).toContain("Write-Output '中文'");
+    expect(state.context.tools.get("pwsh")?.description).toContain("PowerShell");
+    await state.context.fiber.dispose();
+  });
+
+  it("ends foreground work on its official timeout without promoting a job", async () => {
+    const state = await harness();
+    state.fakeSubprocess.plans.push({ stdout: "partial", stderr: "" });
+    const result = await state.execute({ command: "slow", timeoutMs: 10 });
+    expect(result).toMatchObject({ meta: { status: "timeout" }, value: { kind: "foreground", timedOut: true } });
+    expect(state.fakeSubprocess.handles[0]?.terminateHits).toBeGreaterThan(0);
+    expect(state.context.jobs.list(state.agent)).toEqual([]);
+    await state.context.fiber.dispose();
+  });
+
+  it("uses official Jobs reads, cancellation and owner-scoped completion notices", async () => {
+    const state = await harness();
+    state.fakeSubprocess.plans.push({ stdout: "background output\n", stderr: "" });
+    const result = await state.execute({ command: "background", run_in_background: true });
+    expect(result).toMatchObject({ isError: false, meta: { status: "background" }, value: { kind: "background" } });
+    const jobId = (result.value as { jobId: JobId }).jobId;
+    const listed = await state.execute({}, undefined, "job_list");
+    expect(listed.value).toMatchObject([{ id: jobId, status: "running" }]);
+    const output = await state.execute({ job_id: jobId }, undefined, "job_output");
+    expect(output.value).toMatchObject({ text: "background output\n", job: { id: jobId } });
+    await state.execute({ job_id: jobId }, undefined, "job_kill");
+    await state.context.jobs.wait(jobId, 1_000, state.agent);
+    expect(state.fakeSubprocess.handles[0]?.terminateHits).toBeGreaterThan(0);
+    state.fakeSubprocess.plans.push({ stdout: "complete", stderr: "" });
+    const completed = await state.execute({ command: "naturally-finished", run_in_background: true });
+    state.fakeSubprocess.handles.at(-1)?.settle({ exitCode: 0, signal: null });
+    expect(completed).toMatchObject({ isError: false, meta: { status: "background" }, value: { kind: "background" } });
+    await state.fakeSubprocess.handles.at(-1)?.done;
+    await new Promise<void>((resolve) => { setImmediate(resolve); });
+    expect(state.inject.mock.calls[0]?.[0]).toMatchObject({ source: { kind: "plugin", plugin: "tool-jobs", form: "notice" } });
+    expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
+    await state.context.fiber.dispose();
+  });
+
+  it("keeps background ownership after the starting call is cancelled and enforces its owner", async () => {
+    const state = await harness();
+    state.fakeSubprocess.plans.push({ stdout: "", stderr: "" });
+    const controller = new AbortController();
+    const result = await state.execute({ command: "background", run_in_background: true }, controller.signal);
+    const jobId = (result.value as { jobId: JobId }).jobId;
+    controller.abort();
+    expect(state.fakeSubprocess.handles[0]?.terminateHits).toBe(0);
+    const stranger = { id: "other-agent" } as Agent;
+    expect(() => state.context.jobs.read(jobId, stranger)).toThrow();
+    await state.disposeAgent();
+    expect(state.fakeSubprocess.handles[0]?.terminateHits).toBeGreaterThan(0);
+    await state.context.fiber.dispose();
+  });
+
+  it("denies background policy and workdirs outside the workspace before spawning", async () => {
+    const state = await harness({ backgroundRetention: "deny" });
+    expect((await state.execute({ command: "background", run_in_background: true })).isError).toBe(true);
+    expect((await state.execute({ command: "outside", workdir: ".." })).isError).toBe(true);
+    expect(state.fakeSubprocess.specs).toHaveLength(0);
+    await state.context.fiber.dispose();
+  });
+
+  it("allows Read of an upstream spill only for its producing Agent and pins the file identity", async () => {
+    const state = await harness();
+    const output = join(state.root, "official-output.log");
+    await writeFile(output, "full upstream output");
+    state.fakeSubprocess.plans.push({ outcome: { exitCode: 0, signal: null }, stdout: "tail", stdoutLossy: true, stdoutSpillPath: output, stderr: "" });
+    const result = await state.execute({ command: "large-output" });
+    expect(result.isError).toBe(false);
+    const product: ProductToolContext = {
+      agent: state.agent, birth: state.operation.birth, callId: "read-spill", catalog,
+      clientOperationId: state.operation.clientOperationId, dshTurn: 1, environment: state.environment,
+      origin: "root", productTurnId: state.operation.productTurnId, rootCallId: "read-spill", signal: new AbortController().signal,
+    };
+    const target = await state.context.productProcesses.resolveRetainedOutput(product, output);
+    expect(target.displayPath).toBe(output);
+    expect(() => state.context.productProcesses.resolveRetainedOutput({ ...product, agent: { id: "other" } as Agent }, output)).toThrow();
+    await rename(output, `${output}.original`);
+    await writeFile(output, "replacement");
+    await expect(state.context.fs.readBytes(target, undefined, 1_024)).rejects.toThrow();
+    await state.context.fiber.dispose();
+  });
+
 });

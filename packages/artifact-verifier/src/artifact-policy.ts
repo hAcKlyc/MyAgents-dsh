@@ -246,6 +246,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     allowedFiles: [
       "generated/catalog-fixtures-v1.json",
       "generated/canonical-tool-contracts-v1.json",
+      "generated/official-shell-tools-v1.json",
       "generated/dsh-reuse-matrix-v1.json",
       "generated/tool-catalog.schema.json",
       "generated/tool-contract-meta.json",
@@ -284,8 +285,6 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "package.json",
       "src/index.ts",
       "src/runtime.ts",
-      "src/windows-job-host.ps1",
-      "src/windows-job-subprocess.ts",
     ],
   },
   {

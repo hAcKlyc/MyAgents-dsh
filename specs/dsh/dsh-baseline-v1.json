@@ -17,11 +17,96 @@
     "registry": "https://registry.npmjs.org",
     "dshRelease": "0.1.2-rc.1",
     "sourceAssociation": "unproven",
-    "directPackageCount": 52,
-    "productionPackageCount": 322
+    "directPackageCount": 58,
+    "productionPackageCount": 328
   },
   "publicCompileFixture": "packages/product-profile/src/dsh-public-surface.compile.ts",
   "publicSeams": [
+    {
+      "id": "bash-local",
+      "package": "@deepseek-ai/dsh-bash-local",
+      "importPath": "@deepseek-ai/dsh-bash-local",
+      "classification": "provider",
+      "batchUse": [
+        "UPG-W10"
+      ],
+      "values": [
+        "LocalBashExecutor"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "pwsh-local",
+      "package": "@deepseek-ai/dsh-pwsh-local",
+      "importPath": "@deepseek-ai/dsh-pwsh-local",
+      "classification": "provider",
+      "batchUse": [
+        "UPG-W10"
+      ],
+      "values": [
+        "PwshLocalExecutor",
+        "resolvePwshPath"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "shell-env",
+      "package": "@deepseek-ai/dsh-shell-env",
+      "importPath": "@deepseek-ai/dsh-shell-env",
+      "classification": "provider",
+      "batchUse": [
+        "UPG-W10"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "tool-bash",
+      "package": "@deepseek-ai/dsh-tool-bash",
+      "importPath": "@deepseek-ai/dsh-tool-bash",
+      "classification": "provider",
+      "batchUse": [
+        "UPG-W10"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "tool-jobs",
+      "package": "@deepseek-ai/dsh-tool-jobs",
+      "importPath": "@deepseek-ai/dsh-tool-jobs",
+      "classification": "provider",
+      "batchUse": [
+        "UPG-W10"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "tool-pwsh",
+      "package": "@deepseek-ai/dsh-tool-pwsh",
+      "importPath": "@deepseek-ai/dsh-tool-pwsh",
+      "classification": "provider",
+      "batchUse": [
+        "UPG-W10"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
     {
       "id": "session-query-sqlite",
       "package": "@deepseek-ai/dsh-session-query-sqlite",
@@ -886,7 +971,7 @@
     },
     {
       "license": "MIT",
-      "count": 224
+      "count": 230
     },
     {
       "license": "Python-2.0",
@@ -1347,6 +1432,16 @@
       "optional": false
     },
     {
+      "path": "node_modules/@deepseek-ai/dsh-bash-local",
+      "name": "@deepseek-ai/dsh-bash-local",
+      "version": "0.1.2-rc.1",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-bash-local/-/dsh-bash-local-0.1.2-rc.1.tgz",
+      "integrity": "sha512-/3+AO2TSC5RUKzP0/UZuWhIdwUUd30fx35/eTn8+KlntD7gPgDRMIv1JfXVTxk2pCU3K1V9JX3XjdJ5dHpEObA==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
       "path": "node_modules/@deepseek-ai/dsh-brand",
       "name": "@deepseek-ai/dsh-brand",
       "version": "0.1.2-rc.1",
@@ -1557,6 +1652,16 @@
       "optional": false
     },
     {
+      "path": "node_modules/@deepseek-ai/dsh-pwsh-local",
+      "name": "@deepseek-ai/dsh-pwsh-local",
+      "version": "0.1.2-rc.1",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-pwsh-local/-/dsh-pwsh-local-0.1.2-rc.1.tgz",
+      "integrity": "sha512-jFJQOWkQ3qHWj4xg5he0pjJtzktZYnrjMmDTJmxI4vyMK8UxpEoR0tD4p6eNAJoxZusot9o1/SUqe+HJcjoSrw==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
       "path": "node_modules/@deepseek-ai/dsh-sandbox",
       "name": "@deepseek-ai/dsh-sandbox",
       "version": "0.1.2-rc.1",
@@ -1672,6 +1777,16 @@
       "version": "0.1.2-rc.1",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-shell/-/dsh-shell-0.1.2-rc.1.tgz",
       "integrity": "sha512-uFrSY0nNKzh5orGl2B0B4RfK7wTdIlwhPQc7aLA44jyjioLlqhF7PUek/NWtye2scwp3YHOw158XeOQUD8qTFg==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-shell-env",
+      "name": "@deepseek-ai/dsh-shell-env",
+      "version": "0.1.2-rc.1",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-shell-env/-/dsh-shell-env-0.1.2-rc.1.tgz",
+      "integrity": "sha512-o1VqxyHp1OrMB8aHnzYAPwuU4giUErCxBg0yr035r6f3Le36viS0sUHsnjcAsMdbaQJf/XvzbaokYDVrdVHE4A==",
       "license": "MIT",
       "direct": true,
       "optional": false
@@ -1797,6 +1912,16 @@
       "optional": false
     },
     {
+      "path": "node_modules/@deepseek-ai/dsh-tool-bash",
+      "name": "@deepseek-ai/dsh-tool-bash",
+      "version": "0.1.2-rc.1",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-tool-bash/-/dsh-tool-bash-0.1.2-rc.1.tgz",
+      "integrity": "sha512-xKc4oXVDBwM/PaicpjGdWEaJ1N14B7KPmOzdpQ7ynE4gKUnvGU/eTg18EHamdyDOidh5ox0fNUnxk0rQjVo2+Q==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
       "path": "node_modules/@deepseek-ai/dsh-tool-call-timeout-policy",
       "name": "@deepseek-ai/dsh-tool-call-timeout-policy",
       "version": "0.1.2-rc.1",
@@ -1812,6 +1937,26 @@
       "version": "0.1.2-rc.1",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-tool-fs-search/-/dsh-tool-fs-search-0.1.2-rc.1.tgz",
       "integrity": "sha512-F6j7OhMCowlOwIYmB4hA6sqenw2V7Eez90BjLww87iM9YarR6D/CQcHJN4OIViepuyE4sLtk5gkXM8oT/PeTNg==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-tool-jobs",
+      "name": "@deepseek-ai/dsh-tool-jobs",
+      "version": "0.1.2-rc.1",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-tool-jobs/-/dsh-tool-jobs-0.1.2-rc.1.tgz",
+      "integrity": "sha512-ya7E6zToAdJ+GvNeZFPx8jNx0CfI52tlp0NCGzXHeB0S74haGWCV0iFe1nyoDJg7SDiN1xc1d2nV9klOqWtd5g==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-tool-pwsh",
+      "name": "@deepseek-ai/dsh-tool-pwsh",
+      "version": "0.1.2-rc.1",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-tool-pwsh/-/dsh-tool-pwsh-0.1.2-rc.1.tgz",
+      "integrity": "sha512-LaImOCdizIGkQnxzzkoaqzRWGZLsuDuqqF2adgJ3zeG0nDwan4Sz+1wYz4YSp0Gg6mJ79CYacsbYmGhYYyKY/g==",
       "license": "MIT",
       "direct": true,
       "optional": false

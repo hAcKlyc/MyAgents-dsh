@@ -1,3 +1,9 @@
+import * as OfficialBashLocal from "@deepseek-ai/dsh-bash-local";
+import * as OfficialPwshLocal from "@deepseek-ai/dsh-pwsh-local";
+import * as OfficialShellEnv from "@deepseek-ai/dsh-shell-env";
+import * as OfficialToolBash from "@deepseek-ai/dsh-tool-bash";
+import * as OfficialToolJobs from "@deepseek-ai/dsh-tool-jobs";
+import * as OfficialToolPwsh from "@deepseek-ai/dsh-tool-pwsh";
 import { Context, Service } from "@deepseek-ai/cordis";
 import type { Plugin } from "@deepseek-ai/cordis";
 import { AgentRegistry } from "@deepseek-ai/dsh-agent";
@@ -115,6 +121,7 @@ import { WebRuntime } from "@deepseek-ai/dsh-web";
 import type { WebFetchProvider, WebSearchProvider } from "@deepseek-ai/dsh-web";
 
 export const dshPublicSurfaceValues = Object.freeze({
+  officialShell: [OfficialBashLocal, OfficialPwshLocal, OfficialShellEnv, OfficialToolBash, OfficialToolJobs, OfficialToolPwsh],
   AgentLoop,
   AgentRegistry,
   AgentInstructionsConfigValue,

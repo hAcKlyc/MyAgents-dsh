@@ -1,3 +1,4 @@
+import { resolvePwshPath } from "@deepseek-ai/dsh-pwsh-local";
 import {
   CANONICAL_TOOL_NAMES,
   CANONICAL_TOOL_CONTRACT_SHA256,
@@ -40,13 +41,13 @@ import { delimiter, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 export const OFFICIAL_HOST_INTERACTION_REVISION = "host-interaction-v1" as const;
-export const OFFICIAL_TOOL_CATALOG_REVISION = "official-canonical-tools-v3" as const;
+export const OFFICIAL_TOOL_CATALOG_REVISION = "official-canonical-tools-v4" as const;
 export const OFFICIAL_EXTENSION_REVISION = "official-empty-extensions-v1" as const;
 export const OFFICIAL_PLAN_REVISION = "official-plan-v1" as const;
 export const OFFICIAL_ORIGIN_REVISION = "official-root-origin-v1" as const;
 
-const unavailableWebTools = new Set<string>();
-const effectiveTools = Object.freeze(CANONICAL_TOOL_NAMES.filter((tool) => !unavailableWebTools.has(tool)));
+const unavailableShellTools = new Set<string>([selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)).shell.dialect === "pwsh" ? "bash" : "pwsh"]);
+const effectiveTools = Object.freeze(CANONICAL_TOOL_NAMES.filter((tool) => !unavailableShellTools.has(tool)));
 const toolCatalogAuthority = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
@@ -54,8 +55,8 @@ const toolCatalogAuthority = Object.freeze({
   effectiveTools,
   revision: OFFICIAL_TOOL_CATALOG_REVISION,
   diagnostics: Object.freeze(CANONICAL_TOOL_NAMES.map((tool) => Object.freeze(
-    unavailableWebTools.has(tool)
-      ? { tool, available: false as const, reasonCode: "no-approved-web-provider" }
+    unavailableShellTools.has(tool)
+      ? { tool, available: false as const, reasonCode: "shell-not-selected-for-platform" }
       : { tool, available: true as const },
   ))),
 });
@@ -146,58 +147,20 @@ const processAuthority = async (target: PlatformTarget) => {
   if (target !== resolveRuntimePlatformTarget(process.platform, process.arch)) {
     throw new Error("official Runtime process authority must match the native artifact target");
   }
-  const [bash, bundledNode, ripgrep] = await Promise.all([
-    resolveExecutable("bash", target),
+  const [shell, bundledNode, ripgrep] = await Promise.all([
+    platform.shell.dialect === "pwsh" ? realpath(resolvePwshPath()) : resolveExecutable("bash", target),
     realpath(process.execPath),
     realpath(rgPath),
   ]);
-  await access(ripgrep, fsConstants.X_OK);
-  if (target !== "win32-x64") {
-    const [bashSha256, bundledNodeSha256, ripgrepSha256] = await Promise.all([
-      sha256File(bash), sha256File(bundledNode), sha256File(ripgrep),
-    ]);
-    return Object.freeze({
-      allowedCommandRefs: Object.freeze(["bundled-bash", "bundled-node", "bundled-ripgrep"]),
-      environmentValues: processEnvironmentValues(),
-      executablePaths: Object.freeze({ bash, bundledNode, ripgrep }),
-      executableRefs: Object.freeze({
-        bash: "bundled-bash",
-        bundledNode: "bundled-node",
-        ripgrep: "bundled-ripgrep",
-      }),
-      executableSha256: Object.freeze({
-        bash: bashSha256,
-        bundledNode: bundledNodeSha256,
-        ripgrep: ripgrepSha256,
-      }),
-    });
-  }
-  const windowsPowerShell = await resolveExecutable("powershell", target);
-  const [bashSha256, bundledNodeSha256, ripgrepSha256, windowsPowerShellSha256] = await Promise.all([
-    sha256File(bash), sha256File(bundledNode), sha256File(ripgrep), sha256File(windowsPowerShell),
-  ]);
-  if (platform.shell.utf8PreludeRef === undefined) {
-    throw new Error("Windows platform adapter lacks its UTF-8 prelude authority");
-  }
+  await Promise.all([access(shell, fsConstants.X_OK), access(ripgrep, fsConstants.X_OK)]);
+  const [shellSha256, nodeSha256, ripgrepSha256] = await Promise.all([sha256File(shell), sha256File(bundledNode), sha256File(ripgrep)]);
   return Object.freeze({
-    allowedCommandRefs: Object.freeze([
-      "bundled-bash", "bundled-node", "bundled-powershell", "bundled-ripgrep",
-    ]),
+    shellDialect: platform.shell.dialect,
+    allowedCommandRefs: Object.freeze(["runtime-shell", "bundled-node", "bundled-ripgrep"]),
     environmentValues: processEnvironmentValues(),
-    executablePaths: Object.freeze({ bash, bundledNode, ripgrep, windowsPowerShell }),
-    executableRefs: Object.freeze({
-      bash: "bundled-bash",
-      bundledNode: "bundled-node",
-      ripgrep: "bundled-ripgrep",
-      windowsPowerShell: "bundled-powershell",
-      windowsUtf8Prelude: platform.shell.utf8PreludeRef,
-    }),
-    executableSha256: Object.freeze({
-      bash: bashSha256,
-      bundledNode: bundledNodeSha256,
-      ripgrep: ripgrepSha256,
-      windowsPowerShell: windowsPowerShellSha256,
-    }),
+    executablePaths: Object.freeze({ shell, bundledNode, ripgrep }),
+    executableRefs: Object.freeze({ shell: "runtime-shell", bundledNode: "bundled-node", ripgrep: "bundled-ripgrep" }),
+    executableSha256: Object.freeze({ shell: shellSha256, bundledNode: nodeSha256, ripgrep: ripgrepSha256 }),
   });
 };
 

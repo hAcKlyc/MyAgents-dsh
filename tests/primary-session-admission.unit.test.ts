@@ -36,15 +36,11 @@ const processEnvironmentFields = (windows = false) => ({
   environment: { allowedKeys: [], inheritedKeys: [], secretValues: "reverse-port-only" as const },
   executables: {
     allowedCommandRefs: [],
-    bashDialect: "bash" as const,
-    bashRef: "bash-v1",
+    shellDialect: windows ? "pwsh" as const : "bash" as const,
+    shellRef: "bash-v1",
     bundledNodeRef: "node-v1",
     pathPolicy: "sealed" as const,
     ripgrepRef: "ripgrep-v1",
-    ...(windows ? {
-      windowsPowerShellRef: "powershell-v1",
-      windowsUtf8PreludeRef: "utf8-prelude-v1",
-    } : {}),
   },
   network: { mode: "deny" as const },
   process: { backgroundRetention: "allow" as const, killTreeOnAbort: true as const, maxChildren: 4 },

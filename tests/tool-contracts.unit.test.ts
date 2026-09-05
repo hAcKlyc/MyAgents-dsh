@@ -15,6 +15,7 @@ import {
 import {
   CANONICAL_TOOL_CONTRACT_SHA256 as TOOL_CONTRACT_SHA256,
   CANONICAL_TOOL_CONTRACTS,
+  isOfficialShellTool,
   CANONICAL_TOOL_NAMES,
   CANONICAL_TOOL_REUSE_MATRIX,
   CANONICAL_TOOL_SCHEMA_FIXTURES,
@@ -33,10 +34,10 @@ import {
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
-describe("canonical twenty-tool contract authority", () => {
+describe("canonical tool contract authority", () => {
   it("owns the only exact ordered model catalog and immutable per-tool facts", () => {
     expect(CANONICAL_TOOL_NAMES).toEqual([
-      "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls",
+      "Read", "Write", "Edit", "Glob", "Grep", "bash", "pwsh", "job_output", "job_list", "job_kill", "ls",
       "WebFetch", "WebSearch", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
       "Skill", "Agent", "TaskStop", "SendMessage",
       "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
@@ -47,8 +48,8 @@ describe("canonical twenty-tool contract authority", () => {
     expect(Object.isFrozen(PROTOCOL_TOOL_NAMES)).toBe(true);
     expect(() => (CANONICAL_TOOL_NAMES as unknown as string[]).pop()).toThrow(TypeError);
     expect(() => (PROTOCOL_TOOL_NAMES as unknown as string[]).splice(0, 1)).toThrow(TypeError);
-    expect(CANONICAL_TOOL_NAMES).toHaveLength(20);
-    expect(PROTOCOL_TOOL_NAMES).toHaveLength(20);
+    expect(CANONICAL_TOOL_NAMES).toHaveLength(24);
+    expect(PROTOCOL_TOOL_NAMES).toHaveLength(24);
     expect(Object.keys(CANONICAL_TOOL_CONTRACTS)).toEqual(CANONICAL_TOOL_NAMES);
     expect(Object.keys(CANONICAL_TOOL_REUSE_MATRIX)).toEqual(CANONICAL_TOOL_NAMES);
     expect(Object.isFrozen(CANONICAL_TOOL_CONTRACTS)).toBe(true);
@@ -84,7 +85,7 @@ describe("canonical twenty-tool contract authority", () => {
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
       CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "managed-plan-file-only")).toEqual(["Write", "Edit"]);
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
-      CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "denied")).toEqual(["Bash", "TaskStop", "SendMessage"]);
+      CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "denied")).toEqual(["bash", "pwsh", "job_kill", "TaskStop", "SendMessage"]);
     expect(CANONICAL_TOOL_CONTRACTS.Agent.planPolicy).toMatchObject({
       denialCode: "plan_safe_agent_unavailable",
       mode: "plan-safe-child-only",
@@ -108,14 +109,14 @@ describe("canonical twenty-tool contract authority", () => {
       expect(Value.Check(contract.inputSchema, {
         ...fixture.input,
         unexpected: true,
-      }), `${name} unknown input`).toBe(false);
+      }), `${name} unknown input`).toBe(isOfficialShellTool(name));
     }
     expect(Value.Check(CANONICAL_TOOL_CONTRACTS.Read.inputSchema, {
       file_path: `/${"x".repeat(8_192)}`,
     })).toBe(false);
-    expect(Value.Check(CANONICAL_TOOL_CONTRACTS.Bash.inputSchema, {
+    expect(Value.Check(CANONICAL_TOOL_CONTRACTS.bash.inputSchema, {
       command: "fixture",
-      timeout: 600_001,
+      timeoutMs: "not-a-number",
     })).toBe(false);
     expect(validateCanonicalToolInput("Agent", {
       description: "调研子代理能力\n只读探索",
@@ -462,8 +463,8 @@ describe("canonical twenty-tool contract authority", () => {
     const seams = new Map(publicSeams.map((seam) => [seam.importPath, seam]));
     for (const name of CANONICAL_TOOL_NAMES) {
       const decision = CANONICAL_TOOL_REUSE_MATRIX[name];
-      expect(decision.modelDefinition).toBe("compat-tool");
-      expect(decision.stockModelDefinition).toBe("excluded");
+      expect(decision.modelDefinition).toBe(isOfficialShellTool(name) ? "official-tool" : "compat-tool");
+      expect(decision.stockModelDefinition).toBe(isOfficialShellTool(name) ? "enabled" : "excluded");
       expect(decision.productOwner).toMatch(/^@myagents-dsh\//u);
       expect(decision.dshPublicReuse.length).toBeGreaterThan(0);
       for (const reuse of decision.dshPublicReuse) {
@@ -502,7 +503,7 @@ describe("canonical twenty-tool contract authority", () => {
     const meta = JSON.parse(metaBytes) as { contractSha256: string; canonicalToolCount: number };
     const protocolMeta = JSON.parse(protocolMetaBytes) as { canonicalToolContractSha256: string };
     const digest = createHash("sha256").update(contractBytes).digest("hex");
-    expect(meta.canonicalToolCount).toBe(20);
+    expect(meta.canonicalToolCount).toBe(24);
     expect(meta.contractSha256).toBe(digest);
     expect(PROTOCOL_TOOL_CONTRACT_SHA256).toBe(digest);
     expect(protocolMeta.canonicalToolContractSha256).toBe(digest);

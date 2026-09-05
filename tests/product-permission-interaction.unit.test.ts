@@ -178,7 +178,7 @@ const mounted = async (
 };
 
 const request = (
-  tool: ProductToolPermissionRequest["tool"] = "Bash",
+  tool: ProductToolPermissionRequest["tool"] = "bash",
   permissionClass = "process.execute",
   target = "workspace-command",
 ): ProductToolPermissionRequest => Object.freeze({ permissionClass, target, tool });
@@ -186,7 +186,7 @@ const request = (
 describe("product permission policy and local interaction provider", () => {
   it("continues independent approvals after Bash Always Allow without widening its grant", async () => {
     const local = provider("scenario-progress", (pending, settlement) =>
-      response(pending, pending.tool === "Bash" ? "always_allow" : "allow_once", settlement));
+      response(pending, pending.tool === "bash" ? "always_allow" : "allow_once", settlement));
     const state = await mounted(local.provider, { mode: "acceptEdits" });
     const original = state.product();
     await expect(state.context.productPermission.authorize(original, request())).resolves.toBe("allow");
@@ -196,7 +196,7 @@ describe("product permission policy and local interaction provider", () => {
         .resolves.toBe("allow");
     }
     expect(local.permissionRequests.map(({ tool }) => tool)).toEqual([
-      "Bash", "WebSearch", "WebFetch", "TaskCreate", "Skill", "Agent", "AskUserQuestion",
+      "bash", "WebSearch", "WebFetch", "TaskCreate", "Skill", "Agent", "AskUserQuestion",
     ]);
     expect(local.permissionRequests.slice(1).every(({ expectedPermissionRevision }) =>
       expectedPermissionRevision === state.context.productPermission.currentRevision(state.agent))).toBe(true);
@@ -212,7 +212,7 @@ describe("product permission policy and local interaction provider", () => {
     const state = await mounted(local.provider);
     const original = state.product();
     const first = state.context.productPermission.authorize(original, request());
-    const second = state.context.productPermission.authorize({ ...original, callId: "second" }, request("Bash", "process.execute", "other"));
+    const second = state.context.productPermission.authorize({ ...original, callId: "second" }, request("bash", "process.execute", "other"));
     while (decisions.length < 2) await Promise.resolve();
     const flush = Promise.withResolvers<boolean>();
     state.setFlushResult(flush.promise);
@@ -220,7 +220,7 @@ describe("product permission policy and local interaction provider", () => {
     while (state.flushes.length < 1) await Promise.resolve();
     response(required(local.permissionRequests[0]), "always_allow", required(decisions[0]));
     let readerSettled = false;
-    const reader = state.context.productPermission.authorize({ ...original, callId: "reader" }, request("Bash", "process.execute", "other"))
+    const reader = state.context.productPermission.authorize({ ...original, callId: "reader" }, request("bash", "process.execute", "other"))
       .then((result) => { readerSettled = true; return result; });
     await Promise.resolve();
     await Promise.resolve();
@@ -295,7 +295,7 @@ describe("product permission policy and local interaction provider", () => {
     const snapshot = state.permissionController.snapshot(state.agent);
     if (mutation === "grant") {
       await state.permissionController.grantRule(state.agent, {
-        expectedRevision: snapshot.revision, tool: "Bash", permissionClass: "process.execute", target: "external",
+        expectedRevision: snapshot.revision, tool: "bash", permissionClass: "process.execute", target: "external",
       });
     } else {
       await state.permissionController.revokeRule(state.agent, { expectedRevision: snapshot.revision, ruleId: required(snapshot.rules[0]).ruleId });
@@ -314,14 +314,14 @@ describe("product permission policy and local interaction provider", () => {
     });
     const display = { command: "printf first", cwd: "/workspace", description: "First command" };
     await expect(state.context.productPermission.authorize(product(), {
-      ...request("Bash", "process.execute", "/workspace"), display,
+      ...request("bash", "process.execute", "/workspace"), display,
     })).resolves.toBe("allow");
     expect(local.permissionRequests[0]?.display).toEqual(display);
     expect(JSON.stringify(state.session.snapshotEvents())).not.toContain("printf first");
     expect(JSON.stringify(state.session.snapshotEvents())).not.toContain('"display"');
     const revision = state.context.productPermission.currentRevision(state.agent);
     await expect(state.context.productPermission.authorize(product(revision), {
-      ...request("Bash", "process.execute", "/workspace"),
+      ...request("bash", "process.execute", "/workspace"),
       display: { command: "printf second", cwd: "/workspace" },
     })).resolves.toBe("allow");
     expect(local.permissionRequests).toHaveLength(1);
@@ -408,8 +408,8 @@ describe("product permission policy and local interaction provider", () => {
     await expect(state.context.productPermission.authorize(state.product(), request()))
       .resolves.toBe("deny");
     expect(hookRequests).toEqual([
-      { permissionClass: "process.execute", target: "workspace-command", tool: "Bash" },
-      { permissionClass: "process.execute", target: "workspace-command", tool: "Bash" },
+      { permissionClass: "process.execute", target: "workspace-command", tool: "bash" },
+      { permissionClass: "process.execute", target: "workspace-command", tool: "bash" },
     ]);
     expect(local.permissionRequests).toEqual([]);
   });
@@ -424,8 +424,8 @@ describe("product permission policy and local interaction provider", () => {
     )).resolves.toBe("allow");
     await expect(state.context.productPermission.authorize(
       state.product(),
-      request("Bash", "workspace.read", "workspace-command"),
-    )).rejects.toThrow("permission class must match the canonical Bash contract");
+      request("bash", "workspace.read", "workspace-command"),
+    )).rejects.toThrow("permission class must match the canonical bash contract");
     expect(local.permissionRequests).toEqual([]);
     expect(state.session.snapshotEvents().filter(({ type }) => type.startsWith("approval/"))).toEqual([]);
   });
@@ -451,7 +451,7 @@ describe("product permission policy and local interaction provider", () => {
       )).resolves.toBe(fixture.write);
       await expect(state.context.productPermission.authorize(
         state.product(),
-        request("Bash", "process.execute", "workspace-command"),
+        request("bash", "process.execute", "workspace-command"),
       )).resolves.toBe(fixture.bash);
       expect(local.permissionRequests, fixture.mode).toHaveLength(fixture.prompts);
     }
@@ -480,11 +480,11 @@ describe("product permission policy and local interaction provider", () => {
 
     const applied = await state.permissionController.grantRule(state.agent, Object.freeze({
       expectedRevision: before.revision,
-      tool: "Bash",
+      tool: "bash",
       permissionClass: "process.execute",
       target: "workspace-command",
     }));
-    expect(applied).toMatchObject({ state: "applied", rule: { tool: "Bash" } });
+    expect(applied).toMatchObject({ state: "applied", rule: { tool: "bash" } });
     if (applied.state !== "applied" || applied.rule === undefined) throw new Error("rule grant fixture failed");
     expect(state.flushes).toEqual(["permission-session"]);
     await expect(state.context.productPermission.authorize(state.product(applied.revision), request()))
@@ -492,7 +492,7 @@ describe("product permission policy and local interaction provider", () => {
 
     await expect(state.permissionController.grantRule(state.agent, Object.freeze({
       expectedRevision: before.revision,
-      tool: "Bash",
+      tool: "bash",
       permissionClass: "process.execute",
       target: "workspace-command",
     }))).resolves.toMatchObject({ state: "already_effective", revision: applied.revision });
@@ -538,7 +538,7 @@ describe("product permission policy and local interaction provider", () => {
       interactionScenarioRevision: "scenario-v1",
       permissionClass: "process.execute",
       target: "workspace-command",
-      tool: "Bash",
+      tool: "bash",
     });
     const audit = state.session.snapshotEvents().filter(({ type }) => type.startsWith("approval/"));
     expect(audit.map(({ type }) => type)).toEqual(["approval/asked", "approval/decided"]);
@@ -572,7 +572,7 @@ describe("product permission policy and local interaction provider", () => {
     expect(local.permissionRequests).toHaveLength(1);
     expect(local.permissionRequests[0]?.agent).toBe(child);
     expect(local.permissionRequests[0]?.origin).toBe("background_child");
-    expect(local.permissionRequests[0]?.tool).toBe("Bash");
+    expect(local.permissionRequests[0]?.tool).toBe("bash");
     expect(state.session.snapshotEvents().some(({ type }) => type === "myagents/permission/rule")).toBe(true);
     expect(childSession.snapshotEvents().some(({ type }) => type === "myagents/permission/rule")).toBe(false);
     expect(state.flushes).toEqual([String(state.session.id)]);
@@ -733,7 +733,7 @@ describe("product permission policy and local interaction provider", () => {
       if (!(error instanceof Error) || !(error.cause instanceof Error)) {
         throw new Error("mismatched permission rule did not retain its validation cause", { cause: error });
       }
-      expect(error.cause.message).toBe("permission class must match the canonical Bash contract");
+      expect(error.cause.message).toBe("permission class must match the canonical bash contract");
     }
     await expect(state.context.productPermission.authorize(state.product(latest), request()))
       .resolves.toBe("allow");
@@ -1081,7 +1081,7 @@ describe("product permission policy and local interaction provider", () => {
       ruleId: "forged",
       fromRevision: baseRevision,
       revision: "forged-revision",
-      tool: "Bash",
+      tool: "bash",
       permissionClass: "process.execute",
       target: "workspace-command",
       origin: "root",

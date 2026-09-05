@@ -68,9 +68,9 @@ const initializeParams = {
     },
     executables: {
       bundledNodeRef: "node-v24",
-      bashRef: "bash",
+      shellRef: "bash",
       ripgrepRef: "rg",
-      bashDialect: "bash",
+      shellDialect: "bash",
       allowedCommandRefs: ["node-v24", "bash", "rg"],
       pathPolicy: "sealed",
     },
@@ -622,8 +622,8 @@ export const buildProtocolArtifacts = async (repositoryRoot: string): Promise<Ge
     throw new Error("Protocol inventory must contain exactly 44 Host methods, 7 reverse methods, and 4 notifications");
   }
   const canonicalTools: readonly string[] = CANONICAL_TOOL_NAMES;
-  if (canonicalTools.length !== 20 || new Set(canonicalTools).size !== 20) {
-    throw new Error("Canonical tool inventory must contain exactly 20 unique names");
+  if (new Set(canonicalTools).size !== canonicalTools.length) {
+    throw new Error("Canonical tool inventory must contain unique unique names");
   }
 
   const schema = {

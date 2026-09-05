@@ -884,7 +884,7 @@ describe("canonical Agent Work projection", () => {
 
   it("gives Explore the Claude Code-style read/search/Bash surface while hiding mutations and child spawn", async () => {
     const state = await harness();
-    const disposers = ["Read", "Write", "Bash", "TaskCreate", "AskUserQuestion", "EnterPlanMode"].map((name) =>
+    const disposers = ["Read", "Write", "bash", "TaskCreate", "AskUserQuestion", "EnterPlanMode"].map((name) =>
       state.context.tools.register(Object.freeze({
         name,
         description: `${name} fixture definition`,
@@ -908,7 +908,7 @@ describe("canonical Agent Work projection", () => {
       const descriptor = foldSubagentDescriptor(child.session.snapshotEvents());
       if (descriptor?.mode !== "continuable") throw new Error("Explore fixture descriptor is not continuable");
       const names = descriptor.toolFilter?.allow ?? [];
-      expect(names).toEqual(expect.arrayContaining(["Read", "Bash", "TaskStop", "SendMessage"]));
+      expect(names).toEqual(expect.arrayContaining(["Read", "bash", "TaskStop", "SendMessage"]));
       expect(names).not.toEqual(expect.arrayContaining(["Write", "TaskCreate", "AskUserQuestion", "EnterPlanMode", "Agent"]));
     } finally {
       for (const dispose of disposers.reverse()) dispose();

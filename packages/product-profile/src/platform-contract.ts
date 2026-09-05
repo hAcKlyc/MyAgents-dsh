@@ -45,11 +45,6 @@ export interface PublicationPlan {
   )[];
 }
 
-export interface PlatformProcessTreeHandle {
-  signal(signal: "SIGTERM" | "CTRL_BREAK_EVENT" | "SIGKILL" | "TerminateJobObject"): Promise<void>;
-  wait(timeoutMs: number): Promise<boolean>;
-}
-
 export interface PlatformRoots {
   readonly attachmentStaging: string;
   readonly runtimeHome: string;
@@ -67,14 +62,13 @@ export interface PlatformAdapterContract {
   readonly evidenceState: PlatformEvidenceState;
   readonly pathFlavor: "posix" | "win32";
   readonly shell: Readonly<{
-    dialect: "bash";
-    executableRef: "bundled-bash";
-    utf8PreludeRef?: "windows-utf8-v1";
+    dialect: "bash" | "pwsh";
+    executableRef: "runtime-shell";
   }>;
   readonly processTree: Readonly<{
-    owner: "process-group" | "job-object";
-    gracefulSignal: "SIGTERM" | "CTRL_BREAK_EVENT";
-    forceSignal: "SIGKILL" | "TerminateJobObject";
+    owner: "dsh-local-subprocess";
+    gracefulSignal: "SIGTERM" | "taskkill";
+    forceSignal: "SIGKILL" | "taskkill";
   }>;
   readonly stdio: Readonly<{
     framing: "ndjson-utf8";
@@ -100,15 +94,6 @@ export interface PlatformAdapterContract {
   samePath(left: string, right: string): boolean;
   publicationPlan(target: string, nonce: string): PublicationPlan;
   artifactName(distribution: string, version: string): string;
-  shellLaunchPlan(scriptPath: string, arguments_: readonly string[]): Readonly<{
-    executableRef: "bundled-bash";
-    arguments: readonly string[];
-    utf8PreludeRef?: "windows-utf8-v1";
-  }>;
-  cleanupProcessTree(handle: PlatformProcessTreeHandle, graceMs: number): Promise<Readonly<{
-    graceful: PlatformAdapterContract["processTree"]["gracefulSignal"];
-    forced: boolean;
-  }>>;
   encodeStdioFrame(value: Readonly<Record<string, unknown>>): Uint8Array;
   normalizeExplicitRoots(roots: PlatformRoots): PlatformRoots;
   sqliteDurabilityPlan(databasePath: string): SqliteDurabilityPlan;
@@ -120,11 +105,6 @@ const assertSegment = (value: string, description: string): void => {
   }
 };
 
-const assertArguments = (values: readonly string[]): readonly string[] => Object.freeze(values.map((value) => {
-  if (value.includes("\0") || value.length > 32_768) throw new TypeError("shell argument is invalid");
-  return value;
-}));
-
 const encodeStdioFrame = (value: unknown): Uint8Array => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("NDJSON frame must be an object");
@@ -134,22 +114,6 @@ const encodeStdioFrame = (value: unknown): Uint8Array => {
     throw new TypeError("NDJSON frame must serialize to one JSON line");
   }
   return new TextEncoder().encode(`${serialized}\n`);
-};
-
-const cleanupProcessTree = async (
-  handle: PlatformProcessTreeHandle,
-  graceMs: number,
-  graceful: PlatformAdapterContract["processTree"]["gracefulSignal"],
-  force: PlatformAdapterContract["processTree"]["forceSignal"],
-): Promise<Readonly<{ graceful: typeof graceful; forced: boolean }>> => {
-  if (!Number.isSafeInteger(graceMs) || graceMs < 1 || graceMs > 60_000) {
-    throw new TypeError("process cleanup grace must be a bounded positive integer");
-  }
-  await handle.signal(graceful);
-  if (await handle.wait(graceMs)) return Object.freeze({ graceful, forced: false });
-  await handle.signal(force);
-  if (!await handle.wait(graceMs)) throw new Error("platform process tree remained live after force cleanup");
-  return Object.freeze({ graceful, forced: true });
 };
 
 const normalizeRoots = (
@@ -188,8 +152,8 @@ const posixAdapter = (
     ? "implementation-complete_pending-native-validation"
     : "contract_defined",
   pathFlavor: "posix",
-  shell: Object.freeze({ dialect: "bash", executableRef: "bundled-bash" }),
-  processTree: Object.freeze({ owner: "process-group", gracefulSignal: "SIGTERM", forceSignal: "SIGKILL" }),
+  shell: Object.freeze({ dialect: "bash", executableRef: "runtime-shell" }),
+  processTree: Object.freeze({ owner: "dsh-local-subprocess", gracefulSignal: "SIGTERM", forceSignal: "SIGKILL" }),
   stdio: Object.freeze({ framing: "ndjson-utf8", newline: "lf", stdoutUse: "protocol-only" }),
   directories: Object.freeze({
     temporaryOwner: "platform-adapter",
@@ -225,15 +189,6 @@ const posixAdapter = (
     assertSegment(version, "version");
     return `${distribution}-${version}-${target}.tar.gz`;
   },
-  shellLaunchPlan(scriptPath: string, arguments_: readonly string[]) {
-    return Object.freeze({
-      executableRef: "bundled-bash" as const,
-      arguments: Object.freeze([this.normalizeAbsolutePath(scriptPath), ...assertArguments(arguments_)]),
-    });
-  },
-  async cleanupProcessTree(handle: PlatformProcessTreeHandle, graceMs: number) {
-    return await cleanupProcessTree(handle, graceMs, "SIGTERM", "SIGKILL");
-  },
   encodeStdioFrame,
   normalizeExplicitRoots(roots: PlatformRoots): PlatformRoots {
     return normalizeRoots(roots, (value) => this.normalizeAbsolutePath(value), (left, right) => this.samePath(left, right), "/");
@@ -252,14 +207,13 @@ const windowsAdapter = (): PlatformAdapterContract => Object.freeze({
   evidenceState: "implementation-complete_pending-native-validation",
   pathFlavor: "win32",
   shell: Object.freeze({
-    dialect: "bash",
-    executableRef: "bundled-bash",
-    utf8PreludeRef: "windows-utf8-v1",
+    dialect: "pwsh",
+    executableRef: "runtime-shell",
   }),
   processTree: Object.freeze({
-    owner: "job-object",
-    gracefulSignal: "CTRL_BREAK_EVENT",
-    forceSignal: "TerminateJobObject",
+    owner: "dsh-local-subprocess",
+    gracefulSignal: "taskkill",
+    forceSignal: "taskkill",
   }),
   stdio: Object.freeze({ framing: "ndjson-utf8", newline: "lf", stdoutUse: "protocol-only" }),
   directories: Object.freeze({
@@ -299,16 +253,6 @@ const windowsAdapter = (): PlatformAdapterContract => Object.freeze({
     assertSegment(distribution, "distribution");
     assertSegment(version, "version");
     return `${distribution}-${version}-win32-x64.zip`;
-  },
-  shellLaunchPlan(scriptPath: string, arguments_: readonly string[]) {
-    return Object.freeze({
-      executableRef: "bundled-bash" as const,
-      arguments: Object.freeze([this.normalizeAbsolutePath(scriptPath), ...assertArguments(arguments_)]),
-      utf8PreludeRef: "windows-utf8-v1" as const,
-    });
-  },
-  async cleanupProcessTree(handle: PlatformProcessTreeHandle, graceMs: number) {
-    return await cleanupProcessTree(handle, graceMs, "CTRL_BREAK_EVENT", "TerminateJobObject");
   },
   encodeStdioFrame,
   normalizeExplicitRoots(roots: PlatformRoots): PlatformRoots {

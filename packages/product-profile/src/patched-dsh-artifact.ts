@@ -12,18 +12,24 @@ const expectedRuntimePackageNames = Object.freeze([
   "@deepseek-ai/dsh-agent-loop",
   "@deepseek-ai/dsh-attachment",
   "@deepseek-ai/dsh-attachment-local",
+  "@deepseek-ai/dsh-bash-local",
   "@deepseek-ai/dsh-compaction",
   "@deepseek-ai/dsh-compaction-basic",
   "@deepseek-ai/dsh-compaction-tool-result-pruner",
   "@deepseek-ai/dsh-llm",
   "@deepseek-ai/dsh-llm-deepseek",
   "@deepseek-ai/dsh-llm-pi-ai",
+  "@deepseek-ai/dsh-pwsh-local",
   "@deepseek-ai/dsh-session",
   "@deepseek-ai/dsh-session-query",
   "@deepseek-ai/dsh-session-query-sqlite",
+  "@deepseek-ai/dsh-shell-env",
   "@deepseek-ai/dsh-subagent",
   "@deepseek-ai/dsh-system-prompt",
   "@deepseek-ai/dsh-token-meter",
+  "@deepseek-ai/dsh-tool-bash",
+  "@deepseek-ai/dsh-tool-jobs",
+  "@deepseek-ai/dsh-tool-pwsh",
   "@deepseek-ai/dsh-tools",
   "@deepseek-ai/dsh-util-values",
 ] as const);
@@ -36,7 +42,7 @@ export interface AcceptedPatchedDshArtifactAuthority {
   readonly manifestSha256: string;
   readonly sha256SumsSha256: string;
   readonly consumerLockSha256: string;
-  readonly packageCount: 66;
+  readonly packageCount: 72;
   readonly runtimePackages: Readonly<Record<AcceptedDshRuntimePackageName, string>>;
   readonly requiredPatchedSeams: readonly [
     "agent.wakePending",
@@ -92,7 +98,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "runtimePackages",
     "requiredPatchedSeams",
   ], "accepted patched DSH artifact authority");
-  if (authority.formatVersion !== 1 || authority.packageCount !== 66
+  if (authority.formatVersion !== 1 || authority.packageCount !== 72
     || typeof authority.artifactVersion !== "string"
     || !/^0\.1\.2-rc\.1\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
     throw new TypeError("accepted patched DSH artifact identity is invalid");
@@ -146,7 +152,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     manifestSha256: exactSha256(authority.manifestSha256, "accepted patched DSH manifest"),
     sha256SumsSha256: exactSha256(authority.sha256SumsSha256, "accepted patched DSH SHA256SUMS"),
     consumerLockSha256: exactSha256(authority.consumerLockSha256, "accepted patched DSH consumer lock"),
-    packageCount: 66,
+    packageCount: 72,
     runtimePackages: frozenPackages,
     requiredPatchedSeams: Object.freeze(expectedSeams) as AcceptedPatchedDshArtifactAuthority["requiredPatchedSeams"],
   });

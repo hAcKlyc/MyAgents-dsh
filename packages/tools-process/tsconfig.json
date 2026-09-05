@@ -5,7 +5,7 @@
     "outDir": "../../dist/packages/tools-process",
     "tsBuildInfoFile": "../../dist/packages/tools-process/.tsbuildinfo"
   },
-  "files": ["src/index.ts", "src/runtime.ts", "src/windows-job-subprocess.ts"],
+  "files": ["src/index.ts", "src/runtime.ts"],
   "references": [
     { "path": "../tool-contracts" },
     { "path": "../tool-runtime-product" },

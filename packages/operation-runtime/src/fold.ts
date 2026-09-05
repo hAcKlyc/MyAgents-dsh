@@ -1091,3 +1091,11 @@ export const findProductOperation = (
 ): ProductOperationRecord | undefined => fold.operations.find(
   (operation) => operation.clientOperationId === clientOperationId,
 );
+
+/** The trusted stock Jobs plugin writes notices into the sole DSH Inbox. */
+export const ownsOfficialJobNotice = (
+  events: readonly SessionEvent[], source: MessageSource | undefined, messageId: string,
+): boolean => source?.kind === "plugin" && source.plugin === "tool-jobs" && source.form === "notice"
+  && events.some((event) => event.type === "agent/inbox/spliced" && event.data.inserted.some((message) =>
+    message.id === messageId && message.source.kind === "plugin"
+    && message.source.plugin === "tool-jobs" && message.source.form === "notice"));

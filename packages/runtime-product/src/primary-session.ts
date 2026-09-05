@@ -77,13 +77,11 @@ export interface ProductExecutionEnvironment {
   }>;
   readonly executables: Readonly<{
     readonly allowedCommandRefs: readonly string[];
-    readonly bashDialect: "bash";
-    readonly bashRef: string;
+    readonly shellDialect: "bash" | "pwsh";
+    readonly shellRef: string;
     readonly bundledNodeRef: string;
     readonly pathPolicy: "sealed";
     readonly ripgrepRef: string;
-    readonly windowsPowerShellRef?: string;
-    readonly windowsUtf8PreludeRef?: string;
   }>;
   readonly platformTarget: PlatformTarget;
   readonly network: Readonly<
@@ -468,11 +466,11 @@ export const validateProductExecutionEnvironment = (
   const normalize = (path: string): string => adapter.normalizeAbsolutePath(path);
   const executableAuthority = exactOwnDataObject(
     environment.executables,
-    ["allowedCommandRefs", "bashDialect", "bashRef", "bundledNodeRef", "pathPolicy", "ripgrepRef"],
-    ["windowsPowerShellRef", "windowsUtf8PreludeRef"],
+    ["allowedCommandRefs", "shellDialect", "shellRef", "bundledNodeRef", "pathPolicy", "ripgrepRef"],
+    [],
     "execution environment executable authority",
   );
-  if (executableAuthority.bashDialect !== "bash" || executableAuthority.pathPolicy !== "sealed") {
+  if (executableAuthority.shellDialect !== adapter.shell.dialect || executableAuthority.pathPolicy !== "sealed") {
     throw new TypeError("execution environment executable authority must select sealed Bash");
   }
   const allowedCommandRefs = exactIdentifierArray(
@@ -480,17 +478,6 @@ export const validateProductExecutionEnvironment = (
     "allowed command references",
     128,
   );
-  const windowsUtf8PreludeRef = Object.hasOwn(executableAuthority, "windowsUtf8PreludeRef")
-    ? boundedIdentifier(executableAuthority.windowsUtf8PreludeRef, "Windows UTF-8 prelude reference")
-    : undefined;
-  const windowsPowerShellRef = Object.hasOwn(executableAuthority, "windowsPowerShellRef")
-    ? boundedIdentifier(executableAuthority.windowsPowerShellRef, "Windows PowerShell executable reference")
-    : undefined;
-  if (platformTarget === "win32-x64"
-    ? windowsUtf8PreludeRef === undefined || windowsPowerShellRef === undefined
-    : windowsUtf8PreludeRef !== undefined || windowsPowerShellRef !== undefined) {
-    throw new TypeError("Windows execution environment requires one exact native process reference set");
-  }
   const environmentAuthority = exactOwnDataObject(
     environment.environment,
     ["allowedKeys", "inheritedKeys", "secretValues"],
@@ -592,13 +579,11 @@ export const validateProductExecutionEnvironment = (
     }),
     executables: Object.freeze({
       allowedCommandRefs,
-      bashDialect: "bash" as const,
-      bashRef: boundedIdentifier(executableAuthority.bashRef, "Bash executable reference"),
+      shellDialect: adapter.shell.dialect,
+      shellRef: boundedIdentifier(executableAuthority.shellRef, "Bash executable reference"),
       bundledNodeRef: boundedIdentifier(executableAuthority.bundledNodeRef, "bundled Node executable reference"),
       pathPolicy: "sealed" as const,
       ripgrepRef: boundedIdentifier(executableAuthority.ripgrepRef, "ripgrep executable reference"),
-      ...(windowsUtf8PreludeRef === undefined ? {} : { windowsUtf8PreludeRef }),
-      ...(windowsPowerShellRef === undefined ? {} : { windowsPowerShellRef }),
     }),
     platformTarget,
     network,

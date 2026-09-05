@@ -407,9 +407,9 @@ const initializeParams = (): InitializeParams => ({
     },
     executables: {
       bundledNodeRef: "bundled-node",
-      bashRef: "bundled-bash",
+      shellRef: "bundled-bash",
       ripgrepRef: "bundled-ripgrep",
-      bashDialect: "bash",
+      shellDialect: "bash",
       allowedCommandRefs: [],
       pathPolicy: "sealed",
     },
@@ -649,11 +649,11 @@ describe("native RPC Cordis service", () => {
         });
       const granted = await within("permission/rules/add", harness.client.permissionRulesAdd({
         expectedRevision: "c".repeat(64),
-        tool: "Bash",
+        tool: "bash",
         permissionClass: "process.execute",
         target: "/fixture/workspace",
       }));
-      expect(granted).toMatchObject({ state: "applied", rule: { tool: "Bash" } });
+      expect(granted).toMatchObject({ state: "applied", rule: { tool: "bash" } });
       await expect(within("permission/rules/revoke", harness.client.permissionRulesRevoke({
         expectedRevision: "d".repeat(64),
         ruleId: "rule-1",
@@ -1299,7 +1299,7 @@ describe("native RPC Cordis service", () => {
     try {
       await expect(harness.client.initialize({
         ...initializeParams(),
-        protocol: { minVersion: "3.0.0", maxVersion: "3.0.0" },
+        protocol: { minVersion: "4.0.0", maxVersion: "4.0.0" },
       })).rejects.toMatchObject({ code: "protocol_version_incompatible" });
       expect(harness.server.phase).toBe("await_initialize");
 

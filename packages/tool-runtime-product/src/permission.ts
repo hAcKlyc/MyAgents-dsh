@@ -1402,7 +1402,7 @@ export class ProductPermissionService extends Service {
     let display: ProductToolPermissionRequest["display"];
     if (request.display !== undefined) {
       const value = exactOwnDataObject(request.display, ["command", "cwd"], ["description"], "permission display");
-      if (tool !== "Bash" || typeof value.command !== "string" || value.command.length === 0
+      if (tool !== "bash" || typeof value.command !== "string" || value.command.length === 0
         || value.command.length > 262_144 || typeof value.cwd !== "string"
         || value.cwd !== context.environment.workspace.canonicalRoot
         || (value.description !== undefined

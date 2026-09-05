@@ -1,4 +1,5 @@
 import { Type, type Static, type TSchema } from "typebox";
+import officialShellTools from "../generated/official-shell-tools-v1.json" with { type: "json" };
 
 import {
   CANONICAL_JSON_LIMITS,
@@ -14,7 +15,6 @@ import {
   nonNegativeInteger,
   positiveInteger,
   revision,
-  safeInteger,
   sha256,
   strictObject,
   taskNode,
@@ -22,7 +22,7 @@ import {
 } from "./schema.js";
 
 const CANONICAL_TOOL_NAME_VALUES = [
-  "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls",
+  "Read", "Write", "Edit", "Glob", "Grep", "bash", "pwsh", "job_output", "job_list", "job_kill", "ls",
   "WebFetch", "WebSearch", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
   "Skill", "Agent", "TaskStop", "SendMessage",
   "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
@@ -122,10 +122,10 @@ export interface DshReuseSeam {
 
 export interface CanonicalToolReuseDecision {
   readonly tool: CanonicalToolName;
-  readonly modelDefinition: "compat-tool";
+  readonly modelDefinition: "compat-tool" | "official-tool";
   readonly dshPublicReuse: readonly DshReuseSeam[];
   readonly productOwner: string;
-  readonly stockModelDefinition: "excluded";
+  readonly stockModelDefinition: "excluded" | "enabled";
 }
 
 const outputLimits = (
@@ -153,7 +153,11 @@ const PLAN_POLICIES = Object.freeze({
   Edit: { mode: "managed-plan-file-only", denialCode: "plan_mode_side_effect_forbidden", revision: "operation-birth-and-durable-session" },
   Glob: { mode: "allowed", revision: "operation-birth-and-durable-session" },
   Grep: { mode: "allowed", revision: "operation-birth-and-durable-session" },
-  Bash: { mode: "denied", denialCode: "plan_mode_side_effect_forbidden", revision: "operation-birth-and-durable-session" },
+  bash: { mode: "denied", denialCode: "plan_mode_side_effect_forbidden", revision: "operation-birth-and-durable-session" },
+  pwsh: { mode: "denied", denialCode: "plan_mode_side_effect_forbidden", revision: "operation-birth-and-durable-session" },
+  job_output: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  job_list: { mode: "allowed", revision: "operation-birth-and-durable-session" },
+  job_kill: { mode: "denied", denialCode: "plan_mode_side_effect_forbidden", revision: "operation-birth-and-durable-session" },
   ls: { mode: "allowed", revision: "operation-birth-and-durable-session" },
   WebFetch: { mode: "allowed", revision: "operation-birth-and-durable-session" },
   WebSearch: { mode: "allowed", revision: "operation-birth-and-durable-session" },
@@ -188,6 +192,41 @@ const contract = <Name extends CanonicalToolName, Input extends TSchema, Output 
   executionInputSchema: value.executionInputSchema ?? value.inputSchema,
   originPolicy: ORIGIN_POLICIES[value.name],
   planPolicy: PLAN_POLICIES[value.name],
+});
+
+export const OFFICIAL_SHELL_TOOL_NAMES = Object.freeze(["bash", "pwsh", "job_output", "job_list", "job_kill"] as const);
+export type OfficialShellToolName = (typeof OFFICIAL_SHELL_TOOL_NAMES)[number];
+export const isOfficialShellTool = (name: string): name is OfficialShellToolName =>
+  OFFICIAL_SHELL_TOOL_NAMES.some((candidate) => candidate === name);
+
+const officialShellContract = <Name extends OfficialShellToolName>(name: Name): CanonicalToolContract<Name> => {
+  const definition = officialShellTools[name];
+  const read = name === "job_output" || name === "job_list";
+  return contract({
+    name,
+    description: definition.description,
+    inputSchema: definition.inputSchema,
+    outputSchema: definition.outputSchema,
+    concurrency: "parallel",
+    sideEffect: read ? "read" : "process",
+    outputLimits: outputLimits(262_144, 1_024),
+    permissionClass: read ? "workspace.read" : name === "job_kill" ? "work.stop" : "process.execute",
+    checkpoint: "none",
+    behaviorFixtureIds: ["official_definition", "permission_and_origin", "output_and_exit", "cancellation", "owner_scoped_jobs"],
+    resultSemantics: "Pinned official DSH tool output, rendering and Jobs lifecycle.",
+    errorCodes: errors(["permission_denied", false, "Product execution policy denies the call."]),
+    lifecycle: lifecycle("bounded_executor", "allowed"),
+  });
+};
+
+const officialShellReuse = (tool: OfficialShellToolName): CanonicalToolReuseDecision => ({
+  tool, modelDefinition: "official-tool", stockModelDefinition: "enabled",
+  productOwner: "@myagents-dsh/tools-process",
+  dshPublicReuse: [{
+    id: tool.startsWith("job_") ? "tool-jobs" : `tool-${tool}`,
+    importPath: tool.startsWith("job_") ? "@deepseek-ai/dsh-tool-jobs" : `@deepseek-ai/dsh-tool-${tool}`,
+    classification: "direct", symbols: ["apply"],
+  }],
 });
 
 const citation = strictObject({
@@ -237,22 +276,6 @@ const grepContentRecord = strictObject({
 });
 const grepCountRecord = strictObject({ path: boundedPath, count: nonNegativeInteger });
 const grepFileRecord = strictObject({ path: boundedPath });
-
-const backgroundWorkOutput = strictObject({
-  taskId: boundedIdentifier,
-  background: Type.Literal(true),
-  outputPath: boundedPath,
-});
-
-const foregroundProcessOutput = strictObject({
-  background: Type.Literal(false),
-  stdout: Type.String({ maxLength: TOOL_CONTRACT_LIMITS.maxInlineOutputBytes }),
-  stderr: Type.String({ maxLength: TOOL_CONTRACT_LIMITS.maxInlineOutputBytes }),
-  exitCode: safeInteger,
-  durationMs: nonNegativeInteger,
-  interrupted: Type.Boolean(),
-  outputTruncated: Type.Boolean(),
-});
 
 const planExitOutput = Type.Union([
   strictObject({
@@ -465,32 +488,11 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     ),
     lifecycle: lifecycle("bounded_executor", "allowed"),
   }),
-  Bash: contract({
-    name: "Bash",
-    description: "Runs a Bash command in the workspace using the sealed execution environment. Commands may run in the background and return a read-only output path. The Runtime does not provide an OS sandbox.",
-    inputSchema: strictObject({
-      command: Type.String({ minLength: 1, maxLength: 262_144 }),
-      timeout: Type.Optional(Type.Integer({ minimum: 1, maximum: 600_000 })),
-      description: Type.Optional(Type.String({ maxLength: 512 })),
-      run_in_background: Type.Optional(Type.Boolean()),
-    }),
-    outputSchema: Type.Union([foregroundProcessOutput, backgroundWorkOutput]),
-    concurrency: "parallel",
-    sideEffect: "process",
-    timeoutMs: 600_000,
-    outputLimits: outputLimits(262_144, 32, { maxRetainedOutputBytes: 262_144 }),
-    permissionClass: "process.execute",
-    checkpoint: "none",
-    behaviorFixtureIds: ["foreground_success_and_nonzero_exit", "explicit_background_handle", "timeout_promotes_same_work_entry", "disabled_background_kills_tree", "session_close_generation_cleanup"],
-    resultSemantics: "Foreground returns bounded streams and process terminal; background returns one retained WorkRegistry identity and output path.",
-    errorCodes: errors(
-      ["shell_dependency_missing", false, "The sealed Bash prerequisite is unavailable."],
-      ["permission_denied", false, "Hard policy or permission denies process execution."],
-      ["process_timeout", true, "A non-promotable bounded execution timed out."],
-      ["process_spawn_failed", true, "The sealed environment cannot start the process."],
-    ),
-    lifecycle: lifecycle("work_registry", "policy_required"),
-  }),
+  bash: officialShellContract("bash"),
+  pwsh: officialShellContract("pwsh"),
+  job_output: officialShellContract("job_output"),
+  job_list: officialShellContract("job_list"),
+  job_kill: officialShellContract("job_kill"),
   ls: contract({
     name: "ls",
     description: "List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to 500 entries or 50KB (whichever is hit first).",
@@ -718,11 +720,11 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskStop: contract({
     name: "TaskStop",
-    description: "Stops an owned background Bash process or child Agent by task ID and waits for terminal state and resource finalization.",
+    description: "Stops an owned child Agent by task ID and waits for terminal state and resource finalization.",
     inputSchema: strictObject({ task_id: boundedIdentifier }),
     outputSchema: strictObject({
       taskId: boundedIdentifier,
-      kind: Type.Union([Type.Literal("process"), Type.Literal("agent")]),
+      kind: Type.Literal("agent"),
       terminal: Type.Union([Type.Literal("succeeded"), Type.Literal("failed"), Type.Literal("aborted")]),
       alreadyTerminal: Type.Boolean(),
     }),
@@ -891,11 +893,11 @@ export const CANONICAL_TOOL_REUSE_MATRIX = deepFreeze({
     { id: "fs-search-helpers", importPath: "@deepseek-ai/dsh-tool-fs-search", classification: "helper", symbols: ["buildGrepCommand", "parseGrepArgs"] },
     { id: "subprocess", importPath: "@deepseek-ai/dsh-subprocess", classification: "provider", symbols: ["SubprocessRuntime"] },
   ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
-  Bash: { tool: "Bash", modelDefinition: "compat-tool", dshPublicReuse: [
-    { id: "shell", importPath: "@deepseek-ai/dsh-shell", classification: "provider", symbols: ["ShellExecutor"] },
-    { id: "subprocess", importPath: "@deepseek-ai/dsh-subprocess", classification: "provider", symbols: ["SubprocessRuntime"] },
-    { id: "jobs", importPath: "@deepseek-ai/dsh-jobs", classification: "provider", symbols: ["JobRegistry"] },
-  ], productOwner: "@myagents-dsh/tools-process", stockModelDefinition: "excluded" },
+  bash: officialShellReuse("bash"),
+  pwsh: officialShellReuse("pwsh"),
+  job_output: officialShellReuse("job_output"),
+  job_list: officialShellReuse("job_list"),
+  job_kill: officialShellReuse("job_kill"),
   ls: { tool: "ls", modelDefinition: "compat-tool", dshPublicReuse: [
     { id: "filesystem", importPath: "@deepseek-ai/dsh-fs", classification: "provider", symbols: ["FileSystem"] },
   ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
@@ -925,7 +927,6 @@ export const CANONICAL_TOOL_REUSE_MATRIX = deepFreeze({
     { id: "jobs", importPath: "@deepseek-ai/dsh-jobs", classification: "provider", symbols: ["JobRegistry"] },
   ], productOwner: "@myagents-dsh/tools-agent", stockModelDefinition: "excluded" },
   TaskStop: { tool: "TaskStop", modelDefinition: "compat-tool", dshPublicReuse: [
-    { id: "jobs", importPath: "@deepseek-ai/dsh-jobs", classification: "provider", symbols: ["JobRegistry"] },
     { id: "subagents", importPath: "@deepseek-ai/dsh-subagent", classification: "direct", symbols: ["SubagentRuntime"] },
   ], productOwner: "@myagents-dsh/tools-agent", stockModelDefinition: "excluded" },
   SendMessage: { tool: "SendMessage", modelDefinition: "compat-tool", dshPublicReuse: [
@@ -962,13 +963,19 @@ const fixtureUsage = {
   totalTokens: 2,
 } as const;
 
+const fixtureShellJob = { id: "job-1", kind: "bash", label: "Print fixture", status: "completed", startedAt: 1 };
+
 export const CANONICAL_TOOL_SCHEMA_FIXTURES = deepFreeze({
   Read: { input: { file_path: "/fixture/read.txt" }, output: { path: "/fixture/read.txt", kind: "text", mimeType: "text/plain", offset: 1, lineCount: 1, truncated: false, content: "fixture" } },
   Write: { input: { file_path: "/fixture/write.txt", content: "fixture" }, output: { path: "/fixture/write.txt", bytes: 7, sha256: "a".repeat(64), created: true } },
   Edit: { input: { file_path: "/fixture/edit.txt", old_string: "old", new_string: "new" }, output: { path: "/fixture/edit.txt", replacements: 1, sha256: "b".repeat(64), externalChangesRetained: false } },
   Glob: { input: { pattern: "**/*.ts" }, output: { durationMs: 1, numFiles: 1, filenames: ["src/index.ts"], truncated: false } },
   Grep: { input: { pattern: "fixture" }, output: { mode: "content", records: [{ path: "src/index.ts", line: 1, text: "fixture" }], offset: 0, limit: 1, truncated: false, durationMs: 1 } },
-  Bash: { input: { command: "printf fixture" }, output: { background: false, stdout: "fixture", stderr: "", exitCode: 0, durationMs: 1, interrupted: false, outputTruncated: false } },
+  bash: { input: { command: "printf fixture", description: "Print fixture" }, output: { kind: "background", jobId: "job-1" } },
+  pwsh: { input: { command: "Write-Output fixture", description: "Print fixture" }, output: { kind: "background", jobId: "job-1" } },
+  job_output: { input: { job_id: "job-1" }, output: { text: "fixture", job: fixtureShellJob } },
+  job_list: { input: {}, output: [] },
+  job_kill: { input: { job_id: "job-1" }, output: { outcome: "already-finished", job: fixtureShellJob } },
   ls: { input: {}, output: "src/\npackage.json" },
   WebFetch: { input: { url: "https://example.invalid/fixture", prompt: "Summarize" }, output: { url: "https://example.invalid/fixture", finalUrl: "https://example.invalid/fixture", answer: "fixture", citations: [], usage: fixtureUsage, truncated: false } },
   WebSearch: { input: { query: "fixture" }, output: { query: "fixture", results: [], citations: [], usage: fixtureUsage, truncated: false, searchCount: 1, durationMs: 1 } },

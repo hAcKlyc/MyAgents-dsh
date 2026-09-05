@@ -78,8 +78,8 @@ const productContext = (signal = new AbortController().signal): ProductToolConte
     environment: Object.freeze({ allowedKeys: Object.freeze([]), inheritedKeys: Object.freeze([]), secretValues: "reverse-port-only" as const }),
     executables: Object.freeze({
       allowedCommandRefs: Object.freeze([]),
-      bashDialect: "bash" as const,
-      bashRef: "bash-v1",
+      shellDialect: "bash" as const,
+      shellRef: "bash-v1",
       bundledNodeRef: "node-v1",
       pathPolicy: "sealed" as const,
       ripgrepRef: "rg-v1",

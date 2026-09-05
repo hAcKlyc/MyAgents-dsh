@@ -41,13 +41,11 @@ export interface ProductToolExecutionEnvironment {
   }>;
   readonly executables: Readonly<{
     readonly allowedCommandRefs: readonly string[];
-    readonly bashDialect: "bash";
-    readonly bashRef: string;
+    readonly shellDialect: "bash" | "pwsh";
+    readonly shellRef: string;
     readonly bundledNodeRef: string;
     readonly pathPolicy: "sealed";
     readonly ripgrepRef: string;
-    readonly windowsPowerShellRef?: string;
-    readonly windowsUtf8PreludeRef?: string;
   }>;
   readonly platformTarget: "darwin-arm64" | "win32-x64" | "linux-x64";
   readonly network: Readonly<

@@ -2,7 +2,7 @@
 type: technical-architecture
 status: source-candidate
 module: runtime-plugin-composition
-updated: 2026-09-03
+updated: 2026-09-06
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_integration.md
@@ -23,7 +23,7 @@ It is a maintained projection, not a competing executable inventory. Exact insta
 - `packages/product-profile/src/candidate-runtime-profile.ts` for the separately maintained profile allowlist;
 - `specs/dsh/seam-decisions-v1.json` for exact DSH patch order, hashes and removal conditions.
 
-The current source baseline is official DeepSeek Harness `0.1.1-rc.2` at `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, composed with ten isolated patches. A `.myagents...` package-version suffix identifies the content-addressed patched artifact as a whole; it does not mean every packed DSH package has source changes. The installed pi-ai core is separately pinned and patched under `specs/pi-ai/`; it remains one adapter dependency, not another AgentLoop.
+The current source baseline is official DeepSeek Harness `0.1.2-rc.1` at `a66e4702047846cdaa10c66c9d3df3951f5ea70d`, composed with ten isolated patches. A `.myagents...` package-version suffix identifies the content-addressed patched artifact as a whole; it does not mean every packed DSH package has source changes. The installed pi-ai core is separately pinned and patched under `specs/pi-ai/`; it remains one adapter dependency, not another AgentLoop.
 
 ### 1.1 Relationships
 
@@ -39,30 +39,13 @@ The count in this document means **live Cordis plugin instances installed by the
 The following rules keep that count distinct from adjacent inventories:
 
 1. Count each selected `Context.plugin(...)` installation once.
-2. Count the platform subprocess implementation once: POSIX/macOS installs `LocalSubprocessRuntime`; Windows installs `WindowsJobObjectSubprocessRuntime` instead.
+2. Count the platform subprocess implementation once: all platforms use the stock `LocalSubprocessRuntime` mechanics through the thin `ProductSubprocessRuntime` policy Provider.
 3. Count `NativeRpcServer` after process lifecycle installation and `ProductSqliteSessionPersistence` after initialization installs the production persistence plane.
-4. Do not count the twenty model-visible tool definitions separately. Their owning plugins register them through the single DSH `ctx.tools` pipeline.
+4. Do not count model-visible tool definitions separately. Their owning plugins register them through the single DSH `ctx.tools` pipeline.
 5. Do not count MCP, Skill, Agent, Command, Hook or Host Tool descriptors as executable Cordis plugins. They are declarative components compiled inside one `ProductComponentService` generation.
-6. Do not count ordinary helper objects, Provider profiles, generated contracts, package dependencies or the 58-package DSH artifact inventory as plugin instances.
+6. Do not count ordinary helper objects, Provider profiles, generated contracts, package dependencies or the 72-package DSH artifact inventory as plugin instances.
 
-On macOS arm64 and Linux x64 the resulting steady-state graph is:
-
-| Source | Count |
-| --- | ---: |
-| Official DSH plugins | 22 |
-| MyAgents-owned plugins | 25 |
-| Third-party or marketplace plugins | 0 |
-| Total | **47** |
-
-Windows x64 also installs 47 plugins. Its platform substitution changes the source split to 21 official DSH plugins and 26 MyAgents-owned plugins.
-
-The lifecycle count is:
-
-```text
-official composition: 45
-  + NativeRpcServer: 46
-  + ProductSqliteSessionPersistence after initialize: 47
-```
+Exact plugin installation order and counts come from `packages/runtime-product/src/composition.ts` and the packed composition fixture. The role inventory below is a maintenance map, not an alternative numeric composition authority. UPG-W10 adds the stock Shell executor, Shell tool, `shell-env` and `tool-jobs`; it removes the custom executor and Windows supervisor. Declarative tools are not plugin instances.
 
 ## 3. Relationship vocabulary
 
@@ -104,7 +87,7 @@ The inventory uses five relationship terms:
 
 | # | Plugin | Responsibility | Source | Relationship | DSH patch impact |
 | ---: | --- | --- | --- | --- | --- |
-| 20 | `@deepseek-ai/dsh-subprocess-local:LocalSubprocessRuntime` | Execute and cancel local POSIX subprocesses | DSH official | Retain on macOS/Linux | No |
+| 20 | `@myagents-dsh/tools-process:ProductSubprocessRuntime` | Apply product spawn policy, delegate execution and tree cleanup to official LocalSubprocessRuntime | MyAgents policy / DSH execution | Retain official execution on all platforms | No |
 | 21 | `@deepseek-ai/dsh-jobs-local:LocalJobRegistry` | Own bounded background job identities and state | DSH official | Retain | No |
 | 22 | `@myagents-dsh/tools-fs:LocalWorkspaceFileSystem` | Enforce canonical workspace, root and filesystem identity policy | MyAgents | Replace the stock local filesystem Provider | No |
 | 23 | `@deepseek-ai/dsh-agent-instructions:AgentInstructions` | Discover and durably reconcile project instruction files | DSH official | Enable with MyAgents candidate order and tool names | Direct: 0009 instruction selection |
@@ -124,14 +107,14 @@ The inventory uses five relationship terms:
 | 37 | `@myagents-dsh/tools-agent:ProductSkillService` | Register the canonical `Skill` tool and dynamic Skill catalog | MyAgents | Extend SkillRegistry | Indirect: 0008 literal Skill prompt |
 | 38 | `@deepseek-ai/dsh-commands:CommandRuntime` | Own Command registration and dispatch primitives | DSH official | Retain | No |
 | 39 | `@myagents-dsh/components-commands:ProductCommandService` | Bind declarative Commands to Host operations and RPC invocation | MyAgents | Extend CommandRuntime | No |
-| 40 | `@myagents-dsh/tools-process:SealedBashExecutor` | Bind shell execution to build-verified executables and the admitted environment | MyAgents | Replace the stock ShellExecutor | No |
-| 41 | `@myagents-dsh/tools-process:ProductProcessRuntime` | Register canonical Bash and own process output, cancellation and settlement | MyAgents | Replace stock process-tool contributions | No |
+| 40 | official `LocalBashExecutor` or `PwshLocalExecutor`, `tool-bash` or `tool-pwsh`, `shell-env`, `tool-jobs` | Own selected Shell execution, tool definitions, output and Jobs | DSH official | Enable directly | No |
+| 41 | `@myagents-dsh/tools-process:ProductProcessRuntime` | Authorize official Shell/Jobs calls and derived Host/spill-read presentation | MyAgents | Extend public tool/subprocess seams | No |
 | 42 | `@myagents-dsh/tools-agent:ProductWorkService` | Implement Agent, TaskStop, SendMessage, background work and recovery | MyAgents | Extend official Subagent and Jobs services | Indirect: 0005/0008 |
 | 43 | `@myagents-dsh/tools-fs:CanonicalFileTools` | Register Read, Write, Edit, Glob, Grep and `ls` | MyAgents | Replace stock file-tool definitions | No |
 | 44 | `@deepseek-ai/dsh-web:WebRuntime` | Own WebSearch/WebFetch Provider routing | DSH official | Retain | No |
 | 45 | `@myagents-dsh/tools-web:CanonicalWebTools` | Register governed WebSearch/WebFetch and dispatch native or Host-backed providers | MyAgents | Replace stock model-visible web-tool definitions | No |
 
-On Windows, slot 20 is `@myagents-dsh/tools-process:WindowsJobObjectSubprocessRuntime`. It replaces `LocalSubprocessRuntime` with a Windows Job Object owner for process-tree termination; both are never installed together.
+Windows mounts official PowerShell instead of Bash. The same policy Provider delegates to official subprocess execution on every platform; the custom Job Object Provider and `.ps1` supervisor no longer exist. See [Platform and local execution](../boundaries/platform-and-local-execution.md).
 
 ## 6. Process lifecycle and persistence plane
 

@@ -880,3 +880,7 @@ relabeled.
 ### Collaboration source semantics in 2.7.0
 
 Runtime defaults identified follow-up delivery to realtime at a DSH model/tool step boundary; explicit turn delivery remains selectable and frozen per accepted message. Autonomous collaboration root admissions carry a distinct origin. Work controls act only on the published primary root tree and carry stable message/resume identities or the exact handle revision; model tools cannot implicitly reopen closed nodes. Work list cursors stay within that tree, obey negotiated frame limits and expose bounded previews. The Host can read native usage/context projections without waking Agent execution. The upgrade PRD owns final client, artifact and platform acceptance.
+
+### Official Shell migration (protocol 3.0.0)
+
+Initialize executable authority now uses `shellRef` and `shellDialect` (`bash` or `pwsh`), removing `bashRef`/`bashDialect` and the custom Windows supervisor/prelude references. The generated canonical catalog contains both official Shell definitions and the three Jobs definitions, while each platform exposes its selected Shell. Foreground timeout ends execution; explicit background output and cancellation use Jobs. Tool schemas and descriptions come directly from the pinned official plugins. This is a breaking contract revision; use the newly generated client and immutable Runtime together. Legacy `Bash` records remain history, not active tool aliases. Exact shapes remain in `packages/protocol/src/contract-source.ts`.

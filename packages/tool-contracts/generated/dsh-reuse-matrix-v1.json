@@ -1,6 +1,6 @@
 {
   "artifactFormatVersion": 1,
-  "contractSha256": "aeb3069e1f5280c41fe8426ac7461d7391d656725456c3c8beabf1c0665a5b8c",
+  "contractSha256": "3e9c711becce5d954432a1d077970d7d58e5530d88cf8014dbf3957ad6fa67e2",
   "decisions": [
     {
       "dshPublicReuse": [
@@ -113,34 +113,82 @@
     {
       "dshPublicReuse": [
         {
-          "classification": "provider",
-          "id": "shell",
-          "importPath": "@deepseek-ai/dsh-shell",
+          "classification": "direct",
+          "id": "tool-bash",
+          "importPath": "@deepseek-ai/dsh-tool-bash",
           "symbols": [
-            "ShellExecutor"
-          ]
-        },
-        {
-          "classification": "provider",
-          "id": "subprocess",
-          "importPath": "@deepseek-ai/dsh-subprocess",
-          "symbols": [
-            "SubprocessRuntime"
-          ]
-        },
-        {
-          "classification": "provider",
-          "id": "jobs",
-          "importPath": "@deepseek-ai/dsh-jobs",
-          "symbols": [
-            "JobRegistry"
+            "apply"
           ]
         }
       ],
-      "modelDefinition": "compat-tool",
+      "modelDefinition": "official-tool",
       "productOwner": "@myagents-dsh/tools-process",
-      "stockModelDefinition": "excluded",
-      "tool": "Bash"
+      "stockModelDefinition": "enabled",
+      "tool": "bash"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "direct",
+          "id": "tool-pwsh",
+          "importPath": "@deepseek-ai/dsh-tool-pwsh",
+          "symbols": [
+            "apply"
+          ]
+        }
+      ],
+      "modelDefinition": "official-tool",
+      "productOwner": "@myagents-dsh/tools-process",
+      "stockModelDefinition": "enabled",
+      "tool": "pwsh"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "direct",
+          "id": "tool-jobs",
+          "importPath": "@deepseek-ai/dsh-tool-jobs",
+          "symbols": [
+            "apply"
+          ]
+        }
+      ],
+      "modelDefinition": "official-tool",
+      "productOwner": "@myagents-dsh/tools-process",
+      "stockModelDefinition": "enabled",
+      "tool": "job_output"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "direct",
+          "id": "tool-jobs",
+          "importPath": "@deepseek-ai/dsh-tool-jobs",
+          "symbols": [
+            "apply"
+          ]
+        }
+      ],
+      "modelDefinition": "official-tool",
+      "productOwner": "@myagents-dsh/tools-process",
+      "stockModelDefinition": "enabled",
+      "tool": "job_list"
+    },
+    {
+      "dshPublicReuse": [
+        {
+          "classification": "direct",
+          "id": "tool-jobs",
+          "importPath": "@deepseek-ai/dsh-tool-jobs",
+          "symbols": [
+            "apply"
+          ]
+        }
+      ],
+      "modelDefinition": "official-tool",
+      "productOwner": "@myagents-dsh/tools-process",
+      "stockModelDefinition": "enabled",
+      "tool": "job_kill"
     },
     {
       "dshPublicReuse": [
@@ -306,14 +354,6 @@
     },
     {
       "dshPublicReuse": [
-        {
-          "classification": "provider",
-          "id": "jobs",
-          "importPath": "@deepseek-ai/dsh-jobs",
-          "symbols": [
-            "JobRegistry"
-          ]
-        },
         {
           "classification": "direct",
           "id": "subagents",

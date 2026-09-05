@@ -129,9 +129,9 @@ describe("Runtime artifact self-check", () => {
         actualNodeVersion: "24.14.0",
       });
       expect(report.profile.stage).toBe("batch-1-w4-a11");
-      expect(report.dsh.packageCount).toBe(66);
+      expect(report.dsh.packageCount).toBe(72);
       expect(report.contracts).toEqual({
-        canonicalToolsSha256: "aeb3069e1f5280c41fe8426ac7461d7391d656725456c3c8beabf1c0665a5b8c",
+        canonicalToolsSha256: "3e9c711becce5d954432a1d077970d7d58e5530d88cf8014dbf3957ad6fa67e2",
         eventsSha256: "d8816339d9af67fb272869a6d09bd56338677671aed4c083003c2d4911de0959",
         sessionFormat: "dsh-session-events-v1",
         persistenceFormat: "myagents-sqlite-session-v1",
@@ -306,7 +306,7 @@ describe("Runtime artifact self-check", () => {
     expect(OFFICIAL_STATIC_SKILL_CATALOG.skills).toEqual([]);
     expect(OFFICIAL_TOOL_CATALOG.effectiveTools).toContain("WebFetch");
     expect(OFFICIAL_TOOL_CATALOG.effectiveTools).toContain("WebSearch");
-    expect(OFFICIAL_TOOL_CATALOG.effectiveTools).toHaveLength(20);
+    expect(OFFICIAL_TOOL_CATALOG.effectiveTools).toHaveLength(23);
   });
 
   it("rejects reflective process and Tester-launch configuration before side effects", async () => {

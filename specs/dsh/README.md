@@ -8,7 +8,7 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 - Source/design evidence is `deepseek-harness@a66e4702047846cdaa10c66c9d3df3951f5ea70d` (tree `27ab636bb3d77e698f5637e518db44ae1f61e262`), whose manifests declare `0.1.2-rc.1`.
 - Development dependency evidence is the public npm `0.1.2-rc.1` package set plus `@deepseek-ai/cordis@4.0.2`, pinned by exact versions, tarball URLs, and SHA-512 integrities in `package-lock.json`.
-- Candidate executable authority is the source-built, ten-patch artifact `0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd`, content-addressed by manifest SHA-256 `b081b253d3337761ac6a1f15d3667cd9ff36b966ffdf93325ada4c2391168575`. Its Provider-content seam also binds the separately pinned and patched pi-ai `0.84.2` authority under `specs/pi-ai/`.
+- Candidate executable authority is the source-built, ten-patch artifact `0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd`, content-addressed by manifest SHA-256 `58ff076944e029d835e34bbdf433609422ac88d381bdede3e7b216b28975e6f8`. Its Provider-content seam also binds the separately pinned and patched pi-ai `0.84.2` authority under `specs/pi-ai/`.
 
 The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 

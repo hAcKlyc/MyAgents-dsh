@@ -56,7 +56,7 @@ afterEach(async () => {
 });
 
 const effectiveTools = Object.freeze([
-  "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls", "WebFetch", "WebSearch",
+  "Read", "Write", "Edit", "Glob", "Grep", "bash", "ls", "WebFetch", "WebSearch",
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
 ] as const);
 const effectiveSet = new Set<string>(effectiveTools);
@@ -121,8 +121,8 @@ const mounted = async (options: MountedOptions = {}) => {
     }),
     executables: Object.freeze({
       allowedCommandRefs: Object.freeze([]),
-      bashDialect: "bash" as const,
-      bashRef: "bash-v1",
+      shellDialect: "bash" as const,
+      shellRef: "bash-v1",
       bundledNodeRef: "node-v1",
       pathPolicy: "sealed" as const,
       ripgrepRef: "ripgrep-v1",
@@ -504,7 +504,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
       agent: state.agent,
       arguments: Object.freeze({}),
       callId: rootCall,
-      name: "Bash",
+      name: "bash",
       rootCallId: rootCall,
       signal: new AbortController().signal,
     } as never)).toThrow(expect.objectContaining({ code: "plan_mode_side_effect_forbidden" }));

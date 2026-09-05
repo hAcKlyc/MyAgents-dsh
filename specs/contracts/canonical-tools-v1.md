@@ -2,7 +2,7 @@
 
 # Canonical tool contract and DSH reuse projection
 
-Contract SHA-256: `aeb3069e1f5280c41fe8426ac7461d7391d656725456c3c8beabf1c0665a5b8c`
+Contract SHA-256: `3e9c711becce5d954432a1d077970d7d58e5530d88cf8014dbf3957ad6fa67e2`
 
 | Tool | Concurrency | Side effect | Permission | Checkpoint | Public DSH reuse | Product owner |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -11,7 +11,11 @@ Contract SHA-256: `aeb3069e1f5280c41fe8426ac7461d7391d656725456c3c8beabf1c0665a5
 | `Edit` | `canonical_path` | `workspace` | `workspace.write` | `root_managed_file` | `@deepseek-ai/dsh-fs` (provider) | `@myagents-dsh/tools-fs` |
 | `Glob` | `parallel` | `read` | `workspace.search` | `none` | `@deepseek-ai/dsh-tool-fs-search` (helper)<br>`@deepseek-ai/dsh-subprocess` (provider) | `@myagents-dsh/tools-fs` |
 | `Grep` | `parallel` | `read` | `workspace.search` | `none` | `@deepseek-ai/dsh-tool-fs-search` (helper)<br>`@deepseek-ai/dsh-subprocess` (provider) | `@myagents-dsh/tools-fs` |
-| `Bash` | `parallel` | `process` | `process.execute` | `none` | `@deepseek-ai/dsh-shell` (provider)<br>`@deepseek-ai/dsh-subprocess` (provider)<br>`@deepseek-ai/dsh-jobs` (provider) | `@myagents-dsh/tools-process` |
+| `bash` | `parallel` | `process` | `process.execute` | `none` | `@deepseek-ai/dsh-tool-bash` (direct) | `@myagents-dsh/tools-process` |
+| `pwsh` | `parallel` | `process` | `process.execute` | `none` | `@deepseek-ai/dsh-tool-pwsh` (direct) | `@myagents-dsh/tools-process` |
+| `job_output` | `parallel` | `read` | `workspace.read` | `none` | `@deepseek-ai/dsh-tool-jobs` (direct) | `@myagents-dsh/tools-process` |
+| `job_list` | `parallel` | `read` | `workspace.read` | `none` | `@deepseek-ai/dsh-tool-jobs` (direct) | `@myagents-dsh/tools-process` |
+| `job_kill` | `parallel` | `process` | `work.stop` | `none` | `@deepseek-ai/dsh-tool-jobs` (direct) | `@myagents-dsh/tools-process` |
 | `ls` | `parallel` | `read` | `workspace.read` | `none` | `@deepseek-ai/dsh-fs` (provider) | `@myagents-dsh/tools-fs` |
 | `WebFetch` | `parallel` | `network` | `network.fetch` | `none` | `@deepseek-ai/dsh-web` (provider)<br>`@deepseek-ai/dsh-tool-web` (helper) | `@myagents-dsh/tools-web` |
 | `WebSearch` | `parallel` | `network` | `network.search` | `none` | `@deepseek-ai/dsh-web` (provider)<br>`@deepseek-ai/dsh-tool-web` (helper) | `@myagents-dsh/tools-web` |
@@ -20,11 +24,11 @@ Contract SHA-256: `aeb3069e1f5280c41fe8426ac7461d7391d656725456c3c8beabf1c0665a5
 | `ExitPlanMode` | `session_serial` | `interaction` | `session.plan.exit` | `none` | `@deepseek-ai/dsh-plan-mode` (helper)<br>`@deepseek-ai/dsh-user-questions` (provider) | `@myagents-dsh/tools-interaction` |
 | `Skill` | `session_serial` | `read` | `skill.load` | `none` | `@deepseek-ai/dsh-skill` (provider) | `@myagents-dsh/tools-agent` |
 | `Agent` | `parallel` | `delegation` | `agent.spawn` | `none` | `@deepseek-ai/dsh-subagent` (direct)<br>`@deepseek-ai/dsh-jobs` (provider) | `@myagents-dsh/tools-agent` |
-| `TaskStop` | `session_serial` | `session_state` | `work.stop` | `none` | `@deepseek-ai/dsh-jobs` (provider)<br>`@deepseek-ai/dsh-subagent` (direct) | `@myagents-dsh/tools-agent` |
+| `TaskStop` | `session_serial` | `session_state` | `work.stop` | `none` | `@deepseek-ai/dsh-subagent` (direct) | `@myagents-dsh/tools-agent` |
 | `SendMessage` | `session_serial` | `delegation` | `agent.message` | `none` | `@deepseek-ai/dsh-subagent` (direct) | `@myagents-dsh/tools-agent` |
 | `TaskCreate` | `session_serial` | `session_state` | `task_graph.mutate` | `none` | `@deepseek-ai/dsh-session` (product-plugin) | `@myagents-dsh/task-graph` |
 | `TaskGet` | `parallel` | `read` | `task_graph.read` | `none` | `@deepseek-ai/dsh-session` (product-plugin) | `@myagents-dsh/task-graph` |
 | `TaskList` | `parallel` | `read` | `task_graph.read` | `none` | `@deepseek-ai/dsh-session` (product-plugin) | `@myagents-dsh/task-graph` |
 | `TaskUpdate` | `session_serial` | `session_state` | `task_graph.mutate` | `none` | `@deepseek-ai/dsh-session` (product-plugin) | `@myagents-dsh/task-graph` |
 
-All twenty model definitions are MyAgents `compat-tool` definitions. Stock DSH model-facing definitions are excluded; only the listed public package-root services and helpers are reused.
+Shell and Job tools use official DSH definitions. Other tools retain their explicitly recorded product contracts.

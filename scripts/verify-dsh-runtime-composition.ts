@@ -175,7 +175,6 @@ const runtimeCompositionSourcePaths = [
   "packages/tools-interaction/src/runtime.ts",
   "packages/tools-process/src/index.ts",
   "packages/tools-process/src/runtime.ts",
-  "packages/tools-process/src/windows-job-subprocess.ts",
   "packages/tools-web/src/index.ts",
   "packages/tools-web/src/runtime.ts",
   "packages/tools-web/src/safe-http.ts",
@@ -424,12 +423,7 @@ const stageBuiltPackage = (
     recursive: true,
     filter: (path) => statSync(path).isDirectory() || path.endsWith(".js"),
   });
-  if (workspaceDirectory === "packages/tools-process") {
-    cpSync(
-      resolve(repositoryRoot, "packages/tools-process/src/windows-job-host.ps1"),
-      resolve(destination, "src/windows-job-host.ps1"),
-    );
-  }
+
   if (workspaceDirectory === "packages/product-profile") {
     const manifestDirectory = resolve(destination, "manifests");
     mkdirSync(manifestDirectory);
@@ -469,6 +463,7 @@ const stageBuiltPackage = (
     for (const filename of [
       "catalog-fixtures-v1.json",
       "canonical-tool-contracts-v1.json",
+      "official-shell-tools-v1.json",
       "dsh-reuse-matrix-v1.json",
       "tool-catalog.schema.json",
       "tool-contract-meta.json",
@@ -701,13 +696,13 @@ const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
   "packages/product-profile/manifests/platform-targets-v1.json",
   "packages/tool-contracts/generated/catalog-fixtures-v1.json",
   "packages/tool-contracts/generated/canonical-tool-contracts-v1.json",
+  "packages/tool-contracts/generated/official-shell-tools-v1.json",
   "packages/tool-contracts/generated/dsh-reuse-matrix-v1.json",
   "packages/tool-contracts/generated/tool-catalog.schema.json",
   "packages/tool-contracts/generated/tool-contract-meta.json",
   "packages/protocol/generated/protocol-fixtures.json",
   "packages/protocol/generated/protocol-meta.json",
   "packages/protocol/generated/protocol.schema.json",
-  "packages/tools-process/src/windows-job-host.ps1",
   ...runtimePackageWorkspaces.map(([workspace]) => `${workspace}/package.json`),
 ])).sort(compareCodePoint));
 
@@ -1580,26 +1575,26 @@ const main = (): void => {
       evidence.canonicalPermissionEvidence,
       "canonical permission and interaction evidence",
     );
-    if (permissionEvidence.asked !== 25
-      || permissionEvidence.decided !== 25
+    if (permissionEvidence.asked !== 26
+      || permissionEvidence.decided !== 26
       || permissionEvidence.durableRules !== 2
       || permissionEvidence.durableRuleRevocations !== 1
-      || permissionEvidence.providerRequests !== 25
+      || permissionEvidence.providerRequests !== 26
       || permissionEvidence.safeToolsAutoAllowed !== true) {
       throw new Error("canonical permission and interaction evidence differs from the exact policy contract");
     }
     const canonicalToolPipeline = exactObject(
       evidence.canonicalTwentyToolPipeline,
-      "canonical twenty-tool pipeline evidence",
+      "canonical tool pipeline evidence",
     );
-    const expectedModelTools = [...CANONICAL_TOOL_NAMES, "mcp__artifact_host__release_check"].toSorted();
-    if (canonicalToolPipeline.callCount !== 35
+    const expectedModelTools = [...CANONICAL_TOOL_NAMES.filter((name) => name !== "pwsh"), "mcp__artifact_host__release_check"].toSorted();
+    if (canonicalToolPipeline.callCount !== 37
       || JSON.stringify(canonicalToolPipeline.names) !== JSON.stringify(CANONICAL_TOOL_NAMES)
       || JSON.stringify(canonicalToolPipeline.observedRootToolNames) !== JSON.stringify(expectedModelTools)
       || canonicalToolPipeline.onlyExpectedToolNames !== true
       || canonicalToolPipeline.preAssistantCommitTransformHits !== 1
       || canonicalToolPipeline.transformedCallId !== "artifact-write-call") {
-      throw new Error("canonical twenty-tool pipeline evidence differs from the exact accumulated contract");
+      throw new Error("canonical tool pipeline evidence differs from the exact accumulated contract");
     }
     const hostToolEvidence = exactObject(
       evidence.hostToolComponentEvidence,
@@ -2031,7 +2026,7 @@ const main = (): void => {
     const incompleteToolLifecycle = [...toolLifecycles.entries()].find(
       ([, lifecycle]) => lifecycle.endIndex === undefined || lifecycle.endIndex <= lifecycle.startIndex,
     );
-    if (toolLifecycles.size !== 38 || incompleteToolLifecycle !== undefined
+    if (toolLifecycles.size !== 40 || incompleteToolLifecycle !== undefined
       || actualEventKinds.length
         !== expectedOperationEventKinds.length + toolLifecycles.size * 2 + productProjectionEvents.length) {
       throw new Error(

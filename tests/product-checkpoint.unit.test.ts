@@ -51,8 +51,8 @@ const environment = (
   }),
   executables: Object.freeze({
     allowedCommandRefs: Object.freeze([]),
-    bashDialect: "bash" as const,
-    bashRef: "bash-v1",
+    shellDialect: "bash" as const,
+    shellRef: "bash-v1",
     bundledNodeRef: "node-v1",
     pathPolicy: "sealed" as const,
     ripgrepRef: "ripgrep-v1",

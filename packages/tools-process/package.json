@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Sealed process Provider and canonical Bash execution bridge",
+  "description": "Product authorization policy over official DSH Shell and subprocess services",
   "files": [
     "src"
   ],

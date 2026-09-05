@@ -17,18 +17,18 @@ The compatibility target is the versioned MyAgents Agent experience admitted by 
 
 ### 1.1 Current implementation and acceptance state
 
-This table is the architecture-level snapshot as of 2026-09-04. The active PRDs remain the acceptance authority.
+This table records the current source boundaries. The active PRDs own acceptance; the generated Host lock and immutable handoff own installed byte identities.
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
-| DSH source distribution | Implemented source/artifact candidate | Official `dsh-v0.1.1-rc.2` at `b150a551…`, plus ten isolated patches; the accepted 58-package DSH artifact is `0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a` / manifest `b42f4c59…`, with separately pinned patched pi-ai `0.82.1` |
-| Standalone Runtime and native RPC | Protocol `2.3.0` immutable handoff remains the installed historical authority; `2.5.0` source candidate passes isolated composition | The candidate retains 40/7/4 methods/notifications, carries typed Tool/status projections and ready baseline, and adds generic non-canonical `provider_tool`; commit-bound Runtime/native/handoff evidence is not accepted yet |
-| Batch 3 integration handoff | Protocol `2.3.0` handoff ingested by MyAgents and accepted in a refreshed local unsigned macOS package | Handoff `999a80f5…` binds Runtime `4b3bc9de…` to source `1a77619…` and MyAgents commit `80df5aa4…`; deterministic Host/Runtime, final-App/updater verification, native restart/resume and lifecycle-soak gates pass |
-| Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Web artifact `48c7f09c…` is intentionally frozen to the older Runtime `ddd6052e…`, not the latest compaction Runtime |
-| Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet |
-| Platforms | All three implementations complete; product release promotion pending | Current handoff keeps all product claims pending; exact macOS Runtime native evidence passes, while signed MyAgents and native Windows/Linux acceptance remain open |
+| DSH source distribution | Fixed official source plus required isolated patches | DSH `0.1.2-rc.1` at `a66e4702047846cdaa10c66c9d3df3951f5ea70d`, ten unchanged core patches, 72-package artifact; exact digests live in the accepted patched-artifact manifest. The separate pi-ai dependency remains `0.84.2`. |
+| Standalone Runtime and native RPC | Protocol `3.0.0` source | 44 Host methods, seven reverse methods and four notifications. Shell execution references and dialect replace the prior Bash-specific fields. |
+| Batch 3 integration handoff | Updated through the official immutable builder | The current [MyAgents lock](../../MyAgents-integration-myagents-dsh/src/shared/integrated-runtimes/dsh-lock.json) selects the accepted Runtime, contracts and platform evidence. The active UPG ledger owns Shell delivery acceptance. |
+| Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Its older frozen web artifact does not prove the current Runtime source. |
+| Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet. |
+| Platforms | All three implementations complete; native claims are artifact-specific | macOS arm64, Windows x64 and Linux x64 implementations share official DSH subprocess semantics. New bytes require new native evidence; Windows/Linux remain pending until their native campaigns pass. |
 
-The previous draft.2, draft.3, `2.0.0`, `2.1.0`, `2.2.0` and `2.4.x` Runtime/handoff pairs and the Reference Web artifact are different frozen distributions. They remain historical evidence only and may not be relabeled as protocol `2.3.0` or `2.5.0`. The accepted `2.3.0` handoff cannot prove the current `2.5.0` source candidate. Every new consumer must use a deliberately regenerated artifact/evidence set. The official candidate profile remains `workstream-evidence-only`; this document describes implemented architecture, not a public product-release promotion.
+Earlier Runtime/handoff pairs remain historical evidence for their original bytes. No profile, protocol or platform evidence is relabeled for this Shell change. The official candidate profile remains `workstream-evidence-only`; source completion does not promote a public product release.
 
 ## 2. Product boundaries
 
@@ -272,7 +272,7 @@ At startup, the invariant plugin fails closed unless:
 - the runtime and generated client share an accepted protocol schema digest;
 - every installed plugin belongs to the content-addressed locked composition manifest.
 
-The official compatibility profile also excludes stock DSH model-visible tool suites, the local credential Provider, DSH Agent Presets as a Host extension mechanism, and the DSH SDK JSON-RPC server. Equivalent lower-level DSH services may still be part of the locked profile.
+The official compatibility profile enables the selected stock DSH Shell tool and official Jobs tools; it excludes the other stock DSH model-visible tool suites, the local credential Provider, DSH Agent Presets as a Host extension mechanism, and the DSH SDK JSON-RPC server. Equivalent lower-level DSH services may still be part of the locked profile.
 
 Ordinary SDK or Host input may configure declared component instances, but may not change the installed plugin package set.
 
@@ -358,6 +358,8 @@ The current public DSH persistence seam is append-only and has no delete, replac
 
 ## 10. Tool and policy architecture
 
+Official DSH owns Shell definitions, Bash/PowerShell execution, foreground deadlines, output and background Jobs. MyAgents retains execution authorization and Host projection through public seams. The exact component and lifecycle boundary is maintained in [Platform and local execution](./tech_docs/boundaries/platform-and-local-execution.md#4-sealed-process-environment); `TaskStop` owns Agent handles, and official `job_kill` owns Shell Jobs.
+
 All model-visible tools use DSH `ctx.tools`. A product tool is considered native to this distribution when it registers into `ctx.tools`, even if its exact definition and executor are maintained by MyAgents. Root, foreground-child and background-child calls share this execution plane: WorkRegistry derives immutable child authority from the parent Product operation, while the common tool runtime rechecks visibility, origin, Hooks, permission and delayed execution policy. Child roles can narrow the parent catalog but cannot widen it or create another ToolRuntime. General, Explore, Plan and custom roles retain context in both modes; ProductWork separately owns activation completion, handle closure and epoch-correlated quiet Inbox reports, with independent active/retained limits. New child births freeze the selected Host model before materialization and use one root capacity FIFO with durable queued/started/waiting facts. Eligible roles may delegate through the Host-configured depth (default one); DSH owns actual parent Sessions, ProductWork owns the root ledger and shared capacity, and permission interaction waits borrow this capacity owner through composition. Composition verifies already-disposed child completion against the public durable snapshot before publishing settlement. See [Child agents and background work](./tech_docs/execution/child-agents-and-background-work.md) for source behavior and remaining acceptance boundaries.
 
 For each target tool:
@@ -367,10 +369,10 @@ For each target tool:
 3. otherwise register a MyAgents compatibility definition and reuse only lower-level public services/libraries that preserve semantics;
 4. never expose both definitions under competing names in the official compatibility profile.
 
-The initial canonical catalog is exactly:
+The current implementation catalog contains 24 definitions; the effective catalog selects one platform Shell (23 tools with the official web Provider):
 
 ```text
-Read, Write, Edit, Glob, Grep, Bash, ls,
+Read, Write, Edit, Glob, Grep, bash, pwsh, job_output, job_list, job_kill, ls,
 WebFetch, WebSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode,
 Skill, Agent, TaskStop, SendMessage,
 TaskCreate, TaskGet, TaskList, TaskUpdate
@@ -394,13 +396,13 @@ resolve visible definition and immutable operation scope
 
 Current DSH does not expose an authoritative pre-dispatch argument-rewrite seam. Exact `PreToolUse.updatedInput` compatibility therefore requires either an accepted upstream DSH seam or a minimal pinned fork. Proxying every stock tool and logging different outer/inner arguments is not an accepted production solution.
 
-Plan-mode transition and policy ownership belongs to the single `ProductPlanService`. It records one product ownership fact adjacent to each public DSH `plan/mode` event and verifies the resulting state with `foldPlanMode`; it does not install the broader stock `PlanModeController`, whose stock tool, prompt, and pending-state ownership are not contract-equivalent. The service contributes one monotonic global `ctx.tools` guard derived from the canonical twenty-tool contract. Consequently definitions registered later through trusted Host/MCP composition are denied by default while plan mode is active unless they carry an exact current product-operation authority and declared plan policy. The operation that owns a durable transition may continue under the new revision, while older concurrent births fail closed.
+Plan-mode transition and policy ownership belongs to the single `ProductPlanService`. It records one product ownership fact adjacent to each public DSH `plan/mode` event and verifies the resulting state with `foldPlanMode`; it does not install the broader stock `PlanModeController`, whose stock tool, prompt, and pending-state ownership are not contract-equivalent. The service contributes one monotonic global `ctx.tools` guard derived from the canonical tool contract. Consequently definitions registered later through trusted Host/MCP composition are denied by default while plan mode is active unless they carry an exact current product-operation authority and declared plan policy. The operation that owns a durable transition may continue under the new revision, while older concurrent births fail closed.
 
 Permission mode is the fallback policy after hard guards, PermissionRequest Hooks, safe classes, tool-level auto-allow policy and unexpired exact rules. `default` asks, `acceptEdits` additionally auto-allows governed `Write`/`Edit`, `dontAsk` denies anything not pre-authorized without opening an interaction, and `bypassPermissions` skips permission prompting without bypassing hard policy. Exact rules and revocations are chained durable DSH Session facts. Same-operation calls for one exact tuple are single-flight; a durably settled `always_allow` adds only that operation-local exact proof while preserving the frozen birth for every unrelated decision. A replacement Runtime generation restores the Host-requested effective permission configuration before validating this durable chain; the restore is read-only and does not manufacture a new configuration event. Protocol `2.1.0` retains the Host list/add/revoke rule methods and quiescent `plan/apply`, and `interaction/respond` reports the actual post-effect revision. Both model-driven and Host-driven Plan transitions still use the one `ProductPlanService`. The complete ordering, security boundary and MyAgents mapping are maintained in [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md).
 
 An acknowledged interactive desktop request waits without a human-decision wall-clock timeout. The Host registration and response RPCs remain bounded, operation/Session cancellation remains authoritative, and permissionable tool execution arms its cooperative deadline only after authorization settles. This placement uses the public optional DSH timeout seam and does not patch DSH Core.
 
-Bash approval carries ephemeral full command, sealed working directory and optional description through the existing interaction schema. This review projection never changes permission tuple matching or durable rule contents; its ownership is documented in [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md#5-blocking-interactions).
+Shell approval carries ephemeral full command, sealed working directory and optional description through the existing interaction schema. This review projection never changes permission tuple matching or durable rule contents; its ownership is documented in [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md#5-blocking-interactions).
 
 ## 11. Declarative component lifecycle
 

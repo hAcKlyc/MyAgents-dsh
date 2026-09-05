@@ -59,6 +59,8 @@ const expectedScripts = new Map([
   ["build:batch-1-distribution-handoff", "tsx scripts/build-batch-1-distribution-handoff.ts"],
   ["build:batch-3-integration-handoff", "tsx scripts/build-batch-3-integration-handoff.ts"],
   ["build:web-artifact", "npm run build && tsx scripts/build-reference-web-artifact.ts"],
+  ["generate:official-shell-tools", "tsx scripts/generate-official-shell-tools.ts"],
+  ["check:official-shell-tools", "tsx scripts/generate-official-shell-tools.ts --check"],
   ["generate:tool-contracts", "tsx scripts/generate-tool-contracts.ts"],
   ["check:tool-contracts", "tsx scripts/generate-tool-contracts.ts --check"],
   ["check:dsh-seams-source", "tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test"],
@@ -71,7 +73,7 @@ const expectedScripts = new Map([
   ["generate:profile", "tsx scripts/generate-product-profile.ts"],
   ["check:profile", "tsx scripts/generate-product-profile.ts --check"],
   ["check:security", "tsx scripts/verify-repository-security.ts"],
-  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:dsh-seams && npm run check:pi-ai-seam && npm run check:tool-contracts && npm run check:protocol && npm run check:web-host-contract && npm run check:web-host-foundation && npm run check:compatibility && npm run check:profile && npm run check:security"],
+  ["check:foundation", "npm run check:workspace && npm run check:migration && npm run check:dsh && npm run check:dsh-seams && npm run check:pi-ai-seam && npm run check:official-shell-tools && npm run check:tool-contracts && npm run check:protocol && npm run check:web-host-contract && npm run check:web-host-foundation && npm run check:compatibility && npm run check:profile && npm run check:security"],
   ["typecheck", "npm run check:foundation && tsc -b --pretty false"],
   ["lint", "eslint . --max-warnings 0"],
   ["test", "npm run check:foundation && vitest run --maxWorkers=1 --no-file-parallelism"],
@@ -234,6 +236,7 @@ const expectedWorkspaceFiles = new Map([
   ["packages/tool-contracts", [
     "generated/catalog-fixtures-v1.json",
     "generated/canonical-tool-contracts-v1.json",
+    "generated/official-shell-tools-v1.json",
     "generated/dsh-reuse-matrix-v1.json",
     "generated/tool-catalog.schema.json",
     "generated/tool-contract-meta.json",
@@ -250,7 +253,6 @@ const expectedWorkspaceFiles = new Map([
   ["packages/tools-process", [
     "src/index.ts",
     "src/runtime.ts",
-    "src/windows-job-subprocess.ts",
   ]],
   ["packages/tools-web", ["src/index.ts", "src/runtime.ts", "src/safe-http.ts"]],
   ["packages/web-host-contract", [

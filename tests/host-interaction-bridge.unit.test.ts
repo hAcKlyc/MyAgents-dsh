@@ -29,7 +29,7 @@ describe("Host interaction bridge", () => {
       productTurnId: "turn-immediate-response",
       dshTurn: 1,
       callId: "call-immediate-response",
-      tool: "Bash",
+      tool: "bash",
       permissionClass: "process.execute",
       target: "workspace-command",
       display: { command: `printf '%s' '${"example".repeat(160)}'`, cwd: "/workspace", description: "Inspect" },
@@ -60,7 +60,7 @@ describe("Host interaction bridge", () => {
     });
     expect(requestInteraction).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       schema: {
-        origin: "root", permissionClass: "process.execute", target: "workspace-command", tool: "Bash",
+        origin: "root", permissionClass: "process.execute", target: "workspace-command", tool: "bash",
         display: request.display,
       },
     }));

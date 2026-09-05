@@ -132,11 +132,11 @@ import toolContractMetaJson from "@myagents-dsh/tool-contracts/tool-contract-met
 };
 
 assert.equal(Object.isFrozen(CANONICAL_TOOL_NAMES), true);
-assert.equal(CANONICAL_TOOL_NAMES.length, 20);
+assert.equal(CANONICAL_TOOL_NAMES.length, 24);
 assert.equal(toolContractMetaJson.contractSha256, CANONICAL_TOOL_CONTRACT_SHA256);
-assert.equal(toolContractMetaJson.canonicalToolCount, 20);
+assert.equal(toolContractMetaJson.canonicalToolCount, 24);
 const artifactEffectiveTools = Object.freeze([
-  "Read", "Write", "Edit", "Glob", "Grep", "Bash", "ls", "WebFetch", "WebSearch",
+  "Read", "Write", "Edit", "Glob", "Grep", "bash", "job_output", "job_list", "job_kill", "ls", "WebFetch", "WebSearch",
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "Skill", "Agent", "TaskStop", "SendMessage",
   "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
 ] as const);
@@ -760,16 +760,17 @@ adapter.enqueue({
     { id: "artifact-glob-call", name: "Glob", arguments: JSON.stringify({ pattern: "**/*.txt" }) },
     { id: "artifact-grep-call", name: "Grep", arguments: JSON.stringify({ pattern: "governed" }) },
     { id: "artifact-ls-call", name: "ls", arguments: JSON.stringify({}) },
-    { id: "artifact-bash-call", name: "Bash", arguments: JSON.stringify({ command: "printf artifact-bash" }) },
+    { id: "artifact-bash-call", name: "bash", arguments: JSON.stringify({ description: "Artifact Shell check", command: "printf artifact-bash" }) },
     {
       id: "artifact-background-bash-call",
-      name: "Bash",
-      arguments: JSON.stringify({ command: "/bin/sleep 0.05; printf artifact-background", run_in_background: true }),
+      name: "bash",
+      arguments: JSON.stringify({ description: "Artifact Shell check", command: "/bin/sleep 0.05; printf artifact-background", run_in_background: true }),
     },
     {
       id: "artifact-background-flood-call",
-      name: "Bash",
+      name: "bash",
       arguments: JSON.stringify({
+        description: "Artifact large output check",
         command: `${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(200004))'`,
         run_in_background: true,
       }),
@@ -834,7 +835,7 @@ adapter.enqueue({
 adapter.enqueue({
   calls: [
     { id: "artifact-plan-read-call", name: "Read", arguments: JSON.stringify({ file_path: fixturePlanPath }) },
-    { id: "artifact-plan-bash-denied-call", name: "Bash", arguments: JSON.stringify({ command: "printf forbidden" }) },
+    { id: "artifact-plan-bash-denied-call", name: "bash", arguments: JSON.stringify({ description: "Artifact Shell check", command: "printf forbidden" }) },
   ],
   kind: "tool-calls",
 });
@@ -995,7 +996,7 @@ const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
 const artifactRipgrepPath = await resolveRgPath();
 const executableSha256 = Object.freeze({
-  bash: createHash("sha256").update(await readFile("/bin/bash")).digest("hex"),
+  shell: createHash("sha256").update(await readFile("/bin/bash")).digest("hex"),
   bundledNode: createHash("sha256").update(await readFile(process.execPath)).digest("hex"),
   ripgrep: createHash("sha256").update(await readFile(artifactRipgrepPath)).digest("hex"),
 });
@@ -1058,16 +1059,17 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
   plan: Object.freeze({ revision: "artifact-plan-v1" }),
   platformTarget: "darwin-arm64",
   process: Object.freeze({
+    shellDialect: "bash",
     allowedCommandRefs: Object.freeze(["bundled-bash", "bundled-node", "bundled-ripgrep"]),
     environmentValues: Object.freeze({}),
     executableSha256,
     executablePaths: Object.freeze({
-      bash: "/bin/bash",
+      shell: "/bin/bash",
       bundledNode: process.execPath,
       ripgrep: artifactRipgrepPath,
     }),
     executableRefs: Object.freeze({
-      bash: "bundled-bash",
+      shell: "bundled-bash",
       bundledNode: "bundled-node",
       ripgrep: "bundled-ripgrep",
     }),
@@ -1454,11 +1456,11 @@ hostPeer.registerRequestHandler("host/interaction/request", (params, context) =>
     assert.equal(typeof schema.permissionClass, "string");
     assert.equal(typeof schema.target, "string");
     assert.equal(typeof schema.tool, "string");
-    if (schema.tool === "Bash") {
+    if (schema.tool === "bash") {
       assert.equal(typeof schema.display?.command, "string");
       assert.equal(schema.display?.cwd, schema.target);
       if (schema.display?.command === "printf artifact-bash") {
-        assert.deepEqual(schema.display, { command: "printf artifact-bash", cwd: schema.target });
+        assert.deepEqual(schema.display, { command: "printf artifact-bash", cwd: schema.target, description: "Artifact Shell check" });
       }
     }
     if (schema.tool !== "Agent" || schema.target !== "Verify child model lineage") {
@@ -1614,9 +1616,9 @@ const initializeRequest: InitializeParams = {
     },
     executables: {
       bundledNodeRef: "bundled-node",
-      bashRef: "bundled-bash",
+      shellRef: "bundled-bash",
       ripgrepRef: "bundled-ripgrep",
-      bashDialect: "bash",
+      shellDialect: "bash",
       allowedCommandRefs: ["bundled-bash", "bundled-node", "bundled-ripgrep"],
       pathPolicy: "sealed",
     },
@@ -2465,10 +2467,10 @@ assert.equal(
   primarySessionParams.systemPrompt,
   "created primary Session must install the requested persona in its Agent scope",
 );
-for (const name of CANONICAL_TOOL_NAMES) {
+for (const name of artifactEffectiveTools) {
   assert.ok(composition.context.tools.get(name, primaryAgent), `missing canonical tool ${name}`);
 }
-for (const stockName of ["read_file", "write_file", "edit_file", "bash", "glob", "grep", "todo_write"]) {
+for (const stockName of ["read_file", "write_file", "edit_file", "pwsh", "glob", "grep", "todo_write"]) {
   assert.equal(composition.context.tools.get(stockName, primaryAgent), undefined, `stock tool ${stockName} must be absent`);
 }
 assert.equal(
@@ -2568,8 +2570,11 @@ await waitUntil(
 const approvalRuntimeContext = "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n"
   + "Current workspace root:\n"
   + `${fixtureWorkspace}\n\n`
-  + "Use this exact absolute path for file and search tools that require one. Bash already runs in this workspace. "
+  + "Use this exact absolute path for file and search tools that require one. The available Shell tool runs in this workspace. "
   + "Do not infer access outside it.\n\n"
+  + "Runtime platform: darwin-arm64. Available Shell tool: bash. Executable: /bin/bash. "
+  + "Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. "
+  + "Query the executable's version before relying on version-specific features.\n\n"
   + "Available Skills:\n"
   + "- fixture-audit — Audits the synthetic Runtime artifact and returns bounded evidence.\n"
   + "- release-audit — Audit one accepted Runtime component generation\n\n"
@@ -2597,7 +2602,7 @@ assert.deepEqual(adapter.requests[1]?.messages.map(({ role, content }) => ({ rol
   { role: "assistant", content: [{ type: "text", text: "first completion" }] },
   { role: "user", content: [{ type: "text", text: "second prompt" }] },
 ]);
-assert.deepEqual(adapter.requests[0].toolNames, [...CANONICAL_TOOL_NAMES, artifactHostToolName].toSorted());
+assert.deepEqual(adapter.requests[0].toolNames, [...artifactEffectiveTools, artifactHostToolName].toSorted());
 assert.equal(
   adapter.requests.every(({ toolNames }) => toolNames.every((name) => artifactModelToolSet.has(name))),
   true,
@@ -3068,53 +3073,35 @@ assert.deepEqual({
   truncated: false,
 });
 assert.equal(processSearchText("artifact-ls-call"), "governed.txt\npixel.png\nskills/");
-const foregroundBash = JSON.parse(processSearchText("artifact-bash-call")) as unknown;
-assert.ok(foregroundBash !== null && typeof foregroundBash === "object" && !Array.isArray(foregroundBash));
-assert.deepEqual({
-  background: (foregroundBash as Record<string, unknown>).background,
-  exitCode: (foregroundBash as Record<string, unknown>).exitCode,
-  interrupted: (foregroundBash as Record<string, unknown>).interrupted,
-  outputTruncated: (foregroundBash as Record<string, unknown>).outputTruncated,
-  stderr: (foregroundBash as Record<string, unknown>).stderr,
-  stdout: (foregroundBash as Record<string, unknown>).stdout,
-}, {
-  background: false,
-  exitCode: 0,
-  interrupted: false,
-  outputTruncated: false,
-  stderr: "",
-  stdout: "artifact-bash",
-});
-const backgroundBash = JSON.parse(processSearchText("artifact-background-bash-call")) as unknown;
-assert.ok(backgroundBash !== null && typeof backgroundBash === "object" && !Array.isArray(backgroundBash));
-const backgroundRecord = backgroundBash as Record<string, unknown>;
-assert.equal(backgroundRecord.background, true);
-assert.equal(typeof backgroundRecord.outputPath, "string");
-assert.equal(typeof backgroundRecord.taskId, "string");
-const backgroundFlood = JSON.parse(processSearchText("artifact-background-flood-call")) as unknown;
-assert.ok(backgroundFlood !== null && typeof backgroundFlood === "object" && !Array.isArray(backgroundFlood));
-const backgroundFloodRecord = backgroundFlood as Record<string, unknown>;
-assert.equal(backgroundFloodRecord.background, true);
-assert.equal(typeof backgroundFloodRecord.outputPath, "string");
-assert.equal(typeof backgroundFloodRecord.taskId, "string");
-assert.ok(fileToolEvidence.some((entry) => entry.startsWith("permission:Bash:")));
+assert.match(processSearchText("artifact-bash-call"), /artifact-bash/u);
+const shellMeta = (callId: string): Record<string, unknown> => {
+  const event = processSearchResults.find((candidate) => candidate.type === "tool/result"
+    && String(candidate.data.message.source.callId) === callId);
+  assert.ok(event?.type === "tool/result");
+  assert.ok(event.data.meta !== null && typeof event.data.meta === "object" && !Array.isArray(event.data.meta));
+  return event.data.meta;
+};
+assert.deepEqual(shellMeta("artifact-bash-call"), { exitCode: 0, status: "completed" });
+const backgroundRecord = { jobId: shellMeta("artifact-background-bash-call").jobId };
+const backgroundFloodRecord = { jobId: shellMeta("artifact-background-flood-call").jobId };
+assert.equal(typeof backgroundRecord.jobId, "string");
+assert.equal(typeof backgroundFloodRecord.jobId, "string");
+assert.ok(fileToolEvidence.some((entry) => entry.startsWith("permission:bash:")));
 for (const safeTool of ["Read", "Glob", "Grep", "ls"]) {
   assert.equal(fileToolEvidence.some((entry) => entry.startsWith(`permission:${safeTool}:`)), false);
 }
 const backgroundJobs = composition.context.jobs.list(primaryAgent);
 assert.equal(backgroundJobs.length, 2);
-const backgroundJob = backgroundJobs.find(({ id }) => id === backgroundRecord.taskId);
+const backgroundJob = backgroundJobs.find(({ id }) => id === backgroundRecord.jobId);
 assert.ok(backgroundJob);
-assert.equal(backgroundJob.id, backgroundRecord.taskId);
 await composition.context.jobs.wait(backgroundJob.id, 5_000, primaryAgent);
-assert.equal(await readFile(backgroundRecord.outputPath as string, "utf8"), "artifact-background");
-const backgroundFloodJob = backgroundJobs.find(({ id }) => id === backgroundFloodRecord.taskId);
+const backgroundFloodJob = backgroundJobs.find(({ id }) => id === backgroundFloodRecord.jobId);
 assert.ok(backgroundFloodJob);
 await composition.context.jobs.wait(backgroundFloodJob.id, 5_000, primaryAgent);
-const retainedFlood = await readFile(backgroundFloodRecord.outputPath as string, "utf8");
-assert.match(retainedFlood, /^\[myagents: stdout truncated; 80004 earlier bytes omitted\]\n/u);
-assert.equal(retainedFlood.endsWith("x".repeat(120_000)), true);
-assert.equal(Buffer.byteLength(retainedFlood, "utf8") <= 262_144, true);
+const retainedFlood = composition.context.jobs.read(backgroundFloodJob.id, primaryAgent);
+assert.ok(retainedFlood.text.includes("x".repeat(256)));
+assert.ok(Buffer.byteLength(retainedFlood.text, "utf8") < 200_004);
+
 assert.equal(composition.context.productProcesses.snapshot().liveProcesses, 0);
 
 await composition.context.sdkOperations.start({
@@ -3716,8 +3703,18 @@ adapter.enqueue({
   calls: [
     {
       id: "artifact-background-read-call",
-      name: "Read",
-      arguments: JSON.stringify({ file_path: backgroundRecord.outputPath }),
+      name: "job_output",
+      arguments: JSON.stringify({ job_id: backgroundRecord.jobId }),
+    },
+    {
+      id: "artifact-job-list-call",
+      name: "job_list",
+      arguments: JSON.stringify({}),
+    },
+    {
+      id: "artifact-job-kill-call",
+      name: "job_kill",
+      arguments: JSON.stringify({ job_id: backgroundRecord.jobId }),
     },
     {
       id: "artifact-runtime-private-read-call",
@@ -3764,9 +3761,9 @@ const canonicalToolResultIds = new Set(primaryAgent.session.snapshotEvents().fla
 assert.deepEqual(
   CANONICAL_TOOL_NAMES.filter((name) => canonicalToolCalls.some((event) =>
     event.type === "tool/call" && event.data.name === name)),
-  CANONICAL_TOOL_NAMES,
+  artifactEffectiveTools,
 );
-for (const name of CANONICAL_TOOL_NAMES) {
+for (const name of artifactEffectiveTools) {
   const calls = canonicalToolCalls.filter((event) => event.type === "tool/call" && event.data.name === name);
   assert.ok(calls.length > 0, `canonical tool ${name} was not called through DSH`);
   assert.ok(calls.some((event) => event.type === "tool/call"
@@ -3837,8 +3834,8 @@ assert.equal(hostInteractionResponses.at(-1)?.state, "expired");
 adapter.enqueue({
   calls: [{
     id: "artifact-aborted-bash-call",
-    name: "Bash",
-    arguments: JSON.stringify({ command: "/bin/sleep 30" }),
+    name: "bash",
+    arguments: JSON.stringify({ description: "Artifact Shell check", command: "/bin/sleep 30" }),
   }],
   kind: "tool-calls",
 });
@@ -4078,7 +4075,7 @@ assert.deepEqual(componentCatalog.skills, [{
   disableModelInvocation: false,
   name: "release-audit",
 }]);
-assert.deepEqual(componentCatalog.tools, [...CANONICAL_TOOL_NAMES.toSorted(), artifactHostToolName]);
+assert.deepEqual(componentCatalog.tools, [...artifactEffectiveTools.toSorted(), artifactHostToolName]);
 const componentPublicationVerified = snapshot.componentPlane === "installed"
   && snapshot.componentEffectiveRevision === artifactDeclarativeExtensionSnapshot.revision
   && componentCatalog.revision === artifactDeclarativeExtensionSnapshot.revision;
@@ -4876,8 +4873,8 @@ const permissionDecidedEvents = primaryAgent.session.snapshotEvents().filter(({ 
 const permissionRuleEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule");
 const permissionRuleRevokedEvents = primaryAgent.session.snapshotEvents()
   .filter(({ type }) => type === "myagents/permission/rule/revoked");
-assert.equal(permissionAskedEvents.length, 25);
-assert.equal(permissionDecidedEvents.length, 25);
+assert.equal(permissionAskedEvents.length, 26);
+assert.equal(permissionDecidedEvents.length, 26);
 assert.equal(permissionRuleEvents.length, 2);
 assert.equal(permissionRuleRevokedEvents.length, 1);
 assert.equal(hostInteractionResponses.length, hostInteractionCalls.length + 2);

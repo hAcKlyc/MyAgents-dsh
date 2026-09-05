@@ -192,7 +192,7 @@ export const loadDynamicScenarioCorpus = async (directory: string): Promise<read
     capabilityCoverage.filter((name) => (CANONICAL_TOOL_NAMES as readonly string[]).includes(name))));
   if (observedCanonicalTools.size !== CANONICAL_TOOL_NAMES.length
     || CANONICAL_TOOL_NAMES.some((name) => !observedCanonicalTools.has(name))) {
-    throw new TypeError("dynamic scenario corpus does not cover the exact canonical twenty-tool authority");
+    throw new TypeError("dynamic scenario corpus does not cover the exact canonical tool authority");
   }
   return Object.freeze(scenarios);
 };

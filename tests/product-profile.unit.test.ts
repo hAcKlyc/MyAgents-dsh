@@ -231,29 +231,12 @@ describe("composition-selected platform adapter contracts", () => {
     } as unknown as string)).toThrow("unsupported platform target");
   });
 
-  it.each(PLATFORM_TARGETS)("executes the shared shell/process/stdio/root/SQLite conformance for %s", async (target) => {
+  it.each(PLATFORM_TARGETS)("executes the shared shell/process/stdio/root/SQLite conformance for %s", (target) => {
     const adapter = selectPlatformAdapter(target);
     const isWindows = target === "win32-x64";
     const root = isWindows ? "C:\\Fixture" : "/fixture";
-    const script = isWindows ? `${root}\\bin\\run.sh` : `${root}/bin/run.sh`;
-    const shell = adapter.shellLaunchPlan(script, ["--fixture", "value"]);
-    expect(shell.executableRef).toBe("bundled-bash");
-    expect(shell.arguments).toEqual([adapter.normalizeAbsolutePath(script), "--fixture", "value"]);
-    expect(shell.utf8PreludeRef).toBe(isWindows ? "windows-utf8-v1" : undefined);
-
-    const signals: string[] = [];
-    const waits = [false, true];
-    const cleanup = await adapter.cleanupProcessTree({
-      signal(signal) {
-        signals.push(signal);
-        return Promise.resolve();
-      },
-      wait() {
-        return Promise.resolve(waits.shift() ?? false);
-      },
-    }, 25);
-    expect(cleanup).toEqual({ graceful: adapter.processTree.gracefulSignal, forced: true });
-    expect(signals).toEqual([adapter.processTree.gracefulSignal, adapter.processTree.forceSignal]);
+    expect(adapter.shell).toEqual({ executableRef: "runtime-shell", dialect: isWindows ? "pwsh" : "bash" });
+    expect(adapter.processTree.owner).toBe("dsh-local-subprocess");
 
     const encoded = adapter.encodeStdioFrame({ jsonrpc: "2.0", id: 1 });
     expect(new TextDecoder().decode(encoded)).toBe('{"jsonrpc":"2.0","id":1}\n');
@@ -310,7 +293,7 @@ describe("composition-selected platform adapter contracts", () => {
       "atomic-replace-with-bounded-retry",
       "record-parent-flush-unavailable",
     ]);
-    expect(adapter.processTree).toMatchObject({ owner: "job-object", forceSignal: "TerminateJobObject" });
+    expect(adapter.processTree).toMatchObject({ owner: "dsh-local-subprocess", forceSignal: "taskkill" });
     expect(adapter.artifactName("myagents-dsh", "0.0.0")).toBe("myagents-dsh-0.0.0-win32-x64.zip");
   });
 });

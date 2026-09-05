@@ -52,3 +52,5 @@ Versioned PRD filenames use the target program milestone, while `batch` and `wor
 - Use numbered ADRs only for accepted durable choices that code cannot explain safely.
 - Keep comparative exploration under `research/` only while it remains useful and non-normative.
 - Preserve generated contracts, DSH seam records, and migration inventories in their existing machine-owned directories and change them only through their owning workflow.
+
+Official Shell/Jobs ownership is maintained in [Platform and local execution](./tech_docs/boundaries/platform-and-local-execution.md), under [UPG-W10](./prd/prd_0.3_myagents_dsh_0_1_2_upgrade.md#7-工作包与内部台账). `packages/tool-contracts/generated/official-shell-tools-v1.json` is generated directly from the pinned official plugins; it is an input snapshot to the canonical catalog generator, never a hand-maintained competing tool definition.

@@ -97,9 +97,9 @@ const initialize = (
     },
     executables: {
       bundledNodeRef: "bundled-node",
-      bashRef: "bundled-bash",
+      shellRef: "bundled-bash",
       ripgrepRef: "bundled-ripgrep",
-      bashDialect: "bash",
+      shellDialect: "bash",
       allowedCommandRefs: [],
       pathPolicy: "sealed",
     },

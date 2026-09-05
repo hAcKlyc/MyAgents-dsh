@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Composition and process-lifecycle boundary for the verified MyAgents-dsh runtime artifact",
-  "files": ["src"],
+  "files": [
+    "src"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./process": "./src/process.ts",
@@ -17,5 +19,8 @@
     "@myagents-dsh/rpc-server": "0.0.0",
     "@myagents-dsh/runtime-product": "0.0.0",
     "@vscode/ripgrep": "1.18.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-pwsh-local": "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd || 0.1.2-rc.1"
   }
 }

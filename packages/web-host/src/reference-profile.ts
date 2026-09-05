@@ -264,16 +264,10 @@ export const createReferenceWebInitialize = (
     },
     executables: {
       bundledNodeRef: "bundled-node",
-      bashRef: "bundled-bash",
+      shellRef: "runtime-shell",
       ripgrepRef: "bundled-ripgrep",
-      ...(platform.os === "win32" ? {
-        windowsPowerShellRef: "bundled-powershell",
-        windowsUtf8PreludeRef: "windows-utf8-v1",
-      } : {}),
-      bashDialect: "bash",
-      allowedCommandRefs: platform.os === "win32"
-        ? ["bundled-bash", "bundled-node", "bundled-powershell", "bundled-ripgrep"]
-        : ["bundled-bash", "bundled-node", "bundled-ripgrep"],
+      shellDialect: platform.os === "win32" ? "pwsh" : "bash",
+      allowedCommandRefs: ["runtime-shell", "bundled-node", "bundled-ripgrep"],
       pathPolicy: "sealed",
     },
     environment: { allowedKeys: [], inheritedKeys: [], secretValues: "reverse-port-only" },

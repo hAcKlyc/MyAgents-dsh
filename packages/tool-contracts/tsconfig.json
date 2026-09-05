@@ -8,6 +8,7 @@
   "files": [
     "generated/catalog-fixtures-v1.json",
     "generated/canonical-tool-contracts-v1.json",
+    "generated/official-shell-tools-v1.json",
     "generated/dsh-reuse-matrix-v1.json",
     "generated/tool-catalog.schema.json",
     "generated/tool-contract-meta.json",

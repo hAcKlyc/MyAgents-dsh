@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: platform-and-local-execution
-updated: 2026-09-02
+updated: 2026-09-06
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_architecture.md
 ---
@@ -15,9 +15,9 @@ This guide explains the composition-selected platform adapters and the local fil
 
 ## 2. Relationships
 
-- **Owns:** platform target selection, path flavor, explicit roots, process-tree cleanup, shell launch contract, sealed executable/environment identity and filesystem canonicalization.
+- **Owns:** platform target selection, path flavor, explicit roots, platform Shell selection, sealed executable/environment identity and filesystem canonicalization.
 - **Depends on:** Host-launched process environment, verified bundled/system executables, platform artifact inventory and operation-frozen workspace policy.
-- **Consumed by:** Bash, Glob/Grep/Read/Write/Edit/ls, MCP stdio, attachments, SQLite publication, Plan/checkpoint storage and process cleanup.
+- **Consumed by:** official `bash`/`pwsh`/Jobs, Glob/Grep/Read/Write/Edit/ls, MCP stdio, attachments, SQLite publication, Plan/checkpoint storage and process cleanup.
 - **Does not own:** an OS sandbox, user shell startup files, Host secrets, network policy, tool permission or platform release claims.
 
 ## 3. Target adapters
@@ -26,42 +26,34 @@ This guide explains the composition-selected platform adapters and the local fil
 | --- | --- | --- | --- |
 | macOS arm64 | POSIX / `tar.gz` | process group, `SIGTERM` then `SIGKILL` | composition-sealed, `PATH`-resolved bash |
 | Linux x64 | POSIX / `tar.gz` | process group, `SIGTERM` then `SIGKILL` | composition-sealed, `PATH`-resolved bash |
-| Windows x64 | Win32 / `zip` | Job Object, CTRL_BREAK then TerminateJobObject | composition-sealed, `PATH`-resolved bash plus UTF-8/PowerShell host adapter |
+| Windows x64 | Win32 / `zip` | official DSH tree termination through `taskkill` | official `pwsh`; PowerShell 7 preferred, Windows PowerShell 5.1 fallback |
 
-`PlatformAdapterContract` declares target path/archive, shell-launch, cleanup and publication plans,
-but not every plan method currently drives the production I/O path directly. POSIX execution uses
-the DSH local subprocess Provider; Windows selects `WindowsJobObjectSubprocessRuntime`; canonical
-Bash argv comes from `createSealedBashArgv`. SQLite and MCP stdio also have their own
-composition-selected consumers. Maintain the contract as target intent while verifying each
-actual Provider path.
+`PlatformAdapterContract` selects the platform and records its path/archive/process facts. `ProductSubprocessRuntime` only applies product spawn policy and delegates to the official `LocalSubprocessRuntime` on all platforms. The former Shell launch/cleanup plan methods, custom Bash executor, Windows Job Object Provider and PowerShell supervisor script are removed. SQLite and MCP keep their existing composition-selected consumers.
 
-The current adapter manifest labels macOS `contract_defined` and Linux/Windows
-`implementation-complete_pending-native-validation`; it contains no `native_verified` target. The
-current integration compatibility fixture treats all three native claims as pending. Neither fact
-may be promoted without exact artifact-bound native evidence.
+Platform implementation and native validation are separate. A support claim comes from the exact Runtime's platform evidence; a previous macOS pass cannot be inherited by new bytes. Windows/Linux remain `implementation-complete_pending-native-validation` until their native campaigns pass.
 
 ## 4. Sealed process environment
 
-The official Runtime resolves and hashes exact bash and Windows PowerShell identities from the
-launcher `PATH`; Node is `process.execPath`, and ripgrep comes from `@vscode/ripgrep`. It snapshots a
+The official Runtime resolves and hashes the selected Shell: `bash` from launcher `PATH` on POSIX, or the official `resolvePwshPath()` result on Windows; Node is `process.execPath`, and ripgrep comes from `@vscode/ripgrep`. It snapshots a
 bounded explicit environment from the launcher when present, including `PATH`, `HOME`, user/shell,
 locale and required Windows variables. Canonical process-tool configuration freezes the allowed
 keys and executable references; each such process call revalidates path, file identity and digest.
 
-`Bash` runs the configured bash directly with the canonical workspace root as `cwd`; it does not launch the user's interactive/login zsh and does not source shell profiles. Consequently, `HOME` or a Homebrew/`~/.myagents/bin` path exists only if the Host process supplied it in the launch environment and it was captured at Runtime composition. The architecture-correct fix for a missing MyAgents CLI is at the Host/runtime-process launch and official environment capture boundary, not in a model prompt or one command's ad hoc `export`.
+Official `LocalBashExecutor`/`PwshLocalExecutor` own command argv, encoding, deadlines, collection and cancellation. The selected official `tool-bash` or `tool-pwsh` definition is mounted unchanged. Only one Shell is visible on a platform. The product guard checks permission, Plan/origin/catalog and operation revision, captures the requested workspace before permission, and revalidates its identity and executable before admission. A thin subprocess policy supplies the verified executable, governed cwd and sealed environment to the stock Provider; it does not implement another executor.
 
-Canonical Bash/Glob/Grep and Product process calls use the sealed explicit map and operation-frozen
-authority; ambient child environment is not re-read after initialization and secrets remain
-excluded. Managed MCP stdio is a distinct boundary: it uses Host-declared argv/cwd plus
-reverse-port credential material and calls shared `ctx.subprocess` without ProductProcessRuntime's
-allowed-command references or executable-digest check. Its declarative component/credential policy,
-not this canonical-tool claim, owns that launch.
+The official `shell-env` registry owns trusted `DSH_*` injection. Initialization reconfigures its stock `DSH_HOME` to the admitted Runtime home; its session facts and product platform/dialect/executable contributor are per-call facts. System context names the actual platform and Shell. Host launch supplies `PATH`, home, locale and installed CLI paths; a model command or prompt is not environment authority.
+
+Foreground expiry ends the command and returns the official `timedOut` result. Background execution is explicit and has no foreground deadline; `job_output`, `job_list`, and `job_kill` use the official owner-scoped Jobs registry. Completion notices use stock quiet delivery through the sole DSH Inbox, so a busy Agent receives the notice at its next step and an idle Agent retains it for the next managed operation. Waiting/reading a terminal job marks it reported and suppresses duplicate notices. ProductWork's `TaskStop` now addresses Agent handles only.
+
+Official output remains official: stdout/stderr are bounded and may spill to upstream-owned files. Product code retains only the producing Agent's spill-file identity so governed `Read` can read it, rejecting other Agents, hardlinks and replaced files. It neither allocates nor rewrites Shell output. Background reads go through `job_output`; old product `outputPath`/automatic promotion semantics are retired. The sole DSH ToolRuntime forwards stock registrations with only the public `output.presentationMeta` callback added. This pure Host projection derives exit/state/job identity from the validated official value and an explicit workdir from the arguments. It preserves official schema, render and execution; middleware-authored success metadata is intentionally not used because DSH renormalizes it.
+
+Glob/Grep retain their sealed search policy over the same subprocess seam. Managed MCP stdio remains a separate declarative argv/cwd/credential boundary and does not inherit Shell tool authorization.
 
 ## 5. Filesystem and path identity
 
 `LocalWorkspaceFileSystem` resolves canonical existing paths, validates parent identity for creation, rejects alias/symlink escapes and rechecks identity around mutation. Initialize rejects read/write roots that contain or are contained by runtime home or attachment staging. The actual canonical-tool temporary root is separately canonicalized but is not currently proven non-overlapping with Workspace roots. This explains the two-stage `/tmp` behavior on macOS: `/tmp` is an alias for `/private/tmp`, so canonical-path validation may fail before the later workspace/root authorization check.
 
-Filesystem policy is strong path and time-of-check protection inside a trusted local process; it is not kernel containment. Bash and external programs retain the local user's OS authority.
+Filesystem policy is strong path and time-of-check protection inside a trusted local process; it is not kernel containment. Shell commands and external programs retain the local user's OS authority.
 
 ## 6. Durability and cleanup
 
@@ -75,8 +67,7 @@ SQLite uses WAL and `synchronous=FULL`. The Windows contract says parent-directo
 `record-unavailable`, yet the new-database path currently still attempts directory sync and does
 not persist an "unavailable" report. This is an unverified implementation/contract gap until a
 Windows native campaign and correction establish the real behavior. Runtime shutdown and tool
-cancellation otherwise terminate owned process groups/Job Objects and settle retained
-output/background Jobs.
+cancellation otherwise delegate process-tree termination and settlement to official DSH subprocess/Jobs owners.
 
 ## 7. Architecture-correct change path
 
@@ -94,9 +85,11 @@ cancellation and native process-tree cleanup on the target OS before promoting s
 | --- | --- |
 | Target contract | `packages/product-profile/src/platform-contract.ts` |
 | Environment/executable capture | `apps/runtime-server/src/official-composition.ts` |
-| Bash/background process execution | `packages/tools-process/src/runtime.ts` |
-| POSIX subprocess Provider and MCP stdio | pinned DSH local subprocess package, `packages/components-mcp/src/managed-transport.ts` |
-| Windows Job Object | `packages/tools-process/src/windows-job-subprocess.ts`, `windows-job-host.ps1` |
+| Shell product policy and spill-read authorization | `packages/tools-process/src/runtime.ts` |
+| Execution on all platforms and MCP stdio | pinned official DSH local subprocess package, `packages/components-mcp/src/managed-transport.ts` |
+| Official tool definitions and drift check | `scripts/official-shell-tool-contracts.ts`, `packages/tool-contracts/generated/official-shell-tools-v1.json` |
 | Canonical filesystem | `packages/tools-fs/src/local-filesystem.ts` |
 | SQLite path/durability | `packages/persistence-product/src/provider.ts`, `sqlite-store.ts` |
 | Native claims | artifact-bound platform reports and `packages/artifact-verifier/` |
+
+The accepted change and delivery gates are [UPG-W10](../../prd/prd_0.3_myagents_dsh_0_1_2_upgrade.md#7-工作包与内部台账). Protocol 3.0.0 uses `shellRef`/`shellDialect`; Hosts must use the generated matching contract. Historic `Bash` transcript records remain readable, but the old executor is not installed.

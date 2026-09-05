@@ -6,6 +6,7 @@ import { buildToolCatalogSchema } from "../packages/protocol/src/tool-catalog-sc
 import {
   CANONICAL_TOOL_CONTRACTS,
   CANONICAL_TOOL_NAMES,
+  isOfficialShellTool,
   CANONICAL_TOOL_REUSE_MATRIX,
   CANONICAL_TOOL_SCHEMA_FIXTURES,
   TOOL_CONTRACT_SOURCE,
@@ -33,8 +34,8 @@ const exactCanonicalAuthority = (): void => {
   const reuseNames = Object.keys(CANONICAL_TOOL_REUSE_MATRIX);
   if (JSON.stringify(contractNames) !== JSON.stringify(CANONICAL_TOOL_NAMES)
     || JSON.stringify(reuseNames) !== JSON.stringify(CANONICAL_TOOL_NAMES)
-    || new Set(CANONICAL_TOOL_NAMES).size !== 20) {
-    throw new Error("canonical tool source must own exactly twenty names in model order");
+    || new Set(CANONICAL_TOOL_NAMES).size !== CANONICAL_TOOL_NAMES.length) {
+    throw new Error("canonical tool source must own unique names in model order");
   }
   const behaviorIds = new Set<string>();
   for (const name of CANONICAL_TOOL_NAMES) {
@@ -53,15 +54,13 @@ const exactCanonicalAuthority = (): void => {
     if (!Value.Check(contract.outputSchema, fixture.output)) {
       throw new Error(`${name} minimum output fixture does not satisfy its canonical schema`);
     }
-    if (Value.Check(contract.inputSchema, { ...fixture.input, unexpected: true })) {
+    if (!isOfficialShellTool(name) && Value.Check(contract.inputSchema, { ...fixture.input, unexpected: true })) {
       throw new Error(`${name} input schema is not strict`);
     }
-    if (Value.Check(contract.executionInputSchema, { ...fixture.input, unexpected: true })) {
+    if (!isOfficialShellTool(name) && Value.Check(contract.executionInputSchema, { ...fixture.input, unexpected: true })) {
       throw new Error(`${name} execution input schema is not strict`);
     }
-    const invalidOutput = typeof fixture.output === "object"
-      ? { ...fixture.output, unexpected: true }
-      : { unexpected: fixture.output };
+    const invalidOutput = Object.assign({}, fixture.output, { unexpected: true });
     if (Value.Check(contract.outputSchema, invalidOutput)) {
       throw new Error(`${name} output schema is not strict`);
     }
@@ -146,7 +145,7 @@ export const buildToolContractArtifacts = (): ToolContractArtifacts => {
       return `| \`${name}\` | \`${contract.concurrency}\` | \`${contract.sideEffect}\` | \`${contract.permissionClass}\` | \`${contract.checkpoint}\` | ${reuse.dshPublicReuse.map(({ importPath, classification }) => `\`${importPath}\` (${classification})`).join("<br>")} | \`${reuse.productOwner}\` |`;
     }),
     "",
-    "All twenty model definitions are MyAgents `compat-tool` definitions. Stock DSH model-facing definitions are excluded; only the listed public package-root services and helpers are reused.",
+    "Shell and Job tools use official DSH definitions. Other tools retain their explicitly recorded product contracts.",
     "",
   ].join("\n");
   const metaBytes = stableJson({
