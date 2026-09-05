@@ -14,7 +14,9 @@ import { types as utilTypes } from "node:util";
 import type { ProductOperationRequestContext } from "./events.js";
 import type { ProductOperationRecord } from "./fold.js";
 
-type UsageSummary = Extract<TurnTerminal, { kind: "succeeded" }>["usage"];
+import { addExactReportedUsage, deriveAccruedTurnTokenUsage, deriveCompletedTurnTokenUsage, type ExactReportedTokenUsage } from "./token-accounting.js";
+
+type UsageSummary = NonNullable<Extract<TurnTerminal, { kind: "succeeded" }>["usage"]>;
 
 export interface DerivedOperationTerminal {
   readonly finalDshTurn?: number;
@@ -33,6 +35,7 @@ const DSH_USAGE_KEYS = Object.freeze([
   "inputTokens",
   "outputTokens",
   "reasoningTokens",
+  "totalTokens",
 ] as const);
 
 export interface NormalizedDshTokenUsage {
@@ -85,6 +88,11 @@ export const normalizeDshTokenUsage = (value: unknown): Readonly<NormalizedDshTo
   const cacheReadTokens = count("cacheReadTokens", false);
   const cacheWriteTokens = count("cacheWriteTokens", false);
   const reasoningTokens = count("reasoningTokens", false);
+  const totalTokens = count("totalTokens", false);
+  if (totalTokens !== undefined && cacheReadTokens !== undefined && cacheWriteTokens !== undefined
+    && totalTokens !== Number(inputTokens) + Number(outputTokens) + cacheReadTokens + cacheWriteTokens) {
+    throw new TypeError("DSH total token usage contradicts its exact buckets");
+  }
   if (inputTokens === undefined || outputTokens === undefined) {
     throw new TypeError("DSH token usage primary counts are incomplete");
   }
@@ -143,6 +151,16 @@ export const deriveOperationAccruedCostUsd = (
     if (starts.length !== 1 || start?.type !== "turn/start" || ends.length > 1
       || (end !== undefined && end.seq <= start.seq)) {
       throw new TypeError("priced operation turn has an invalid durable boundary");
+    }
+    if (operation.tokenAccounting === "native-attempts-v1") {
+      const owned = events.slice(start.seq, end === undefined ? events.length : end.seq + 1);
+      // An independent summarizer's rate card is not the root operation's birth pricing.
+      if (owned.some((event) => event.type === "compaction/summary")) return null;
+      const usage = deriveAccruedTurnTokenUsage(owned);
+      if (usage === undefined) return null;
+      cost += priceDshTokenUsage(usage, pricing);
+      if (!Number.isFinite(cost) || cost < 0) throw new TypeError("accumulated operation cost exceeds the finite protocol range");
+      continue;
     }
     for (const event of events) {
       if (event.type !== "assistant/message" || event.data.turn !== turn
@@ -263,7 +281,7 @@ export const requestContextAtOwnedEvent = (
   return anchors[0].data;
 };
 
-export const deriveOperationUsageSummary = (
+const deriveLegacyOperationUsageSummary = (
   events: readonly SessionEvent[],
   operation: ProductOperationRecord,
 ): UsageSummary | undefined => {
@@ -315,6 +333,45 @@ export const deriveOperationUsageSummary = (
           cacheReadTokens,
           cacheWriteTokens,
         }, operation.birth.pricing),
+    turnId: operation.productTurnId,
+    normalizedAs: "turn_total",
+    contextOccupiedTokens: null,
+    runtimeContextWindow,
+    modelProfileRevision: operation.birth.modelProfileRevision,
+  });
+};
+
+
+export const deriveOperationUsageSummary = (
+  events: readonly SessionEvent[],
+  operation: ProductOperationRecord,
+): UsageSummary | undefined => {
+  if (operation.tokenAccounting !== "native-attempts-v1") return deriveLegacyOperationUsageSummary(events, operation);
+  let total: ExactReportedTokenUsage | undefined;
+  let runtimeContextWindow: number | undefined;
+  let pricingKnown = true;
+  for (const turn of operation.dshTurns) {
+    const boundary = operationTurnBoundary(events, operation, turn);
+    if (boundary.end === undefined) return undefined;
+    // Validate product request attribution even when metering is incomplete.
+    for (const event of events.slice(boundary.start.seq + 1, boundary.end.seq)) {
+      if (event.type !== "assistant/message" || event.data.usage === undefined) continue;
+      normalizeDshTokenUsage(event.data.usage);
+      runtimeContextWindow = requestContextAtOwnedEvent(events, operation, turn, event.seq)?.contextWindow;
+    }
+    const owned = events.slice(boundary.start.seq, boundary.end.seq + 1);
+    if (!owned.some((event) => event.type === "step/start")) continue;
+    const usage = deriveCompletedTurnTokenUsage(owned);
+    if (usage === undefined) return undefined;
+    total = total === undefined ? usage : addExactReportedUsage(total, usage);
+    if (total === undefined) return undefined;
+    // Birth pricing cannot attribute independent summary routes or failed retries.
+    if (owned.some((event) => event.type === "compaction/summary" || (event.type as string) === "llm/retry")) pricingKnown = false;
+  }
+  if (total === undefined || runtimeContextWindow === undefined) return undefined;
+  return Object.freeze({
+    ...total,
+    costUsd: !pricingKnown || operation.birth.pricing === undefined ? null : priceDshTokenUsage(total, operation.birth.pricing),
     turnId: operation.productTurnId,
     normalizedAs: "turn_total",
     contextOccupiedTokens: null,
@@ -430,16 +487,18 @@ export const deriveOperationTerminal = (
     case "completed":
       terminal = finalAssistant?.type === "assistant/message"
         && nonEmptyAssistantContent(finalAssistant.data.message.content)
-        && usage !== undefined
+        && (operation.tokenAccounting === "native-attempts-v1" || usage !== undefined)
         ? {
             kind: "succeeded",
             assistantEventId: durableSessionEventId(runtimeSessionId, finalAssistant.seq),
-            usage,
+            ...(usage === undefined ? {} : { usage }),
           }
         : {
             kind: "failed",
             code: "no_final_assistant",
-            message: "Final DSH turn completed without a durable non-empty assistant and usage anchor",
+            message: operation.tokenAccounting === "native-attempts-v1"
+              ? "Final DSH turn completed without a durable non-empty assistant"
+              : "Final DSH turn completed without a durable non-empty assistant and usage anchor",
             retryable: false,
             ...(usage === undefined ? {} : { usage }),
           };

@@ -10,9 +10,9 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "2.5.0" as const;
+export const PROTOCOL_VERSION = "2.7.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
-export const DSH_ENGINE_VERSION = "0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a" as const;
+export const DSH_ENGINE_VERSION = "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
 export const DEEPSEEK_WEB_SEARCH_POLICY_REF = "deepseek-official-web-search-v1" as const;
@@ -198,6 +198,10 @@ export const RuntimeCapabilityProfileSchema = strictObject({
   }),
   work: strictObject({
     children: capability(Type.Literal("dsh-agent-scope-v1")),
+    nesting: capability(Type.Literal("host-bounded-tree-v1")),
+    modelPolicy: capability(Type.Literal("host-authorized-model-set-v1")),
+    userResume: capability(Type.Literal("retained-handle-revision-v1")),
+    messageTiming: capability(Type.Literal("realtime-or-turn-v1")),
     background: capability(Type.Literal("dsh-jobs-v1")),
     taskGraph: capability(Type.Literal("product-durable-events-v1")),
     mailbox: capability(Type.Literal("identified-delivery-v1")),
@@ -317,6 +321,23 @@ export const ModelExecutionProfileSchema = strictObject({
   compatibility: Type.Optional(ProviderCompatibilityProfileSchema),
 });
 
+export const AgentCollaborationConfigSchema = strictObject({
+  version: Type.Literal(1),
+  maxDepth: Type.Integer({ minimum: 1, maximum: 8 }),
+  maxActiveChildren: Type.Integer({ minimum: 1, maximum: 32 }),
+  maxRetainedChildren: Type.Integer({ minimum: 1, maximum: 256 }),
+  messageDelivery: Type.Union([Type.Literal("realtime"), Type.Literal("turn")]),
+  modelPolicy: strictObject({
+    mode: Type.Union([Type.Literal("inherit"), Type.Literal("fixed"), Type.Literal("agent")]),
+    profileRef: Type.Optional(identifier),
+    roles: Type.Array(strictObject({ role: identifier, profileRef: identifier }), { maxItems: 128 }),
+  }),
+  modelProfiles: Type.Array(ModelExecutionProfileSchema, { maxItems: 64 }),
+});
+
+export type AgentCollaborationConfig = Static<typeof AgentCollaborationConfigSchema>;
+export type ModelExecutionProfile = Static<typeof ModelExecutionProfileSchema>;
+
 export const InitializeParamsSchema = strictObject({
   protocol: strictObject({ minVersion: identifier, maxVersion: identifier }),
   host: strictObject({ name: identifier, version: identifier, platform: identifier, arch: identifier, nodeVersion: identifier }),
@@ -382,7 +403,7 @@ export const UsageSummarySchema = strictObject({
   modelProfileRevision: revision,
 });
 export const TurnTerminalSchema = Type.Union([
-  strictObject({ kind: Type.Literal("succeeded"), assistantEventId: identifier, usage: UsageSummarySchema }),
+  strictObject({ kind: Type.Literal("succeeded"), assistantEventId: identifier, usage: Type.Optional(UsageSummarySchema) }),
   strictObject({ kind: Type.Literal("failed"), code: identifier, message: Type.String({ maxLength: 4_096 }), retryable: Type.Boolean(), usage: Type.Optional(UsageSummarySchema) }),
   strictObject({ kind: Type.Literal("aborted"), reason: Type.Union([Type.Literal("user"), Type.Literal("host_shutdown"), Type.Literal("session_replaced")]), usage: Type.Optional(UsageSummarySchema) }),
   strictObject({ kind: Type.Literal("context_exhausted"), message: Type.Optional(Type.String({ maxLength: 4_096 })), usage: Type.Optional(UsageSummarySchema) }),
@@ -529,6 +550,7 @@ const turnStartParams = strictObject({
   origin: turnOrigin,
 });
 const turnAdmission = strictObject({
+  origin: Type.Optional(Type.Union([Type.Literal("user"), Type.Literal("collaboration")])),
   clientOperationId: identifier,
   turnId: identifier,
   admittedAt: Type.String({ format: "date-time" }),
@@ -804,6 +826,25 @@ const toolResultMetadata = strictObject({
   status: Type.Optional(identifier),
 });
 const workStatusSnapshot = strictObject({
+  totalUsage: Type.Optional(TokenUsageSchema),
+  context: Type.Optional(strictObject({ capacity: Type.Optional(Type.Integer({ minimum: 1 })), projectedInputTokens: Type.Optional(nonNegativeInteger), providerInputTokens: Type.Optional(nonNegativeInteger) })),
+  tree: Type.Optional(strictObject({ rootAgentId: identifier, parentAgentId: identifier, depth: Type.Integer({ minimum: 1, maximum: 8 }) })),
+  modelRoute: Type.Optional(strictObject({
+    provider: identifier, profileRevision: identifier,
+    selection: Type.Union([Type.Literal("inherit"), Type.Literal("fixed"), Type.Literal("agent")]),
+  })),
+  lastActivityAt: Type.Optional(Type.String({ format: "date-time" })),
+  activation: strictObject({
+    id: identifier,
+    ordinal: Type.Integer({ minimum: 1, maximum: 10_000 }),
+    state: Type.Union([
+      Type.Literal("queued"), Type.Literal("running"), Type.Literal("waiting_interaction"),
+      Type.Literal("waiting_child"), Type.Literal("waiting_delivery"),
+      Type.Literal("completed"), Type.Literal("failed"), Type.Literal("aborted"),
+    ]),
+  }),
+  handleRevision: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+  handleState: Type.Union([Type.Literal("open"), Type.Literal("stopping"), Type.Literal("closed")]),
   taskId: identifier,
   parentToolCallId: identifier,
   agentId: identifier,
@@ -905,8 +946,8 @@ export const RPC_METHODS = {
   initialize: method("host_to_runtime", InitializeParamsSchema, InitializeResultSchema),
   "runtime/status": method("host_to_runtime", emptyParams, RuntimeStatusSchema),
   "runtime/shutdown": method("host_to_runtime", strictObject({ reason: Type.Optional(identifier) }), okResult),
-  "session/create": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: Type.Optional(identifier), persistenceRef: identifier, provider: ModelExecutionProfileSchema, configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
-  "session/resume": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: identifier, persistenceRef: identifier, provider: ModelExecutionProfileSchema, configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
+  "session/create": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: Type.Optional(identifier), persistenceRef: identifier, provider: ModelExecutionProfileSchema, collaboration: Type.Optional(AgentCollaborationConfigSchema), configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
+  "session/resume": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: identifier, persistenceRef: identifier, provider: ModelExecutionProfileSchema, collaboration: Type.Optional(AgentCollaborationConfigSchema), configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
   "session/read": method("host_to_runtime", strictObject({ cursor: Type.Optional(identifier) }), SessionReadResultSchema),
   "session/close": method("host_to_runtime", operationParams, okResult),
   "session/compact": method("host_to_runtime", operationParams, strictObject({ state: Type.Union([Type.Literal("accepted"), Type.Literal("already_known")]) })),
@@ -923,14 +964,18 @@ export const RPC_METHODS = {
   "session/rewind/commit": method("host_to_runtime", mutationParams, mutationResult),
   "session/rewind/rollback": method("host_to_runtime", mutationParams, mutationResult),
   "session/rewind/status": method("host_to_runtime", strictObject({ token: identifier }), mutationResult),
+  "work/list": method("host_to_runtime", strictObject({ afterTaskId: Type.Optional(identifier) }), strictObject({ items: Type.Array(workStatusSnapshot, { maxItems: 32 }), nextTaskId: Type.Optional(identifier) })),
+  "work/agent/resume": method("host_to_runtime", strictObject({ agentId: identifier, clientRequestId: identifier, expectedHandleRevision: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }) }), okResult),
+  "work/agent/stop": method("host_to_runtime", strictObject({ agentId: identifier, expectedHandleRevision: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }) }), okResult),
+  "work/agent/message": method("host_to_runtime", strictObject({ agentId: identifier, clientMessageId: identifier, message: Type.String({ minLength: 1, maxLength: 12_000 }) }), okResult),
   "turn/start": method("host_to_runtime", turnStartParams, turnStartResult),
   "turn/get": method("host_to_runtime", strictObject({ clientOperationId: identifier }), strictObject({ clientOperationId: identifier, admission: Type.Optional(turnAdmission), terminal: Type.Optional(TurnTerminalSchema) })),
   "turn/steer": method("host_to_runtime", strictObject({ clientOperationId: identifier, input: CanonicalUserInputSchema }), okResult),
-  "turn/followUp": method("host_to_runtime", strictObject({ clientOperationId: identifier, messageId: identifier, input: CanonicalUserInputSchema }), strictObject({ messageId: identifier, state: queuedMessageState })),
+  "turn/followUp": method("host_to_runtime", strictObject({ clientOperationId: identifier, messageId: identifier, input: CanonicalUserInputSchema, delivery: Type.Optional(Type.Union([Type.Literal("realtime"), Type.Literal("turn")])) }), strictObject({ messageId: identifier, state: queuedMessageState })),
   "turn/message/cancel": method("host_to_runtime", strictObject({ clientOperationId: identifier, messageId: identifier }), strictObject({ messageId: identifier, state: queuedMessageState })),
   "turn/interrupt": method("host_to_runtime", strictObject({ clientOperationId: identifier, cancelQueued: Type.Optional(Type.Boolean()) }), strictObject({ ok: Type.Literal(true), stillQueuedMessageIds: Type.Array(identifier, { maxItems: 4_096 }), cancelledMessageIds: Type.Array(identifier, { maxItems: 4_096 }) })),
   "command/invoke": method("host_to_runtime", strictObject({ clientOperationId: identifier, clientUserMessageId: identifier, commandId: identifier, arguments: Type.Array(boundedText, { maxItems: 256 }), configRevision: revision, extensionDigest: sha256, executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256, limits: operationLimits, origin: turnOrigin }), turnStartResult),
-  "config/apply": method("host_to_runtime", strictObject({ revision, provider: ModelExecutionProfileSchema, permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256 }), applyResult),
+  "config/apply": method("host_to_runtime", strictObject({ revision, provider: ModelExecutionProfileSchema, collaboration: Type.Optional(AgentCollaborationConfigSchema), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256 }), applyResult),
   "plan/apply": method("host_to_runtime", strictObject({ clientOperationId: identifier, expectedRevision: revision, mode: Type.Union([Type.Literal("normal"), Type.Literal("plan")]) }), planApplyResult),
   "permission/rules/list": method("host_to_runtime", emptyParams, strictObject({ permissionMode: identifier, autoAllowTools: Type.Array(identifier, { maxItems: 512, uniqueItems: true }), revision, rules: Type.Array(permissionRule, { maxItems: 512 }) })),
   "permission/rules/add": method("host_to_runtime", strictObject({ expectedRevision: revision, tool: identifier, permissionClass: identifier, target: Type.String({ minLength: 1, maxLength: 8_192 }) }), permissionRuleMutationResult),
@@ -1007,7 +1052,7 @@ export const REFERENCE_RUNTIME_CAPABILITIES: RuntimeCapabilityProfile = {
   extensions: { snapshot: "replace-by-digest", componentStatus: "per-component", arbitraryJavascript: "unsupported" },
   tools: { pipeline: "dsh-ctx-tools-only", catalog: "agent-experience-v1", hostTools: "reverse-request", hooks: "governed-pre-post" },
   hostPorts: { credentials: "request-connection-scoped", interaction: "registration-ack-plus-explicit-response", tools: "reverse-request-v1", hooks: "reverse-request-v1", attachments: "generation-leases-v1" },
-  work: { children: "dsh-agent-scope-v1", background: "dsh-jobs-v1", taskGraph: "product-durable-events-v1", mailbox: "identified-delivery-v1" },
+  work: { children: "dsh-agent-scope-v1", nesting: "host-bounded-tree-v1", modelPolicy: "host-authorized-model-set-v1", userResume: "retained-handle-revision-v1", messageTiming: "realtime-or-turn-v1", background: "dsh-jobs-v1", taskGraph: "product-durable-events-v1", mailbox: "identified-delivery-v1" },
   telemetry: { usage: "normalized-turn-total-v1", context: "provider-native-occupancy-v1", compaction: "dsh-operation-event-v1" },
   security: { execution: "trusted-local-user-process", osSandbox: false, secrets: "reverse-port-only", checkpoint: "root-write-edit-only-v1" },
 };

@@ -1,34 +1,44 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-03",
+  "recordedAt": "2026-09-05",
   "authority": {
     "repository": "https://github.com/earendil-works/pi.git",
-    "commit": "b4f293684bba718d59cc1157679bcf6157b3a7f5",
-    "tree": "33235f8a1b7a50de1dea72d39ee3f3a2adbd5806",
-    "tag": "v0.82.1",
+    "commit": "914cf1472e715297caa30db4b9535d534a9eb718",
+    "tree": "73f6a2a71a4fb941c5688753931c2aa6f95902c5",
+    "tag": "v0.84.2",
     "packageName": "@earendil-works/pi-ai",
-    "packageVersion": "0.82.1",
-    "registryIntegrity": "sha512-3WFYRhEp3lQB3444EhPMBcM7zSaEUE3eJgHOR7s4081NLqbw/FsWilIKWXSua0Gv3sRr7m9xMidR3pPDE7jI/A==",
+    "packageVersion": "0.84.2",
+    "registryIntegrity": "sha512-6MzsrYIYNVlE7SfpbL2yYb67Qo58p/7Q+xWG1RZvoX1P80aRCHSod2/13aFpxkow1lPO2LEh3c495J0Gwmyjig==",
     "files": [
       {
+        "path": "package-lock.json",
+        "blob": "1f77aa69a44915990ba2e4f41573cb2b7005b0ca",
+        "sha256": "5c1c06c9c578c436e6cb0599231a9299493f3d7ff6f8443aba76e2d7a204bf8f"
+      },
+      {
+        "path": "packages/ai/package.json",
+        "blob": "fe1f336d89b4cdb500956b9431ed4306c3182d49",
+        "sha256": "9575365ce609dca8e1fd4fa72471d55006e1e0f81310c0808f93abc4bc14bbf9"
+      },
+      {
         "path": "packages/ai/src/api/anthropic-messages.ts",
-        "blob": "99f698b4002ffd83427cc351770c2ad43a0ae20f",
-        "sha256": "9a0828bef6720b1ff2b34274e1ee53ce2edf8ed5aad5bf0fdbe7f1cc095b4f04"
+        "blob": "b9586120dd075257e37f50d55dff6f4acb57eb9f",
+        "sha256": "28445137aa4c6bd47bb97f541a9d0687dfcf050546eef47b01903396b5b4c1d6"
       },
       {
         "path": "packages/ai/src/api/mistral-conversations.ts",
-        "blob": "3a5e59dd7f975735356b82889762b4bc1990f63f",
-        "sha256": "38e965bb08cab0aff182edd5e301dc24fae0c0d9a04d01fc3026728be9e817fb"
+        "blob": "b52eae4cf8f8f5c435891b4e088b3e76799edb10",
+        "sha256": "fa88195b0ea6e26d8210a1888c0190502baf317388f619179bf2580db6debcce"
       },
       {
         "path": "packages/ai/src/providers/faux.ts",
-        "blob": "4a26f1ad67b62150010fc51767a787560a1ad820",
-        "sha256": "eea5c33e3a3553adf4d8216e2660dac19a69663d3ac295dd61c4e35a346ed535"
+        "blob": "284a099b314b3b247826f9622bddf25909b252b5",
+        "sha256": "d819e22fcfba388d043246d34d770f2e2614f351de47f102c69f310c21fc6c65"
       },
       {
         "path": "packages/ai/src/types.ts",
-        "blob": "1d8fcfd3af2e5dc02094604e7f5c62ac5f390407",
-        "sha256": "9ce10d9c21fd23d7b7cd1854648e82f86e37fa5e2743b4d2a345dbd82c64bbdf"
+        "blob": "7e1fd00a378011b6e6fe2cbc4267c947efcbdbd9",
+        "sha256": "62e6982bdd44e602ff53fcdcf2c4dfd1120bd9db207695ddf27e723ed9a0f73e"
       },
       {
         "path": "packages/ai/src/utils/estimate.ts",
@@ -37,15 +47,20 @@
       },
       {
         "path": "packages/ai/test/anthropic-sse-parsing.test.ts",
-        "blob": "0cdd0577cf77fa3349f99ff107f555035658331e",
-        "sha256": "42ddf157cfbf48e6168c22fb7c094dc16fdd6fdc3c9b7c1896a5714f257ab8ed"
+        "blob": "4f111a61d93ef6af00313237bf18415f382f8c87",
+        "sha256": "c58248ad7d439f5fffebd9363638805cce955d03c5aa95615a8663222d127ac6"
+      },
+      {
+        "path": "packages/telemetry/package.json",
+        "blob": "37e1153223ed0a22002580bf5422602f83b8a1f6",
+        "sha256": "ba3e45a83f94a06a0f311b9412f99e73c760d3eb0adee5909e4f2a356f109958"
       }
     ]
   },
   "patch": {
     "order": 1,
     "path": "specs/pi-ai/patches/0001-anthropic-provider-content.patch",
-    "sha256": "474580e54f4b06b0115f503da2a40edc265d45842d46ea859d0c22de30217de2"
+    "sha256": "64396f3cc0b027f7d69dcca39b24f0e98442dc516d1b0a280b8f4302d87aa2d1"
   },
   "disposition": "required_upstream_patch_accepted",
   "removalCondition": "an installed pi-ai release preserves generic Anthropic Provider-owned content and exact matching-route replay"

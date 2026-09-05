@@ -1,6 +1,6 @@
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import { CallId } from "@deepseek-ai/dsh-llm";
+import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
@@ -10,6 +10,7 @@ import {
 } from "@myagents-dsh/tool-contracts";
 import {
   ProductToolError,
+  ProductPermissionError,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
 import {
@@ -136,6 +137,7 @@ const defaultUtility: NonNullable<CanonicalWebToolsConfig["fetch"]>["utility"] =
 });
 
 const createWebHarness = async (options: Readonly<{
+  authorize?: () => Promise<void>;
   content?: NonNullable<CanonicalWebToolsConfig["fetch"]>["content"];
   host?: NonNullable<CanonicalWebToolsConfig["fetch"]>["host"];
   product?: ProductToolContext;
@@ -146,7 +148,7 @@ const createWebHarness = async (options: Readonly<{
   const context = new Context();
   let currentProduct = options.product ?? productContext();
   context.provide("productTools", {
-    authorize: () => Promise.resolve(),
+    authorize: () => options.authorize?.() ?? Promise.resolve(),
     resolve: () => currentProduct,
   } as never);
   await context.plugin(SystemPrompt);
@@ -178,7 +180,7 @@ const createWebHarness = async (options: Readonly<{
       return context.tools.execute({
         agent: currentProduct.agent,
         arguments: args,
-        callId: CallId(`web-call-${call}`),
+        callId: ToolCallId(`web-call-${call}`),
         name,
         signal,
       });
@@ -188,6 +190,25 @@ const createWebHarness = async (options: Readonly<{
 };
 
 describe("safe Web Providers and canonical Web tools", () => {
+  it.each(["WebFetch", "WebSearch"] as const)("preserves permission failures before %s dispatch", async (tool) => {
+    const failure = new ProductPermissionError("permission_revision_stale", "Permission revision changed", {
+      cause: new Error("synthetic-private-cause https://example.test/?key=fixture-secret"),
+    });
+    const run = vi.fn(() => Promise.reject(new Error("Provider must not be called")));
+    const state = await createWebHarness({
+      authorize: () => Promise.reject(failure),
+      search: { available: () => true, credentialRef: "credential-ref-v1", policyRef: policy.policyRef, providerId: "approved-search", run },
+    });
+    try {
+      const result = await state.execute(tool, tool === "WebFetch"
+        ? { url: "https://example.com", prompt: "Synthetic request" } : { query: "Synthetic request" });
+      expect(result).toMatchObject({ isError: true, error: { info: { code: "permission_revision_stale" } } });
+      expect(JSON.stringify(result)).not.toContain("fixture-secret");
+      expect(JSON.stringify(result)).not.toContain("synthetic-private-cause");
+      expect(run).not.toHaveBeenCalled();
+    } finally { await state.context.fiber.dispose(); }
+  });
+
   it("waits for both DNS families before propagating a lookup failure", async () => {
     const delayed = Promise.withResolvers<readonly ProductDnsAnswer[]>();
     const failure = new Error("synthetic IPv4 lookup failure");
@@ -708,6 +729,27 @@ describe("safe Web Providers and canonical Web tools", () => {
     await harness.context.fiber.dispose();
   });
 
+  it("preserves partial service text and domain uncertainty through the canonical DSH tool pipeline", async () => {
+    const harness = await createWebHarness({ search: Object.freeze({
+      available: () => true,
+      credentialRef: "credential-ref-v1", policyRef: policy.policyRef, providerId: "approved-search",
+      run: () => Promise.resolve(Object.freeze({
+        answer: "Service text with https://unconfirmed.test that is not a verified citation",
+        warnings: Object.freeze(["unverified_search_results"] as const),
+        results: Object.freeze([]), citations: Object.freeze([]), searchCount: 1,
+        durationMs: 1, truncated: false,
+        usage: Object.freeze({ inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 2 }),
+      })),
+    }) });
+    try {
+      await expect(harness.execute("WebSearch", { query: "partial search", allowed_domains: ["example.com"] }))
+        .resolves.toMatchObject({ isError: false, value: {
+          answer: "Service text with https://unconfirmed.test that is not a verified citation",
+          results: [], citations: [], warnings: ["unverified_search_results", "unverified_domain_filter"],
+        } });
+    } finally { await harness.context.fiber.dispose(); }
+  });
+
   it("preserves an actionable Host WebSearch failure", async () => {
     const harness = await createWebHarness({
       search: Object.freeze({
@@ -930,7 +972,7 @@ describe("safe Web Providers and canonical Web tools", () => {
     const fetch = await context.tools.execute({
       agent: product.agent,
       arguments: { url: "https://example.com/document.pdf", prompt: "Summarize" },
-      callId: CallId("fetch-call"),
+      callId: ToolCallId("fetch-call"),
       name: "WebFetch",
       signal: product.signal,
     });
@@ -946,7 +988,7 @@ describe("safe Web Providers and canonical Web tools", () => {
     const search = await context.tools.execute({
       agent: product.agent,
       arguments: { query: "bounded search", allowed_domains: ["example.com"] },
-      callId: CallId("search-call"),
+      callId: ToolCallId("search-call"),
       name: "WebSearch",
       signal: product.signal,
     });
@@ -1155,7 +1197,7 @@ describe("safe Web Providers and canonical Web tools", () => {
     const outcome = await context.tools.execute({
       agent: product.agent,
       arguments: { query: "fixture", allowed_domains: ["example.com"], blocked_domains: ["example.org"] },
-      callId: CallId("search-conflict"),
+      callId: ToolCallId("search-conflict"),
       name: "WebSearch",
       signal: product.signal,
     });

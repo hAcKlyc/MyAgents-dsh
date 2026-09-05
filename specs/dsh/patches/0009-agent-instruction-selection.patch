@@ -80,7 +80,7 @@ index f9edc9d4b8..f75a022b24 100644
  }
  
 diff --git a/packages/context/agent-instructions/src/files.ts b/packages/context/agent-instructions/src/files.ts
-index 291619a983..c584fa91ba 100644
+index 01492e3e91..b76abfc55c 100644
 --- a/packages/context/agent-instructions/src/files.ts
 +++ b/packages/context/agent-instructions/src/files.ts
 @@ -52,6 +52,7 @@ interface DiscoverOptions {
@@ -186,10 +186,10 @@ index 291619a983..c584fa91ba 100644
    }
    const deduped = dedupInstructionFilesByDirectory(loaded)
 diff --git a/packages/context/agent-instructions/src/index.ts b/packages/context/agent-instructions/src/index.ts
-index 1b00960adb..c542b3b9e7 100644
+index f614926241..42f8fdba1b 100644
 --- a/packages/context/agent-instructions/src/index.ts
 +++ b/packages/context/agent-instructions/src/index.ts
-@@ -67,10 +67,8 @@ function sameContextPayload(left: UserMessage, right: UserMessage): boolean {
+@@ -70,10 +70,8 @@ function sameContextPayload(left: UserMessage, right: UserMessage): boolean {
      && isDeepStrictEqual(left.source, right.source)
  }
  
@@ -202,7 +202,7 @@ index 1b00960adb..c542b3b9e7 100644
    if (typeof exec.arguments !== 'object' || exec.arguments === null) return undefined
    if (!('file_path' in exec.arguments) || typeof exec.arguments.file_path !== 'string') return undefined
    const filePath = exec.arguments.file_path.trim()
-@@ -79,6 +77,7 @@ function filePathFromExecution(exec: ToolExecution): string | undefined {
+@@ -82,6 +80,7 @@ function filePathFromExecution(exec: ToolExecution): string | undefined {
  
  export function apply(ctx: Context, config: Config): void {
    const resolved: ResolvedConfig = resolveConfig(config)
@@ -210,7 +210,7 @@ index 1b00960adb..c542b3b9e7 100644
    const instructionVersions: InstructionVersionCache = new WeakMap()
    const baselinePreparations = new WeakMap<Session, {
      identity: string
-@@ -351,7 +350,7 @@ export function apply(ctx: Context, config: Config): void {
+@@ -342,7 +341,7 @@ export function apply(ctx: Context, config: Config): void {
      const touches = executionTouches.get(exec.token) ?? []
      executionTouches.delete(exec.token)
      if (!result.isError && exec.agent !== undefined && !exec.signal.aborted) {
@@ -220,7 +220,7 @@ index 1b00960adb..c542b3b9e7 100644
      }
      if (exec.parent !== undefined) {
 diff --git a/packages/context/agent-instructions/src/state.ts b/packages/context/agent-instructions/src/state.ts
-index 30e700eda5..5cfd11d8c7 100644
+index fb25e262f9..022663e332 100644
 --- a/packages/context/agent-instructions/src/state.ts
 +++ b/packages/context/agent-instructions/src/state.ts
 @@ -345,6 +345,106 @@ export async function reconcileInstructionContext(
@@ -331,10 +331,10 @@ index 30e700eda5..5cfd11d8c7 100644
        const previous = effective.get(scope)
        const probe = await probeScopeInstruction(scope, projectRoot, resolved, fileSystem, options.signal)
 diff --git a/packages/context/agent-instructions/tests/agent-instructions.spec.ts b/packages/context/agent-instructions/tests/agent-instructions.spec.ts
-index 4fc60bc78d..bd73b3fd3c 100644
+index af270437b1..9d2e49d2f9 100644
 --- a/packages/context/agent-instructions/tests/agent-instructions.spec.ts
 +++ b/packages/context/agent-instructions/tests/agent-instructions.spec.ts
-@@ -554,6 +554,42 @@ describe('workspace context instruction discovery', () => {
+@@ -564,6 +564,42 @@ describe('workspace context instruction discovery', () => {
      }
    })
  
@@ -377,7 +377,7 @@ index 4fc60bc78d..bd73b3fd3c 100644
    it('ignores configured instruction candidates that are not same-directory file names', async () => {
      const root = await tempRepo()
      const home = await tempRepo()
-@@ -2488,6 +2524,56 @@ describe('workspace context request injection', () => {
+@@ -2519,6 +2555,56 @@ describe('workspace context request injection', () => {
  })
  
  describe('dynamic nested workspace context injection', () => {
@@ -400,7 +400,7 @@ index 4fc60bc78d..bd73b3fd3c 100644
 +      const agent = stubAgent(root)
 +      const emitRead = (callId: string) => ctx.emit('tools/result', stubToolExecution({
 +        signal: testToolSignal,
-+        callId: CallId(callId),
++        callId: ToolCallId(callId),
 +        name: 'Read',
 +        arguments: { file_path: join('pkg', 'file.txt') },
 +        agent,

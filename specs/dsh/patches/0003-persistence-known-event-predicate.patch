@@ -1,8 +1,8 @@
 diff --git a/packages/session/session-persistence/src/coordinator.ts b/packages/session/session-persistence/src/coordinator.ts
-index 63def62528..4c6a7867a7 100644
+index c16fae6d40..14dc7d7a1c 100644
 --- a/packages/session/session-persistence/src/coordinator.ts
 +++ b/packages/session/session-persistence/src/coordinator.ts
-@@ -86,6 +86,11 @@ export interface PersistenceCoordinatorOptions {
+@@ -102,6 +102,11 @@ export interface PersistenceCoordinatorOptions {
    readonly preparedSessionCacheSize: number
    /** Maximum intentional batching wait after an idle live queue receives work. */
    readonly writeBatchMaxDelayMs: number
@@ -14,7 +14,7 @@ index 63def62528..4c6a7867a7 100644
  }
  
  /**
-@@ -601,6 +606,8 @@ export class PersistenceCoordinator<TornMarker = unknown> {
+@@ -651,6 +656,8 @@ export class PersistenceCoordinator<TornMarker = unknown> {
    private chains = new Map<SessionId, Promise<unknown>>()
    /** Resolved fixed write-batching window shared by per-session controllers. */
    private readonly writeBatchMaxDelayMs: number
@@ -23,7 +23,7 @@ index 63def62528..4c6a7867a7 100644
  
    constructor(
      private ctx: Context,
-@@ -619,7 +626,12 @@ export class PersistenceCoordinator<TornMarker = unknown> {
+@@ -669,7 +676,12 @@ export class PersistenceCoordinator<TornMarker = unknown> {
        || options.writeBatchMaxDelayMs > MAX_WRITE_BATCH_DELAY_MS) {
        throw new TypeError(`writeBatchMaxDelayMs must be an integer between 1 and ${MAX_WRITE_BATCH_DELAY_MS}`)
      }
@@ -36,7 +36,7 @@ index 63def62528..4c6a7867a7 100644
      this.preparations = new SessionPreparations(options.preparedSessionCacheSize)
      this.installWritePath()
    }
-@@ -1060,7 +1072,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
+@@ -1247,7 +1259,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     */
    private assertEventsSupported(meta: SessionHeader, events: readonly SessionEvent[]): void {
      for (const event of events) {
@@ -46,20 +46,20 @@ index 63def62528..4c6a7867a7 100644
      }
    }
 diff --git a/packages/session/session-persistence/tests/persistence.spec.ts b/packages/session/session-persistence/tests/persistence.spec.ts
-index 6c63d72b9f..fbd7605cba 100644
+index dd002882f7..83c4c2af29 100644
 --- a/packages/session/session-persistence/tests/persistence.spec.ts
 +++ b/packages/session/session-persistence/tests/persistence.spec.ts
-@@ -1,6 +1,6 @@
+@@ -1,6 +1,7 @@
  import { describe, expect, it, vi } from 'vitest'
  import { Context } from '@deepseek-ai/cordis'
--import SessionStore, { Session, SessionId, isJsonValue } from '@deepseek-ai/dsh-session'
-+import SessionStore, { KNOWN_SESSION_EVENT_TYPES, Session, SessionId, isJsonValue } from '@deepseek-ai/dsh-session'
- import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
- import {
-   DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
-@@ -10,6 +10,21 @@ import {
- import { runPersistenceContract, meta, oneTurnLog } from './contract.ts'
- import { runCoordinatorContract, type CoordinatorFixture } from './coordinator-contract.ts'
+ import SessionStore, {
++  KNOWN_SESSION_EVENT_TYPES,
+   Session,
+   SessionId,
+   SessionLogOffset,
+@@ -23,6 +24,21 @@ import {
+   legacyMessageLog, preReactLoopLog, runCoordinatorContract, type CoordinatorFixture,
+ } from './coordinator-contract.ts'
  
 +declare module '@deepseek-ai/dsh-session' {
 +  interface SessionEventMap {
@@ -70,16 +70,16 @@ index 6c63d72b9f..fbd7605cba 100644
 +function productRequiredEvent(seq = 0): SessionEvent {
 +  return {
 +    type: 'myagents/test-required',
-+    seq,
++    seq: SessionSeq(seq),
 +    time: 1,
 +    data: { marker: 'product' },
 +  }
 +}
 +
  /** The durable store shape: materialized sessions only (no lazy entries). */
- type MemoryStore = Map<string, { meta: SessionHeader; events: SessionEvent[] }>
- 
-@@ -303,6 +318,109 @@ describe('PersistenceCoordinator seed ownership', () => {
+ type MemoryStore = Map<string, {
+   meta: SessionHeader
+@@ -381,6 +397,109 @@ describe('PersistenceCoordinator seed ownership', () => {
    })
  })
  
@@ -138,15 +138,15 @@ index 6c63d72b9f..fbd7605cba 100644
 +        events: [{ type: 'myagents/test-required' }],
 +      })
 +      preparation = await second.coordinator.prepare(id)
-+      expect(preparation.session.events.map(event => event.type)).toEqual([
++      expect(preparation.session.snapshotEvents().map(event => event.type)).toEqual([
 +        'myagents/test-required',
 +        'session/end-seed',
 +      ])
 +      preparation[Symbol.dispose]()
 +      preparation = undefined
-+      await expect(second.coordinator.load(id)).resolves.toMatchObject({
-+        events: [{ type: 'myagents/test-required' }],
-+      })
++      expect((await second.coordinator.load(id)).events).toEqual(expect.arrayContaining([
++        expect.objectContaining({ type: 'myagents/test-required' }),
++      ]))
 +    } finally {
 +      preparation?.[Symbol.dispose]()
 +      await second.fiber.dispose()

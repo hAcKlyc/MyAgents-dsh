@@ -46,6 +46,12 @@ uncorrelated or cross-route result, and preserves ordinary assistant text indepe
 activity is observational: it cannot settle Product operations or mutate permission, interaction,
 TaskGraph, ProductWork, Plan, queue or root loading state.
 
+Provider failure projection recognizes explicit error flags, typed errors, structured HTTP error
+statuses and errors inside bounded result arrays/envelopes (including JSON-serialized data).
+It never infers status from decorative prose. A call with no corresponding result does not create
+a synthetic successful end event; the Host stops its animation at the turn boundary and shows the
+result as unconfirmed. A returned result indicates Provider completion, not content-quality approval.
+
 Operation correlation during live projection and close uses ProductWork's exported Session-only
 root-context proof. It never calls `ProductSessionService.requireAgent()` or dynamically resolves
 ProductWork merely to interpret durable history; a closing generation therefore uses the same

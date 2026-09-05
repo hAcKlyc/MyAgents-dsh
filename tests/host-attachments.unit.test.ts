@@ -137,7 +137,7 @@ describe("HostAttachmentStore", () => {
         const normalizedBytes = publishedBytes;
         if (normalizedBytes === undefined) throw new Error("normalized image bytes were not staged");
         expect(params).toMatchObject({
-          mimeType: "image/png",
+          mimeType: "image/webp",
           name: "pixel.png",
           stagingPath: "/fixture/staging/put-1",
         });
@@ -145,7 +145,7 @@ describe("HostAttachmentStore", () => {
         expect(params.sizeBytes).toBe(normalizedBytes.byteLength);
         return {
           attachmentId: `sha256:${params.sha256}`,
-          mimeType: "image/png",
+          mimeType: params.mimeType,
           sizeBytes: params.sizeBytes,
           sha256: params.sha256,
         };
@@ -171,7 +171,7 @@ describe("HostAttachmentStore", () => {
         name: "/private/local/pixel.png",
       }));
     expect(ref).toMatchObject({
-      mediaType: "image/png",
+      mediaType: "image/webp",
       width: 1,
       height: 1,
       name: "pixel.png",

@@ -1,7 +1,7 @@
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import type { FsTarget } from "@deepseek-ai/dsh-fs";
-import { CallId } from "@deepseek-ai/dsh-llm";
+import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import "@deepseek-ai/dsh-plan-mode";
@@ -235,6 +235,7 @@ const mounted = async (options: MountedOptions = {}) => {
   const refreshOperation = (): ProductOperationRecord => {
     operationNumber += 1;
     currentOperation = Object.freeze({
+      origin: "user" as const,
       acceptedAt: operationNumber,
       birth: Object.freeze({
         componentDigest: "b".repeat(64),
@@ -274,7 +275,7 @@ const mounted = async (options: MountedOptions = {}) => {
     return await context.tools.execute({
       agent,
       arguments: argumentsValue,
-      callId: CallId(`plan-call-${callNumber}`),
+      callId: ToolCallId(`plan-call-${callNumber}`),
       name,
       signal,
     });
@@ -352,7 +353,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     }));
     expect(entered).toMatchObject({ state: "applied", mode: "plan" });
     expect(entered.planPath).toBeTypeOf("string");
-    expect(state.session.events.filter(({ type }) => type === "plan/mode")).toHaveLength(1);
+    expect(state.session.snapshotEvents().filter(({ type }) => type === "plan/mode")).toHaveLength(1);
     await expect(state.planController.apply(state.agent, Object.freeze({
       clientOperationId: "host-plan-entry-retry",
       expectedRevision: initial.revision,
@@ -494,11 +495,11 @@ describe("canonical interaction and DSH-backed plan mode", () => {
 
     const idempotentEntry = state.output(await state.execute("EnterPlanMode", {}));
     expect(idempotentEntry).toEqual(entered);
-    expect(state.session.events.filter(({ type }) => type === "plan/mode")).toHaveLength(1);
+    expect(state.session.snapshotEvents().filter(({ type }) => type === "plan/mode")).toHaveLength(1);
     const read = await state.execute("Read", { file_path: entered.planPath });
     expect(read.isError).toBe(false);
 
-    const rootCall = CallId("hard-plan-guard");
+    const rootCall = ToolCallId("hard-plan-guard");
     expect(() => state.context.productTools.resolve({
       agent: state.agent,
       arguments: Object.freeze({}),
@@ -547,7 +548,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     const after = state.context.productPlan.snapshot(state.agent);
     expect(after.mode).toBe("normal");
     expect(foldProductPlan(
-      structuredClone(state.session.events),
+      structuredClone(state.session.snapshotEvents()),
       String(state.session.id),
       "plan-v1",
       entered.planPath,
@@ -666,7 +667,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     });
     expect((await retryable.execute("EnterPlanMode", {})).isError).toBe(true);
     expect(retryable.context.productPlan.snapshot(retryable.agent).mode).toBe("normal");
-    expect(retryable.session.events.filter(({ type }) => type === "plan/mode")).toHaveLength(0);
+    expect(retryable.session.snapshotEvents().filter(({ type }) => type === "plan/mode")).toHaveLength(0);
     const entered = retryable.output(await retryable.execute("EnterPlanMode", {})) as Readonly<{
       mode: string;
       planPath: string;
@@ -677,7 +678,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
 
     const uncertain = await mounted({ planFlush: () => Promise.resolve(false) });
     expect((await uncertain.execute("EnterPlanMode", {})).isError).toBe(true);
-    expect(uncertain.session.events.filter(({ type }) => type === "plan/mode"))
+    expect(uncertain.session.snapshotEvents().filter(({ type }) => type === "plan/mode"))
       .toEqual([expect.objectContaining({ data: { active: true } })]);
     expect(() => uncertain.context.productPlan.snapshot(uncertain.agent))
       .toThrow(expect.objectContaining({ code: "plan_recovery_required" }));
@@ -685,7 +686,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
 
     const truthyNonBoolean = await mounted({ planFlush: () => Promise.resolve("true") });
     expect((await truthyNonBoolean.execute("EnterPlanMode", {})).isError).toBe(true);
-    expect(truthyNonBoolean.session.events.filter(({ type }) => type === "plan/mode"))
+    expect(truthyNonBoolean.session.snapshotEvents().filter(({ type }) => type === "plan/mode"))
       .toEqual([expect.objectContaining({ data: { active: true } })]);
     expect(() => truthyNonBoolean.context.productPlan.snapshot(truthyNonBoolean.agent))
       .toThrow(expect.objectContaining({ code: "plan_recovery_required" }));
@@ -765,7 +766,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
       session: childSession,
     }) as unknown as Agent;
     state.context.agents.enter(child, state.agent);
-    const childCall = CallId("child-plan-entry-call");
+    const childCall = ToolCallId("child-plan-entry-call");
     const childEntry = await state.context.tools.execute({
       agent: child,
       arguments: {},
@@ -776,7 +777,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     });
     expect(childEntry.isError).toBe(true);
     const questionCount = state.questionRequests.length;
-    const childAskCall = CallId("child-plan-question-call");
+    const childAskCall = ToolCallId("child-plan-question-call");
     const childAsk = await state.context.tools.execute({
       agent: child,
       arguments: {

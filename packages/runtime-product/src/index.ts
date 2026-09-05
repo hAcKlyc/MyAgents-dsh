@@ -1,3 +1,5 @@
+export { AgentCollaborationPolicy } from "./collaboration-policy.js";
+export type { ChildModelSelection } from "./collaboration-policy.js";
 export * from "./composition.js";
 export * from "./host-model.js";
 export * from "./host-settings.js";

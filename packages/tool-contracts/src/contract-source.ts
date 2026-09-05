@@ -176,7 +176,7 @@ const ORIGIN_POLICIES = Object.freeze({
   AskUserQuestion: { mode: "no-background-child", denialCode: "background_interaction_forbidden", revision: "operation-birth" },
   EnterPlanMode: { mode: "root-only", denialCode: "child_plan_entry_forbidden", revision: "operation-birth" },
   ExitPlanMode: { mode: "no-background-child", denialCode: "background_interaction_forbidden", revision: "operation-birth" },
-  Agent: { mode: "root-only", denialCode: "child_agent_nesting_forbidden", revision: "operation-birth" },
+  Agent: { mode: "all", revision: "operation-birth" },
 } as const) as Readonly<Record<CanonicalToolName, CanonicalToolOriginPolicy>>;
 
 const contract = <Name extends CanonicalToolName, Input extends TSchema, Output extends TSchema>(
@@ -296,7 +296,7 @@ const agentOutput = Type.Union([
     state: Type.Union([Type.Literal("succeeded"), Type.Literal("failed"), Type.Literal("aborted")]),
     result: Type.String({ maxLength: TOOL_CONTRACT_LIMITS.maxInlineOutputBytes }),
     resultTruncated: Type.Boolean(),
-    usage: tokenUsage,
+    usage: Type.Optional(tokenUsage),
     model: boundedIdentifier,
   }),
 ]);
@@ -330,7 +330,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Write: contract({
     name: "Write",
-    description: "Creates a new file or atomically replaces a previously read file inside an allowed workspace. Existing files require a current complete Read receipt.",
+    description: "Creates missing parent directories and a new file, or atomically replaces a previously read file, inside an allowed workspace. Existing files require a current complete Read receipt.",
     inputSchema: strictObject({ file_path: boundedPath, content: boundedText }),
     outputSchema: writeOutput,
     concurrency: "canonical_path",
@@ -339,12 +339,11 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     outputLimits: outputLimits(16_384, 16),
     permissionClass: "workspace.write",
     checkpoint: "root_managed_file",
-    behaviorFixtureIds: ["new_file_absent_precondition", "existing_file_requires_complete_read", "atomic_replace_and_checkpoint_receipt", "external_change_conflict", "abort_before_commit"],
-    resultSemantics: "Atomically create or replace one managed file and return its committed identity and eligible checkpoint receipt.",
+    behaviorFixtureIds: ["new_file_absent_precondition", "existing_file_requires_complete_read", "atomic_replace_and_checkpoint_receipt", "external_change_conflict", "abort_before_commit", "journaled_parent_creation_and_rewind"],
+    resultSemantics: "Create missing parents through the checkpoint journal, atomically publish one managed file, and return its identity and eligible root checkpoint receipt. Rollback removes only recorded, unchanged, empty directories.",
     errorCodes: errors(
       ["read_required", false, "An existing target has no current complete Read receipt."],
       ["stale_read", true, "The target changed after its qualifying Read."],
-      ["directory_not_found", false, "The parent directory of a new target does not exist."],
       ["path_denied", false, "The target is outside an allowed write root or changes identity."],
       ["mutation_conflict", true, "The atomic commit precondition no longer matches."],
     ),
@@ -548,7 +547,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   WebSearch: contract({
     name: "WebSearch",
-    description: "Searches the web through a supported Provider server-side adapter and returns cited results. This tool is absent when the operation-frozen Provider has no compatible adapter.",
+    description: "Searches the web through a supported Provider server-side adapter and returns cited results and available service text. Warnings identify unverified results or domain filtering; do not present unverified text as confirmed sources. This tool is absent when the operation-frozen Provider has no compatible adapter.",
     inputSchema: strictObject({
       query: Type.String({ minLength: 1, maxLength: 8_192 }),
       allowed_domains: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 253 }), { maxItems: 64, uniqueItems: true })),
@@ -556,6 +555,11 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     }),
     outputSchema: strictObject({
       query: Type.String({ minLength: 1, maxLength: 8_192 }),
+      answer: Type.Optional(Type.String({ maxLength: 65_536 })),
+      warnings: Type.Optional(Type.Array(Type.Union([
+        Type.Literal("unverified_search_results"),
+        Type.Literal("unverified_domain_filter"),
+      ]), { maxItems: 2, uniqueItems: true })),
       results: Type.Array(strictObject({
         title: Type.String({ minLength: 1, maxLength: 512 }),
         url: Type.String({ format: "uri", maxLength: 2_048 }),
@@ -574,7 +578,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     permissionClass: "network.search",
     checkpoint: "none",
     behaviorFixtureIds: ["provider_adapter_gating", "allowed_and_blocked_domains", "citations_and_usage", "max_uses_and_rate_limit", "cancel_provider_search"],
-    resultSemantics: "Return Provider-native cited results and separately attributable usage; HTML scraping fallback is forbidden.",
+    resultSemantics: "Return bounded Provider-native cited results, available service text and separately attributable usage. Empty matches are valid; incomplete result formats retain text with explicit uncertainty. HTML scraping fallback is forbidden.",
     errorCodes: errors(
       ["web_search_unavailable", false, "The frozen Provider has no approved server-side search adapter."],
       ["domain_policy_invalid", false, "Domain constraints conflict or exceed bounds."],
@@ -687,7 +691,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Agent: contract({
     name: "Agent",
-    description: "Starts a supervised local child Agent with a fresh DSH context and the current bounded workspace/component snapshot. Omit subagent_type to use the built-in general descriptor, which inherits eligible parent tools. Explore keeps read/search/Web/Bash tools with a read-only role instruction. Custom descriptors may narrow inherited visibility. The result's taskId is for TaskStop; agentId addresses the live child with SendMessage. Background returns a retained work handle; foreground waits for the child terminal.",
+    description: "Starts a supervised local child Agent with a fresh DSH context and the current bounded workspace/component snapshot. Omit subagent_type for the general descriptor; Explore and Plan provide read-only research/planning roles. Custom descriptors may narrow inherited tools. run_in_background defaults to true: omitted/true returns a background handle; false waits for this activation's result. All roles and both modes retain context for SendMessage follow-ups after completion. taskId addresses TaskStop, agentId addresses SendMessage. Completion reports arrive automatically; an idle retained handle is not still executing. TaskStop closes the handle and model messages cannot restart it.",
     inputSchema: strictObject({
       description: Type.String({ minLength: 1, maxLength: 80 }),
       prompt: Type.String({ minLength: 1, maxLength: 1_000_000 }),
@@ -703,7 +707,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     permissionClass: "agent.spawn",
     checkpoint: "none",
     behaviorFixtureIds: ["foreground_child_terminal", "default_background_child_handle", "exact_model_alias", "background_permission_fail_closed", "stop_and_generation_cleanup"],
-    resultSemantics: "Foreground returns the child terminal and usage; background returns one supervised WorkRegistry handle and output path.",
+    resultSemantics: "Foreground returns this activation's result, usage, and continuable identity; background returns one supervised handle and output path. Execution completion and handle closure are separate.",
     errorCodes: errors(
       ["agent_unavailable", false, "No compatible child descriptor or model alias is visible."],
       ["child_nesting_forbidden", false, "A child attempts to spawn another child."],
@@ -833,7 +837,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskUpdate: contract({
     name: "TaskUpdate",
-    description: "Atomically updates one Session-local task, including status, ownership, dependencies, text, and bounded flat scalar metadata. Set owner to root in the same update (or earlier) before status can become in_progress. Dependencies must remain acyclic.",
+    description: "Atomically updates one Session-local task, including status, ownership, dependencies, text, and bounded flat scalar metadata. When starting an unassigned task, owner may be omitted: the Runtime assigns the actual calling Agent. An existing owner is preserved; the root or current owner may explicitly transfer to root or a registered child agentId in this Session. Dependencies must remain acyclic.",
     inputSchema: strictObject({
       taskId: boundedIdentifier,
       status: Type.Optional(Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed"), Type.Literal("cancelled")])),
@@ -907,10 +911,10 @@ export const CANONICAL_TOOL_REUSE_MATRIX = deepFreeze({
     { id: "questions", importPath: "@deepseek-ai/dsh-user-questions", classification: "provider", symbols: ["UserQuestionService"] },
   ], productOwner: "@myagents-dsh/tools-interaction", stockModelDefinition: "excluded" },
   EnterPlanMode: { tool: "EnterPlanMode", modelDefinition: "compat-tool", dshPublicReuse: [
-    { id: "plan-mode-fold", importPath: "@deepseek-ai/dsh-plan-mode", classification: "helper", symbols: ["foldPlanMode"] },
+    { id: "plan-mode-fold", importPath: "@deepseek-ai/dsh-plan-mode", classification: "helper", symbols: ["planProjectionDefinition"] },
   ], productOwner: "@myagents-dsh/tools-interaction", stockModelDefinition: "excluded" },
   ExitPlanMode: { tool: "ExitPlanMode", modelDefinition: "compat-tool", dshPublicReuse: [
-    { id: "plan-mode-fold", importPath: "@deepseek-ai/dsh-plan-mode", classification: "helper", symbols: ["foldPlanMode"] },
+    { id: "plan-mode-fold", importPath: "@deepseek-ai/dsh-plan-mode", classification: "helper", symbols: ["planProjectionDefinition"] },
     { id: "questions", importPath: "@deepseek-ai/dsh-user-questions", classification: "provider", symbols: ["UserQuestionService"] },
   ], productOwner: "@myagents-dsh/tools-interaction", stockModelDefinition: "excluded" },
   Skill: { tool: "Skill", modelDefinition: "compat-tool", dshPublicReuse: [

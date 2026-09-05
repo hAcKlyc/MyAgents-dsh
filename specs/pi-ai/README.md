@@ -1,6 +1,11 @@
 # pi-ai Provider-content seam
 
-The official DSH pi-ai adapter delegates Anthropic Messages transport to `@earendil-works/pi-ai`. The exact `v0.82.1` source authority discards Provider-owned server-tool blocks, so MyAgents carries one minimal patch that preserves generic structured call/result content and exact same-route replay.
+The official DSH pi-ai adapter delegates Anthropic Messages transport to `@earendil-works/pi-ai`. The exact `v0.84.2` source authority discards Provider-owned server-tool blocks, so MyAgents carries one minimal patch that preserves generic structured call/result content and exact same-route replay.
+
+The 2026-09-05 correction preserves generic `tool_result` only when correlated with an observed
+server/MCP call, including opaque content and Provider-rewritten names. The SSE regression covers
+standard and generic results, exact replay, and absent/client/unrelated-call negative cases. No
+canonical search parser or local tool executor is added to this model-content seam.
 
 `seam-evidence-v1.json` binds the source commit/tree, every touched source blob, and the ordered patch digest. `npm run check:pi-ai-seam` is the clean-checkout evidence check. With the exact upstream source and an explicitly primed npm cache, run:
 

@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: sessions-persistence-and-recovery
-updated: 2026-09-02
+updated: 2026-09-05
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_session_persistence_mutations.md
 decisions:
@@ -32,6 +32,20 @@ active locator points to one Session storage generation. The active generation i
 stable while its event sequence is append-only and its revision/count/head hash advance; an
 archived generation no longer accepts append. Rewind publishes a new generation and switches the
 locator. Required Product event types pass an exact known-event predicate.
+
+The DSH 0.1.2 candidate uses public `snapshotEvents()`/`SessionSeq`/`SessionLogOffset`
+and `SessionStorageMetadata`. SQLite schema 8 stores `inherited_event_count` separately
+from the immutable header. The transactional schema-7 migration derives that cut from
+legacy `seedLength`, preserving the original header JSON, every event envelope and its
+hash. Reads expose the new `isSeeded` header view; append compares that normalized view
+and the independently stored cut. Fork records its inherited prefix; rewind carries the
+prefix clipped to the new generation boundary. Invalid counts and inconsistent metadata
+fail before materialization. `borrowSession` delegates to the official coordinator lease.
+
+The composition also mounts the official SQLite SessionQuery engine with a process-local
+in-memory derived index, opened on first search. It uses the same public persistence and
+Session providers; the index is disposable and never replaces the product SQLite log or
+its mutation locks. Cold-list/tree performance acceptance remains in UPG-W06.
 
 ```text
 Session identity
@@ -144,3 +158,9 @@ contention and corrupted/unknown/ignorable input.
 | Required DSH seams | patches `0001`, `0003`, `0004`, `0005` in `specs/dsh/seam-decisions-v1.json` |
 | Persistence decisions | ADR 0003 and ADR 0004 |
 | Tests | `tests/product-persistence.unit.test.ts`, `tests/primary-session-admission.unit.test.ts`, Runtime restart/resume campaigns and Host conformance |
+
+The Primary Session admission `afterReady` hook owns the final recovery activation boundary: the exact Agent is published as ready before durable ProductWork/operation messages can wake it. The hook is awaited under the existing settlement deadline; failure retires that handle and leaves recovery required. Pre-publication reconciliation validates facts with execution deferred.
+
+SQLite schema v9 follows the v8 inherited-prefix migration with nullable checkpoint directory plans.
+It preserves old header/event bytes and leaves historical directory ownership absent. Directory
+prepare/cleanup/replay semantics are owned by [Mutations and checkpoints](./mutations-and-checkpoints.md#8-checkpoint-coverage-and-limits).

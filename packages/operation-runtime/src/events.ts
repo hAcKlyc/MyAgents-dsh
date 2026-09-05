@@ -48,6 +48,10 @@ export interface OperationBirthSnapshot {
 }
 
 export interface ProductOperationAccepted {
+  readonly tokenAccounting?: "native-attempts-v1";
+  readonly rootContextMessage?: true;
+  readonly rootDeliveryTiming?: "realtime" | "turn";
+  readonly rootInputFingerprint?: string;
   readonly clientOperationId: string;
   readonly clientUserMessageId: string;
   readonly fingerprint: string;
@@ -58,6 +62,8 @@ export interface ProductOperationAccepted {
 }
 
 export interface ProductOperationMessage {
+  readonly contextMessage?: true;
+  readonly deliveryTiming?: "realtime" | "turn";
   readonly clientOperationId: string;
   readonly messageId: string;
   readonly kind: "root" | "steer" | "follow_up";

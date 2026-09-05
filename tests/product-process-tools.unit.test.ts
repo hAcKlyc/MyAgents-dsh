@@ -2,7 +2,7 @@ import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import type { JobId } from "@deepseek-ai/dsh-jobs";
-import { CallId } from "@deepseek-ai/dsh-llm";
+import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { SubprocessRuntime } from "@deepseek-ai/dsh-subprocess";
 import { createScope } from "@deepseek-ai/dsh-scope";
 import type {
@@ -263,6 +263,7 @@ const harness = async (options: Readonly<{
     }),
   });
   const operation = Object.freeze({
+    origin: "user" as const,
     acceptedAt: 1,
     birth: Object.freeze({
       componentDigest: "b".repeat(64),
@@ -368,7 +369,7 @@ const harness = async (options: Readonly<{
     return context.tools.execute({
       agent,
       arguments: args,
-      callId: CallId(`bash-${call}`),
+      callId: ToolCallId(`bash-${call}`),
       name: "Bash",
       signal,
     });

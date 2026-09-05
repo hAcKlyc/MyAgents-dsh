@@ -517,7 +517,7 @@ export class CanonicalFileTools extends Service {
         const content = args.content as string;
         const afterBytes = Buffer.from(content, "utf8");
         const afterSha256 = sha256(content);
-        const checkpoint = authority.checkpointEligible
+        const checkpoint = authority.checkpointEligible || (product.origin !== "root" && current === undefined)
           ? await ctx.productTools.prepareCheckpoint(product, {
             afterBytes,
             afterSha256,
@@ -538,6 +538,7 @@ export class CanonicalFileTools extends Service {
             await settleCheckpoint(checkpoint, settlement, "conflict");
             throw new ProductToolError("mutation_conflict", "Write target identity changed before publication");
           }
+          await checkpoint?.verify?.();
           const outcome = await ctx.fs.writeText(
             target,
             content,
@@ -556,7 +557,7 @@ export class CanonicalFileTools extends Service {
           });
           return Object.freeze({
             bytes: Buffer.byteLength(content, "utf8"),
-            ...(checkpoint === undefined ? {} : { checkpointReceipt: checkpoint.receipt }),
+            ...(checkpoint === undefined || !authority.checkpointEligible ? {} : { checkpointReceipt: checkpoint.receipt }),
             created: outcome.operation === "create",
             path: target.displayPath,
             sha256: afterSha256,

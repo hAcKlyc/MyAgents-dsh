@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Single Runtime-to-Host reverse RPC service and lifecycle owner",
-  "files": ["src"],
+  "files": [
+    "src"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
@@ -12,9 +14,9 @@
     "@myagents-dsh/protocol": "0.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.1",
-    "@deepseek-ai/dsh-attachment": "0.1.1-rc.2.myagents.b150a551b8d4.56f8f4241def || 0.1.1-rc.2",
-    "@deepseek-ai/dsh-attachment-local": "0.1.1-rc.2.myagents.b150a551b8d4.56f8f4241def || 0.1.1-rc.2",
-    "@deepseek-ai/dsh-credentials": "0.1.1-rc.2.myagents.b150a551b8d4.56f8f4241def || 0.1.1-rc.2"
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-attachment": "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd || 0.1.2-rc.1",
+    "@deepseek-ai/dsh-attachment-local": "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd || 0.1.2-rc.1",
+    "@deepseek-ai/dsh-credentials": "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd || 0.1.2-rc.1"
   }
 }

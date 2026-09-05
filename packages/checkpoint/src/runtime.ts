@@ -6,11 +6,14 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import {
   ProductToolError,
+  productRootAgent,
   type ProductToolCheckpointHandle,
   type ProductToolCheckpointRequest,
   type ProductToolContext,
   type ProductToolExecutionEnvironment,
 } from "@myagents-dsh/tool-runtime-product";
+
+import { validateCheckpointDirectoryPlan, type CheckpointDirectoryIo, type CheckpointDirectoryPlan } from "./directories.js";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -46,13 +49,14 @@ export interface ProductCheckpointEventData {
   readonly tool: "Write" | "Edit";
 }
 
-declare module "@deepseek-ai/dsh-session" {
+declare module "@deepseek-ai/dsh-session/types" {
   interface SessionEventMap {
     "myagents/checkpoint/state": ProductCheckpointEventData;
   }
 }
 
 export interface ProductCheckpointRecord extends ProductCheckpointEventData {
+  readonly directoryPlan?: CheckpointDirectoryPlan;
   readonly lastEventPhase: ProductCheckpointPhase | null;
   readonly lastEventSeq: number | null;
   readonly preparedAt: number;
@@ -60,6 +64,7 @@ export interface ProductCheckpointRecord extends ProductCheckpointEventData {
 }
 
 export interface ProductCheckpointPrepareInput {
+  readonly directoryPlan?: CheckpointDirectoryPlan;
   readonly beforeBytes?: Uint8Array;
   readonly callId: string;
   readonly checkpointId: string;
@@ -75,6 +80,8 @@ export interface ProductCheckpointPrepareInput {
 }
 
 export interface ProductCheckpointStore {
+  updateDirectoryPlan(checkpointId: string, expected: CheckpointDirectoryPlan, next: CheckpointDirectoryPlan, signal?: AbortSignal): Promise<ProductCheckpointRecord>;
+  listRewindDirectoryPlans(token: string, signal?: AbortSignal): Promise<readonly ProductCheckpointRecord[]>;
   get(checkpointId: string, signal?: AbortSignal): Promise<ProductCheckpointRecord | undefined>;
   prepare(input: ProductCheckpointPrepareInput, signal?: AbortSignal): Promise<ProductCheckpointRecord>;
   transition(
@@ -137,6 +144,7 @@ export interface ProductCheckpointFileSnapshot {
 }
 
 export interface ProductCheckpointIoAuthority {
+  readonly directories?: CheckpointDirectoryIo;
   capture(
     environment: ProductToolExecutionEnvironment,
     path: string,
@@ -229,7 +237,20 @@ const validateConfig = (value: ProductCheckpointServiceConfig): ProductCheckpoin
     "product checkpoint config",
   );
   const durability = exactOwnDataObject(config.durability, ["flush"], "checkpoint durability authority");
-  const io = exactOwnDataObject(config.io, ["capture", "restore"], "checkpoint filesystem authority");
+  if (config.io === null || typeof config.io !== "object" || utilTypes.isProxy(config.io)) {
+    throw new TypeError("checkpoint filesystem authority must be a non-Proxy object");
+  }
+  const hasDirectories = Object.hasOwn(config.io, "directories");
+  const io = exactOwnDataObject(config.io, hasDirectories ? ["capture", "restore", "directories"] : ["capture", "restore"], "checkpoint filesystem authority");
+  let directories: CheckpointDirectoryIo | undefined;
+  if (hasDirectories) {
+    const authority = exactOwnDataObject(io.directories, ["plan", "inspect", "create", "remove"], "checkpoint directory authority");
+    const methods = Object.fromEntries(["plan", "inspect", "create", "remove"].map((key) => {
+      const fn = dataFunction(authority, key, "checkpoint directory authority");
+      return [key, (...args: unknown[]): unknown => Reflect.apply(fn, io.directories, args) as unknown];
+    }));
+    directories = Object.freeze(methods) as unknown as CheckpointDirectoryIo;
+  }
   const requireAgent = dataFunction(config, "requireAgent", "checkpoint Agent authority");
   const environment = dataFunction(config, "environment", "checkpoint environment authority");
   const store = dataFunction(config, "store", "checkpoint Store authority");
@@ -242,6 +263,7 @@ const validateConfig = (value: ProductCheckpointServiceConfig): ProductCheckpoin
     }),
     environment: () => Reflect.apply(environment, value, []) as ProductToolExecutionEnvironment,
     io: Object.freeze({
+      ...(directories === undefined ? {} : { directories }),
       capture: (
         environment: ProductToolExecutionEnvironment,
         path: string,
@@ -432,7 +454,7 @@ type FoldedCheckpoint = Readonly<{ data: ProductCheckpointEventData; eventSeq: n
 
 const foldCheckpointLineages = (session: Session): ReadonlyMap<string, FoldedCheckpoint> => {
   const folded = new Map<string, FoldedCheckpoint>();
-  for (const event of session.events) {
+  for (const event of session.snapshotEvents()) {
     if (event.type !== "myagents/checkpoint/state") continue;
     const current = validateEvent(event, `checkpoint event ${event.seq}`);
     if (current.sessionId !== String(session.id)) {
@@ -485,11 +507,16 @@ export class ProductCheckpointService extends Service {
   readonly #pendingByCall = new Map<string, ProductCheckpointRecord>();
   readonly #settlements = new Set<Promise<void>>();
   #failure: unknown;
+  readonly #recoveredAgents = new WeakMap<Agent, Promise<void>>();
 
   constructor(ctx: Context, config: ProductCheckpointServiceConfig) {
     super(ctx, "productCheckpoint");
     this.#config = validateConfig(config);
     ctx.effect(() => {
+      const stopRecovery = ctx.on("agent/pre-step", async ({ agent }, next) => {
+        await this.#ensureRecovered(agent);
+        return await next();
+      });
       const stop = ctx.on("session/event", (session, event) => {
         if (event.type !== "tool/result") return;
         const key = this.#callKey(String(session.id), event.data.turn, String(event.data.message.source.callId));
@@ -500,6 +527,7 @@ export class ProductCheckpointService extends Service {
       });
       return async () => {
         stop();
+        stopRecovery();
         await Promise.allSettled([...this.#settlements]);
         this.#pendingByCall.clear();
         if (this.#failure instanceof Error) throw this.#failure;
@@ -518,10 +546,13 @@ export class ProductCheckpointService extends Service {
     context.signal.throwIfAborted();
     const origin: unknown = context.origin;
     const tool: unknown = request.tool;
-    if (origin !== "root" || context.agent !== this.#config.requireAgent()
+    if (productRootAgent(context) !== this.#config.requireAgent()
+      || ((origin === "root") !== (context.agent === this.#config.requireAgent()))
+      || (origin !== "root" && (tool !== "Write" || !["foreground_child", "background_child"].includes(String(origin))))
       || (tool !== "Write" && tool !== "Edit")) {
-      throw new ProductToolError("checkpoint_unavailable", "checkpoint requires the exact primary root tool authority");
+      throw new ProductToolError("checkpoint_unavailable", "checkpoint requires the exact primary root or governed child Write authority");
     }
+    await this.#ensureRecovered(context.agent);
     const policyRevision = validatePolicy(context.environment, request.tool);
     if (request.afterBytes.byteLength > MAX_CHECKPOINT_FILE_BYTES
       || sha256(request.afterBytes) !== request.afterSha256
@@ -543,10 +574,15 @@ export class ProductCheckpointService extends Service {
           || snapshot.bytes === undefined || !Buffer.from(snapshot.bytes).equals(Buffer.from(request.beforeBytes)))) {
       throw new ProductToolError("mutation_conflict", "checkpoint preimage differs from the managed file");
     }
+    const directoryPlan = request.tool === "Write" && request.beforeBytes === undefined && this.#config.io.directories !== undefined
+      ? await exactNativePromise<CheckpointDirectoryPlan | undefined>(
+        this.#config.io.directories.plan(context.environment, request.path, context.signal), "checkpoint parent planning")
+      : undefined;
     const id = checkpointId(context, request, policyRevision);
     const store = this.#requireStore();
     const record = await exactNativePromise<ProductCheckpointRecord>(store.prepare(Object.freeze({
       ...(request.beforeBytes === undefined ? {} : { beforeBytes: Uint8Array.from(request.beforeBytes) }),
+      ...(directoryPlan === undefined ? {} : { directoryPlan: validateCheckpointDirectoryPlan(directoryPlan) }),
       callId: context.callId,
       checkpointId: id,
       clientOperationId: context.clientOperationId,
@@ -565,6 +601,15 @@ export class ProductCheckpointService extends Service {
       await this.#appendPhase(context.agent.session, record, "prepared", undefined, context.signal);
     } else if (!sameImmutableRecord(known, record) || known.phase !== record.phase) {
       throw new ProductToolError("checkpoint_uncertain", "checkpoint Store and Session correlation differ");
+    }
+    if (record.directoryPlan !== undefined) {
+      try {
+        await this.#createParents(record, context.environment, context.signal);
+      } catch (error) {
+        // The intent is durable before mkdir. Cleanup uses only journaled inode identities.
+        await this.#settleHandle({ ...context, signal: new AbortController().signal }, id, "abort");
+        throw error;
+      }
     }
     let settlement: Readonly<{ branch: "abort" | "commit" | "conflict"; promise: Promise<void> }> | undefined;
     const settle = (branch: "abort" | "commit" | "conflict"): Promise<void> => {
@@ -586,6 +631,7 @@ export class ProductCheckpointService extends Service {
       commit: () => settle("commit"),
       conflict: () => settle("conflict"),
       receipt: Object.freeze({ checkpointId: id, policyRevision }),
+      verify: () => this.#verifyParents(id, context.environment, context.signal),
     });
   }
 
@@ -603,6 +649,8 @@ export class ProductCheckpointService extends Service {
     for (const file of files) {
       operationSignal.throwIfAborted();
       if (file.sealed) continue;
+      const directories = await exactNativePromise<readonly ProductCheckpointRecord[]>(store.listRewindDirectoryPlans(token, operationSignal), "rewind parent verification plans");
+      for (const record of directories) await this.#verifyParents(record.checkpointId, this.#config.environment(), operationSignal);
       const current = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
         this.#config.io.capture(
           this.#config.environment(),
@@ -643,25 +691,11 @@ export class ProductCheckpointService extends Service {
     try {
       for (const file of files) {
         operationSignal.throwIfAborted();
-        if (file.phase === "published") {
-          published.push(file);
-          continue;
-        }
-        if (file.phase !== "prepared" && file.phase !== "rolled_back") {
+        if (!["prepared", "rolled_back", "published"].includes(file.phase)) {
           throw new ProductToolError("checkpoint_uncertain", "rewind file plan settled unexpectedly");
         }
         const sourcePhase = file.phase;
-        const restored = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
-          this.#config.io.restore(
-            this.#config.environment(),
-            file.path,
-            file.expectedCurrentSha256,
-            file.targetBytes,
-            file.targetSha256,
-            operationSignal,
-          ),
-          "rewind target publication",
-        ), file.path);
+        const restored = await this.#restoreRewindFile(file, "published", operationSignal);
         const actualSha256 = restored.exists ? restored.sha256 : undefined;
         let transitioned: ProductCheckpointRewindFile;
         try {
@@ -697,9 +731,19 @@ export class ProductCheckpointService extends Service {
         }
         published.push(transitioned);
       }
+      const directories = await exactNativePromise<readonly ProductCheckpointRecord[]>(store.listRewindDirectoryPlans(token, operationSignal), "rewind directory cleanup plans");
+      for (const record of [...directories].reverse()) {
+        await this.#removeParents(record, this.#config.environment(), operationSignal);
+      }
     } catch (error) {
       const cleanupErrors: unknown[] = [];
       const cleanupSignal = new AbortController().signal;
+      try {
+        await this.#restoreRewindParents(token, cleanupSignal);
+      } catch (cleanupError) {
+        this.#failure ??= new AggregateError([error, cleanupError], "rewind directory compensation failed");
+        throw this.#failure;
+      }
       for (const file of published.reverse()) {
         try {
           const restored = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
@@ -743,28 +787,19 @@ export class ProductCheckpointService extends Service {
       store.listRewindFiles(token, operationSignal),
       "rewind file plan lookup",
     );
+    await this.#restoreRewindParents(token, operationSignal);
     for (const file of [...files].reverse()) {
       operationSignal.throwIfAborted();
-      if (file.phase === "prepared" || file.phase === "rolled_back") continue;
-      if (file.phase !== "published" || file.rollbackBytes === undefined
+      if (!file.sealed && file.phase === "prepared") continue;
+      if (!["prepared", "published", "rolled_back"].includes(file.phase) || file.rollbackBytes === undefined
         || file.rollbackSha256 === undefined) {
         throw new ProductToolError("checkpoint_uncertain", "rewind rollback file plan is invalid");
       }
-      const restored = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
-        this.#config.io.restore(
-          this.#config.environment(),
-          file.path,
-          file.targetSha256,
-          file.rollbackBytes,
-          file.rollbackSha256,
-          operationSignal,
-        ),
-        "rewind rollback publication",
-      ), file.path);
+      const restored = await this.#restoreRewindFile(file, "rolled_back", operationSignal);
       await exactNativePromise<ProductCheckpointRewindFile>(store.transitionRewindFile(
         token,
         file.path,
-        ["published"],
+        [file.phase],
         "rolled_back",
         restored.exists ? restored.sha256 : undefined,
         operationSignal,
@@ -832,8 +867,10 @@ export class ProductCheckpointService extends Service {
       const priorMatches = record.priorSha256 === null ? !actual.exists : actualSha === record.priorSha256;
       const expectedMatches = actualSha === record.expectedSha256;
       if (record.phase === "prepared" && priorMatches) {
+        await this.#removeParents(record, environment, signal);
         await this.#transitionAndAppend(agent.session, record, "aborted", actualSha, signal);
       } else if (expectedMatches) {
+        await this.#verifyParents(record.checkpointId, environment, signal);
         const published = record.phase === "prepared"
           ? await this.#transitionAndAppend(agent.session, record, "published", actualSha, signal)
           : record;
@@ -846,15 +883,148 @@ export class ProductCheckpointService extends Service {
     this.#assertHealthy();
   }
 
+  async #restoreRewindFile(file: ProductCheckpointRewindFile, direction: "published" | "rolled_back", signal: AbortSignal): Promise<ProductCheckpointFileSnapshot> {
+    const environment = this.#config.environment();
+    const current = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
+      this.#config.io.capture(environment, file.path, MAX_CHECKPOINT_FILE_BYTES, signal), "rewind filesystem adjudication",
+    ), file.path);
+    const desiredSha = direction === "published" ? file.targetSha256 : file.rollbackSha256;
+    const sourceSha = direction === "published" ? file.expectedCurrentSha256 : file.targetSha256;
+    const currentSha = current.exists ? current.sha256 : undefined;
+    if (currentSha === desiredSha) return current;
+    if (currentSha !== sourceSha) throw new ProductToolError("mutation_conflict", "rewind file matches neither sealed side of the transaction");
+    return validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(this.#config.io.restore(
+      environment, file.path, sourceSha,
+      direction === "published" ? file.targetBytes : file.rollbackBytes,
+      desiredSha, signal,
+    ), "rewind filesystem publication"), file.path);
+  }
+
+  #ensureRecovered(agent: Agent): Promise<void> {
+    let recovery = this.#recoveredAgents.get(agent);
+    if (recovery === undefined) {
+      recovery = this.reconcile(agent);
+      this.#recoveredAgents.set(agent, recovery);
+    }
+    return recovery;
+  }
+
+  async #verifyParents(checkpointId: string, environment: ProductToolExecutionEnvironment, signal: AbortSignal): Promise<void> {
+    const record = await exactNativePromise<ProductCheckpointRecord | undefined>(this.#requireStore().get(checkpointId, signal), "checkpoint directory verification lookup");
+    if (record === undefined) throw new ProductToolError("checkpoint_uncertain", "checkpoint owner is unavailable");
+    const plan = record.directoryPlan;
+    if (plan === undefined) return;
+    const io = this.#config.io.directories;
+    if (io === undefined) throw new ProductToolError("checkpoint_unavailable", "checkpoint directory authority is unavailable");
+    for (const entry of [plan.anchor, ...plan.entries]) {
+      if (entry.identity === undefined || ("state" in entry && entry.state !== "created")
+        || await exactNativePromise<string | undefined>(io.inspect(environment, entry.path, signal), "checkpoint directory verification") !== entry.identity) {
+        throw new ProductToolError("mutation_conflict", "checkpoint directory identity changed before publication");
+      }
+    }
+  }
+
+  async #createParents(
+    record: ProductCheckpointRecord,
+    environment: ProductToolExecutionEnvironment,
+    signal: AbortSignal,
+    managedAnchors: ReadonlyMap<string, string> = new Map(),
+  ): Promise<void> {
+    const io = this.#config.io.directories;
+    let plan = record.directoryPlan;
+    if (plan === undefined) return;
+    if (io === undefined) throw new ProductToolError("checkpoint_unavailable", "checkpoint directory authority is unavailable");
+    const store = this.#requireStore();
+    const save = async (next: CheckpointDirectoryPlan): Promise<void> => {
+      if (plan === undefined) throw new Error("checkpoint directory plan disappeared");
+      await exactNativePromise(store.updateDirectoryPlan(record.checkpointId, plan, next), "checkpoint directory receipt");
+      plan = next;
+    };
+    const actualAnchor = await exactNativePromise<string | undefined>(io.inspect(environment, plan.anchor.path, signal), "checkpoint parent anchor inspection");
+    const managedAnchor = managedAnchors.get(plan.anchor.path);
+    if (actualAnchor !== plan.anchor.identity) {
+      if (actualAnchor === undefined || managedAnchor !== actualAnchor) {
+        throw new ProductToolError("mutation_conflict", "checkpoint directory anchor changed");
+      }
+      await save(validateCheckpointDirectoryPlan({ ...plan, anchor: { path: plan.anchor.path, identity: actualAnchor } }));
+    }
+    let parent = plan.anchor;
+    for (let index = 0; index < plan.entries.length; index += 1) {
+      signal.throwIfAborted();
+      let entry = plan.entries[index];
+      if (entry === undefined) throw new Error("checkpoint directory entry disappeared");
+      let actual = await exactNativePromise<string | undefined>(io.inspect(environment, entry.path, signal), "checkpoint parent inspection");
+      const update = async (next: typeof entry): Promise<void> => {
+        if (plan === undefined || next === undefined) throw new Error("checkpoint directory plan disappeared");
+        await save(validateCheckpointDirectoryPlan({ ...plan, entries: plan.entries.map((value, offset) => offset === index ? next : value) }));
+        entry = next;
+      };
+      if (entry.state === "removing") {
+        if (actual !== undefined && actual !== entry.identity) throw new ProductToolError("mutation_conflict", "checkpoint directory removal raced a replacement");
+        await update({ ...entry, state: actual === undefined ? "removed" : "created" });
+      }
+      if (entry.state === "created") {
+        if (actual !== entry.identity) throw new ProductToolError("mutation_conflict", "checkpoint created directory identity changed");
+      } else {
+        if (actual !== undefined) throw new ProductToolError("checkpoint_uncertain", "checkpoint directory has no matching creation receipt");
+        if (entry.state === "removed") await update({ ...entry, state: "restoring" });
+        actual = await exactNativePromise<string>(io.create(environment, entry.path, parent, signal), "checkpoint directory creation");
+        await update({ path: entry.path, identity: actual, state: "created" });
+      }
+      if (actual === undefined) throw new ProductToolError("checkpoint_uncertain", "checkpoint directory lacks an inode receipt");
+      parent = Object.freeze({ path: entry.path, identity: actual });
+    }
+  }
+
+  async #removeParents(record: ProductCheckpointRecord, environment: ProductToolExecutionEnvironment, signal: AbortSignal): Promise<void> {
+    const store = this.#requireStore();
+    const fresh = await exactNativePromise<ProductCheckpointRecord | undefined>(store.get(record.checkpointId, signal), "checkpoint directory cleanup lookup");
+    let plan = fresh?.directoryPlan;
+    if (plan === undefined) return;
+    const io = this.#config.io.directories;
+    if (io === undefined) throw new ProductToolError("checkpoint_unavailable", "checkpoint directory authority is unavailable");
+    for (let index = plan.entries.length - 1; index >= 0; index -= 1) {
+      const entry = plan.entries[index];
+      if (entry === undefined || entry.state === "planned" || entry.state === "removed") continue;
+      if (entry.state === "restoring") throw new ProductToolError("checkpoint_uncertain", "checkpoint directory restoration requires recovery");
+      if (entry.identity === undefined) throw new Error("checkpoint directory receipt is missing");
+      const update = async (state: "removing" | "removed" | "created"): Promise<void> => {
+        if (plan === undefined) throw new Error("checkpoint directory plan disappeared");
+        const next = validateCheckpointDirectoryPlan({ ...plan, entries: plan.entries.map((value, offset) => offset === index ? { ...entry, state } : value) });
+        await exactNativePromise(store.updateDirectoryPlan(record.checkpointId, plan, next), "checkpoint directory cleanup journal");
+        plan = next;
+      };
+      if (entry.state !== "removing") await update("removing");
+      const removed = await exactNativePromise<boolean>(io.remove(environment, entry.path, entry.identity, signal), "checkpoint owned empty directory cleanup");
+      await update(removed ? "removed" : "created");
+    }
+  }
+
+  async #restoreRewindParents(token: string, signal: AbortSignal): Promise<void> {
+    const store = this.#requireStore();
+    const records = await exactNativePromise<readonly ProductCheckpointRecord[]>(store.listRewindDirectoryPlans(token, signal), "rewind directory plan lookup");
+    const managed = new Map<string, string>();
+    for (const record of records) {
+      if (record.directoryPlan?.entries.some((entry) => entry.state === "removed" || entry.state === "removing" || entry.state === "restoring")) {
+        await this.#createParents(record, this.#config.environment(), signal, managed);
+      }
+      const current = await exactNativePromise<ProductCheckpointRecord | undefined>(store.get(record.checkpointId, signal), "rewind directory receipt lookup");
+      for (const entry of current?.directoryPlan?.entries ?? []) {
+        if (entry.state === "created" && entry.identity !== undefined) managed.set(entry.path, entry.identity);
+      }
+    }
+  }
+
   async #settleHandle(
     context: ProductToolContext,
     checkpoint: string,
     branch: "abort" | "commit" | "conflict",
   ): Promise<void> {
     this.#assertHealthy();
+    const signal = branch === "commit" ? context.signal : new AbortController().signal;
     const store = this.#requireStore();
     const record = await exactNativePromise<ProductCheckpointRecord | undefined>(
-      store.get(checkpoint, context.signal),
+      store.get(checkpoint, signal),
       "checkpoint Store handle lookup",
     );
     if (record === undefined) {
@@ -872,24 +1042,26 @@ export class ProductCheckpointService extends Service {
       throw new ProductToolError("checkpoint_uncertain", "checkpoint handle is already settled differently");
     }
     const actual = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
-      this.#config.io.capture(context.environment, record.path, MAX_CHECKPOINT_FILE_BYTES, context.signal),
+      this.#config.io.capture(context.environment, record.path, MAX_CHECKPOINT_FILE_BYTES, signal),
       "checkpoint settlement filesystem capture",
     ), record.path);
     const actualSha = actual.exists ? actual.sha256 : undefined;
     const priorMatches = record.priorSha256 === null ? !actual.exists : actualSha === record.priorSha256;
     const expectedMatches = actualSha === record.expectedSha256;
     if (branch === "commit" && expectedMatches) {
+      await this.#verifyParents(record.checkpointId, context.environment, signal);
       const published = await this.#transitionAndAppend(
-        context.agent.session, record, "published", actualSha, context.signal,
+        context.agent.session, record, "published", actualSha, signal,
       );
       this.#pendingByCall.set(this.#callKey(record.sessionId, record.dshTurn, record.callId), published);
       return;
     }
     if (branch === "abort" && priorMatches) {
-      await this.#transitionAndAppend(context.agent.session, record, "aborted", actualSha, context.signal);
+      await this.#removeParents(record, context.environment, new AbortController().signal);
+      await this.#transitionAndAppend(context.agent.session, record, "aborted", actualSha, signal);
       return;
     }
-    await this.#transitionAndAppend(context.agent.session, record, "conflict", actualSha, context.signal);
+    await this.#transitionAndAppend(context.agent.session, record, "conflict", actualSha, signal);
     this.#failure ??= new Error("managed checkpoint settlement conflicted with file truth");
     if (branch !== "conflict") {
       throw new ProductToolError("checkpoint_uncertain", "checkpoint settlement conflicts with the managed file");

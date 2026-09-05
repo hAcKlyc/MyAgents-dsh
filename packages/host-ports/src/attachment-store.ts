@@ -18,6 +18,7 @@ import {
   DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
   DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
   DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
+  DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS,
   prepareImageFile,
   readRequestImageFile,
   type PreparedImageFile,
@@ -45,6 +46,7 @@ const CONTENT_ADDRESS_PATTERN = /^sha256:([a-f0-9]{64})$/u;
 const NORMALIZATION_POLICY = Object.freeze({
   maxBytes: DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
   maxDimension: DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
+  maxPixels: DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS,
 });
 
 export interface HostAttachmentStagingFile {

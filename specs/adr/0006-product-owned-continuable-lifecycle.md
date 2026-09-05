@@ -2,7 +2,7 @@
 
 Status: accepted on 2026-08-21 for the fixed DSH source baseline
 
-Current disposition (2026-08-29): reduced against the newer public setup/drain seams and rebased as `DSH-SEAM-006` / patch 0005 for official DSH `0.1.1-rc.2`. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
+Current disposition (2026-09-05): rebased as `DSH-SEAM-006` / patch 0005 for official DSH `0.1.2-rc.1` (`a66e470…`). Selected-child drain is now stock; trusted setup, external completion, attributed delivery, exact pending wake and cold-ancestor residency remain patched. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
 
 ## Context
 
@@ -49,6 +49,30 @@ The existing local `subagent/end` edge is emitted only after Activation quiescen
 `resumeContinuable` uses that same per-child lock and cold-materialization path, validates exact parent lineage, and invokes the existing Agent `wakePending()` seam for the named durable identity. Materialization projects every pending Inbox identity into the Activation's existing accepted-work set before its settlement watcher starts. A missing/claimed identity returns `false`; no path inserts or replaces Inbox content. If a process died after the durable descriptor was created but before the initial Inbox insertion existed, ProductWork may use ordinary `followup()` exactly once to complete that missing admission; it first proves from the root operation/tool-call log that no initial user insertion exists, so this path cannot duplicate an accepted message.
 
 The MyAgents ProductWorkService selects `external`, consumes the existing lifecycle edges, writes its projection into the primary Session, and calls exact retirement for `TaskStop`. DSH remains the child Session, Inbox, AgentLoop, Activation, persistence, and physical handle owner.
+
+## Cold ancestor residency in the UPG source candidate
+
+Official rc.1 continuation requires the exact registered direct-parent Agent. Its public
+Session query can read a cold ancestor but cannot authorize a descendant delivery without
+materializing that ancestor. Sending an invented parent prompt would spend a model turn;
+reparenting or constructing a Product-owned AgentHandle would change lineage or duplicate
+the native lifecycle owner.
+
+`SubagentRuntime.withContinuableAncestors(root, path, { signal }, operation)` therefore
+retains each exact stored direct-parent edge through the existing continuation manager,
+child lock, setup transaction and Agent handle. Quiet residency emits no subagent activation
+edge and injects no input. DSH's normal `session/end-seed` resume marker remains a native
+Session fact. Concurrent callers share the same handle; the last lease releases a quiet
+ancestor without joining or stopping its background descendants. If a pending identity was
+already durable, residency preserves it for its existing `resumeContinuable` owner rather
+than disposing and clearing the Inbox. Normal delivery promotes that same native handle
+into an observed activation. Stale objects reject new admission. The existing scoped drain also retains proven durable ancestor Session identities, so a restored ancestor can stop descendants that survived its original Agent object; identity restoration does not reparent them.
+
+This is a trusted composition API, with bounded acyclic ancestry; model/Host configuration
+cannot supply its callback. ProductWork must still authorize root membership, closed state,
+current model access and execution capacity before using it. Source regressions cover quiet
+cold routing, pending preservation, callback failure, forged paths, concurrent leases and
+stale objects. Runtime integration and final-byte evidence remain in the UPG ledger.
 
 ## Rejected alternatives
 

@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: model-provider-plane
-updated: 2026-09-04
+updated: 2026-09-05
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_integration.md
@@ -33,11 +33,27 @@ The official composition registers two deliberately different routes behind DSH 
 | Route | Active implementation | API behavior |
 | --- | --- | --- |
 | `deepseek-official` | MyAgents `HostDeepSeekLlmAdapter` wrapping the official DSH DeepSeek adapter | fixed official DeepSeek route using its accepted `openai-completions` profile, DeepSeek-native streaming and Files/attachments |
-| Host-declared ordinary API route | `@deepseek-ai/dsh-llm-pi-ai@0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a` using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `0.82.1` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
+| Host-declared ordinary API route | `@deepseek-ai/dsh-llm-pi-ai@0.1.2-rc.1.myagents.a66e47020478.687734e8d36c` using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `0.84.2` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
 
 The configured API family is preserved. Anthropic-compatible profiles use Anthropic Messages; OpenAI Chat Completions and Responses profiles use their corresponding direct pi-ai transports. This Runtime does not route those families through the historical MyAgents Anthropic bridge when the installed adapter supports them.
 
 The installed pi-ai package catalog is advisory and dormant until a Host profile is admitted. An enabled ordinary API Provider becomes eligible when the Host maps its declared protocol to one of the three installed families; no Runtime catalog or Provider/model whitelist participates. The minimal pi-ai and DSH adapter patches preserve Provider-owned Anthropic content through the same message stream and exact matching-route replay; they do not add a transport or model loop.
+
+The UPG source candidate admits a bounded Host model set in addition to the primary profile.
+`AgentCollaborationPolicy` validates profile revision/Provider/model uniqueness and resolves
+inheritance, fixed Session/role constraints, or opt-in selection. Profile revisions disambiguate
+identically named models from different Providers; component and Host role constraints may not
+silently override one another. Native protocol configuration snapshots include depth/resource and
+collaboration-message policy, independently of each user message's delivery intent. ProductWork
+spawn now consumes this policy and persists the selected route before execution. Deep tree routing
+and MyAgents configuration delivery remain active UPG implementation work.
+
+The credential owner atomically replaces the whole preflighted binding set. Request scopes select
+an exact binding, so multiple profiles may share a credential reference without overwriting each
+other. Revocation is checked again when material returns and when a prepared request executes.
+DeepSeek keeps immutable per-profile adapter options; pi-ai combines compatible models within a
+route, requiring different route IDs when connection/credential/reasoning settings differ. The Host
+still owns those route IDs and records. A policy or model map is never a secret store.
 
 ## 4. Admission and request flow
 
@@ -57,7 +73,13 @@ The Runtime never persists the API key. `HostSettingsProvider` contains non-secr
 
 ## 5. Route-dependent web behavior
 
-All canonical web definitions enter the canonical `ctx.tools` pipeline. Under `deepseek-official`, Runtime-owned `WebSearch` calls the DeepSeek Anthropic Messages search endpoint through the safe HTTP client and Provider credential request scope; Runtime-owned `WebFetch` performs safe HTTP retrieval/content conversion and uses a tool-free utility model to summarize. Other profiles may dispatch both canonical tools through `host/tool/execute` using operation-frozen Provider authority. The Host selects canonical Search by API family: `anthropic-messages` uses the Claude Code-compatible nested Messages request with `web_search_20250305`; a standalone Provider Search endpoint is used only when an explicit backend exists.
+All canonical web definitions enter the canonical `ctx.tools` pipeline. When the Host canonical-web
+capability is present, both tools use `host/tool/execute`, including native DeepSeek search at the
+fixed official Anthropic endpoint and its no-tools utility call. The explicit standalone direct profile
+retains Runtime-owned DeepSeek WebSearch/WebFetch. The Host selects canonical Search by API family:
+`anthropic-messages` uses the nested Messages request with `web_search_20250305`; a standalone
+Provider Search endpoint is used only when an explicit backend exists. The full compatibility,
+uncertainty and network ownership rules live in [Web/network](../boundaries/web-and-network.md).
 
 Host canonical-web availability is optional and independent of model admission. A missing backend, stale operation authority, reverse-request failure or invalid Host result fails only the individual Web tool call. None creates an ambient Runtime network path.
 
@@ -66,6 +88,12 @@ result blocks remain in the one durable DSH assistant stream and project as prot
 `provider_tool`; they never claim canonical ToolRuntime admission, permission or Hooks and never
 drive root loading or terminal truth.
 
+The paired pi-ai seam preserves generic `tool_result` when its ID matches an observed server/MCP
+call in that response. It retains opaque raw content and exact matching-route replay; it does not
+interpret provider text as a local Tool result or normalize it into canonical WebSearch citations.
+Client/unrelated results remain outside this Provider observation path. The 2026-09-05 isolated
+source/build/SSE gate passes; installed Runtime bytes change only through the artifact builder.
+
 ## 6. Current capabilities and limits
 
 - Host-declared pi-ai routes directly support Anthropic Messages, OpenAI Chat Completions and OpenAI Responses. The `deepseek-official` route accepts opaque current Product model IDs and capacities on the official endpoint with a text-first text/image subset; it does not consume pi-ai compatibility overrides.
@@ -73,7 +101,7 @@ drive root loading or terminal truth.
 - Stop sequences are not supported by the locked pi-ai route.
 - Pi-ai exposes reasoning content but does not project provider reasoning-token counts into DSH `TokenUsage`.
 - Structured Anthropic Provider blocks are retained generically. Representative family and Provider routes require honest wire and packaged evidence, but evidence coverage is not an execution allowlist; decorative assistant Markdown is never parsed into structure.
-- A child currently inherits the parent's exact Provider/model. If the `Agent` call includes `model`, it must equal the parent model; a declarative `modelProfileRef` can only require the operation-birth profile revision. Different child-model routing is not implemented.
+- Child model selection uses the admitted Host collaboration policy: inherit the direct parent's actual route, require a Host/component fixed profile, or select an explicitly authorized profile when autonomous selection is enabled. ProductWork persists the exact selected profile revision, Provider/model and selection mode before DSH child creation. The original root-operation profile remains a separate lineage fact; each request also revalidates the selected profile against current Host authorization.
 - Utility calls are bounded, idempotent and non-conversation work. Compaction requests remain attached to the owning Session/operation context.
 
 These are implementation facts, not a claim that every Provider implements every optional server tool. Host policy exposes enabled ordinary API Providers and their current models; supported-family execution is independent of optional Provider capabilities.

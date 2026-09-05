@@ -47,7 +47,9 @@ export const compilePatchedDshSeams = (
   const infrastructureFailure: SubagentRunEndInfo["infrastructureFailure"] = true;
   const drainContinuableChildren = ctx.subagents.drainContinuableChildren;
   const resumeContinuable = ctx.subagents.resumeContinuable;
-  const requestEstimate: TokenRequestEstimateInput = { messages: [] };
+  const deliverContinuable = ctx.subagents.deliverContinuable;
+  void deliverContinuable;
+  const requestEstimate: TokenRequestEstimateInput = { messages: [], route: { provider: "synthetic", model: "summary" } };
   const estimatedTokens: number = ctx.tokenMeter.estimateRequest(requestEstimate);
   const safetyMargin: 1024 = SUMMARY_SAFETY_MARGIN_TOKENS;
   const capacityError = new SummaryCapacityError("compile fixture");

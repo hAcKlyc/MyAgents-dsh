@@ -4,8 +4,11 @@ import { isPromise, isProxy } from "node:util/types";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import { Inbox, foldConsumedWork, type Agent } from "@deepseek-ai/dsh-agent";
 import { JobId, type JobSnapshot } from "@deepseek-ai/dsh-jobs";
-import { MessageId, type ContentBlock, type MessageSource } from "@deepseek-ai/dsh-llm";
-import { Session, SessionId, type SessionEvent, type SessionHeader } from "@deepseek-ai/dsh-session";
+import { MessageId, ToolCallId, freezeMessage, type ContentBlock, type MessageSource, type UserMessage } from "@deepseek-ai/dsh-llm";
+import { Session, SessionId, SessionLogOffset, type SessionEvent, type SessionHeader } from "@deepseek-ai/dsh-session";
+import type { SessionObservation } from "@deepseek-ai/dsh-session-query";
+import type {} from "@deepseek-ai/dsh-token-meter";
+import type { ContextPressureProjection, TokenUsageProjection } from "@deepseek-ai/dsh-token-meter/client";
 import type { SessionInspection } from "@deepseek-ai/dsh-session-persistence";
 import {
   foldSubagentDescriptor,
@@ -22,7 +25,10 @@ import { Value } from "typebox/value";
 
 import {
   foldProductOperations,
-  normalizeDshTokenUsage,
+  addExactReportedUsage,
+  deriveCompletedSessionTokenUsage,
+  deriveSummaryTokenUsage,
+  exactReportedUsage,
   type ModelRequestOperationAuthority,
   type OperationBirthSnapshot,
   type ProductOperationRecord,
@@ -46,6 +52,7 @@ import {
   type ProductRetainedOutputFile,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
+import { resolveWorkLineage } from "./work-lineage.js";
 
 type JsonObject = Record<string, unknown>;
 type WorkTerminal = "aborted" | "failed" | "succeeded";
@@ -53,9 +60,12 @@ type WorkTerminal = "aborted" | "failed" | "succeeded";
 const MAX_AGENT_OUTPUT_BYTES = 8 * 1_024 * 1_024;
 const MAX_INLINE_OUTPUT_BYTES = 262_144;
 const MAX_WORK_ITEMS = 256;
-const MAX_WORK_MESSAGES = 1_024;
-const MAX_WORK_EPOCHS = MAX_WORK_MESSAGES + 1;
-const MAX_WORK_EPOCHS_TOTAL = MAX_WORK_ITEMS + MAX_WORK_MESSAGES;
+const MAX_ACTIVE_CHILDREN = 32;
+const MAX_MANUAL_WORK_MESSAGES = 1_024;
+const MAX_WORK_EPOCHS = MAX_MANUAL_WORK_MESSAGES + 1;
+const MAX_WORK_EPOCHS_TOTAL = MAX_WORK_ITEMS + MAX_MANUAL_WORK_MESSAGES;
+const MAX_WORK_MESSAGES = MAX_MANUAL_WORK_MESSAGES + MAX_WORK_EPOCHS_TOTAL;
+const MAX_COMPLETION_REPORT_BYTES = 4_096;
 const MAX_WORK_MESSAGE_BYTES = 4 * 1_024 * 1_024;
 const LIVE_CHILD_REPLY_SEPARATOR = "\n\n--- child follow-up ---\n";
 const RESUMED_CHILD_RUN_SEPARATOR = "\n\n--- resumed child run ---\n";
@@ -73,6 +83,11 @@ const EXPLORE_CHILD_PERSONA = [
   "Remain read-only: do not create, edit, delete, rename, or otherwise mutate files or Product state.",
   "Bash is available for read-only inspection commands only. Report findings with paths and evidence to your parent.",
   "You cannot spawn another child Agent.",
+].join(" ");
+const PLAN_CHILD_PERSONA = [
+  "You are a Plan agent. Research the assigned problem and produce an actionable implementation plan.",
+  "Remain read-only. Use inspection and search tools to establish evidence, constraints, and verification steps.",
+  "Do not implement changes or spawn another child Agent. Report your plan to your parent.",
 ].join(" ");
 
 const hasControlCharacter = (value: string): boolean => {
@@ -97,6 +112,7 @@ const workAuthoritySchema = strictObject({
   callId: eventIdentifier,
   clientOperationId: eventIdentifier,
   dshTurn: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+  rootDshTurn: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
   productTurnId: eventIdentifier,
   toolCatalogDigest: eventSha256,
   toolCatalogRevision: eventIdentifier,
@@ -106,12 +122,14 @@ const workBirthSchema = strictObject({
   allowedTools: Type.Array(eventIdentifier, { maxItems: 256, uniqueItems: true }),
   componentDigest: eventSha256,
   componentRevision: eventIdentifier,
-  depth: Type.Integer({ minimum: 1, maximum: 1 }),
+  depth: Type.Integer({ minimum: 1, maximum: 8 }),
   descriptorDigest: eventSha256,
   interaction: Type.Literal("unavailable"),
   maxTurns: Type.Integer({ minimum: 1, maximum: 10_000 }),
   model: eventIdentifier,
   modelProfileRevision: eventIdentifier,
+  selectedModelProfileRevision: Type.Optional(eventIdentifier),
+  modelSelection: Type.Optional(Type.Union([Type.Literal("inherit"), Type.Literal("fixed"), Type.Literal("agent")])),
   network: Type.Literal("deny"),
   parentOperationId: eventIdentifier,
   parentSessionId: eventIdentifier,
@@ -122,6 +140,7 @@ const workBirthSchema = strictObject({
 
 export const PRODUCT_WORK_EVENT_SCHEMAS = deepFreeze({
   "myagents/work/created": strictObject({
+    admission: Type.Optional(Type.Literal("reserved")),
     agentId: eventIdentifier,
     authority: workAuthoritySchema,
     birth: workBirthSchema,
@@ -137,6 +156,15 @@ export const PRODUCT_WORK_EVENT_SCHEMAS = deepFreeze({
     sessionId: eventIdentifier,
     taskId: eventIdentifier,
   }),
+  "myagents/work/started": strictObject({
+    agentId: eventIdentifier,
+    eventSeq: eventSequence,
+    initialChildEventSeq: eventSequence,
+    initialContentSha256: eventSha256,
+    initialMessageId: eventIdentifier,
+    sessionId: eventIdentifier,
+    taskId: eventIdentifier,
+  }),
   "myagents/work/epoch": strictObject({
     agentId: eventIdentifier,
     childEndSeq: eventSequence,
@@ -144,6 +172,9 @@ export const PRODUCT_WORK_EVENT_SCHEMAS = deepFreeze({
     epochId: eventSha256,
     eventSeq: eventSequence,
     ordinal: Type.Integer({ minimum: 1, maximum: MAX_WORK_EPOCHS }),
+    result: Type.Optional(Type.String({ maxLength: MAX_INLINE_OUTPUT_BYTES })),
+    resultTruncated: Type.Optional(Type.Boolean()),
+    usage: Type.Optional(usageSchema),
     sessionId: eventIdentifier,
     stopReason: Type.Union([
       Type.Literal("aborted"),
@@ -154,10 +185,20 @@ export const PRODUCT_WORK_EVENT_SCHEMAS = deepFreeze({
     ]),
     taskId: eventIdentifier,
   }),
+  "myagents/work/activated": strictObject({
+    agentId: eventIdentifier,
+    childStartSeq: eventSequence,
+    eventSeq: eventSequence,
+    ordinal: Type.Integer({ minimum: 2, maximum: MAX_WORK_EPOCHS }),
+    sessionId: eventIdentifier,
+    taskId: eventIdentifier,
+  }),
   "myagents/work/message-intent": strictObject({
     agentId: eventIdentifier,
+    completionEpochId: Type.Optional(eventSha256),
     contentBytes: Type.Integer({ minimum: 1, maximum: MAX_WORK_MESSAGE_BYTES }),
     contentSha256: eventSha256,
+    deliveryTiming: Type.Optional(Type.Union([Type.Literal("realtime"), Type.Literal("turn")])),
     eventSeq: eventSequence,
     messageId: eventIdentifier,
     recipient: eventIdentifier,
@@ -180,10 +221,30 @@ export const PRODUCT_WORK_EVENT_SCHEMAS = deepFreeze({
     summary: Type.String({ minLength: 1, maxLength: 200 }),
     taskId: eventIdentifier,
   }),
+  "myagents/work/message-canceled": strictObject({
+    agentId: eventIdentifier,
+    eventSeq: eventSequence,
+    messageId: eventIdentifier,
+    reason: Type.Union([Type.Literal("caller_aborted"), Type.Literal("recipient_closed"), Type.Literal("recipient_limit")]),
+    sessionId: eventIdentifier,
+    taskId: eventIdentifier,
+  }),
   "myagents/work/stopping": strictObject({
     agentId: eventIdentifier,
     eventSeq: eventSequence,
     reason: Type.Literal("user"),
+    sessionId: eventIdentifier,
+    taskId: eventIdentifier,
+  }),
+  "myagents/work/reopened": strictObject({
+    agentId: eventIdentifier, eventSeq: eventSequence, sessionId: eventIdentifier, taskId: eventIdentifier,
+    clientRequestId: eventIdentifier, previousSettlementSeq: eventSequence,
+  }),
+  "myagents/work/phase": strictObject({
+    agentId: eventIdentifier,
+    eventSeq: eventSequence,
+    ordinal: Type.Integer({ minimum: 1, maximum: MAX_WORK_EPOCHS }),
+    phase: Type.Union([Type.Literal("queued"), Type.Literal("running"), Type.Literal("waiting_child"), Type.Literal("waiting_interaction"), Type.Literal("waiting_delivery")]),
     sessionId: eventIdentifier,
     taskId: eventIdentifier,
   }),
@@ -195,30 +256,47 @@ export const PRODUCT_WORK_EVENT_SCHEMAS = deepFreeze({
     sessionId: eventIdentifier,
     taskId: eventIdentifier,
     terminal: Type.Union([Type.Literal("aborted"), Type.Literal("failed"), Type.Literal("succeeded")]),
-    usage: usageSchema,
+    usage: Type.Optional(usageSchema),
   }),
 } as const);
 
 export const PRODUCT_WORK_EVENT_TYPES = Object.freeze([
   "myagents/work/created",
+  "myagents/work/started",
   "myagents/work/epoch",
+  "myagents/work/activated",
   "myagents/work/message-intent",
   "myagents/work/message",
+  "myagents/work/message-canceled",
   "myagents/work/stopping",
+  "myagents/work/phase",
+  "myagents/work/reopened",
   "myagents/work/settled",
 ] as const);
 
 export type ProductWorkEventType = typeof PRODUCT_WORK_EVENT_TYPES[number];
 export type ProductWorkCreatedEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/created"]>>;
+export type ProductWorkStartedEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/started"]>>;
 export type ProductWorkEpochEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/epoch"]>>;
+export type ProductWorkActivatedEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/activated"]>>;
 export type ProductWorkMessageIntentEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/message-intent"]>>;
 export type ProductWorkMessageEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/message"]>>;
+export type ProductWorkMessageCanceledEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/message-canceled"]>>;
 export type ProductWorkStoppingEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/stopping"]>>;
+export type ProductWorkReopenedEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/reopened"]>>;
+export type ProductWorkPhaseEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/phase"]>>;
 export type ProductWorkSettledEventData = Readonly<Static<(typeof PRODUCT_WORK_EVENT_SCHEMAS)["myagents/work/settled"]>>;
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
     productWork: ProductWorkService;
+  }
+}
+
+declare module "@deepseek-ai/dsh-llm" {
+  interface MessageSourceMap {
+    "subagent-report": { kind: "subagent-report"; form: "relay"; senderSessionId: SessionId };
+    coordinator: { kind: "coordinator"; form: "relay"; senderSessionId: SessionId };
   }
 }
 
@@ -245,6 +323,11 @@ declare module "@deepseek-ai/dsh-subagent" {
   }
 
   interface SubagentRuntime {
+    withContinuableAncestors<T>(root: Agent, ancestors: readonly SessionId[], options: Readonly<{ signal: AbortSignal }>, operation: (parent: Agent) => Promise<T>): Promise<T>;
+    registerContinuableSetup(contribution: (childCtx: Context) => () => void): () => void;
+    deliverContinuable(parent: Agent, childId: SessionId, content: ContentBlock[], options: Readonly<{
+      delivery: "steer" | "queue"; source: MessageSource; signal: AbortSignal;
+    }>): Promise<MessageId>;
     resumeContinuable(
       parent: Agent,
       childId: SessionId,
@@ -257,22 +340,47 @@ declare module "@deepseek-ai/dsh-subagent" {
 declare module "@deepseek-ai/dsh-session/types" {
   interface SessionEventMap {
     "myagents/work/created": ProductWorkCreatedEventData;
+    "myagents/work/started": ProductWorkStartedEventData;
     "myagents/work/epoch": ProductWorkEpochEventData;
+    "myagents/work/activated": ProductWorkActivatedEventData;
     "myagents/work/message-intent": ProductWorkMessageIntentEventData;
     "myagents/work/message": ProductWorkMessageEventData;
+    "myagents/work/message-canceled": ProductWorkMessageCanceledEventData;
     "myagents/work/stopping": ProductWorkStoppingEventData;
+    "myagents/work/phase": ProductWorkPhaseEventData;
+    "myagents/work/reopened": ProductWorkReopenedEventData;
     "myagents/work/settled": ProductWorkSettledEventData;
   }
 }
 
 export interface ProductWorkServiceConfig {
+  readonly messageDelivery?: () => "realtime" | "turn";
+  readonly deliverRootMessage?: (request: ProductRootMessageDelivery) => Promise<"delivered" | "suppressed">;
   readonly durability: Readonly<{ flush(session: Session): Promise<unknown> }>;
   readonly output: ProductRetainedOutputAuthority;
   readonly publication: Readonly<{ prepare(child: Agent, parent: Agent): () => void }>;
   readonly provider: string;
   readonly requireAgent: () => Agent;
   readonly runtimeHome: () => string;
+  readonly selectModel?: (parent: Agent, role: string, requested?: string, declaredProfileRef?: string) => ProductChildModelBinding;
+  readonly assertModel?: (binding: ProductChildModelBinding) => void;
+  readonly limits?: () => Readonly<{ maxDepth: number; maxActiveChildren: number; maxRetainedChildren: number }>;
   readonly registerDynamicAgentController?: (controller: ProductDynamicAgentController) => void;
+}
+
+export interface ProductRootMessageDelivery {
+  readonly root: Agent;
+  readonly message: UserMessage;
+  readonly productMessageId: string;
+  readonly sourceOperationId: string;
+  readonly deliveryTiming: "realtime" | "turn";
+}
+
+export interface ProductChildModelBinding {
+  readonly model: string;
+  readonly provider: string;
+  readonly profileRevision: string;
+  readonly selection: "inherit" | "fixed" | "agent";
 }
 
 export interface DynamicAgentGenerationIdentity {
@@ -300,6 +408,19 @@ export interface ProductDynamicAgentController {
 }
 
 export interface ProductWorkSnapshot {
+  readonly modelRoute: Readonly<{ provider: string; profileRevision: string; selection: "inherit" | "fixed" | "agent" }>;
+  readonly tree: Readonly<{ rootAgentId: string; parentAgentId: string; depth: number }>;
+  readonly lastActivityAt: string;
+  readonly totalUsage?: ProductWorkSettledEventData["usage"];
+  readonly context?: Readonly<{ capacity?: number; projectedInputTokens?: number; providerInputTokens?: number }>;
+
+  readonly activation: Readonly<{
+    id: string;
+    ordinal: number;
+    state: "queued" | "running" | "waiting_child" | "waiting_interaction" | "waiting_delivery" | "completed" | "failed" | "aborted";
+  }>;
+  readonly handleRevision: number;
+  readonly handleState: "open" | "stopping" | "closed";
   readonly agentId: string;
   readonly agentType: string;
   readonly description: string;
@@ -336,23 +457,31 @@ type WorkEntry = {
   readonly mode: "continuable" | "foreground";
   output?: ProductRetainedOutputFile;
   readonly outputReady: NativeVoidDeferred;
-  readonly parent: Agent;
+  readonly root: Agent;
   readonly published: NativeVoidDeferred;
   readonly taskId: string;
-  readonly terminalReady: NativeDeferred<ProductWorkSettledEventData>;
+  terminalReady: NativeDeferred<ProductWorkSettledEventData>;
+  readonly firstActivationReady: NativeDeferred<WorkActivationResult>;
+  activated?: ProductWorkActivatedEventData;
+  phase?: ProductWorkPhaseEventData;
+  firstActivation?: WorkActivationResult;
   latestOutput: string;
   outputFinalized: boolean;
   settlement?: ProductWorkSettledEventData;
   stopRequested: boolean;
 };
+type WorkActivationResult = Pick<ProductWorkSettledEventData, "terminal" | "result" | "resultTruncated" | "usage">;
 
 type WorkCreationAuthority = Readonly<{
   agent: Agent;
+  /** Recovery may read a nonresident caller's durable tool call without inventing an Agent object. */
+  callerSessionId?: string;
   birth: Pick<OperationBirthSnapshot, "componentDigest" | "componentRevision" | "modelProfileRevision">;
   callId: string;
   catalog: Readonly<{ digest: string; revision: string }>;
   clientOperationId: string;
   dshTurn: number;
+  rootDshTurn?: number;
   productTurnId: string;
 }>;
 
@@ -366,6 +495,7 @@ type AgentBirthTemplate = Readonly<{
 
 type ChildCreationPermit = Readonly<{
   agentProvider: string;
+  selectedModel?: ProductChildModelBinding;
   authority: WorkCreationAuthority;
   model: string;
   mode: "continuable" | "foreground";
@@ -403,13 +533,7 @@ type ActivationEndObservation = Readonly<{
 type WorkMessageEntry = {
   readonly intent: ProductWorkMessageIntentEventData;
   delivery?: ProductWorkMessageEventData;
-};
-
-type UsageAccumulator = {
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  inputTokens: number;
-  outputTokens: number;
+  cancellation?: ProductWorkMessageCanceledEventData;
 };
 
 const exactNativePromise = <T>(value: Promise<T>, description: string): Promise<T> => {
@@ -465,7 +589,7 @@ const exactConfig = (value: unknown): ProductWorkServiceConfig => {
   }
   const record = value as JsonObject;
   const requiredKeys = ["durability", "output", "provider", "publication", "requireAgent", "runtimeHome"];
-  const allowedKeys = new Set([...requiredKeys, "registerDynamicAgentController"]);
+  const allowedKeys = new Set([...requiredKeys, "registerDynamicAgentController", "selectModel", "assertModel", "limits", "messageDelivery", "deliverRootMessage"]);
   if (requiredKeys.some((key) => !Object.hasOwn(record, key))
     || Reflect.ownKeys(record).some((key) => typeof key !== "string" || !allowedKeys.has(key))
     || Reflect.ownKeys(record).some((key) => {
@@ -532,6 +656,11 @@ const exactConfig = (value: unknown): ProductWorkServiceConfig => {
   const resolve = resolveDescriptor.value as ProductRetainedOutputAuthority["resolve"];
   const requireAgent = record.requireAgent as () => Agent;
   const runtimeHome = record.runtimeHome as () => string;
+  if ((record.selectModel === undefined) !== (record.assertModel === undefined)
+    || [record.selectModel, record.assertModel, record.limits, record.messageDelivery, record.deliverRootMessage].some((method) => method !== undefined
+      && (typeof method !== "function" || isProxy(method)))) {
+    throw new TypeError("work model selection and authorization must be paired capabilities");
+  }
   if (record.registerDynamicAgentController !== undefined
     && (typeof record.registerDynamicAgentController !== "function"
       || isProxy(record.registerDynamicAgentController))) {
@@ -561,6 +690,13 @@ const exactConfig = (value: unknown): ProductWorkServiceConfig => {
       },
     }),
     provider: record.provider,
+    ...(record.deliverRootMessage === undefined ? {} : { deliverRootMessage: record.deliverRootMessage as NonNullable<ProductWorkServiceConfig["deliverRootMessage"]> }),
+    ...(record.messageDelivery === undefined ? {} : { messageDelivery: record.messageDelivery as NonNullable<ProductWorkServiceConfig["messageDelivery"]> }),
+    ...(record.limits === undefined ? {} : { limits: record.limits as NonNullable<ProductWorkServiceConfig["limits"]> }),
+    ...(record.selectModel === undefined ? {} : {
+      selectModel: record.selectModel as NonNullable<ProductWorkServiceConfig["selectModel"]>,
+      assertModel: record.assertModel as NonNullable<ProductWorkServiceConfig["assertModel"]>,
+    }),
     ...(record.registerDynamicAgentController === undefined ? {} : {
       registerDynamicAgentController: (controller: ProductDynamicAgentController) => {
         Reflect.apply(
@@ -629,6 +765,10 @@ const descriptorDigestForBirth = (birth: ProductWorkCreatedEventData["birth"]): 
   allowedTools: birth.allowedTools,
   interaction: birth.interaction,
   modelProfileRevision: birth.modelProfileRevision,
+  ...(birth.selectedModelProfileRevision === undefined ? {} : {
+    selectedModelProfileRevision: birth.selectedModelProfileRevision,
+    modelSelection: birth.modelSelection,
+  }),
   model: birth.model,
   network: birth.network,
   maxTurns: birth.maxTurns,
@@ -639,7 +779,7 @@ const descriptorDigestForBirth = (birth: ProductWorkCreatedEventData["birth"]): 
 
 const agentRequestSha256 = (authority: WorkCreationAuthority, args: JsonObject): string => sha256(
   "myagents-product-work-request-v1",
-  authority.agent.id,
+  authority.callerSessionId ?? authority.agent.id,
   authority.clientOperationId,
   authority.callId,
   authority.productTurnId,
@@ -706,7 +846,7 @@ const appendBoundedUtf8 = (current: string, suffix: string, maxBytes: number): s
 
 const epochOutput = (
   events: readonly SessionEvent[],
-  epoch: ProductWorkEpochEventData,
+  epoch: Pick<ProductWorkEpochEventData, "agentId" | "childStartSeq" | "childEndSeq" | "stopReason">,
 ): string => {
   if (epoch.childStartSeq < 0 || epoch.childEndSeq <= epoch.childStartSeq
     || epoch.childEndSeq > events.length) {
@@ -772,7 +912,8 @@ const pendingInboxMessages = (
   events: readonly SessionEvent[],
   meta: SessionHeader,
 ): readonly PendingInboxMessage[] => {
-  const replay = Session.fromRestore(SessionId(meta.id), events, meta);
+  if (meta.isSeeded) throw new Error("ProductWork spawn history cannot contain a fork-inherited prefix");
+  const replay = Session.fromRestore(SessionId(meta.id), events, meta, SessionLogOffset(0));
   const inbox = new Inbox(replay, {
     claimed: () => undefined,
     discarded: () => undefined,
@@ -869,7 +1010,8 @@ const correlatedInboxMessages = (
       const source = message.source;
       if (source === null || typeof source !== "object" || Array.isArray(source)) continue;
       const sourceRecord = source as JsonObject;
-      if (sourceRecord.kind !== sourceKind) continue;
+      // rc.1 unifies directed Agent relays; legacy source tags remain readable.
+      if (sourceRecord.kind !== sourceKind && sourceRecord.kind !== "agent-message") continue;
       if (message.role !== "user" || sourceRecord.form !== "relay" || typeof sourceRecord.senderSessionId !== "string"
         || typeof message.id !== "string" || message.id.length === 0 || !Array.isArray(message.content)) {
         throw new Error("product work DSH Inbox message has invalid correlation authority");
@@ -892,13 +1034,14 @@ export const ownsProductWorkRootContextMessage = (
   source: MessageSource | undefined,
   messageId: string,
 ): boolean => {
-  if (session.header.origin === "subagent" || source?.kind !== "subagent-report") return false;
-  const insertions = correlatedInboxMessages(session.events, session.id, "subagent-report")
+  if (session.header.origin === "subagent"
+    || (source?.kind !== "subagent-report" && source?.kind !== "agent-message")) return false;
+  const insertions = correlatedInboxMessages(session.snapshotEvents(), session.id, "subagent-report")
     .filter((candidate) => candidate.id === messageId && candidate.sender === source.senderSessionId);
   if (insertions.length !== 1) return false;
   const insertion = insertions[0];
   if (insertion === undefined) return false;
-  const intents = session.events.flatMap((event) => {
+  const intents = session.snapshotEvents().flatMap((event) => {
     if (event.type !== "myagents/work/message-intent") return [];
     const intent = validateEventData(event.type, event.data);
     if (intent.eventSeq !== event.seq || intent.sessionId !== session.id) {
@@ -910,7 +1053,7 @@ export const ownsProductWorkRootContextMessage = (
   if (intents.length !== 1) return false;
   const intent = intents[0];
   if (intent === undefined) return false;
-  const deliveries = session.events.flatMap((event) => {
+  const deliveries = session.snapshotEvents().flatMap((event) => {
     if (event.type !== "myagents/work/message") return [];
     const delivery = validateEventData(event.type, event.data);
     if (delivery.eventSeq !== event.seq || delivery.sessionId !== session.id) {
@@ -926,7 +1069,7 @@ export const ownsProductWorkRootContextMessage = (
     || intent.agentId !== delivery.agentId || intent.taskId !== delivery.taskId
     || intent.recipient !== delivery.recipient || intent.sender !== delivery.sender
     || intent.sequence !== delivery.sequence || intent.summary !== delivery.summary)) return false;
-  const creations = session.events.flatMap((event) => {
+  const creations = session.snapshotEvents().flatMap((event) => {
     if (event.type !== "myagents/work/created") return [];
     const created = validateEventData(event.type, event.data);
     if (created.eventSeq !== event.seq || created.sessionId !== session.id) {
@@ -954,41 +1097,7 @@ const addUsage = (left: number, right: number): number => {
   return left + right;
 };
 
-const usageFrom = (events: readonly SessionEvent[]): ProductWorkSettledEventData["usage"] => {
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheReadTokens = 0;
-  let cacheWriteTokens = 0;
-  for (const event of events) {
-    if (event.type !== "assistant/message" || event.data.usage === undefined) continue;
-    const usage = normalizeDshTokenUsage(event.data.usage);
-    inputTokens = addUsage(inputTokens, usage.inputTokens);
-    outputTokens = addUsage(outputTokens, usage.outputTokens);
-    cacheReadTokens = addUsage(cacheReadTokens, usage.cacheReadTokens);
-    cacheWriteTokens = addUsage(cacheWriteTokens, usage.cacheWriteTokens);
-  }
-  let totalTokens = 0;
-  for (const value of [inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens]) {
-    totalTokens = addUsage(totalTokens, value);
-  }
-  return Object.freeze({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, totalTokens });
-};
-
-const emptyUsageAccumulator = (): UsageAccumulator => ({
-  cacheReadTokens: 0,
-  cacheWriteTokens: 0,
-  inputTokens: 0,
-  outputTokens: 0,
-});
-
-const projectUsage = (usage: UsageAccumulator): ProductWorkSettledEventData["usage"] => Object.freeze({
-  cacheReadTokens: usage.cacheReadTokens,
-  cacheWriteTokens: usage.cacheWriteTokens,
-  inputTokens: usage.inputTokens,
-  outputTokens: usage.outputTokens,
-  totalTokens: [usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens]
-    .reduce(addUsage, 0),
-});
+const usageFrom = deriveCompletedSessionTokenUsage;
 
 const terminalForStopReason = (reason: string): WorkTerminal => reason === "completed"
   ? "succeeded"
@@ -1002,6 +1111,8 @@ const renderJson = (_args: unknown, value: unknown): ContentBlock[] => [
   Object.freeze({ type: "text", text: JSON.stringify(value) }),
 ];
 
+class ChildAdmissionStoppedError extends Error {}
+
 export class ProductWorkService extends Service {
   // Persistence is installed only after the Host supplies the canonical Runtime
   // home during initialize. ProductWork must register its controller before that
@@ -1009,14 +1120,19 @@ export class ProductWorkService extends Service {
   // public service explicitly below.
   static inject = ["agents", "jobs", "productTools", "sessions", "subagents", "tools"];
   private readonly config: ProductWorkServiceConfig;
+  private readonly factIndexes = new WeakMap<Session, { through: number; activity: Map<string, SessionEvent>; handles: Map<string, number> }>();
   private readonly byAgent = new Map<string, WorkEntry>();
   private readonly byTask = new Map<string, WorkEntry>();
   private readonly activeExecutions = new Set<Promise<unknown>>();
   private readonly activeEpochs = new Map<string, ActivationObservation>();
+  private readonly creatingTasks = new Set<string>();
+  private readonly workReservations = new Set<string>();
+  private readonly capacityWaiters = new Map<string, Readonly<{ grant(): void; cancel(error: unknown): void }>>();
+  private readonly deferredRecoveryAdmissions: (() => Promise<void>)[] = [];
+  private readonly waitingAgents = new Map<string, { count: number; reason: "child" | "interaction" | "delivery"; resuming?: Promise<void> }>();
   private readonly locks = new Map<string, Promise<void>>();
   private readonly latestEnds = new Map<string, ActivationEndObservation>();
   private readonly messages = new Map<string, WorkMessageEntry>();
-  private readonly usageByAgent = new Map<string, UsageAccumulator>();
   private readonly continuablePermits = new Map<string, ChildCreationPermit>();
   private readonly componentGenerationWaiters = new Map<string, Set<() => void>>();
   private readonly dynamicAgents = new Map<string, Map<string, DynamicAgentRegistration>>();
@@ -1025,12 +1141,12 @@ export class ProductWorkService extends Service {
   private epochCount = 0;
   private failure: ProductToolError | undefined;
   private initialization: Promise<void> | undefined;
+  private recoveryPendingReady = false;
   private messageBytes = 0;
   private messageSequence = 0;
   private nextModelRequest = 1;
   private primary: Agent | undefined;
   private serial: Promise<void> = Promise.resolve();
-  private workReservations = 0;
 
   constructor(ctx: Context, config: ProductWorkServiceConfig) {
     super(ctx, "productWork");
@@ -1052,15 +1168,17 @@ export class ProductWorkService extends Service {
             throw new Error("ProductWork subagent lifecycle started before primary authority initialization");
           }
           if (session?.header.origin !== "subagent"
-            || session.header.parentSession !== root.id) {
+            || session.header.parentSession !== (this.byAgent.get(info.id)?.created.birth.parentSessionId
+              ?? this.pendingChildAuthorities.get(info.id)?.parent.id)) {
             throw new Error("ProductWork subagent lifecycle start lacks its exact child Session");
           }
           this.activeEpochs.set(info.id, Object.freeze({
             runId: String(info.runId),
             session,
-            startSeq: session.events.length,
+            startSeq: session.snapshotEvents().length,
           }));
-          this.usageFor(info.id);
+          const entry = this.byAgent.get(info.id);
+          if (entry !== undefined) this.queueActivation(entry, session.snapshotEvents().length);
         } catch (error) {
           this.fence(error);
         }
@@ -1073,8 +1191,9 @@ export class ProductWorkService extends Service {
             throw new Error("ProductWork subagent lifecycle end lacks its exact local start");
           }
           this.activeEpochs.delete(info.id);
+          this.pumpCapacity();
           const ended = Object.freeze({
-            endSeq: observation.session.events.length,
+            endSeq: observation.session.snapshotEvents().length,
             info,
             observation,
           });
@@ -1088,7 +1207,7 @@ export class ProductWorkService extends Service {
       const childSetup = ctx.subagents.registerContinuableSetup((childCtx) => {
         const child = childCtx.agent;
         if (child === undefined) throw new Error("continuable setup lacks one child Agent");
-        const descriptor = foldSubagentDescriptor(child.session.events);
+        const descriptor = foldSubagentDescriptor(child.session.snapshotEvents());
         if (descriptor?.mode !== "continuable" || descriptor.provider !== this.config.provider) {
           throw new Error("continuable child lacks the exact ProductWork descriptor authority");
         }
@@ -1117,34 +1236,28 @@ export class ProductWorkService extends Service {
           this.continuablePermits.delete(descriptor.label);
           this.pendingChildAuthorities.set(child.id, permit);
           ready = permit.ready.promise;
-        } else if (entry.taskId !== descriptor.label || entry.parent.id !== child.session.header.parentSession
+        } else if (entry.taskId !== descriptor.label || entry.created.birth.parentSessionId !== child.session.header.parentSession
           || entry.settlement !== undefined || entry.stopRequested) {
           throw new Error("terminal or mismatched ProductWork child cannot cold-resume");
         } else {
-          ready = Promise.resolve(entry);
+          if (entry.created.admission === "reserved" && entry.created.initialMessageId === undefined && permit !== undefined) {
+            this.pendingChildAuthorities.set(child.id, permit);
+          }
+          ready = entry.published.promise.then(() => entry);
         }
-        const parent = entry?.parent ?? permit?.parent;
+        const parent = entry === undefined ? permit?.parent : this.ctx.agents.get(SessionId(entry.created.birth.parentSessionId));
         if (parent === undefined) throw new Error("continuable child lacks its primary parent authority");
         const cancelPublication = this.config.publication.prepare(child, parent);
         try {
-          this.usageFor(child.id);
           const stopUsage = this.ctx.on("session/event", (session, event) => {
             if (session !== child.session || event.type !== "assistant/message") return;
-            if (event.data.usage !== undefined) {
-              const normalized = normalizeDshTokenUsage(event.data.usage);
-              const usage = this.usageFor(child.id);
-              usage.inputTokens = addUsage(usage.inputTokens, normalized.inputTokens);
-              usage.outputTokens = addUsage(usage.outputTokens, normalized.outputTokens);
-              usage.cacheReadTokens = addUsage(usage.cacheReadTokens, normalized.cacheReadTokens);
-              usage.cacheWriteTokens = addUsage(usage.cacheWriteTokens, normalized.cacheWriteTokens);
-            }
             void this.trackExecution(async () => {
               const liveEntry = await exactNativePromise(ready, "ProductWork child publication");
               await this.withLock(liveEntry.taskId, async () => {
                 const observation = this.activeEpochs.get(child.id);
                 if (liveEntry.mode !== "continuable" || liveEntry.stopRequested
                   || liveEntry.settlement !== undefined || observation?.session !== session) return;
-                const output = accumulatedLiveOutput(session.events, liveEntry, observation.startSeq);
+                const output = accumulatedLiveOutput(session.snapshotEvents(), liveEntry, observation.startSeq);
                 if (output === liveEntry.latestOutput) return;
                 liveEntry.latestOutput = output;
                 await this.publishOutput(liveEntry, output);
@@ -1175,6 +1288,7 @@ export class ProductWorkService extends Service {
       const disposeSend = ctx.tools.register(this.sendMessageDefinition());
       return async () => {
         this.accepting = false;
+        this.pumpCapacity();
         const errors: unknown[] = [];
         for (const dispose of [disposeSend, disposeStop, disposeAgent]) {
           try { dispose(); } catch (error) { errors.push(error); }
@@ -1301,19 +1415,21 @@ export class ProductWorkService extends Service {
   }
 
   private resolveAgentTemplate(authority: WorkCreationAuthority, type: string): AgentBirthTemplate {
+    const canNest = this.lineageFor(authority.agent.id).length + 1 < this.executionLimits().maxDepth;
     const inherited = this.ctx.tools.schemas(authority.agent).map(({ name }) => name)
+      .filter((name) => name !== "Agent" || canNest)
       .filter((name) => !CANONICAL_TOOL_NAMES.includes(name as (typeof CANONICAL_TOOL_NAMES)[number])
         || CANONICAL_TOOL_CONTRACTS[name as keyof typeof CANONICAL_TOOL_CONTRACTS].originPolicy.mode !== "root-only");
     if (type === "general") return Object.freeze({
       allowedTools: Object.freeze(inherited),
       maxTurns: 10_000,
-      persona: GENERAL_CHILD_PERSONA,
+      persona: canNest ? GENERAL_CHILD_PERSONA.replace("You cannot spawn another child Agent.", "You may delegate within your inherited tools and the configured tree depth and resource limits.") : GENERAL_CHILD_PERSONA,
       type,
     });
-    if (type === "Explore") return Object.freeze({
+    if (type === "Explore" || type === "Plan") return Object.freeze({
       allowedTools: Object.freeze(EXPLORE_CHILD_TOOLS.filter((name) => inherited.includes(name))),
       maxTurns: 10_000,
-      persona: EXPLORE_CHILD_PERSONA,
+      persona: type === "Explore" ? EXPLORE_CHILD_PERSONA : PLAN_CHILD_PERSONA,
       type,
     });
     const registration = this.dynamicAgents.get(this.dynamicGenerationKey({
@@ -1348,11 +1464,16 @@ export class ProductWorkService extends Service {
   snapshotForEvent(source: SessionEvent): ProductWorkSnapshot | undefined {
     this.assertHealthy();
     if (source.type !== "myagents/work/created"
+      && source.type !== "myagents/work/started"
+      && source.type !== "myagents/work/activated"
+      && source.type !== "myagents/work/epoch"
       && source.type !== "myagents/work/stopping"
+      && source.type !== "myagents/work/phase"
+      && source.type !== "myagents/work/reopened"
       && source.type !== "myagents/work/settled") return undefined;
     const entry = this.byTask.get(source.data.taskId);
-    if (entry?.parent.session.events[source.seq] !== source
-      || source.data.eventSeq !== source.seq || source.data.sessionId !== entry.parent.id
+    if (entry?.root.session.snapshotEvents()[source.seq] !== source
+      || source.data.eventSeq !== source.seq || source.data.sessionId !== entry.root.id
       || source.data.agentId !== entry.agentId) {
       throw new Error("ProductWork status source lacks its exact live registry owner");
     }
@@ -1360,7 +1481,7 @@ export class ProductWorkService extends Service {
   }
 
   private statusSnapshot(entry: WorkEntry, source?: SessionEvent): ProductWorkSnapshot {
-    const createdSource = entry.parent.session.events[entry.created.eventSeq];
+    const createdSource = entry.root.session.snapshotEvents()[entry.created.eventSeq];
     if (createdSource?.type !== "myagents/work/created"
       || createdSource.data.taskId !== entry.taskId
       || createdSource.data.agentId !== entry.agentId) {
@@ -1370,16 +1491,43 @@ export class ProductWorkService extends Service {
     const settlement = sourceSettlement ?? entry.settlement;
     const stopping = source?.type === "myagents/work/stopping"
       || (settlement === undefined && entry.stopRequested);
-    const finishedSource = settlement === undefined
-      ? undefined
-      : entry.parent.session.events[settlement.eventSeq];
-    if (settlement !== undefined && (finishedSource?.type !== "myagents/work/settled"
-      || finishedSource.data.taskId !== entry.taskId
-      || finishedSource.data.agentId !== entry.agentId)) {
+    const epoch = source?.type === "myagents/work/epoch" ? source.data : entry.epochs.at(-1);
+    const activated = source?.type === "myagents/work/activated" ? source.data : entry.activated;
+    const phase = source?.type === "myagents/work/phase" ? source.data : entry.phase;
+    const activeOrdinal = Math.max(activated?.ordinal ?? 1, phase?.ordinal ?? 1);
+    const activationCompleted = epoch !== undefined && activeOrdinal <= epoch.ordinal;
+    const ordinal = activationCompleted ? epoch.ordinal : activeOrdinal;
+    const childStartSeq = activationCompleted ? epoch.childStartSeq
+      : activated?.childStartSeq ?? entry.created.initialChildEventSeq ?? 0;
+    const terminal = activationCompleted ? terminalForStopReason(epoch.stopReason) : undefined;
+    const queued = entry.created.admission === "reserved" && entry.created.initialMessageId === undefined
+      && source?.type !== "myagents/work/started" && settlement === undefined;
+    const activationState = terminal === "succeeded" ? "completed"
+      : terminal ?? (settlement !== undefined ? "aborted" : queued ? "queued"
+        : phase?.ordinal === ordinal && phase.eventSeq > (activated?.eventSeq ?? entry.created.eventSeq) ? phase.phase : "running");
+    const settledSource = settlement === undefined ? undefined : entry.root.session.snapshotEvents()[settlement.eventSeq];
+    if (settlement !== undefined && (settledSource?.type !== "myagents/work/settled"
+      || settledSource.data.taskId !== entry.taskId
+      || settledSource.data.agentId !== entry.agentId)) {
       throw new Error("ProductWork status lacks its exact durable settlement fact");
     }
-    const usage = settlement?.usage;
+    const finishedSource = activationCompleted ? entry.root.session.snapshotEvents()[epoch.eventSeq] : settledSource;
+    const startedSource = activated?.ordinal === ordinal
+      ? entry.root.session.snapshotEvents()[activated.eventSeq] ?? createdSource : createdSource;
+    const usage = activationCompleted ? epoch.usage ?? (entry.epochs.length === 1 ? settlement?.usage : undefined) : settlement?.usage;
+    const result = activationCompleted ? epoch.result ?? settlement?.result : settlement?.result;
+    const resultTruncated = activationCompleted ? epoch.resultTruncated ?? settlement?.resultTruncated : settlement?.resultTruncated;
+    const lastActivity = this.factsFor(entry.root.session).activity.get(entry.taskId) ?? createdSource;
     return Object.freeze({
+      activation: Object.freeze({
+        id: entry.created.admission === "reserved"
+          ? sha256("myagents-work-activation-v2", entry.agentId, String(ordinal))
+          : sha256("myagents-work-activation-v1", entry.agentId, String(childStartSeq)),
+        ordinal,
+        state: activationState,
+      }),
+      handleRevision: this.handleRevision(entry),
+      handleState: settlement !== undefined ? "closed" : stopping ? "stopping" : "open",
       agentId: entry.agentId,
       agentType: entry.created.birth.type,
       description: entry.created.description,
@@ -1388,12 +1536,19 @@ export class ProductWorkService extends Service {
       }),
       mode: entry.mode,
       model: entry.created.model,
+      modelRoute: Object.freeze({
+        provider: entry.created.birth.provider,
+        profileRevision: entry.created.birth.selectedModelProfileRevision ?? entry.created.birth.modelProfileRevision,
+        selection: entry.created.birth.modelSelection ?? "inherit",
+      }),
+      tree: Object.freeze({ rootAgentId: entry.root.id, parentAgentId: entry.created.birth.parentSessionId, depth: entry.created.birth.depth }),
+      lastActivityAt: new Date(lastActivity.time).toISOString(),
       ...(entry.created.outputPath === undefined ? {} : { outputPath: entry.created.outputPath }),
       parentToolCallId: entry.created.authority.callId,
-      ...(settlement === undefined ? {} : { result: settlement.result }),
-      ...(settlement === undefined ? {} : { resultTruncated: settlement.resultTruncated }),
-      startedAt: new Date(createdSource.time).toISOString(),
-      state: settlement?.terminal ?? (stopping ? "stopping" : "running"),
+      ...(result === undefined ? {} : { result }),
+      ...(resultTruncated === undefined ? {} : { resultTruncated }),
+      startedAt: new Date(startedSource.time).toISOString(),
+      state: stopping ? "stopping" : terminal ?? settlement?.terminal ?? "running",
       taskId: entry.taskId,
       ...(usage === undefined ? {} : { usage: Object.freeze({ ...usage }) }),
     });
@@ -1461,7 +1616,7 @@ export class ProductWorkService extends Service {
     const entry = this.byAgent.get(agent.id);
     if (rootAgent === undefined || this.ctx.agents.get(agent.id) !== agent
       || agent.session.header.origin !== "subagent"
-      || agent.session.header.parentSession !== rootAgent.id
+      || agent.session.header.parentSession !== (entry?.created.birth.parentSessionId ?? pending?.parent.id)
       || (entry === undefined && pending === undefined)
       || entry?.settlement !== undefined || entry?.stopRequested === true) {
       throw new ProductToolError("tool_operation_denied", "child tool call lacks one live ProductWork owner");
@@ -1472,14 +1627,20 @@ export class ProductWorkService extends Service {
     const componentRevision = pending?.authority.birth.componentRevision ?? entry?.created.birth.componentRevision;
     const catalogDigest = pending?.authority.catalog.digest ?? entry?.created.authority.toolCatalogDigest;
     const catalogRevision = pending?.authority.catalog.revision ?? entry?.created.authority.toolCatalogRevision;
-    const parentDshTurn = pending?.authority.dshTurn ?? entry?.created.authority.dshTurn;
+    if (entry !== undefined) {
+      this.assertOpenLineage(agent.id);
+      const turns = agent.session.snapshotEvents().slice(entry.created.initialChildEventSeq ?? 0).filter((event) => event.type === "turn/start").length;
+      if (turns > entry.created.birth.maxTurns) throw new ProductToolError("child_failed", "child exhausted its operation-frozen model turn limit");
+    }
+    const parentDshTurn = pending?.authority.rootDshTurn ?? pending?.authority.dshTurn
+      ?? entry?.created.authority.rootDshTurn ?? entry?.created.authority.dshTurn;
     const allowedTools = pending?.template.allowedTools ?? entry?.created.birth.allowedTools;
     const mode = pending?.mode ?? entry?.mode;
     if (allowedTools === undefined || mode === undefined) {
       throw new ProductToolError("tool_operation_denied", "child tool authority is incomplete");
     }
     const matches = foldProductOperations(
-      rootAgent.session.events,
+      rootAgent.session.snapshotEvents(),
       rootAgent.id,
       (source, messageId) => this.ownsPersistedRootContextMessage(rootAgent, source, messageId),
     ).operations
@@ -1508,18 +1669,39 @@ export class ProductWorkService extends Service {
     });
   }
 
-  initialize(primary?: Agent): Promise<void> {
+  initialize(primary?: Agent, deferAdmissions = false): Promise<void> {
     const root = primary ?? this.config.requireAgent();
     if (this.primary !== undefined && this.primary !== root) {
       return Promise.reject(this.fence(new Error("ProductWork primary Agent authority changed")));
     }
     this.primary = root;
     if (this.initialization !== undefined) return this.initialization;
-    const initialization = this.reconcilePersistedChildren(root).catch((error: unknown) => {
+    this.recoveryPendingReady = deferAdmissions;
+    const initialization = this.reconcilePersistedChildren(root).then(() => {
+      if (!deferAdmissions) this.startRecoveredAdmissions();
+    }).catch((error: unknown) => {
       throw this.fence(error);
     });
     this.initialization = initialization;
     return initialization;
+  }
+
+  async resumeReady(root: Agent): Promise<void> {
+    if (root !== this.config.requireAgent()) throw new Error("Work recovery readiness requires the published root");
+    await this.initialize(root, true);
+    this.recoveryPendingReady = false;
+    for (const known of this.messages.values()) {
+      if (known.intent.recipient !== root.id || known.delivery === undefined || known.cancellation !== undefined) continue;
+      const message = [...root.inbox.nextStep, ...root.inbox.nextTurn].find((candidate) => candidate.id === known.delivery?.dshMessageId);
+      if (message !== undefined) await this.deliverRootContext(root, known, message);
+    }
+    this.startRecoveredAdmissions();
+  }
+
+  private startRecoveredAdmissions(): void {
+    for (const recover of this.deferredRecoveryAdmissions.splice(0)) {
+      void this.trackExecution(recover).catch((error: unknown) => { this.fence(error); });
+    }
   }
 
   validatePersisted(agent: Agent): void {
@@ -1552,7 +1734,7 @@ export class ProductWorkService extends Service {
     if (previous === agent || this.ctx.agents.get(previous.id) === previous || this.accepting
       || this.activeExecutions.size !== 0 || this.activeEpochs.size !== 0
       || this.locks.size !== 0 || this.continuablePermits.size !== 0
-      || this.pendingChildAuthorities.size !== 0 || this.workReservations !== 0
+      || this.pendingChildAuthorities.size !== 0 || this.workReservations.size !== 0 || this.capacityWaiters.size !== 0
       || this.componentGenerationWaiters.size !== 0) {
       throw this.fence(new Error("ProductWork generation replacement is not quiescent"));
     }
@@ -1560,7 +1742,6 @@ export class ProductWorkService extends Service {
     this.byAgent.clear();
     this.latestEnds.clear();
     this.messages.clear();
-    this.usageByAgent.clear();
     this.primary = undefined;
     this.initialization = undefined;
     this.accepting = true;
@@ -1589,7 +1770,7 @@ export class ProductWorkService extends Service {
     const entry = this.byAgent.get(agent.id);
     if (primary === undefined || this.ctx.agents.get(agent.id) !== agent
       || agent.session.header.origin !== "subagent"
-      || agent.session.header.parentSession !== primary.id
+      || agent.session.header.parentSession !== (entry?.created.birth.parentSessionId ?? pending?.parent.id)
       || (entry === undefined && pending === undefined)
       || entry?.settlement !== undefined || entry?.stopRequested === true) {
       throw new ProductToolError(
@@ -1598,7 +1779,7 @@ export class ProductWorkService extends Service {
       );
     }
     const authority: WorkCreationAuthority = pending?.authority ?? Object.freeze({
-      agent: entry?.parent ?? primary,
+      agent: entry?.root ?? primary,
       birth: Object.freeze({
         componentDigest: entry?.created.birth.componentDigest ?? "",
         componentRevision: entry?.created.birth.componentRevision ?? "",
@@ -1611,20 +1792,36 @@ export class ProductWorkService extends Service {
       }),
       clientOperationId: entry?.created.authority.clientOperationId ?? "",
       dshTurn: entry?.created.authority.dshTurn ?? 0,
+      ...(entry?.created.authority.rootDshTurn === undefined ? {} : { rootDshTurn: entry.created.authority.rootDshTurn }),
       productTurnId: entry?.created.authority.productTurnId ?? "",
     });
     const taskId = pending?.taskId ?? entry?.taskId;
     const expectedModel = pending?.model ?? entry?.created.model;
     const expectedProvider = pending?.agentProvider ?? entry?.created.birth.provider;
-    if (taskId === undefined || authority.agent !== primary
+    if (taskId === undefined
       || agent.options.model !== expectedModel || agent.options.provider !== expectedProvider) {
       throw new ProductToolError(
         "child_failed",
         "child model route differs from its ProductWork birth authority",
       );
     }
+    if (entry !== undefined) this.assertOpenLineage(agent.id);
+    const selected = pending?.selectedModel ?? (entry?.created.birth.selectedModelProfileRevision === undefined
+      ? undefined : {
+        model: entry.created.model,
+        provider: entry.created.birth.provider,
+        profileRevision: entry.created.birth.selectedModelProfileRevision,
+        selection: entry.created.birth.modelSelection ?? "inherit",
+      });
+    if (selected !== undefined) {
+      if (this.config.assertModel === undefined && (selected.profileRevision !== authority.birth.modelProfileRevision
+        || selected.provider !== primary.options.provider || selected.model !== primary.options.model)) {
+        throw new ProductToolError("child_failed", "child model profile lacks its current Host authority");
+      }
+      this.config.assertModel?.(selected);
+    }
     const operationMatches = foldProductOperations(
-      primary.session.events,
+      primary.session.snapshotEvents(),
       primary.id,
       (source, messageId) => this.ownsPersistedRootContextMessage(primary, source, messageId),
     ).operations
@@ -1635,9 +1832,10 @@ export class ProductWorkService extends Service {
       || operation.birth.componentRevision !== authority.birth.componentRevision
       || operation.birth.toolCatalogDigest !== authority.catalog.digest
       || operation.birth.toolCatalogRevision !== authority.catalog.revision
-      || operation.birth.configRevision !== configRevision
-      || operation.birth.modelProfileRevision !== modelProfileRevision
-      || !operation.dshTurns.includes(authority.dshTurn)) {
+      || operation.birth.modelProfileRevision !== authority.birth.modelProfileRevision
+      || (this.config.assertModel === undefined && (operation.birth.configRevision !== configRevision
+        || operation.birth.modelProfileRevision !== modelProfileRevision))
+      || !operation.dshTurns.includes(authority.rootDshTurn ?? authority.dshTurn)) {
       throw new ProductToolError(
         "child_failed",
         "child model request differs from its durable parent operation",
@@ -1645,7 +1843,7 @@ export class ProductWorkService extends Service {
     }
     const epoch = this.activeEpochs.get(agent.id);
     const dshTurn = this.openDshTurn(agent);
-    const creationRequestInFlight = pending !== undefined && entry === undefined;
+    const creationRequestInFlight = pending !== undefined && entry?.created.initialMessageId === undefined;
     if ((!creationRequestInFlight && epoch?.session !== agent.session) || dshTurn === undefined) {
       throw new ProductToolError(
         "child_failed",
@@ -1664,7 +1862,7 @@ export class ProductWorkService extends Service {
 
   private openDshTurn(agent: Agent): number | undefined {
     let open: number | undefined;
-    for (const event of agent.session.events) {
+    for (const event of agent.session.snapshotEvents()) {
       if (event.type === "turn/start") open = event.data.turn;
       else if (event.type === "turn/end" && event.data.turn === open) open = undefined;
     }
@@ -1673,10 +1871,14 @@ export class ProductWorkService extends Service {
 
   private async reconcilePersistedChildren(root: Agent): Promise<void> {
     this.hydrate(root);
-    const recoverableCalls = this.recoverableAgentCalls(root);
+    // A committed ancestor stop is the admission cutoff for its entire tree,
+    // including children whose individual stopping receipt was not yet flushed.
+    for (const entry of this.byTask.values()) {
+      if (entry.settlement === undefined && this.hasClosedAncestor(entry)) await this.appendStopping(entry);
+    }
     const liveChildren = new Map<string, Session>();
     for (const session of this.ctx.sessions.list()) {
-      if (session.header.origin === "subagent" && session.header.parentSession === root.id) {
+      if (session.header.origin === "subagent" && (session.header.parentSession === root.id || this.byAgent.has(session.id))) {
         liveChildren.set(session.id, session);
       }
     }
@@ -1686,22 +1888,23 @@ export class ProductWorkService extends Service {
       : await exactNativePromise<SessionHeader[]>(persistence.list(), "product work child catalog listing");
     const candidates = new Map<string, Readonly<{ events: readonly SessionEvent[]; meta: SessionHeader }>>();
     for (const session of liveChildren.values()) {
-      candidates.set(session.id, Object.freeze({ events: session.events, meta: session.header }));
+      candidates.set(session.id, Object.freeze({ events: session.snapshotEvents(), meta: session.header }));
     }
     if (persistence !== undefined) {
       for (const header of persistedHeaders) {
-        if (header.origin !== "subagent" || header.parentSession !== root.id || candidates.has(header.id)) continue;
+        if (header.origin !== "subagent" || (header.parentSession !== root.id && !this.byAgent.has(header.id)) || candidates.has(header.id)) continue;
         const inspection = await exactNativePromise<SessionInspection>(
           persistence.inspect(header.id),
           "product work child inspection",
         );
-        if (inspection.meta.id !== header.id || inspection.meta.parentSession !== root.id
+        if (inspection.meta.id !== header.id || inspection.meta.parentSession !== header.parentSession
           || inspection.meta.origin !== "subagent") {
           throw new Error("persisted subagent catalog changed identity during ProductWork reconciliation");
         }
         candidates.set(header.id, inspection);
       }
     }
+    const recoverableCalls = this.recoverableAgentCalls(root, candidates);
 
     const runtimeHome = this.config.runtimeHome();
     if (typeof runtimeHome !== "string" || runtimeHome.length === 0 || runtimeHome.length > 8_192
@@ -1747,6 +1950,43 @@ export class ProductWorkService extends Service {
       await this.reconstructAcceptedAgent(root, call, candidate, recoveredOutputs, candidates);
     }
 
+    const queuedRecovery = new Set<string>();
+    for (const entry of this.byTask.values()) {
+      if (entry.created.admission !== "reserved" || entry.created.initialMessageId !== undefined
+        || entry.settlement !== undefined) continue;
+      const seed = recoverableCalls.get(entry.taskId);
+      if (seed === undefined) throw new Error("reserved ProductWork lacks its durable Agent tool call");
+      const call = this.validateRecoverableAgentCall(seed);
+      if (call.requestSha256 !== entry.created.requestSha256) throw new Error("reserved child differs from its durable call");
+      const hash = sha256("myagents-work-message-content-v1", stableJson(messageText(call.args.description as string, call.args.prompt as string)));
+      const candidate = candidates.get(entry.agentId);
+      if (entry.stopRequested || (candidate !== undefined && findInitialInboxMessage(candidate.events, hash) !== undefined)) {
+        await this.recoverReservedEntry(entry, call, candidates, runtimeHome);
+      } else {
+        queuedRecovery.add(entry.agentId);
+        this.deferredRecoveryAdmissions.push(() => this.withLock(entry.taskId, async () => {
+          try {
+            await this.acquireChildSlot(entry.taskId, new AbortController().signal);
+            await this.recoverReservedEntry(entry, call, candidates, runtimeHome);
+          } catch (error) {
+            if (this.failure !== undefined) throw this.failure;
+            const terminal = entry.stopRequested || !this.accepting || error instanceof ChildAdmissionStoppedError ? "aborted" : "failed";
+            await this.appendStopping(entry);
+            await this.retireResidentEntry(entry);
+            if (entry.output === undefined && entry.created.outputPath !== undefined) {
+              entry.output = exactRetainedOutputFile(await exactNativePromise(this.config.output.resume(entry.created.outputPath, runtimeHome, new AbortController().signal), "failed recovery output"));
+            }
+            await this.finalizeOutput(entry, "child Agent recovery admission failed");
+            await this.appendSettlement(entry, terminal, "child Agent recovery admission failed", false, usageFrom([]));
+            entry.published.resolve();
+            void error;
+          } finally {
+            this.creatingTasks.delete(entry.taskId);
+            this.pumpCapacity();
+          }
+        }));
+      }
+    }
     const seen = new Set<string>();
     for (const [childId, candidate] of candidates) {
       const descriptor = foldSubagentDescriptor(candidate.events);
@@ -1757,7 +1997,9 @@ export class ProductWorkService extends Service {
       if (entry === undefined || descriptor.label !== entry.taskId || descriptor.mode !== "continuable") {
         throw new Error("DSH subagent child lacks one exact durable ProductWork owner");
       }
-      if (descriptor.agentModel !== entry.created.model
+      if (candidate.meta.parentSession !== entry.created.birth.parentSessionId
+          || (candidate.meta.delegationDepth ?? 1) !== entry.created.birth.depth
+          || descriptor.agentModel !== entry.created.model
           || descriptor.agentProvider !== entry.created.birth.provider
           || descriptor.persona !== entry.created.birth.persona
           || stableJson(descriptor.toolFilter) !== stableJson({ allow: entry.created.birth.allowedTools })
@@ -1768,19 +2010,21 @@ export class ProductWorkService extends Service {
         throw new Error("DSH subagent descriptor differs from its exact ProductWork birth authority");
       }
       if (entry.created.initialMessageId === undefined || entry.created.initialContentSha256 === undefined) {
+        if (queuedRecovery.has(childId)) { seen.add(childId); continue; }
+        if (entry.created.admission === "reserved" && entry.settlement !== undefined) { seen.add(childId); continue; }
         throw new Error("ProductWork lacks its initial durable message authority");
       }
       validateInitialInboxMessage(candidate.events, entry.created.initialMessageId, entry.created.initialContentSha256);
       seen.add(childId);
     }
     for (const entry of this.byAgent.values()) {
-      if (entry.settlement === undefined && !seen.has(entry.agentId)) {
+      if (entry.settlement === undefined && !seen.has(entry.agentId) && !queuedRecovery.has(entry.agentId)) {
         throw new Error("durable ProductWork points to an absent DSH subagent child");
       }
     }
     await this.reconcileMessages(root, candidates);
     for (const entry of this.byTask.values()) {
-      if (entry.settlement !== undefined) continue;
+      if (entry.settlement !== undefined || queuedRecovery.has(entry.agentId)) continue;
       const candidate = candidates.get(entry.agentId);
       if (candidate === undefined) throw new Error("unsettled ProductWork child is absent during recovery");
       if (entry.mode === "continuable") {
@@ -1795,88 +2039,173 @@ export class ProductWorkService extends Service {
       this.validateEpochProjection(entry, candidate.events);
       await this.recoverClosedEpoch(entry, candidate.events);
       entry.latestOutput = accumulatedEpochOutput(candidate.events, entry);
+      for (const epoch of entry.epochs) await this.reportCompletedEpoch(entry, epoch, candidate.events);
       if (entry.stopRequested) {
-        await exactNativePromise(
-          this.ctx.subagents.drainContinuableChildren(root, [SessionId(entry.agentId)]),
-          "recovering ProductWork retirement",
-        );
+        await this.retireResidentEntry(entry);
         const output = entry.latestOutput.length === 0
           ? "child Agent stopped before producing output"
           : entry.latestOutput;
         await this.finalizeOutput(entry, output);
         const inline = boundedInline(output);
-        await this.appendSettlement(entry, "aborted", inline.result, inline.truncated, usageFrom(candidate.events));
-      } else if (entry.mode === "foreground" && entry.epochs.length > 0) {
-        const epoch = entry.epochs.at(-1);
-        if (epoch === undefined) throw new Error("foreground ProductWork lost its terminal epoch");
-        const output = entry.latestOutput.length === 0
-          ? `subagent ${entry.agentId} settled without a closing message (${epoch.stopReason})`
-          : entry.latestOutput;
-        const inline = boundedInline(output);
-        await this.appendSettlement(
-          entry,
-          terminalForStopReason(epoch.stopReason),
-          inline.result,
-          inline.truncated,
-          usageFrom(candidate.events),
-        );
+        await this.appendSettlement(entry, "aborted", inline.result, inline.truncated, usageFrom(candidate.events.slice(entry.created.initialChildEventSeq ?? 0)));
       } else if (entry.latestOutput.length > 0) {
         await this.publishOutput(entry, entry.latestOutput);
       }
-      if (!entry.stopRequested) await this.resumePendingEntry(root, entry, candidate);
+      const firstEpoch = entry.epochs[0];
+      if (firstEpoch !== undefined) this.completeFirstActivation(entry, firstEpoch, candidate.events);
+    }
+    for (const entry of this.byTask.values()) {
+      if (entry.stopRequested || entry.settlement !== undefined || queuedRecovery.has(entry.agentId)) continue;
+      let candidate = candidates.get(entry.agentId);
+      if (candidate === undefined) throw new Error("pending recovery child lost its inspected Session");
+      const inspectedEvents = candidate.events;
+      const received = [...this.messages.values()].filter((known) => known.intent.recipient === entry.agentId && known.delivery !== undefined);
+      const hasNewDelivery = received.some((known) => !inspectedEvents.some((event) => event.type === "agent/inbox/spliced"
+        && event.data.inserted.some((message) => message.id === known.delivery?.dshMessageId)));
+      if (hasNewDelivery) {
+        const live = this.ctx.sessions.get(SessionId(entry.agentId));
+        if (live !== undefined) candidate = { events: live.snapshotEvents(), meta: live.header };
+        else if (persistence !== undefined) candidate = await exactNativePromise(persistence.inspect(SessionId(entry.agentId)), "post-report child recovery inspection");
+        else throw new Error("new recovery report lacks its recipient Session");
+      }
+      this.resumePendingEntry(entry, candidate);
     }
   }
 
-  private recoverableAgentCalls(root: Agent): ReadonlyMap<string, RecoverableAgentCallSeed> {
+  private async recoverReservedEntry(
+    entry: WorkEntry,
+    call: RecoverableAgentCall,
+    candidates: Map<string, Readonly<{ events: readonly SessionEvent[]; meta: SessionHeader }>>,
+    runtimeHome: string,
+  ): Promise<void> {
+    const birth = entry.created.birth;
+    if (call.requestSha256 !== entry.created.requestSha256 || call.authority.agent !== entry.root
+      || (call.authority.callerSessionId ?? call.authority.agent.id) !== birth.parentSessionId
+      || entry.agentId !== `child-${sha256("myagents-work-child-v1", entry.taskId).slice(0, 48)}`
+      || birth.selectedModelProfileRevision === undefined || birth.modelSelection === undefined) {
+      throw new Error("reserved ProductWork differs from its original durable call and model selection");
+    }
+    const selectedModel = Object.freeze({
+      model: birth.model, provider: birth.provider,
+      profileRevision: birth.selectedModelProfileRevision, selection: birth.modelSelection,
+    });
+    if (entry.created.outputPath !== undefined) {
+      entry.output = exactRetainedOutputFile(await exactNativePromise(
+        this.config.output.resume(entry.created.outputPath, runtimeHome, new AbortController().signal), "reserved Agent output recovery",
+      ));
+    }
+    if (entry.stopRequested || this.hasClosedAncestor(entry)) {
+      await this.appendStopping(entry);
+      await this.retireResidentEntry(entry);
+      await this.finalizeOutput(entry, "child Agent stopped before starting");
+      await this.appendSettlement(entry, "aborted", "child Agent stopped before starting", false, usageFrom([]));
+      entry.published.resolve();
+      return;
+    }
+    const prompt = messageText(call.args.description as string, call.args.prompt as string);
+    const hash = sha256("myagents-work-message-content-v1", stableJson(prompt));
+    this.config.assertModel?.(selectedModel);
+    await this.withDirectParent(entry, new AbortController().signal, async (parent) => {
+      const permit: ChildCreationPermit = Object.freeze({
+        agentProvider: birth.provider, authority: call.authority, model: birth.model, selectedModel,
+        mode: entry.mode, parent, ready: this.entryDeferred(), taskId: entry.taskId,
+        template: Object.freeze({ allowedTools: birth.allowedTools, maxTurns: birth.maxTurns, persona: birth.persona, type: birth.type }),
+      });
+      this.continuablePermits.set(entry.taskId, permit);
+      try {
+        let candidate = candidates.get(entry.agentId);
+        let initial = candidate?.events === undefined ? undefined : findInitialInboxMessage(candidate.events, hash);
+        if (initial === undefined) {
+          const signal = new AbortController().signal;
+          const messageId = candidate === undefined
+            ? (await exactNativePromise(this.ctx.subagents.startContinuable({
+              childId: SessionId(entry.agentId), label: entry.taskId, provider: this.config.provider,
+              settlementDelivery: "external", signal,
+              request: {
+                parent, prompt, maxDepth: birth.depth,
+                agentOptions: { model: birth.model, provider: birth.provider },
+                persona: birth.persona, personaInterpolate: false, toolFilter: { allow: [...birth.allowedTools] },
+              },
+            }), "reserved Agent start recovery")).messageId
+            : await exactNativePromise(this.ctx.subagents.deliverContinuable(parent, SessionId(entry.agentId), prompt, {
+              delivery: "queue", source: { kind: "user" }, signal,
+            }), "reserved Agent initial message recovery");
+          const child = this.ctx.sessions.get(SessionId(entry.agentId));
+          if (child?.header.parentSession !== birth.parentSessionId || child.header.origin !== "subagent") {
+            throw new Error("reserved Agent recovery lacks its exact DSH Session");
+          }
+          await this.flush(child);
+          candidate = Object.freeze({ events: child.snapshotEvents(), meta: child.header });
+          candidates.set(entry.agentId, candidate);
+          initial = findInitialInboxMessage(candidate.events, hash, String(messageId));
+        }
+        if (initial === undefined) throw new Error("reserved Agent lacks its initial durable Inbox insertion");
+        await this.appendStarted(entry, initial.eventSeq, initial.id, hash);
+        entry.published.resolve();
+        permit.ready.resolve(entry);
+      } catch (error) {
+        permit.ready.reject(error);
+        throw error;
+      } finally {
+        if (this.continuablePermits.get(entry.taskId) === permit) this.continuablePermits.delete(entry.taskId);
+        if (this.pendingChildAuthorities.get(entry.agentId) === permit) this.pendingChildAuthorities.delete(entry.agentId);
+      }
+    });
+  }
+
+  private recoverableAgentCalls(
+    root: Agent,
+    candidates: ReadonlyMap<string, Readonly<{ events: readonly SessionEvent[]; meta: SessionHeader }>>,
+  ): ReadonlyMap<string, RecoverableAgentCallSeed> {
     const operations = foldProductOperations(
-      root.session.events,
-      root.id,
+      root.session.snapshotEvents(), root.id,
       (source, messageId) => this.ownsPersistedRootContextMessage(root, source, messageId),
     ).operations;
-    const rejected = new Set<string>();
-    for (const event of root.session.events) {
-      if (event.type !== "tool/result"
-        || (event.data.error === undefined && event.data.message.content[0].isError !== true)) continue;
-      rejected.add(`${String(event.data.turn)}\0${String(event.data.message.source.callId)}`);
-    }
+    const callers = [{ id: String(root.id), events: root.session.snapshotEvents() },
+      ...[...candidates].filter(([id]) => this.byAgent.has(id)).map(([id, candidate]) => ({ id, events: candidate.events }))];
     const result = new Map<string, RecoverableAgentCallSeed>();
-    for (const event of root.session.events) {
-      if (event.type !== "tool/call" || event.data.name !== "Agent") continue;
-      const { callId, turn } = event.data;
-      if (typeof callId !== "string" || callId.length === 0
-        || !Number.isSafeInteger(turn) || turn < 1) {
-        throw new Error("Agent tool-call event lacks exact durable identity");
+    for (const caller of callers) {
+      const callerWork = this.byAgent.get(caller.id);
+      const rejected = new Set<string>();
+      for (const event of caller.events) {
+        if (event.type !== "tool/result"
+          || (event.data.error === undefined && event.data.message.content[0].isError !== true)) continue;
+        rejected.add(`${String(event.data.turn)}\0${String(event.data.message.source.callId)}`);
       }
-      const matches = operations.filter((operation) => operation.dshTurns.includes(turn));
-      if (matches.length !== 1) {
-        throw new Error("Agent tool-call event lacks one exact Product operation owner");
+      for (const event of caller.events) {
+        if (event.type !== "tool/call" || event.data.name !== "Agent") continue;
+        const { callId, turn } = event.data;
+        if (typeof callId !== "string" || callId.length === 0 || !Number.isSafeInteger(turn) || turn < 1) {
+          throw new Error("Agent tool-call event lacks exact durable identity");
+        }
+        const rootDshTurn = callerWork?.created.authority.rootDshTurn ?? callerWork?.created.authority.dshTurn;
+        const matches = operations.filter((operation) => caller.id === root.id ? operation.dshTurns.includes(turn)
+          : operation.clientOperationId === callerWork?.created.authority.clientOperationId
+            && operation.productTurnId === callerWork.created.authority.productTurnId
+            && operation.dshTurns.includes(rootDshTurn ?? 0));
+        if (matches.length !== 1) throw new Error("Agent tool-call event lacks one exact Product operation owner");
+        const operation = matches[0];
+        if (operation === undefined) throw new Error("Agent tool-call operation authority was lost");
+        if (rejected.has(`${String(turn)}\0${String(callId)}`)) continue;
+        const authority: WorkCreationAuthority = Object.freeze({
+          agent: root,
+          ...(caller.id === root.id ? {} : { callerSessionId: caller.id }),
+          birth: Object.freeze({
+            componentDigest: operation.birth.componentDigest,
+            componentRevision: operation.birth.componentRevision,
+            modelProfileRevision: operation.birth.modelProfileRevision,
+          }),
+          callId,
+          catalog: Object.freeze({ digest: operation.birth.toolCatalogDigest, revision: operation.birth.toolCatalogRevision }),
+          clientOperationId: operation.clientOperationId,
+          dshTurn: turn,
+          ...(rootDshTurn === undefined ? {} : { rootDshTurn }),
+          productTurnId: operation.productTurnId,
+        });
+        const taskId = taskIdForAuthority(caller.id, operation.clientOperationId, callId);
+        if (result.has(taskId)) throw new Error("Agent tool-call durable identity is duplicated");
+        result.set(taskId, Object.freeze({ arguments: event.data.arguments, authority, taskId }));
       }
-      const operation = matches[0];
-      if (operation === undefined) throw new Error("Agent tool-call operation authority was lost");
-      if (rejected.has(`${String(turn)}\0${String(callId)}`)) continue;
-      const authority: WorkCreationAuthority = Object.freeze({
-        agent: root,
-        birth: Object.freeze({
-          componentDigest: operation.birth.componentDigest,
-          componentRevision: operation.birth.componentRevision,
-          modelProfileRevision: operation.birth.modelProfileRevision,
-        }),
-        callId,
-        catalog: Object.freeze({
-          digest: operation.birth.toolCatalogDigest,
-          revision: operation.birth.toolCatalogRevision,
-        }),
-        clientOperationId: operation.clientOperationId,
-        dshTurn: turn,
-        productTurnId: operation.productTurnId,
-      });
-      const taskId = taskIdForAuthority(root.id, operation.clientOperationId, callId);
-      if (result.has(taskId)) throw new Error("Agent tool-call durable identity is duplicated");
-      result.set(taskId, Object.freeze({
-        arguments: event.data.arguments,
-        authority,
-        taskId,
-      }));
     }
     return result;
   }
@@ -1916,6 +2245,9 @@ export class ProductWorkService extends Service {
     recoveredOutputs: readonly ProductRetainedOutputFile[],
     candidates: Map<string, Readonly<{ events: readonly SessionEvent[]; meta: SessionHeader }>>,
   ): Promise<void> {
+    if (call.authority.callerSessionId !== undefined || candidate.inspection.meta.parentSession !== root.id) {
+      throw new Error("nested child recovery requires its original reserved ProductWork birth");
+    }
     const model = root.options.model;
     const agentProvider = root.options.provider;
     const mode = call.args.run_in_background === false ? "foreground" : "continuable";
@@ -1965,10 +2297,11 @@ export class ProductWorkService extends Service {
         });
         this.continuablePermits.set(call.taskId, permit);
         const messageId = await exactNativePromise(
-          this.ctx.subagents.followup(root, SessionId(candidate.childId), messageText(
+          this.ctx.subagents.deliverContinuable(root, SessionId(candidate.childId), messageText(
             call.args.description as string,
             call.args.prompt as string,
           ), {
+            delivery: "queue",
             signal: new AbortController().signal,
             source: Object.freeze({ kind: "user" }),
           }),
@@ -1979,7 +2312,7 @@ export class ProductWorkService extends Service {
           throw new Error("recovered Agent prompt lacks its exact live child Session");
         }
         await this.flush(child);
-        inspection = Object.freeze({ events: child.events, meta: child.header });
+        inspection = Object.freeze({ events: child.snapshotEvents(), meta: child.header });
         candidates.set(candidate.childId, inspection);
         initial = findInitialInboxMessage(inspection.events, expectedContentSha256, String(messageId));
         if (initial === undefined) {
@@ -1999,7 +2332,6 @@ export class ProductWorkService extends Service {
         initial.id,
         template,
       );
-      this.publishEntry(entry);
       await this.appendCreated(entry);
       entry.published.resolve();
       permit?.ready.resolve(entry);
@@ -2033,7 +2365,9 @@ export class ProductWorkService extends Service {
   }
 
   private async recoverClosedEpoch(entry: WorkEntry, events: readonly SessionEvent[]): Promise<void> {
-    const childStartSeq = entry.epochs.at(-1)?.childEndSeq ?? entry.created.initialChildEventSeq;
+    const previous = entry.epochs.at(-1);
+    const childStartSeq = entry.activated !== undefined && entry.activated.ordinal > (previous?.ordinal ?? 0)
+      ? entry.activated.childStartSeq : previous?.childEndSeq ?? entry.created.initialChildEventSeq;
     if (childStartSeq === undefined || childStartSeq > events.length) {
       throw new Error("ProductWork recovery lacks its exact child suffix boundary");
     }
@@ -2055,14 +2389,13 @@ export class ProductWorkService extends Service {
       childEndSeq,
       childStartSeq,
       stopReason: stopReasonFromEvents(events.slice(childStartSeq, childEndSeq)),
-    });
+    }, events);
   }
 
-  private async resumePendingEntry(
-    root: Agent,
+  private resumePendingEntry(
     entry: WorkEntry,
     candidate: Readonly<{ events: readonly SessionEvent[]; meta: SessionHeader }>,
-  ): Promise<void> {
+  ): void {
     const pending = pendingInboxMessages(candidate.events, candidate.meta);
     if (pending.length === 0) return;
     const owned = new Map<string, Readonly<{
@@ -2077,7 +2410,7 @@ export class ProductWorkService extends Service {
       }));
     }
     for (const message of this.messages.values()) {
-      if (message.intent.agentId === entry.agentId && message.intent.recipient === entry.agentId
+      if (message.intent.recipient === entry.agentId
         && message.delivery !== undefined) {
         if (owned.has(message.delivery.dshMessageId)) {
           throw new Error("persisted child Inbox reuses a ProductWork message identity");
@@ -2096,7 +2429,7 @@ export class ProductWorkService extends Service {
         ? sourceKeys.length === 1 && sourceKeys[0] === "kind" && message.source.kind === "user"
         : expected?.sourceKind === "coordinator"
           && stableJson(sourceKeys) === stableJson(["form", "kind", "senderSessionId"])
-          && message.source.kind === "coordinator" && message.source.form === "relay"
+          && (message.source.kind === "coordinator" || message.source.kind === "agent-message") && message.source.form === "relay"
           && message.source.senderSessionId === expected.sender;
       if (expected?.contentSha256 !== message.contentSha256 || !sourceMatches) {
         throw new Error("persisted child Inbox contains work outside ProductWork authority");
@@ -2104,15 +2437,39 @@ export class ProductWorkService extends Service {
     }
     const message = pending[0];
     if (message === undefined) return;
-    const resumed = await exactNativePromise(
-      this.ctx.subagents.resumeContinuable(root, SessionId(entry.agentId), MessageId(message.id), {
-        signal: new AbortController().signal,
-      }),
-      "ProductWork pending child recovery",
-    );
-    if (!resumed) {
-      throw new Error("durable ProductWork pending child identity could not be resumed");
-    }
+    this.deferredRecoveryAdmissions.push(() => this.withLock(entry.taskId, async () => {
+      const signal = new AbortController().signal;
+      try {
+        await this.appendPhase(entry, "queued");
+        await this.acquireChildSlot(entry.taskId, signal);
+        if (entry.stopRequested || entry.settlement !== undefined || this.hasClosedAncestor(entry)) return;
+        const resumed = await this.withDirectParent(entry, signal, (parent) => exactNativePromise(
+          this.ctx.subagents.resumeContinuable(parent, SessionId(entry.agentId), MessageId(message.id), { signal }),
+          "ProductWork pending child recovery",
+        ));
+        if (!resumed) throw new Error("durable ProductWork pending child identity could not be resumed");
+      } catch (error) {
+        if (entry.stopRequested || entry.settlement !== undefined || !this.accepting || error instanceof ChildAdmissionStoppedError) return;
+        throw error;
+      } finally {
+        this.creatingTasks.delete(entry.taskId);
+        this.pumpCapacity();
+      }
+    }));
+  }
+
+  private hasClosedAncestor(entry: WorkEntry): boolean {
+    return this.lineageFor(entry.created.birth.parentSessionId).some((id) => {
+      const ancestor = this.byAgent.get(id);
+      return ancestor?.stopRequested === true || ancestor?.settlement !== undefined;
+    });
+  }
+
+  private async retireResidentEntry(entry: WorkEntry): Promise<void> {
+    const child = this.ctx.agents.get(SessionId(entry.agentId));
+    if (child !== undefined) await exactNativePromise(this.ctx.subagents.drainContinuableDescendants([child]), "recovered subtree retirement");
+    const parent = this.ctx.agents.get(SessionId(entry.created.birth.parentSessionId));
+    if (parent !== undefined) await exactNativePromise(this.ctx.subagents.drainContinuableChildren(parent, [SessionId(entry.agentId)]), "recovered child retirement");
   }
 
   private async reconcileMessages(
@@ -2120,7 +2477,7 @@ export class ProductWorkService extends Service {
     candidates: ReadonlyMap<string, Readonly<{ events: readonly SessionEvent[]; meta: SessionHeader }>>,
   ): Promise<void> {
     const insertions: CorrelatedInboxMessage[] = [
-      ...correlatedInboxMessages(root.session.events, root.id, "subagent-report"),
+      ...correlatedInboxMessages(root.session.snapshotEvents(), root.id, "subagent-report"),
     ];
     for (const [childId, candidate] of candidates) {
       insertions.push(...correlatedInboxMessages(candidate.events, childId, "coordinator"));
@@ -2129,6 +2486,7 @@ export class ProductWorkService extends Service {
     const ordered = [...this.messages.values()].sort((left, right) =>
       left.intent.sequence - right.intent.sequence);
     for (const known of ordered) {
+      if (known.cancellation !== undefined) continue;
       const matching = insertions.find((candidate) => !used.has(candidate.id)
         && candidate.sender === known.intent.sender
         && candidate.recipient === known.intent.recipient
@@ -2162,7 +2520,7 @@ export class ProductWorkService extends Service {
 
   private hydrate(agent: Agent): void {
     let messageSequence = 0;
-    for (const event of agent.session.events) {
+    for (const event of agent.session.snapshotEvents()) {
       if (!isProductWorkEventType(event.type)) continue;
       const data = validateEventData(event.type, event.data);
       if (data.eventSeq !== event.seq || data.sessionId !== agent.id) {
@@ -2170,13 +2528,21 @@ export class ProductWorkService extends Service {
       }
       if (event.type === "myagents/work/created") {
         const created = data as ProductWorkCreatedEventData;
+        const parentEntry = created.birth.parentSessionId === agent.id ? undefined : this.byAgent.get(created.birth.parentSessionId);
+        const parentIsRoot = created.birth.parentSessionId === agent.id;
         if (created.sessionId !== agent.id
           || created.taskId !== taskIdForAuthority(
-            agent.id,
+            created.birth.parentSessionId,
             created.authority.clientOperationId,
             created.authority.callId,
           )
-          || created.birth.parentSessionId !== agent.id
+          || (parentIsRoot ? created.birth.depth !== 1 : parentEntry === undefined || parentEntry.stopRequested
+            || parentEntry.settlement !== undefined || created.birth.depth !== parentEntry.created.birth.depth + 1
+            || created.authority.rootDshTurn !== (parentEntry.created.authority.rootDshTurn ?? parentEntry.created.authority.dshTurn)
+            || created.authority.clientOperationId !== parentEntry.created.authority.clientOperationId
+            || created.birth.componentDigest !== parentEntry.created.birth.componentDigest
+            || created.birth.componentRevision !== parentEntry.created.birth.componentRevision
+            || created.birth.allowedTools.some((tool) => !parentEntry.created.birth.allowedTools.includes(tool)))
           || created.birth.parentOperationId !== created.authority.clientOperationId
           || created.birth.model !== created.model
           || created.birth.allowedReadRoots.length !== 0
@@ -2184,7 +2550,9 @@ export class ProductWorkService extends Service {
           || (created.mode === "continuable") !== (created.outputPath !== undefined)
           || (created.initialChildEventSeq === undefined) !== (created.initialContentSha256 === undefined)
           || (created.initialChildEventSeq === undefined) !== (created.initialMessageId === undefined)
-          || (created.mode === "continuable" && created.initialChildEventSeq === undefined)) {
+          || (created.admission === "reserved" ? created.initialChildEventSeq !== undefined
+            : created.mode === "continuable" && created.initialChildEventSeq === undefined)
+          || (created.birth.selectedModelProfileRevision === undefined) !== (created.birth.modelSelection === undefined)) {
           throw new Error("persisted product Work creation differs from its immutable birth authority");
         }
         if (this.byTask.size >= MAX_WORK_ITEMS
@@ -2197,7 +2565,7 @@ export class ProductWorkService extends Service {
         }
         const outputReady = this.deferred();
         const published = this.deferred();
-        published.resolve();
+        if (created.admission !== "reserved") published.resolve();
         const entry: WorkEntry = {
           agentId: created.agentId,
           created,
@@ -2206,14 +2574,58 @@ export class ProductWorkService extends Service {
           mode: created.mode,
           outputFinalized: false,
           outputReady,
-          parent: agent,
+          root: agent,
           published,
           stopRequested: false,
           taskId: created.taskId,
           terminalReady: this.settlementDeferred(),
+          firstActivationReady: this.activationDeferred(),
         };
         this.byTask.set(entry.taskId, entry);
         this.byAgent.set(entry.agentId, entry);
+        continue;
+      }
+      if (event.type === "myagents/work/started") {
+        const started = data as ProductWorkStartedEventData;
+        const entry = this.byTask.get(started.taskId);
+        if (entry === undefined) throw new Error("ProductWork start lacks its reserved birth");
+        this.applyStarted(entry, started);
+        entry.published.resolve();
+        continue;
+      }
+      if (event.type === "myagents/work/activated") {
+        const activated = data as ProductWorkActivatedEventData;
+        const entry = this.byTask.get(activated.taskId);
+        const previous = entry?.epochs.at(-1);
+        if (entry?.agentId !== activated.agentId || entry.stopRequested || entry.settlement !== undefined
+          || previous === undefined || activated.ordinal !== previous.ordinal + 1
+          || activated.childStartSeq < previous.childEndSeq
+          || (entry.activated !== undefined && entry.activated.ordinal > previous.ordinal)) {
+          throw new Error("persisted ProductWork activation lacks its previous durable epoch");
+        }
+        entry.activated = activated;
+        continue;
+      }
+      if (event.type === "myagents/work/reopened") {
+        const reopened = data as ProductWorkReopenedEventData;
+        const entry = this.byTask.get(reopened.taskId);
+        if (entry?.agentId !== reopened.agentId || entry.settlement?.eventSeq !== reopened.previousSettlementSeq
+          || entry.created.initialMessageId === undefined || this.hasClosedAncestor(entry)
+          || agent.session.snapshotEvents().slice(0, event.seq).some((prior) => prior.type === "myagents/work/reopened" && prior.data.clientRequestId === reopened.clientRequestId)) {
+          throw new Error("persisted user reopen lacks its exact closed handle");
+        }
+        delete entry.settlement;
+        entry.terminalReady = this.settlementDeferred();
+        entry.stopRequested = false;
+        entry.outputFinalized = false;
+        continue;
+      }
+      if (event.type === "myagents/work/phase") {
+        const phase = data as ProductWorkPhaseEventData;
+        const entry = this.byTask.get(phase.taskId);
+        if (entry?.agentId !== phase.agentId || entry.stopRequested || entry.settlement !== undefined
+          || phase.ordinal !== entry.epochs.length + 1) throw new Error("persisted Work phase lacks its exact open activation");
+        entry.phase = phase;
         continue;
       }
       if (event.type === "myagents/work/epoch") {
@@ -2240,26 +2652,41 @@ export class ProductWorkService extends Service {
         const intent = data as ProductWorkMessageIntentEventData;
         const entry = this.byTask.get(intent.taskId);
         messageSequence += 1;
+        const automatic = intent.completionEpochId !== undefined;
+        const completion = automatic ? entry?.epochs.find((epoch) => epoch.epochId === intent.completionEpochId) : undefined;
         if (entry?.agentId !== intent.agentId || intent.sequence !== messageSequence
-          || entry.stopRequested || entry.settlement !== undefined
+          || (!automatic && (entry.stopRequested || entry.settlement !== undefined))
+          || (automatic && (completion === undefined || intent.sender !== entry.agentId
+            || intent.recipient !== entry.created.birth.parentSessionId || intent.contentBytes > MAX_COMPLETION_REPORT_BYTES
+            || intent.messageId !== `completion-${intent.completionEpochId}`))
           || this.messages.has(intent.messageId) || messageSequence > MAX_WORK_MESSAGES
-          || this.messageBytes > MAX_WORK_MESSAGE_BYTES - intent.contentBytes) {
+          || (!automatic && this.messageBytes > MAX_WORK_MESSAGE_BYTES - intent.contentBytes)) {
           throw new Error("persisted product Work message intent lacks one exact bounded owner");
         }
-        this.messageBytes += intent.contentBytes;
+        if (!automatic) this.messageBytes += intent.contentBytes;
         this.messages.set(intent.messageId, { intent });
         continue;
       }
       if (event.type === "myagents/work/message") {
         const message = data as ProductWorkMessageEventData;
         const known = this.messages.get(message.messageId);
-        if (known === undefined || known.delivery !== undefined
+        if (known === undefined || known.delivery !== undefined || known.cancellation !== undefined
           || known.intent.agentId !== message.agentId || known.intent.taskId !== message.taskId
           || known.intent.recipient !== message.recipient || known.intent.sender !== message.sender
           || known.intent.sequence !== message.sequence || known.intent.summary !== message.summary) {
           throw new Error("persisted product Work message delivery lacks one exact intent");
         }
         known.delivery = message;
+        continue;
+      }
+      if (event.type === "myagents/work/message-canceled") {
+        const canceled = data as ProductWorkMessageCanceledEventData;
+        const known = this.messages.get(canceled.messageId);
+        if (known === undefined || known.delivery !== undefined || known.cancellation !== undefined
+          || known.intent.agentId !== canceled.agentId || known.intent.taskId !== canceled.taskId) {
+          throw new Error("persisted Work message cancellation lacks its exact undelivered intent");
+        }
+        known.cancellation = canceled;
         continue;
       }
       if (event.type === "myagents/work/stopping") {
@@ -2275,7 +2702,7 @@ export class ProductWorkService extends Service {
       const settled = data as ProductWorkSettledEventData;
       const entry = this.byTask.get(settled.taskId);
       let expectedTotalTokens = 0;
-      for (const value of [
+      for (const value of settled.usage === undefined ? [] : [
         settled.usage.inputTokens,
         settled.usage.outputTokens,
         settled.usage.cacheReadTokens,
@@ -2286,7 +2713,7 @@ export class ProductWorkService extends Service {
       if (entry?.agentId !== settled.agentId || entry.settlement !== undefined
         || (entry.mode === "continuable" && !entry.stopRequested)
         || Buffer.byteLength(settled.result, "utf8") > MAX_INLINE_OUTPUT_BYTES
-        || settled.usage.totalTokens !== expectedTotalTokens) {
+        || (settled.usage !== undefined && settled.usage.totalTokens !== expectedTotalTokens)) {
         throw new Error("persisted product Work settlement lacks one exact live projection");
       }
       entry.settlement = settled;
@@ -2295,6 +2722,8 @@ export class ProductWorkService extends Service {
       entry.outputFinalized = entry.created.outputPath !== undefined;
       entry.outputReady.resolve();
       entry.terminalReady.resolve(settled);
+      entry.firstActivationReady.resolve(settled);
+      entry.published.resolve();
       this.releaseComponentGenerationWaiters(entry);
     }
     this.messageSequence = messageSequence;
@@ -2302,13 +2731,13 @@ export class ProductWorkService extends Service {
 
   hasRetainedOutput(agent: Agent, path: string): boolean {
     const entry = [...this.byTask.values()].find((candidate) => candidate.created.outputPath === path);
-    return entry?.parent === agent;
+    return entry?.root === agent;
   }
 
   async resolveRetainedOutput(product: ProductToolContext, path: string): Promise<FsTarget> {
     await this.initialize();
     const entry = [...this.byTask.values()].find((candidate) => candidate.created.outputPath === path);
-    if (entry?.parent !== product.agent) {
+    if (entry?.root !== product.agent) {
       throw new ProductToolError("path_denied", "Read target is not an Agent output owned by this primary Session");
     }
     await exactNativePromise(entry.outputReady.promise, "Agent output settlement");
@@ -2337,11 +2766,17 @@ export class ProductWorkService extends Service {
   async preparePrimaryRetirement(agent: Agent): Promise<void> {
     await this.initialize(agent);
     this.accepting = false;
-    const entries = [...this.byTask.values()].filter((entry) => entry.parent === agent && entry.settlement === undefined);
+    this.pumpCapacity();
+    const entries = [...this.byTask.values()].filter((entry) => entry.root === agent && entry.settlement === undefined);
+    const retained = new Map(entries.map((entry) => [entry.agentId, this.ctx.agents.get(SessionId(entry.agentId))]));
+    const errors: unknown[] = [];
+    try {
+      await ctxSubagents(this.ctx).drainContinuableDescendants([agent]);
+    } catch (error) { errors.push(error); }
     const stopResults = await Promise.allSettled(entries.map((entry) => this.withLock(entry.taskId, async () => {
-      await this.stopAgentEntry(entry, new AbortController().signal);
+      await this.stopAgentEntry(entry, new AbortController().signal, retained.get(entry.agentId));
     })));
-    const errors = stopResults.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+    errors.push(...stopResults.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []));
     try {
       await ctxSubagents(this.ctx).drainContinuableDescendants([agent]);
     } catch (error) {
@@ -2360,17 +2795,158 @@ export class ProductWorkService extends Service {
     if (errors.length > 0) throw this.fence(new AggregateError(errors, "product work retirement failed"));
   }
 
+  private factsFor(session: Session) {
+    let index = this.factIndexes.get(session);
+    if (index === undefined) {
+      index = { through: 0, activity: new Map(), handles: new Map() };
+      this.factIndexes.set(session, index);
+    }
+    const events = session.snapshotEvents();
+    for (; index.through < events.length; index.through++) {
+      const event = events[index.through];
+      if (event === undefined || !isProductWorkEventType(event.type)) continue;
+      const taskId = (event.data as { taskId: string }).taskId;
+      index.activity.set(taskId, event);
+      if (event.type === "myagents/work/reopened" || event.type === "myagents/work/stopping" || event.type === "myagents/work/settled") index.handles.set(taskId, event.seq);
+    }
+    return index;
+  }
+
+  private handleRevision(entry: WorkEntry): number {
+    return this.factsFor(entry.root.session).handles.get(entry.taskId) ?? entry.created.eventSeq;
+  }
+
+  /** Bounded native query leases provide current metrics without starting or retaining Agent execution. */
+  async readSnapshots(signal: AbortSignal, afterTaskId?: string): Promise<readonly ProductWorkSnapshot[]> {
+    const root = this.config.requireAgent();
+    await this.initialize(root);
+    const all = [...this.byTask.values()];
+    const after = afterTaskId === undefined ? -1 : all.findIndex((entry) => entry.taskId === afterTaskId);
+    if (afterTaskId !== undefined && after < 0) throw new ProductToolError("recipient_not_found", "Work cursor is outside this primary Session");
+    const entries = all.slice(after + 1, after + 34);
+    const result = new Array<ProductWorkSnapshot>(entries.length);
+    const query = this.ctx.get("sessionQuery");
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(4, entries.length) }, async () => {
+      while (next < entries.length) {
+        const position = next++;
+        const entry = entries[position];
+        if (entry === undefined) throw new Error("Work listing lost its entry");
+        signal.throwIfAborted();
+        if (query === undefined || entry.created.initialMessageId === undefined) { result[position] = this.statusSnapshot(entry); continue; }
+        using observation: SessionObservation = await query.observeSession(SessionId(entry.agentId), { signal, projectionMode: "all" });
+        if (observation.header.id !== entry.agentId || observation.header.parentSession !== entry.created.birth.parentSessionId
+          || observation.header.origin !== "subagent") throw this.fence(new Error("Work metrics observation has foreign lineage"));
+        const snapshot = this.statusSnapshot(entry);
+        const projections = observation.projections?.values as Readonly<Record<string, unknown>> | undefined;
+        const usage = projections?.tokenUsage as TokenUsageProjection | undefined;
+        const pressure = projections?.contextPressure as ContextPressureProjection | undefined;
+        const route = observation.events.findLast((event) => event.type === "request/context");
+        const firstOwned = entry.created.initialChildEventSeq ?? observation.inheritedEventCount;
+        const ownEvents = observation.events.slice(firstOwned);
+        const reports = ownEvents.flatMap((event) => event.type === "assistant/message" && event.data.usage !== undefined
+          ? [event.data.usage] : event.type === "assistant/chunk" && event.data.chunk.type === "usage" ? [event.data.chunk.usage] : []);
+        const registry = this.ctx.get("sessionProjections");
+        const inherited = firstOwned === 0 ? undefined : registry?.restore({}, observation.events.slice(0, firstOwned),
+          SessionLogOffset(0), observation.header, observation.inheritedEventCount).snapshot.values.tokenUsage;
+        const summary = deriveSummaryTokenUsage(ownEvents);
+        const reported = reports.length > 0 || ownEvents.some((event) => (event.type as string) === "compaction/summary");
+        const nativeUsage = usage === undefined || (firstOwned > 0 && inherited === undefined)
+          || reports.some((report) => exactReportedUsage(report) === undefined) ? undefined : exactReportedUsage({
+            inputTokens: usage.uncachedInputTokens - (inherited?.uncachedInputTokens ?? 0),
+            outputTokens: usage.outputTokens - (inherited?.outputTokens ?? 0),
+            cacheReadTokens: usage.cacheReadTokens - (inherited?.cacheReadTokens ?? 0),
+            cacheWriteTokens: usage.cacheWriteTokens - (inherited?.cacheWriteTokens ?? 0),
+          });
+        const totalUsage = !reported || nativeUsage === undefined || summary === undefined
+          ? undefined : addExactReportedUsage(nativeUsage, summary);
+        const context = route?.type !== "request/context" || route.data.provider !== entry.created.birth.provider
+          || route.data.model !== entry.created.model || pressure === undefined ? undefined : Object.freeze({
+            ...(pressure.contextWindow === undefined ? {} : { capacity: pressure.contextWindow }),
+            ...(pressure.projectedTokens === undefined ? {} : { projectedInputTokens: pressure.projectedTokens }),
+            ...(pressure.pressureTokens === undefined ? {} : { providerInputTokens: pressure.pressureTokens }),
+          });
+        const latest = observation.events.at(-1)?.time;
+        result[position] = Object.freeze({ ...snapshot,
+          ...(latest === undefined || latest <= Date.parse(snapshot.lastActivityAt) ? {} : { lastActivityAt: new Date(latest).toISOString() }),
+          ...(totalUsage === undefined ? {} : { totalUsage }), ...(context === undefined ? {} : { context }),
+        });
+      }
+    }));
+    if (root !== this.config.requireAgent()) throw new Error("Work listing primary generation changed");
+    return Object.freeze(result);
+  }
+
+  private activationLimitReached(entry: WorkEntry): boolean {
+    return entry.epochs.length >= Math.min(MAX_WORK_EPOCHS, entry.created.birth.maxTurns);
+  }
+
+  /** Trusted Host port: reopening is an explicit lifecycle fact, never a model tool. */
+  async resumeFromHost(agentId: string, clientRequestId: string, expectedHandleRevision: number, signal: AbortSignal): Promise<void> {
+    const root = this.config.requireAgent();
+    await this.initialize(root);
+    this.assertAccepting();
+    const entry = this.byAgent.get(agentId);
+    if (entry?.root !== root) throw new ProductToolError("recipient_not_found", "Agent is outside this primary Session");
+    await this.withLock(entry.taskId, async () => {
+      signal.throwIfAborted();
+      const previous = root.session.snapshotEvents().find((event) => event.type === "myagents/work/reopened" && event.data.clientRequestId === clientRequestId);
+      if (previous?.type === "myagents/work/reopened") {
+        if (previous.data.agentId !== agentId || previous.data.previousSettlementSeq !== expectedHandleRevision) throw new ProductToolError("delivery_failed", "Host resume identity was reused");
+        return;
+      }
+      if (entry.settlement === undefined || this.handleRevision(entry) !== expectedHandleRevision
+        || entry.created.initialMessageId === undefined || this.hasClosedAncestor(entry) || this.activationLimitReached(entry)) {
+        throw new ProductToolError("recipient_out_of_scope", "resume requires the exact closed retained Agent, open ancestors and available turn budget");
+      }
+      this.config.assertModel?.({ provider: entry.created.birth.provider, model: entry.created.model,
+        profileRevision: entry.created.birth.selectedModelProfileRevision ?? entry.created.birth.modelProfileRevision,
+        selection: entry.created.birth.modelSelection ?? "inherit" });
+      const previousSettlement = entry.settlement;
+      let output: ProductRetainedOutputFile | undefined;
+      if (entry.created.outputPath !== undefined) output = exactRetainedOutputFile(await exactNativePromise(
+        this.config.output.resume(entry.created.outputPath, this.config.runtimeHome(), signal), "explicit Agent output resume"));
+      try {
+        signal.throwIfAborted();
+        await this.serialize(async () => {
+          this.assertAccepting();
+          if (entry.settlement !== previousSettlement || this.hasClosedAncestor(entry)) throw new Error("Agent reopen authority changed");
+          const reopened = validateEventData("myagents/work/reopened", { agentId, clientRequestId,
+            previousSettlementSeq: previousSettlement.eventSeq, eventSeq: root.session.seq, sessionId: root.id, taskId: entry.taskId });
+          root.session.append("myagents/work/reopened", reopened);
+          await this.flush(root.session);
+          delete entry.settlement;
+          entry.terminalReady = this.settlementDeferred();
+          entry.stopRequested = false;
+          entry.outputFinalized = false;
+          if (output !== undefined) entry.output = output;
+        });
+      } catch (error) {
+        if (output !== undefined) await output.finalize(entry.latestOutput, MAX_AGENT_OUTPUT_BYTES);
+        throw error;
+      }
+    });
+  }
+
+  async stopFromHost(agentId: string, expectedHandleRevision: number, signal: AbortSignal): Promise<void> {
+    const root = this.config.requireAgent();
+    await this.initialize(root);
+    const entry = this.byAgent.get(agentId);
+    if (entry?.root !== root) throw new ProductToolError("recipient_not_found", "Agent is outside this primary Session");
+    await this.executeTaskStop(root, entry.taskId, signal, expectedHandleRevision);
+  }
+
+  async messageFromHost(agentId: string, clientMessageId: string, message: string, signal: AbortSignal): Promise<void> {
+    const root = this.config.requireAgent();
+    await this.executeSendMessage(root, { to: agentId, summary: "User follow-up", message }, {
+      callId: ToolCallId(`host-${sha256("host-agent-message-v1", clientMessageId)}`),
+      rootCallId: ToolCallId(`host-${sha256("host-agent-message-v1", clientMessageId)}`), signal,
+    });
+  }
+
   private safePrimary(): Agent | undefined {
     if (this.primary !== undefined) return this.primary;
     try { return this.config.requireAgent(); } catch { return undefined; }
-  }
-
-  private usageFor(agentId: string): UsageAccumulator {
-    const existing = this.usageByAgent.get(agentId);
-    if (existing !== undefined) return existing;
-    const created = emptyUsageAccumulator();
-    this.usageByAgent.set(agentId, created);
-    return created;
   }
 
   private queueEnd(entry: WorkEntry, ended: ActivationEndObservation): void {
@@ -2382,24 +2958,38 @@ export class ProductWorkService extends Service {
       }
       await this.recordEpoch(entry, ended);
       if (entry.stopRequested) return;
-      if (entry.mode === "continuable") {
-        if (entry.output === undefined) {
-          throw new Error("background ProductWork lacks its retained output handle");
-        }
-        await this.publishOutput(entry, entry.latestOutput);
-        return;
+      await this.publishOutput(entry, entry.latestOutput);
+      this.releaseComponentGenerationWaiters(entry);
+    }).catch((error: unknown) => { this.fence(error); });
+  }
+
+  private queueActivation(entry: WorkEntry, childStartSeq: number): void {
+    void this.withLock(entry.taskId, async () => {
+      await exactNativePromise(entry.published.promise, "ProductWork creation publication");
+      if (entry.settlement !== undefined || entry.stopRequested) {
+        throw new Error("a closed ProductWork handle started a native activation");
       }
-      const output = entry.latestOutput.length === 0
-        ? `subagent ${entry.agentId} settled without a closing message (${ended.info.stopReason})`
-        : entry.latestOutput;
-      const inline = boundedInline(output);
-      await this.appendSettlement(
-        entry,
-        terminalForStopReason(ended.info.stopReason),
-        inline.result,
-        inline.truncated,
-        usageFrom(ended.observation.session.events),
-      );
+      // Creation already owns the first activation. Native start is observed before
+      // the next prompt is consumed; no synthetic model turn is created here.
+      if (entry.epochs.length === 0) return;
+      await this.serialize(async () => {
+        const activated = validateEventData("myagents/work/activated", {
+          agentId: entry.agentId,
+          childStartSeq,
+          eventSeq: entry.root.session.seq,
+          ordinal: entry.epochs.length + 1,
+          sessionId: entry.root.id,
+          taskId: entry.taskId,
+        });
+        const previous = entry.epochs.at(-1);
+        if (previous === undefined || childStartSeq < previous.childEndSeq
+          || (entry.activated !== undefined && entry.activated.ordinal > previous.ordinal)) {
+          throw new Error("ProductWork activation differs from its previous durable epoch");
+        }
+        entry.root.session.append("myagents/work/activated", activated);
+        await this.flush(entry.root.session);
+        entry.activated = activated;
+      });
     }).catch((error: unknown) => { this.fence(error); });
   }
 
@@ -2423,12 +3013,15 @@ export class ProductWorkService extends Service {
       || !ended.info.local || String(ended.info.runId) !== ended.observation.runId) {
       throw new Error("ProductWork lifecycle end differs from its exact child epoch authority");
     }
-    await this.appendEpoch(entry, {
+    await this.flush(ended.observation.session);
+    const epoch = await this.appendEpoch(entry, {
       childEndSeq,
       childStartSeq,
       stopReason: ended.info.stopReason,
-    });
-    entry.latestOutput = accumulatedEpochOutput(ended.observation.session.events, entry);
+    }, ended.observation.session.snapshotEvents());
+    entry.latestOutput = accumulatedEpochOutput(ended.observation.session.snapshotEvents(), entry);
+    await this.reportCompletedEpoch(entry, epoch, ended.observation.session.snapshotEvents());
+    this.completeFirstActivation(entry, epoch, ended.observation.session.snapshotEvents());
     if (this.latestEnds.get(entry.agentId) === ended) this.latestEnds.delete(entry.agentId);
   }
 
@@ -2439,16 +3032,25 @@ export class ProductWorkService extends Service {
       childStartSeq: number;
       stopReason: SubagentStopReason;
     }>,
+    events: readonly SessionEvent[],
   ): Promise<ProductWorkEpochEventData> {
     return await this.serialize(async () => {
+      const output = epochOutput(events, { ...boundary, agentId: entry.agentId });
+      const inline = boundedInline(output.length === 0
+        ? `subagent ${entry.agentId} settled without a closing message (${boundary.stopReason})`
+        : output);
+      const usage = usageFrom(events.slice(boundary.childStartSeq, boundary.childEndSeq));
       const epoch = validateEventData("myagents/work/epoch", {
         agentId: entry.agentId,
         childEndSeq: boundary.childEndSeq,
         childStartSeq: boundary.childStartSeq,
         epochId: epochIdFor(entry.agentId, boundary.childStartSeq, boundary.childEndSeq),
-        eventSeq: entry.parent.session.seq,
+        eventSeq: entry.root.session.seq,
         ordinal: entry.epochs.length + 1,
-        sessionId: entry.parent.id,
+        result: inline.result,
+        resultTruncated: inline.truncated,
+        ...(usage === undefined ? {} : { usage }),
+        sessionId: entry.root.id,
         stopReason: boundary.stopReason,
         taskId: entry.taskId,
       });
@@ -2462,11 +3064,146 @@ export class ProductWorkService extends Service {
         || entry.epochs.some((known) => known.epochId === epoch.epochId)) {
         throw new Error("ProductWork epoch changed during durable publication");
       }
-      entry.parent.session.append("myagents/work/epoch", epoch);
-      await this.flush(entry.parent.session);
+      entry.root.session.append("myagents/work/epoch", epoch);
+      await this.flush(entry.root.session);
       entry.epochs.push(epoch);
       this.epochCount += 1;
       return epoch;
+    });
+  }
+
+  private completeFirstActivation(
+    entry: WorkEntry,
+    epoch: ProductWorkEpochEventData,
+    events: readonly SessionEvent[],
+  ): void {
+    if (epoch.ordinal !== 1 || entry.firstActivation !== undefined) return;
+    const inline = boundedInline(epoch.result ?? epochOutput(events, epoch));
+    const usage = epoch.usage ?? usageFrom(events.slice(epoch.childStartSeq, epoch.childEndSeq));
+    entry.firstActivation = Object.freeze({
+      terminal: terminalForStopReason(epoch.stopReason),
+      result: inline.result,
+      resultTruncated: epoch.resultTruncated ?? inline.truncated,
+      ...(usage === undefined ? {} : { usage }),
+    });
+    entry.firstActivationReady.resolve(entry.firstActivation);
+  }
+
+  private async reportCompletedEpoch(
+    entry: WorkEntry,
+    epoch: ProductWorkEpochEventData,
+    events: readonly SessionEvent[],
+  ): Promise<void> {
+    const root = entry.root;
+    await this.withLock(`messages:${root.id}`, async () => {
+      const recipient = entry.created.birth.parentSessionId;
+      const messageId = `completion-${epoch.epochId}`;
+      const output = epoch.result ?? epochOutput(events, epoch);
+      let excerpt = appendBoundedUtf8("", output, 1_536);
+      const summary = `Child activation ${String(epoch.ordinal)} ${epoch.stopReason}`;
+      const serializeReport = (): string => JSON.stringify({
+        kind: "activation_completion",
+        agentId: entry.agentId,
+        taskId: entry.taskId,
+        epochId: epoch.epochId,
+        ordinal: epoch.ordinal,
+        outcome: terminalForStopReason(epoch.stopReason),
+        result: excerpt,
+        truncated: excerpt !== output || epoch.resultTruncated === true,
+      });
+      let body = serializeReport();
+      while (Buffer.byteLength(`${summary}\n\n${body}`, "utf8") > MAX_COMPLETION_REPORT_BYTES && excerpt.length > 0) {
+        excerpt = appendBoundedUtf8("", excerpt, Math.floor(Buffer.byteLength(excerpt, "utf8") / 2));
+        body = serializeReport();
+      }
+      const content = parentReportContent(entry.agentId, messageText(summary, body));
+      const contentSha256 = sha256("myagents-work-message-content-v1", stableJson(content));
+      const contentBytes = Buffer.byteLength(`${summary}\n\n${body}`, "utf8");
+      if (contentBytes > MAX_COMPLETION_REPORT_BYTES) throw new Error("child completion report exceeded its fixed bound");
+      let known = this.messages.get(messageId);
+      if (known === undefined) {
+        await this.serialize(async () => {
+          const intent = validateEventData("myagents/work/message-intent", {
+            agentId: entry.agentId,
+            completionEpochId: epoch.epochId,
+            contentBytes,
+            contentSha256,
+            deliveryTiming: this.collaborationMessageTiming(),
+            eventSeq: root.session.seq,
+            messageId,
+            recipient,
+            sender: entry.agentId,
+            sequence: this.messageSequence + 1,
+            sessionId: root.id,
+            state: "delivered",
+            summary,
+            taskId: entry.taskId,
+          });
+          root.session.append("myagents/work/message-intent", intent);
+          await this.flush(root.session);
+          this.messageSequence = intent.sequence;
+          known = { intent };
+          this.messages.set(messageId, known);
+        });
+      }
+      if (known?.intent.contentSha256 !== contentSha256
+        || known.intent.completionEpochId !== epoch.epochId || known.intent.recipient !== recipient) {
+        throw new Error("child completion report differs from its durable epoch");
+      }
+      if (known.cancellation !== undefined) return;
+      if (await this.recoverMessageDelivery(root, known)) return;
+      if (this.hasClosedAncestor(entry)) {
+        await this.cancelMessage(root, known, "recipient_closed");
+        return;
+      }
+      const reportIntent = known;
+      if (recipient === root.id || this.recoveryPendingReady) await this.withDirectParent(entry, new AbortController().signal, async (parent) => {
+        const message = freezeMessage({
+          id: MessageId(`work-inbox-${sha256("myagents-work-inbox-v1", messageId).slice(0, 48)}`), role: "user",
+          content,
+          source: { kind: parent === root ? "subagent-report" : "agent-message", form: "relay", senderSessionId: SessionId(entry.agentId) },
+        });
+        if (parent === root) {
+          if (!await this.deliverRootContext(root, reportIntent, message)) return;
+        } else if ((reportIntent.intent.deliveryTiming ?? "realtime") === "realtime") parent.inject(message);
+        else parent.send(message, "next-turn", false);
+        await this.flush(parent.session);
+      });
+      else {
+        const parentEntry = this.byAgent.get(recipient);
+        if (parentEntry === undefined) throw new Error("completion report lacks its direct parent Work owner");
+        if (!this.activeEpochs.has(recipient) && this.activationLimitReached(parentEntry)) {
+          await this.cancelMessage(root, reportIntent, "recipient_limit");
+          return;
+        }
+        let slot = false;
+        try {
+          if (!this.activeEpochs.has(recipient)) {
+            await this.appendPhase(parentEntry, "queued");
+            await this.acquireChildSlot(parentEntry.taskId, new AbortController().signal);
+            slot = true;
+          }
+          this.assertOpenLineage(recipient);
+          await this.withDirectParent(parentEntry, new AbortController().signal, (parent) => this.ctx.subagents.deliverContinuable(parent, SessionId(recipient), content, {
+            source: { kind: "agent-message", form: "relay", senderSessionId: SessionId(entry.agentId) },
+            delivery: (reportIntent.intent.deliveryTiming ?? "realtime") === "realtime" ? "steer" : "queue",
+            signal: new AbortController().signal,
+          }));
+        } catch (error) {
+          if (await this.recoverMessageDelivery(root, reportIntent)) return;
+          if (error instanceof ChildAdmissionStoppedError || this.hasClosedAncestor(entry) || !this.accepting) {
+            await this.cancelMessage(root, reportIntent, "recipient_closed");
+            return;
+          }
+          throw error;
+        } finally {
+          if (slot) { this.creatingTasks.delete(parentEntry.taskId); this.pumpCapacity(); }
+        }
+      }
+      if (this.messages.get(messageId)?.cancellation !== undefined) return;
+      if (!await this.recoverMessageDelivery(root, known)) {
+        throw new Error("child completion report lacks its accepted DSH Inbox insertion");
+      }
     });
   }
 
@@ -2589,7 +3326,17 @@ export class ProductWorkService extends Service {
 
   private async executeAgent(product: ProductToolContext, args: JsonObject): Promise<unknown> {
     await this.initialize();
-    const authority = workCreationAuthority(product);
+    const root = this.rootForCaller(product.agent);
+    const parentWork = product.agent === root ? undefined : this.byAgent.get(product.agent.id);
+    if (parentWork !== undefined && !parentWork.created.birth.allowedTools.includes("Agent")) {
+      throw new ProductToolError("child_agent_nesting_forbidden", "this role's frozen tool surface does not allow child delegation");
+    }
+    const depth = (parentWork?.created.birth.depth ?? 0) + 1;
+    if (depth > this.executionLimits().maxDepth) throw new ProductToolError("child_agent_nesting_forbidden", "child creation exceeds the Host-configured maximum depth");
+    const authority = Object.freeze({
+      ...workCreationAuthority(product),
+      ...(parentWork === undefined ? {} : { rootDshTurn: parentWork.created.authority.rootDshTurn ?? parentWork.created.authority.dshTurn }),
+    });
     const taskId = taskIdFor(product);
     const requestSha256 = agentRequestSha256(authority, args);
     await this.ctx.productTools.authorize(product, {
@@ -2600,7 +3347,7 @@ export class ProductWorkService extends Service {
     return await runWithProductToolExecutionDeadline(
       product,
       CANONICAL_TOOL_CONTRACTS.Agent.timeoutMs,
-      async (product) => {
+      async (product) => this.withWaitingAgent(product.agent, "child", product.signal, async () => {
         const entry = await this.withLock(taskId, async () => {
           const existing = this.byTask.get(taskId);
           if (existing !== undefined) {
@@ -2610,16 +3357,21 @@ export class ProductWorkService extends Service {
             await exactNativePromise(existing.published.promise, "known Agent creation publication");
             return existing;
           }
-          if (this.byTask.size + this.workReservations >= MAX_WORK_ITEMS) {
-            throw new ProductToolError("child_failed", "product work item quota is exhausted");
+          if (this.byTask.size + this.workReservations.size >= this.executionLimits().maxRetainedChildren) {
+            throw new ProductToolError("child_failed", "this Session reached its retained child handle limit");
           }
-          this.workReservations += 1;
+          this.workReservations.add(taskId);
           try {
             return await this.executeNewAgent(product, authority, args, taskId, requestSha256);
           } finally {
-            this.workReservations -= 1;
+            this.workReservations.delete(taskId);
+            this.creatingTasks.delete(taskId);
+            this.pumpCapacity();
           }
         });
+        if (entry.created.admission === "reserved" && entry.created.initialMessageId === undefined && entry.settlement !== undefined) {
+          throw new ProductToolError("child_failed", `child Agent admission was ${entry.settlement.terminal}`);
+        }
         if (entry.mode === "continuable") {
           if (entry.created.outputPath === undefined) {
             throw new ProductToolError("child_failed", "known background Agent lacks retained output authority");
@@ -2634,15 +3386,15 @@ export class ProductWorkService extends Service {
         }
         const settled = await this.awaitForegroundSettlement(entry, product.signal);
         return this.foregroundResult(entry, settled);
-      },
+      }),
     );
   }
 
   private async awaitForegroundSettlement(
     entry: WorkEntry,
     signal: AbortSignal,
-  ): Promise<ProductWorkSettledEventData> {
-    const known = entry.settlement;
+  ): Promise<WorkActivationResult> {
+    const known = entry.firstActivation ?? entry.settlement;
     if (known !== undefined && !signal.aborted) return known;
 
     const aborted = Promise.withResolvers<undefined>();
@@ -2652,8 +3404,8 @@ export class ProductWorkService extends Service {
     try {
       const outcome = await Promise.race([
         exactNativePromise(
-          entry.terminalReady.promise,
-          "foreground Agent terminal settlement",
+          entry.firstActivationReady.promise,
+          "foreground Agent activation completion",
         ).then((settlement) => Object.freeze({ kind: "settled" as const, settlement })),
         aborted.promise.then(() => Object.freeze({ kind: "aborted" as const })),
       ]);
@@ -2684,6 +3436,32 @@ export class ProductWorkService extends Service {
     }
   }
 
+  private selectChildModel(
+    authority: WorkCreationAuthority,
+    template: AgentBirthTemplate,
+    requested?: string,
+  ): ProductChildModelBinding {
+    if (this.config.selectModel !== undefined) {
+      const selected = normalizeCanonicalJson(this.config.selectModel(
+        authority.agent, template.type, requested, template.modelProfileRef,
+      ));
+      const schema = strictObject({
+        model: eventIdentifier, provider: eventIdentifier, profileRevision: eventIdentifier,
+        selection: Type.Union([Type.Literal("inherit"), Type.Literal("fixed"), Type.Literal("agent")]),
+      });
+      if (!Value.Check(schema, selected)) throw new ProductToolError("agent_unavailable", "invalid Host child model selection");
+      const binding = deepFreeze(selected) as ProductChildModelBinding;
+      this.config.assertModel?.(binding);
+      return binding;
+    }
+    const { model, provider } = authority.agent.options;
+    if (model === undefined || provider === undefined || (requested !== undefined && requested !== model)
+      || (template.modelProfileRef !== undefined && template.modelProfileRef !== authority.birth.modelProfileRevision)) {
+      throw new ProductToolError("agent_unavailable", "requested child model is absent from the operation-frozen route");
+    }
+    return Object.freeze({ model, provider, profileRevision: authority.birth.modelProfileRevision, selection: "inherit" });
+  }
+
   private async executeNewAgent(
     product: ProductToolContext,
     authority: WorkCreationAuthority,
@@ -2692,20 +3470,15 @@ export class ProductWorkService extends Service {
     requestSha256: string,
   ): Promise<WorkEntry> {
     this.assertAccepting();
-    this.assertAccepting();
     const parentModel = product.agent.options.model;
     const parentProvider = product.agent.options.provider;
     const requestedModel = args.model as string | undefined;
-    if (parentModel === undefined || parentProvider === undefined
-      || (requestedModel !== undefined && requestedModel !== parentModel)) {
-      throw new ProductToolError("agent_unavailable", "requested child model alias is absent from the operation-frozen route");
+    if (parentModel === undefined || parentProvider === undefined) {
+      throw new ProductToolError("agent_unavailable", "parent model route is absent");
     }
     const type = (args.subagent_type as string | undefined) ?? "general";
     const template = this.resolveAgentTemplate(authority, type);
-    if (template.modelProfileRef !== undefined
-      && template.modelProfileRef !== authority.birth.modelProfileRevision) {
-      throw new ProductToolError("agent_unavailable", "requested child model profile differs from operation birth");
-    }
+    const selectedModel = this.selectChildModel(authority, template, requestedModel);
     const background = args.run_in_background !== false;
     let output: ProductRetainedOutputFile | undefined;
     let admittedEntry: WorkEntry | undefined;
@@ -2713,8 +3486,8 @@ export class ProductWorkService extends Service {
     let durableCreated = false;
     let continuableStart: ContinuableStart | undefined;
     const request = Object.freeze({
-      agentOptions: Object.freeze({ model: parentModel, provider: parentProvider }),
-      maxDepth: 1,
+      agentOptions: Object.freeze({ model: selectedModel.model, provider: selectedModel.provider }),
+      maxDepth: this.executionLimits().maxDepth,
       parent: product.agent,
       persona: template.persona,
       personaInterpolate: false,
@@ -2735,9 +3508,10 @@ export class ProductWorkService extends Service {
         throw new ProductToolError("child_failed", "background Agent output authority is unavailable");
       }
       const permit = Object.freeze({
-        agentProvider: parentProvider,
+        agentProvider: selectedModel.provider,
+        selectedModel,
         authority,
-        model: parentModel,
+        model: selectedModel.model,
         mode: background ? "continuable" as const : "foreground" as const,
         parent: product.agent,
         ready: this.entryDeferred(),
@@ -2745,11 +3519,25 @@ export class ProductWorkService extends Service {
         template,
       });
       creationPermit = permit.ready;
+      const childId = SessionId(`child-${sha256("myagents-work-child-v1", taskId).slice(0, 48)}`);
+      const entry = this.newEntry(
+        authority, taskId, childId, background ? "continuable" : "foreground", selectedModel.model,
+        args, requestSha256, output, undefined, undefined, template, selectedModel,
+      );
+      entry.created = validateEventData("myagents/work/created", { ...entry.created, admission: "reserved" });
+      admittedEntry = entry;
+      await this.appendCreated(entry);
+      durableCreated = true;
+      await this.acquireChildSlot(taskId, product.signal);
+      this.assertAccepting();
+      if (entry.stopRequested) throw new ProductToolError("child_failed", "child admission was stopped before execution");
+      this.config.assertModel?.(selectedModel);
       this.continuablePermits.set(taskId, permit);
       let started: ContinuableStart;
       try {
         started = await exactNativePromise<ContinuableStart>(
           this.ctx.subagents.startContinuable({
+            childId,
             provider: this.config.provider,
             label: taskId,
             request,
@@ -2768,7 +3556,7 @@ export class ProductWorkService extends Service {
         throw new ProductToolError("child_failed", "continuable child lacks its exact initial lifecycle boundary");
       }
       const initialMessage = validateInitialInboxMessage(
-        initialEpoch.session.events,
+        initialEpoch.session.snapshotEvents(),
         String(started.messageId),
         sha256(
           "myagents-work-message-content-v1",
@@ -2778,23 +3566,10 @@ export class ProductWorkService extends Service {
       if (initialMessage.eventSeq !== initialEpoch.startSeq) {
         throw new ProductToolError("child_failed", "continuable child initial Inbox boundary changed during admission");
       }
-      const entry = this.newEntry(
-        authority,
-        taskId,
-        started.childId,
-        background ? "continuable" : "foreground",
-        parentModel,
-        args,
-        requestSha256,
-        output,
-        initialMessage.eventSeq,
-        String(started.messageId),
-        template,
-      );
-      admittedEntry = entry;
-      this.publishEntry(entry);
-      await this.appendCreated(entry);
-      durableCreated = true;
+      if (started.childId !== childId) throw new Error("DSH changed the reserved ProductWork child identity");
+      await this.appendStarted(entry, initialMessage.eventSeq, String(started.messageId), sha256(
+        "myagents-work-message-content-v1", stableJson(request.prompt),
+      ));
       if (this.pendingChildAuthorities.get(entry.agentId) === permit) {
         this.pendingChildAuthorities.delete(entry.agentId);
       }
@@ -2804,9 +3579,23 @@ export class ProductWorkService extends Service {
       if (ended !== undefined) this.queueEnd(entry, ended);
       return entry;
     } catch (error) {
+      if (this.failure !== undefined) {
+        creationPermit?.reject(this.failure);
+        throw this.failure;
+      }
       if (durableCreated) {
         creationPermit?.reject(error);
-        if (admittedEntry?.settlement === undefined) throw this.fence(error);
+        if (admittedEntry === undefined) throw this.fence(error);
+        try {
+          const terminal = product.signal.aborted || admittedEntry.stopRequested || error instanceof ChildAdmissionStoppedError ? "aborted" : "failed";
+          await this.appendStopping(admittedEntry);
+          await exactNativePromise(this.ctx.subagents.drainContinuableChildren(product.agent, [SessionId(admittedEntry.agentId)]), "failed reserved child retirement");
+          await this.finalizeOutput(admittedEntry, "child Agent admission failed");
+          await this.appendSettlement(admittedEntry, terminal, "child Agent admission failed", false, usageFrom([]));
+          admittedEntry.published.resolve();
+        } catch (cleanupError) {
+          throw this.fence(new AggregateError([error, cleanupError], "reserved child retirement failed"));
+        }
         throw error;
       }
       const cleanupErrors: unknown[] = [];
@@ -2823,7 +3612,6 @@ export class ProductWorkService extends Service {
         } finally {
           this.activeEpochs.delete(continuableChildId);
           this.latestEnds.delete(continuableChildId);
-          this.usageByAgent.delete(continuableChildId);
         }
       }
       if (output !== undefined && continuableStart === undefined) {
@@ -2864,13 +3652,17 @@ export class ProductWorkService extends Service {
     initialChildEventSeq: number | undefined,
     initialMessageId: string | undefined,
     template: AgentBirthTemplate,
+    selectedModel?: ProductChildModelBinding,
   ): WorkEntry {
+    const root = this.safePrimary();
+    if (root === undefined || this.rootForCaller(authority.agent) !== root) throw new Error("child birth lacks its root tree authority");
+    const depth = this.lineageFor(authority.agent.id).length + 1;
     const birth = Object.freeze({
       allowedReadRoots: Object.freeze([]),
       allowedTools: template.allowedTools,
       componentDigest: authority.birth.componentDigest,
       componentRevision: authority.birth.componentRevision,
-      depth: 1 as const,
+      depth,
       descriptorDigest: sha256(stableJson({
         allowedReadRoots: [],
         allowedTools: template.allowedTools,
@@ -2878,19 +3670,27 @@ export class ProductWorkService extends Service {
         maxTurns: template.maxTurns,
         model,
         modelProfileRevision: authority.birth.modelProfileRevision,
+        ...(selectedModel === undefined ? {} : {
+          selectedModelProfileRevision: selectedModel.profileRevision,
+          modelSelection: selectedModel.selection,
+        }),
         network: "deny",
         persona: template.persona,
-        provider: authority.agent.options.provider,
+        provider: selectedModel?.provider ?? authority.agent.options.provider,
         type: template.type,
       })),
       interaction: "unavailable" as const,
       maxTurns: template.maxTurns,
       model,
       modelProfileRevision: authority.birth.modelProfileRevision,
+      ...(selectedModel === undefined ? {} : {
+        selectedModelProfileRevision: selectedModel.profileRevision,
+        modelSelection: selectedModel.selection,
+      }),
       network: "deny" as const,
       parentOperationId: authority.clientOperationId,
       parentSessionId: authority.agent.id,
-      provider: authority.agent.options.provider ?? "default",
+      provider: selectedModel?.provider ?? authority.agent.options.provider ?? "default",
       persona: template.persona,
       type: template.type,
     });
@@ -2900,13 +3700,14 @@ export class ProductWorkService extends Service {
         callId: authority.callId,
         clientOperationId: authority.clientOperationId,
         dshTurn: authority.dshTurn,
+        ...(authority.rootDshTurn === undefined ? {} : { rootDshTurn: authority.rootDshTurn }),
         productTurnId: authority.productTurnId,
         toolCatalogDigest: authority.catalog.digest,
         toolCatalogRevision: authority.catalog.revision,
       },
       birth,
       description: args.description,
-      eventSeq: authority.agent.session.seq,
+      eventSeq: root.session.seq,
       ...(initialChildEventSeq === undefined ? {} : { initialChildEventSeq }),
       ...(initialMessageId === undefined ? {} : {
         initialContentSha256: sha256(
@@ -2919,7 +3720,7 @@ export class ProductWorkService extends Service {
       model,
       ...(output === undefined ? {} : { outputPath: output.path }),
       requestSha256,
-      sessionId: authority.agent.id,
+      sessionId: root.id,
       taskId,
     });
     return {
@@ -2931,11 +3732,12 @@ export class ProductWorkService extends Service {
       ...(output === undefined ? {} : { output }),
       outputFinalized: false,
       outputReady: this.deferred(),
-      parent: authority.agent,
+      root,
       published: this.deferred(),
       stopRequested: false,
       taskId,
       terminalReady: this.settlementDeferred(),
+      firstActivationReady: this.activationDeferred(),
     };
   }
 
@@ -2947,21 +3749,55 @@ export class ProductWorkService extends Service {
     }
     this.byTask.set(entry.taskId, entry);
     this.byAgent.set(entry.agentId, entry);
+    this.workReservations.delete(entry.taskId);
   }
 
   private async appendCreated(entry: WorkEntry): Promise<void> {
-    await this.serialize(async () => {
+    const admitted = await this.serialize(async () => {
+      const parentEntry = this.byAgent.get(entry.created.birth.parentSessionId);
+      if (parentEntry?.stopRequested || parentEntry?.settlement !== undefined) return false;
       const created = validateEventData("myagents/work/created", {
         ...entry.created,
-        eventSeq: entry.parent.session.seq,
+        eventSeq: entry.root.session.seq,
       });
-      entry.parent.session.append("myagents/work/created", created);
-      await this.flush(entry.parent.session);
       entry.created = created;
+      this.publishEntry(entry);
+      entry.root.session.append("myagents/work/created", created);
+      await this.flush(entry.root.session);
+      return true;
+    });
+    if (!admitted) throw new ProductToolError("child_agent_nesting_forbidden", "parent stopped before durable child admission");
+  }
+
+  private async appendStarted(entry: WorkEntry, childSeq: number, messageId: string, contentSha256: string): Promise<void> {
+    await this.serialize(async () => {
+      if (entry.created.admission !== "reserved" || entry.created.initialMessageId !== undefined
+        || entry.stopRequested || entry.settlement !== undefined) throw new Error("ProductWork admission cannot start twice or after closing");
+      const started = validateEventData("myagents/work/started", {
+        agentId: entry.agentId, taskId: entry.taskId, sessionId: entry.root.id,
+        eventSeq: entry.root.session.seq, initialChildEventSeq: childSeq,
+        initialMessageId: messageId, initialContentSha256: contentSha256,
+      });
+      entry.root.session.append("myagents/work/started", started);
+      await this.flush(entry.root.session);
+      this.applyStarted(entry, started);
     });
   }
 
-  private foregroundResult(entry: WorkEntry, settled: ProductWorkSettledEventData): unknown {
+  private applyStarted(entry: WorkEntry, started: ProductWorkStartedEventData): void {
+    if (entry.created.admission !== "reserved" || entry.created.initialMessageId !== undefined
+      || entry.agentId !== started.agentId || entry.stopRequested || entry.settlement !== undefined) {
+      throw new Error("ProductWork start differs from its reserved birth");
+    }
+    entry.created = validateEventData("myagents/work/created", {
+      ...entry.created,
+      initialChildEventSeq: started.initialChildEventSeq,
+      initialContentSha256: started.initialContentSha256,
+      initialMessageId: started.initialMessageId,
+    });
+  }
+
+  private foregroundResult(entry: WorkEntry, settled: WorkActivationResult): unknown {
     if (settled.terminal !== "succeeded") {
       throw new ProductToolError("child_failed", `foreground child Agent reached ${settled.terminal} terminal`);
     }
@@ -2971,23 +3807,47 @@ export class ProductWorkService extends Service {
       state: settled.terminal,
       result: settled.result,
       resultTruncated: settled.resultTruncated,
-      usage: settled.usage,
+      ...(settled.usage === undefined ? {} : { usage: settled.usage }),
       model: entry.created.model,
     });
   }
 
-  private async executeTaskStop(caller: Agent, taskId: string, signal: AbortSignal): Promise<unknown> {
+  private async executeTaskStop(caller: Agent, taskId: string, signal: AbortSignal, expectedHandleRevision?: number): Promise<unknown> {
     await this.initialize();
     this.assertHealthy();
     const entry = this.byTask.get(taskId);
     if (entry !== undefined) {
       this.authorizeLineage(caller, entry);
-      if (caller.id === entry.agentId) {
-        throw new ProductToolError("task_stop_failed", "a child Agent cannot synchronously stop its own active task");
+      if (caller.id === entry.agentId || (caller !== entry.root && this.lineageFor(caller.id).includes(entry.agentId))) {
+        throw new ProductToolError("task_stop_failed", "a child Agent cannot synchronously stop its own active task or an ancestor");
+      }
+      if (entry.settlement === undefined && expectedHandleRevision !== undefined && expectedHandleRevision !== this.handleRevision(entry)) {
+        throw new ProductToolError("task_stop_failed", "Host stop refers to an older Agent handle revision");
+      }
+      // Release queued activation admission before waiting on the task lock:
+      // its previous epoch may still be publishing a report under message order.
+      this.capacityWaiters.get(taskId)?.cancel(new ChildAdmissionStoppedError("child activation stopped by user"));
+      for (const descendant of this.byTask.values()) {
+        if (descendant !== entry && this.lineageFor(descendant.agentId).includes(entry.agentId)) {
+          this.capacityWaiters.get(descendant.taskId)?.cancel(new ChildAdmissionStoppedError("ancestor stopped child admission"));
+        }
+      }
+      if (entry.created.admission === "reserved" && entry.created.initialMessageId === undefined && entry.settlement === undefined) {
+        signal.throwIfAborted();
+        await this.appendStopping(entry);
+        this.capacityWaiters.get(taskId)?.cancel(new Error("queued child stopped by user"));
       }
       return await this.withLock(taskId, async () => {
         const alreadyTerminal = entry.settlement !== undefined;
-        if (!alreadyTerminal) await this.stopAgentEntry(entry, signal);
+        if (!alreadyTerminal && expectedHandleRevision !== undefined && expectedHandleRevision !== this.handleRevision(entry)) {
+          throw new ProductToolError("task_stop_failed", "Host stop refers to an older Agent handle revision");
+        }
+        if (!alreadyTerminal) {
+          const descendants = [...this.byTask.values()].filter((candidate) => candidate !== entry
+            && candidate.settlement === undefined && this.lineageFor(candidate.agentId).includes(entry.agentId));
+          if (descendants.length === 0) await this.stopAgentEntry(entry, signal);
+          else await this.stopSubtree(entry, signal);
+        }
         const terminal = entry.settlement?.terminal;
         if (terminal === undefined) throw new ProductToolError("task_stop_failed", "child did not reach terminal cleanup");
         return Object.freeze({ taskId, kind: "agent" as const, terminal, alreadyTerminal });
@@ -3012,7 +3872,32 @@ export class ProductWorkService extends Service {
     return Object.freeze({ taskId, kind: "process" as const, terminal: terminalForJob(snapshot), alreadyTerminal });
   }
 
-  private async stopAgentEntry(entry: WorkEntry, signal: AbortSignal): Promise<void> {
+  private async stopSubtree(entry: WorkEntry, signal: AbortSignal): Promise<void> {
+    await this.withDirectParent(entry, signal, async (parent) => {
+      await exactNativePromise(this.ctx.subagents.withContinuableAncestors(parent, [SessionId(entry.agentId)], { signal }, async (target) => {
+        const errors: unknown[] = [];
+        try { await this.appendStopping(entry); } catch (error) { errors.push(error); }
+        const descendants = [...this.byTask.values()].filter((candidate) => candidate !== entry
+          && candidate.settlement === undefined && this.lineageFor(candidate.agentId).includes(entry.agentId))
+          .sort((left, right) => right.created.birth.depth - left.created.birth.depth);
+        const retained = new Map(descendants.map((child) => [child.agentId, this.ctx.agents.get(SessionId(child.agentId))]));
+        for (const child of descendants) {
+          try { await this.appendStopping(child); } catch (error) { errors.push(error); }
+          this.capacityWaiters.get(child.taskId)?.cancel(new Error("ancestor stopped the queued child"));
+        }
+        try { await this.ctx.subagents.drainContinuableDescendants([target]); } catch (error) { errors.push(error); }
+        try { await this.ctx.subagents.drainContinuableChildren(parent, [SessionId(entry.agentId)]); } catch (error) { errors.push(error); }
+        const cleanupSignal = new AbortController().signal;
+        for (const child of descendants) {
+          try { await this.withLock(child.taskId, () => this.stopAgentEntry(child, cleanupSignal, retained.get(child.agentId))); } catch (error) { errors.push(error); }
+        }
+        try { await this.stopAgentEntry(entry, cleanupSignal, target); } catch (error) { errors.push(error); }
+        if (errors.length > 0) throw this.fence(new AggregateError(errors, "ProductWork subtree retirement failed"));
+      }), "ProductWork subtree retirement residency");
+    });
+  }
+
+  private async stopAgentEntry(entry: WorkEntry, signal: AbortSignal, retainedLive?: Agent): Promise<void> {
     if (entry.settlement !== undefined) return;
     signal.throwIfAborted();
     const preRetirementErrors: unknown[] = [];
@@ -3025,10 +3910,9 @@ export class ProductWorkService extends Service {
     }
     const live = this.ctx.agents.get(SessionId(entry.agentId));
     try {
-      await exactNativePromise(
-        this.ctx.subagents.drainContinuableChildren(entry.parent, [SessionId(entry.agentId)]),
-        "continuable subagent retirement",
-      );
+      if (live !== undefined) await this.withDirectParent(entry, signal, async (parent) => {
+        await exactNativePromise(this.ctx.subagents.drainContinuableChildren(parent, [SessionId(entry.agentId)]), "continuable subagent retirement");
+      });
     } catch (error) {
       preRetirementErrors.push(error);
     }
@@ -3043,21 +3927,24 @@ export class ProductWorkService extends Service {
     await this.finalizeOutput(entry, output);
     const inline = boundedInline(output);
     await this.appendSettlement(entry, "aborted", inline.result, inline.truncated,
-      await this.usageForEntry(entry, live));
+      await this.usageForEntry(entry, live ?? retainedLive));
   }
 
   private async usageForEntry(entry: WorkEntry, retainedLive: Agent | undefined): Promise<ProductWorkSettledEventData["usage"]> {
-    if (retainedLive !== undefined) return usageFrom(retainedLive.session.events);
+    if (retainedLive !== undefined) return usageFrom(retainedLive.session.snapshotEvents().slice(entry.created.initialChildEventSeq ?? retainedLive.session.inheritedEventCount));
+    const ended = this.latestEnds.get(entry.agentId);
+    if (ended !== undefined) return usageFrom(ended.observation.session.snapshotEvents().slice(entry.created.initialChildEventSeq ?? ended.observation.session.inheritedEventCount));
+    if (entry.created.admission === "reserved" && entry.created.initialMessageId === undefined) return usageFrom([]);
     const persistence = this.ctx.get("sessionPersistence");
-    if (persistence === undefined) return projectUsage(this.usageFor(entry.agentId));
+    if (persistence === undefined) return undefined;
     const inspection = await exactNativePromise<SessionInspection>(
       persistence.inspect(SessionId(entry.agentId)),
       "continuable subagent usage inspection",
     );
-    if (inspection.meta.id !== entry.agentId || inspection.meta.parentSession !== entry.parent.id) {
+    if (inspection.meta.id !== entry.agentId || inspection.meta.parentSession !== entry.created.birth.parentSessionId) {
       throw new Error("persisted child usage belongs to another WorkRegistry lineage");
     }
-    return usageFrom(inspection.events);
+    return usageFrom(inspection.events.slice(entry.created.initialChildEventSeq ?? inspection.inheritedEventCount));
   }
 
   private async executeSendMessage(
@@ -3071,7 +3958,7 @@ export class ProductWorkService extends Service {
     const root = this.rootForCaller(caller);
     const requestedRecipient = args.to as string;
     const recipient = requestedRecipient === "parent" && caller !== root
-      ? String(root.id)
+      ? this.byAgent.get(caller.id)?.created.birth.parentSessionId ?? String(root.id)
       : requestedRecipient;
     const messageId = `message-${sha256(
       "myagents-work-message-v2",
@@ -3080,7 +3967,7 @@ export class ProductWorkService extends Service {
       String(exec.rootCallId),
       String(exec.callId),
     ).slice(0, 48)}`;
-    return await this.withLock(`messages:${root.id}`, async () => {
+    return await this.withWaitingAgent(caller, "delivery", exec.signal, () => this.withLock(`messages:${root.id}`, async () => {
       const blocks = messageText(summary, message);
       const persistedContent = recipient === root.id && caller !== root
         ? parentReportContent(caller.id, blocks)
@@ -3094,6 +3981,7 @@ export class ProductWorkService extends Service {
           || known.intent.contentBytes !== contentBytes) {
           throw new ProductToolError("delivery_failed", "SendMessage call identity was reused with different immutable input");
         }
+        if (known.cancellation !== undefined) throw new ProductToolError("delivery_failed", "this exact collaborator message was canceled before delivery");
         if (known.delivery !== undefined) return this.messageResult(known);
       }
       this.assertAccepting();
@@ -3109,7 +3997,7 @@ export class ProductWorkService extends Service {
         exec.signal,
         known,
       );
-    });
+    }));
   }
 
   private async executeNewMessage(
@@ -3128,20 +4016,19 @@ export class ProductWorkService extends Service {
     let state: "delivered" | "queued" = "delivered";
     if (recipient === root.id && caller !== root) {
       const sourceEntry = this.byAgent.get(caller.id);
-      if (sourceEntry?.parent !== root || sourceEntry.settlement !== undefined || sourceEntry.stopRequested) {
+      if (sourceEntry?.root !== root || sourceEntry.settlement !== undefined || sourceEntry.stopRequested) {
         throw new ProductToolError("recipient_out_of_scope", "sender is not a live collaborator in this primary Session");
       }
       targetTask = sourceEntry;
     } else {
       const recipientEntry = this.byAgent.get(recipient);
-      if (recipientEntry?.parent !== root) {
+      if (recipientEntry?.root !== root) {
         throw new ProductToolError("recipient_not_found", "recipient is not a local collaborator in this primary Session");
       }
       if (recipientEntry.settlement !== undefined || recipientEntry.stopRequested) {
         throw new ProductToolError("recipient_not_found", "recipient is terminal or stopping");
       }
-      const consumedTurns = recipientEntry.epochs.length + 1;
-      if (consumedTurns >= recipientEntry.created.birth.maxTurns) {
+      if (!this.activeEpochs.has(recipient) && this.activationLimitReached(recipientEntry)) {
         throw new ProductToolError(
           "delivery_failed",
           "recipient exhausted its operation-frozen maximum turn count",
@@ -3149,17 +4036,18 @@ export class ProductWorkService extends Service {
       }
       if (caller !== root) {
         const callerEntry = this.byAgent.get(caller.id);
-        if (callerEntry?.parent !== root) {
+        if (callerEntry?.root !== root) {
           throw new ProductToolError("recipient_out_of_scope", "sender and recipient do not share one parent Session");
         }
       }
       targetTask = recipientEntry;
-      state = this.ctx.agents.get(SessionId(recipient))?.status === "running" ? "queued" : "delivered";
+      const active = this.activeEpochs.has(recipient);
+      state = active ? "queued" : "delivered";
     }
     let known = existing;
     if (known === undefined) {
       const pending = [...this.messages.values()]
-        .filter((candidate) => candidate.delivery === undefined)
+        .filter((candidate) => candidate.delivery === undefined && candidate.cancellation === undefined)
         .sort((left, right) => left.intent.sequence - right.intent.sequence);
       for (const earlier of pending) {
         if (!await this.recoverMessageDelivery(root, earlier)) {
@@ -3169,7 +4057,8 @@ export class ProductWorkService extends Service {
           );
         }
       }
-      if (this.messageSequence >= MAX_WORK_MESSAGES
+      const manualCount = [...this.messages.values()].filter((message) => message.intent.completionEpochId === undefined).length;
+      if (manualCount >= MAX_MANUAL_WORK_MESSAGES
         || this.messageBytes > MAX_WORK_MESSAGE_BYTES - contentBytes) {
         throw new ProductToolError("delivery_failed", "product work message quota is exhausted");
       }
@@ -3179,6 +4068,7 @@ export class ProductWorkService extends Service {
           agentId: targetTask.agentId,
           contentBytes,
           contentSha256,
+          deliveryTiming: this.collaborationMessageTiming(),
           eventSeq: root.session.seq,
           messageId,
           recipient,
@@ -3205,18 +4095,30 @@ export class ProductWorkService extends Service {
     if (known === undefined) throw this.fence(new Error("SendMessage intent publication was lost"));
     if (await this.recoverMessageDelivery(root, known)) return this.messageResult(known);
     let dshMessageId: string;
+    let slot = false;
     try {
       if (recipient === root.id && caller !== root) {
-        dshMessageId = await exactNativePromise(
-          this.ctx.subagents.reportFrom(caller, blocks, { delivery: "quiet", signal }),
-          "subagent parent report",
-        );
+        signal.throwIfAborted();
+        const report = freezeMessage({
+          id: MessageId(`work-inbox-${sha256("myagents-work-inbox-v1", messageId).slice(0, 48)}`), role: "user",
+          content: parentReportContent(caller.id, blocks),
+          source: { kind: "agent-message", form: "relay", senderSessionId: caller.id },
+        });
+        if (!await this.deliverRootContext(root, known, report)) throw new ProductToolError("delivery_failed", "the root is no longer admitting collaboration");
+        dshMessageId = report.id;
       } else {
+        if (!this.activeEpochs.has(recipient)) {
+          await this.appendPhase(targetTask, "queued");
+          await this.acquireChildSlot(targetTask.taskId, signal);
+          slot = true;
+          this.assertOpenLineage(recipient);
+        }
         dshMessageId = await exactNativePromise(
-          this.ctx.subagents.followup(root, SessionId(recipient), blocks, {
-            source: Object.freeze({ kind: "coordinator", form: "relay", senderSessionId: caller.id }),
+          this.withDirectParent(targetTask, signal, (parent) => this.ctx.subagents.deliverContinuable(parent, SessionId(recipient), blocks, {
+            delivery: (known?.intent.deliveryTiming ?? "turn") === "realtime" ? "steer" : "queue",
+            source: Object.freeze({ kind: "agent-message", form: "relay", senderSessionId: caller.id }),
             signal,
-          }),
+          })),
           "subagent follow-up",
         );
         const childSession = this.ctx.sessions.get(SessionId(recipient));
@@ -3227,7 +4129,15 @@ export class ProductWorkService extends Service {
       }
     } catch (error) {
       if (await this.recoverMessageDelivery(root, known)) return this.messageResult(known);
+      if (signal.aborted || error instanceof ChildAdmissionStoppedError || targetTask.stopRequested || targetTask.settlement !== undefined) {
+        await this.cancelMessage(root, known, signal.aborted ? "caller_aborted" : "recipient_closed");
+      }
       throw error;
+    } finally {
+      if (slot) {
+        this.creatingTasks.delete(targetTask.taskId);
+        this.pumpCapacity();
+      }
     }
     const delivery = validateEventData("myagents/work/message", {
       agentId: targetTask.agentId,
@@ -3246,17 +4156,18 @@ export class ProductWorkService extends Service {
   }
 
   private async recoverMessageDelivery(root: Agent, known: WorkMessageEntry): Promise<boolean> {
+    if (known.cancellation !== undefined) return false;
     if (known.delivery !== undefined) return true;
     let events: readonly SessionEvent[];
     let sourceKind: "coordinator" | "subagent-report";
     if (known.intent.recipient === root.id) {
-      events = root.session.events;
+      events = root.session.snapshotEvents();
       sourceKind = "subagent-report";
     } else {
       sourceKind = "coordinator";
       const child = this.ctx.sessions.get(SessionId(known.intent.recipient));
       if (child !== undefined) {
-        events = child.events;
+        events = child.snapshotEvents();
       } else {
         const persistence = this.ctx.get("sessionPersistence");
         if (persistence === undefined) return false;
@@ -3265,7 +4176,8 @@ export class ProductWorkService extends Service {
           "SendMessage recovery inspection",
         );
         if (inspection.meta.id !== known.intent.recipient
-          || inspection.meta.parentSession !== root.id || inspection.meta.origin !== "subagent") {
+          || inspection.meta.parentSession !== this.byAgent.get(known.intent.recipient)?.created.birth.parentSessionId
+          || inspection.meta.origin !== "subagent") {
           throw this.fence(new Error("SendMessage recovery inspected a foreign child Session"));
         }
         events = inspection.events;
@@ -3300,6 +4212,42 @@ export class ProductWorkService extends Service {
     });
     await this.appendMessageDelivery(root, known, delivery);
     return true;
+  }
+
+  private async deliverRootContext(root: Agent, known: WorkMessageEntry, message: UserMessage): Promise<boolean> {
+    const source = this.byTask.get(known.intent.taskId);
+    if (source?.root !== root) throw new Error("root collaboration lost its Work birth owner");
+    const deliveryTiming = known.intent.deliveryTiming ?? (known.intent.completionEpochId === undefined ? "turn" : "realtime");
+    if (this.config.deliverRootMessage === undefined) {
+      if (![...root.inbox.nextStep, ...root.inbox.nextTurn].some((pending) => pending.id === message.id)) {
+        if (deliveryTiming === "realtime") root.inject(message);
+        else root.send(message, "next-turn", false);
+      }
+      return true;
+    }
+    const result: unknown = await exactNativePromise(this.config.deliverRootMessage({
+      root, message, productMessageId: known.intent.messageId,
+      sourceOperationId: source.created.authority.clientOperationId, deliveryTiming,
+    }), "operation-owned root collaboration delivery");
+    if (result === "suppressed") {
+      if (known.delivery === undefined) await this.cancelMessage(root, known, "recipient_closed");
+      return false;
+    }
+    if (result !== "delivered") throw new Error("root collaboration returned an invalid delivery state");
+    return true;
+  }
+
+  private async cancelMessage(root: Agent, known: WorkMessageEntry, reason: ProductWorkMessageCanceledEventData["reason"]): Promise<void> {
+    await this.serialize(async () => {
+      if (known.cancellation !== undefined || known.delivery !== undefined) return;
+      const data = validateEventData("myagents/work/message-canceled", {
+        agentId: known.intent.agentId, taskId: known.intent.taskId, messageId: known.intent.messageId,
+        eventSeq: root.session.seq, sessionId: root.id, reason,
+      });
+      root.session.append("myagents/work/message-canceled", data);
+      await this.flush(root.session);
+      known.cancellation = data;
+    });
   }
 
   private messageResult(known: WorkMessageEntry): unknown {
@@ -3337,14 +4285,55 @@ export class ProductWorkService extends Service {
     const root = this.primary ?? this.config.requireAgent();
     if (caller === root) return root;
     const entry = this.byAgent.get(caller.id);
-    if (entry?.parent !== root || this.ctx.agents.get(caller.id) !== caller) {
+    if (entry?.root !== root || this.ctx.agents.get(caller.id) !== caller
+      || caller.session.header.origin !== "subagent" || caller.session.header.parentSession !== entry.created.birth.parentSessionId
+      || entry.stopRequested || entry.settlement !== undefined) {
       throw new ProductToolError("recipient_out_of_scope", "caller is outside the primary Session collaborator graph");
     }
+    this.assertOpenLineage(caller.id);
     return root;
   }
 
+  private lineageFor(agentId: string): readonly string[] {
+    const root = this.safePrimary();
+    if (root === undefined) throw new Error("Work lineage lacks its primary root");
+    return resolveWorkLineage(root.id, agentId, (id) => {
+      const entry = this.byAgent.get(id);
+      return entry?.root === root ? { agentId: id, parentSessionId: entry.created.birth.parentSessionId, depth: entry.created.birth.depth } : undefined;
+    }).map((node) => node.agentId);
+  }
+
+  private assertOpenLineage(agentId: string): void {
+    for (const id of this.lineageFor(agentId)) {
+      const entry = this.byAgent.get(id);
+      if (entry?.stopRequested || entry?.settlement !== undefined) throw new ProductToolError("recipient_out_of_scope", "the collaborator or an ancestor is closed or stopping");
+    }
+  }
+
+  /** Shared tree identity for Product TaskGraph; membership grants no mutation permission. */
+  isKnownCollaborator(root: Agent, agentId: string): boolean {
+    if (root !== this.safePrimary() || this.ctx.agents.get(root.id) !== root) return false;
+    if (agentId === root.id) return true;
+    const entry = this.byAgent.get(agentId);
+    if (entry === undefined || entry.settlement !== undefined || entry.stopRequested) return false;
+    const live = this.ctx.agents.get(SessionId(agentId));
+    if (live !== undefined && (live.session.header.origin !== "subagent"
+      || live.session.header.parentSession !== entry.created.birth.parentSessionId)) return false;
+    try { return this.lineageFor(agentId).length > 0; } catch { return false; }
+  }
+
+  private async withDirectParent<T>(entry: WorkEntry, signal: AbortSignal, operation: (parent: Agent) => Promise<T>): Promise<T> {
+    const path = this.lineageFor(entry.created.birth.parentSessionId);
+    for (const id of path) {
+      const ancestor = this.byAgent.get(id);
+      if (ancestor?.stopRequested || ancestor?.settlement !== undefined) throw new ProductToolError("recipient_out_of_scope", "a direct ancestor is closed or stopping");
+    }
+    if (path.length === 0) return await operation(entry.root);
+    return await exactNativePromise(this.ctx.subagents.withContinuableAncestors(entry.root, path.map(SessionId), { signal }, operation), "ProductWork direct-parent residency");
+  }
+
   private authorizeLineage(caller: Agent, entry: WorkEntry): void {
-    if (this.rootForCaller(caller) !== entry.parent) {
+    if (this.rootForCaller(caller) !== entry.root) {
       throw new ProductToolError("task_not_found", "task belongs to another Runtime Session");
     }
   }
@@ -3361,21 +4350,21 @@ export class ProductWorkService extends Service {
       if (entry.settlement !== undefined) return entry.settlement;
       const event = validateEventData("myagents/work/settled", {
         agentId: entry.agentId,
-        eventSeq: entry.parent.session.seq,
+        eventSeq: entry.root.session.seq,
         result,
         resultTruncated,
-        sessionId: entry.parent.id,
+        sessionId: entry.root.id,
         taskId: entry.taskId,
         terminal,
-        usage,
+        ...(usage === undefined ? {} : { usage }),
       });
-      entry.parent.session.append("myagents/work/settled", event);
-      await this.flush(entry.parent.session);
+      entry.root.session.append("myagents/work/settled", event);
+      await this.flush(entry.root.session);
       entry.settlement = event;
       entry.outputReady.resolve();
       entry.terminalReady.resolve(event);
+      entry.firstActivationReady.resolve(entry.firstActivation ?? event);
       this.latestEnds.delete(entry.agentId);
-      this.usageByAgent.delete(entry.agentId);
       this.releaseComponentGenerationWaiters(entry);
       return event;
     });
@@ -3387,13 +4376,13 @@ export class ProductWorkService extends Service {
       if (entry.stopRequested) return;
       const event = validateEventData("myagents/work/stopping", {
         agentId: entry.agentId,
-        eventSeq: entry.parent.session.seq,
+        eventSeq: entry.root.session.seq,
         reason: "user",
-        sessionId: entry.parent.id,
+        sessionId: entry.root.id,
         taskId: entry.taskId,
       });
-      entry.parent.session.append("myagents/work/stopping", event);
-      await this.flush(entry.parent.session);
+      entry.root.session.append("myagents/work/stopping", event);
+      await this.flush(entry.root.session);
       entry.stopRequested = true;
     });
   }
@@ -3435,6 +4424,12 @@ export class ProductWorkService extends Service {
 
   private settlementDeferred(): NativeDeferred<ProductWorkSettledEventData> {
     const deferred = Promise.withResolvers<ProductWorkSettledEventData>();
+    void deferred.promise.catch(() => undefined);
+    return deferred;
+  }
+
+  private activationDeferred(): NativeDeferred<WorkActivationResult> {
+    const deferred = Promise.withResolvers<WorkActivationResult>();
     void deferred.promise.catch(() => undefined);
     return deferred;
   }
@@ -3500,6 +4495,121 @@ export class ProductWorkService extends Service {
       && entry.created.birth.componentDigest === digest);
   }
 
+  private activeChildSlots(): number {
+    const tasks = new Set(this.creatingTasks);
+    for (const agentId of this.activeEpochs.keys()) {
+      if (this.waitingAgents.has(agentId)) continue;
+      tasks.add(this.byAgent.get(agentId)?.taskId ?? this.pendingChildAuthorities.get(agentId)?.taskId ?? agentId);
+    }
+    return tasks.size;
+  }
+
+  private collaborationMessageTiming(): "realtime" | "turn" {
+    const delivery: unknown = this.config.messageDelivery?.() ?? "realtime";
+    if (delivery !== "realtime" && delivery !== "turn") throw new Error("collaboration delivery policy is invalid");
+    return delivery;
+  }
+
+  async withWaitingAgent<T>(
+    agent: Agent,
+    reason: "child" | "interaction" | "delivery",
+    signal: AbortSignal,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    if (agent === this.primary) return await operation();
+    const entry = this.byAgent.get(agent.id);
+    if (entry === undefined || this.ctx.agents.get(agent.id) !== agent) throw new Error("waiting child lacks its live ProductWork owner");
+    this.assertOpenLineage(agent.id);
+    const waiting = this.waitingAgents.get(agent.id) ?? { count: 0, reason };
+    if (waiting.count === 0 && waiting.resuming === undefined) this.creatingTasks.delete(entry.taskId);
+    waiting.count += 1;
+    this.waitingAgents.set(agent.id, waiting);
+    await this.appendPhase(entry, `waiting_${waiting.reason}`);
+    this.pumpCapacity();
+    try {
+      return await operation();
+    } finally {
+      waiting.count -= 1;
+      if (waiting.count === 0) {
+        waiting.resuming ??= (async () => {
+            try {
+              if (!signal.aborted && this.accepting && !entry.stopRequested && entry.settlement === undefined
+                && this.activeEpochs.has(agent.id)) {
+                await this.appendPhase(entry, "queued");
+                this.creatingTasks.delete(entry.taskId);
+                await this.acquireChildSlot(entry.taskId, signal);
+              }
+            } finally {
+              if (waiting.count === 0) this.waitingAgents.delete(agent.id);
+              delete waiting.resuming;
+              this.creatingTasks.delete(entry.taskId);
+              if (waiting.count === 0 && this.activeEpochs.has(agent.id)) await this.appendPhase(entry, "running");
+              this.pumpCapacity();
+            }
+        })();
+        await waiting.resuming;
+      }
+    }
+  }
+
+  private async appendPhase(entry: WorkEntry, phase: ProductWorkPhaseEventData["phase"]): Promise<void> {
+    await this.serialize(async () => {
+      if (entry.stopRequested || entry.settlement !== undefined) return;
+      const ordinal = entry.epochs.length + 1;
+      if (entry.phase?.ordinal === ordinal && entry.phase.phase === phase) return;
+      const data = validateEventData("myagents/work/phase", {
+        agentId: entry.agentId, eventSeq: entry.root.session.seq, ordinal, phase,
+        sessionId: entry.root.id, taskId: entry.taskId,
+      });
+      entry.phase = data;
+      entry.root.session.append("myagents/work/phase", data);
+      await this.flush(entry.root.session);
+    });
+  }
+
+  private executionLimits(): Readonly<{ maxDepth: number; maxActiveChildren: number; maxRetainedChildren: number }> {
+    const limits = this.config.limits?.() ?? { maxDepth: 1, maxActiveChildren: MAX_ACTIVE_CHILDREN, maxRetainedChildren: MAX_WORK_ITEMS };
+    if (!Number.isSafeInteger(limits.maxDepth) || limits.maxDepth < 1 || limits.maxDepth > 8
+      || !Number.isSafeInteger(limits.maxActiveChildren) || limits.maxActiveChildren < 1 || limits.maxActiveChildren > MAX_ACTIVE_CHILDREN
+      || !Number.isSafeInteger(limits.maxRetainedChildren) || limits.maxRetainedChildren < limits.maxActiveChildren
+      || limits.maxRetainedChildren > MAX_WORK_ITEMS) throw new Error("ProductWork limits exceed the supported root budget");
+    return limits;
+  }
+
+  private acquireChildSlot(taskId: string, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    this.assertAccepting();
+    if (this.creatingTasks.has(taskId) || this.capacityWaiters.has(taskId)) throw new Error("duplicate child execution admission");
+    return new Promise<void>((resolve, reject) => {
+      const remove = (): void => {
+        this.capacityWaiters.delete(taskId);
+        signal.removeEventListener("abort", onAbort);
+      };
+      const onAbort = (): void => {
+        remove();
+        reject(signal.reason instanceof Error ? signal.reason : new Error("child admission aborted"));
+        this.pumpCapacity();
+      };
+      this.capacityWaiters.set(taskId, {
+        grant: () => { remove(); this.creatingTasks.add(taskId); resolve(); },
+        cancel: (error) => { remove(); reject(error instanceof Error ? error : new Error("child admission canceled", { cause: error })); },
+      });
+      signal.addEventListener("abort", onAbort, { once: true });
+      this.pumpCapacity();
+    });
+  }
+
+  private pumpCapacity(): void {
+    if (this.failure !== undefined || !this.accepting) {
+      for (const waiter of [...this.capacityWaiters.values()]) waiter.cancel(this.failure ?? new Error("ProductWork is closing"));
+      return;
+    }
+    for (const waiter of this.capacityWaiters.values()) {
+      if (this.activeChildSlots() >= this.executionLimits().maxActiveChildren) break;
+      waiter.grant();
+    }
+  }
+
   private releaseComponentGenerationWaiters(entry: WorkEntry): void {
     const { componentDigest, componentRevision } = entry.created.birth;
     if (this.hasLiveComponentGeneration(componentRevision, componentDigest)) return;
@@ -3517,11 +4627,13 @@ export class ProductWorkService extends Service {
   private fence(error: unknown): ProductToolError {
     if (this.failure === undefined) {
       this.failure = new ProductToolError("task_stop_failed", "product work durability became uncertain", { cause: error });
+      this.pumpCapacity();
       for (const entry of this.byTask.values()) {
         if (entry.settlement === undefined) {
           entry.outputReady.reject(this.failure);
           entry.published.reject(this.failure);
           entry.terminalReady.reject(this.failure);
+          entry.firstActivationReady.reject(this.failure);
         }
       }
     }

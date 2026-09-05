@@ -1,4 +1,5 @@
 import { Service, symbols, type Context } from "@deepseek-ai/cordis";
+import { SessionLogOffset } from "@deepseek-ai/dsh-session";
 import type {
   SessionEvent,
   SessionHeader,
@@ -12,6 +13,8 @@ import {
   PersistenceCoordinator,
   SessionPersistence,
   type PersistenceCoordinatorOptions,
+  type BorrowedSessionSource,
+  type SessionEventSuffix,
   type SessionInspection,
   type SessionLocation,
   type SessionPersistenceSnapshot,
@@ -244,13 +247,15 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
       coordinator,
       reader: new ProductSessionReadProjector({
         cursorMac: (payload, signal) => store.cursorMac(payload, signal),
-        readFrom: (id, fromSeq, signal) => coordinator.readFrom(id, fromSeq, signal),
+        readFrom: (id, fromSeq, signal) => coordinator.readFrom(id, SessionLogOffset(fromSeq), signal),
         snapshot: (id, signal) => store.readProductSnapshot(id, signal),
         mutationBoundaries: (id, signal) => store.readMutationBoundaries(id, signal),
       }),
       store,
     }));
     const checkpointStore = Object.freeze<ProductCheckpointStore>({
+      updateDirectoryPlan: (checkpointId, expected, next, signal) => store.updateDirectoryPlan(checkpointId, expected, next, signal),
+      listRewindDirectoryPlans: (token, signal) => store.listRewindDirectoryPlans(token, signal),
       get: (checkpointId, signal) => store.get(checkpointId, signal),
       listUnsettled: (sessionId, signal) => store.listUnsettled(sessionId, signal),
       listRewindFiles: (token, signal) => store.listRewindFiles(token, signal),
@@ -275,8 +280,8 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
     return undefined;
   }
 
-  create(meta: SessionHeader): Promise<void> {
-    return stateOf(this).coordinator.create(meta);
+  create(meta: SessionHeader, inheritedEventCount?: SessionLogOffset): Promise<void> {
+    return stateOf(this).coordinator.create(meta, inheritedEventCount);
   }
 
   append(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
@@ -302,12 +307,16 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
     return stateOf(this).store.inspectRecovery(id, signal);
   }
 
-  readFrom(
+  borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource> {
+    return stateOf(this).coordinator.borrowSession(id, signal);
+  }
+
+  async readFrom(
     id: SessionId,
     fromSeq: number,
     signal?: AbortSignal,
-  ): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
-    return stateOf(this).coordinator.readFrom(id, fromSeq, signal);
+  ): Promise<SessionEventSuffix> {
+    return stateOf(this).coordinator.readFrom(id, SessionLogOffset(fromSeq), signal);
   }
 
   list(signal?: AbortSignal): Promise<SessionHeader[]> {

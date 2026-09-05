@@ -9,6 +9,7 @@ import {
   type HostPortServiceController,
 } from "@myagents-dsh/host-ports";
 import {
+  AgentCollaborationPolicy,
   HostDeepSeekLlmAdapter,
   HostDeepSeekModelAuthority,
   HOST_DEEPSEEK_BASE_URL,
@@ -16,7 +17,9 @@ import {
   validateHostDeepSeekProfile,
   type PrimarySessionBackendRequest,
 } from "@myagents-dsh/runtime-product";
-import { ProtocolError } from "@myagents-dsh/protocol";
+import { ProtocolError, type ModelExecutionProfile } from "@myagents-dsh/protocol";
+import { type ProductToolContext } from "@myagents-dsh/tool-runtime-product";
+import { executeHostCanonicalWebTool } from "@myagents-dsh/runtime-product";
 import { createInMemoryPeerPair } from "@myagents-dsh/test-host";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -128,6 +131,7 @@ const fakeModelContext = (
     session: Object.freeze({ id: "runtime-session-1" }),
   });
   return Object.assign(Object.create(Reflect.getPrototypeOf(root)) as object, {
+    get: root.get.bind(root),
     agents: Object.freeze({
       get: (id: string) => id === "runtime-session-1" ? agent : undefined,
     }),
@@ -160,6 +164,207 @@ const modelOptions = (signal = new AbortController().signal): GenerateOptions =>
 });
 
 describe("Host credential and model route", () => {
+  it("resolves child models from explicit Host authority without ambiguous names or role overrides", () => {
+    const parent = { provider: profile.providerRouteId, model: profile.modelId };
+    const inherited = new AgentCollaborationPolicy(profile);
+    expect(inherited.config).toMatchObject({ maxDepth: 1, maxActiveChildren: 32, messageDelivery: "realtime" });
+    expect(inherited.select(parent, "general")).toMatchObject({ profile, selection: "inherit" });
+    const second: ModelExecutionProfile = { ...profile, revision: "child-profile", providerRouteId: "other-provider-route" };
+    const third = { ...profile, revision: "third-profile", modelId: "third-model" };
+    const base = { ...inherited.config, modelProfiles: [second, third] };
+    const disabled = new AgentCollaborationPolicy(profile, base);
+    expect(() => disabled.select(parent, "general", second.revision)).toThrow("not enabled autonomous");
+    const selectable = new AgentCollaborationPolicy(profile, {
+      ...base, modelPolicy: { mode: "agent", roles: [{ role: "Explore", profileRef: third.revision }] },
+    });
+    expect(selectable.select(parent, "general", second.revision)).toMatchObject({ profile: second, selection: "agent" });
+    expect(() => selectable.select(parent, "general", profile.modelId)).toThrow("absent or ambiguous");
+    expect(selectable.select({ provider: second.providerRouteId, model: second.modelId }, "general"))
+      .toMatchObject({ profile: second, selection: "inherit" });
+    expect(selectable.select(parent, "Explore")).toMatchObject({ profile: third, selection: "fixed" });
+    expect(() => selectable.select(parent, "Explore", second.revision)).toThrow("conflicts with the fixed");
+    expect(() => selectable.select(parent, "Explore", undefined, second.revision)).toThrow("constraints disagree");
+    expect(() => selectable.select(parent, "general", "not-authorized")).toThrow("absent or ambiguous");
+    expect(() => selectable.requireProfile("revoked-profile")).toThrow("Host-authorized set");
+    expect(() => new AgentCollaborationPolicy(profile, {
+      ...base, modelProfiles: [{ ...second, revision: profile.revision }],
+    })).toThrow("unambiguous");
+    expect(() => new AgentCollaborationPolicy(profile, {
+      ...base, modelPolicy: { mode: "fixed", roles: [] },
+    })).toThrow("requires profileRef");
+    const fixed = new AgentCollaborationPolicy(profile, {
+      ...base, modelPolicy: { mode: "fixed", profileRef: third.revision, roles: [] },
+    });
+    expect(fixed.select(parent, "general")).toMatchObject({ profile: third, selection: "fixed" });
+    second.modelId = "changed-after-admission";
+    expect(selectable.requireProfile(second.revision).modelId).toBe(profile.modelId);
+  });
+
+  it("executes different admitted DeepSeek models concurrently without sharing frozen request options", async () => {
+    const harness = await createHarness();
+    const childProfile = { ...profile, revision: "child-profile-v1", modelId: "child-model", maxTokens: 256 };
+    const context = fakeModelContext(harness.root);
+    const primary = context.productSession.requireAgent();
+    const child = { id: SessionId("child-session"), options: { provider: profile.providerRouteId, model: childProfile.modelId } };
+    const childAuthority = vi.fn(() => ({
+      assertCurrent: () => undefined, callId: "child-call", clientOperationId: "operation-1", dshTurn: 1,
+      modelRequestId: "child-model-request", rootCallId: "child-call", turnId: "turn-1",
+    }));
+    Object.assign(context, {
+      agents: { get: (id: string) => id === "child-session" ? child : id === "runtime-session-1" ? primary : undefined },
+      productWork: { createChildModelRequestAuthority: childAuthority },
+    });
+    harness.pair.host.registerRequestHandler("host/credential/resolve", (params) => {
+      if (params.subject !== "provider") throw new Error("unexpected credential subject");
+      return params.purpose === "availability"
+        ? { authoritativeCredentialRevision: "credential-v1", available: true, kind: "availability" as const }
+        : { authoritativeCredentialRevision: "credential-v1", kind: "material" as const,
+            material: { [credentialValueField]: `synthetic-${params.profileRevision}` } };
+    });
+    const authority = new HostDeepSeekModelAuthority(context, harness.credentialController,
+      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" });
+    const request = sessionRequest();
+    const collaboration = { ...new AgentCollaborationPolicy(profile).config, modelProfiles: [childProfile] };
+    await authority.preflight({ ...request, params: { ...request.params, collaboration } });
+    const adapter = new HostDeepSeekLlmAdapter(authority, harness.credentials, harness.credentialController);
+    const observed: Array<{ authorization: string | null; model: string; maxTokens: number }> = [];
+    globalThis.fetch = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+      if (typeof init?.body !== "string") throw new Error("fixture expected a JSON request body");
+      const body = JSON.parse(init.body) as { model: string; max_tokens: number };
+      observed.push({ authorization: new Headers(init.headers).get("authorization"), model: body.model, maxTokens: body.max_tokens });
+      return Promise.resolve(new Response([
+        'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}', "data: [DONE]", "",
+      ].join("\n\n"), { headers: { "content-type": "text/event-stream" } }));
+    });
+    const rootOptions = modelOptions();
+    const childOptions = { ...modelOptions(), sessionId: SessionId("child-session"), model: childProfile.modelId, maxTokens: 128 };
+    await Promise.all([rootOptions, childOptions].map(async (options) => {
+      const prepared = await adapter.prepareCall(options.provider, options.model);
+      const chunks = [];
+      for await (const chunk of prepared.stream(options)) chunks.push(chunk);
+      expect(chunks).toEqual(expect.arrayContaining([expect.objectContaining({ type: "finish" })]));
+    }));
+    expect(observed).toEqual(expect.arrayContaining([
+      { authorization: `Bearer synthetic-${profile.revision}`, model: profile.modelId, maxTokens: 512 },
+      { authorization: `Bearer synthetic-${childProfile.revision}`, model: childProfile.modelId, maxTokens: 128 },
+    ]));
+    expect(childAuthority).toHaveBeenCalledWith(child, "config-v1", profile.revision);
+    const preparedChild = await adapter.prepareCall(profile.providerRouteId, childProfile.modelId);
+    await authority.preflight({ ...request, params: { ...request.params, configRevision: "config-v2" } });
+    await expect((async () => { for await (const chunk of preparedChild.stream(childOptions)) { void chunk; } })())
+      .rejects.toMatchObject({ code: "provider_profile_stale" });
+    expect(observed).toHaveLength(2);
+  });
+
+  it("isolates concurrent model bindings sharing one credential reference and revokes in-flight material", async () => {
+    const harness = await createHarness();
+    const childProfile = { ...profile, revision: "child-profile-v1", modelId: "child-model" };
+    const materialEntered = deferred<undefined>();
+    const releaseMaterial = deferred<undefined>();
+    let holdChildMaterial = false;
+    harness.pair.host.registerRequestHandler("host/credential/resolve", async (params) => {
+      if (params.subject !== "provider") throw new Error("unexpected credential subject");
+      if (params.purpose === "availability") return {
+        authoritativeCredentialRevision: "credential-v1", available: true, kind: "availability" as const,
+      };
+      if (holdChildMaterial && params.profileRevision === childProfile.revision) {
+        materialEntered.resolve(undefined);
+        await releaseMaterial.promise;
+      }
+      return { authoritativeCredentialRevision: "credential-v1", kind: "material" as const,
+        material: { [credentialValueField]: `synthetic-${params.profileRevision}` } };
+    });
+    const bindings = await Promise.all([profile, childProfile].map((candidate) =>
+      harness.credentialController.preflightProvider({
+        assertCurrent: () => undefined, configRevision: "config-v1", deadlineMs: 30_000,
+        profile: candidate, runtimeSessionId: "runtime-session-1", signal: new AbortController().signal,
+      })));
+    const primary = bindings[0];
+    const child = bindings[1];
+    if (primary === undefined || child === undefined) throw new Error("missing model binding fixture");
+    const scopeFor = (binding: typeof primary, request: string) => harness.credentialController.createProviderRequestScope({
+      assertCurrent: () => undefined, binding, clientOperationId: "operation-1", deadlineMs: 30_000,
+      dshTurn: 1, modelRequestId: request, rootCallId: request, signal: new AbortController().signal, turnId: "turn-1",
+    });
+    harness.credentialController.activateProviderBindings(bindings);
+    const results = await Promise.all(bindings.map((binding, index) =>
+      harness.credentialController.runWithProviderRequestScope(scopeFor(binding, `parallel-${index}`), async () => {
+        await Promise.resolve();
+        return harness.credentials.resolve(binding.profile.credentialRef as CredentialRef);
+      })));
+    expect(results.map((result) => result?.value)).toEqual([
+      `synthetic-${profile.revision}`, `synthetic-${childProfile.revision}`,
+    ]);
+    expect(() => harness.credentialController.activateProviderBindings([primary, { ...child }]))
+      .toThrow("preflighted Session/config authority");
+    expect(() => scopeFor(child, "still-admitted")).not.toThrow();
+
+    holdChildMaterial = true;
+    const pending = harness.credentialController.runWithProviderRequestScope(scopeFor(child, "revoked-model"),
+      () => harness.credentials.resolve(child.profile.credentialRef as CredentialRef));
+    const rejected = expect(pending).rejects.toMatchObject({ code: "provider_credential_revision_stale" });
+    await materialEntered.promise;
+    harness.credentialController.activateProviderBindings([primary]);
+    releaseMaterial.resolve(undefined);
+    await rejected;
+    expect(() => scopeFor(child, "revoked-retry")).toThrow("no longer current");
+    expect(() => scopeFor(primary, "primary-still-admitted")).not.toThrow();
+    await expect(harness.credentials.describe(primary.profile.credentialRef as CredentialRef))
+      .resolves.toMatchObject({ configured: true });
+  });
+
+  it.each(["root", "foreground_child", "background_child"] as const)(
+    "binds %s Web requests to its actual model Provider and keeps executing call identity",
+    async (origin) => {
+      const harness = await createHarness();
+      const credentialRequests: unknown[] = [];
+      harness.pair.host.registerRequestHandler("host/credential/resolve", (params) => {
+        credentialRequests.push(params);
+        return params.purpose === "availability"
+          ? { authoritativeCredentialRevision: "credential-v1", available: true, kind: "availability" as const }
+          : { authoritativeCredentialRevision: "credential-v1", kind: "material" as const, material: { [credentialValueField]: "synthetic-key" } };
+      });
+      const childProfile = { ...profile, revision: "web-child-profile", modelId: "web-child-model" };
+      const selected = origin === "root" ? profile : childProfile;
+      const modelContext = fakeModelContext(harness.root);
+      const childToolAuthority = vi.fn(() => ({}));
+      Object.assign(modelContext, { productWork: { resolveActiveChildToolOperation: childToolAuthority } });
+      const authority = new HostDeepSeekModelAuthority(modelContext, harness.credentialController,
+        { resolveUserId: () => "00000000-0000-4000-8000-000000000001" });
+      authority.bindHostCapabilities({ webSearchAdapters: ["myagents-host-canonical-web-v1"] } as Parameters<typeof authority.bindHostCapabilities>[0]);
+      await authority.preflight({ ...sessionRequest(), params: { ...sessionRequest().params, collaboration: { ...new AgentCollaborationPolicy(profile).config, modelProfiles: [childProfile] } } });
+      const rootAgent = { id: "runtime-session-1" } as ProductToolContext["agent"];
+      const context = {
+        agent: origin === "root" ? rootAgent : { id: "child-session-1", options: { provider: childProfile.providerRouteId, model: childProfile.modelId } }, rootAgent, origin,
+        birth: { modelProfileRevision: profile.revision, configRevision: "config-v1" },
+        callId: "web-child-call", rootCallId: "root-call", dshTurn: 1,
+        clientOperationId: "operation-1", productTurnId: "turn-1", signal: new AbortController().signal,
+      } as ProductToolContext;
+      expect(authority.shouldUseHostCanonicalWeb()).toBe(true);
+      await authority.runWebSearchRequest(context, async (actual) => {
+        expect(actual.revision).toBe(selected.revision);
+        await harness.credentials.resolve(selected.credentialRef as CredentialRef);
+      });
+      expect(credentialRequests.at(-1)).toMatchObject({ authority: { runtimeSessionId: "runtime-session-1", callId: "web-child-call" } });
+      const hostRequests: unknown[] = [];
+      harness.pair.host.registerRequestHandler("host/tool/execute", (params) => {
+        hostRequests.push(params);
+        return { state: "succeeded" as const, structured: { fixture: true } };
+      });
+      await expect(executeHostCanonicalWebTool(harness.root, harness.controller, authority, context,
+        "WebFetch", { url: "https://example.com/", prompt: "fixture" })).resolves.toEqual({ fixture: true });
+      expect(hostRequests.at(-1)).toMatchObject({ authority: { runtimeSessionId: "runtime-session-1", callId: "web-child-call" } });
+      await expect(executeHostCanonicalWebTool(harness.root, harness.controller, authority, context,
+        "WebSearch", { query: "fixture" })).resolves.toEqual({ fixture: true });
+      expect(hostRequests.at(-1)).toMatchObject({ authority: { runtimeSessionId: "runtime-session-1", callId: "web-child-call" } });
+      expect(credentialRequests.at(-1)).toMatchObject({ profileRevision: selected.revision });
+      if (origin !== "root") expect(childToolAuthority).toHaveBeenCalled();
+      const wrong = { ...context, rootAgent: { id: "another-root" } as ProductToolContext["agent"], agent: { ...context.agent, options: { provider: selected.providerRouteId, model: selected.modelId } } as ProductToolContext["agent"] };
+      await expect(authority.runHostWebRequest(wrong, () => Promise.resolve(true))).rejects.toMatchObject({ code: "provider_request_stale" });
+      await expect(authority.runWebSearchRequest(wrong, () => Promise.resolve(true))).rejects.toMatchObject({ code: "provider_request_stale" });
+    },
+  );
+
   it("removes an initial Provider binding when admission rolls back", async () => {
     const harness = await createHarness();
     harness.pair.host.registerRequestHandler("host/credential/resolve", () => ({
@@ -248,7 +453,8 @@ describe("Host credential and model route", () => {
       }));
     });
     const chunks = [];
-    for await (const chunk of adapter.stream(modelOptions())) chunks.push(chunk);
+    const prepared = await adapter.prepareCall(profile.providerRouteId, profile.modelId);
+    for await (const chunk of prepared.stream(modelOptions())) chunks.push(chunk);
     expect(chunks.some((chunk) => chunk.type === "finish")).toBe(true);
     expect(authorization).toEqual([`Bearer ${secret}`]);
     expect(calls).toHaveLength(2);

@@ -58,8 +58,8 @@ describe("canonical twenty-tool contract authority", () => {
       const contract = CANONICAL_TOOL_CONTRACTS[name];
       expect(contract.name).toBe(name);
       expect(contract.description.length).toBeGreaterThan(40);
-      expect(contract.behaviorFixtureIds).toHaveLength(5);
-      expect(new Set(contract.behaviorFixtureIds).size).toBe(5);
+      expect(contract.behaviorFixtureIds).toHaveLength(name === "Write" ? 6 : 5);
+      expect(new Set(contract.behaviorFixtureIds).size).toBe(name === "Write" ? 6 : 5);
       expect(contract.errorCodes.length).toBeGreaterThan(0);
       expect(contract.lifecycle.cancellation).toBe("abort_signal_exactly_one_terminal");
       expect(contract.lifecycle.durableResult).toBe("dsh_tool_result_before_runtime_visibility");
@@ -77,7 +77,8 @@ describe("canonical twenty-tool contract authority", () => {
     expect(CANONICAL_TOOL_CONTRACTS.SendMessage.sideEffect).toBe("delegation");
     expect(CANONICAL_TOOL_CONTRACTS.AskUserQuestion.timeoutMs).toBeUndefined();
     expect(CANONICAL_TOOL_CONTRACTS.Agent.inputSchema.properties).not.toHaveProperty("name");
-    expect(CANONICAL_TOOL_CONTRACTS.Agent.description).toContain("taskId is for TaskStop");
+    expect(CANONICAL_TOOL_CONTRACTS.Agent.description).toContain("taskId addresses TaskStop");
+    expect(CANONICAL_TOOL_CONTRACTS.Agent.description).toContain("run_in_background defaults to true");
     expect(CANONICAL_TOOL_CONTRACTS.SendMessage.description).toContain("agentId returned by Agent");
     expect(CANONICAL_TOOL_CONTRACTS.SendMessage.description).toContain("literal parent");
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
@@ -89,7 +90,7 @@ describe("canonical twenty-tool contract authority", () => {
       mode: "plan-safe-child-only",
     });
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
-      CANONICAL_TOOL_CONTRACTS[name].originPolicy.mode === "root-only")).toEqual(["EnterPlanMode", "Agent"]);
+      CANONICAL_TOOL_CONTRACTS[name].originPolicy.mode === "root-only")).toEqual(["EnterPlanMode"]);
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
       CANONICAL_TOOL_CONTRACTS[name].originPolicy.mode === "no-background-child"))
       .toEqual(["AskUserQuestion", "ExitPlanMode"]);

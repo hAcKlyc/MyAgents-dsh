@@ -1,5 +1,5 @@
 export const PRODUCT_PERSISTENCE_FORMAT = "myagents-sqlite-session-v1" as const;
-export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 7 as const;
+export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 9 as const;
 export const PRODUCT_PERSISTENCE_APPLICATION_ID = 0x4d594147 as const;
 
 export const PRODUCT_PERSISTENCE_SCHEMA_V1_SQL = `
@@ -256,9 +256,26 @@ CREATE TABLE delete_journals (
 ) STRICT;
 ` as const;
 
-export const PRODUCT_PERSISTENCE_SCHEMA_SQL = PRODUCT_PERSISTENCE_SCHEMA_V6_SQL.replace(
+export const PRODUCT_PERSISTENCE_SCHEMA_V7_SQL = PRODUCT_PERSISTENCE_SCHEMA_V6_SQL.replace(
   PRODUCT_DELETE_SCHEMA_SQL.trim(),
   PRODUCT_DELETE_SCHEMA_V7_SQL.trim(),
+);
+
+export const PRODUCT_INHERITED_PREFIX_SCHEMA_SQL =
+  "ALTER TABLE session_generations ADD COLUMN inherited_event_count INTEGER NOT NULL DEFAULT 0 CHECK (inherited_event_count >= 0);";
+
+// Match the exact sqlite_schema spelling produced by the v7 ALTER migration.
+export const PRODUCT_PERSISTENCE_SCHEMA_V8_SQL = PRODUCT_PERSISTENCE_SCHEMA_V7_SQL.replace(
+  "  created_at     INTEGER NOT NULL,\n  PRIMARY KEY (session_id, generation_id)\n) STRICT;",
+  "  created_at     INTEGER NOT NULL, inherited_event_count INTEGER NOT NULL DEFAULT 0 CHECK (inherited_event_count >= 0),\n  PRIMARY KEY (session_id, generation_id)\n) STRICT;",
+);
+
+export const PRODUCT_CHECKPOINT_DIRECTORIES_MIGRATION_SQL =
+  "ALTER TABLE checkpoint_records ADD COLUMN directory_plan_json TEXT;";
+
+export const PRODUCT_PERSISTENCE_SCHEMA_SQL = PRODUCT_PERSISTENCE_SCHEMA_V8_SQL.replace(
+  "  settled_at          INTEGER,\n  UNIQUE (session_id, generation_id, call_id, path)",
+  "  settled_at          INTEGER, directory_plan_json TEXT,\n  UNIQUE (session_id, generation_id, call_id, path)",
 );
 
 export const PRODUCT_PERSISTENCE_TABLES = Object.freeze([

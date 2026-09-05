@@ -1,5 +1,5 @@
 import { Context } from "@deepseek-ai/cordis";
-import { CallId } from "@deepseek-ai/dsh-llm";
+import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime, type ToolRunContext } from "@deepseek-ai/dsh-tools";
 import {
@@ -220,7 +220,7 @@ describe("generation-owned Host tool component compiler", () => {
     expect(Object.isFrozen(definition?.parameters)).toBe(true);
     const result = await harness.root.tools.execute({
       arguments: Object.freeze({ value: "hello" }),
-      callId: CallId("call-1"),
+      callId: ToolCallId("call-1"),
       name: "mcp__fixture__echo",
       signal: new AbortController().signal,
     });
@@ -267,7 +267,7 @@ describe("generation-owned Host tool component compiler", () => {
     });
     const execute = (callId: string) => harness.root.tools.execute({
       arguments: Object.freeze({ value: callId }),
-      callId: CallId(callId),
+      callId: ToolCallId(callId),
       name: "mcp__fixture__echo",
       signal: new AbortController().signal,
     });
@@ -317,7 +317,7 @@ describe("generation-owned Host tool component compiler", () => {
     const definition = harness.root.tools.get("mcp__fixture__echo");
     const outcome = await harness.root.tools.execute({
       arguments: Object.freeze({ value: "image" }),
-      callId: CallId("call-image"),
+      callId: ToolCallId("call-image"),
       name: "mcp__fixture__echo",
       signal: new AbortController().signal,
     });
@@ -347,7 +347,7 @@ describe("generation-owned Host tool component compiler", () => {
     });
     const stale = harness.root.tools.execute({
       arguments: Object.freeze({ value: "stale" }),
-      callId: CallId("call-stale"),
+      callId: ToolCallId("call-stale"),
       name: "mcp__fixture__echo",
       signal: new AbortController().signal,
     });

@@ -1,5 +1,5 @@
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index 3ef1ec7aa4..2064c52f32 100644
+index 1b8448e693..98b4987bee 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
 @@ -16,7 +16,7 @@ import type {
@@ -11,7 +11,7 @@ index 3ef1ec7aa4..2064c52f32 100644
  import {
    BlockAssembler,
    LlmError,
-@@ -119,6 +119,14 @@ export class ReactLoopAgent implements Agent {
+@@ -128,6 +128,14 @@ export class ReactLoopAgent implements Agent {
      if (wakeup) this.wakeDriver(wakingAfterAbort)
    }
  
@@ -27,10 +27,10 @@ index 3ef1ec7aa4..2064c52f32 100644
      this.send(input, 'next-turn', true)
    }
 diff --git a/packages/core/agent-loop/tests/cancel.spec.ts b/packages/core/agent-loop/tests/cancel.spec.ts
-index 992f4b6284..679d0dc2e6 100644
+index 4c148d663d..a52023c1fc 100644
 --- a/packages/core/agent-loop/tests/cancel.spec.ts
 +++ b/packages/core/agent-loop/tests/cancel.spec.ts
-@@ -55,6 +55,46 @@ function userTexts(agent: Agent): string[] {
+@@ -57,6 +57,46 @@ function userTexts(agent: Agent): string[] {
  }
  
  describe('Agent.cancel()', () => {
@@ -69,7 +69,7 @@ index 992f4b6284..679d0dc2e6 100644
 +    await agent.whenIdle()
 +
 +    expect(userTexts(agent)).toEqual(['first', 'second'])
-+    expect(agent.session.events.some(event => event.type === 'agent/inbox/spliced'
++    expect(agent.session.snapshotEvents().some(event => event.type === 'agent/inbox/spliced'
 +      && event.data.outcome === 'canceled')).toBe(false)
 +    expect(agent.wakePending?.(first.id)).toBe(false)
 +  })
@@ -78,32 +78,33 @@ index 992f4b6284..679d0dc2e6 100644
      const adapter = new MockAdapter([textResponse('reply')])
      const ctx = await harness(adapter)
 diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
-index 7d713f8c77..7fd4e706d1 100644
+index c8bc08ecbb..1a7ef01fa7 100644
 --- a/packages/core/agent/src/runtime-types.ts
 +++ b/packages/core/agent/src/runtime-types.ts
 @@ -7,7 +7,7 @@
  
  import type { Context } from '@deepseek-ai/cordis'
  import type { Scoped } from '@deepseek-ai/dsh-scope'
--import type { LlmCallConfig, LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
-+import type { LlmCallConfig, LlmFailure, MessageId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
- import type { AgentCancelCause, Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
+-import type { LlmCallConfig, LlmFailure, ReasoningEffortId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
++import type { LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+ import type { AgentCancelCause, Session, UserMessage } from '@deepseek-ai/dsh-session'
  export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
  import type { Inbox } from './inbox.ts'
-@@ -92,6 +92,16 @@ export interface Agent {
+@@ -98,6 +98,17 @@ declare module './types.ts' {
     */
-   whenIdle(): Promise<void>
+     whenIdle(): Promise<void>
  
-+  /**
-+   * Wake the driver only when the exact identity is already pending. This
-+   * performs no Inbox mutation and therefore preserves durable FIFO order and
-+   * cancellation history. Repeated calls are safe: the driver wake is already
-+   * a level-triggered/latching operation.
-+   * @param messageId - an existing next-step or next-turn message identity.
-+   * @returns whether that identity was still pending when the wake was requested.
-+   */
-+  wakePending?(messageId: MessageId): boolean
++    /**
++     * Wake the driver only when the exact identity is already pending. This
++     * performs no Inbox mutation and therefore preserves durable FIFO order and
++     * cancellation history. Repeated calls are safe: the driver wake is already
++     * a level-triggered/latching operation.
++     * @param messageId - an existing next-step or next-turn message identity.
++     * @returns whether that identity was still pending when the wake was requested.
++     */
++    wakePending?(messageId: MessageId): boolean
 +
-   /**
++
+     /**
     * Run one non-turn maintenance task from the true idle phase. The task starts
     * synchronously after claiming that phase; later waking input remains in the

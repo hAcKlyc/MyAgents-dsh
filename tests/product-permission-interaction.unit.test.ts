@@ -6,6 +6,7 @@ import { ApprovalService } from "@deepseek-ai/dsh-user-approval";
 import { UserQuestionService, type AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import {
   ProductPermissionService,
+  ProductToolError,
   createDeterministicLocalInteractionProvider,
   foldProductPermissions,
   type ProductLocalInteractionProvider,
@@ -18,7 +19,13 @@ import {
   type ProductToolContext,
   type ProductToolPermissionRequest,
 } from "@myagents-dsh/tool-runtime-product";
+import { CANONICAL_TOOL_CONTRACTS } from "@myagents-dsh/tool-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const required = <T>(value: T | undefined): T => {
+  if (value === undefined) throw new Error("Expected fixture value is absent");
+  return value;
+};
 
 const contexts: Context[] = [];
 
@@ -177,6 +184,127 @@ const request = (
 ): ProductToolPermissionRequest => Object.freeze({ permissionClass, target, tool });
 
 describe("product permission policy and local interaction provider", () => {
+  it("continues independent approvals after Bash Always Allow without widening its grant", async () => {
+    const local = provider("scenario-progress", (pending, settlement) =>
+      response(pending, pending.tool === "Bash" ? "always_allow" : "allow_once", settlement));
+    const state = await mounted(local.provider, { mode: "acceptEdits" });
+    const original = state.product();
+    await expect(state.context.productPermission.authorize(original, request())).resolves.toBe("allow");
+    for (const tool of ["WebSearch", "WebFetch", "TaskCreate", "Skill", "Agent", "AskUserQuestion"] as const) {
+      await expect(state.context.productPermission.authorize({ ...original, callId: tool },
+        request(tool, CANONICAL_TOOL_CONTRACTS[tool].permissionClass, `target-${tool}`)))
+        .resolves.toBe("allow");
+    }
+    expect(local.permissionRequests.map(({ tool }) => tool)).toEqual([
+      "Bash", "WebSearch", "WebFetch", "TaskCreate", "Skill", "Agent", "AskUserQuestion",
+    ]);
+    expect(local.permissionRequests.slice(1).every(({ expectedPermissionRevision }) =>
+      expectedPermissionRevision === state.context.productPermission.currentRevision(state.agent))).toBe(true);
+    await expect(state.context.productPermission.authorize({ ...original, callId: "bash-again" }, request()))
+      .resolves.toBe("allow");
+    expect(local.permissionRequests).toHaveLength(7);
+    expect(original.birth.permissionRevision).not.toBe(state.context.productPermission.currentRevision(state.agent));
+  });
+
+  it("serializes different-tuple durable grants after out-of-order answers and gates reads until flush", async () => {
+    const decisions: Array<ProductLocalInteractionSettlement<unknown>> = [];
+    const local = provider("scenario-parallel-grants", (_pending, settlement) => { decisions.push(settlement); });
+    const state = await mounted(local.provider);
+    const original = state.product();
+    const first = state.context.productPermission.authorize(original, request());
+    const second = state.context.productPermission.authorize({ ...original, callId: "second" }, request("Bash", "process.execute", "other"));
+    while (decisions.length < 2) await Promise.resolve();
+    const flush = Promise.withResolvers<boolean>();
+    state.setFlushResult(flush.promise);
+    response(required(local.permissionRequests[1]), "always_allow", required(decisions[1]));
+    while (state.flushes.length < 1) await Promise.resolve();
+    response(required(local.permissionRequests[0]), "always_allow", required(decisions[0]));
+    let readerSettled = false;
+    const reader = state.context.productPermission.authorize({ ...original, callId: "reader" }, request("Bash", "process.execute", "other"))
+      .then((result) => { readerSettled = true; return result; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(state.flushes).toHaveLength(1);
+    expect(readerSettled).toBe(false);
+    flush.resolve(true);
+    await expect(Promise.all([first, second, reader])).resolves.toEqual(["allow", "allow", "allow"]);
+    expect(state.flushes).toHaveLength(2);
+    expect(local.permissionRequests).toHaveLength(2);
+    expect(state.context.productPermission.fold(state.session).grantEventCount).toBe(2);
+  });
+
+  it.each(["allow_once", "deny"] as const)("settles a concurrent %s against its original card after another tuple advances", async (decision) => {
+    const settlements: Array<ProductLocalInteractionSettlement<unknown>> = [];
+    const local = provider("scenario-mixed-grants", (_pending, settlement) => { settlements.push(settlement); });
+    const state = await mounted(local.provider);
+    const birth = state.product();
+    const first = state.context.productPermission.authorize(birth, request());
+    const second = state.context.productPermission.authorize({ ...birth, callId: "other" }, request("WebSearch", "network.search", "other"));
+    while (settlements.length < 2) await Promise.resolve();
+    response(required(local.permissionRequests[0]), "always_allow", required(settlements[0]));
+    await expect(first).resolves.toBe("allow");
+    response(required(local.permissionRequests[1]), decision, required(settlements[1]));
+    await expect(second).resolves.toBe(decision === "allow_once" ? "allow" : "deny");
+    expect(state.flushes).toHaveLength(1);
+    expect(state.context.productPermission.fold(state.session).grantEventCount).toBe(1);
+  });
+
+  it("rejects tampered durable inline provenance during reconstruction", async () => {
+    const local = provider("scenario-tampered-proof", (pending, settlement) => response(pending, "always_allow", settlement));
+    const state = await mounted(local.provider);
+    await state.context.productPermission.authorize(state.product(), request());
+    const original = required(state.session.snapshotEvents().find(event => event.type === "myagents/permission/rule"));
+    for (const patch of [{ agentId: "another-agent" }, { clientOperationId: "another-operation" }, { birthRevision: "unknown" }, { version: 2 }]) {
+      const data = structuredClone(original.data) as unknown as Record<string, unknown>;
+      data.inlineGrant = { ...(data.inlineGrant as Record<string, unknown>), ...patch };
+      const replay = await mounted(local.provider);
+      replay.session.append("myagents/permission/rule", data as never);
+      expect(() => replay.context.productPermission.fold(replay.session)).toThrow();
+    }
+  });
+
+  it("does not lend inline receipts to a sibling Agent and can reconstruct receipts after resume", async () => {
+    const local = provider("scenario-resume-proof", (pending, settlement) => response(pending, "always_allow", settlement));
+    const state = await mounted(local.provider);
+    const original = state.product();
+    await state.context.productPermission.authorize(original, request());
+    const childSession = state.context.sessions.create(SessionId("proof-child"));
+    childSession.append("turn/start", { turn: 1 });
+    const child = { ...state.agent, id: "proof-child", session: childSession } as Agent;
+    state.context.agents.enter(child, state.agent);
+    await state.context.productPermission.authorize({ ...original, agent: child, origin: "background_child", rootAgent: state.agent }, request());
+    expect(local.permissionRequests).toHaveLength(2);
+    const resumedLocal = provider("scenario-resume-proof", (pending, settlement) => response(pending, "deny", settlement));
+    const resumed = await mounted(resumedLocal.provider);
+    for (const event of state.session.snapshotEvents()) {
+      if (event.type === "myagents/permission/rule") resumed.session.append(event.type, structuredClone(event.data));
+    }
+    await expect(resumed.context.productPermission.authorize(resumed.product(original.birth.permissionRevision), request()))
+      .resolves.toBe("allow");
+    expect(resumedLocal.permissionRequests).toHaveLength(0);
+    const foreign = { ...resumed.product(original.birth.permissionRevision), clientOperationId: "different-operation" };
+    await expect(resumed.context.productPermission.authorize(foreign, request()))
+      .rejects.toMatchObject({ code: "permission_revision_stale" });
+  });
+
+  it.each(["grant", "revoke"] as const)("rejects old births after an external %s even for automatic tools", async (mutation) => {
+    const local = provider("scenario-external-change", (pending, settlement) => response(pending, "always_allow", settlement));
+    const state = await mounted(local.provider, { mode: "acceptEdits" });
+    const original = state.product();
+    await state.context.productPermission.authorize(original, request());
+    const snapshot = state.permissionController.snapshot(state.agent);
+    if (mutation === "grant") {
+      await state.permissionController.grantRule(state.agent, {
+        expectedRevision: snapshot.revision, tool: "Bash", permissionClass: "process.execute", target: "external",
+      });
+    } else {
+      await state.permissionController.revokeRule(state.agent, { expectedRevision: snapshot.revision, ruleId: required(snapshot.rules[0]).ruleId });
+    }
+    const failure = state.context.productPermission.authorize({ ...original, callId: "write" }, request("Write", "workspace.write", "file"));
+    await expect(failure).rejects.toBeInstanceOf(ProductToolError);
+    await expect(failure).rejects.toMatchObject({ code: "permission_revision_stale" });
+  });
+
   it("carries operation display to the Host without persisting it or changing rule matching", async () => {
     const local = provider("scenario-v1", (pending, settlement) => response(pending, "always_allow", settlement));
     const state = await mounted(local.provider);
@@ -189,8 +317,8 @@ describe("product permission policy and local interaction provider", () => {
       ...request("Bash", "process.execute", "/workspace"), display,
     })).resolves.toBe("allow");
     expect(local.permissionRequests[0]?.display).toEqual(display);
-    expect(JSON.stringify(state.session.events)).not.toContain("printf first");
-    expect(JSON.stringify(state.session.events)).not.toContain('"display"');
+    expect(JSON.stringify(state.session.snapshotEvents())).not.toContain("printf first");
+    expect(JSON.stringify(state.session.snapshotEvents())).not.toContain('"display"');
     const revision = state.context.productPermission.currentRevision(state.agent);
     await expect(state.context.productPermission.authorize(product(revision), {
       ...request("Bash", "process.execute", "/workspace"),
@@ -210,7 +338,7 @@ describe("product permission policy and local interaction provider", () => {
     }));
     const after = state.context.productPermission.currentRevision(state.agent);
     expect(after).not.toBe(before);
-    expect(state.session.events.at(-1)).toMatchObject({
+    expect(state.session.snapshotEvents().at(-1)).toMatchObject({
       type: "myagents/permission/config",
       data: {
         sessionId: "permission-session",
@@ -221,7 +349,7 @@ describe("product permission policy and local interaction provider", () => {
     });
     expect(state.flushes).toEqual(["permission-session"]);
     expect(foldProductPermissions(
-      state.session.events,
+      state.session.snapshotEvents(),
       "permission-session",
       after,
       8,
@@ -238,7 +366,7 @@ describe("product permission policy and local interaction provider", () => {
       autoAllowTools: Object.freeze([]),
       interaction: desired.provider,
     }));
-    const persistedPermissionEvents = source.session.events.filter(({ type }) =>
+    const persistedPermissionEvents = source.session.snapshotEvents().filter(({ type }) =>
       type.startsWith("myagents/permission/"));
 
     const resumed = await mounted(initial.provider);
@@ -249,7 +377,7 @@ describe("product permission policy and local interaction provider", () => {
     for (const event of persistedPermissionEvents) {
       appendPersisted(event.type, event.data);
     }
-    const beforeEventCount = resumed.session.events.length;
+    const beforeEventCount = resumed.session.snapshotEvents().length;
     resumed.permissionController.restoreConfiguration(resumed.agent, Object.freeze({
       mode: "acceptEdits",
       autoAllowTools: Object.freeze([]),
@@ -258,7 +386,7 @@ describe("product permission policy and local interaction provider", () => {
 
     expect(resumed.context.productPermission.currentRevision(resumed.agent))
       .toBe(source.context.productPermission.currentRevision(source.agent));
-    expect(resumed.session.events).toHaveLength(beforeEventCount);
+    expect(resumed.session.snapshotEvents()).toHaveLength(beforeEventCount);
     expect(resumed.flushes).toEqual([]);
   });
 
@@ -299,7 +427,7 @@ describe("product permission policy and local interaction provider", () => {
       request("Bash", "workspace.read", "workspace-command"),
     )).rejects.toThrow("permission class must match the canonical Bash contract");
     expect(local.permissionRequests).toEqual([]);
-    expect(state.session.events.filter(({ type }) => type.startsWith("approval/"))).toEqual([]);
+    expect(state.session.snapshotEvents().filter(({ type }) => type.startsWith("approval/"))).toEqual([]);
   });
 
   it("enforces the complete four-mode behavior matrix", async () => {
@@ -374,10 +502,10 @@ describe("product permission policy and local interaction provider", () => {
       ruleId: applied.rule.ruleId,
     }));
     expect(revoked).toMatchObject({ state: "applied" });
-    expect(state.session.events.at(-1)?.type).toBe("myagents/permission/rule/revoked");
+    expect(state.session.snapshotEvents().at(-1)?.type).toBe("myagents/permission/rule/revoked");
     expect(state.permissionController.snapshot(state.agent).rules).toEqual([]);
     const replayed = foldProductPermissions(
-      structuredClone(state.session.events),
+      structuredClone(state.session.snapshotEvents()),
       String(state.session.id),
       state.context.productPermission.baseRevision(state.session),
       8,
@@ -412,7 +540,7 @@ describe("product permission policy and local interaction provider", () => {
       target: "workspace-command",
       tool: "Bash",
     });
-    const audit = state.session.events.filter(({ type }) => type.startsWith("approval/"));
+    const audit = state.session.snapshotEvents().filter(({ type }) => type.startsWith("approval/"));
     expect(audit.map(({ type }) => type)).toEqual(["approval/asked", "approval/decided"]);
     expect(audit[1]?.data).toMatchObject({ outcome: "allowed-once" });
     expect(state.flushes).toEqual([]);
@@ -445,8 +573,8 @@ describe("product permission policy and local interaction provider", () => {
     expect(local.permissionRequests[0]?.agent).toBe(child);
     expect(local.permissionRequests[0]?.origin).toBe("background_child");
     expect(local.permissionRequests[0]?.tool).toBe("Bash");
-    expect(state.session.events.some(({ type }) => type === "myagents/permission/rule")).toBe(true);
-    expect(childSession.events.some(({ type }) => type === "myagents/permission/rule")).toBe(false);
+    expect(state.session.snapshotEvents().some(({ type }) => type === "myagents/permission/rule")).toBe(true);
+    expect(childSession.snapshotEvents().some(({ type }) => type === "myagents/permission/rule")).toBe(false);
     expect(state.flushes).toEqual([String(state.session.id)]);
   });
 
@@ -524,7 +652,7 @@ describe("product permission policy and local interaction provider", () => {
 
     await expect(state.context.productPermission.authorize(state.product(), request()))
       .resolves.toBe("deny");
-    expect(state.session.events.at(-1)?.data).toMatchObject({ outcome: "unavailable" });
+    expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({ outcome: "unavailable" });
     expect(() => state.context.productPermission.currentRevision(state.agent))
       .toThrow(expect.objectContaining({ code: "permission_recovery_required" }));
   });
@@ -542,7 +670,7 @@ describe("product permission policy and local interaction provider", () => {
 
     await expect(state.context.productPermission.authorize(state.product(), request()))
       .resolves.toBe("deny");
-    expect(state.session.events.at(-1)?.data).toMatchObject({ outcome: "unavailable" });
+    expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({ outcome: "unavailable" });
     expect(() => state.context.productPermission.currentRevision(state.agent))
       .toThrow(expect.objectContaining({ code: "permission_recovery_required" }));
   });
@@ -579,7 +707,7 @@ describe("product permission policy and local interaction provider", () => {
     expect(state.flushes).toEqual(["permission-session"]);
 
     const reloaded = foldProductPermissions(
-      structuredClone(state.session.events),
+      structuredClone(state.session.snapshotEvents()),
       String(state.session.id),
       state.context.productPermission.baseRevision(state.session),
       8,
@@ -587,7 +715,7 @@ describe("product permission policy and local interaction provider", () => {
     );
     expect(reloaded.latestRevision).toBe(latest);
     expect(reloaded.history.at(-1)?.rules).toHaveLength(1);
-    const mismatched = structuredClone(state.session.events);
+    const mismatched = structuredClone(state.session.snapshotEvents());
     const rule = mismatched.find(({ type }) => type === "myagents/permission/rule");
     if (rule?.type !== "myagents/permission/rule") throw new Error("permission rule fixture is absent");
     (rule.data as unknown as { permissionClass: string }).permissionClass = "workspace.read";
@@ -622,7 +750,7 @@ describe("product permission policy and local interaction provider", () => {
 
     await expect(state.context.productPermission.authorize(state.product(), request()))
       .rejects.toMatchObject({ code: "permission_durability_failed" });
-    expect(state.session.events.filter(({ type }) => type === "myagents/permission/rule")).toHaveLength(1);
+    expect(state.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule")).toHaveLength(1);
     expect(() => state.context.productPermission.currentRevision(state.agent))
       .toThrow(expect.objectContaining({ code: "permission_recovery_required" }));
   });
@@ -673,7 +801,7 @@ describe("product permission policy and local interaction provider", () => {
     await expect(first).resolves.toBe("allow");
     await expect(second).resolves.toBe("allow");
     expect(local.permissionRequests).toHaveLength(1);
-    expect(state.session.events.filter(({ type }) => type === "myagents/permission/rule")).toHaveLength(1);
+    expect(state.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule")).toHaveLength(1);
   });
 
   it("fails stale, malformed, throwing, and denied responses closed", async () => {
@@ -701,7 +829,7 @@ describe("product permission policy and local interaction provider", () => {
       const state = await mounted(local.provider);
       await expect(state.context.productPermission.authorize(state.product(), request()))
         .resolves.toBe("deny");
-      expect(state.session.events.at(-1)?.data).toMatchObject({
+      expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({
         outcome: decide === responders[3] ? "rejected" : "unavailable",
       });
       expect(state.context.productPermission.pendingCount).toBe(0);
@@ -738,7 +866,7 @@ describe("product permission policy and local interaction provider", () => {
     await expect(authorization).rejects.toThrow("operation stopped");
     expect(abortHits).toBe(1);
     expect(state.context.productPermission.pendingCount).toBe(0);
-    expect(state.session.events.at(-1)?.data).toMatchObject({ outcome: "cancelled" });
+    expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({ outcome: "cancelled" });
   });
 
   it("keeps silent questions pending without a decision timeout and settles them during disposal", async () => {
@@ -881,7 +1009,7 @@ describe("product permission policy and local interaction provider", () => {
       const state = await mounted(local.provider);
       await expect(state.context.productPermission.authorize(state.product(), request()))
         .resolves.toBe("deny");
-      expect(state.session.events.at(-1)?.data).toMatchObject({ outcome: "unavailable" });
+      expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({ outcome: "unavailable" });
     }
     expect(thenGetterHits).toBe(0);
   });
@@ -894,7 +1022,7 @@ describe("product permission policy and local interaction provider", () => {
     await expect(state.context.productPermission.authorize(state.product(), request())).resolves.toBe("allow");
 
     expect(() => foldProductPermissions(
-      structuredClone(state.session.events),
+      structuredClone(state.session.snapshotEvents()),
       "another-session",
       baseRevision,
       8,
@@ -902,7 +1030,7 @@ describe("product permission policy and local interaction provider", () => {
     )).toThrow("belongs to another Session");
 
     let traps = 0;
-    const eventProxy = new Proxy(state.session.events, {
+    const eventProxy = new Proxy(state.session.snapshotEvents(), {
       get: () => { traps += 1; return undefined; },
       getOwnPropertyDescriptor: () => { traps += 1; return undefined; },
       getPrototypeOf: () => { traps += 1; return Reflect.getPrototypeOf([]); },

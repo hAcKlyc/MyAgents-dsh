@@ -159,7 +159,7 @@ const expectedWorkspaceFiles = new Map([
   ]],
   ["packages/components-skills", ["src/index.ts"]],
   ["packages/host-ports", ["src/attachment-store.ts", "src/credential-provider.ts", "src/index.ts", "src/service.ts"]],
-  ["packages/checkpoint", ["src/index.ts", "src/runtime.ts"]],
+  ["packages/checkpoint", ["src/directories.ts", "src/index.ts", "src/runtime.ts"]],
   ["packages/operation-runtime", [
     "src/events.ts",
     "src/fold.ts",
@@ -167,6 +167,7 @@ const expectedWorkspaceFiles = new Map([
     "src/limits.ts",
     "src/service.ts",
     "src/terminal.ts",
+    "src/token-accounting.ts",
   ]],
   ["packages/persistence-product", [
     "src/compaction.ts",
@@ -209,6 +210,7 @@ const expectedWorkspaceFiles = new Map([
   ]],
   ["packages/rpc-server", ["src/event-projector.ts", "src/index.ts", "src/native-rpc-service.ts"]],
   ["packages/runtime-product", [
+    "src/collaboration-policy.ts",
     "src/composition.ts",
     "src/host-interaction.ts",
     "src/host-model.ts",
@@ -242,7 +244,7 @@ const expectedWorkspaceFiles = new Map([
     "src/validation.ts",
   ]],
   ["packages/tool-runtime-product", ["src/index.ts", "src/keyed-locks.ts", "src/permission.ts", "src/runtime.ts"]],
-  ["packages/tools-agent", ["src/index.ts", "src/skill-runtime.ts", "src/work-runtime.ts"]],
+  ["packages/tools-agent", ["src/index.ts", "src/skill-runtime.ts", "src/work-lineage.ts", "src/work-runtime.ts"]],
   ["packages/tools-fs", ["src/canonical-file-tools.ts", "src/index.ts", "src/local-filesystem.ts"]],
   ["packages/tools-interaction", ["src/index.ts", "src/runtime.ts"]],
   ["packages/tools-process", [

@@ -1,23 +1,17 @@
+import { SessionLogOffset } from "@deepseek-ai/dsh-session";
+import type { SessionStorageMetadata } from "@deepseek-ai/dsh-session-persistence";
 import { Inbox } from "@deepseek-ai/dsh-agent";
 import {
   MessageId,
   freezeMessage,
   type AssistantMessage,
-  type CallId,
+  type ToolCallId,
   type ContentBlock,
   type ToolCallBlock,
   type UserMessage,
 } from "@deepseek-ai/dsh-llm";
-import {
-  KNOWN_SESSION_EVENT_TYPES,
-  Session,
-  SessionId,
-  isJsonValue,
-  snapshotJsonValue,
-  type JsonValue,
-  type SessionEvent,
-  type SessionHeader,
-} from "@deepseek-ai/dsh-session";
+import { KNOWN_SESSION_EVENT_TYPES, Session, SessionId, type SessionEvent, type SessionHeader } from "@deepseek-ai/dsh-session";
+import { isJsonValue, snapshotJsonValue, type JsonValue } from "@deepseek-ai/dsh-util-values";
 import {
   SessionPersistenceRevision,
   type PersistenceBackend,
@@ -501,7 +495,7 @@ export function recoverPendingOperation(
 }
 
 export interface PreparedAssistantToolCall {
-  readonly callId: CallId;
+  readonly callId: ToolCallId;
   readonly name: string;
   readonly parsedArguments: JsonValue;
   readonly rawArguments: string;
@@ -737,6 +731,7 @@ export class SharedGenerationMutationHarness implements PersistenceBackend<never
       createdAt: 0,
       id: SessionId(sessionId),
       version: 0,
+      isSeeded: false,
     });
   }
 
@@ -764,6 +759,7 @@ export class SharedGenerationMutationHarness implements PersistenceBackend<never
     if (id !== this.meta.id || this.tombstone !== undefined) return Promise.resolve(undefined);
     return Promise.resolve({
       meta: structuredClone(this.meta),
+      inheritedEventCount: SessionLogOffset(0),
       events: structuredClone(this.events),
       revision: SessionPersistenceRevision(this.currentRevision()),
     });
@@ -776,7 +772,8 @@ export class SharedGenerationMutationHarness implements PersistenceBackend<never
       : undefined);
   }
 
-  async appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void> {
+  async appendBatch(storage: SessionStorageMetadata, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void> {
+    const { meta } = storage;
     void isMaterialized;
     if (meta.id !== this.meta.id) throw new Error("generation backend session identity changed");
     if (!this.writerAdmitting || this.tombstone !== undefined) throw new Error("live writer is retired");
@@ -790,7 +787,7 @@ export class SharedGenerationMutationHarness implements PersistenceBackend<never
     });
   }
 
-  async commitRepair(...[meta, , closers]: [SessionHeader, undefined, readonly SessionEvent[]]): Promise<void> {
+  async commitRepair(...[meta, , closers]: [SessionStorageMetadata, undefined, readonly SessionEvent[]]): Promise<void> {
     await this.appendBatch(meta, closers, true);
   }
 
@@ -928,10 +925,10 @@ export function rewindToStablePrefix(
   targetSessionId: string,
   boundary: number,
 ): Session {
-  if (!Number.isSafeInteger(boundary) || boundary < 0 || boundary > source.events.length) {
+  if (!Number.isSafeInteger(boundary) || boundary < 0 || boundary > source.snapshotEvents().length) {
     throw new Error("rewind boundary is invalid");
   }
-  const prefix = source.events.slice(0, boundary);
+  const prefix = source.snapshotEvents().slice(0, boundary);
   const last = prefix.at(-1);
   if (last !== undefined && last.type !== "turn/end") {
     throw new Error("rewind boundary is not a stable completed turn");

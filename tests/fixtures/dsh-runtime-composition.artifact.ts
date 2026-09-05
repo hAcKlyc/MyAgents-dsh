@@ -1,3 +1,9 @@
+// Retain a historical stock log fixture without activating the stock Todo tool.
+declare module "@deepseek-ai/dsh-session/types" {
+  interface SessionEventMap {
+    "todo/write": { todos: readonly { content: string; status: "pending" | "in_progress" | "completed" }[] };
+  }
+}
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
@@ -14,7 +20,7 @@ import {
   ToolResultPruner,
 } from "@deepseek-ai/dsh-compaction-tool-result-pruner";
 import {
-  CallId,
+  ToolCallId,
   createMessage,
   createToolResultMessage,
   createUserMessage,
@@ -612,7 +618,7 @@ assert.ok(lifecycleOldDefinition !== undefined);
 const lifecycleInitialCatalog = JSON.stringify(lifecycleRoot.productComponents.catalog());
 const lifecycleOldExecution = lifecycleRoot.tools.execute({
   arguments: Object.freeze({ value: "hold" }),
-  callId: CallId("artifact-lifecycle-old-call"),
+  callId: ToolCallId("artifact-lifecycle-old-call"),
   name: lifecycleToolName,
   signal: new AbortController().signal,
 });
@@ -663,7 +669,7 @@ lifecycleOldGenerationUnused.resolve(undefined);
 await waitUntil(() => lifecycleCloseHits.get(1) === 1, "retired MCP generation cleanup");
 const lifecycleReplacementOutcome = await lifecycleRoot.tools.execute({
   arguments: Object.freeze({ value: "replacement" }),
-  callId: CallId("artifact-lifecycle-replacement-call"),
+  callId: ToolCallId("artifact-lifecycle-replacement-call"),
   name: lifecycleToolName,
   signal: new AbortController().signal,
 });
@@ -2034,7 +2040,7 @@ const hostModelSecretProjectionRejected = !JSON.stringify({
   hostPorts: hostModelComposition.context.hostPorts.snapshot(),
   runtimeEvents: hostModelRuntimeEvents,
   sessions: hostModelComposition.context.sessions.list().map((session) => ({
-    events: session.events,
+    events: session.snapshotEvents(),
     header: session.header,
   })),
 }).includes(hostModelSecret);
@@ -2043,7 +2049,7 @@ const hostModelMcpPermission = hostModelInteractionCalls.find((request) =>
   && JSON.stringify(request.schema).includes("mcp__artifact-mcp__echo"));
 const hostModelMcpPermissionVerified = JSON.stringify(hostModelMcpPermission?.schema)
   .includes(hostModelExtensionSnapshot.digest);
-const hostModelMcpResult = hostModelComposition.context.productSession.requireAgent().session.events.findLast(
+const hostModelMcpResult = hostModelComposition.context.productSession.requireAgent().session.snapshotEvents().findLast(
   (event) => event.type === "tool/result"
     && String(event.data.message.source.callId) === "artifact-host-model-mcp-call",
 );
@@ -2472,7 +2478,7 @@ assert.equal(
 );
 let durableOperationEvents: readonly SessionEvent[] = [];
 composition.context.on("session/flush", (session) => {
-  durableOperationEvents = structuredClone(session.events);
+  durableOperationEvents = structuredClone(session.snapshotEvents());
 });
 const turnStartParams = {
   clientOperationId: "artifact-operation-1",
@@ -2491,7 +2497,7 @@ assert.deepEqual(await Promise.race([
   delay(5_000).then(() => {
     throw new Error(`turn/start stalled: ${JSON.stringify({
       agentStatus: primaryAgent.status,
-      eventTypes: primaryAgent.session.events.map(({ type }) => type),
+      eventTypes: primaryAgent.session.snapshotEvents().map(({ type }) => type),
       exitRequest: nativeRpc.exitRequest,
       hostFatalErrors: hostFatalErrors.map(({ message }) => message),
       phase: nativeRpc.phase,
@@ -2553,7 +2559,7 @@ await primaryAgent.whenIdle();
 await waitUntil(
   () => composition.context.sdkOperations.lookup("artifact-operation-2")?.state === "terminal",
   `second durable operation terminal (${JSON.stringify({
-    eventTypes: primaryAgent.session.events.map(({ type }) => type),
+    eventTypes: primaryAgent.session.snapshotEvents().map(({ type }) => type),
     hostFatalErrors: hostFatalErrors.map(({ message }) => message),
     phase: nativeRpc.phase,
   })})`,
@@ -2597,7 +2603,7 @@ assert.equal(
   true,
   "every primary AgentLoop request must expose only the canonical tools plus the committed Host tool",
 );
-const firstAssistant = primaryAgent.session.events.find(({ type }) => type === "assistant/message");
+const firstAssistant = primaryAgent.session.snapshotEvents().find(({ type }) => type === "assistant/message");
 assert.ok(firstAssistant?.type === "assistant/message");
 assert.deepEqual(
   firstAssistant.data.usage,
@@ -2676,12 +2682,12 @@ await waitUntil(
   "failed durable operation terminal",
 );
 assert.equal(primaryAgent.status, "idle");
-const failedTurn = primaryAgent.session.events.findLast(({ type }) => type === "turn/end");
+const failedTurn = primaryAgent.session.snapshotEvents().findLast(({ type }) => type === "turn/end");
 assert.ok(failedTurn?.type === "turn/end");
 assert.equal(failedTurn.data.reason.kind, "error");
 assert.equal(composition.context.sdkOperations.lookup("artifact-operation-3")?.terminal?.kind, "failed");
 await composition.context.sessions.flush(primaryAgent.session);
-const rewindTargetEvents = structuredClone(primaryAgent.session.events);
+const rewindTargetEvents = structuredClone(primaryAgent.session.snapshotEvents());
 const rewindTargetDerivedMessages = structuredClone(primaryAgent.session.deriveMessages());
 const rewindTargetRead = await hostClient.sessionRead({});
 assert.equal(rewindTargetRead.nextCursor, undefined);
@@ -2719,7 +2725,7 @@ assert.deepEqual(await hostClient.sessionForkCommit({
   clientMutationId: "artifact-fork-1",
   token: forkPrepared.token,
 }), forkCommitted);
-assert.deepEqual(primaryAgent.session.events, rewindTargetEvents);
+assert.deepEqual(primaryAgent.session.snapshotEvents(), rewindTargetEvents);
 const forkDatabase = new DatabaseSync(productSessionDatabasePath(
   selectPlatformAdapter("darwin-arm64"),
   fixtureForkRuntimeHome,
@@ -2753,7 +2759,10 @@ const forkHeaderRecord = forkHeader as Record<string, unknown>;
 assert.equal(forkHeaderRecord.id, "artifact-forked-session");
 assert.equal(forkHeaderRecord.cwd, fixtureWorkspace);
 assert.equal(forkHeaderRecord.parentSession, "dsh-artifact-primary");
-assert.equal(forkHeaderRecord.seedLength, rewindTargetEvents.length);
+assert.equal(forkHeaderRecord.isSeeded, true);
+assert.equal((forkDatabase.prepare(`
+  SELECT inherited_event_count FROM session_generations WHERE session_id = ? AND state = 'active'
+`).get("artifact-forked-session") as { inherited_event_count: number }).inherited_event_count, rewindTargetEvents.length);
 const forkTail = forkDatabase.prepare(`
   SELECT envelope_json FROM session_events WHERE session_id = ? ORDER BY seq DESC LIMIT 1
 `).get("artifact-forked-session") as { envelope_json: string };
@@ -2793,12 +2802,12 @@ const forkPreparation = await forkReloadContext.sessionPersistence.prepare(
 );
 assert.deepEqual(forkPreparation.session.deriveMessages(), rewindTargetDerivedMessages);
 assert.equal(
-  forkPreparation.session.events.some(
+  forkPreparation.session.snapshotEvents().some(
     (event) => (event as { readonly type: string }).type === "myagents/session/fork",
   ),
   true,
 );
-assert.equal(forkPreparation.session.events.at(-1)?.type, "session/end-seed");
+assert.equal(forkPreparation.session.snapshotEvents().at(-1)?.type, "session/end-seed");
 forkPreparation[Symbol.dispose]();
 await forkReloadContext.fiber.dispose();
 
@@ -2846,10 +2855,10 @@ await waitUntil(
   "governed file-tool operation terminal",
 );
 if (composition.context.sdkOperations.lookup("artifact-file-operation")?.terminal?.kind !== "succeeded") {
-  throw new Error(`governed file-tool operation failed: ${JSON.stringify(primaryAgent.session.events.slice(-12))}`);
+  throw new Error(`governed file-tool operation failed: ${JSON.stringify(primaryAgent.session.snapshotEvents().slice(-12))}`);
 }
 assert.equal(preAssistantCommitTransformHits, 1);
-const governedToolResults = primaryAgent.session.events.filter((event) =>
+const governedToolResults = primaryAgent.session.snapshotEvents().filter((event) =>
   event.type === "tool/result" && ["artifact-read-call", "artifact-write-call"]
     .includes(String(event.data.message.source.callId)));
 assert.equal(governedToolResults.length, 2, JSON.stringify(governedToolResults));
@@ -2860,25 +2869,25 @@ assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
   `permission:Write:${fixtureFile}`,
 ]);
 await waitUntil(
-  () => primaryAgent.session.events.some((event) => event.type === "myagents/checkpoint/state"
+  () => primaryAgent.session.snapshotEvents().some((event) => event.type === "myagents/checkpoint/state"
     && event.data.callId === "artifact-write-call" && event.data.phase === "settled"),
   "governed Write checkpoint settlement",
 );
-assert.deepEqual(primaryAgent.session.events
+assert.deepEqual(primaryAgent.session.snapshotEvents()
   .filter((event) => event.type === "myagents/checkpoint/state"
     && event.data.callId === "artifact-write-call")
   .map((event) => event.type === "myagents/checkpoint/state" ? event.data.phase : undefined), [
   "prepared", "published", "settled",
 ]);
 assert.equal(
-  primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule").length,
+  primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule").length,
   2,
 );
-const transformedWriteCall = primaryAgent.session.events.findLast((event) => event.type === "tool/call"
+const transformedWriteCall = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/call"
   && String(event.data.callId) === "artifact-write-call");
 assert.ok(transformedWriteCall?.type === "tool/call");
 assert.equal(transformedWriteCall.data.arguments, transformedWriteArguments);
-const transformedWriteAssistant = primaryAgent.session.events.findLast((event) =>
+const transformedWriteAssistant = primaryAgent.session.snapshotEvents().findLast((event) =>
   event.type === "assistant/message" && event.data.message.content.some((block) =>
     block.type === "tool-call" && String(block.id) === "artifact-write-call"));
 assert.ok(transformedWriteAssistant?.type === "assistant/message");
@@ -2890,7 +2899,7 @@ const replayedWriteBlock = primaryAgent.session.deriveMessages().flatMap(({ cont
   .find((block) => block.type === "tool-call" && String(block.id) === "artifact-write-call");
 assert.ok(replayedWriteBlock?.type === "tool-call");
 assert.equal(replayedWriteBlock.arguments, transformedWriteArguments);
-assert.equal(JSON.stringify(primaryAgent.session.events).includes(untransformedWriteContent), false);
+assert.equal(JSON.stringify(primaryAgent.session.snapshotEvents()).includes(untransformedWriteContent), false);
 
 const binaryAttachmentEvidenceStart = hostAttachmentEvidence.length;
 await composition.context.sdkOperations.start({
@@ -2908,7 +2917,7 @@ assert.equal(
   composition.context.sdkOperations.lookup("artifact-binary-read-operation")?.terminal?.kind,
   "succeeded",
 );
-const binaryReadResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+const binaryReadResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-binary-read-call");
 assert.ok(binaryReadResult?.type === "tool/result");
 const binaryReadValue = binaryReadResult.data.message.content[0] as unknown as Readonly<{
@@ -2937,9 +2946,9 @@ await waitUntil(
   "governed Edit operation terminal",
 );
 assert.equal(composition.context.sdkOperations.lookup("artifact-edit-operation")?.terminal?.kind, "succeeded");
-const governedEditResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+const governedEditResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-edit-call");
-const governedEditReadResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+const governedEditReadResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-edit-read-call");
 assert.ok(governedEditReadResult?.type === "tool/result");
 assert.equal(governedEditReadResult.data.message.content[0].isError, false, JSON.stringify(governedEditReadResult));
@@ -2951,11 +2960,11 @@ assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
   `permission:Edit:${fixtureFile}`,
 ]);
 await waitUntil(
-  () => primaryAgent.session.events.some((event) => event.type === "myagents/checkpoint/state"
+  () => primaryAgent.session.snapshotEvents().some((event) => event.type === "myagents/checkpoint/state"
     && event.data.callId === "artifact-edit-call" && event.data.phase === "settled"),
   "governed Edit checkpoint settlement",
 );
-assert.deepEqual(primaryAgent.session.events
+assert.deepEqual(primaryAgent.session.snapshotEvents()
   .filter((event) => event.type === "myagents/checkpoint/state"
     && event.data.callId === "artifact-edit-call")
   .map((event) => event.type === "myagents/checkpoint/state" ? event.data.phase : undefined), [
@@ -2985,7 +2994,7 @@ const processSearchCallIds = [
   "artifact-background-bash-call",
   "artifact-background-flood-call",
 ];
-const processSearchResults = primaryAgent.session.events.filter((event) =>
+const processSearchResults = primaryAgent.session.snapshotEvents().filter((event) =>
   event.type === "tool/result" && processSearchCallIds.includes(String(event.data.message.source.callId)));
 assert.equal(processSearchResults.length, processSearchCallIds.length);
 assert.equal(processSearchResults.every((event) => event.type === "tool/result"
@@ -3006,7 +3015,7 @@ const processSearchText = (callId: string): string => {
   return block.text;
 };
 const durableToolText = (callId: string, expectedContentLength = 1): string => {
-  const event = primaryAgent.session.events.findLast((candidate) => candidate.type === "tool/result"
+  const event = primaryAgent.session.snapshotEvents().findLast((candidate) => candidate.type === "tool/result"
     && String(candidate.data.message.source.callId) === callId);
   assert.ok(event?.type === "tool/result");
   const resultBlock = event.data.message.content[0];
@@ -3024,7 +3033,7 @@ const durableToolText = (callId: string, expectedContentLength = 1): string => {
   assert.equal(resultBlock.isError, false, `${callId} failed: ${JSON.stringify({
     content: resultBlock.content,
     productWork: productWorkDiagnostic,
-    workEvents: primaryAgent.session.events.filter(({ type }) => type.startsWith("myagents/work/")),
+    workEvents: primaryAgent.session.snapshotEvents().filter(({ type }) => type.startsWith("myagents/work/")),
   })}`);
   assert.equal(resultBlock.content.length, expectedContentLength);
   const block = resultBlock.content[0];
@@ -3215,7 +3224,7 @@ assert.equal(
   durableToolText("artifact-plan-read-call"),
   "1\t# Governed plan\n2\t\n3\t1. Keep DSH as the only AgentLoop.\n4\t",
 );
-const deniedPlanBash = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+const deniedPlanBash = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-plan-bash-denied-call");
 assert.ok(deniedPlanBash?.type === "tool/result");
 assert.equal(deniedPlanBash.data.message.content[0].isError, true);
@@ -3228,7 +3237,7 @@ assert.deepEqual(JSON.parse(durableToolText("artifact-exit-plan-call")), {
 });
 assert.equal(composition.context.productPlan.snapshot(primaryAgent).mode, "normal");
 assert.deepEqual(
-  primaryAgent.session.events.flatMap((event) => event.type === "plan/mode" ? [event.data.active] : []),
+  primaryAgent.session.snapshotEvents().flatMap((event) => event.type === "plan/mode" ? [event.data.active] : []),
   [true, false, true, false],
 );
 assert.equal(interactionToolEvidence.length, 2);
@@ -3269,7 +3278,7 @@ assert.deepEqual(taskCreateDependent.task, {
   createdSequence: 2,
   updatedSequence: 2,
 });
-const cycleResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+const cycleResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-tg-cycle-call");
 assert.ok(cycleResult?.type === "tool/result");
 assert.equal(cycleResult.data.message.content[0].isError, true);
@@ -3300,11 +3309,11 @@ assert.deepEqual(finalTaskGraph.tasks.map(({ id, status, blockedBy }) => ({ id, 
   { id: "task-2", status: "completed", blockedBy: ["task-1"] },
 ]);
 assert.equal(
-  primaryAgent.session.events.filter(({ type }) => type === "myagents/task/created").length,
+  primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/task/created").length,
   2,
 );
 assert.equal(
-  primaryAgent.session.events.filter(({ type }) => type === "myagents/task/updated").length,
+  primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/task/updated").length,
   4,
 );
 assert.deepEqual(
@@ -3398,7 +3407,7 @@ assert.equal(
   "succeeded",
 );
 assert.equal(durableToolText("artifact-host-tool-call", 3), "Host release check accepted");
-const hostToolResult = primaryAgent.session.events.findLast((event) => event.type === "tool/result"
+const hostToolResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-host-tool-call");
 assert.ok(hostToolResult?.type === "tool/result");
 const hostToolAttachmentEvidence = hostAttachmentEvidence.slice(hostToolAttachmentEvidenceStart);
@@ -3516,12 +3525,12 @@ assert.deepEqual(childRequest?.toolNames, ["SendMessage", "TaskStop"]);
 assert.match(childRequest.system ?? "", /bounded declarative release reviewer/u);
 assert.match(childRequest.system ?? "", /frozen declarative Skill document/u);
 await waitUntil(
-  () => primaryAgent.session.events.some((event) => event.type === "agent/inbox/spliced"
+  () => primaryAgent.session.snapshotEvents().some((event) => event.type === "agent/inbox/spliced"
     && event.data.inserted.some((message) => message.source.kind === "subagent-report"
       && message.source.senderSessionId === backgroundAgentId)),
   "background child report insertion",
 );
-const dynamicAgentCreated = primaryAgent.session.events.find((event) =>
+const dynamicAgentCreated = primaryAgent.session.snapshotEvents().find((event) =>
   event.type === "myagents/work/created"
   && event.data.authority.callId === "artifact-background-agent-call");
 assert.ok(dynamicAgentCreated?.type === "myagents/work/created");
@@ -3660,7 +3669,7 @@ assert.match(
   durableToolText("artifact-agent-output-read-call"),
   new RegExp(`subagent ${backgroundAgentId} settled without a closing message \\(aborted\\)`, "u"),
 );
-const workEvents = primaryAgent.session.events.filter(({ type }) => type.startsWith("myagents/work/"));
+const workEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type.startsWith("myagents/work/"));
 assert.deepEqual(workEvents.map(({ type }) => type), [
   "myagents/work/created",
   "myagents/work/message-intent",
@@ -3679,7 +3688,7 @@ assert.equal(workEpochData.stopReason, "aborted");
 assert.equal(workEpochData.agentId, backgroundAgentId);
 assert.equal(workEpochData.taskId, backgroundAgentTaskId);
 assert.ok(workEpochData.childEndSeq > workEpochData.childStartSeq);
-assert.equal(primaryAgent.session.events.some((event) => event.type === "agent/inbox/spliced"
+assert.equal(primaryAgent.session.snapshotEvents().some((event) => event.type === "agent/inbox/spliced"
   && event.data.inserted.some((message) => message.source.kind === "subagent-settled")), false);
 
 const unrelatedRuntimeFile = join(fixtureRuntimeHome, "must-not-read.txt");
@@ -3715,7 +3724,7 @@ assert.equal(
   composition.context.sdkOperations.lookup("artifact-retained-output-operation")?.terminal?.kind,
   "succeeded",
 );
-const retainedOutputResults = primaryAgent.session.events.filter((event) => event.type === "tool/result"
+const retainedOutputResults = primaryAgent.session.snapshotEvents().filter((event) => event.type === "tool/result"
   && ["artifact-background-read-call", "artifact-runtime-private-read-call"]
     .includes(String(event.data.message.source.callId)));
 assert.equal(retainedOutputResults.length, 2);
@@ -3729,9 +3738,9 @@ assert.match(JSON.stringify(retainedOutputRead.data.message.content[0].content),
 assert.ok(unrelatedRuntimeRead?.type === "tool/result");
 assert.equal(unrelatedRuntimeRead.data.message.content[0].isError, true);
 
-const canonicalToolCalls = primaryAgent.session.events.filter((event) =>
+const canonicalToolCalls = primaryAgent.session.snapshotEvents().filter((event) =>
   event.type === "tool/call" && artifactEffectiveToolSet.has(event.data.name));
-const canonicalToolResultIds = new Set(primaryAgent.session.events.flatMap((event) =>
+const canonicalToolResultIds = new Set(primaryAgent.session.snapshotEvents().flatMap((event) =>
   event.type === "tool/result" ? [String(event.data.message.source.callId)] : []));
 assert.deepEqual(
   CANONICAL_TOOL_NAMES.filter((name) => canonicalToolCalls.some((event) =>
@@ -3828,7 +3837,7 @@ await waitUntil(
   "owned Bash process admission before interrupt",
 ).catch((error: unknown) => {
   const operation = composition.context.sdkOperations.lookup("artifact-process-abort-operation");
-  const recentEvents = primaryAgent.session.events.slice(-12).map((event) => ({
+  const recentEvents = primaryAgent.session.snapshotEvents().slice(-12).map((event) => ({
     type: event.type,
     ...(event.type === "tool/result" ? { callId: String(event.data.message.source.callId) } : {}),
   }));
@@ -3891,7 +3900,7 @@ assert.equal(primaryAgent.status, "idle");
 assert.equal(adapter.activeStreamCount, 0);
 assert.equal(childAdapter.activeStreamCount, 0);
 assert.equal(childAdapter.pendingScriptCount, 0);
-assert.ok(primaryAgent.session.events.some(({ type }) => type === "turn/end"));
+assert.ok(primaryAgent.session.snapshotEvents().some(({ type }) => type === "turn/end"));
 assert.deepEqual(composition.context.sdkOperations.lookup("artifact-operation-4")?.terminal, {
   kind: "aborted",
   reason: "user",
@@ -3899,13 +3908,13 @@ assert.deepEqual(composition.context.sdkOperations.lookup("artifact-operation-4"
 const interruptedOperationTurn = composition.context.sdkOperations
   .lookup("artifact-operation-4")?.dshTurns[0];
 assert.ok(interruptedOperationTurn !== undefined);
-const interruptedAssistantPrefix = primaryAgent.session.events.findLast((event) =>
+const interruptedAssistantPrefix = primaryAgent.session.snapshotEvents().findLast((event) =>
   event.type === "assistant/message" && event.data.interrupted === true
     && event.data.message.content.some((block) => block.type === "text"
       && block.text === "durable interrupted assistant prefix"));
 assert.ok(interruptedAssistantPrefix?.type === "assistant/message", JSON.stringify({
   operation: composition.context.sdkOperations.lookup("artifact-operation-4"),
-  recentAssistantEvents: primaryAgent.session.events.filter((event) =>
+  recentAssistantEvents: primaryAgent.session.snapshotEvents().filter((event) =>
     event.type === "assistant/message").slice(-4),
 }));
 assert.equal(interruptedAssistantPrefix.data.turn, interruptedOperationTurn);
@@ -3920,7 +3929,7 @@ assert.deepEqual(composition.context.sdkOperations.lookup("artifact-operation-5"
 });
 
 await composition.context.sessions.flush(primaryAgent.session);
-const rewindSourceEvents = structuredClone(primaryAgent.session.events);
+const rewindSourceEvents = structuredClone(primaryAgent.session.snapshotEvents());
 const rewindSourceDerivedMessages = structuredClone(primaryAgent.session.deriveMessages());
 const rewindAdapterRequestCount = adapter.requests.length;
 const rewindPrepareParams = {
@@ -3951,8 +3960,8 @@ const rewoundAgent = composition.context.productSession.requireAgent();
 assert.notEqual(rewoundAgent, primaryAgent);
 assert.deepEqual(rewoundAgent.session.deriveMessages(), rewindTargetDerivedMessages);
 assert.equal(adapter.requests.length, rewindAdapterRequestCount, "rewind must not replay model work");
-assert.equal(rewoundAgent.session.events.at(-2)?.type, "myagents/session/rewind");
-assert.equal(rewoundAgent.session.events.at(-1)?.type, "session/end-seed");
+assert.equal(rewoundAgent.session.snapshotEvents().at(-2)?.type, "myagents/session/rewind");
+assert.equal(rewoundAgent.session.snapshotEvents().at(-1)?.type, "session/end-seed");
 const rewindRolledBack = await hostClient.sessionRewindRollback({
   clientMutationId: "artifact-rewind-1",
   token: rewindPrepared.token,
@@ -3994,7 +4003,7 @@ assert.throws(() => composition.context.productSession.close({
 }), /clientOperationId differs/u);
 assert.deepEqual(firstSessionClose, { ok: true });
 assert.equal(composition.context.productSession.snapshot().state, "retired");
-const shutdownTerminal = primaryAgent.session.events.findLast((event) =>
+const shutdownTerminal = primaryAgent.session.snapshotEvents().findLast((event) =>
   event.type === "myagents/operation/terminal"
     && event.data.clientOperationId === "artifact-operation-6");
 assert.ok(shutdownTerminal?.type === "myagents/operation/terminal");
@@ -4345,21 +4354,21 @@ assert.match(
 );
 assert.equal(resumedPrimary.durableHead.sequence, resumedAgent.session.seq);
 assert.equal(
-  JSON.stringify(resumedAgent.session.events.slice(0, persistedPrimary.events.length)),
+  JSON.stringify(resumedAgent.session.snapshotEvents().slice(0, persistedPrimary.events.length)),
   persistedPrimaryBytes,
   "resumed Session must preserve the complete durable source prefix byte-for-byte",
 );
-assert.equal(resumedAgent.session.events.length, persistedPrimary.events.length + 1);
-assert.deepEqual(resumedAgent.session.events.at(-1), {
+assert.equal(resumedAgent.session.snapshotEvents().length, persistedPrimary.events.length + 1);
+assert.deepEqual(resumedAgent.session.snapshotEvents().at(-1), {
   type: "session/end-seed",
   seq: persistedPrimary.events.length,
-  time: resumedAgent.session.events.at(-1)?.time,
+  time: resumedAgent.session.snapshotEvents().at(-1)?.time,
   data: {},
 });
 assert.equal(resumeAdapter.requests.length, 0, "Session resume must not replay model work");
-const longSessionTurnCount = resumedAgent.session.events.filter(({ type }) => type === "turn/end").length;
+const longSessionTurnCount = resumedAgent.session.snapshotEvents().filter(({ type }) => type === "turn/end").length;
 assert.ok(longSessionTurnCount >= 10, "manual compaction evidence requires a real long Session history");
-const preCompactionEventCount = resumedAgent.session.events.length;
+const preCompactionEventCount = resumedAgent.session.snapshotEvents().length;
 const structuredCompactionCheckpoint = [
   "## User Intent and Non-Negotiable Constraints",
   "- Continue the exact artifact verification task without changing its authorities.",
@@ -4396,7 +4405,7 @@ assert.deepEqual(await resumeHostClient.sessionCompact({
   clientOperationId: "artifact-primary-session-compaction",
 }), { state: "already_known" });
 assert.equal(resumeAdapter.requests.length, 1, "manual compaction must use one real routed summary request");
-const compactionEvents = resumedAgent.session.events.slice(preCompactionEventCount);
+const compactionEvents = resumedAgent.session.snapshotEvents().slice(preCompactionEventCount);
 assert.deepEqual(compactionEvents.map(({ type }) => type), [
   "compaction/start",
   "compaction/summary",
@@ -4438,7 +4447,7 @@ assert.equal(compactionReceipt.data.outcome, "completed");
 assert.equal(compactionReceipt.data.startSeq, compactionStart.seq);
 assert.equal(compactionReceipt.data.summarySeq, compactionSummary.seq);
 assert.equal(compactionReceipt.data.endSeq, compactionEnd.seq);
-assert.equal(compactionReceipt.data.resultEventCount, resumedAgent.session.events.length);
+assert.equal(compactionReceipt.data.resultEventCount, resumedAgent.session.snapshotEvents().length);
 assert.equal(resumeAdapter.requests[0]?.maxTokens, 8_192);
 assert.match(
   resumeAdapter.requests[0].messages.at(-1)?.content
@@ -4455,7 +4464,7 @@ assert.equal(JSON.stringify(compactionTelemetry).includes("artifact verification
 assert.equal(JSON.stringify(compactionTelemetry).includes("dsh-artifact-primary"), true);
 const automaticPressureResults: unknown[] = [];
 const compactionPrivateCanary = ["COMPACTION", "PRIVATE", "CANARY"].join("_");
-const preAutomaticPressureEventCount = resumedAgent.session.events.length;
+const preAutomaticPressureEventCount = resumedAgent.session.snapshotEvents().length;
 for (let cycle = 1; cycle <= 3; cycle += 1) {
   const turn = 10_000 + cycle;
   resumedAgent.session.append("turn/start", { turn });
@@ -4481,7 +4490,7 @@ for (let cycle = 1; cycle <= 3; cycle += 1) {
   resumedAgent.session.append("turn/end", { turn, reason: { kind: "completed" } });
 }
 assert.equal(automaticPressureResults.length, 3);
-const automaticPressureDurableEventCount = resumedAgent.session.events.length
+const automaticPressureDurableEventCount = resumedAgent.session.snapshotEvents().length
   - preAutomaticPressureEventCount;
 assert.equal(automaticPressureDurableEventCount, 78);
 assert.equal(resumeAdapter.requests.length, 4);
@@ -4505,7 +4514,7 @@ const automaticSummaryRequestCount = resumeAdapter.requests.length - 1;
 // composition: a deterministic prune that is sufficient by itself, followed
 // by a provider-confirmed trigger that still requires one semantic summary.
 const pruneOnlySession = Session.create(SessionId("artifact-compaction-prune-only"));
-const pruneOnlyCallId = CallId("artifact-compaction-prune-only-call");
+const pruneOnlyCallId = ToolCallId("artifact-compaction-prune-only-call");
 pruneOnlySession.append("turn/start", { turn: 1 });
 pruneOnlySession.append("step/start", { turn: 1, step: 1 });
 pruneOnlySession.append("request/header", {
@@ -4557,7 +4566,7 @@ assert.equal(pruneOnlyResult, null);
 assert.equal(resumeAdapter.requests.length, requestsBeforePruneOnly);
 const pruneOnlyProviderRequests = resumeAdapter.requests.length - requestsBeforePruneOnly;
 assert.equal(pruneOnlySession.surface.replaceGeneration, generationBeforePruneOnly + 1);
-const prunedVisibleResultEvent = pruneOnlySession.events.findLast((event) =>
+const prunedVisibleResultEvent = pruneOnlySession.snapshotEvents().findLast((event) =>
   event.type === "tool/result");
 assert.ok(prunedVisibleResultEvent);
 const prunedVisibleResult = pruneOnlySession.deriveEventMessage(prunedVisibleResultEvent);
@@ -4624,8 +4633,8 @@ do {
   sessionReadCursor = page.nextCursor;
 } while (sessionReadCursor !== undefined);
 const sessionReadEvents = sessionReadAssembler.finish();
-assert.equal(sessionReadEvents.length, resumedAgent.session.events.length);
-for (const [index, event] of resumedAgent.session.events.entries()) {
+assert.equal(sessionReadEvents.length, resumedAgent.session.snapshotEvents().length);
+for (const [index, event] of resumedAgent.session.snapshotEvents().entries()) {
   const projected = sessionReadEvents[index];
   assert.equal(projected?.sequence, event.seq);
   assert.equal(projected.eventType, event.type);
@@ -4844,10 +4853,10 @@ assert.throws(() => composition.snapshot(), /disposing or disposed/u);
 const componentGenerationVerified = componentPublicationVerified;
 assert.equal(componentGenerationVerified, true);
 assert.deepEqual(hostFatalErrors, []);
-const permissionAskedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/asked");
-const permissionDecidedEvents = primaryAgent.session.events.filter(({ type }) => type === "approval/decided");
-const permissionRuleEvents = primaryAgent.session.events.filter(({ type }) => type === "myagents/permission/rule");
-const permissionRuleRevokedEvents = primaryAgent.session.events
+const permissionAskedEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === "approval/asked");
+const permissionDecidedEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === "approval/decided");
+const permissionRuleEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule");
+const permissionRuleRevokedEvents = primaryAgent.session.snapshotEvents()
   .filter(({ type }) => type === "myagents/permission/rule/revoked");
 assert.equal(permissionAskedEvents.length, 25);
 assert.equal(permissionDecidedEvents.length, 25);
@@ -4955,11 +4964,11 @@ process.stdout.write(`${JSON.stringify({
     sourceMessageCount: rewindSourceDerivedMessages.length,
   },
   checkpointJournalEvidence: {
-    writePhases: primaryAgent.session.events
+    writePhases: primaryAgent.session.snapshotEvents()
       .filter((event) => event.type === "myagents/checkpoint/state"
         && event.data.callId === "artifact-write-call")
       .map((event) => event.type === "myagents/checkpoint/state" ? event.data.phase : undefined),
-    editPhases: primaryAgent.session.events
+    editPhases: primaryAgent.session.snapshotEvents()
       .filter((event) => event.type === "myagents/checkpoint/state"
         && event.data.callId === "artifact-edit-call")
       .map((event) => event.type === "myagents/checkpoint/state" ? event.data.phase : undefined),
@@ -4976,7 +4985,7 @@ process.stdout.write(`${JSON.stringify({
     resumedDurableSequence: sessionReadEvents.length,
     resumedEventCount: resumedPersistenceSession.event_count,
     resumedSourcePrefixByteEquivalent: JSON.stringify(
-      resumedAgent.session.events.slice(0, persistedPrimary.events.length),
+      resumedAgent.session.snapshotEvents().slice(0, persistedPrimary.events.length),
     ) === persistedPrimaryBytes,
     resumedWithoutModelReplay: true,
     sessionReadChunkRecords: sessionReadChunkRecords.length,

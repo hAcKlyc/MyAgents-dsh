@@ -2,8 +2,8 @@
 type: protocol-specification
 status: source-candidate
 module: runtime-protocol
-version: 2.5.0
-updated: 2026-09-03
+version: 2.7.0
+updated: 2026-09-05
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
@@ -17,7 +17,16 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Protocol `2.5.0` is the current source candidate. It retains the complete `2.4.1` method and
+Protocol `2.7.0` is the DSH 0.1.2 upgrade source candidate. It adds Host Work listing and message/stop/resume control, bounded collaboration model/limit policy and typed tree/usage snapshots. It incorporates the `2.6.0` self-test correction. It advances the schema-bound canonical
+Tool digest to preserve bounded WebSearch service text and explicit uncertainty. The owning
+[self-test PRD](../../prd/prd_0.3_myagents_dsh_selftest_reliability.md) tracks implementation and acceptance;
+no existing Runtime/handoff establishes acceptance for these bytes.
+
+The source also separates ProductWork activation identity/ordinal/state from handle state. Epoch
+completion and handle closure remain distinct facts; foreground completion does not close a
+continuable child. These required snapshot fields are owned by the TypeBox contract source.
+
+Predecessor `2.5.0` retains the complete `2.4.1` method and
 notification vocabulary and adds one distinct `provider_tool` observation for structured
 Provider-owned activity preserved by an Anthropic-compatible model route. It does not reinterpret
 that activity as canonical `tool` execution. `2.4.1` advanced the canonical Tool digest after
@@ -28,11 +37,11 @@ Runtime composition gate passes, while commit-bound Runtime/platform/handoff evi
 
 ### 1.1 Compatibility versioning
 
-The active source implements exactly `2.5.0`. Initialization accepts a Host range only when it
-contains `2.5.0`; it neither negotiates down nor emulates earlier behavior. Current version strings
+The active source implements exactly `2.7.0`. Initialization accepts a Host range only when it
+contains `2.7.0`; it neither negotiates down nor emulates earlier behavior. Current version strings
 are exact wire-mode selectors, not a promise that a `2.x` Host accepts every later `2.x` payload.
 That distinction matters because `2.4.0` removes old event `detail` shapes and adds required typed
-fields, `2.4.1` changes the schema-bound canonical Tool digest, and `2.5.0` adds a required tagged
+fields, `2.4.1` and `2.6.0` change the schema-bound canonical Tool digest, and `2.5.0` adds a required tagged
 union member; an older exact Host schema will reject any mismatch. A Runtime may advertise a wider range only after it implements and
 proves each mode. A larger number, generated schema or source test is not artifact acceptance, and
 historical draft/release evidence cannot be relabeled.
@@ -225,9 +234,9 @@ type InitializeResult = {
 
 ## 7. Method inventory
 
-The contract exposes 47 request methods: 40 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 51 names. Draft.2 added `session/delete/purge`; draft.3 added `plan/apply` plus `permission/rules/list`, `permission/rules/add`, and `permission/rules/revoke`; `2.0.0` froze that vocabulary and `2.1.0` through `2.4.0` leave it unchanged.
+The contract exposes 51 request methods: 44 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 55 names. Draft.2 added `session/delete/purge`; draft.3 added `plan/apply` plus `permission/rules/list`, `permission/rules/add`, and `permission/rules/revoke`; `2.0.0` froze that vocabulary and `2.1.0` through `2.4.0` leave it unchanged.
 
-### 7.1 Host-to-Runtime methods: 40
+### 7.1 Host-to-Runtime methods: 44
 
 | Domain | Methods |
 | --- | --- |
@@ -236,6 +245,7 @@ The contract exposes 47 request methods: 40 Host-to-Runtime methods and seven Ru
 | Delete transaction | `session/delete/prepare`, `session/delete/commit`, `session/delete/purge`, `session/delete/rollback`, `session/delete/status` |
 | Fork transaction | `session/fork/prepare`, `session/fork/commit`, `session/fork/abort`, `session/fork/status` |
 | Rewind transaction | `session/rewind/prepare`, `session/rewind/commit`, `session/rewind/rollback`, `session/rewind/status` |
+| Retained Agent tree | `work/list`, `work/agent/message`, `work/agent/stop`, `work/agent/resume` |
 | Turn | `turn/start`, `turn/get`, `turn/steer`, `turn/followUp`, `turn/message/cancel`, `turn/interrupt` |
 | Command/configuration | `command/invoke`, `config/apply`, `plan/apply`, `credential/reconcile` |
 | Permission policy | `permission/rules/list`, `permission/rules/add`, `permission/rules/revoke` |
@@ -513,7 +523,7 @@ Limit arbitration appends one durable first-limit fact to the same DSH Session l
 
 ```ts
 type TurnTerminal =
-  | { kind: "succeeded"; assistantEventId: string; usage: UsageSummary }
+  | { kind: "succeeded"; assistantEventId: string; usage?: UsageSummary }
   | { kind: "failed"; code: string; message: string; retryable: boolean; usage?: UsageSummary }
   | { kind: "aborted"; reason: "user" | "host_shutdown" | "session_replaced"; usage?: UsageSummary }
   | { kind: "context_exhausted"; message?: string; usage?: UsageSummary }
@@ -866,3 +876,7 @@ artifact-consuming Runtime composition gate pass, including the patched DSH/pi-a
 That does not yet constitute release acceptance: a commit-bound Runtime artifact, platform evidence,
 immutable handoff and exact Host ingestion remain required. Accepted `2.4.x` bytes cannot be
 relabeled.
+
+### Collaboration source semantics in 2.7.0
+
+Runtime defaults identified follow-up delivery to realtime at a DSH model/tool step boundary; explicit turn delivery remains selectable and frozen per accepted message. Autonomous collaboration root admissions carry a distinct origin. Work controls act only on the published primary root tree and carry stable message/resume identities or the exact handle revision; model tools cannot implicitly reopen closed nodes. Work list cursors stay within that tree, obey negotiated frame limits and expose bounded previews. The Host can read native usage/context projections without waking Agent execution. The upgrade PRD owns final client, artifact and platform acceptance.

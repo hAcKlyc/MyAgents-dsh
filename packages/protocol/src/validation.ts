@@ -2,10 +2,12 @@ import { Value } from "typebox/value";
 
 import {
   ProtocolLimitsSchema,
+  AgentCollaborationConfigSchema,
   RPC_METHODS,
   RPC_NOTIFICATIONS,
   TurnTerminalSchema,
   type MethodParams,
+  type AgentCollaborationConfig,
   type MethodResult,
   type NotificationParams,
   type ProtocolLimits,
@@ -20,6 +22,14 @@ import { validateNormalizedEffectiveToolCatalog } from "./tool-catalog.js";
 
 export const isRpcMethodName = (value: string): value is RpcMethodName => Object.hasOwn(RPC_METHODS, value);
 export const isRpcNotificationName = (value: string): value is RpcNotificationName => Object.hasOwn(RPC_NOTIFICATIONS, value);
+
+export const validateAgentCollaborationConfig = (value: unknown): AgentCollaborationConfig => {
+  const canonical = canonicalProtocolJsonSnapshot(value, "collaboration_config_invalid");
+  if (!Value.Check(AgentCollaborationConfigSchema, canonical)) {
+    throw new ProtocolError("collaboration_config_invalid", Value.Errors(AgentCollaborationConfigSchema, canonical)[0]?.message ?? "Invalid collaboration configuration");
+  }
+  return canonical;
+};
 
 export const validateMethodParams = <Name extends RpcMethodName>(name: Name, value: unknown): MethodParams<Name> => {
   const canonical = canonicalProtocolJsonSnapshot(value, "protocol_invalid_params");

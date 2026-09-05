@@ -139,6 +139,7 @@ export interface ProductExternalToolPermissionRequest {
 }
 
 export interface ProductToolCheckpointHandle {
+  verify?(): Promise<void>;
   readonly receipt: Readonly<{ checkpointId: string; policyRevision: string }>;
   abort(): Promise<void>;
   commit(): Promise<void>;
@@ -686,7 +687,7 @@ export class ProductToolRuntime extends Service {
       context.signal.throwIfAborted();
       const handle = exactOwnDataObject(
         candidate,
-        ["abort", "commit", "conflict", "receipt"],
+        Object.hasOwn(candidate as object, "verify") ? ["abort", "commit", "conflict", "receipt", "verify"] : ["abort", "commit", "conflict", "receipt"],
         "checkpoint handle",
       );
       const receipt = exactOwnDataObject(
@@ -694,7 +695,7 @@ export class ProductToolRuntime extends Service {
         ["checkpointId", "policyRevision"],
         "checkpoint receipt",
       );
-      const method = (key: "abort" | "commit" | "conflict"): (() => Promise<void>) => {
+      const method = (key: "abort" | "commit" | "conflict" | "verify"): (() => Promise<void>) => {
         const value = handle[key];
         if (typeof value !== "function") throw new TypeError(`checkpoint ${key} must be a function`);
         return async () => {
@@ -705,6 +706,7 @@ export class ProductToolRuntime extends Service {
       const checkpointId = boundedIdentifier(receipt.checkpointId, "checkpoint id");
       const policyRevision = boundedIdentifier(receipt.policyRevision, "checkpoint policy revision");
       return Object.freeze({
+        ...(Object.hasOwn(handle, "verify") ? { verify: method("verify") } : {}),
         abort: method("abort"),
         commit: method("commit"),
         conflict: method("conflict"),

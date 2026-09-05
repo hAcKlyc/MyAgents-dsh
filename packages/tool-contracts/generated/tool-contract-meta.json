@@ -1,12 +1,12 @@
 {
   "artifactFormatVersion": 1,
   "authority": "packages/tool-contracts/src/contract-source.ts",
-  "behaviorFixtureCount": 100,
+  "behaviorFixtureCount": 101,
   "canonicalToolCount": 20,
-  "catalogSchemaSha256": "84d1ccbf06d2cd1b96509b375b84a528b09f2e5a710dd81ef613e6692234c98f",
-  "contractSha256": "dee6528e97bff11415526f6cc05d2327cab5df616e02aeb27039e135758bacc2",
-  "documentationSha256": "7bf68fcb1cc4e7aa5cac06025d3a9c8c9dddf47348f42b005b6018e627df54f4",
-  "fixturesSha256": "4aad263214ba44faa0e0e1a37bcdfcbfb7b1c2fbc35195d24f2bfb07714d25a4",
+  "catalogSchemaSha256": "eb122dd7462df06f3b42bdb2f8be1c8bd496ff6c65da7eeceebe52cbe21d9959",
+  "contractSha256": "aeb3069e1f5280c41fe8426ac7461d7391d656725456c3c8beabf1c0665a5b8c",
+  "documentationSha256": "128bc1216f64bfa34274bef79cce1e424a627c72671e91438e2f9a6d2a6f807d",
+  "fixturesSha256": "076fcdc15d076a34a1dc8ddd8ad8a16cc526d4094b24d0e83bf3f241845ca068",
   "generator": "scripts/generate-tool-contracts.ts",
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
@@ -14,9 +14,9 @@
     "packages/protocol/src/tool-catalog-schema.ts"
   ],
   "profile": "canonical-agent-experience-v1",
-  "reuseMatrixSha256": "56a94c2608187b06de466514bd278c1976ff3b66e9b8587af83235b51c362c53",
+  "reuseMatrixSha256": "9edf14df0733caab6c0694ffb4873548bb36a4100aea62a00093c3a3e9dee764",
   "toolDigests": {
-    "Agent": "8bf33ee701810946d50f1ef896931d75283b1ac841752b6db1641590118b28cc",
+    "Agent": "fe6d6bdc7f9577a8d2ac4d143c1efdc1d405e90616cc3d33da3fd4fbb28ddaf7",
     "AskUserQuestion": "636c602d528e80a423e2eeae53dbf3fc60c881bedde405fb922f61ad30a25d1d",
     "Bash": "7d1db47ce0c84cca5b136910abc94c2f6d99e45d21033b4cadfbb823ce56507d",
     "Edit": "60e2001f5e649af7cb8bdbe1cf99b3b13c1265e5837dced0ed1f93bf4655e5f0",
@@ -31,10 +31,10 @@
     "TaskGet": "4195b325342b264f53edfbd72513d337fe7caf704ff916cfe86cd5dd24c30b73",
     "TaskList": "365499cc93d2af0d45535bce66ea8780e6d85a8f7c28655d48b6a0e01ae4580c",
     "TaskStop": "ccd994110bf29e1a7708126fe23f3d35aeb75c868f248360823c46170816c7fa",
-    "TaskUpdate": "b98dfdb0ed0d0e73702d0d4ab60c6ae1a9ad736078b18896d6d078f46a9c0920",
+    "TaskUpdate": "9b7e0afb5242addf13f0d097fb0cb59f7df57aaa98d76cfd8f52ef744f11055d",
     "WebFetch": "34a5131c26502ecbcd1002de6288ba0c7017c18beeaa46803d8d0683831f2ddc",
-    "WebSearch": "dac2ef4bd8fe1369b275a590b400e09c7386ab8fdfcf140251dcfe69b3ff6d54",
-    "Write": "87987609cdcbe5d4e3150333f1482e345ccc854761be1ab4f0b0da0f621ea36c",
+    "WebSearch": "e8543011fe5c98f37ea5aab5f89195d32bdf8c958ac8f8fc8b1ebf9778fc472b",
+    "Write": "37a52bdf6e5ffe62c4ef7f90deffb7f185d832ae5e431a103d0713608c9b35c7",
     "ls": "98335fd6d8109cff2de7473a87a069cbf3ea86445a3b85aa9e2aa16a7a9bae32"
   }
 }

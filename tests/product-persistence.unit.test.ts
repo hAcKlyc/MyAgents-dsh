@@ -1,3 +1,4 @@
+import { SessionSeq, SessionLogOffset } from "@deepseek-ai/dsh-session";
 import { Context } from "@deepseek-ai/cordis";
 import {
   SESSION_FORMAT_VERSION,
@@ -19,6 +20,8 @@ import {
   PRODUCT_PERSISTENCE_LIMITS,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
+  PRODUCT_PERSISTENCE_SCHEMA_V7_SQL,
+  PRODUCT_PERSISTENCE_SCHEMA_V8_SQL,
   PRODUCT_REQUIRED_SESSION_EVENT_TYPES,
   ProductSqliteSessionPersistence,
   foldProductCompactions,
@@ -27,7 +30,7 @@ import {
   productTranscriptPostcondition,
   validateProductCompactionReceipt,
 } from "@myagents-dsh/persistence-product";
-import { SessionReadAssembler } from "@myagents-dsh/protocol";
+import { canonicalSessionReadData, SessionReadAssembler } from "@myagents-dsh/protocol";
 import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
 
 const roots: string[] = [];
@@ -45,12 +48,13 @@ const header = (id: string): SessionHeader => Object.freeze({
   cwd: "/fixture/workspace",
   id: SessionId(id),
   version: SESSION_FORMAT_VERSION,
+  isSeeded: false,
 });
 
 const turn = (seq: number, turnNumber: number): readonly SessionEvent[] => Object.freeze([
   Object.freeze({
     data: Object.freeze({ turn: turnNumber }),
-    seq,
+    seq: SessionSeq(seq),
     time: seq + 1,
     type: "turn/start" as const,
   }),
@@ -59,7 +63,7 @@ const turn = (seq: number, turnNumber: number): readonly SessionEvent[] => Objec
       reason: Object.freeze({ kind: "completed" as const }),
       turn: turnNumber,
     }),
-    seq: seq + 1,
+    seq: SessionSeq(seq + 1),
     time: seq + 2,
     type: "turn/end" as const,
   }),
@@ -96,8 +100,9 @@ afterEach(async () => {
 describe("ProductSqliteSessionPersistence", () => {
   it("owns the exact immutable product event registry", () => {
     expect(Object.isFrozen(PRODUCT_REQUIRED_SESSION_EVENT_TYPES)).toBe(true);
-    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(24);
-    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(24);
+    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toHaveLength(29);
+    expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(29);
+    expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toContain("myagents/work/activated");
     expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toContain("myagents/session/configuration");
     expect(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).toContain("myagents/operation/limit");
     for (const type of PRODUCT_REQUIRED_SESSION_EVENT_TYPES) {
@@ -124,7 +129,7 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(Object.isFrozen(receipt)).toBe(true);
     expect(foldProductCompactions([{
       data: receipt,
-      seq: 6,
+      seq: SessionSeq(6),
       time: 7,
       type: "myagents/session/compaction",
     }])).toEqual(new Map([["compact-primary-1", receipt]]));
@@ -173,7 +178,7 @@ describe("ProductSqliteSessionPersistence", () => {
     }) as unknown as SessionEvent;
     await expect(context.sessionPersistence.append(id, [oversized]))
       .rejects.toThrow(/persisted byte bound/u);
-    expect((await context.sessionPersistence.readFrom(id, 0)).events).toHaveLength(2);
+    expect((await context.sessionPersistence.readFrom(id, SessionLogOffset(0))).events).toHaveLength(2);
 
     let deepData: unknown = "leaf";
     for (let depth = 0; depth <= PRODUCT_PERSISTENCE_LIMITS.maxJsonDepth; depth += 1) {
@@ -185,7 +190,7 @@ describe("ProductSqliteSessionPersistence", () => {
       time: 3,
       type: "assistant/message" as const,
     }) as unknown as SessionEvent])).rejects.toThrow(/JSON depth bound/u);
-    expect((await context.sessionPersistence.readFrom(id, 0)).events).toHaveLength(2);
+    expect((await context.sessionPersistence.readFrom(id, SessionLogOffset(0))).events).toHaveLength(2);
 
     const probe = new DatabaseSync(databasePath);
     probe.prepare("UPDATE sessions SET event_count = ? WHERE id = ?")
@@ -293,6 +298,69 @@ describe("ProductSqliteSessionPersistence", () => {
     await context.fiber.dispose();
   });
 
+  it("migrates v8 stores to the directory journal without inventing historical ownership", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const platform = selectPlatformAdapter("darwin-arm64");
+    const databasePath = productSessionDatabasePath(platform, runtimeHome);
+    await mkdir(join(runtimeHome, "persistence"), { mode: 0o700 });
+    const database = new DatabaseSync(databasePath);
+    database.exec(PRODUCT_PERSISTENCE_SCHEMA_V8_SQL);
+    database.prepare("INSERT INTO store_meta VALUES (1, 'directory-migration', 8, ?, 1)").run(PRODUCT_PERSISTENCE_FORMAT);
+    database.exec(`PRAGMA application_id = ${PRODUCT_PERSISTENCE_APPLICATION_ID}; PRAGMA user_version = 8;`);
+    database.close();
+    await chmod(databasePath, 0o600);
+    const context = await mount(runtimeHome);
+    const probe = new DatabaseSync(databasePath, { readOnly: true });
+    expect(probe.prepare("PRAGMA user_version").get()).toEqual({ user_version: PRODUCT_PERSISTENCE_SCHEMA_VERSION });
+    expect(probe.prepare("PRAGMA table_info(checkpoint_records)").all().at(-1)).toMatchObject({
+      name: "directory_plan_json", type: "TEXT", notnull: 0, dflt_value: null,
+    });
+    expect(probe.prepare("SELECT directory_plan_json FROM checkpoint_records").all()).toEqual([]);
+    probe.close();
+    await context.fiber.dispose();
+  });
+
+  it("migrates legacy fork metadata while preserving its original header and event bytes", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const platform = selectPlatformAdapter("darwin-arm64");
+    const databasePath = productSessionDatabasePath(platform, runtimeHome);
+    await mkdir(join(runtimeHome, "persistence"), { mode: 0o700 });
+    const database = new DatabaseSync(databasePath);
+    database.exec(PRODUCT_PERSISTENCE_SCHEMA_V7_SQL);
+    database.prepare("INSERT INTO store_meta VALUES (1, 'legacy-prefix-fixture', 7, ?, 1)").run(PRODUCT_PERSISTENCE_FORMAT);
+    database.exec(`PRAGMA application_id = ${PRODUCT_PERSISTENCE_APPLICATION_ID}; PRAGMA user_version = 7;`);
+    const id = SessionId("legacy-fork");
+    const legacyHeader = { createdAt: 1_000, cwd: "/fixture/workspace", id, parentSession: "legacy-parent", seedLength: 2, version: SESSION_FORMAT_VERSION };
+    const headerBytes = canonicalSessionReadData(legacyHeader).bytes.toString("utf8");
+    const events = turn(0, 1);
+    let head = createHash("sha256").digest("hex");
+    const rows = events.map((event) => {
+      const bytes = canonicalSessionReadData(event).bytes.toString("utf8");
+      head = createHash("sha256").update(Buffer.from(head, "hex")).update(bytes).digest("hex");
+      return { event, bytes, head };
+    });
+    database.prepare("INSERT INTO sessions VALUES (?, 'legacy-generation', 'active', 1, 2, ?, 1)").run(id, head);
+    database.prepare("INSERT INTO session_generations VALUES (?, 'legacy-generation', ?, 'fork', 'active', 1, 2, ?, 1)").run(id, headerBytes, head);
+    for (const row of rows) database.prepare("INSERT INTO session_events VALUES (?, 'legacy-generation', ?, ?, ?, ?, ?)")
+      .run(id, row.event.seq, row.event.type, row.event.time, row.bytes, row.head);
+    database.close();
+    await chmod(databasePath, 0o600);
+    const context = await mount(runtimeHome);
+    const restored = await context.sessionPersistence.inspect(id);
+    expect(restored.inheritedEventCount).toBe(2);
+    expect(restored.meta).toMatchObject({ isSeeded: true, parentSession: "legacy-parent" });
+    expect(restored.meta).not.toHaveProperty("seedLength");
+    expect(restored.events).toEqual(events);
+    await context.sessionPersistence.append(id, turn(2, 2));
+    const probe = new DatabaseSync(databasePath, { readOnly: true });
+    expect(probe.prepare("SELECT header_json, inherited_event_count FROM session_generations").get())
+      .toEqual({ header_json: headerBytes, inherited_event_count: 2 });
+    expect(probe.prepare("SELECT envelope_json FROM session_events WHERE seq < 2 ORDER BY seq").all())
+      .toEqual(rows.map(({ bytes }) => ({ envelope_json: bytes })));
+    probe.close();
+    await context.fiber.dispose();
+  });
+
   it("persists and projects one opaque stable boundary for a closed durable history", async () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
@@ -337,7 +405,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const id = SessionId("product-persistence-genesis-rewind");
     const configuration = Object.freeze({
       data: Object.freeze({}),
-      seq: 0,
+      seq: SessionSeq(0),
       time: 1,
       type: "session/end-seed" as const,
     });
@@ -463,7 +531,7 @@ describe("ProductSqliteSessionPersistence", () => {
       storageState: "tombstoned",
     });
     expect(await persistence.list()).toEqual([]);
-    await expect(persistence.readFrom(id, 0)).rejects.toThrow(/not found|unavailable/u);
+    await expect(persistence.readFrom(id, SessionLogOffset(0))).rejects.toThrow(/not found|unavailable/u);
 
     const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
     const tombstoneProbe = new DatabaseSync(databasePath);
@@ -478,7 +546,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const rolledBack = await persistence.rollbackDelete(prepared.token, "delete-client-1");
     expect(rolledBack).toMatchObject({ attempt: 2, phase: "rolled_back" });
     expect(await persistence.rollbackDelete(prepared.token, "delete-client-1")).toEqual(rolledBack);
-    expect((await persistence.readFrom(id, 0)).events).toEqual(events);
+    expect((await persistence.readFrom(id, SessionLogOffset(0))).events).toEqual(events);
     await expect(persistence.inspectRecovery(id)).resolves.toMatchObject({
       state: "resume_candidate",
       generationId: prepared.sourceGenerationId,
@@ -509,7 +577,7 @@ describe("ProductSqliteSessionPersistence", () => {
     await expect(persistence.commitDelete(prepared.token, "delete-client-revision-drift"))
       .rejects.toThrow(/locator or revision changed/u);
     expect(await persistence.getDelete(prepared.token)).toEqual(prepared);
-    expect((await persistence.readFrom(id, 0)).events).toEqual([...firstTurn, ...secondTurn]);
+    expect((await persistence.readFrom(id, SessionLogOffset(0))).events).toEqual([...firstTurn, ...secondTurn]);
     expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId))).toEqual([id]);
     expect(await persistence.rollbackDelete(prepared.token, "delete-client-revision-drift"))
       .toMatchObject({ phase: "rolled_back" });
@@ -606,7 +674,7 @@ describe("ProductSqliteSessionPersistence", () => {
       ...header(excludedChildId),
       origin: "subagent" as const,
       parentSession: id,
-      seedLength: 0,
+      isSeeded: false,
     }));
     await context.sessionPersistence.append(excludedChildId, turn(0, 1));
     await persistence.append(id, secondTurn);
@@ -693,7 +761,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const rolledBack = await persistence.rollbackRewind(prepared.token, "rewind-client-1");
     expect(rolledBack.phase).toBe("rolled_back");
     expect(await persistence.rollbackRewind(prepared.token, "rewind-client-1")).toEqual(rolledBack);
-    expect((await persistence.readFrom(id, 0)).events).toEqual(allEvents);
+    expect((await persistence.readFrom(id, SessionLogOffset(0))).events).toEqual(allEvents);
     expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId)).sort())
       .toEqual([String(excludedChildId), String(id)].sort());
     await context.fiber.dispose();
@@ -832,7 +900,7 @@ describe("ProductSqliteSessionPersistence", () => {
       },
     });
     expect(await persistence.commitFork(prepared.token, "fork-client-1")).toEqual(committed);
-    expect((await persistence.readFrom(sourceId, 0)).events).toEqual(firstTurn);
+    expect((await persistence.readFrom(sourceId, SessionLogOffset(0))).events).toEqual(firstTurn);
     probe = new DatabaseSync(targetDatabasePath, { readOnly: true });
     const target = probe.prepare(`
       SELECT s.state, s.event_count, g.state AS generation_state, g.header_json
@@ -849,7 +917,7 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(JSON.parse(target.header_json)).toMatchObject({
       id: prepared.targetRuntimeSessionId,
       parentSession: sourceId,
-      seedLength: 2,
+      isSeeded: true,
     });
     expect(JSON.parse((probe.prepare(`
       SELECT envelope_json FROM session_events
@@ -984,15 +1052,15 @@ describe("ProductSqliteSessionPersistence", () => {
     await context.sessionPersistence.create(meta);
     await context.sessionPersistence.append(id, [...turn(0, 1), ...turn(2, 2)]);
 
-    const complete = await context.sessionPersistence.readFrom(id, 0);
-    const suffix = await context.sessionPersistence.readFrom(id, 2);
+    const complete = await context.sessionPersistence.readFrom(id, SessionLogOffset(0));
+    const suffix = await context.sessionPersistence.readFrom(id, SessionLogOffset(2));
     expect(Buffer.from(JSON.stringify(suffix.events))).toEqual(
       Buffer.from(JSON.stringify(complete.events.slice(2))),
     );
-    expect((await context.sessionPersistence.readFrom(id, 4)).events).toEqual([]);
-    expect((await context.sessionPersistence.readFrom(id, 99)).events).toEqual([]);
-    await expect(context.sessionPersistence.readFrom(id, -1)).rejects.toThrow(/non-negative safe integer/u);
-    await expect(context.sessionPersistence.readFrom(id, Number.MAX_SAFE_INTEGER + 1))
+    expect((await context.sessionPersistence.readFrom(id, SessionLogOffset(4))).events).toEqual([]);
+    expect((await context.sessionPersistence.readFrom(id, SessionLogOffset(99))).events).toEqual([]);
+    await expect(context.sessionPersistence.readFrom(id, -1 as SessionLogOffset)).rejects.toThrow(/non-negative safe integer/u);
+    await expect(context.sessionPersistence.readFrom(id, Number.MAX_SAFE_INTEGER + 1 as SessionLogOffset))
       .rejects.toThrow(/non-negative safe integer/u);
 
     const probe = new DatabaseSync(databasePath);
@@ -1005,23 +1073,23 @@ describe("ProductSqliteSessionPersistence", () => {
        WHERE session_id = ? AND generation_id = ? AND seq = 0
     `).run("not-json", id, generation.active_generation_id);
 
-    expect((await context.sessionPersistence.readFrom(id, 2)).events.map(({ seq }) => seq))
+    expect((await context.sessionPersistence.readFrom(id, SessionLogOffset(2))).events.map(({ seq }) => seq))
       .toEqual([2, 3]);
-    await expect(context.sessionPersistence.readFrom(id, 0)).rejects.toThrow(/event 0 contains invalid JSON/u);
+    await expect(context.sessionPersistence.readFrom(id, SessionLogOffset(0))).rejects.toThrow(/event 0 contains invalid JSON/u);
 
     probe.prepare(`
       UPDATE session_events
          SET envelope_json = ?
        WHERE session_id = ? AND generation_id = ? AND seq = 2
     `).run("also-not-json", id, generation.active_generation_id);
-    await expect(context.sessionPersistence.readFrom(id, 2)).rejects.toThrow(/event 2 contains invalid JSON/u);
+    await expect(context.sessionPersistence.readFrom(id, SessionLogOffset(2))).rejects.toThrow(/event 2 contains invalid JSON/u);
 
     probe.prepare(`
       DELETE FROM session_events
        WHERE session_id = ? AND generation_id = ? AND seq = 1
     `).run(id, generation.active_generation_id);
     probe.close();
-    await expect(context.sessionPersistence.readFrom(id, 2)).rejects.toThrow(/prefix.*not contiguous/u);
+    await expect(context.sessionPersistence.readFrom(id, SessionLogOffset(2))).rejects.toThrow(/prefix.*not contiguous/u);
     await context.fiber.dispose();
   });
 
@@ -1213,7 +1281,7 @@ describe("ProductSqliteSessionPersistence", () => {
       type: "turn/end",
       data: { turn: 1, reason: { kind: "interrupted" } },
     });
-    const durable = await reopened.sessionPersistence.readFrom(id, 0);
+    const durable = await reopened.sessionPersistence.readFrom(id, SessionLogOffset(0));
     expect(Buffer.from(JSON.stringify(durable.events))).toEqual(
       Buffer.from(JSON.stringify(repaired.events)),
     );
@@ -1232,7 +1300,7 @@ describe("ProductSqliteSessionPersistence", () => {
     await first.sessionPersistence.create(header(id));
     await first.sessionPersistence.append(id, [Object.freeze({
       data: Object.freeze({ required: true }),
-      seq: 0,
+      seq: SessionSeq(0),
       time: 1,
       type: "myagents/unknown-required-event",
     }) as unknown as SessionEvent, ...turn(1, 1)]);
@@ -1246,7 +1314,7 @@ describe("ProductSqliteSessionPersistence", () => {
     before.close();
 
     const reopened = await mount(runtimeHome);
-    expect((await reopened.sessionPersistence.readFrom(id, 1)).events.map(({ seq }) => seq))
+    expect((await reopened.sessionPersistence.readFrom(id, SessionLogOffset(1))).events.map(({ seq }) => seq))
       .toEqual([1, 2]);
     await expect(reopened.sessionPersistence.inspect(id)).rejects.toThrow(/unknown to this harness/u);
     await reopened.fiber.dispose();

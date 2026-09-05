@@ -1,6 +1,6 @@
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
-import { CallId } from "@deepseek-ai/dsh-llm";
+import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
@@ -24,6 +24,7 @@ afterEach(async () => {
 });
 
 interface MountedOptions {
+  readonly isKnownCollaborator?: (root: Agent, agentId: string) => boolean;
   readonly flush?: (session: Session) => Promise<unknown>;
 }
 
@@ -43,16 +44,17 @@ const mounted = async (options: MountedOptions = {}) => {
   const permissionRequests: unknown[] = [];
   context.provide("productTools", Object.freeze({
     resolve: (exec: Readonly<{ agent?: Agent; callId: unknown; signal: AbortSignal }>) => {
-      if (exec.agent !== agent) throw new Error("not primary");
+      if (!exec.agent) throw new Error("missing actor");
       return Object.freeze({
-        agent,
+        agent: exec.agent,
+        rootAgent: agent,
         birth: Object.freeze({}),
         callId: String(exec.callId),
         catalog: Object.freeze({ digest: "c".repeat(64), revision: "task-catalog-v1" }),
         clientOperationId: "task-operation",
         dshTurn: 1,
         environment: Object.freeze({}),
-        origin: "root" as const,
+        origin: exec.agent === agent ? "root" : "foreground_child",
         productTurnId: "task-product-turn",
         rootCallId: String(exec.callId),
         signal: exec.signal,
@@ -70,6 +72,7 @@ const mounted = async (options: MountedOptions = {}) => {
   }) as never);
   const flushes: string[] = [];
   await context.plugin(ProductTaskGraphService, {
+    ...(options.isKnownCollaborator === undefined ? {} : { isKnownCollaborator: options.isKnownCollaborator }),
     durability: Object.freeze({
       flush: (candidate: Session) => {
         flushes.push(String(candidate.id));
@@ -79,11 +82,11 @@ const mounted = async (options: MountedOptions = {}) => {
     requireAgent: () => agent,
   });
   let callNumber = 0;
-  const execute = async (name: string, argumentsValue: unknown, signal = new AbortController().signal) => {
+  const execute = async (name: string, argumentsValue: unknown, signal = new AbortController().signal, actor = agent) => {
     callNumber += 1;
-    const callId = CallId(`task-call-${callNumber}`);
+    const callId = ToolCallId(`task-call-${callNumber}`);
     return context.tools.execute({
-      agent,
+      agent: actor,
       arguments: argumentsValue,
       callId,
       name,
@@ -105,6 +108,12 @@ const mounted = async (options: MountedOptions = {}) => {
     output,
     permissionRequests,
     session,
+    child: (id: string, parentSession = agent.id, register = true) => {
+      const childSession = context.sessions.create(SessionId(id), { meta: { origin: "subagent", parentSession } });
+      const child = Object.freeze({ ctx: context, id: SessionId(id), session: childSession }) as unknown as Agent;
+      if (register) context.agents.enter(child, agent);
+      return child;
+    },
     setCurrent: (value: boolean) => { current = value; },
   });
 };
@@ -116,6 +125,52 @@ const successful = async (
 ): Promise<Record<string, unknown>> => state.output(await state.execute(name, input)) as Record<string, unknown>;
 
 describe("durable Session-local product TaskGraph", () => {
+  it("atomically claims for the real child, fences concurrent claims, and governs explicit transfer", async () => {
+    const state = await mounted();
+    const first = state.child("child-first");
+    const second = state.child("child-second");
+    await successful(state, "TaskCreate", { subject: "Claim", description: "Shared root graph" });
+    const claims = await Promise.all([first, second].map((actor) =>
+      state.execute("TaskUpdate", { taskId: "task-1", status: "in_progress" }, undefined, actor)));
+    expect(claims.filter((result) => !result.isError)).toHaveLength(1);
+    expect(claims.filter((result) => result.isError)).toHaveLength(1);
+    const owner = (state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.owner);
+    const winner = owner === first.id ? first : second;
+    const loser = winner === first ? second : first;
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: loser.id }, undefined, loser)).isError).toBe(true);
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: loser.id }, undefined, winner)).isError).toBe(false);
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", status: "completed" }, undefined, winner)).isError).toBe(true);
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", status: "completed" }, undefined, loser)).isError).toBe(false);
+    expect(foldProductTaskGraph(structuredClone(state.session.snapshotEvents()), String(state.agent.id)))
+      .toEqual(state.context.productTaskGraph.snapshot(state.agent));
+  });
+
+  it("uses the shared tree authority for nested actors and retained targets without granting another branch control", async () => {
+    const admitted = new Set(["nested-actor", "retained-target"]);
+    const state = await mounted({ isKnownCollaborator: (root, id) => root.id === "task-graph-session" && admitted.has(id) });
+    const actor = state.child("nested-actor", SessionId("direct-parent"));
+    const stranger = state.child("registered-stranger", state.agent.id);
+    await successful(state, "TaskCreate", { subject: "Nested ownership", description: "Shared authority for a nested collaborator." });
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", status: "in_progress" }, undefined, actor)).isError).toBe(false);
+    expect(state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.owner).toBe(actor.id);
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: "retained-target" }, undefined, stranger)).isError).toBe(true);
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: "retained-target" }, undefined, actor)).isError).toBe(false);
+    admitted.delete("nested-actor");
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: actor.id })).isError).toBe(true);
+  });
+
+  it("rejects unregistered and foreign callers or transfer targets before publishing ownership", async () => {
+    const state = await mounted();
+    await successful(state, "TaskCreate", { subject: "Identity", description: "Root domain only" });
+    const actors = [state.child("unregistered", state.agent.id, false), state.child("foreign", SessionId("foreign-root"))];
+    for (const actor of actors) {
+      expect((await state.execute("TaskUpdate", { taskId: "task-1", status: "in_progress" }, undefined, actor)).isError).toBe(true);
+      expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: actor.id })).isError).toBe(true);
+    }
+    expect(state.session.snapshotEvents().filter(({ type }) => type === "myagents/task/updated")).toHaveLength(0);
+    expect((await successful(state, "TaskGet", { taskId: "task-1" })).task).not.toHaveProperty("owner");
+  });
+
   it("creates stable IDs and resumes Get/List from the append-only Session fold", async () => {
     const state = await mounted();
     const first = await successful(state, "TaskCreate", {
@@ -138,7 +193,7 @@ describe("durable Session-local product TaskGraph", () => {
       metadata: { priority: 1, category: "inspection", pinned: true },
     });
     expect(second.task).toMatchObject({ id: "task-2", createdSequence: 2, updatedSequence: 2 });
-    const firstTaskEvent = state.session.events.find(({ type }) => type === "myagents/task/created");
+    const firstTaskEvent = state.session.snapshotEvents().find(({ type }) => type === "myagents/task/created");
     assertTaskEvent(firstTaskEvent, "TaskCreate");
     expect(state.flushes).toEqual(["task-graph-session", "task-graph-session"]);
 
@@ -148,7 +203,7 @@ describe("durable Session-local product TaskGraph", () => {
     expect(list).toMatchObject({ tasks: [first.task, second.task], revision: second.revision, truncated: false });
 
     const resumed = foldProductTaskGraph(
-      structuredClone(state.session.events),
+      structuredClone(state.session.snapshotEvents()),
       String(state.session.id),
     );
     expect(resumed).toEqual(state.context.productTaskGraph.snapshot(state.agent));
@@ -165,7 +220,7 @@ describe("durable Session-local product TaskGraph", () => {
   it("exports exact immutable schemas used by durable event parsing", async () => {
     const state = await mounted();
     await successful(state, "TaskCreate", { subject: "Schema", description: "Schema authority" });
-    const created = state.session.events.find(({ type }) => type === "myagents/task/created");
+    const created = state.session.snapshotEvents().find(({ type }) => type === "myagents/task/created");
     expect(PRODUCT_TASK_EVENT_TYPES).toEqual(Object.keys(PRODUCT_TASK_EVENT_SCHEMAS));
     expect(Object.isFrozen(PRODUCT_TASK_EVENT_SCHEMAS)).toBe(true);
     expect(Object.isFrozen(PRODUCT_TASK_EVENT_SCHEMAS["myagents/task/created"])).toBe(true);
@@ -192,11 +247,9 @@ describe("durable Session-local product TaskGraph", () => {
       .toMatchObject({ id: "task-1", updatedSequence: 3 });
     expect((await state.execute("TaskUpdate", { taskId: "task-1", addBlockedBy: ["task-2"] })).isError).toBe(true);
     const unowned = await state.execute("TaskUpdate", { taskId: "task-1", status: "in_progress" });
-    expect(unowned).toMatchObject({ isError: true });
-    expect(unowned.content).toEqual([{
-      type: "text",
-      text: "Error: An in-progress task must be owned by root",
-    }]);
+    expect(unowned).toMatchObject({ isError: false, value: {
+      task: { status: "in_progress", owner: "root" }, changedFields: ["status", "owner"],
+    } });
     expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: "outside" })).isError).toBe(true);
 
     await successful(state, "TaskUpdate", { taskId: "task-1", owner: "root", status: "completed" });
@@ -308,7 +361,7 @@ describe("durable Session-local product TaskGraph", () => {
       type: "myagents/task/updated",
     } as unknown as SessionEvent;
     expect(() => foldProductTaskGraph(
-      Object.freeze([...state.session.events, event]),
+      Object.freeze([...state.session.snapshotEvents(), event]),
       String(state.session.id),
     )).toThrow(ProductTaskGraphFoldError);
     expect(getterHits).toBe(0);
@@ -317,7 +370,7 @@ describe("durable Session-local product TaskGraph", () => {
   it("permanently fences an appended event whose exact durability participation fails", async () => {
     const falseFlush = await mounted({ flush: () => Promise.resolve(false) });
     expect((await falseFlush.execute("TaskCreate", { subject: "Uncertain", description: "Uncertain" })).isError).toBe(true);
-    expect(falseFlush.session.events.filter(({ type }) => type === "myagents/task/created")).toHaveLength(1);
+    expect(falseFlush.session.snapshotEvents().filter(({ type }) => type === "myagents/task/created")).toHaveLength(1);
     expect(() => falseFlush.context.productTaskGraph.snapshot(falseFlush.agent))
       .toThrow(expect.objectContaining({ code: "task_graph_unavailable" }));
     expect((await falseFlush.execute("TaskList", {})).isError).toBe(true);
@@ -338,7 +391,7 @@ describe("durable Session-local product TaskGraph", () => {
     const stale = await mounted();
     stale.setCurrent(false);
     expect((await stale.execute("TaskCreate", { subject: "Stale", description: "Stale" })).isError).toBe(true);
-    expect(stale.session.events.filter(({ type }) => type === "myagents/task/created")).toHaveLength(0);
+    expect(stale.session.snapshotEvents().filter(({ type }) => type === "myagents/task/created")).toHaveLength(0);
 
   });
 
@@ -379,7 +432,7 @@ describe("durable Session-local product TaskGraph", () => {
     releaseFirst(true);
     expect((await first).isError).toBe(false);
     expect((await second).isError).toBe(true);
-    expect(state.session.events.filter(({ type }) => type === "myagents/task/created")).toHaveLength(1);
+    expect(state.session.snapshotEvents().filter(({ type }) => type === "myagents/task/created")).toHaveLength(1);
 
     const third = await successful(state, "TaskCreate", { subject: "Third", description: "Third" });
     expect(third.task).toMatchObject({ id: "task-2" });
@@ -391,6 +444,7 @@ const assertTaskEvent = (event: SessionEvent | undefined, expectedTool: "TaskCre
   expect(event?.type).toBe(expectedTool === "TaskCreate" ? "myagents/task/created" : "myagents/task/updated");
   if (event?.type !== "myagents/task/created" && event?.type !== "myagents/task/updated") return;
   expect(event.data.authority).toEqual({
+    actorId: "root",
     callId: "task-call-1",
     clientOperationId: "task-operation",
     dshTurn: 1,

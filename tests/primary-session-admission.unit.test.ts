@@ -122,6 +122,38 @@ const backendWith = (
 ): PrimarySessionBackend => ({ create, resume });
 
 describe("one-primary-session admission", () => {
+  it.each(["create", "resume"] as const)("starts recovered execution only after the exact primary is ready (%s)", async (mode) => {
+    const handle = fakeHandle("runtime-primary");
+    const afterReady = vi.fn((agent: Agent) => {
+      expect(admission.snapshot().state).toBe("ready");
+      expect(admission.requireAgent()).toBe(agent);
+      return Promise.resolve();
+    });
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(handle.handle)),
+      () => Promise.resolve(readyResult(handle.handle)),
+    ), workspace, undefined, undefined, undefined, undefined, afterReady);
+    if (mode === "create") await admission.bindCreate(createParams());
+    else await admission.bindResume(resumeParams({ runtimeSessionId: "runtime-primary" }));
+    expect(afterReady).toHaveBeenCalledOnce();
+    await admission.retire();
+  });
+
+  it("disposes a published candidate when recovered execution admission fails", async () => {
+    const handle = fakeHandle("runtime-primary");
+    const failure = new Error("synthetic recovered admission failure");
+    const rollback = vi.fn(() => Promise.resolve());
+    const admission = new PrimarySessionAdmission(backendWith(
+      () => Promise.resolve(readyResult(handle.handle)),
+      () => Promise.reject(new Error("unexpected resume")),
+    ), workspace, undefined, () => Promise.resolve(), undefined, rollback, () => Promise.reject(failure));
+    await expect(admission.bindCreate(createParams())).rejects.toBe(failure);
+    expect(handle.dispose).toHaveBeenCalledOnce();
+    expect(rollback).toHaveBeenCalledOnce();
+    expect(admission.snapshot().state).toBe("recovery_required");
+    expect(() => admission.requireAgent()).toThrow();
+  });
+
   it("rolls back a prepared Provider when backend admission fails", async () => {
     const failure = new Error("synthetic backend failure");
     const admissionGuard = vi.fn(() => Promise.resolve());
@@ -947,7 +979,7 @@ describe("one-primary-session admission", () => {
 
     await service.replaceConfiguration(candidate, () => Promise.resolve());
 
-    expect(source.handle.agent.session.events).toEqual([
+    expect(source.handle.agent.session.snapshotEvents()).toEqual([
       expect.objectContaining({
         type: "myagents/session/configuration",
         data: { revision: "config-v2" },

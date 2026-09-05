@@ -10,7 +10,7 @@ import https from "node:https";
 import { syncBuiltinESMExports } from "node:module";
 import net from "node:net";
 import { basename, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { arch, platform, release, tmpdir } from "node:os";
 import tls from "node:tls";
 import workerThreads from "node:worker_threads";
 
@@ -143,7 +143,13 @@ for (const method of ["copyFile", "cp", "link", "rename", "symlink"] as const) {
 }
 
 replace(process, "loadEnvFile", blocked("process.loadEnvFile"));
-replace(process, "getBuiltinModule", blocked("process.getBuiltinModule"));
+// pi-ai's browser-safe User-Agent loader reads only these OS facts. Do not
+// expose module loading as a way around the network/process/worker guards.
+const osMetadata = Object.freeze({ arch, platform, release });
+replace(process, "getBuiltinModule", (name: string) => {
+  if (name === "node:os" || name === "os") return osMetadata;
+  return blocked("process.getBuiltinModule")();
+});
 
 syncBuiltinESMExports();
 

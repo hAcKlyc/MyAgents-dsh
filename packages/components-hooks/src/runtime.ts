@@ -1,7 +1,7 @@
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import { freezeMessage, type AssistantMessage, type CallId, type ContentBlock } from "@deepseek-ai/dsh-llm";
-import type { JsonValue } from "@deepseek-ai/dsh-session";
+import { freezeMessage, type AssistantMessage, type ToolCallId, type ContentBlock } from "@deepseek-ai/dsh-llm";
+import type { JsonValue } from "@deepseek-ai/dsh-util-values";
 import {
   validateJsonSchemaValue,
   type PostToolDecision,
@@ -100,7 +100,7 @@ export interface ProductHookPermissionRequest {
 type HookResult = MethodResult<"host/hook/execute">;
 
 interface PreparedAssistantToolCall {
-  readonly callId: CallId;
+  readonly callId: ToolCallId;
   readonly name: string;
   readonly parsedArguments: JsonValue;
   readonly rawArguments: string;

@@ -27,3 +27,7 @@ Carry one minimal, ordered, upstream-ready DSH patch. It exposes complete reques
 - estimate summary capacity with an independent Host heuristic;
 - accept a known-overflow request and rely on Provider failure;
 - omit repair-call provenance or mislabel two calls as exactly one.
+
+## DSH 0.1.2-rc.1 refresh (2026-09-05)
+
+Disposition: rebase. The official candidate does not supply the complete capacity/repair seam. Patch 0007 preserves unknown per-call usage and optional buckets across summary repair instead of reporting partial totals as complete. Eighteen isolated capacity regressions cover this behavior; final artifact acceptance is recorded by the accepted artifact manifest.

@@ -32,7 +32,6 @@ import {
   type DeepSeekConnectionOptions,
   type RequestDefaults,
 } from "@deepseek-ai/dsh-llm-deepseek";
-import { settingsNamespace } from "@deepseek-ai/dsh-settings";
 import type {
   HostCredentialProviderController,
   HostCredentialProvider,
@@ -45,13 +44,14 @@ import {
   type InitializeParams,
   type MethodParams,
 } from "@myagents-dsh/protocol";
-import type { ProductToolContext } from "@myagents-dsh/tool-runtime-product";
+import { productRootAgent, type ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isProxy } from "node:util/types";
 
 import type { PrimarySessionBackendRequest } from "./primary-session.js";
+import { AgentCollaborationPolicy } from "./collaboration-policy.js";
 
 export type HostProviderProfile = MethodParams<"session/create">["provider"];
 type ProviderProfile = HostProviderProfile;
@@ -92,6 +92,8 @@ type ProviderAdmissionRollback = Readonly<{
   readonly nextBinding: HostProviderCredentialBinding;
   readonly nextConfigRevision: string;
   readonly previousBinding?: HostProviderCredentialBinding;
+  readonly previousBindings: readonly HostProviderCredentialBinding[];
+  readonly previousPolicy?: AgentCollaborationPolicy;
   readonly previousPiSettings: Readonly<{
     providers: Readonly<Record<string, PiAiProviderProfile>>;
   }>;
@@ -100,7 +102,7 @@ type ProviderAdmissionRollback = Readonly<{
 
 export const HOST_DEEPSEEK_PROVIDER_ROUTE = "deepseek-official";
 export const HOST_DEEPSEEK_BASE_URL = PUBLIC_BASE_URL;
-export const HOST_PI_AI_SETTINGS_NAMESPACE = settingsNamespace("llm-pi-ai");
+export const HOST_PI_AI_SETTINGS_NAMESPACE = "llm-pi-ai" as const;
 export const HOST_MODEL_REQUEST_DEADLINE_MS = 120_000;
 const HOST_DEEPSEEK_RETRY_POLICY = resolveRetryPolicy(
   undefined,
@@ -540,6 +542,27 @@ export const translateHostPiAiProfile = (
   return freezeJson({ providers: { [profile.providerRouteId]: route } });
 };
 
+const translateHostPiAiProfiles = (
+  profiles: readonly ProviderProfile[],
+  deadlineMs: number,
+): Readonly<{ providers: Readonly<Record<string, PiAiProviderProfile>> }> => {
+  const providers: Record<string, PiAiProviderProfile> = {};
+  const routeSettings = (route: PiAiProviderProfile) => Object.fromEntries(Object.entries(route)
+    .filter(([key]) => !["models", "defaultContextWindow", "defaultMaxTokens", "defaultInput"].includes(key)));
+  for (const profile of profiles) {
+    if (profile.providerRouteId === HOST_DEEPSEEK_PROVIDER_ROUTE) continue;
+    const route = translateHostPiAiProfile(profile, deadlineMs).providers[profile.providerRouteId];
+    if (route === undefined) throw new ProtocolError("provider_profile_invalid", "Provider route translation is missing");
+    const previous = providers[profile.providerRouteId];
+    if (previous !== undefined && !isDeepStrictEqual(routeSettings(previous), routeSettings(route))) {
+      throw new ProtocolError("provider_profile_conflict", "Models with different connection, credential or reasoning settings require distinct Host Provider route IDs");
+    }
+    providers[profile.providerRouteId] = previous === undefined ? route
+      : { ...previous, models: [...previous.models, ...route.models] };
+  }
+  return freezeJson({ providers });
+};
+
 const connectionFor = (profile: ProviderProfile): DeepSeekConnectionOptions => Object.freeze({
   apiKeyEnv: credentialRef(profile.credentialRef),
   baseURL: profile.baseUrl ?? HOST_DEEPSEEK_BASE_URL,
@@ -637,6 +660,8 @@ export class HostModelAuthority {
   readonly #context: Context;
   readonly #credentials: HostCredentialProviderController;
   #binding: HostProviderCredentialBinding | undefined;
+  #bindings = new Map<string, HostProviderCredentialBinding>();
+  #collaboration: AgentCollaborationPolicy | undefined;
   #candidate: PrimarySessionBackendRequest | undefined;
   #rollback: ProviderAdmissionRollback | undefined;
   #piSettings: Readonly<{ providers: Readonly<Record<string, PiAiProviderProfile>> }> =
@@ -673,8 +698,7 @@ export class HostModelAuthority {
   }
 
   shouldUseHostCanonicalWeb(): boolean {
-    return this.hostCanonicalWebAvailable()
-      && this.#binding?.profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE;
+    return this.hostCanonicalWebAvailable();
   }
 
   async preflight(request: PrimarySessionBackendRequest): Promise<void> {
@@ -685,10 +709,13 @@ export class HostModelAuthority {
       );
     }
     const profile = validateHostProviderProfile(request.params.provider);
+    const collaboration = new AgentCollaborationPolicy(profile, request.params.collaboration);
+    for (const authorized of collaboration.profiles) validateHostProviderProfile(authorized);
     const current = this.#binding;
     if (current?.runtimeSessionId === request.runtimeSessionId
       && current.configRevision === request.params.configRevision
-      && isDeepStrictEqual(current.profile, profile)) {
+      && isDeepStrictEqual(current.profile, profile)
+      && isDeepStrictEqual(this.#collaboration?.config, collaboration.config)) {
       return;
     }
     this.#candidate = request;
@@ -701,24 +728,24 @@ export class HostModelAuthority {
       }
     };
     try {
-      const binding = await this.#credentials.preflightProvider({
+      const bindings = await Promise.all(collaboration.profiles.map((candidate) => this.#credentials.preflightProvider({
         assertCurrent,
         configRevision: request.params.configRevision,
         deadlineMs: this.#config.requestDeadlineMs,
-        profile,
+        profile: candidate,
         runtimeSessionId: request.runtimeSessionId,
         signal: request.signal,
-      });
+      })));
+      const binding = bindings.find((candidate) => candidate.profile.revision === profile.revision);
+      if (binding === undefined) throw new ProtocolError("provider_profile_invalid", "Primary Provider binding is missing");
       assertCurrent();
       const settingsProvider = typeof (this.#context as unknown as { get?: unknown }).get === "function"
         ? this.#context.get("settings")
         : undefined;
       const previousPiSettings = this.#piSettings;
-      const nextPiSettings = profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE
-        ? translateHostPiAiProfile(profile, this.#config.requestDeadlineMs)
-        : Object.freeze({ providers: Object.freeze({}) });
+      const nextPiSettings = translateHostPiAiProfiles(collaboration.profiles, this.#config.requestDeadlineMs);
       let settingsReplaced = false;
-      if (profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE) {
+      if (Object.keys(nextPiSettings.providers).length > 0) {
         if (settingsProvider === undefined) {
           throw new ProtocolError(
             "provider_profile_not_ready",
@@ -740,13 +767,19 @@ export class HostModelAuthority {
       }
       try {
         assertCurrent();
-        this.#credentials.activateProviderBinding(binding);
+        const previousBindings = Object.freeze([...this.#bindings.values()]);
+        const previousPolicy = this.#collaboration;
+        this.#credentials.activateProviderBindings(bindings);
         this.#binding = binding;
+        this.#bindings = new Map(bindings.map((candidate) => [candidate.profile.revision, candidate]));
+        this.#collaboration = collaboration;
         this.#piSettings = nextPiSettings;
         this.#rollback = Object.freeze({
           nextBinding: binding,
           nextConfigRevision: request.params.configRevision,
           ...(current === undefined ? {} : { previousBinding: current }),
+          previousBindings,
+          ...(previousPolicy === undefined ? {} : { previousPolicy }),
           previousPiSettings,
           settingsReplaced,
         });
@@ -775,7 +808,8 @@ export class HostModelAuthority {
     const profile = validateHostProviderProfile(request.params.provider);
     if (binding.runtimeSessionId !== request.runtimeSessionId
       || binding.configRevision !== request.params.configRevision
-      || !isDeepStrictEqual(binding.profile, profile)) {
+      || !isDeepStrictEqual(binding.profile, profile)
+      || !isDeepStrictEqual(this.#collaboration?.config, new AgentCollaborationPolicy(profile, request.params.collaboration).config)) {
       throw new ProtocolError(
         "provider_profile_stale",
         "Provider profile admission is no longer current",
@@ -802,13 +836,10 @@ export class HostModelAuthority {
     if (rollback.settingsReplaced && settingsProvider !== undefined) {
       await settingsProvider.replace(HOST_PI_AI_SETTINGS_NAMESPACE, rollback.previousPiSettings);
     }
-    if (rollback.previousBinding === undefined) {
-      this.#credentials.deactivateProviderBinding(rollback.nextBinding);
-      this.#binding = undefined;
-    } else {
-      this.#credentials.activateProviderBinding(rollback.previousBinding);
-      this.#binding = rollback.previousBinding;
-    }
+    this.#credentials.activateProviderBindings(rollback.previousBindings);
+    this.#binding = rollback.previousBinding;
+    this.#bindings = new Map(rollback.previousBindings.map((binding) => [binding.profile.revision, binding]));
+    this.#collaboration = rollback.previousPolicy;
     this.#piSettings = rollback.previousPiSettings;
     this.#rollback = undefined;
   }
@@ -823,8 +854,8 @@ export class HostModelAuthority {
     }
   }
 
-  connection(): DeepSeekConnectionOptions {
-    const profile = this.requireBinding().profile;
+  connection(provider = HOST_DEEPSEEK_PROVIDER_ROUTE, model?: string): DeepSeekConnectionOptions {
+    const profile = model === undefined ? this.requireBinding().profile : this.bindingFor(provider, model).profile;
     if (profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE) {
       throw new ProtocolError(
         "provider_profile_stale",
@@ -835,13 +866,16 @@ export class HostModelAuthority {
   }
 
   activeProviderRoutes(): readonly string[] {
-    const profile = this.#binding?.profile;
-    return Object.freeze([
+    return Object.freeze([...new Set([
       HOST_DEEPSEEK_PROVIDER_ROUTE,
-      ...(profile === undefined || profile.providerRouteId === HOST_DEEPSEEK_PROVIDER_ROUTE
-        ? []
-        : [profile.providerRouteId]),
-    ]);
+      ...[...this.#bindings.values()].map((binding) => binding.profile.providerRouteId),
+    ])]);
+  }
+
+  collaborationPolicy(): AgentCollaborationPolicy {
+    this.requireBinding();
+    if (this.#collaboration === undefined) throw new ProtocolError("provider_profile_not_ready", "Collaboration policy is not admitted");
+    return this.#collaboration;
   }
 
   currentProfile(): ProviderProfile {
@@ -852,7 +886,8 @@ export class HostModelAuthority {
     binding: HostProviderCredentialBinding;
     scope: HostProviderRequestScope;
   }> {
-    const binding = this.requireBinding();
+    const primaryBinding = this.requireBinding();
+    const binding = this.bindingFor(options.provider, options.model);
     const signal = nativeSignal(options.signal);
     if (options.provider !== binding.profile.providerRouteId
       || options.model !== binding.profile.modelId
@@ -875,7 +910,7 @@ export class HostModelAuthority {
         auxiliary.clientOperationId,
       ])).digest("hex").slice(0, 48);
       const assertCurrent = (): void => {
-        if (this.#binding !== binding || auxiliary.signal.aborted || signal.aborted
+        if (!this.bindingIsCurrent(binding) || auxiliary.signal.aborted || signal.aborted
           || this.#auxiliaryRequest.getStore()?.token !== auxiliary.token) {
           throw new ProtocolError("provider_request_stale", "auxiliary model request authority is stale");
         }
@@ -916,10 +951,10 @@ export class HostModelAuthority {
       : this.#context.productWork.createChildModelRequestAuthority(
           agent,
           binding.configRevision,
-          binding.profile.revision,
+          primaryBinding.profile.revision,
         );
     const assertCurrent = (): void => {
-      if (this.#binding !== binding || signal.aborted) {
+      if (!this.bindingIsCurrent(binding) || signal.aborted) {
         throw new ProtocolError(
           "provider_request_stale",
           "model request Provider authority is no longer current",
@@ -960,8 +995,9 @@ export class HostModelAuthority {
       || typeof action !== "function" || isProxy(action)) {
       return Promise.reject(new TypeError("utility model request requires native cancellation and action"));
     }
-    const binding = this.requireBinding();
-    if (binding.profile.revision !== params.modelProfileRevision) {
+    this.requireBinding();
+    const binding = this.#bindings.get(params.modelProfileRevision);
+    if (binding === undefined) {
       return Promise.reject(new ProtocolError(
         "model_profile_stale",
         "utility model profile revision is not effective",
@@ -1006,7 +1042,7 @@ export class HostModelAuthority {
     return this.#auxiliaryRequest.run(request, action);
   }
 
-  runWebSearchRequest<T>(
+  async runWebSearchRequest<T>(
     context: ProductToolContext,
     action: (profile: ProviderProfile) => Promise<T>,
   ): Promise<T> {
@@ -1014,10 +1050,10 @@ export class HostModelAuthority {
       || typeof action !== "function" || isProxy(action)) {
       return Promise.reject(new TypeError("WebSearch Provider request requires exact tool authority"));
     }
-    const binding = this.requireBinding();
-    const runtimeSessionId = String(context.agent.id);
+    const binding = this.bindingForTool(context);
+    const runtimeSessionId = String(productRootAgent(context).id);
     if (runtimeSessionId !== binding.runtimeSessionId
-      || context.birth.modelProfileRevision !== binding.profile.revision) {
+) {
       return Promise.reject(new ProtocolError(
         "provider_request_stale",
         "WebSearch Provider request differs from the admitted Provider binding",
@@ -1031,8 +1067,8 @@ export class HostModelAuthority {
       context.dshTurn,
     ])).digest("hex").slice(0, 48);
     const assertCurrent = (): void => {
-      if (this.#binding !== binding || context.signal.aborted
-        || String(context.agent.id) !== binding.runtimeSessionId) {
+      if (!this.bindingIsCurrent(binding) || context.signal.aborted
+        || String(productRootAgent(context).id) !== binding.runtimeSessionId) {
         throw new ProtocolError(
           "provider_request_stale",
           "WebSearch Provider request authority is stale",
@@ -1055,30 +1091,30 @@ export class HostModelAuthority {
     return this.#credentials.runWithProviderRequestScope(scope, () => action(binding.profile));
   }
 
-  runHostWebRequest<T>(
+  async runHostWebRequest<T>(
     context: ProductToolContext,
     action: (
       profile: ProviderProfile,
       assertCurrent: () => void,
+      configRevision: string,
     ) => Promise<T>,
   ): Promise<T> {
     if (!(context.signal instanceof AbortSignal) || isProxy(context.signal)
       || typeof action !== "function" || isProxy(action)) {
       return Promise.reject(new TypeError("Host web request requires exact tool authority"));
     }
-    const binding = this.requireBinding();
-    if (binding.profile.providerRouteId === HOST_DEEPSEEK_PROVIDER_ROUTE
-      || !this.hostCanonicalWebAvailable()
-      || String(context.agent.id) !== binding.runtimeSessionId
-      || context.birth.modelProfileRevision !== binding.profile.revision) {
+    const binding = this.bindingForTool(context);
+    if (!this.hostCanonicalWebAvailable()
+      || String(productRootAgent(context).id) !== binding.runtimeSessionId
+) {
       return Promise.reject(new ProtocolError(
         "provider_web_backend_unavailable",
         "Host canonical web backend differs from the operation-frozen Provider authority",
       ));
     }
     const assertCurrent = (): void => {
-      if (this.#binding !== binding || context.signal.aborted
-        || String(context.agent.id) !== binding.runtimeSessionId) {
+      if (!this.bindingIsCurrent(binding) || context.signal.aborted
+        || String(productRootAgent(context).id) !== binding.runtimeSessionId) {
         throw new ProtocolError(
           "provider_request_stale",
           "Host canonical web request authority is stale",
@@ -1087,11 +1123,35 @@ export class HostModelAuthority {
       }
     };
     assertCurrent();
-    return action(binding.profile, assertCurrent);
+    return action(binding.profile, assertCurrent, binding.configRevision);
+  }
+
+  prepareDeepSeekExtensions(
+    request: Parameters<ConstructorParameters<typeof DeepSeekAdapter>[0]["prepareExtensions"]>[0],
+  ) {
+    return this.#context.get("deepseekLlmApiExtensions")?.prepare(request)
+      ?? Promise.resolve({ fields: {}, accept: () => Promise.resolve() });
   }
 
   resolveAttachments() {
     return this.#context.get("attachments");
+  }
+
+  private bindingForTool(context: ProductToolContext): HostProviderCredentialBinding {
+    const root = productRootAgent(context);
+    let binding = this.requireBinding();
+    if (root !== context.agent) {
+      const { provider, model } = context.agent.options;
+      if (provider === undefined || model === undefined) throw new ProtocolError("model_profile_stale", "child tool lacks its frozen model route");
+      binding = this.bindingFor(provider, model);
+    }
+    if (root === context.agent) {
+      if (context.birth.modelProfileRevision !== binding.profile.revision) throw new ProtocolError("model_profile_stale", "tool Provider profile differs from its root operation");
+    } else {
+      this.#context.productWork.resolveActiveChildToolOperation(context.agent);
+    }
+    if (String(root.id) !== binding.runtimeSessionId) throw new ProtocolError("provider_request_stale", "tool Provider belongs to another Session");
+    return binding;
   }
 
   private requireBinding(): HostProviderCredentialBinding {
@@ -1103,6 +1163,19 @@ export class HostModelAuthority {
       );
     }
     return this.#binding;
+  }
+
+  private bindingFor(provider: string, model: string): HostProviderCredentialBinding {
+    const candidates = [...this.#bindings.values()].filter((binding) =>
+      binding.profile.providerRouteId === provider && binding.profile.modelId === model);
+    if (candidates.length !== 1 || candidates[0] === undefined) {
+      throw new ProtocolError("provider_profile_stale", "Model request differs from the Host-authorized Provider set");
+    }
+    return candidates[0];
+  }
+
+  private bindingIsCurrent(binding: HostProviderCredentialBinding): boolean {
+    return this.#bindings.get(binding.profile.revision) === binding;
   }
 }
 
@@ -1157,6 +1230,8 @@ export const installHostLlmRequestScope = (
 
 export class HostDeepSeekLlmAdapter extends LlmAdapter {
   readonly #adapter: DeepSeekAdapter;
+  readonly #adapters = new WeakMap<ProviderProfile, DeepSeekAdapter>();
+  readonly #adapterForProfile: (profile: ProviderProfile) => DeepSeekAdapter;
   readonly #authority: HostModelAuthority;
   readonly #credentialController: HostCredentialProviderController;
 
@@ -1168,8 +1243,9 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
     super();
     this.#authority = authority;
     this.#credentialController = credentialController;
-    this.#adapter = new DeepSeekAdapter({
-      options: () => authority.connection(),
+    const createAdapter = (options: () => DeepSeekConnectionOptions) => new DeepSeekAdapter({
+      options,
+      prepareExtensions: (request) => authority.prepareDeepSeekExtensions(request),
       resolveApiKey: async (connection) => {
         try {
           const resolved = await credentials.resolve(connection.apiKeyEnv);
@@ -1188,6 +1264,19 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
       resolveAttachments: () => authority.resolveAttachments(),
       resolveUserId: () => authority.resolveUserId(),
     });
+    this.#adapter = createAdapter(() => authority.connection());
+    this.#adapterForProfile = (profile) => createAdapter(() => connectionFor(profile));
+  }
+
+  #routedAdapter(provider: string, model: string): DeepSeekAdapter {
+    if (provider !== HOST_DEEPSEEK_PROVIDER_ROUTE) throw new ProtocolError("provider_profile_stale", "Native DeepSeek adapter received a foreign Provider route");
+    const profile = this.#authority.collaborationPolicy().profileFor(provider, model);
+    let adapter = this.#adapters.get(profile);
+    if (adapter === undefined) {
+      adapter = this.#adapterForProfile(profile);
+      this.#adapters.set(profile, adapter);
+    }
+    return adapter;
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
@@ -1199,8 +1288,10 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
     return HOST_DEEPSEEK_RETRY_POLICY;
   }
 
-  override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    return this.#adapter.listModels(provider);
+  override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    const profiles = this.#authority.collaborationPolicy().profiles.filter((profile) => profile.providerRouteId === provider);
+    return Object.freeze((await Promise.all(profiles.map((profile) =>
+      this.#routedAdapter(provider, profile.modelId).listModels(provider)))).flat());
   }
 
   override resolveModel(
@@ -1208,14 +1299,33 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
     model: string,
     signal?: AbortSignal,
   ): Promise<LlmResolvedModelInfo> {
-    return this.#adapter.resolveModel(provider, model, signal);
+    return this.#routedAdapter(provider, model).resolveModel(provider, model, signal);
   }
 
-  override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+  override imageRequestPricing(provider: string, model: string) {
+    return this.#routedAdapter(provider, model).imageRequestPricing(provider, model);
+  }
+
+  override async prepareCall(provider: string, model: string, signal?: AbortSignal) {
+    const prepared = await this.#routedAdapter(provider, model).prepareCall(provider, model, signal);
+    return {
+      model: prepared.model,
+      stream: (options: GenerateOptions) => this.#scopedStream(options, (request) => prepared.stream(request)),
+    };
+  }
+
+  override stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    return this.#scopedStream(options, (request) => this.#routedAdapter(request.provider, request.model).stream(request));
+  }
+
+  async *#scopedStream(
+    options: GenerateOptions,
+    dispatch: (request: GenerateOptions) => AsyncIterable<StreamChunk>,
+  ): AsyncIterable<StreamChunk> {
     const { scope } = this.#authority.request(options);
     const iterator = this.#credentialController.runWithProviderRequestScope(
       scope,
-      () => this.#adapter.stream(options)[Symbol.asyncIterator](),
+      () => dispatch(options)[Symbol.asyncIterator](),
     );
     let exhausted = false;
     let failure: LlmError | undefined;

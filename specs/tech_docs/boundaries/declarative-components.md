@@ -89,6 +89,8 @@ operation-frozen allowed read root, not only the Workspace root. The snapshot ca
 Skill source, not a recursive directory serialization; referenced resources are opened on demand
 through ordinary governed tools.
 
+The MyAgents Host now owns shared Skill/Command/Agent declaration types and discovery under `runtimes/product-extensions/`; Managed Codex applies its own Skill admission after discovery, while DSH receives complete source identities and metadata. DSH preserves authored `allowed-tools` guidance without creating permission grants, honors invocation flags, and isolates unsupported `context`/`agent` semantics per Skill. Runtime dynamic Skill preparation independently rejects unsupported execution-context metadata. Nonconforming command names retain their original spelling and receive a precise rename instruction; no implicit lowercase merge is performed. Unified installed/enabled/admitted/model-invocable/generation UI remains tracked in SELF and the accepted 0.1.2 upgrade.
+
 ## 6. MCP boundary
 
 The managed MCP implementation uses the public MCP SDK. HTTP transports receive the

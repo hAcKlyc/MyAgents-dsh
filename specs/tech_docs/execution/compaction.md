@@ -244,6 +244,8 @@ DSH durable compaction events remain the content-bearing transaction authority. 
 - summary input estimate, output cap, `streamCalls`, `repairAttempts`, `inputTokens` and
   `outputTokens`.
 
+Summary and repair usage is aggregated only when every call reports usage. Optional cache/reasoning/total fields remain absent if any call omits them; no missing call or bucket becomes zero. Runtime adds the durable aggregate once, separately from ordinary turn attempts.
+
 Full aggregate usage remains in the durable compaction/summary facts rather than this scalar
 process-local telemetry. The telemetry is not a Session event or native transcript. It must never
 include prompt or summary text, model messages, reasoning, tool input/output, attachment bytes,

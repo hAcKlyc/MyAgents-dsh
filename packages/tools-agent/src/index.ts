@@ -27,6 +27,8 @@ export type {
   DynamicAgentGenerationIdentity,
   DynamicAgentRegistration,
   ProductDynamicAgentController,
+  ProductChildModelBinding,
+  ProductRootMessageDelivery,
   ProductWorkCreatedEventData,
   ProductWorkEpochEventData,
   ProductWorkEventType,

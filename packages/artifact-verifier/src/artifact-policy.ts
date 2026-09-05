@@ -68,7 +68,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/checkpoint",
     relativeDirectory: "packages/checkpoint",
-    allowedFiles: ["package.json", "src/index.ts", "src/runtime.ts"],
+    allowedFiles: ["package.json", "src/directories.ts", "src/index.ts", "src/runtime.ts"],
   },
   {
     packageName: "@myagents-dsh/compatibility",
@@ -134,6 +134,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/limits.ts",
       "src/service.ts",
       "src/terminal.ts",
+      "src/token-accounting.ts",
     ],
   },
   {
@@ -204,6 +205,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     relativeDirectory: "packages/runtime-product",
     allowedFiles: [
       "package.json",
+      "src/collaboration-policy.ts",
       "src/composition.ts",
       "src/host-interaction.ts",
       "src/host-model.ts",
@@ -263,7 +265,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/tools-agent",
     relativeDirectory: "packages/tools-agent",
-    allowedFiles: ["package.json", "src/index.ts", "src/skill-runtime.ts", "src/work-runtime.ts"],
+    allowedFiles: ["package.json", "src/index.ts", "src/skill-runtime.ts", "src/work-lineage.ts", "src/work-runtime.ts"],
   },
   {
     packageName: "@myagents-dsh/tools-fs",

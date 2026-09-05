@@ -1,4 +1,4 @@
-import { CallId, LlmAdapter } from "@deepseek-ai/dsh-llm";
+import { ToolCallId, LlmAdapter } from "@deepseek-ai/dsh-llm";
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -366,7 +366,7 @@ export class ScriptedFakeLlmAdapter extends LlmAdapter {
       }
       if (script.kind === "tool-calls") {
         for (const [index, call] of script.calls.entries()) {
-          const id = CallId(call.id);
+          const id = ToolCallId(call.id);
           throwIfAborted();
           yield { type: "block-start", index, blockType: "tool-call" };
           throwIfAborted();

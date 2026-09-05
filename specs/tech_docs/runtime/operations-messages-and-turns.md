@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: operations-messages-and-turns
-updated: 2026-09-02
+updated: 2026-09-05
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decisions:
   - ../../prd/tech_rfc_0.1_runtime_architecture.md
@@ -49,7 +49,7 @@ turn/start
   -> exactly one product terminal after all owned turns close and no queued message remains
 ```
 
-All terminals require quiescent owned turns/messages. Success additionally requires a final completed turn with an owned non-empty durable assistant completion, usage and request-context proof. Zero-turn cancellation or a pre-turn limit may still terminate without an assistant. Interrupt, failure, context exhaustion, output/turn/budget limits and uncertain transport remain distinguishable outcomes.
+All terminals require quiescent owned turns/messages. Success additionally requires a final completed turn with an owned non-empty durable assistant completion and request-context proof. New admissions persist `tokenAccounting: native-attempts-v1`: official DSH attempt folding owns retry/stream accounting, compaction summary/repair usage is added once, and missing provider buckets remain unknown without failing a valid completion. Unmarked historical admissions retain their original terminal derivation. Budget admission still requires provable usage and the frozen rate card before another request. Zero-turn cancellation or a pre-turn limit may still terminate without an assistant. Interrupt, failure, context exhaustion, output/turn/budget limits and uncertain transport remain distinguishable outcomes.
 
 ## 5. Input operations
 
@@ -58,9 +58,11 @@ All terminals require quiescent owned turns/messages. Success additionally requi
 | `turn/start` | Create or idempotently recover one operation and its initial user message. |
 | `turn/get` | Recover the known admission/current state/terminal for one operation identity after retry or disconnect. |
 | `turn/steer` | Add input to the currently active operation under DSH steering semantics. |
-| `turn/followUp` | Queue another message for a non-terminal operation; delivery may require the current turn to settle. |
+| `turn/followUp` | Admit an idempotent continuation for a non-terminal operation; omitted/`realtime` delivery enters the next DSH step boundary, while explicit `turn` enters the next turn. |
 | `turn/message/cancel` | Cancel a queued message that has not become delivered work. |
 | `turn/interrupt` | Cancel the target operation's currently owned open turn and optionally its queued messages; it does not force terminal while owned work/messages remain. |
+
+New follow-up intents persist `deliveryTiming`; identity retries cannot change this timing. Legacy messages without the field retain their original turn semantics. The Inbox insertion must match the durable boundary. Existing in-flight model calls and tools complete normally before the next-step claim.
 
 Method receipts expose `queued`, `admitted`, `delivered` or `cancelled`. The durable Product message event records `queued` or `cancelled`; Inbox insertion/claim and projection derive admitted/delivered observation. The protocol provides independent steer, follow-up, cancel and interrupt methods, not an atomic “force send” transaction or mandatory combination order. A Host that implements “send now” must define its own composition of those methods and reconcile Runtime results/events; it must not invent a second transcript item locally.
 
@@ -117,3 +119,11 @@ Express new query behavior as an operation transition over public DSH message/tu
 | Exact methods/states | `packages/protocol/src/contract-source.ts` |
 | Pending-wake seam | `specs/dsh/patches/0001-agent-wake-pending.patch`, accepted patched artifact manifest |
 | Recovery/idempotency/fault campaigns | `tests/operation-runtime.unit.test.ts`, persistence and packed-runtime tests |
+
+## Root collaboration admission
+
+ProductWork's trusted `deliverContext` composition port joins the active root operation or admits an independent collaboration-origin operation while idle. The operation ledger records only correlation, timing and input fingerprints; the original DSH Inbox message keeps its `agent-message` or `subagent-report` source. Exact already-persisted pending messages are adopted into the derived operation fold without reinsertion. Existing user FIFO position can move a newly arriving report to the next turn. Repeated delivery uses its persisted boundary and identity. A limited, canceled or closing operation cannot be extended.
+
+Primary Session recovery first validates/reconciles durable facts with native wake deferred. The Session lifecycle owner publishes the exact ready Agent, then awaits its `afterReady` hook before resolving admission. That hook re-admits ProductWork Root context and resumes child pending Inbox work, followed by normal operation wake reconciliation. Failure of the post-ready hook disposes the newly published generation and requires recovery; it cannot return a usable half-ready Session.
+
+Identified `turn/followUp` retries compare the immutable input fingerprint and delivery timing before checking whether new input can extend the operation. An exact consumed or cancelled receipt remains readable after terminal settlement and after a limit was reached. Claimed receipts wait for the correlation flush; retries cannot acknowledge volatile claims, reinsert input or reopen the operation. Multiple different input messages can be claimed within one DSH turn; the operation owns that turn once, while each input keeps its own durable claim and cancellation identity.

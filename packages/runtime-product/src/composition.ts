@@ -9,6 +9,7 @@ import { ToolResultPruner } from "@deepseek-ai/dsh-compaction-tool-result-pruner
 import { CommandId, CommandRuntime } from "@deepseek-ai/dsh-commands";
 import { LlmAdapter, LlmRuntime, type ContentBlock } from "@deepseek-ai/dsh-llm";
 import { SettingsProvider } from "@deepseek-ai/dsh-settings";
+import { SqliteSessionQueryEngine } from "@deepseek-ai/dsh-session-query-sqlite";
 import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
@@ -25,6 +26,7 @@ import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
 import { WebRuntime } from "@deepseek-ai/dsh-web";
 import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
 import { isProxy } from "node:util/types";
+import { createHash } from "node:crypto";
 import {
   SdkOperationService,
   type OperationBirthAuthority,
@@ -1259,6 +1261,8 @@ export const installCanonicalToolPlane = async (
     let permissionController: ProductPermissionController | undefined;
     fibers.push(await root.plugin(ProductPermissionService, {
       ...permissionConfig,
+      withInteractionWait: (agent, signal, operation) => agent === root.productSession.requireAgent()
+        ? operation() : root.productWork.withWaitingAgent(agent, "interaction", signal, operation),
       clock: Date.now,
       durability: Object.freeze({
         flush: (session: Session) => permissionDeadline.wait(
@@ -1406,6 +1410,7 @@ export const installCanonicalToolPlane = async (
       throw new Error("product plan service did not register its composition controller");
     }
     fibers.push(await root.plugin(ProductTaskGraphService, {
+      isKnownCollaborator: (primary, agentId) => root.productWork.isKnownCollaborator(primary, agentId),
       durability: Object.freeze({
         flush: (session: Session) => permissionDeadline.wait(
           root.sessions.flush(session),
@@ -1497,6 +1502,61 @@ export const installCanonicalToolPlane = async (
         ),
       }),
       provider: "myagents-spawn",
+      messageDelivery: () => authority.hostModelAuthority?.collaborationPolicy().config.messageDelivery ?? "realtime",
+      deliverRootMessage: async (request) => {
+        const state = root.productSession.snapshot().state;
+        if (state === "creating" || state === "resuming") {
+          // Recovery reconstructs native Inbox facts before publication. Only
+          // afterReady may admit or wake their model execution.
+          const owned = root.sdkOperations.snapshot().operations.flatMap((operation) => operation.messages)
+            .find((message) => message.messageId === request.message.id);
+          const timing = owned?.deliveryTiming ?? request.deliveryTiming;
+          if (![...request.root.inbox.nextStep, ...request.root.inbox.nextTurn].some((message) => message.id === request.message.id)) {
+            request.root.send(request.message, timing === "realtime" ? "next-step" : "next-turn", false);
+            await root.sessions.flush(request.root.session);
+          }
+          return "delivered";
+        }
+        if (state !== "ready") return "suppressed";
+        const environment = root.productSession.requireExecutionEnvironment();
+        const source = root.sdkOperations.lookup(request.sourceOperationId);
+        if (source === undefined) throw new Error("root collaboration lacks its originating Product operation");
+        const parts = request.message.content.map((block) => {
+          if (block.type !== "text") throw new Error("root collaboration must contain bounded text only");
+          return { kind: "text" as const, text: block.text };
+        });
+        return await root.sdkOperations.deliverContext(request.root, {
+          clientOperationId: `collaboration-${createHash("sha256").update(request.productMessageId).digest("hex").slice(0, 48)}`,
+          clientUserMessageId: request.productMessageId, input: { parts },
+          configRevision: root.productSession.requireOperationConfigRevision(),
+          extensionDigest: root.productComponents.catalog().digest,
+          executionEnvironmentRevision: environment.revision, executionEnvironmentDigest: environment.digest,
+          limits: source.birth.limits, origin: { kind: "headless", scenario: "runtime-collaboration" },
+        }, request.message, request.deliveryTiming);
+      },
+      limits: () => {
+        const config = authority.hostModelAuthority?.collaborationPolicy().config;
+        return config ?? { maxDepth: 1, maxActiveChildren: 32, maxRetainedChildren: 256 };
+      },
+      selectModel: (parent, role, requested, declaredProfileRef) => {
+        const policy = authority.hostModelAuthority?.collaborationPolicy();
+        if (policy === undefined || parent.options.provider === undefined || parent.options.model === undefined) {
+          throw new ProtocolError("child_model_unavailable", "Child model selection requires the admitted Host model policy");
+        }
+        const selected = policy.select({ provider: parent.options.provider, model: parent.options.model }, role, requested, declaredProfileRef);
+        return Object.freeze({
+          model: selected.profile.modelId,
+          provider: selected.profile.providerRouteId,
+          profileRevision: selected.profile.revision,
+          selection: selected.selection,
+        });
+      },
+      assertModel: (binding) => {
+        const profile = authority.hostModelAuthority?.collaborationPolicy().requireProfile(binding.profileRevision);
+        if (profile?.modelId !== binding.model || profile.providerRouteId !== binding.provider) {
+          throw new ProtocolError("child_model_unauthorized", "The child's frozen model route is no longer authorized");
+        }
+      },
       registerDynamicAgentController: (controller) => {
         if (dynamicAgents !== undefined) throw new Error("dynamic Agent controller may register exactly once");
         dynamicAgents = controller;
@@ -2143,6 +2203,12 @@ export const composeDshRootServices = async (
   let operationLifecycleController: OperationLifecycleController | undefined;
   try {
     await root.plugin(SessionStore);
+    await root.plugin(SqliteSessionQueryEngine, {
+      path: ":memory:",
+      openAt: "first-search",
+      readWindowMax: 256,
+      persistedInspectConcurrency: 4,
+    });
     await root.plugin(await loadSessionProjectionRegistry());
     await root.plugin(AgentRegistry);
     await root.plugin(LlmRuntime);
@@ -2359,7 +2425,7 @@ export const composeDshRootServices = async (
             persistence.validateRollbackRewind(token, clientMutationId, signal),
           rollbackRewind: async (token, clientMutationId, signal) => {
             const record = await persistence.getRewind(token, signal);
-            if (record?.phase === "committed" || record?.phase === "rolling_back") {
+            if (record?.phase === "prepared" || record?.phase === "committed" || record?.phase === "rolling_back") {
               await persistence.validateRollbackRewind(token, clientMutationId, signal);
               await root.productCheckpoint.rollbackRewindFiles(token, signal);
             }
@@ -2384,8 +2450,12 @@ export const composeDshRootServices = async (
         return rewindStore;
       },
       reconcileResume: async (agent) => {
+        await root.sdkOperations.reconcileResumed(agent, false);
+        await root.productWork.initialize(agent, true);
+      },
+      afterReady: async (agent) => {
+        await root.productWork.resumeReady(agent);
         await root.sdkOperations.reconcileResumed(agent);
-        await root.productWork.initialize(agent);
       },
       validateResume: async (agent, request) => {
         const authority = compositionAuthorities.get(root);
@@ -2426,7 +2496,7 @@ export const composeDshRootServices = async (
         authority.canonicalPermissionMode = request.params.permissionMode;
         authority.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
         authority.hostInteractionRevision = request.params.interactionScenario;
-        foldProductCompactions(agent.session.events);
+        foldProductCompactions(agent.session.snapshotEvents());
         root.sdkOperations.prepareGenerationReplacement(agent);
         root.productWork.prepareGenerationReplacement(agent);
         root.sdkOperations.validatePersisted(agent);

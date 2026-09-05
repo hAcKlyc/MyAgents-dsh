@@ -1,8 +1,8 @@
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index 2064c52f32..ab384d46e6 100644
+index 98b4987bee..153d1104b4 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
-@@ -12,23 +12,26 @@ import type {
+@@ -12,19 +12,22 @@ import type {
    AgentStatus,
    CancelOptions,
    InboxTarget,
@@ -18,22 +18,18 @@ index 2064c52f32..ab384d46e6 100644
    BlockAssembler,
    LlmError,
    createAssistantMessage,
-   deepFreeze,
    errorChain,
 +  freezeMessage,
    markAgentLoopRequest,
  } from '@deepseek-ai/dsh-llm'
+-import { deepFreeze } from '@deepseek-ai/dsh-util-values'
++import { deepFreeze, isJsonValue, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
  import type { Scope } from '@deepseek-ai/dsh-scope'
  import { createScope } from '@deepseek-ai/dsh-scope'
- import type { EpochHeader, RequestContext, Session, SessionId, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
--import { canonicalHeader, headerEquals } from '@deepseek-ai/dsh-session'
-+import { canonicalHeader, headerEquals, isJsonValue, snapshotJsonValue } from '@deepseek-ai/dsh-session'
- import { joinContextSections, renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
- import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
- import type { Context } from '@deepseek-ai/cordis'
-@@ -51,6 +54,127 @@ type PreparedStep =
-   | { kind: 'reject' }
-   | { kind: 'enter'; messages: UserMessage[]; assembly: PromptAssembly }
+ import type { EpochHeader, RequestContext, Session, SessionId, SessionSeq, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
+@@ -57,6 +60,127 @@ type PreparedStep =
+     assembly: PromptAssembly
+   }
  
 +/** Match DSH execution parsing while retaining a lossless immutable value. */
 +function parsePreparedArguments(block: ToolCallBlock): PreparedAssistantToolCall['parsedArguments'] {
@@ -159,7 +155,7 @@ index 2064c52f32..ab384d46e6 100644
  /** Remove adapter-derived values before plugins propose the next request config. */
  function requestProposal(header: EpochHeader): LlmCallConfig {
    if (header.adapterDefaults === undefined) return header.config
-@@ -397,7 +521,7 @@ export class ReactLoopAgent implements Agent {
+@@ -415,7 +539,7 @@ export class ReactLoopAgent implements Agent {
          continue
        }
  
@@ -168,7 +164,7 @@ index 2064c52f32..ab384d46e6 100644
          content: assembler.blocks(),
          source: {
            provider: request.provider,
-@@ -405,6 +529,18 @@ export class ReactLoopAgent implements Agent {
+@@ -423,6 +547,18 @@ export class ReactLoopAgent implements Agent {
            ...assembler.replayState !== undefined ? { replayState: assembler.replayState } : {},
          },
        })
@@ -187,7 +183,7 @@ index 2064c52f32..ab384d46e6 100644
        this.session.append(
          'assistant/message',
          {
-@@ -417,10 +553,16 @@ export class ReactLoopAgent implements Agent {
+@@ -435,10 +571,16 @@ export class ReactLoopAgent implements Agent {
        )
        if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
  
@@ -208,10 +204,10 @@ index 2064c52f32..ab384d46e6 100644
        return concluded ? { kind: 'completed' } : null
 diff --git a/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
 new file mode 100644
-index 0000000000..164582be29
+index 0000000000..0501450524
 --- /dev/null
 +++ b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
-@@ -0,0 +1,280 @@
+@@ -0,0 +1,283 @@
 +import { describe, expect, it } from 'vitest'
 +import { Context } from '@deepseek-ai/cordis'
 +import AgentRegistry, {
@@ -221,14 +217,16 @@ index 0000000000..164582be29
 +} from '@deepseek-ai/dsh-agent'
 +import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 +import LlmRuntime, {
-+  CallId,
++  ToolCallId,
 +  createUserMessage,
 +  freezeMessage,
 +  type AssistantMessage,
 +  type StreamChunk,
 +  type ToolCallBlock,
 +} from '@deepseek-ai/dsh-llm'
-+import SessionStore, { Session, SessionId, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-session'
++import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
++import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
++import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 +import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 +import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 +import { maxTokensResponse, MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
@@ -237,6 +235,7 @@ index 0000000000..164582be29
 +  const ctx = new Context()
 +  await ctx.plugin(LlmRuntime)
 +  await ctx.plugin(SessionStore)
++  await ctx.plugin(SessionProjectionRegistry)
 +  await ctx.plugin(SystemPrompt)
 +  await ctx.plugin(ToolRuntime)
 +  await ctx.plugin(AgentRegistry)
@@ -255,11 +254,11 @@ index 0000000000..164582be29
 +function parallelToolResponse(): StreamChunk[] {
 +  return [
 +    { type: 'block-start', index: 0, blockType: 'tool-call' },
-+    { type: 'tool-call-delta', index: 0, id: CallId('call-a'), name: 'read', argumentsDelta: '{"path":"old-a"}' },
-+    { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('call-a'), name: 'read', arguments: '{"path":"old-a"}' } },
++    { type: 'tool-call-delta', index: 0, id: ToolCallId('call-a'), name: 'read', argumentsDelta: '{"path":"old-a"}' },
++    { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('call-a'), name: 'read', arguments: '{"path":"old-a"}' } },
 +    { type: 'block-start', index: 1, blockType: 'tool-call' },
-+    { type: 'tool-call-delta', index: 1, id: CallId('call-b'), name: 'write', argumentsDelta: '{"path":"old-b","content":"old"}' },
-+    { type: 'block-end', index: 1, block: { type: 'tool-call', id: CallId('call-b'), name: 'write', arguments: '{"path":"old-b","content":"old"}' } },
++    { type: 'tool-call-delta', index: 1, id: ToolCallId('call-b'), name: 'write', argumentsDelta: '{"path":"old-b","content":"old"}' },
++    { type: 'block-end', index: 1, block: { type: 'tool-call', id: ToolCallId('call-b'), name: 'write', arguments: '{"path":"old-b","content":"old"}' } },
 +    { type: 'usage', usage: { inputTokens: 10, outputTokens: 10 } },
 +    { type: 'finish', reason: { kind: 'tool-calls' } },
 +  ]
@@ -329,20 +328,20 @@ index 0000000000..164582be29
 +    expect(preparedOrder).toEqual(['read', 'write'])
 +    expect(permissionInputs).toEqual([{ path: 'new-a' }, { path: 'new-b', content: 'published' }])
 +    expect(executions).toEqual(permissionInputs)
-+    const callEvents = agent.session.events.filter(event => event.type === 'tool/call')
++    const callEvents = agent.session.snapshotEvents().filter(event => event.type === 'tool/call')
 +    expect(callEvents.map(event => event.type === 'tool/call' && event.data.arguments)).toEqual([
 +      '{"path":"new-a"}',
 +      '{"path":"new-b","content":"published"}',
 +    ])
-+    const resultIds = agent.session.events
++    const resultIds = agent.session.snapshotEvents()
 +      .filter(event => event.type === 'tool/result')
 +      .map(event => event.type === 'tool/result' && event.data.message.source.callId)
-+    expect(resultIds).toEqual([CallId('call-a'), CallId('call-b')])
-+    const authoritativeLog = JSON.stringify(agent.session.events.filter(event =>
++    expect(resultIds).toEqual([ToolCallId('call-a'), ToolCallId('call-b')])
++    const authoritativeLog = JSON.stringify(agent.session.snapshotEvents().filter(event =>
 +      event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result'))
 +    expect(authoritativeLog).not.toContain('old-a')
 +    expect(authoritativeLog).not.toContain('old-b')
-+    const resumed = Session.create(SessionId('pre-commit-resumed'), agent.session.events)
++    const resumed = Session.create(SessionId('pre-commit-resumed'), agent.session.snapshotEvents())
 +    expect(JSON.stringify(resumed.deriveMessages())).not.toContain('old-a')
 +    expect(JSON.stringify(resumed.deriveMessages())).toContain('published')
 +  })
@@ -361,7 +360,7 @@ index 0000000000..164582be29
 +    await agent.whenIdle()
 +
 +    expect(executions).toEqual([{ text: 'original' }])
-+    expect(agent.session.events.find(event => event.type === 'tool/call'))
++    expect(agent.session.snapshotEvents().find(event => event.type === 'tool/call'))
 +      .toMatchObject({ data: { arguments: '{"text":"original"}' } })
 +  })
 +
@@ -384,8 +383,8 @@ index 0000000000..164582be29
 +    await agent.whenIdle()
 +
 +    expect(dispatched).toBe(0)
-+    expect(agent.session.events.some(event => event.type === 'assistant/message')).toBe(true)
-+    expect(agent.session.events.some(event => event.type === 'tool/call')).toBe(false)
++    expect(agent.session.snapshotEvents().some(event => event.type === 'assistant/message')).toBe(true)
++    expect(agent.session.snapshotEvents().some(event => event.type === 'tool/call')).toBe(false)
 +  })
 +
 +  it.each(['denial', 'timeout', 'crash', 'invalid', 'extra'] as const)(
@@ -429,9 +428,9 @@ index 0000000000..164582be29
 +      await agent.whenIdle()
 +
 +      expect(executed).toBe(false)
-+      expect(agent.session.events.some(event => event.type === 'assistant/message' || event.type === 'tool/call')).toBe(false)
-+      expect(agent.session.events.at(-1)).toMatchObject({ type: 'turn/end' })
-+      const repaired = Session.create(SessionId(`pre-commit-${failure}-resume`), agent.session.events)
++      expect(agent.session.snapshotEvents().some(event => event.type === 'assistant/message' || event.type === 'tool/call')).toBe(false)
++      expect(agent.session.snapshotEvents().at(-1)).toMatchObject({ type: 'turn/end' })
++      const repaired = Session.create(SessionId(`pre-commit-${failure}-resume`), agent.session.snapshotEvents())
 +      expect(repaired.deriveMessages().some(message => message.role === 'assistant')).toBe(false)
 +    },
 +  )
@@ -454,7 +453,7 @@ index 0000000000..164582be29
 +    agent.cancel({ kind: 'user' }, { keepInbox: true })
 +    await agent.whenIdle()
 +
-+    expect(agent.session.events.some(event => event.type === 'assistant/message' || event.type === 'tool/call')).toBe(false)
++    expect(agent.session.snapshotEvents().some(event => event.type === 'assistant/message' || event.type === 'tool/call')).toBe(false)
 +  })
 +
 +  it('pins the in-flight listener generation across replacement', async () => {
@@ -492,28 +491,42 @@ index 0000000000..164582be29
 +    expect(seen).not.toContain('execute:revision-b')
 +  })
 +})
+diff --git a/packages/core/agent/package.json b/packages/core/agent/package.json
+index 60ffb53923..e8969eb8b0 100644
+--- a/packages/core/agent/package.json
++++ b/packages/core/agent/package.json
+@@ -56,5 +56,8 @@
+     "@deepseek-ai/dsh-typert-registry": "workspace:^",
+     "@deepseek-ai/cordis": "workspace:^",
+     "@deepseek-ai/dsh-session-projection": "workspace:^"
++  },
++  "dependencies": {
++    "@deepseek-ai/dsh-util-values": "workspace:^"
+   }
+ }
 diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
-index 7fd4e706d1..e162396148 100644
+index 1a7ef01fa7..c9fe19dae0 100644
 --- a/packages/core/agent/src/runtime-types.ts
 +++ b/packages/core/agent/src/runtime-types.ts
-@@ -7,8 +7,8 @@
+@@ -7,9 +7,10 @@
  
  import type { Context } from '@deepseek-ai/cordis'
  import type { Scoped } from '@deepseek-ai/dsh-scope'
--import type { LlmCallConfig, LlmFailure, MessageId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
--import type { AgentCancelCause, Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
-+import type { AssistantMessage, CallId, LlmCallConfig, LlmFailure, MessageId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
-+import type { AgentCancelCause, JsonValue, Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
+-import type { LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
++import type { AssistantMessage, ToolCallId, LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+ import type { AgentCancelCause, Session, UserMessage } from '@deepseek-ai/dsh-session'
  export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
++import type { JsonValue } from '@deepseek-ai/dsh-util-values'
  import type { Inbox } from './inbox.ts'
- import type { InboxTarget } from './types.ts'
-@@ -57,6 +57,20 @@ export type PreStepDecision =
+ import type { Agent } from './types.ts'
+ export type { Agent } from './types.ts'
+@@ -65,6 +66,20 @@ export type PreStepDecision =
  /** Action returned by a listener that owns model-request recovery. */
  export type RequestErrorAction = { kind: 'retry' } | undefined
  
 +/** One assembled tool call at the pre-assistant-commit boundary. */
 +export interface PreparedAssistantToolCall {
-+  readonly callId: CallId
++  readonly callId: ToolCallId
 +  readonly name: string
 +  readonly rawArguments: string
 +  readonly parsedArguments: JsonValue
@@ -528,7 +541,7 @@ index 7fd4e706d1..e162396148 100644
  /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
  export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
  
-@@ -252,6 +266,14 @@ declare module '@deepseek-ai/cordis' {
+@@ -260,6 +275,14 @@ declare module '@deepseek-ai/cordis' {
       * @mode waterfall
      */
      'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
@@ -544,7 +557,7 @@ index 7fd4e706d1..e162396148 100644
       * Handle one failed model-request attempt before the loop retries or closes
       * its step. A listener returns `{ kind: 'retry' }` without calling `next()`
 diff --git a/packages/core/scope/src/scoped-events.generated.ts b/packages/core/scope/src/scoped-events.generated.ts
-index 672914c5c3..ecda3e174a 100644
+index e7f24ca4cb..64e7c2464e 100644
 --- a/packages/core/scope/src/scoped-events.generated.ts
 +++ b/packages/core/scope/src/scoped-events.generated.ts
 @@ -14,6 +14,7 @@ const scopedSubjectResolvers: Readonly<Record<string, ScopedSubjectResolver | nu
@@ -556,7 +569,7 @@ index 672914c5c3..ecda3e174a 100644
    'agent/request': args => (args[0] as Record<string, unknown>)['agent'],
    'agent/request-error': args => (args[0] as Record<string, unknown>)['agent'],
 diff --git a/packages/core/scope/tests/invariant.spec.ts b/packages/core/scope/tests/invariant.spec.ts
-index 345766b042..637239fd4c 100644
+index 2adc3d787b..d29d2e96f8 100644
 --- a/packages/core/scope/tests/invariant.spec.ts
 +++ b/packages/core/scope/tests/invariant.spec.ts
 @@ -2,7 +2,7 @@ import { freezeMessage, MessageId } from '@deepseek-ai/dsh-llm'
@@ -587,3 +600,18 @@ index 345766b042..637239fd4c 100644
        'agent/request-error': [
          {
            agent,
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 4521b1bbf4..6f415c03bb 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -4178,6 +4178,10 @@ importers:
+         version: link:../../core/system-prompt
+ 
+   packages/core/agent:
++    dependencies:
++      '@deepseek-ai/dsh-util-values':
++        specifier: workspace:^
++        version: link:../../util/values
+     devDependencies:
+       '@deepseek-ai/cordis':
+         specifier: workspace:^

@@ -129,13 +129,13 @@ describe("Runtime artifact self-check", () => {
         actualNodeVersion: "24.14.0",
       });
       expect(report.profile.stage).toBe("batch-1-w4-a11");
-      expect(report.dsh.packageCount).toBe(58);
+      expect(report.dsh.packageCount).toBe(66);
       expect(report.contracts).toEqual({
-        canonicalToolsSha256: "dee6528e97bff11415526f6cc05d2327cab5df616e02aeb27039e135758bacc2",
-        eventsSha256: "de142b081a543575a3a158380bce45d3e7c5703920c5a6f546f387f8981a7869",
+        canonicalToolsSha256: "aeb3069e1f5280c41fe8426ac7461d7391d656725456c3c8beabf1c0665a5b8c",
+        eventsSha256: "d8816339d9af67fb272869a6d09bd56338677671aed4c083003c2d4911de0959",
         sessionFormat: "dsh-session-events-v1",
         persistenceFormat: "myagents-sqlite-session-v1",
-        persistenceSchemaVersion: 7,
+        persistenceSchemaVersion: 9,
         checkpointFormat: "root-write-edit-v1",
       });
       expect(report.protocol.availableHostMethods).toEqual([
@@ -146,6 +146,7 @@ describe("Runtime artifact self-check", () => {
         "session/fork/status",
         "session/rewind/prepare", "session/rewind/commit", "session/rewind/rollback",
         "session/rewind/status",
+        "work/list", "work/agent/resume", "work/agent/stop", "work/agent/message",
         "turn/start", "turn/get", "turn/steer", "turn/followUp", "turn/message/cancel",
         "turn/interrupt", "command/invoke", "config/apply", "plan/apply",
         "permission/rules/list", "permission/rules/add", "permission/rules/revoke", "credential/reconcile",

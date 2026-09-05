@@ -5,7 +5,7 @@
     "outDir": "../../dist/packages/checkpoint",
     "tsBuildInfoFile": "../../dist/packages/checkpoint/.tsbuildinfo"
   },
-  "files": ["src/index.ts", "src/runtime.ts"],
+  "files": ["src/directories.ts", "src/index.ts", "src/runtime.ts"],
   "references": [
     { "path": "../tool-runtime-product" }
   ]

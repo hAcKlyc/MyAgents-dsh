@@ -69,7 +69,7 @@ index 0000000000..0be2525b9c
 +  return message as PiAssistantMessage
 +}
 diff --git a/packages/llm/llm-pi-ai/src/replay.ts b/packages/llm/llm-pi-ai/src/replay.ts
-index aa9d542e33..7870ae17fa 100644
+index bae4cfc40d..17e93a3f7e 100644
 --- a/packages/llm/llm-pi-ai/src/replay.ts
 +++ b/packages/llm/llm-pi-ai/src/replay.ts
 @@ -11,12 +11,15 @@
@@ -162,36 +162,30 @@ index aa9d542e33..7870ae17fa 100644
 -    return replayedAssistant(message, source, source.replayState)
 +    return replayedAssistant(message, source, source.replayState) as unknown as AssistantMessage
    } catch (error: unknown) {
-     /* v8 ignore next -- replayedAssistant throws only INVALID_REPLAY_STATE LlmErrors today; the
+     /* v8 ignore next -- replayedAssistant throws only INVALID_REPLAY_STATE LlmErrors; the
         guard keeps a future non-replay failure loud instead of silently degrading it */
 diff --git a/packages/llm/llm-pi-ai/src/stream.ts b/packages/llm/llm-pi-ai/src/stream.ts
-index d45df45a39..537fd44ba0 100644
+index 203e639052..79e3fe7ae6 100644
 --- a/packages/llm/llm-pi-ai/src/stream.ts
 +++ b/packages/llm/llm-pi-ai/src/stream.ts
-@@ -12,6 +12,13 @@ import { CallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWin
- import type { FinishReason, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
+@@ -13,6 +13,7 @@ import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExcee
+ import type { FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
  import { isContextOverflow } from '@earendil-works/pi-ai'
  import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
-+import {
-+  asPiAssistantMessage,
-+  type PiProviderToolContent,
-+  type PiProviderToolEvent,
-+  type ProviderToolCallBlock,
-+  type ProviderToolResultBlock,
-+} from './provider-content.ts'
++import { asPiAssistantMessage, type PiProviderToolContent, type PiProviderToolEvent, type ProviderToolCallBlock, type ProviderToolResultBlock } from './provider-content.ts'
  import { toPiReplayState } from './replay.ts'
  
  /**
-@@ -125,7 +132,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
+@@ -139,7 +140,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
   *   `LlmError` (`STREAM_CLOSED`) if the source ends without a terminal event.
   */
  export async function* toStreamChunks(
 -  events: AsyncIterable<AssistantMessageEvent>,
 +  events: AsyncIterable<AssistantMessageEvent | PiProviderToolEvent>,
    contextWindow?: number,
+   callerSignal?: AbortSignal,
  ): AsyncGenerator<StreamChunk> {
-   // pi-ai contentIndex ↔ our block index map 1:1 (both count blocks from 0
-@@ -188,12 +195,31 @@ export async function* toStreamChunks(
+@@ -203,12 +204,31 @@ export async function* toStreamChunks(
            },
          }
          break
@@ -224,7 +218,7 @@ index d45df45a39..537fd44ba0 100644
          }
          return
        case 'error':
-@@ -209,3 +235,38 @@ export async function* toStreamChunks(
+@@ -230,3 +250,38 @@ export async function* toStreamChunks(
    }
    throw new LlmError('pi-ai event stream ended without done/error', 'STREAM_CLOSED')
  }
@@ -264,10 +258,10 @@ index d45df45a39..537fd44ba0 100644
 +  }
 +}
 diff --git a/packages/llm/llm-pi-ai/tests/convert.spec.ts b/packages/llm/llm-pi-ai/tests/convert.spec.ts
-index c540f2d50b..ce8c4cf2d9 100644
+index c80df43df1..b1bc4008fc 100644
 --- a/packages/llm/llm-pi-ai/tests/convert.spec.ts
 +++ b/packages/llm/llm-pi-ai/tests/convert.spec.ts
-@@ -5,6 +5,7 @@ import { createUserMessage, CallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE
+@@ -5,6 +5,7 @@ import { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESP
  import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
  import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-works/pi-ai'
  import { toPiContext } from '../src/context.ts'
@@ -288,7 +282,7 @@ index c540f2d50b..ce8c4cf2d9 100644
  async function* feed(...events: AssistantMessageEvent[]): AsyncGenerator<AssistantMessageEvent> {
    for (const event of events) yield event
  }
-@@ -448,6 +455,66 @@ describe('toPiContext', () => {
+@@ -452,6 +459,66 @@ describe('toPiContext', () => {
      expect(context.messages[0]).not.toHaveProperty('responseId')
    })
  
@@ -355,7 +349,7 @@ index c540f2d50b..ce8c4cf2d9 100644
    it('degrades unsupported replay-state versions to provider-neutral history', () => {
      const onDegrade = vi.fn()
      const context = toPiContext({
-@@ -709,6 +776,85 @@ describe('toStreamChunks', () => {
+@@ -713,6 +780,85 @@ describe('toStreamChunks', () => {
      ])
    })
  
@@ -419,7 +413,7 @@ index c540f2d50b..ce8c4cf2d9 100644
 +          raw: result.raw,
 +        },
 +      },
-+      { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } },
++      { type: 'usage', usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } },
 +      {
 +        type: 'finish',
 +        reason: { kind: 'stop' },

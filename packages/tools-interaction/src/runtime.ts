@@ -5,8 +5,8 @@ import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { FsTarget } from "@deepseek-ai/dsh-fs";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
-import { foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
-import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
+import { planProjectionDefinition } from "@deepseek-ai/dsh-plan-mode";
+import { SessionSeq, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ToolDefinition, ToolExecution, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { UserQuestionError, type AskUserQuestionAnswer } from "@deepseek-ai/dsh-user-questions";
 import {
@@ -33,7 +33,7 @@ declare module "@deepseek-ai/cordis" {
   }
 }
 
-declare module "@deepseek-ai/dsh-session" {
+declare module "@deepseek-ai/dsh-session/types" {
   interface SessionEventMap {
     "myagents/plan/transition": {
       active: boolean;
@@ -426,7 +426,7 @@ const foldProductPlanWithPermit = (
     });
     dshPlanEvents.push(Object.freeze({
       data: Object.freeze({ active }),
-      seq: event.seq,
+      seq: SessionSeq(event.seq),
       time: 0,
       type: "plan/mode",
     }));
@@ -444,7 +444,7 @@ const foldProductPlanWithPermit = (
       && livePermit.productTurnId === pending.transition.productTurnId;
     if (!permitMatches) throw new ProductPlanFoldError("durable product plan ownership lacks its adjacent DSH transition");
   }
-  if (foldPlanMode(dshPlanEvents) !== active) {
+  if (dshPlanEvents.reduce(planProjectionDefinition.apply, planProjectionDefinition.init()).active !== active) {
     throw new ProductPlanFoldError("product plan fold differs from the public DSH plan projection");
   }
   return Object.freeze({
@@ -639,7 +639,7 @@ export class ProductPlanService extends Service {
     const sessionId = boundedIdentifier(String(agent.session.id), "plan Session id");
     const path = this.configValue.io.pathFor(runtimeHome, sessionId);
     try {
-      return foldProductPlan(agent.session.events, sessionId, this.configValue.revision, path);
+      return foldProductPlan(agent.session.snapshotEvents(), sessionId, this.configValue.revision, path);
     } catch (error) {
       this.failure ??= error;
       throw new ProductToolError(
@@ -660,7 +660,7 @@ export class ProductPlanService extends Service {
     const path = this.configValue.io.pathFor(runtimeHome, sessionId);
     try {
       return foldProductPlanWithPermit(
-        agent.session.events,
+        agent.session.snapshotEvents(),
         sessionId,
         this.configValue.revision,
         path,

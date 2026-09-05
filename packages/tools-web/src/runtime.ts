@@ -121,6 +121,8 @@ export interface CanonicalWebSearchToolsConfig {
   readonly providerId: string;
   /** Reject only after abort has made Provider work quiescent. */
   readonly run: (request: ProductWebSearchRequest) => Promise<Readonly<{
+    readonly answer?: string;
+    readonly warnings?: readonly ("unverified_search_results" | "unverified_domain_filter")[];
     readonly citations: readonly Readonly<{ readonly title: string; readonly url: string }>[];
     readonly durationMs: number;
     readonly results: readonly Readonly<{
@@ -158,6 +160,8 @@ type SearchExecutionStore = {
 };
 
 interface ProductSearchDetail {
+  readonly answer?: string;
+  readonly warnings?: readonly ("unverified_search_results" | "unverified_domain_filter")[];
   readonly citations: readonly Readonly<{ readonly title: string; readonly url: string }>[];
   readonly durationMs: number;
   readonly results: readonly Readonly<{ readonly snippet: string; readonly title: string; readonly url: string }>[];
@@ -515,11 +519,18 @@ class ProductSearchProvider implements WebSearchProvider {
       ) as ProductSearchDetail;
       store.context.signal.throwIfAborted();
       const detailKeys = ["citations", "durationMs", "results", "searchCount", "truncated", "usage"];
-      if (Reflect.ownKeys(detail).length !== detailKeys.length
-        || detailKeys.some((key) => !Object.hasOwn(detail, key))) {
+      if (detailKeys.some((key) => !Object.hasOwn(detail, key))
+        || Reflect.ownKeys(detail).some((key) => typeof key !== "string"
+          || ![...detailKeys, "answer", "warnings"].includes(key))) {
         throw new TypeError("WebSearch Provider result has an invalid exact shape");
       }
       const checked = validateCanonicalToolOutput("WebSearch", { query: request.query, ...detail }) as JsonObject;
+      if (detail.warnings?.includes("unverified_search_results")
+        && (store.allowedDomains !== undefined || store.blockedDomains !== undefined)) {
+        detail = Object.freeze({ ...detail, warnings: Object.freeze([
+          "unverified_search_results", "unverified_domain_filter",
+        ] as const) });
+      }
       if (!Number.isSafeInteger(checked.searchCount)
         || (checked.searchCount as number) > MAX_SEARCH_USES) {
         throw new ProductToolError("provider_search_failed", "WebSearch Provider exceeded the max-use contract");

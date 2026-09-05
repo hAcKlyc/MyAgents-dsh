@@ -1,7 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { HostPortServiceController } from "@myagents-dsh/host-ports";
 import { ProtocolError } from "@myagents-dsh/protocol";
-import { ProductToolError, type ProductToolContext } from "@myagents-dsh/tool-runtime-product";
+import { ProductToolError, productRootAgent, type ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { isProxy } from "node:util/types";
 
 import type { HostModelAuthority } from "./host-model.js";
@@ -49,7 +49,7 @@ export const executeHostCanonicalWebTool = (
   input: Readonly<Record<string, unknown>>,
 ): Promise<JsonObject> => authority.runHostWebRequest(
   context,
-  async (_profile, assertCurrent) => {
+  async (profile, assertCurrent, configRevision) => {
     assertCurrent();
     const requestAuthority = ports.createRequestAuthority(Object.freeze({
       assertCurrent,
@@ -59,16 +59,16 @@ export const executeHostCanonicalWebTool = (
       componentId: tool === "WebFetch" ? "canonical-web-fetch" : "canonical-web-search",
       deadlineMs: 120_000,
       dshTurn: context.dshTurn,
-      expectedConfigRevision: context.birth.configRevision,
+      expectedConfigRevision: configRevision,
       rootCallId: context.rootCallId,
-      runtimeSessionId: String(context.agent.id),
+      runtimeSessionId: String(productRootAgent(context).id),
       signal: context.signal,
       turnId: context.productTurnId,
     }));
     let result;
     try {
       result = await root.hostPorts.executeHostTool(requestAuthority, Object.freeze({
-        input,
+        input: Object.freeze({ ...input, modelProfileRevision: profile.revision }),
         tool,
       }));
     } catch (error) {

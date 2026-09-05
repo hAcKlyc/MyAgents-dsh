@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import { CallId, HarnessError } from "@deepseek-ai/dsh-llm";
+import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ApprovalOutcome, ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import {
@@ -9,7 +9,6 @@ import {
   type AskUserQuestionAnswer,
   type AskUserQuestionItem,
   type AskUserQuestionRequest,
-  type UserQuestionProvider,
 } from "@deepseek-ai/dsh-user-questions";
 import {
   CANONICAL_TOOL_CONTRACTS,
@@ -22,6 +21,7 @@ import { types as utilTypes } from "node:util";
 
 import {
   productRootAgent,
+  ProductToolError,
   type ProductToolContext,
   type ProductToolOrigin,
   type ProductToolPermissionRequest,
@@ -74,6 +74,15 @@ export interface ProductPermissionRuleEvent {
   readonly origin: "root";
   readonly createdAt: number;
   readonly expiresAt: number;
+  readonly inlineGrant?: ProductPermissionInlineGrant;
+}
+
+export interface ProductPermissionInlineGrant {
+  readonly version: 1;
+  readonly clientOperationId: string;
+  readonly birthRevision: string;
+  readonly agentId: string;
+  readonly origin: ProductToolOrigin;
 }
 
 export interface ProductPermissionRuleRevokedEvent {
@@ -156,6 +165,7 @@ export interface ProductPermissionPlaneConfig {
 }
 
 export interface ProductPermissionServiceConfig extends ProductPermissionPlaneConfig {
+  readonly withInteractionWait?: <T>(agent: Agent, signal: AbortSignal, operation: () => Promise<T>) => Promise<T>;
   readonly clock: () => number;
   readonly durability: Readonly<{
     flush(session: Session): Promise<boolean>;
@@ -228,6 +238,7 @@ export interface ProductPermissionRule {
 export interface ProductPermissionRevisionSnapshot {
   readonly revision: string;
   readonly rules: readonly ProductPermissionRule[];
+  readonly inlineGrant?: ProductPermissionInlineGrant;
 }
 
 export interface ProductPermissionFold {
@@ -239,9 +250,9 @@ export interface ProductPermissionFold {
   readonly revokeEventCount: number;
 }
 
-export class ProductPermissionError extends HarnessError {
+export class ProductPermissionError extends ProductToolError {
   constructor(code: string, message: string, options?: ErrorOptions) {
-    super(message, code, options);
+    super(code, message, options);
     this.name = "ProductPermissionError";
   }
 }
@@ -427,7 +438,7 @@ const ruleKey = (rule: Readonly<{
 
 const computeRuleId = (event: Omit<ProductPermissionRuleEvent, "ruleId" | "revision">): string =>
   sha256(JSON.stringify([
-    "myagents-permission-rule-v1",
+    event.inlineGrant === undefined ? "myagents-permission-rule-v1" : "myagents-permission-rule-v2",
     event.sessionId,
     event.fromRevision,
     event.tool,
@@ -436,6 +447,13 @@ const computeRuleId = (event: Omit<ProductPermissionRuleEvent, "ruleId" | "revis
     event.origin,
     event.createdAt,
     event.expiresAt,
+    ...(event.inlineGrant === undefined ? [] : [
+      event.inlineGrant.version,
+      event.inlineGrant.clientOperationId,
+      event.inlineGrant.birthRevision,
+      event.inlineGrant.agentId,
+      event.inlineGrant.origin,
+    ]),
   ]));
 
 const computeRuleRevision = (event: Omit<ProductPermissionRuleEvent, "revision">): string =>
@@ -501,11 +519,27 @@ const validateProductPermissionClass = (
   return value;
 };
 
+const validateInlineGrant = (value: unknown): ProductPermissionInlineGrant => {
+  const grant = exactOwnDataObject(value,
+    ["version", "clientOperationId", "birthRevision", "agentId", "origin"], [], "inline permission grant");
+  if (grant.version !== 1 || typeof grant.origin !== "string"
+    || !["root", "foreground_child", "background_child"].includes(grant.origin)) {
+    throw new TypeError("inline permission grant version or origin is invalid");
+  }
+  return Object.freeze({
+    version: 1,
+    clientOperationId: boundedIdentifier(grant.clientOperationId, "inline permission operation"),
+    birthRevision: boundedIdentifier(grant.birthRevision, "inline permission birth"),
+    agentId: boundedIdentifier(grant.agentId, "inline permission Agent"),
+    origin: grant.origin as ProductToolOrigin,
+  });
+};
+
 const validateRuleEvent = (value: unknown): ProductPermissionRuleEvent => {
   const event = exactOwnDataObject(value, [
     "sessionId", "ruleId", "fromRevision", "revision", "tool", "permissionClass", "target",
     "origin", "createdAt", "expiresAt",
-  ], [], "product permission rule event");
+  ], ["inlineGrant"], "product permission rule event");
   const origin = event.origin;
   if (origin !== "root") throw new TypeError("product permission rule origin must be root");
   const createdAt = safeEpoch(event.createdAt, "permission rule creation time");
@@ -523,6 +557,7 @@ const validateRuleEvent = (value: unknown): ProductPermissionRuleEvent => {
     origin,
     createdAt,
     expiresAt,
+    ...(event.inlineGrant === undefined ? {} : { inlineGrant: validateInlineGrant(event.inlineGrant) }),
   });
 };
 
@@ -680,6 +715,14 @@ export const foldProductPermissions = (
     if (candidate.expiresAt - candidate.createdAt !== normalizedRuleTtlMs) {
       throw new ProductPermissionFoldError("product permission rule TTL differs from the policy authority");
     }
+    const grant = candidate.inlineGrant;
+    if (grant !== undefined) {
+      const birthIndex = history.findIndex(({ revision }) => revision === grant.birthRevision);
+      if (birthIndex < 0 || history.slice(birthIndex + 1).some(({ inlineGrant }) =>
+        inlineGrant?.clientOperationId !== grant.clientOperationId || inlineGrant.birthRevision !== grant.birthRevision)) {
+        throw new ProductPermissionFoldError("inline permission grant lacks its operation revision chain");
+      }
+    }
     const unsigned = {
       sessionId: candidate.sessionId,
       fromRevision: candidate.fromRevision,
@@ -689,6 +732,7 @@ export const foldProductPermissions = (
       origin: candidate.origin,
       createdAt: candidate.createdAt,
       expiresAt: candidate.expiresAt,
+      ...(candidate.inlineGrant === undefined ? {} : { inlineGrant: candidate.inlineGrant }),
     } as const;
     if (candidate.ruleId !== computeRuleId(unsigned)
       || candidate.revision !== computeRuleRevision({ ...unsigned, ruleId: candidate.ruleId })) {
@@ -711,6 +755,7 @@ export const foldProductPermissions = (
     history.push(Object.freeze({
       revision: latestRevision,
       rules: Object.freeze([...rules.values()]),
+      ...(candidate.inlineGrant === undefined ? {} : { inlineGrant: candidate.inlineGrant }),
     }));
   }
   if (policyBase !== normalizedBase) {
@@ -799,7 +844,7 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
   const config = exactOwnDataObject(value, [
     "mode", "autoAllowTools", "interaction", "interactionRegistrationDeadlineMs", "maxRules", "ruleTtlMs",
     "clock", "durability",
-  ], ["hook", "registerController"], "product permission service config");
+  ], ["hook", "registerController", "withInteractionWait"], "product permission service config");
   const plane = validateProductPermissionPlaneConfig({
     mode: config.mode,
     autoAllowTools: config.autoAllowTools,
@@ -820,8 +865,14 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
   const registerController = config.registerController === undefined
     ? undefined
     : dataFunction(config, "registerController", "permission controller registration");
+  const withInteractionWait = config.withInteractionWait === undefined ? undefined
+    : dataFunction(config, "withInteractionWait", "interaction execution capacity");
   return Object.freeze({
     ...plane,
+    ...(withInteractionWait === undefined ? {} : {
+      withInteractionWait: <T>(agent: Agent, signal: AbortSignal, operation: () => Promise<T>) =>
+        Reflect.apply(withInteractionWait, config, [agent, signal, operation]) as Promise<T>,
+    }),
     clock: () => Reflect.apply(clock, config, []) as number,
     durability: Object.freeze({
       flush: (session: Session) => Reflect.apply(flush, durability, [session]) as Promise<boolean>,
@@ -1052,8 +1103,7 @@ export class ProductPermissionService extends Service {
   private readonly activeInteractionSettlements = new Set<Promise<unknown>>();
   private readonly activeDurabilitySettlements = new Set<Promise<unknown>>();
   private readonly permissionLocks = new ProductKeyedLocks();
-  private readonly operationAlwaysAllowGrants = new Set<string>();
-  private operationGrantOwner: string | undefined;
+  private readonly policyLocks = new ProductKeyedLocks();
   private closingValue = false;
   private closedValue = false;
   private failureValue: unknown;
@@ -1086,13 +1136,10 @@ export class ProductPermissionService extends Service {
         );
       },
     }));
-    const questionProvider: UserQuestionProvider = Object.freeze({
-      ask: (request: AskUserQuestionRequest) => this.answerQuestions(request),
-    });
     ctx.effect(() => {
       const stopApproval = ctx.on("approval/request", (request, next) =>
         this.answerApproval(request, next));
-      const stopQuestions = ctx.userQuestions.registerProvider(questionProvider);
+      const stopQuestions = ctx.on("user-questions/request", (request) => this.answerQuestions(request));
       return async () => {
         this.closingValue = true;
         const cleanupFailures: Error[] = [];
@@ -1293,7 +1340,7 @@ export class ProductPermissionService extends Service {
     });
     try {
       foldProductPermissions(
-        agent.session.events,
+        agent.session.snapshotEvents(),
         String(agent.session.id),
         permissionBaseRevision(candidate, String(agent.session.id)),
         candidate.maxRules,
@@ -1323,7 +1370,7 @@ export class ProductPermissionService extends Service {
   private foldInternal(session: Session): ProductPermissionFold {
     try {
       return foldProductPermissions(
-        session.events,
+        session.snapshotEvents(),
         String(session.id),
         permissionBaseRevision(this.configValue, String(session.id)),
         this.configValue.maxRules,
@@ -1408,15 +1455,7 @@ export class ProductPermissionService extends Service {
         "operation interaction scenario differs from the local provider",
       );
     }
-    const rootAgent = productRootAgent(context);
-    const fold = this.fold(rootAgent.session);
-    const birth = fold.history.find(({ revision }) => revision === context.birth.permissionRevision);
-    if (birth === undefined) {
-      throw new ProductPermissionError(
-        "permission_revision_stale",
-        "operation permission revision is absent from durable policy history",
-      );
-    }
+    await this.readOperationPolicy(context);
     if (this.configValue.hook !== undefined) {
       const hookDecision: unknown = await exactNativePromise(
         this.configValue.hook.authorize(context, normalized),
@@ -1424,35 +1463,59 @@ export class ProductPermissionService extends Service {
       );
       context.signal.throwIfAborted();
       if (hookDecision === "deny") return "deny";
-      if (hookDecision === "allow_once") return "allow";
+      if (hookDecision === "allow_once") {
+        await this.readOperationPolicy(context);
+        return "allow";
+      }
       if (hookDecision !== "continue") {
         throw new ProductPermissionError("permission_hook_invalid", "permission Hook returned an invalid decision");
       }
     }
-    const now = this.now();
-    if (this.isAutomaticallyAllowed(normalized, birth, now)) return "allow";
-    if (this.configValue.mode === "dontAsk") return "deny";
     const tuple = permissionTupleKey(context, normalized);
-    if (this.operationGrantOwner !== context.clientOperationId) {
-      this.operationAlwaysAllowGrants.clear();
-      this.operationGrantOwner = context.clientOperationId;
-    }
-    if (this.operationAlwaysAllowGrants.has(tuple)) return "allow";
     const release = await this.permissionLocks.acquire(tuple, context.signal);
     try {
-      if (this.operationAlwaysAllowGrants.has(tuple)) return "allow";
-      const latest = this.fold(rootAgent.session);
-      const latestBirth = latest.history.find(
-        ({ revision }) => revision === context.birth.permissionRevision,
+      const { fold, birth } = await this.readOperationPolicy(context);
+      if (this.isAutomaticallyAllowed(normalized, birth, this.now())) return "allow";
+      if (this.configValue.mode === "dontAsk") return "deny";
+      if (fold.history.some((snapshot) => snapshot.inlineGrant?.clientOperationId === context.clientOperationId
+        && snapshot.inlineGrant.birthRevision === context.birth.permissionRevision
+        && snapshot.inlineGrant.agentId === String(context.agent.id)
+        && snapshot.inlineGrant.origin === context.origin
+        && snapshot.rules.some((rule) => rule.revision === snapshot.revision
+          && rule.tool === normalized.tool && rule.permissionClass === normalized.permissionClass
+          && rule.target === normalized.target && rule.expiresAt > this.now()))) return "allow";
+      return await this.requestApproval(context, normalized, fold.latestRevision);
+    } finally {
+      release();
+    }
+  }
+
+  private operationPolicy(context: ProductToolContext): Readonly<{
+    fold: ProductPermissionFold;
+    birth: ProductPermissionRevisionSnapshot;
+  }> {
+    this.assertHealthy();
+    const fold = this.foldInternal(productRootAgent(context).session);
+    const index = fold.history.findIndex(({ revision }) => revision === context.birth.permissionRevision);
+    const birth = fold.history[index];
+    if (birth === undefined || fold.history.slice(index + 1).some(({ inlineGrant }) =>
+      inlineGrant?.clientOperationId !== context.clientOperationId
+      || inlineGrant.birthRevision !== context.birth.permissionRevision)) {
+      throw new ProductPermissionError(
+        "permission_revision_stale",
+        "permission policy changed outside this operation's proven inline grants",
       );
-      if (latestBirth === undefined) {
-        throw new ProductPermissionError(
-          "permission_revision_stale",
-          "operation permission revision is absent from durable policy history",
-        );
-      }
-      if (this.isAutomaticallyAllowed(normalized, latestBirth, this.now())) return "allow";
-      return await this.requestApproval(context, normalized, latest.latestRevision, tuple);
+    }
+    return { fold, birth };
+  }
+
+  private async readOperationPolicy(context: ProductToolContext): Promise<Readonly<{
+    fold: ProductPermissionFold;
+    birth: ProductPermissionRevisionSnapshot;
+  }>> {
+    const release = await this.policyLocks.acquire(String(productRootAgent(context).session.id), context.signal);
+    try {
+      return this.operationPolicy(context);
     } finally {
       release();
     }
@@ -1479,14 +1542,7 @@ export class ProductPermissionService extends Service {
     context: ProductToolContext,
     request: ProductPermissionRequest,
     latestRevision: string,
-    tuple: string,
   ): Promise<"allow" | "deny"> {
-    if (latestRevision !== context.birth.permissionRevision) {
-      throw new ProductPermissionError(
-        "permission_revision_stale",
-        "permission policy changed after this operation was admitted",
-      );
-    }
     if (this.pending.size >= 64) {
       throw new ProductPermissionError("interaction_overloaded", "too many permission interactions are pending");
     }
@@ -1504,7 +1560,7 @@ export class ProductPermissionService extends Service {
       context.productTurnId,
       context.dshTurn,
       context.callId,
-      context.birth.permissionRevision,
+      latestRevision,
       request.tool,
       request.permissionClass,
       request.target,
@@ -1521,7 +1577,7 @@ export class ProductPermissionService extends Service {
       target: request.target,
       origin: context.origin,
       ...(request.display === undefined ? {} : { display: request.display }),
-      expectedPermissionRevision: context.birth.permissionRevision,
+      expectedPermissionRevision: latestRevision,
       interactionScenarioRevision: context.birth.interactionScenarioRevision,
       signal: controller.signal,
     });
@@ -1537,7 +1593,7 @@ export class ProductPermissionService extends Service {
     try {
       const outcome = await this.ctx.approval.request({
         agent: context.agent,
-        callId: CallId(context.callId),
+        callId: ToolCallId(context.callId),
         reason: `${request.permissionClass} requires product permission`,
         signal: controller.signal,
         toolName: request.tool,
@@ -1547,23 +1603,22 @@ export class ProductPermissionService extends Service {
         throw controller.signal.reason;
       }
       if (outcome !== "allowed-once" || pending.response === undefined) {
-        pending.effect?.apply({ effectivePolicyRevision: context.birth.permissionRevision });
+        pending.effect?.apply({ effectivePolicyRevision: (await this.readOperationPolicy(context)).fold.latestRevision });
         return "deny";
       }
       const response = pending.response;
       if (response.decision === "allow_once") {
-        this.assertLatestRevision(productRootAgent(context), context.birth.permissionRevision);
-        pending.effect?.apply({ effectivePolicyRevision: context.birth.permissionRevision });
+        const { fold } = await this.readOperationPolicy(context);
+        pending.effect?.apply({ effectivePolicyRevision: fold.latestRevision });
         return "allow";
       }
       if (response.decision === "always_allow") {
         const durabilitySettlement = this.startDurabilitySettlement(() => this.persistRule(context, request));
         const rule = await durabilitySettlement;
-        this.operationAlwaysAllowGrants.add(tuple);
         pending.effect?.apply({ effectivePolicyRevision: rule.revision });
         return "allow";
       }
-      pending.effect?.apply({ effectivePolicyRevision: context.birth.permissionRevision });
+      pending.effect?.apply({ effectivePolicyRevision: (await this.readOperationPolicy(context)).fold.latestRevision });
       return "deny";
     } catch (error) {
       pending.effect?.rejectEffect(error instanceof Error ? error : new Error(String(error)));
@@ -1587,11 +1642,11 @@ export class ProductPermissionService extends Service {
     if (pending?.agent !== request.agent || pending.request.tool !== request.toolName) return next();
     if (pending.started) return Promise.resolve("unavailable");
     pending.started = true;
-    const settlement = this.registerInteraction<ProductPermissionInteractionResponse>(
+    const settlement = this.runInteractionWait(pending.request.agent, pending.request.signal, () => this.registerInteraction<ProductPermissionInteractionResponse>(
       pending.request.signal,
       (callbacks) => this.configValue.interaction.decidePermission(pending.request, callbacks),
       (candidate) => validateProductPermissionInteractionResponse(candidate, pending.request),
-    ).then((registered) => {
+    )).then((registered) => {
       pending.response = registered.value;
       pending.effect = registered;
       return registered.value.decision === "allow_once" || registered.value.decision === "always_allow"
@@ -1630,11 +1685,11 @@ export class ProductPermissionService extends Service {
       signal: controller.signal,
     });
     try {
-      const settlement = this.registerInteraction<AskUserQuestionAnswer>(
+      const settlement = this.runInteractionWait(borrowed.agent, controller.signal, () => this.registerInteraction<AskUserQuestionAnswer>(
         controller.signal,
         (callbacks) => this.configValue.interaction.answerQuestions(borrowed, callbacks),
         (candidate) => validateProductQuestionAnswer(candidate, borrowed),
-      );
+      ));
       let answer: AskUserQuestionAnswer;
       try {
         const registered = await settlement;
@@ -1661,25 +1716,36 @@ export class ProductPermissionService extends Service {
     }
   }
 
+  private runInteractionWait<T>(agent: Agent | undefined, signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+    return agent === undefined || this.configValue.withInteractionWait === undefined ? operation()
+      : this.configValue.withInteractionWait(agent, signal, operation);
+  }
+
   private async persistRule(
     context: ProductToolContext,
     request: ProductPermissionRequest,
   ): Promise<ProductPermissionRule> {
     const rootAgent = productRootAgent(context);
-    const fold = this.foldInternal(rootAgent.session);
-    if (fold.latestRevision !== context.birth.permissionRevision) {
-      throw new ProductPermissionError(
-        "permission_revision_stale",
-        "permission policy changed while always-allow was pending",
-      );
+    const release = await this.policyLocks.acquire(String(rootAgent.session.id), context.signal);
+    try {
+      const { fold } = this.operationPolicy(context);
+      return await this.persistRuleForAgent(rootAgent, fold, request, Object.freeze({
+        version: 1,
+        clientOperationId: context.clientOperationId,
+        birthRevision: context.birth.permissionRevision,
+        agentId: String(context.agent.id),
+        origin: context.origin,
+      }));
+    } finally {
+      release();
     }
-    return await this.persistRuleForAgent(rootAgent, fold, request);
   }
 
   private async persistRuleForAgent(
     agent: Agent,
     fold: ProductPermissionFold,
     request: ProductPermissionRequest,
+    inlineGrant?: ProductPermissionInlineGrant,
   ): Promise<ProductPermissionRule> {
     if (fold.grantEventCount >= this.configValue.maxRules) {
       throw new ProductPermissionError("permission_rule_limit", "durable permission rule limit reached");
@@ -1696,6 +1762,7 @@ export class ProductPermissionService extends Service {
       origin: "root" as const,
       createdAt,
       expiresAt,
+      ...(inlineGrant === undefined ? {} : { inlineGrant }),
     });
     const ruleId = computeRuleId(unsigned);
     const revision = computeRuleRevision({ ...unsigned, ruleId });
@@ -1745,15 +1812,6 @@ export class ProductPermissionService extends Service {
       throw new ProductPermissionError(
         "permission_configuration_busy",
         "permission rule mutation requires a quiescent interaction boundary",
-      );
-    }
-  }
-
-  private assertLatestRevision(agent: Agent, expected: string): void {
-    if (this.foldInternal(agent.session).latestRevision !== expected) {
-      throw new ProductPermissionError(
-        "permission_revision_stale",
-        "permission policy changed while the interaction was pending",
       );
     }
   }

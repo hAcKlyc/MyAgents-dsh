@@ -1,6 +1,6 @@
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import { CallId, MessageId, freezeMessage, type ContentBlock } from "@deepseek-ai/dsh-llm";
+import { ToolCallId, MessageId, freezeMessage, type ContentBlock } from "@deepseek-ai/dsh-llm";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import {
@@ -187,7 +187,7 @@ describe("generation-owned Host Hook components", () => {
       source: { kind: "model", provider: "fixture", model: "fixture" },
       content: [{
         type: "tool-call",
-        id: CallId("hook-call"),
+        id: ToolCallId("hook-call"),
         name: "Fixture",
         arguments: JSON.stringify({ value: "before" }),
       }],
@@ -195,7 +195,7 @@ describe("generation-owned Host Hook components", () => {
     const inherited = Object.freeze({
       message,
       toolCalls: Object.freeze([Object.freeze({
-        callId: CallId("hook-call"),
+        callId: ToolCallId("hook-call"),
         name: "Fixture",
         parsedArguments: Object.freeze({ value: "before" }),
         rawArguments: JSON.stringify({ value: "before" }),
@@ -236,7 +236,7 @@ describe("generation-owned Host Hook components", () => {
         },
       });
     });
-    const callId = CallId("post-call");
+    const callId = ToolCallId("post-call");
     const result = await state.root.tools.execute({
       agent: state.agent,
       arguments: Object.freeze({ value: "before" }),
@@ -318,7 +318,7 @@ describe("generation-owned Host Hook components", () => {
         }),
       }));
     }, () => [imageBlock]);
-    const callId = CallId("post-image-call");
+    const callId = ToolCallId("post-image-call");
     const result = await state.root.tools.execute({
       agent: state.agent,
       arguments: Object.freeze({ value: "before" }),
@@ -366,13 +366,13 @@ describe("generation-owned Host Hook components", () => {
         source: { kind: "model", provider: "fixture", model: "fixture" },
         content: [{
           type: "tool-call",
-          id: CallId("unmatched-hook-call"),
+          id: ToolCallId("unmatched-hook-call"),
           name: "Fixture",
           arguments: rawArguments,
         }],
       }),
       toolCalls: Object.freeze([Object.freeze({
-        callId: CallId("unmatched-hook-call"),
+        callId: ToolCallId("unmatched-hook-call"),
         name: "Fixture",
         parsedArguments: Object.freeze({ value: "unchanged" }),
         rawArguments,
@@ -398,13 +398,13 @@ describe("generation-owned Host Hook components", () => {
         source: { kind: "model", provider: "fixture", model: "fixture" },
         content: [{
           type: "tool-call",
-          id: CallId("invalid-hook-call"),
+          id: ToolCallId("invalid-hook-call"),
           name: "Fixture",
           arguments: JSON.stringify({ value: "before" }),
         }],
       }),
       toolCalls: Object.freeze([Object.freeze({
-        callId: CallId("invalid-hook-call"),
+        callId: ToolCallId("invalid-hook-call"),
         name: "Fixture",
         parsedArguments: Object.freeze({ value: "before" }),
         rawArguments: JSON.stringify({ value: "before" }),
@@ -446,13 +446,13 @@ describe("generation-owned Host Hook components", () => {
         source: { kind: "model", provider: "fixture", model: "fixture" },
         content: [{
           type: "tool-call",
-          id: CallId("pending-hook-call"),
+          id: ToolCallId("pending-hook-call"),
           name: "Fixture",
           arguments: JSON.stringify({ value: "before" }),
         }],
       }),
       toolCalls: Object.freeze([Object.freeze({
-        callId: CallId("pending-hook-call"),
+        callId: ToolCallId("pending-hook-call"),
         name: "Fixture",
         parsedArguments: Object.freeze({ value: "before" }),
         rawArguments: JSON.stringify({ value: "before" }),

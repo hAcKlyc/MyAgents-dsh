@@ -6,6 +6,7 @@ import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import {
   durableSessionEventId,
   findProductOperation,
+  exactReportedUsage,
   foldProductOperations,
   normalizeDshTokenUsage,
   operationTurnBoundary,
@@ -73,7 +74,7 @@ const operationForTurn = (
   throughSequence: number,
   ownsRootContextMessage: RootContextMessageOwnership,
 ): ProductOperationRecord | undefined => foldProductOperations(
-  session.events.slice(0, throughSequence + 1),
+  session.snapshotEvents().slice(0, throughSequence + 1),
   session.id,
   ownsRootContextMessage,
 ).operations.find(
@@ -207,11 +208,25 @@ const providerResultText = (value: unknown): string => {
 
 const providerResultFailed = (block: ProviderToolResultBlock): boolean => {
   if (block.isError === true) return true;
-  if (block.content === null || typeof block.content !== "object" || Array.isArray(block.content)) {
-    return false;
-  }
-  const type = (block.content as Readonly<Record<string, unknown>>).type;
-  return typeof type === "string" && type.endsWith("_error");
+  let visited = 0;
+  const failed = (value: unknown, depth: number): boolean => {
+    if (++visited > 2_000 || depth > 8) return false;
+    if (typeof value === "string") {
+      let decoded: unknown;
+      try { decoded = JSON.parse(value) as unknown; } catch { return false; }
+      return decoded !== null && typeof decoded === "object" && failed(decoded, depth + 1);
+    }
+    if (Array.isArray(value)) return value.some((item) => failed(item, depth + 1));
+    if (value === null || typeof value !== "object") return false;
+    const record = value as Readonly<Record<string, unknown>>;
+    if (record.is_error === true
+      || (typeof record.type === "string" && (record.type === "error" || record.type.endsWith("_error")))
+      || (record.error !== undefined && record.error !== null && record.error !== false)) return true;
+    const status = record.status_code ?? record.statusCode ?? record.status;
+    if (typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599) return true;
+    return ["content", "results", "result"].some((key) => Object.hasOwn(record, key) && failed(record[key], depth + 1));
+  };
+  return failed(block.content, 0);
 };
 
 const MAX_TOOL_RESULT_TEXT = 262_144;
@@ -445,8 +460,8 @@ const contextProjection = (
   const contextWindow = value.contextWindow;
   if (!isNonNegativeSafeInteger(projectedTokens)
     || !isNonNegativeSafeInteger(contextWindow) || contextWindow === 0) return undefined;
-  for (let sequence = Math.min(throughSequence, session.events.length - 1); sequence >= 0; sequence -= 1) {
-    const sample = session.events[sequence];
+  for (let sequence = Math.min(throughSequence, session.snapshotEvents().length - 1); sequence >= 0; sequence -= 1) {
+    const sample = session.snapshotEvents()[sequence];
     const hasUsage = sample?.type === "assistant/message"
       ? sample.data.usage !== undefined
       : sample?.type === "assistant/chunk" && sample.data.chunk.type === "usage";
@@ -458,8 +473,8 @@ const contextProjection = (
       ownsRootContextMessage,
     );
     if (operation === undefined) continue;
-    const sampleRoute = latestRequestContext(session.events, sample.seq);
-    const currentRoute = latestRequestContext(session.events, throughSequence);
+    const sampleRoute = latestRequestContext(session.snapshotEvents(), sample.seq);
+    const currentRoute = latestRequestContext(session.snapshotEvents(), throughSequence);
     if (sampleRoute === undefined) return undefined;
     const currentRouteData = currentRoute?.data;
     if (currentRouteData === undefined) return undefined;
@@ -498,13 +513,7 @@ const taskGraphProjection = (
   }),
 });
 
-const workProjection = (
-  snapshot: ProductWorkSnapshot,
-): RuntimeEventProjection => Object.freeze({
-  toolCallId: snapshot.parentToolCallId,
-  event: Object.freeze({
-    kind: "work",
-    snapshot: Object.freeze({
+export const projectWorkStatusSnapshot = (snapshot: ProductWorkSnapshot): Extract<RuntimeEvent, { kind: "work" }>["snapshot"] => Object.freeze({
       taskId: snapshot.taskId,
       parentToolCallId: snapshot.parentToolCallId,
       agentId: snapshot.agentId,
@@ -512,7 +521,15 @@ const workProjection = (
       description: snapshot.description,
       mode: snapshot.mode,
       model: snapshot.model,
+      modelRoute: snapshot.modelRoute,
+      tree: snapshot.tree,
+      lastActivityAt: snapshot.lastActivityAt,
       state: snapshot.state,
+      activation: snapshot.activation,
+      handleState: snapshot.handleState,
+      handleRevision: snapshot.handleRevision,
+      ...(snapshot.context === undefined ? {} : { context: snapshot.context }),
+      ...(snapshot.totalUsage === undefined ? {} : { totalUsage: { ...snapshot.totalUsage, costUsd: null } }),
       startedAt: snapshot.startedAt,
       ...(snapshot.finishedAt === undefined ? {} : { finishedAt: snapshot.finishedAt }),
       ...(snapshot.result === undefined ? {} : { result: snapshot.result }),
@@ -522,8 +539,11 @@ const workProjection = (
       ...(snapshot.usage === undefined ? {} : {
         usage: Object.freeze({ ...snapshot.usage, costUsd: null }),
       }),
-    }),
-  }),
+});
+
+const workProjection = (snapshot: ProductWorkSnapshot): RuntimeEventProjection => Object.freeze({
+  toolCallId: snapshot.parentToolCallId,
+  event: Object.freeze({ kind: "work", snapshot: projectWorkStatusSnapshot(snapshot) }),
 });
 
 const planProjection = (
@@ -543,7 +563,7 @@ export const projectSessionEvent = (
   source: SessionEvent,
   ownsRootContextMessage: RootContextMessageOwnership = ownsNoRootContextMessage,
 ): readonly RuntimeEventProjection[] => {
-  const events = session.events;
+  const events = session.snapshotEvents();
   if (events[source.seq] !== source) {
     throw new TypeError("projected Session event is not the exact durable source fact");
   }
@@ -557,6 +577,7 @@ export const projectSessionEvent = (
             clientOperationId: source.data.clientOperationId,
             turnId: source.data.productTurnId,
             admittedAt: new Date(source.data.acceptedAt).toISOString(),
+            ...(source.data.rootContextMessage === true ? { origin: "collaboration" as const } : {}),
           }),
         }),
       })]);
@@ -792,6 +813,7 @@ export const projectSessionEvent = (
       if (assistant?.type !== "assistant/message" || assistant.data.usage === undefined) {
         throw new TypeError("projected request-context anchor lacks its assistant usage source");
       }
+      if (exactReportedUsage(assistant.data.usage) === undefined) return Object.freeze([]);
       const requestContext = contextAt(
         events.slice(0, source.seq + 1),
         operation,
@@ -1020,6 +1042,11 @@ export class RuntimeEventProjector {
   #captureProductStatus(session: Session, source: SessionEvent): void {
     const isTask = source.type === "myagents/task/created" || source.type === "myagents/task/updated";
     const isWork = source.type === "myagents/work/created"
+      || source.type === "myagents/work/started"
+      || source.type === "myagents/work/phase"
+      || source.type === "myagents/work/reopened"
+      || source.type === "myagents/work/activated"
+      || source.type === "myagents/work/epoch"
       || source.type === "myagents/work/stopping"
       || source.type === "myagents/work/settled";
     const sourceType: string = source.type;
@@ -1187,7 +1214,7 @@ export class RuntimeEventProjector {
     while (this.#nextSourceSequence !== undefined
       && this.#observedSourceSequence !== undefined
       && this.#nextSourceSequence <= this.#observedSourceSequence) {
-      const source = session.events[this.#nextSourceSequence];
+      const source = session.snapshotEvents()[this.#nextSourceSequence];
       if (source?.seq !== this.#nextSourceSequence) {
         throw new ProtocolError(
           "runtime_event_projection_sequence_gap",

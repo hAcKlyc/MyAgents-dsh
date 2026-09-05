@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: permissions-interactions-and-plan
-updated: 2026-09-04
+updated: 2026-09-05
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_integration.md
@@ -30,6 +30,8 @@ Exact current behavior is owned by:
 - **Consumed by:** every governed root/child tool call, AskUserQuestion, Plan tools, Host permission UI and resume recovery.
 - **Does not own:** tool visibility, hard OS sandboxing, Host UI policy, model execution or TaskGraph state.
 
+Composition supplies `withInteractionWait` to the permission service. Child permission and question waits release ProductWork execution capacity, persist the waiting phase, and reacquire the shared FIFO before returning an answer to the tool. Interaction registration, identity, decisions and cancellation remain owned by the permission/Host interaction plane.
+
 ## 2. Permission modes
 
 The permission mode controls only the fallback after hard guards, Hooks, safe policy, configured auto-allow tools and unexpired exact rules have been evaluated.
@@ -50,6 +52,7 @@ The fixed safe permission classes are `workspace.read`, `workspace.search`, `tas
 ```text
 visible current tool + frozen operation birth
   -> workspace / Plan / origin / catalog hard guards
+  -> durable permission progress validation (serialized with pending commits)
   -> PermissionRequest Host Hook
        deny       -> deny
        allow_once -> allow this call
@@ -63,7 +66,9 @@ visible current tool + frozen operation birth
   -> execution-time current-authority revalidation
 ```
 
-An operation freezes its permission revision at birth. A policy change is a next-operation boundary; delayed answers cannot authorize a stale operation. The one exception is not a new policy snapshot: a successful inline `always_allow` installs an operation-local proof for the exact executing-Agent/client-operation/origin/tool/class/target tuple after the durable rule has flushed. It cannot authorize a sibling child, another tuple or unrelated policy changes.
+An operation freezes its permission revision at birth. Each later revision must be a proven additive inline grant from that same operation and birth; external grants, revocations, configuration transitions and unknown history invalidate the old operation even for automatically allowed tools. A successful inline `always_allow` installs proof for the exact executing-Agent/client-operation/origin/tool/class/target tuple only after the durable rule has flushed. This receipt cannot authorize a sibling child or another tuple. Other tuples may independently ask at the progressed revision without replacing their immutable birth.
+
+Each card records its own expected revision. Out-of-order answers remain valid only across the proven additive chain; exact response identity is still required. Different tuples wait for users independently and serialize append/flush/fold under the root policy commit lock. Reads also wait for that lock, so an appended but unflushed grant cannot authorize concurrent work. Same-tuple single flight is retained. Known `ProductPermissionError` instances inherit `ProductToolError`, preserving permission codes through Skill/Agent/Web domain catches; unknown errors still receive their sanitized domain fallback.
 
 ## 4. Durable exact rules
 
@@ -85,6 +90,8 @@ accepted in `2.3.0`:
 | `permission/rules/revoke` | Append an exact durable revocation at an expected revision; exact retries return `already_absent` |
 
 Grants append `myagents/permission/rule`; revocations append `myagents/permission/rule/revoked`. Both flush through the DSH Session durability Provider before success is returned. A corrupt/discontinuous chain fences permission execution as recovery-required.
+
+Inline grants add versioned `inlineGrant` provenance containing the operation ID, birth revision, executing Agent and origin. Its fields enter the v2 rule identity hash, and the durable fold verifies the complete birth-to-grant chain. Resume reconstructs exact receipts from that single root history; no ephemeral receipt cache is authoritative. Legacy rules keep their v1 hashes and remain usable by new operations, but cannot prove an old in-flight operation's additive progress.
 
 The effective configuration base is also durable history. On process resume the Host sends the Session's desired permission mode, auto-allow set and interaction revision in `session/resume`. Before any persisted permission fold, the Runtime validates the history against that requested base and installs it in the replacement generation without appending another `myagents/permission/config` event or flushing storage. Ordinary live `config/apply` remains the only path that appends a configuration transition. This ordering is required: validating a previously configured Session against the composition's bootstrap `default` would falsely classify healthy history as `persisted_product_state_invalid`.
 

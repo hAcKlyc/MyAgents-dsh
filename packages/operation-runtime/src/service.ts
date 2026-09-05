@@ -113,6 +113,22 @@ export interface SdkOperationSnapshot {
   readonly operations: readonly ProductOperationRecord[];
 }
 
+type OperationMessageCorrelation = Readonly<{
+  clientOperationId: string;
+  clientMessageId: string;
+  delivery: "root" | "steer" | "follow_up";
+}>;
+
+const contextMessageCorrelation = (fold: ProductOperationFold, messageId: string): OperationMessageCorrelation | undefined => {
+  for (const operation of fold.operations) {
+    const message = operation.messages.find((candidate) => candidate.messageId === messageId && candidate.contextMessage === true);
+    if (message !== undefined) return Object.freeze({
+      clientOperationId: operation.clientOperationId, clientMessageId: message.clientMessageId, delivery: message.kind,
+    });
+  }
+  return undefined;
+};
+
 const compareCodePoints = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 
 const agentIsIdle = (agent: Agent): boolean => agent.status === "idle";
@@ -356,6 +372,7 @@ const knownResult = (operation: ProductOperationRecord): MethodResult<"turn/star
     clientOperationId: operation.clientOperationId,
     turnId: operation.productTurnId,
     admittedAt: new Date(operation.acceptedAt).toISOString(),
+    ...(operation.origin === "collaboration" ? { origin: "collaboration" as const } : {}),
   }),
   ...(operation.terminal === undefined ? {} : { terminal: operation.terminal }),
 });
@@ -405,7 +422,7 @@ export class SdkOperationService extends Service {
       const stopClaimed = ctx.on("agent/inbox/claimed", ({ agent, message, turn }) => {
         try {
           const primaryAgent = this.primaryAgent();
-          const source = readOperationMessageSource(message.source);
+          let source: OperationMessageCorrelation | undefined = readOperationMessageSource(message.source);
           if (agent !== primaryAgent) {
             if (source !== undefined) {
               throw new Error("operation-sourced message was claimed by a foreign Agent");
@@ -413,15 +430,20 @@ export class SdkOperationService extends Service {
             return;
           }
           this.assertHealthy();
-          if (source === undefined) {
-            if (this.configValue.ownsRootContextMessage(agent, message.source, message.id)) return;
-            throw new Error("official root Agent claimed unowned product-operation work");
-          }
-          const fold = foldProductOperationsForLiveClaim(agent.session.events, {
+          if (source === undefined && this.configValue.ownsRootContextMessage(agent, message.source, message.id)
+            && !agent.session.snapshotEvents().some((event) =>
+              (event.type === "myagents/operation/accepted" && event.data.rootContextMessage === true && event.data.rootMessageId === message.id)
+              || (event.type === "myagents/operation/message" && event.data.contextMessage === true && event.data.messageId === message.id))) return;
+          const fold = foldProductOperationsForLiveClaim(agent.session.snapshotEvents(), {
             messageId: message.id,
             dshTurn: turn,
           }, agent.id, (candidateSource, messageId) =>
             this.configValue.ownsRootContextMessage(agent, candidateSource, messageId));
+          source ??= contextMessageCorrelation(fold, message.id);
+          if (source === undefined) {
+            if (this.configValue.ownsRootContextMessage(agent, message.source, message.id)) return;
+            throw new Error("official root Agent claimed unowned product-operation work");
+          }
           const operation = findProductOperation(fold, source.clientOperationId);
           const ownedMessage = operation?.messages.find(({ messageId }) => messageId === message.id);
           if (operation === undefined || ownedMessage?.clientMessageId !== source.clientMessageId
@@ -433,10 +455,10 @@ export class SdkOperationService extends Service {
           )) {
             throw new Error("claimed operation message remains pending in the DSH Inbox");
           }
-          const matchingStarts = agent.session.events.filter(
+          const matchingStarts = agent.session.snapshotEvents().filter(
             (event) => event.type === "turn/start" && event.data.turn === turn,
           );
-          if (matchingStarts.length !== 1 || agent.session.events.some(
+          if (matchingStarts.length !== 1 || agent.session.snapshotEvents().some(
             (event) => event.type === "turn/end" && event.data.turn === turn,
           )) {
             throw new Error("claimed operation message lacks one open DSH turn boundary");
@@ -463,7 +485,7 @@ export class SdkOperationService extends Service {
       const stopDiscarded = ctx.on("agent/inbox/discarded", ({ agent, message }) => {
         try {
           const primaryAgent = this.primaryAgent();
-          const source = readOperationMessageSource(message.source);
+          let source: OperationMessageCorrelation | undefined = readOperationMessageSource(message.source);
           if (agent !== primaryAgent) {
             if (source !== undefined) {
               throw new Error("operation-sourced message was discarded by a foreign Agent");
@@ -471,14 +493,19 @@ export class SdkOperationService extends Service {
             return;
           }
           this.assertHealthy();
+          if (source === undefined && this.configValue.ownsRootContextMessage(agent, message.source, message.id)
+            && !agent.session.snapshotEvents().some((event) =>
+              (event.type === "myagents/operation/accepted" && event.data.rootContextMessage === true && event.data.rootMessageId === message.id)
+              || (event.type === "myagents/operation/message" && event.data.contextMessage === true && event.data.messageId === message.id))) return;
+          const fold = foldProductOperationsForLiveDiscard(agent.session.snapshotEvents(), {
+            messageId: message.id,
+          }, agent.id, (candidateSource, messageId) =>
+            this.configValue.ownsRootContextMessage(agent, candidateSource, messageId));
+          source ??= contextMessageCorrelation(fold, message.id);
           if (source === undefined) {
             if (this.configValue.ownsRootContextMessage(agent, message.source, message.id)) return;
             throw new Error("official root Agent discarded unowned product-operation work");
           }
-          const fold = foldProductOperationsForLiveDiscard(agent.session.events, {
-            messageId: message.id,
-          }, agent.id, (candidateSource, messageId) =>
-            this.configValue.ownsRootContextMessage(agent, candidateSource, messageId));
           const operation = findProductOperation(fold, source.clientOperationId);
           const ownedMessage = operation?.messages.find(({ messageId }) => messageId === message.id);
           if (operation === undefined || ownedMessage?.clientMessageId !== source.clientMessageId
@@ -614,9 +641,9 @@ export class SdkOperationService extends Service {
     return this.serialize(() => this.reconcileAgent(this.primaryAgent()));
   }
 
-  reconcileResumed(agent: Agent): Promise<void> {
+  reconcileResumed(agent: Agent, wakePending = true): Promise<void> {
     this.assertOpen();
-    return this.serialize(() => this.reconcileResumedAgent(agent));
+    return this.serialize(() => this.reconcileResumedAgent(agent, wakePending));
   }
 
   lookup(clientOperationId: string): ProductOperationRecord | undefined {
@@ -642,6 +669,7 @@ export class SdkOperationService extends Service {
         clientOperationId: operation.clientOperationId,
         turnId: operation.productTurnId,
         admittedAt: new Date(operation.acceptedAt).toISOString(),
+        ...(operation.origin === "collaboration" ? { origin: "collaboration" as const } : {}),
       }),
       ...(operation.terminal === undefined ? {} : { terminal: operation.terminal }),
     });
@@ -738,6 +766,103 @@ export class SdkOperationService extends Service {
     const params = validateMethodParams("turn/followUp", value);
     return this.serialize(() => this.followUpValue(params, signal));
   }
+
+  /** Trusted ProductWork composition port; this is never an RPC or model tool. */
+  deliverContext(
+    agent: Agent,
+    value: MethodParams<"turn/start">,
+    message: UserMessage,
+    timing: "realtime" | "turn",
+  ): Promise<"delivered" | "suppressed"> {
+    const params = validateMethodParams("turn/start", value);
+    const timingInput: unknown = timing;
+    if (timingInput !== "realtime" && timingInput !== "turn") return Promise.reject(new TypeError("invalid collaboration delivery timing"));
+    if (message.content.some((block) => block.type !== "text") || params.input.parts.some((part) => part.kind !== "text")
+      || stableJson(message.content) !== stableJson(params.input.parts.map((part) => ({ type: "text", text: "text" in part ? part.text : "" })))) {
+      return Promise.reject(new ProtocolError("context_message_denied", "collaboration birth input must match its exact native content"));
+    }
+    return this.serialize(async () => {
+      if (!this.acceptingValue) return "suppressed";
+      this.assertHealthy();
+      const sourceKind: unknown = Reflect.get(message.source, "kind");
+      if (agent !== this.primaryAgent() || agent !== this.configValue.requireAgent()
+        || (sourceKind !== "agent-message" && sourceKind !== "subagent-report")) {
+        throw new ProtocolError("context_message_denied", "collaboration requires its exact root and actual source");
+      }
+      await this.reconcileAgent(agent);
+      let fold = this.foldValue(agent);
+      let operation = fold.operations.find((candidate) => candidate.messages.some((owned) =>
+        owned.contextMessage === true && owned.clientMessageId === params.clientUserMessageId));
+      const existing = operation?.messages.find((owned) => owned.contextMessage === true && owned.clientMessageId === params.clientUserMessageId);
+      if (existing !== undefined) {
+        if (existing.messageId !== message.id || existing.inputFingerprint !== inputFingerprint(params.input)) {
+          throw this.fence(new Error("context retry changed its native message identity or input"));
+        }
+        if (existing.state === "cancelled" || operation?.limit !== undefined) return "suppressed";
+        if (existing.state === "claimed") return "delivered";
+        if (existing.deliveryTiming !== undefined) timing = existing.deliveryTiming;
+      } else {
+        const pending = [...agent.inbox.nextStep, ...agent.inbox.nextTurn].find((candidate) => candidate.id === message.id);
+        if (pending === undefined && this.configValue.ownsRootContextMessage(agent, message.source, message.id)) {
+          // A legacy quiet report may already have been consumed inside a user
+          // operation. Preserve that fact instead of manufacturing another run.
+          return "delivered";
+        }
+        const nonterminal = fold.operations.filter((candidate) => candidate.state !== "terminal");
+        operation = nonterminal.find((candidate) => candidate.state === "active") ?? nonterminal[0];
+        if (operation?.limit !== undefined || operation?.state === "accepted_undelivered") return "suppressed";
+        if (operation !== undefined) {
+          // Previously admitted user continuations retain their place ahead of
+          // additional collaboration when the selected boundary is still free.
+          if (pending === undefined && operation.messages.some((candidate) => candidate.kind === "follow_up"
+            && candidate.contextMessage !== true && candidate.state === "queued")) timing = "turn";
+          agent.session.append("myagents/operation/message", {
+            clientOperationId: operation.clientOperationId, clientMessageId: params.clientUserMessageId,
+            contextMessage: true, deliveryTiming: timing, inputFingerprint: inputFingerprint(params.input),
+            kind: "follow_up", messageId: message.id, state: "queued",
+          });
+        } else {
+          const birth = validateOperationBirthSnapshot(await this.configValue.birthAuthority.capture(params));
+          this.configValue.modelProfileBirthGuard(birth.modelProfileRevision);
+          validateBirthAgainstParams(birth, params);
+          if (birth.limits.maxCostUsd !== undefined && birth.pricing === undefined) {
+            throw new ProtocolError("provider_pricing_unavailable", "collaboration USD limits require authoritative Provider pricing");
+          }
+          if (!this.contextAdmissionOpen() || agent !== this.configValue.requireAgent()) return "suppressed";
+          this.reserveTerminal(params.clientOperationId);
+          agent.session.append("myagents/operation/accepted", {
+            tokenAccounting: "native-attempts-v1",
+            acceptedAt: this.operationClock(), birth, clientOperationId: params.clientOperationId,
+            clientUserMessageId: params.clientUserMessageId, fingerprint: operationFingerprint(params, birth),
+            productTurnId: deterministicId("turn", params.clientOperationId, params.clientUserMessageId),
+            rootContextMessage: true, rootDeliveryTiming: timing, rootInputFingerprint: inputFingerprint(params.input), rootMessageId: message.id,
+          });
+        }
+        await this.flush(agent);
+        fold = this.foldValue(agent);
+        operation = fold.operations.find((candidate) => candidate.messages.some((owned) => owned.messageId === message.id));
+      }
+      if (operation === undefined) throw this.fence(new Error("collaboration lost its admitted operation"));
+      const owned = operation.messages.find((candidate) => candidate.messageId === message.id);
+      if (owned?.delivered !== true) {
+        agent.send(message, timing === "realtime" ? "next-step" : "next-turn", false);
+        await this.flush(agent);
+      }
+      if (!this.configValue.ownsRootContextMessage(agent, message.source, message.id)) {
+        throw this.fence(new Error("collaboration insertion lacks durable ProductWork ownership"));
+      }
+      const current = this.foldValue(agent).operations.find((candidate) => candidate.clientOperationId === operation.clientOperationId);
+      const currentMessage = current?.messages.find((candidate) => candidate.messageId === message.id);
+      if (currentMessage?.state === "queued" && !this.wakeExactPending(agent, message.id)) {
+        throw this.fence(new Error("collaboration wake lost its exact pending Inbox identity"));
+      }
+      await this.flush(agent);
+      if (current !== undefined) this.armDurationTimer(agent, current);
+      return "delivered";
+    });
+  }
+
+  private contextAdmissionOpen(): boolean { return this.acceptingValue; }
 
   cancelMessage(value: unknown): Promise<MethodResult<"turn/message/cancel">> {
     this.assertOpen();
@@ -930,6 +1055,7 @@ export class SdkOperationService extends Service {
     this.reserveTerminal(params.clientOperationId);
     try {
       agent.session.append("myagents/operation/accepted", {
+            tokenAccounting: "native-attempts-v1",
         clientOperationId: params.clientOperationId,
         clientUserMessageId: params.clientUserMessageId,
         fingerprint,
@@ -1005,17 +1131,15 @@ export class SdkOperationService extends Service {
     const agent = this.primaryAgent();
     await this.reconcileAgent(agent);
     const operation = findProductOperation(this.foldValue(agent), params.clientOperationId);
-    if (operation === undefined || operation.state === "terminal") {
+    if (operation === undefined) {
       throw new ProtocolError("turn_not_active", "turn/followUp requires a non-terminal target operation", true);
-    }
-    if (operation.limit !== undefined) {
-      throw new ProtocolError("turn_limit_reached", "turn/followUp cannot extend a limited operation");
     }
     const fingerprint = inputFingerprint(params.input);
     const existing = operation.messages.find(({ messageId }) => messageId === params.messageId);
+    const deliveryTiming = params.delivery ?? "realtime";
     if (existing !== undefined) {
       if (existing.kind !== "follow_up" || existing.clientMessageId !== params.messageId
-        || existing.inputFingerprint !== fingerprint) {
+        || existing.inputFingerprint !== fingerprint || (existing.deliveryTiming ?? "turn") !== deliveryTiming) {
         throw new ProtocolError(
           "queued_message_id_conflict",
           "follow-up message identity was reused with different immutable input",
@@ -1025,11 +1149,22 @@ export class SdkOperationService extends Service {
         return Object.freeze({ messageId: params.messageId, state: "cancelled" as const });
       }
       if (existing.delivered) {
+        if (existing.state === "claimed") {
+          return this.confirmDurableClaim(agent, params.clientOperationId, existing.messageId);
+        }
         return Object.freeze({
           messageId: params.messageId,
-          state: existing.state === "claimed" ? "delivered" as const : "admitted" as const,
+          state: "admitted" as const,
         });
       }
+    }
+    // Exact receipt replay is valid after settlement and never extends the
+    // operation. Admission constraints apply only to input still needing entry.
+    if (operation.state === "terminal") {
+      throw new ProtocolError("turn_not_active", "turn/followUp requires a non-terminal target operation", true);
+    }
+    if (operation.limit !== undefined) {
+      throw new ProtocolError("turn_limit_reached", "turn/followUp cannot extend a limited operation");
     }
     const content = await this.configValue.inputAuthority.prepare(
       params.input,
@@ -1052,6 +1187,7 @@ export class SdkOperationService extends Service {
           clientOperationId: current.clientOperationId,
           messageId: params.messageId,
           kind: "follow_up",
+          deliveryTiming,
           clientMessageId: params.messageId,
           state: "queued",
           inputFingerprint: fingerprint,
@@ -1063,9 +1199,9 @@ export class SdkOperationService extends Service {
         params.messageId,
         params.messageId,
         content,
-      ), "next-turn", false);
+      ), deliveryTiming === "realtime" ? "next-step" : "next-turn", false);
       const stoppingTurn = current.dshTurns.at(-1);
-      const stoppingTurnEnded = stoppingTurn !== undefined && agent.session.events.some(
+      const stoppingTurnEnded = stoppingTurn !== undefined && agent.session.snapshotEvents().some(
         (event) => event.type === "turn/end" && event.data.turn === stoppingTurn,
       );
       const duration = current.birth.limits.maxDurationMs;
@@ -1205,7 +1341,7 @@ export class SdkOperationService extends Service {
 
   private openDshTurn(agent: Agent): number | undefined {
     let open: number | undefined;
-    for (const event of agent.session.events) {
+    for (const event of agent.session.snapshotEvents()) {
       if (event.type === "turn/start") open = event.data.turn;
       else if (event.type === "turn/end" && event.data.turn === open) open = undefined;
     }
@@ -1292,14 +1428,14 @@ export class SdkOperationService extends Service {
 
   private captureRequestContext(
     agent: Agent,
-    event: Extract<Agent["session"]["events"][number], { type: "assistant/message" }>,
+    event: Extract<SessionEvent, { type: "assistant/message" }>,
   ): void {
     try {
       this.assertHealthy();
       const operation = this.foldValue(agent).operations.find(
         ({ dshTurns }) => dshTurns.includes(event.data.turn),
       );
-      const contextEvent = agent.session.events.findLast((candidate) =>
+      const contextEvent = agent.session.snapshotEvents().findLast((candidate) =>
         candidate.seq < event.seq && candidate.type === "request/context");
       const context = contextEvent?.type === "request/context" ? contextEvent.data : undefined;
       const contextWindow = context?.contextWindow;
@@ -1330,7 +1466,7 @@ export class SdkOperationService extends Service {
 
   private queueRequestContextCapture(
     agent: Agent,
-    event: Extract<Agent["session"]["events"][number], { type: "assistant/message" }>,
+    event: Extract<SessionEvent, { type: "assistant/message" }>,
   ): void {
     if (!this.acceptingValue || this.failureValue !== undefined) return;
     const capture = this.serialize(() => {
@@ -1388,7 +1524,7 @@ export class SdkOperationService extends Service {
       if (operation.state !== "settling" || operation.terminal !== undefined
         || (operation.dshTurns.length === 0
           && operation.messages.some(({ state }) => state !== "cancelled"))) continue;
-      const derived = deriveOperationTerminal(agent.id, agent.session.events, operation);
+      const derived = deriveOperationTerminal(agent.id, agent.session.snapshotEvents(), operation);
       const terminalAt = this.configValue.clock();
       if (!Number.isSafeInteger(terminalAt) || terminalAt < 0
         || terminalAt > 8_640_000_000_000_000) {
@@ -1463,7 +1599,7 @@ export class SdkOperationService extends Service {
         }
         const updated = findProductOperation(
           foldProductOperationsForLiveDiscard(
-            agent.session.events,
+            agent.session.snapshotEvents(),
             { messageId: message.messageId },
             agent.id,
             (source, messageId) =>
@@ -1550,9 +1686,9 @@ export class SdkOperationService extends Service {
     }
     const budget = operation.birth.limits.maxCostUsd;
     if (budget === undefined) return;
-    const accrued = deriveOperationAccruedCostUsd(agent.session.events, operation);
+    const accrued = deriveOperationAccruedCostUsd(agent.session.snapshotEvents(), operation);
     if (accrued === null) {
-      throw this.fence(new Error("priced operation lost its authoritative birth rate card"));
+      throw new ProtocolError("provider_usage_unavailable", "The USD budget cannot admit another request without complete Provider usage and an exact request rate card");
     }
     if (accrued >= budget) {
       this.appendLimit(agent, operation, Object.freeze({
@@ -1576,7 +1712,7 @@ export class SdkOperationService extends Service {
       const hasPendingContinuation = operation.messages.some((message) =>
         message.delivered && message.state === "queued");
       const budget = operation.birth.limits.maxCostUsd;
-      const accrued = deriveOperationAccruedCostUsd(agent.session.events, operation);
+      const accrued = deriveOperationAccruedCostUsd(agent.session.snapshotEvents(), operation);
       if (budget !== undefined && accrued !== null
         && (accrued > budget || (accrued === budget && hasPendingContinuation))) {
         operation = this.appendLimit(agent, operation, Object.freeze({
@@ -1685,14 +1821,18 @@ export class SdkOperationService extends Service {
     this.durationTimersValue.clear();
   }
 
-  private async reconcileResumedAgent(agent: Agent): Promise<void> {
+  private async reconcileResumedAgent(agent: Agent, wakePending: boolean): Promise<void> {
     this.assertHealthy();
     if (this.primaryAgentValue !== undefined && this.primaryAgentValue !== agent) {
       throw this.fence(new Error("resumed operation Agent differs from the prepared generation"));
     }
     this.primaryAgentValue = agent;
     this.foldValue(agent);
-    const incomplete = incompleteRecoveryWakes(agent.session.events);
+    if (!wakePending) {
+      await this.reconcileAgent(agent, true);
+      return;
+    }
+    const incomplete = incompleteRecoveryWakes(agent.session.snapshotEvents());
     const wake = async (candidate: IncompleteRecoveryWake, hasIntent: boolean): Promise<void> => {
       if (!hasIntent) {
         agent.session.append("myagents/operation/recovery-wake", {
@@ -1739,7 +1879,8 @@ export class SdkOperationService extends Service {
 
     for (const message of [...agent.inbox.nextStep, ...agent.inbox.nextTurn]) {
       if (wokenMessageIds.has(message.id)) continue;
-      const source = readOperationMessageSource(message.source);
+      const source = readOperationMessageSource(message.source)
+        ?? contextMessageCorrelation(this.foldValue(agent), message.id);
       if (source === undefined) continue;
       const operation = findProductOperation(this.foldValue(agent), source.clientOperationId);
       const owned = operation?.messages.find(({ messageId }) => messageId === message.id);
@@ -1794,7 +1935,7 @@ export class SdkOperationService extends Service {
   private foldValue(agent: Agent): ProductOperationFold {
     try {
       return foldProductOperations(
-        agent.session.events,
+        agent.session.snapshotEvents(),
         agent.id,
         (source, messageId) => this.configValue.ownsRootContextMessage(agent, source, messageId),
       );

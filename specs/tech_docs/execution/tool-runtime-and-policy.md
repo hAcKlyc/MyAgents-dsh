@@ -75,6 +75,8 @@ TaskCreate, TaskGet, TaskList, TaskUpdate
 
 The generated `specs/contracts/canonical-tools-v1.md` is a readable projection, not a handwritten authority.
 
+TaskUpdate can omit model-input `owner` when entering `in_progress`. The root-Session TaskGraph serializes the transition and records the registered caller as owner only when the task is unassigned. New durable events bind `actorId` to the exact root/child origin; legacy events retain their historical fold and revision. Root or the current owner may explicitly transfer a nonterminal task to root or a registered child of that same root. A competing claimant, foreign/unregistered caller or target cannot publish a transition. This source change is covered by `tests/product-task-graph.unit.test.ts`; it does not change the current Write directory/checkpoint coverage.
+
 ## 4. State and concurrency
 
 Operation birth freezes the catalog, permission, component, workspace, execution-environment, plan, and origin revisions used by every call. Tool concurrency follows the contract: independent reads may run in parallel, canonical-path mutations serialize, and Session-state changes use Session-level admission. Cancellation flows through the same owned call record and cleanup path.
@@ -85,13 +87,18 @@ invalidate a parallel search, while replacement of the authorized root/file stil
 the explicit non-secret environment admitted at Session birth. A TaskStop signal settles a
 background Bash job as `aborted`; a natural non-zero exit settles as `failed`.
 
-`Write` owns exactly one file mutation and never creates missing parent directories implicitly. A
-missing parent returns `directory_not_found`; callers that intend to create directory structure do
-so through a separately authorized capability. `ls` likewise returns `directory_not_found` for a
-missing root, distinct from an existing root that is not a readable directory. These codes are part
-of the generated canonical contract and must survive the common tool-result projection.
+`Write` creates missing parents inside the operation-frozen write roots before publishing its one
+file mutation. The checkpoint owner persists the missing-parent plan before the first mkdir and
+records each created directory identity before proceeding. The selected filesystem Provider checks
+canonical paths, real directories and parent identity; aliases, replacement races and unknown
+creation receipts cannot authorize file publication. `ls` retains `directory_not_found` for an absent
+root. The generated canonical contract owns these exact tool descriptions and error codes.
 
-`Write` and `Edit` can participate in root managed-file checkpoints. Bash, Host tools, MCP, child work, and external filesystem effects are deliberately outside that rollback claim.
+Root `Write` and `Edit` participate in managed-file rewind. New-file child `Write` uses internal checkpoint
+records for directory preparation, cancellation and crash recovery, keyed by its own DSH Session;
+its result does not advertise a root checkpoint receipt. Root rewind still excludes child, Bash,
+Host/MCP and external changes. Directory cleanup and rewind compensation are documented in
+[Mutations and checkpoints](../state/mutations-and-checkpoints.md#8-checkpoint-coverage-and-limits).
 
 ## 5. Plan, task and child work
 

@@ -1,7 +1,7 @@
 import { Context } from "@deepseek-ai/cordis";
 import { Inbox } from "@deepseek-ai/dsh-agent";
 import {
-  CallId,
+  ToolCallId,
   createToolResultMessage,
   freezeMessage,
   MessageId,
@@ -174,14 +174,14 @@ describe("Runtime event projection", () => {
     const fixture = appendAcceptedOperation(session);
     appendCompletedTurn(fixture);
 
-    const accepted = session.events.find((event) => event.type === "myagents/operation/accepted");
-    const claimed = session.events.find((event) => event.type === "myagents/operation/claimed");
-    const chunk = session.events.find((event) => event.type === "assistant/chunk");
-    const assistant = session.events.find((event) => event.type === "assistant/message");
-    const requestContext = session.events.find(
+    const accepted = session.snapshotEvents().find((event) => event.type === "myagents/operation/accepted");
+    const claimed = session.snapshotEvents().find((event) => event.type === "myagents/operation/claimed");
+    const chunk = session.snapshotEvents().find((event) => event.type === "assistant/chunk");
+    const assistant = session.snapshotEvents().find((event) => event.type === "assistant/message");
+    const requestContext = session.snapshotEvents().find(
       (event) => event.type === "myagents/operation/request-context",
     );
-    const terminal = session.events.find((event) => event.type === "myagents/operation/terminal");
+    const terminal = session.snapshotEvents().find((event) => event.type === "myagents/operation/terminal");
     if (accepted === undefined || claimed === undefined || chunk === undefined
       || assistant === undefined || requestContext === undefined || terminal === undefined) {
       throw new Error("projection fixture is incomplete");
@@ -237,7 +237,13 @@ describe("Runtime event projection", () => {
     ]);
   });
 
-  it("projects Provider-owned blocks without manufacturing canonical tool events", () => {
+  it.each([
+    { providerType: "web_search_tool_result", content: [{ type: "web_search_result", title: "Reference" }], failed: false },
+    { providerType: "tool_result", content: "Opaque Reference", failed: false },
+    { providerType: "web_search_tool_result", content: [{ type: "web_search_result", title: "Reference" }, { type: "web_search_tool_result_error", error_code: "unavailable" }], failed: true },
+    { providerType: "tool_result", content: { status_code: 400, message: "Reference request failed" }, failed: true },
+    { providerType: "tool_result", content: JSON.stringify({ error: { message: "Reference request failed" } }), failed: true },
+  ])("projects Provider-owned $providerType outcomes without manufacturing canonical tool events ($failed)", ({ providerType, content, failed }) => {
     const session = Session.create(SessionId("provider-tool-projection"));
     const fixture = appendAcceptedOperation(session);
     session.append("turn/start", { turn: 1 });
@@ -278,12 +284,12 @@ describe("Runtime event projection", () => {
         block: {
           type: "provider-tool-result",
           toolCallId: "provider-call-1",
-          providerType: "web_search_tool_result",
-          content: [{ type: "web_search_result", title: "Reference" }],
+          providerType,
+          content,
           raw: {
-            type: "web_search_tool_result",
+            type: providerType,
             tool_use_id: "provider-call-1",
-            content: [{ type: "web_search_result", title: "Reference" }],
+            content,
           },
         },
       } as never,
@@ -308,16 +314,16 @@ describe("Runtime event projection", () => {
         phase: "end",
         providerRouteId: "fixture-provider",
         providerToolCallId: "provider-call-1",
-        providerBlockType: "web_search_tool_result",
+        providerBlockType: providerType,
         name: "web_search",
         result: {
-          state: "succeeded",
-          isError: false,
+          state: failed ? "failed" : "succeeded",
+          isError: failed,
           content: [{ type: "text", text: expect.stringContaining("Reference") as string }],
         },
       },
     }]);
-    expect(session.events.some((event) => event.type === "tool/call" || event.type === "tool/result")).toBe(false);
+    expect(session.snapshotEvents().some((event) => event.type === "tool/call" || event.type === "tool/result")).toBe(false);
   });
 
   it("fails Provider result projection closed across route changes", () => {
@@ -378,7 +384,7 @@ describe("Runtime event projection", () => {
     session.append("turn/start", { turn: 1 });
     fixture.inbox.claim("next-turn", 1);
     session.append("step/start", { turn: 1, step: 1 });
-    const callId = CallId("tool-call-1");
+    const callId = ToolCallId("tool-call-1");
     const call = session.append("tool/call", {
       turn: 1,
       step: 1,
@@ -431,7 +437,7 @@ describe("Runtime event projection", () => {
     session.append("turn/start", { turn: 1 });
     fixture.inbox.claim("next-turn", 1);
     session.append("step/start", { turn: 1, step: 1 });
-    const callId = CallId("rich-tool-call-1");
+    const callId = ToolCallId("rich-tool-call-1");
     const call = session.append("tool/call", {
       turn: 1,
       step: 1,
@@ -578,7 +584,7 @@ describe("Runtime event projection", () => {
         source: { kind: "model", provider: "fixture", model: "fixture-model" },
         content: [{ type: "text", text: "barrier answer" }],
       }),
-      usage: { inputTokens: 4, outputTokens: 2 },
+      usage: { inputTokens: 4, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 },
     }, { surfaceOp: "append", sourceEventSeqs: [] });
     await projector.whenIdle();
     expect(delivered.some(({ event }) => event.kind === "message_event")).toBe(true);

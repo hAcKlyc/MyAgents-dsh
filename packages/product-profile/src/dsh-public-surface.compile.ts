@@ -55,21 +55,22 @@ import {
   DeepSeekAdapter,
   PUBLIC_BASE_URL,
 } from "@deepseek-ai/dsh-llm-deepseek";
-import { SettingsProvider, settingsNamespace } from "@deepseek-ai/dsh-settings";
+import { SettingsProvider } from "@deepseek-ai/dsh-settings";
 import type { SettingsNamespace, SettingsScope } from "@deepseek-ai/dsh-settings";
 import type { DeepSeekConnectionOptions, RequestDefaults } from "@deepseek-ai/dsh-llm-deepseek";
 import { apply as applyMcpClient } from "@deepseek-ai/dsh-mcp-client";
 import type { Config as McpConfig, McpResult } from "@deepseek-ai/dsh-mcp-client";
-import { PlanModeController, foldPlanMode } from "@deepseek-ai/dsh-plan-mode";
+import { PlanModeController, planProjectionDefinition } from "@deepseek-ai/dsh-plan-mode";
 import type { PlanProjection } from "@deepseek-ai/dsh-plan-mode";
+import { SqliteSessionQueryEngine } from "@deepseek-ai/dsh-session-query-sqlite";
+import { SessionQueryEngine } from "@deepseek-ai/dsh-session-query";
+import { deepFreeze, snapshotJsonValue } from "@deepseek-ai/dsh-util-values";
 import { Session, SessionId, SessionStore } from "@deepseek-ai/dsh-session";
 import type { SessionEvent, SessionHeader } from "@deepseek-ai/dsh-session";
 import { createScope, scopeOf } from "@deepseek-ai/dsh-scope";
 import type { Scope, ScopeKey, Scoped } from "@deepseek-ai/dsh-scope";
 import { PersistenceCoordinator, SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
 import type { PersistenceBackend, SessionInspection, SessionPersistenceSnapshot } from "@deepseek-ai/dsh-session-persistence";
-import { SqliteSessionPersistence } from "@deepseek-ai/dsh-session-persistence-sqlite";
-import type { Config as SqlitePersistenceConfig } from "@deepseek-ai/dsh-session-persistence-sqlite";
 import { ShellExecutor, parseExitStatus } from "@deepseek-ai/dsh-shell";
 import type { ShellExecRequest, ShellRunResult } from "@deepseek-ai/dsh-shell";
 import { isModelInvocable, isSkillName, renderSkillContent, SkillRegistry } from "@deepseek-ai/dsh-skill";
@@ -96,6 +97,8 @@ import type { PromptAssembly, PromptContext, PromptSection } from "@deepseek-ai/
 import { deadline, timeoutOf } from "@deepseek-ai/dsh-timeout";
 import type { Deadline } from "@deepseek-ai/dsh-timeout";
 import { TOOL_TIMEOUT, apply as applyToolCallTimeoutPolicy } from "@deepseek-ai/dsh-tool-call-timeout-policy";
+import { deriveTurnTokenUsage } from "@deepseek-ai/dsh-token-meter/client";
+import type { ContextPressureProjection, TokenUsageProjection } from "@deepseek-ai/dsh-token-meter/client";
 import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 import type { TokenMeasurement, TokenMeterConfig } from "@deepseek-ai/dsh-token-meter";
 import { ToolRuntime, defineTool } from "@deepseek-ai/dsh-tools";
@@ -107,7 +110,7 @@ import type { WebFetchMeta, WebSearchMeta } from "@deepseek-ai/dsh-tool-web";
 import { ApprovalRequestId, ApprovalService } from "@deepseek-ai/dsh-user-approval";
 import type { ApprovalOutcome, ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
-import type { AskUserQuestionRequest, UserQuestionProvider } from "@deepseek-ai/dsh-user-questions";
+import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import { WebRuntime } from "@deepseek-ai/dsh-web";
 import type { WebFetchProvider, WebSearchProvider } from "@deepseek-ai/dsh-web";
 
@@ -152,9 +155,12 @@ export const dshPublicSurfaceValues = Object.freeze({
   SessionId,
   SessionPersistence,
   SessionStore,
+  SessionQueryEngine,
+  SqliteSessionQueryEngine,
+  deepFreeze,
+  snapshotJsonValue,
   ShellExecutor,
   SkillRegistry,
-  SqliteSessionPersistence,
   SubagentRuntime,
   finalAssistantOutput,
   SubprocessRuntime,
@@ -162,6 +168,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   SystemPrompt,
   TOOL_TIMEOUT,
   TokenMeter,
+  deriveTurnTokenUsage,
   ToolRuntime,
   SettingsProvider,
   UserQuestionService,
@@ -178,7 +185,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   deadline,
   defineTool,
   prepareImageFile,
-  foldPlanMode,
+  planProjectionDefinition,
   formatFetchOutput,
   formatSearchOutput,
   parseFetchArgs,
@@ -193,7 +200,6 @@ export const dshPublicSurfaceValues = Object.freeze({
   isSkillName,
   renderSkillContent,
   resolveRetryPolicy,
-  settingsNamespace,
   startInProcessRun,
   timeoutOf,
 });
@@ -232,7 +238,6 @@ export interface DshPublicSurfaceTypes {
     SkillProviderControl,
     SkillSummary,
   ];
-  sqlitePersistence: [SqlitePersistenceConfig];
   subagent: [SubagentInterruptAuthority, SubagentProvider, SubagentResult];
   subagentInProcess: [InProcessRunOptions];
   subagentSpawnInProcess: [SubagentSpawnInProcessConfig];
@@ -241,7 +246,8 @@ export interface DshPublicSurfaceTypes {
   timeout: [Deadline];
   tools: [ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext];
   tokenMeter: [TokenMeasurement, TokenMeterConfig];
-  userQuestions: [AskUserQuestionRequest, UserQuestionProvider];
+  tokenMeterClient: [ContextPressureProjection, TokenUsageProjection];
+  userQuestions: [AskUserQuestionRequest];
   web: [WebFetchProvider, WebSearchProvider];
   webHelpers: [WebFetchMeta, WebSearchMeta];
 }

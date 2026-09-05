@@ -87,6 +87,10 @@ export interface HostCredentialProviderConfig {
 }
 
 export interface HostCredentialProviderController {
+  /** Atomically replaces the admitted, root-scoped model credential bindings. */
+  readonly activateProviderBindings: (
+    bindings: readonly HostProviderCredentialBinding[],
+  ) => void;
   readonly activateProviderBinding: (
     binding: HostProviderCredentialBinding,
   ) => void;
@@ -313,9 +317,8 @@ export class HostCredentialProvider extends CredentialProvider {
   readonly #authorityFactory: HostPortRequestAuthorityFactory;
   readonly #requestScopes = new WeakMap<object, RequestScopeState>();
   readonly #activeScope = new AsyncLocalStorage<RequestScopeState>();
-  readonly #bindingsByRef = new Map<string, HostProviderCredentialBinding>();
+  #activeProviderBindings = new Set<HostProviderCredentialBinding>();
   readonly #preflightedProviderBindings = new WeakSet<object>();
-  #activeProviderBinding: HostProviderCredentialBinding | undefined;
   readonly #mcpBindings = new Map<string, McpBindingState>();
   readonly #mcpBlockedGenerations = new Map<string, Set<string>>();
   readonly #mcpPreflights = new Map<object, McpPreflightState>();
@@ -328,6 +331,8 @@ export class HostCredentialProvider extends CredentialProvider {
     const normalized = normalizeConfig(config);
     this.#authorityFactory = normalized.authorityFactory;
     const controller: HostCredentialProviderController = Object.freeze({
+      activateProviderBindings: (bindings: readonly HostProviderCredentialBinding[]) =>
+        this.#activateProviderBindings(bindings),
       activateProviderBinding: (binding: HostProviderCredentialBinding) =>
         this.#activateProviderBinding(binding),
       deactivateProviderBinding: (binding: HostProviderCredentialBinding) =>
@@ -395,40 +400,47 @@ export class HostCredentialProvider extends CredentialProvider {
   }
 
   #activateProviderBinding(binding: HostProviderCredentialBinding): void {
-    if (!this.#preflightedProviderBindings.has(binding)) {
-      throw fixedCredentialError(
-        "provider_credential_binding_invalid",
-        "Provider credential binding was not produced by this Host credential Provider",
-      );
+    this.#activateProviderBindings([binding]);
+  }
+
+  #activateProviderBindings(bindings: readonly HostProviderCredentialBinding[]): void {
+    if (!Array.isArray(bindings) || isProxy(bindings) || bindings.length > 65) {
+      throw fixedCredentialError("provider_credential_binding_invalid", "Provider bindings must be a bounded admitted set");
     }
-    const previous = this.#activeProviderBinding;
-    if (previous !== undefined
-      && this.#bindingsByRef.get(previous.profile.credentialRef) === previous) {
-      this.#bindingsByRef.delete(previous.profile.credentialRef);
+    const admitted = bindings as readonly HostProviderCredentialBinding[];
+    const first = admitted[0];
+    const routes = new Set<string>();
+    const revisions = new Set<string>();
+    for (const binding of admitted) {
+      if (!this.#preflightedProviderBindings.has(binding)
+        || binding.runtimeSessionId !== first?.runtimeSessionId
+        || binding.configRevision !== first.configRevision) {
+        throw fixedCredentialError("provider_credential_binding_invalid", "Provider bindings lack one preflighted Session/config authority");
+      }
+      const route = JSON.stringify([binding.profile.providerRouteId, binding.profile.modelId]);
+      if (routes.has(route) || revisions.has(binding.profile.revision)) {
+        throw fixedCredentialError("provider_credential_binding_invalid", "Provider bindings contain ambiguous model identities");
+      }
+      routes.add(route);
+      revisions.add(binding.profile.revision);
     }
-    this.#activeProviderBinding = binding;
-    this.#bindingsByRef.set(binding.profile.credentialRef, binding);
+    this.#activeProviderBindings = new Set(admitted);
   }
 
   #deactivateProviderBinding(binding: HostProviderCredentialBinding): void {
-    if (this.#activeProviderBinding !== binding) {
+    if (!this.#activeProviderBindings.delete(binding)) {
       throw fixedCredentialError(
         "provider_credential_binding_stale",
         "Provider credential binding is no longer active",
         true,
       );
     }
-    if (this.#bindingsByRef.get(binding.profile.credentialRef) === binding) {
-      this.#bindingsByRef.delete(binding.profile.credentialRef);
-    }
-    this.#activeProviderBinding = undefined;
   }
 
   #createProviderRequestScope(value: HostProviderRequestInput): HostProviderRequestScope {
     const input = normalizeProviderRequest(value);
     input.assertCurrent();
-    const current = this.#bindingsByRef.get(input.binding.profile.credentialRef);
-    if (current !== input.binding) {
+    if (!this.#activeProviderBindings.has(input.binding)) {
       throw fixedCredentialError(
         "provider_credential_revision_stale",
         "Provider credential binding is no longer current",
@@ -469,13 +481,17 @@ export class HostCredentialProvider extends CredentialProvider {
         "Provider credential request scope is invalid",
       );
     }
+    if (!this.#activeProviderBindings.has(state.binding)) {
+      throw fixedCredentialError("provider_credential_revision_stale", "Provider request binding was revoked", true);
+    }
     return this.#activeScope.run(state, action);
   }
 
   resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
     const provider = originalHostCredentialProvider(this);
     const scope = provider.#activeScope.getStore();
-    if (scope === undefined || scope.resolved || ref !== scope.binding.profile.credentialRef) {
+    if (scope === undefined || scope.resolved || ref !== scope.binding.profile.credentialRef
+      || !provider.#activeProviderBindings.has(scope.binding)) {
       return Promise.reject(fixedCredentialError(
         "provider_credential_scope_invalid",
         "Provider credential resolution requires one exact model-request scope",
@@ -490,6 +506,9 @@ export class HostCredentialProvider extends CredentialProvider {
       purpose: "model_request",
       subject: "provider",
     }).then((result): ResolvedCredential => {
+      if (!provider.#activeProviderBindings.has(scope.binding)) {
+        throw fixedCredentialError("provider_credential_revision_stale", "Provider request binding was revoked", true);
+      }
       if (result.kind !== "material") {
         throw fixedCredentialError(
           "provider_material_missing",
@@ -522,7 +541,7 @@ export class HostCredentialProvider extends CredentialProvider {
 
   describe(ref: CredentialRef): Promise<CredentialInfo> {
     const provider = originalHostCredentialProvider(this);
-    const binding = provider.#bindingsByRef.get(ref);
+    const binding = [...provider.#activeProviderBindings].find((candidate) => candidate.profile.credentialRef === ref);
     return Promise.resolve(Object.freeze({
       configured: binding !== undefined,
       ...(binding === undefined ? {} : { source: "host" }),

@@ -38,7 +38,7 @@ import {
 } from "@myagents-dsh/runtime-product";
 import { Readable, Writable } from "node:stream";
 
-import { RuntimeEventProjector } from "./event-projector.js";
+import { RuntimeEventProjector, projectWorkStatusSnapshot } from "./event-projector.js";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -589,6 +589,40 @@ export class NativeRpcServer extends Service {
         })),
         registered("session/rewind/status", this.peerValue.registerRequestHandler("session/rewind/status", (params, context) =>
           this.productSessionValue.rewindStatus(params, context.signal))),
+        registered("work/list", this.peerValue.registerRequestHandler("work/list", async (params, context) => {
+          this.productSessionValue.requireAgent();
+          const snapshots = await compositionAuthority.context.productWork.readSnapshots(context.signal, params.afterTaskId);
+          const items: MethodResult<"work/list">["items"] = [];
+          // Stable creation-order pages, one bounded preview per Agent, and the
+          // largest legal RPC envelope keep a retained tree within negotiated limits.
+          const budget = this.peerValue.maxFrameBytes - 2_048;
+          for (const snapshot of snapshots.slice(0, 32)) {
+            const result = snapshot.result?.slice(0, 1_024);
+            const item = projectWorkStatusSnapshot({ ...snapshot,
+              ...(result === undefined ? {} : { result, resultTruncated: (snapshot.resultTruncated ?? false) || result.length < (snapshot.result?.length ?? 0) }),
+            });
+            if (Buffer.byteLength(JSON.stringify({ items: [...items, item], nextTaskId: snapshot.taskId })) > budget) break;
+            items.push(item);
+          }
+          if (items.length === 0 && snapshots.length > 0) throw new ProtocolError("resource_limit_exceeded", "Agent preview exceeds the negotiated frame limit");
+          const nextTaskId = snapshots.length > items.length ? items.at(-1)?.taskId : undefined;
+          return { items, ...(nextTaskId === undefined ? {} : { nextTaskId }) };
+        })),
+        registered("work/agent/resume", this.peerValue.registerRequestHandler("work/agent/resume", async (params, context) => {
+          context.signal.throwIfAborted(); this.productSessionValue.requireAgent(); context.commit();
+          await compositionAuthority.context.productWork.resumeFromHost(params.agentId, params.clientRequestId, params.expectedHandleRevision, context.signal);
+          return { ok: true as const };
+        })),
+        registered("work/agent/stop", this.peerValue.registerRequestHandler("work/agent/stop", async (params, context) => {
+          context.signal.throwIfAborted(); this.productSessionValue.requireAgent(); context.commit();
+          await compositionAuthority.context.productWork.stopFromHost(params.agentId, params.expectedHandleRevision, context.signal);
+          return { ok: true as const };
+        })),
+        registered("work/agent/message", this.peerValue.registerRequestHandler("work/agent/message", async (params, context) => {
+          context.signal.throwIfAborted(); this.productSessionValue.requireAgent(); context.commit();
+          await compositionAuthority.context.productWork.messageFromHost(params.agentId, params.clientMessageId, params.message, context.signal);
+          return { ok: true as const };
+        })),
         registered("turn/start", this.peerValue.registerRequestHandler("turn/start", (params, context) =>
           this.operationsValue.start(params, Object.freeze({
             signal: context.signal,

@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
-import { CallId } from "@deepseek-ai/dsh-llm";
+import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { SessionId, SessionStore } from "@deepseek-ai/dsh-session";
 import { SkillRegistry } from "@deepseek-ai/dsh-skill";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
@@ -22,7 +22,7 @@ import {
   type StaticSkillDescriptor,
 } from "@myagents-dsh/tools-agent";
 import { LocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
-import type { ProductToolContext } from "@myagents-dsh/tool-runtime-product";
+import { ProductPermissionError, type ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { readAtMostFromHandle } from "../packages/tools-fs/src/local-filesystem.js";
@@ -72,7 +72,7 @@ const catalog = (skills: readonly StaticSkillDescriptor[]): StaticSkillCatalog =
   }));
 };
 
-const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name: "fixture-audit" }]) => {
+const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name: "fixture-audit" }], authorizationError?: Error) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-static-skills-")));
   temporaryRoots.push(root);
   const workspace = join(root, "workspace");
@@ -144,6 +144,7 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
     },
     authorize: (product: ProductToolContext, request: unknown) => {
       permissions.push(request);
+      if (authorizationError) throw authorizationError;
       product.signal.throwIfAborted();
       if (!current) throw new Error("operation changed while permission was pending");
       return Promise.resolve();
@@ -162,7 +163,7 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
   let callNumber = 0;
   const execute = (input: unknown, signal = new AbortController().signal) => {
     callNumber += 1;
-    const callId = CallId(`skill-call-${String(callNumber)}`);
+    const callId = ToolCallId(`skill-call-${String(callNumber)}`);
     return context.tools.execute({
       agent,
       arguments: input,
@@ -187,6 +188,16 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
 };
 
 describe("static declarative Skill tool", () => {
+  it.each([true, false])("preserves trusted permission errors and sanitizes unknown errors (trusted=%s)", async (trusted) => {
+    const privateCause = new Error("synthetic-private-cause https://example.test/?key=fixture-secret");
+    const failure = trusted ? new ProductPermissionError("permission_revision_stale", "Permission revision changed", { cause: privateCause }) : privateCause;
+    const state = await mounted(undefined, failure);
+    const result = await state.execute({ skill: "fixture-audit" });
+    expect(result).toMatchObject({ isError: true, error: { info: { code: trusted ? "permission_revision_stale" : "skill_invalid" } } });
+    expect(JSON.stringify(result)).not.toContain("fixture-secret");
+    expect(JSON.stringify(result)).not.toContain("synthetic-private-cause");
+  });
+
   it("accepts an empty trusted catalog when a distribution ships no built-in Skills", () => {
     expect(catalog([])).toMatchObject({ skills: [] });
   });
@@ -249,7 +260,7 @@ describe("static declarative Skill tool", () => {
     expect(state.context.productSkills.catalog()).toEqual(state.catalog);
   });
 
-  it("loads a dynamic workspace Skill as a package and exposes its directory on demand", async () => {
+  it.each([false, true])("loads a workspace package and preserves tool guidance without granting authority (%s)", async (withGuidance) => {
     const state = await mounted([]);
     const resourceRoot = join(state.workspace, ".agents", "skills", "package-skill");
     await mkdir(join(resourceRoot, "references"), { recursive: true });
@@ -259,6 +270,7 @@ describe("static declarative Skill tool", () => {
       "name: package-skill",
       "description: Uses package resources.",
       "arguments: focus",
+      ...(withGuidance ? ["allowed-tools: Bash(example:*)"] : []),
       "metadata:",
       "  author: fixture",
       "---",
@@ -281,13 +293,16 @@ describe("static declarative Skill tool", () => {
     const unpublish = prepared?.install();
 
     const result = await state.execute({ skill: "package-skill", args: "runtime" });
+    const rendered = withGuidance
+      ? source.replaceAll("${CLAUDE_SKILL_DIR}", resourceRoot).replaceAll("$focus", "runtime")
+      : `Inspect ${resourceRoot}/references/checklist.md for runtime.`;
 
     expect(result).toMatchObject({
       isError: false,
       value: {
         skill: "package-skill",
         argumentsExpanded: true,
-        content: `Inspect ${resourceRoot}/references/checklist.md for runtime.`,
+        content: rendered,
         source: sourcePath,
       },
     });
@@ -301,7 +316,7 @@ describe("static declarative Skill tool", () => {
         "</skill_resources>",
         "",
         "<skill_instructions>",
-        `Inspect ${resourceRoot}/references/checklist.md for runtime.`,
+        rendered,
         "</skill_instructions>",
         "</skill_content>",
       ].join("\n"),

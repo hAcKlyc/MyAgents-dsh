@@ -26,6 +26,8 @@ export type ProductOperationState =
   | "terminal";
 
 export interface ProductOperationMessageRecord {
+  readonly contextMessage?: true;
+  readonly deliveryTiming?: "realtime" | "turn";
   readonly messageId: string;
   readonly clientMessageId: string;
   readonly kind: "root" | "steer" | "follow_up";
@@ -38,6 +40,8 @@ export interface ProductOperationMessageRecord {
 }
 
 export interface ProductOperationRecord {
+  readonly tokenAccounting?: "native-attempts-v1";
+  readonly origin: "user" | "collaboration";
   readonly clientOperationId: string;
   readonly fingerprint: string;
   readonly productTurnId: string;
@@ -68,7 +72,7 @@ type InboxTarget = "next-step" | "next-turn";
 type PendingInboxMessage = {
   readonly id: string;
   readonly source: MessageSource | undefined;
-  readonly operationSource: MyAgentsOperationMessageSource | undefined;
+  readonly operationCorrelation: Pick<MyAgentsOperationMessageSource, "clientOperationId" | "clientMessageId" | "delivery"> | undefined;
 };
 
 type RemovedClaimCandidate = PendingInboxMessage & {
@@ -76,6 +80,8 @@ type RemovedClaimCandidate = PendingInboxMessage & {
 };
 
 type MutableMessage = {
+  contextMessage?: true;
+  deliveryTiming?: "realtime" | "turn";
   messageId: string;
   clientMessageId: string;
   kind: "root" | "steer" | "follow_up";
@@ -276,7 +282,15 @@ const validateAccepted = (value: unknown): ProductOperationAccepted => {
     "rootMessageId",
     "birth",
     "acceptedAt",
-  ], [], "operation acceptance");
+  ], ["rootContextMessage", "rootDeliveryTiming", "rootInputFingerprint", "tokenAccounting"], "operation acceptance");
+  if (Object.hasOwn(event, "tokenAccounting") && event.tokenAccounting !== "native-attempts-v1") return fail("operation token accounting revision is invalid");
+  if (Object.hasOwn(event, "rootContextMessage") && event.rootContextMessage !== true) return fail("operation context origin is invalid");
+  if (event.rootContextMessage === true) {
+    if (event.rootDeliveryTiming !== "realtime" && event.rootDeliveryTiming !== "turn") return fail("context operation requires its exact root delivery timing");
+    sha256(event.rootInputFingerprint, "context operation input fingerprint");
+  } else if (Object.hasOwn(event, "rootDeliveryTiming") || Object.hasOwn(event, "rootInputFingerprint")) {
+    return fail("user operation cannot declare a context root boundary");
+  }
   return Object.freeze({
     clientOperationId: boundedIdentifier(event.clientOperationId, "client operation identity"),
     clientUserMessageId: boundedIdentifier(event.clientUserMessageId, "client user-message identity"),
@@ -284,14 +298,24 @@ const validateAccepted = (value: unknown): ProductOperationAccepted => {
     productTurnId: boundedIdentifier(event.productTurnId, "product turn identity"),
     rootMessageId: boundedIdentifier(event.rootMessageId, "root message identity"),
     birth: validateOperationBirthSnapshot(event.birth),
+    ...(event.tokenAccounting === "native-attempts-v1" ? { tokenAccounting: "native-attempts-v1" as const } : {}),
     acceptedAt: nonNegativeTimestamp(event.acceptedAt, "operation acceptance time"),
+    ...(event.rootContextMessage === true ? {
+      rootContextMessage: true as const, rootDeliveryTiming: event.rootDeliveryTiming as "realtime" | "turn",
+      rootInputFingerprint: event.rootInputFingerprint as string,
+    } : {}),
   });
 };
 
 const validateMessage = (value: unknown): ProductOperationMessage => {
   const event = exactOwnDataObject(value, [
     "clientOperationId", "messageId", "kind", "clientMessageId", "state",
-  ], ["cancellationReason", "inputFingerprint"], "operation message event");
+  ], ["cancellationReason", "inputFingerprint", "deliveryTiming", "contextMessage"], "operation message event");
+  if (Object.hasOwn(event, "contextMessage") && event.contextMessage !== true) return fail("operation message context origin is invalid");
+  if (Object.hasOwn(event, "deliveryTiming") && (event.kind !== "follow_up"
+    || (event.deliveryTiming !== "realtime" && event.deliveryTiming !== "turn"))) {
+    return fail("operation message delivery timing is invalid");
+  }
   if (event.kind !== "root" && event.kind !== "steer" && event.kind !== "follow_up") {
     return fail("operation message kind is invalid");
   }
@@ -323,6 +347,8 @@ const validateMessage = (value: unknown): ProductOperationMessage => {
     kind: event.kind,
     clientMessageId: boundedIdentifier(event.clientMessageId, "client message identity"),
     state: event.state,
+    ...(event.contextMessage === true ? { contextMessage: true as const } : {}),
+    ...(event.deliveryTiming === undefined ? {} : { deliveryTiming: event.deliveryTiming as "realtime" | "turn" }),
     ...(inputFingerprint === undefined ? {} : { inputFingerprint }),
     ...(cancellationReason === undefined
       ? {}
@@ -497,7 +523,7 @@ const readPendingInboxMessage = (value: unknown): PendingInboxMessage => {
   return {
     id: boundedIdentifier(id.value, "DSH inbox message identity"),
     source: source.value as MessageSource | undefined,
-    operationSource: readOperationMessageSource(source.value),
+    operationCorrelation: readOperationMessageSource(source.value),
   };
 };
 
@@ -525,6 +551,8 @@ const terminalState = (operation: MutableOperation): ProductOperationState => {
 };
 
 const immutableOperation = (operation: MutableOperation): ProductOperationRecord => Object.freeze({
+  ...(operation.accepted.tokenAccounting === undefined ? {} : { tokenAccounting: operation.accepted.tokenAccounting }),
+  origin: operation.accepted.rootContextMessage === true ? "collaboration" : "user",
   clientOperationId: operation.accepted.clientOperationId,
   fingerprint: operation.accepted.fingerprint,
   productTurnId: operation.accepted.productTurnId,
@@ -537,6 +565,8 @@ const immutableOperation = (operation: MutableOperation): ProductOperationRecord
     state: message.state,
     delivered: message.delivered,
     ...(message.inputFingerprint === undefined ? {} : { inputFingerprint: message.inputFingerprint }),
+    ...(message.deliveryTiming === undefined ? {} : { deliveryTiming: message.deliveryTiming }),
+    ...(message.contextMessage === true ? { contextMessage: true as const } : {}),
     ...(message.dshTurn === undefined ? {} : { dshTurn: message.dshTurn }),
     ...(message.cancellationReason === undefined
       ? {}
@@ -564,6 +594,23 @@ const foldProductOperationsValue = (
   const inbox: Record<InboxTarget, PendingInboxMessage[]> = {
     "next-step": [],
     "next-turn": [],
+  };
+  const adoptPendingContext = (operationId: string, message: MutableMessage): void => {
+    if (message.contextMessage !== true) return;
+    for (const target of ["next-step", "next-turn"] as const) {
+      const position = inbox[target].findIndex((pending) => pending.id === message.messageId);
+      if (position < 0) continue;
+      const pending = inbox[target][position];
+      if (pending === undefined || pending.operationCorrelation !== undefined
+        || !ownsRootContextMessage(pending.source, pending.id)
+        || (message.deliveryTiming !== undefined && target !== (message.deliveryTiming === "realtime" ? "next-step" : "next-turn"))) {
+        return fail("pending context adoption changed its native source or delivery boundary");
+      }
+      inbox[target][position] = Object.freeze({ ...pending, operationCorrelation: Object.freeze({
+        clientOperationId: operationId, clientMessageId: message.clientMessageId, delivery: message.kind,
+      }) });
+      message.delivered = true;
+    }
   };
   const removedClaimCandidates = new Map<string, RemovedClaimCandidate>();
   const removedDiscardCandidates = new Map<string, PendingInboxMessage>();
@@ -600,6 +647,9 @@ const foldProductOperationsValue = (
           kind: "root",
           state: "queued",
           delivered: false,
+          ...(accepted.rootContextMessage === true ? { contextMessage: true as const } : {}),
+          ...(accepted.rootDeliveryTiming === undefined ? {} : { deliveryTiming: accepted.rootDeliveryTiming }),
+          ...(accepted.rootInputFingerprint === undefined ? {} : { inputFingerprint: accepted.rootInputFingerprint }),
         };
         operations.set(accepted.clientOperationId, {
           accepted,
@@ -611,6 +661,7 @@ const foldProductOperationsValue = (
           wakeAttempts: new Map(),
         });
         messageOwners.set(accepted.rootMessageId, accepted.clientOperationId);
+        adoptPendingContext(accepted.clientOperationId, root);
         break;
       }
       case "myagents/operation/message": {
@@ -629,11 +680,14 @@ const foldProductOperationsValue = (
             kind: messageEvent.kind,
             state: "queued",
             delivered: false,
+            ...(messageEvent.contextMessage === true ? { contextMessage: true as const } : {}),
+            ...(messageEvent.deliveryTiming === undefined ? {} : { deliveryTiming: messageEvent.deliveryTiming }),
             ...(messageEvent.inputFingerprint === undefined
               ? {}
               : { inputFingerprint: messageEvent.inputFingerprint }),
           });
           messageOwners.set(messageEvent.messageId, messageEvent.clientOperationId);
+          adoptPendingContext(messageEvent.clientOperationId, messageFor(operation, messageEvent.messageId, "context adoption"));
         } else {
           if (existing?.state !== "queued"
             || existing.kind !== messageEvent.kind
@@ -642,8 +696,8 @@ const foldProductOperationsValue = (
             return fail("operation cancellation does not match one pending owned message");
           }
           const discarded = removedDiscardCandidates.get(messageEvent.messageId);
-          if (discarded?.operationSource?.clientOperationId !== messageEvent.clientOperationId
-            || discarded.operationSource.clientMessageId !== messageEvent.clientMessageId) {
+          if (discarded?.operationCorrelation?.clientOperationId !== messageEvent.clientOperationId
+            || discarded.operationCorrelation.clientMessageId !== messageEvent.clientMessageId) {
             return fail("operation cancellation lacks its exact durable Inbox discard");
           }
           existing.state = "cancelled";
@@ -668,8 +722,8 @@ const foldProductOperationsValue = (
         }
         const removed = removedClaimCandidates.get(claim.messageId);
         if (removed?.dshTurn !== claim.dshTurn
-          || removed.operationSource?.clientOperationId !== claim.clientOperationId
-          || removed.operationSource.clientMessageId !== message.clientMessageId) {
+          || removed.operationCorrelation?.clientOperationId !== claim.clientOperationId
+          || removed.operationCorrelation.clientMessageId !== message.clientMessageId) {
           return fail("operation claim lacks its exact durable Inbox pure-delete");
         }
         const turnOwner = dshTurnOwners.get(claim.dshTurn);
@@ -857,8 +911,22 @@ const foldProductOperationsValue = (
         if (start > target.length || start + remove > target.length) {
           return fail("DSH inbox splice exceeds the projected queue");
         }
-        const insertedMessages = splice.inserted.map((insertedValue) =>
-          readPendingInboxMessage(insertedValue));
+        const insertedMessages = splice.inserted.map((insertedValue) => {
+          const pending = readPendingInboxMessage(insertedValue);
+          const ownerId = messageOwners.get(pending.id);
+          if (ownerId === undefined) return pending;
+          const owner = operationFor(operations, ownerId, "context Inbox insertion");
+          const message = messageFor(owner, pending.id, "context Inbox insertion");
+          if (message.contextMessage !== true) return pending;
+          if (pending.operationCorrelation !== undefined || !ownsRootContextMessage(pending.source, pending.id)) {
+            return fail("operation context message lacks its independent ProductWork source authority");
+          }
+          // Correlation is a derived index. Preserve the original message source
+          // and content in the sole DSH Inbox/transcript without relabeling either.
+          return Object.freeze({ ...pending, operationCorrelation: Object.freeze({
+            clientOperationId: ownerId, clientMessageId: message.clientMessageId, delivery: message.kind,
+          }) });
+        });
         const removedMessages = new Set(target.slice(start, start + remove));
         const remainingIds = new Set([
           ...inbox["next-step"],
@@ -872,7 +940,7 @@ const foldProductOperationsValue = (
         if (splice.outcome === undefined && removed.length > 0) {
           if (openTurn === undefined) return fail("DSH Inbox pure-delete occurred outside an open turn");
           for (const pending of removed) {
-            if (pending.operationSource === undefined
+            if (pending.operationCorrelation === undefined
               && ownsRootContextMessage(pending.source, pending.id)) {
               continue;
             }
@@ -883,7 +951,7 @@ const foldProductOperationsValue = (
           }
         } else if (splice.outcome === "canceled") {
           for (const pending of removed) {
-            if (pending.operationSource === undefined
+            if (pending.operationCorrelation === undefined
               && ownsRootContextMessage(pending.source, pending.id)) {
               continue;
             }
@@ -894,7 +962,7 @@ const foldProductOperationsValue = (
           }
         }
         for (const inserted of insertedMessages) {
-          const source = inserted.operationSource;
+          const source = inserted.operationCorrelation;
           if (source === undefined) continue;
           const ownerId = messageOwners.get(inserted.id);
           if (ownerId !== source.clientOperationId) {
@@ -905,7 +973,8 @@ const foldProductOperationsValue = (
           const message = messageFor(operation, inserted.id, "operation Inbox insertion");
           const expectedDelivery = message.kind === "follow_up" ? "follow_up" : message.kind;
           if (message.delivered || message.clientMessageId !== source.clientMessageId
-            || expectedDelivery !== source.delivery) {
+            || expectedDelivery !== source.delivery
+            || (message.deliveryTiming !== undefined && splice.target !== (message.deliveryTiming === "realtime" ? "next-step" : "next-turn"))) {
             return fail("operation Inbox insertion changed or duplicated message provenance");
           }
           message.delivered = true;

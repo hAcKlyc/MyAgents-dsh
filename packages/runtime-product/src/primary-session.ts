@@ -666,6 +666,7 @@ const admissionFingerprint = (
   runtimeSessionId,
   params.persistenceRef,
   modelProfileFingerprint(params.provider),
+  stableJson(params.collaboration ?? null),
   params.configRevision,
   params.extensionDigest,
   systemContext.sha256,
@@ -888,7 +889,8 @@ class PrimaryRootPublicationFence {
   }
 
   prepareChild(agent: Agent, parent: Agent): () => void {
-    if (this.#owned !== parent || this.context.agents.get(parent.id) !== parent
+    if (this.#owned === undefined || (this.#owned !== parent && this.#ownedChildren.get(parent.session) !== parent)
+      || this.context.agents.get(parent.id) !== parent
       || agent.session.header.origin !== "subagent"
       || agent.session.header.parentSession !== parent.id
       || agent.id === parent.id || this.#childPermits.has(agent.session)
@@ -962,6 +964,7 @@ export class PrimarySessionAdmission {
     private readonly providerAdmissionGuard?: PrimarySessionProviderAdmissionGuard,
     private readonly providerConfigurationGuard?: PrimarySessionProviderAdmissionGuard,
     private readonly providerAdmissionRollback?: PrimarySessionProviderAdmissionRollback,
+    private readonly afterReady?: (agent: Agent) => Promise<void>,
   ) {
     const candidate: unknown = backend;
     if (candidate === null || typeof candidate !== "object" || utilTypes.isProxy(candidate)
@@ -1144,10 +1147,12 @@ export class PrimarySessionAdmission {
     const retained = { ...record.params };
     Reflect.deleteProperty(retained, "toolPolicy");
     Reflect.deleteProperty(retained, "systemContext");
+    Reflect.deleteProperty(retained, "collaboration");
     const replacement = Object.freeze({
       ...retained,
       configRevision: params.revision,
       provider: params.provider,
+      ...(params.collaboration === undefined ? {} : { collaboration: params.collaboration }),
       permissionMode: params.permissionMode,
       ...(params.toolPolicy === undefined ? {} : { toolPolicy: params.toolPolicy }),
       interactionScenario: params.interactionScenario,
@@ -1308,6 +1313,7 @@ export class PrimarySessionAdmission {
         this.#binding = binding;
         this.#handle = result.state === "ready" ? result.handle : undefined;
         this.#state = result.state;
+        if (result.state === "ready") await this.#finishReadiness(result.handle.agent);
         return binding;
       })
       .catch(async (error: unknown) => {
@@ -1458,6 +1464,7 @@ export class PrimarySessionAdmission {
         promise: Promise.resolve(binding),
       });
       this.#state = "ready";
+      await this.#finishReadiness(result.handle.agent);
       return binding;
     } catch (error) {
       this.#state = "recovery_required";
@@ -1472,6 +1479,27 @@ export class PrimarySessionAdmission {
             { cause: rollbackError },
           );
         }
+      }
+      throw error;
+    }
+  }
+
+  async #finishReadiness(agent: Agent): Promise<void> {
+    if (this.afterReady === undefined) return;
+    try {
+      await this.#settlementDeadline.wait(this.afterReady(agent), "primary readiness admission");
+    } catch (error) {
+      const handle = this.#handle;
+      this.#state = "closing";
+      try {
+        if (handle?.agent === agent) {
+          await this.#settlementDeadline.wait(handle.dispose(), "failed primary readiness cleanup");
+          this.#handle = undefined;
+        }
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], "primary readiness and cleanup failed", { cause: cleanupError });
+      } finally {
+        this.#state = "recovery_required";
       }
       throw error;
     }
@@ -1770,6 +1798,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
 }
 
 export interface ProductSessionServiceConfig {
+  readonly afterReady?: (agent: Agent) => Promise<void>;
   readonly assertPublicationCurrent?: (
     agent: Agent,
     request: PrimarySessionBackendRequest,
@@ -1804,6 +1833,7 @@ export interface ProductSessionServiceConfig {
 export class ProductSessionService extends Service {
   static inject = ["agents", "sessions", "systemPrompt"];
   private readonly backendValue: PrimarySessionBackend;
+  private readonly afterReadyValue: ProductSessionServiceConfig["afterReady"];
   private readonly childPublicationAuthorityValue: object | undefined;
   private readonly compactSessionValue: ProductSessionServiceConfig["compactSession"];
   private readonly compactionPromises = new Map<string, Promise<MethodResult<"session/compact">>>();
@@ -1830,6 +1860,7 @@ export class ProductSessionService extends Service {
       config,
       [],
       [
+        "afterReady",
         "assertPublicationCurrent",
         "backend",
         "childPublicationAuthority",
@@ -1851,6 +1882,11 @@ export class ProductSessionService extends Service {
     this.childPublicationAuthorityValue = Object.hasOwn(normalized, "childPublicationAuthority")
       ? normalized.childPublicationAuthority as object
       : undefined;
+    const afterReady = normalized.afterReady as ProductSessionServiceConfig["afterReady"];
+    if (afterReady !== undefined && (typeof afterReady !== "function" || utilTypes.isProxy(afterReady))) {
+      throw new TypeError("primary readiness callback must be a non-proxy function");
+    }
+    this.afterReadyValue = afterReady;
     const compactSession = Object.hasOwn(normalized, "compactSession")
       ? normalized.compactSession as ProductSessionServiceConfig["compactSession"]
       : undefined;
@@ -1997,6 +2033,7 @@ export class ProductSessionService extends Service {
       providerAdmissionRollback === undefined
         ? undefined
         : (request) => Reflect.apply(providerAdmissionRollback, undefined, [request]),
+      this.afterReadyValue,
     );
     return workspace;
   }
@@ -2176,7 +2213,7 @@ export class ProductSessionService extends Service {
     if (owner !== this) return owner.compact(value, signal);
     const params = validateMethodParams("session/compact", value);
     const agent = this.requireAgent();
-    const known = foldProductCompactions(agent.session.events).get(params.clientOperationId);
+    const known = foldProductCompactions(agent.session.snapshotEvents()).get(params.clientOperationId);
     if (known !== undefined) {
       this.#validateCompactionReceipt(agent, known);
       return Promise.resolve(Object.freeze({ state: "already_known" as const }));
@@ -2583,7 +2620,7 @@ export class ProductSessionService extends Service {
             : "compaction returned no result after committing durable output",
         );
       }
-      const sourceEventCount = agent.session.events.length;
+      const sourceEventCount = agent.session.snapshotEvents().length;
       agent.session.append("myagents/session/compaction", {
         clientOperationId,
         outcome: "not_needed",
@@ -2669,7 +2706,7 @@ export class ProductSessionService extends Service {
     agent: Agent,
     clientOperationId: string,
   ): CompactionResult | "failed" | undefined {
-    const starts = agent.session.events.filter((event) => event.type === "compaction/start"
+    const starts = agent.session.snapshotEvents().filter((event) => event.type === "compaction/start"
       && String(event.data.sourceCommandId ?? "") === clientOperationId) as SessionEvent<"compaction/start">[];
     if (starts.length === 0) return undefined;
     if (starts.length !== 1) {
@@ -2681,9 +2718,9 @@ export class ProductSessionService extends Service {
       throw new ProtocolError("session_recovery_required", "manual compaction start is turn-scoped");
     }
     const compactionId = String(start.data.compactionId);
-    const summaries = agent.session.events.filter((event) => event.type === "compaction/summary"
+    const summaries = agent.session.snapshotEvents().filter((event) => event.type === "compaction/summary"
       && String(event.data.compactionId) === compactionId) as SessionEvent<"compaction/summary">[];
-    const ends = agent.session.events.filter((event) => event.type === "compaction/end"
+    const ends = agent.session.snapshotEvents().filter((event) => event.type === "compaction/end"
       && String(event.data.compactionId) === compactionId) as SessionEvent<"compaction/end">[];
     if (ends.length === 0) {
       throw new ProtocolError("session_recovery_required", "compaction operation has an unmatched durable start");
@@ -2707,7 +2744,7 @@ export class ProductSessionService extends Service {
     if (String(summary.data.sourceCommandId ?? "") !== clientOperationId) {
       throw new ProtocolError("session_recovery_required", "compaction summary identity is invalid");
     }
-    const replacement = agent.session.events.find((event) => event.seq === summary.seq + 1);
+    const replacement = agent.session.snapshotEvents().find((event) => event.seq === summary.seq + 1);
     const source = replacement?.type === "user/message" ? replacement.data.source : undefined;
     if (source === undefined || !isCompactCheckpointSource(source)
       || String((source as unknown as { compactionId?: unknown }).compactionId) !== compactionId) {
@@ -2731,10 +2768,10 @@ export class ProductSessionService extends Service {
     clientOperationId: string,
     result: CompactionResult,
   ): Promise<void> {
-    const existing = foldProductCompactions(agent.session.events).get(clientOperationId);
+    const existing = foldProductCompactions(agent.session.snapshotEvents()).get(clientOperationId);
     if (existing !== undefined) return;
     const sourceEventCount = result.startSeq;
-    const receiptSeq = agent.session.events.length;
+    const receiptSeq = agent.session.snapshotEvents().length;
     if (receiptSeq <= result.endSeq) {
       throw new ProtocolError("session_recovery_required", "compaction receipt would precede its durable end");
     }
@@ -2754,7 +2791,7 @@ export class ProductSessionService extends Service {
     if (!await this.ctx.sessions.flush(agent.session)) {
       throw new ProtocolError("session_recovery_required", "compaction receipt was not durable");
     }
-    const durable = foldProductCompactions(agent.session.events).get(clientOperationId);
+    const durable = foldProductCompactions(agent.session.snapshotEvents()).get(clientOperationId);
     if (durable?.resultEventCount !== receiptSeq + 1) {
       throw new ProtocolError("session_recovery_required", "compaction receipt did not become durable");
     }

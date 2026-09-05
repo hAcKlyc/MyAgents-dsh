@@ -25,6 +25,7 @@ This file is the canonical documentation-governance guide referenced by `AGENTS.
 | Durable architectural decisions | [adr/](./adr/) |
 | Canonical generated/acceptance contracts | [contracts/](./contracts/) |
 | Pinned DSH source, public seams and patch series | [dsh/](./dsh/) |
+| Accepted DSH 0.1.2 upgrade scope and Host/Runtime capability decisions | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_2_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_2_upgrade.md); planned behavior, not installed-version or artifact evidence |
 | Source migration provenance | [migration/](./migration/) |
 | Non-normative comparative research | [research/](./research/) |
 

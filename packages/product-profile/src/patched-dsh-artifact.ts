@@ -19,9 +19,13 @@ const expectedRuntimePackageNames = Object.freeze([
   "@deepseek-ai/dsh-llm-deepseek",
   "@deepseek-ai/dsh-llm-pi-ai",
   "@deepseek-ai/dsh-session",
+  "@deepseek-ai/dsh-session-query",
+  "@deepseek-ai/dsh-session-query-sqlite",
+  "@deepseek-ai/dsh-subagent",
   "@deepseek-ai/dsh-system-prompt",
   "@deepseek-ai/dsh-token-meter",
   "@deepseek-ai/dsh-tools",
+  "@deepseek-ai/dsh-util-values",
 ] as const);
 
 export type AcceptedDshRuntimePackageName = typeof expectedRuntimePackageNames[number];
@@ -32,7 +36,7 @@ export interface AcceptedPatchedDshArtifactAuthority {
   readonly manifestSha256: string;
   readonly sha256SumsSha256: string;
   readonly consumerLockSha256: string;
-  readonly packageCount: 58;
+  readonly packageCount: 66;
   readonly runtimePackages: Readonly<Record<AcceptedDshRuntimePackageName, string>>;
   readonly requiredPatchedSeams: readonly [
     "agent.wakePending",
@@ -45,6 +49,9 @@ export interface AcceptedPatchedDshArtifactAuthority {
     "subagents.strictExternalSettlementDurability",
     "subagents.drainContinuableChildren",
     "subagents.resumeContinuable",
+    "subagents.deliverContinuable",
+    "subagents.independentExternalSettlement",
+    "subagents.withContinuableAncestors",
     "llm-deepseek.streamToolIdentity",
     "tokenMeter.estimateRequest",
     "compaction.capacitySafeCheckpoint",
@@ -85,9 +92,9 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "runtimePackages",
     "requiredPatchedSeams",
   ], "accepted patched DSH artifact authority");
-  if (authority.formatVersion !== 1 || authority.packageCount !== 58
+  if (authority.formatVersion !== 1 || authority.packageCount !== 66
     || typeof authority.artifactVersion !== "string"
-    || !/^0\.1\.1-rc\.2\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
+    || !/^0\.1\.2-rc\.1\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
     throw new TypeError("accepted patched DSH artifact identity is invalid");
   }
   const runtimeValue = authority.runtimePackages;
@@ -97,7 +104,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
   const runtimePackages = runtimeValue as Record<string, unknown>;
   exactKeys(runtimePackages, expectedRuntimePackageNames, "accepted patched DSH runtime package authority");
   for (const name of expectedRuntimePackageNames) {
-    const expectedVersion = name === "@deepseek-ai/cordis" ? "4.0.1" : authority.artifactVersion;
+    const expectedVersion = name === "@deepseek-ai/cordis" ? "4.0.2" : authority.artifactVersion;
     if (runtimePackages[name] !== expectedVersion) {
       throw new TypeError(`${name} differs from the accepted patched DSH artifact version`);
     }
@@ -114,6 +121,9 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "subagents.strictExternalSettlementDurability",
     "subagents.drainContinuableChildren",
     "subagents.resumeContinuable",
+    "subagents.deliverContinuable",
+    "subagents.independentExternalSettlement",
+    "subagents.withContinuableAncestors",
     "llm-deepseek.streamToolIdentity",
     "tokenMeter.estimateRequest",
     "compaction.capacitySafeCheckpoint",
@@ -136,7 +146,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     manifestSha256: exactSha256(authority.manifestSha256, "accepted patched DSH manifest"),
     sha256SumsSha256: exactSha256(authority.sha256SumsSha256, "accepted patched DSH SHA256SUMS"),
     consumerLockSha256: exactSha256(authority.consumerLockSha256, "accepted patched DSH consumer lock"),
-    packageCount: 58,
+    packageCount: 66,
     runtimePackages: frozenPackages,
     requiredPatchedSeams: Object.freeze(expectedSeams) as AcceptedPatchedDshArtifactAuthority["requiredPatchedSeams"],
   });
@@ -176,9 +186,9 @@ const readInstalledPackageVersion = (packageName: string): string => {
   throw new Error(`cannot locate the public package authority for ${packageName}`);
 };
 
-export const assertAcceptedDshRuntimeGraph = (): void => {
+export const assertAcceptedDshRuntimeGraph = (readVersion: (packageName: string) => string = readInstalledPackageVersion): void => {
   for (const packageName of ACCEPTED_DSH_RUNTIME_PACKAGE_NAMES) {
-    const actual = readInstalledPackageVersion(packageName);
+    const actual = readVersion(packageName);
     const expected = ACCEPTED_PATCHED_DSH_ARTIFACT.runtimePackages[packageName];
     if (actual !== expected) {
       throw new Error(`${packageName} resolved to ${actual}; accepted patched runtime requires ${expected}`);

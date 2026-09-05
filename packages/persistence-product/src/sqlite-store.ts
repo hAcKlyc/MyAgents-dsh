@@ -18,24 +18,21 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { isProxy } from "node:util/types";
 
-import {
-  snapshotJsonValue,
-  type JsonValue,
-  type SessionEvent,
-  type SessionHeader,
-  type SessionId,
-} from "@deepseek-ai/dsh-session";
+import { SessionLogOffset, type SessionEvent, type SessionHeader, type SessionId } from "@deepseek-ai/dsh-session";
+import { snapshotJsonValue, type JsonValue } from "@deepseek-ai/dsh-util-values";
 import {
   SessionPersistenceRevision,
   type PersistenceBackend,
   type SessionPersistenceRevision as PersistenceRevision,
   type SessionPersistenceSnapshot,
+  type SessionStorageMetadata,
   type StoredPrefix,
   type StoredSuffix,
 } from "@deepseek-ai/dsh-session-persistence";
 import type { SqliteDurabilityPlan } from "@myagents-dsh/product-profile";
 import { canonicalSessionReadData } from "@myagents-dsh/protocol";
 import type {
+  CheckpointDirectoryPlan,
   ProductCheckpointPhase,
   ProductCheckpointPrepareInput,
   ProductCheckpointRecord,
@@ -43,6 +40,8 @@ import type {
   ProductCheckpointRewindFilePhase,
   ProductCheckpointStore,
 } from "@myagents-dsh/checkpoint";
+
+import { validateCheckpointDirectoryPlan } from "@myagents-dsh/checkpoint";
 
 import type {
   ProductDeletePhase,
@@ -71,6 +70,7 @@ import {
   isProductKnownSessionEventType,
 } from "./known-events.js";
 import {
+  PRODUCT_CHECKPOINT_DIRECTORIES_MIGRATION_SQL,
   PRODUCT_PERSISTENCE_APPLICATION_ID,
   PRODUCT_CHECKPOINT_SCHEMA_SQL,
   PRODUCT_DELETE_SCHEMA_SQL,
@@ -78,6 +78,7 @@ import {
   PRODUCT_FORK_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_SQL,
+  PRODUCT_INHERITED_PREFIX_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V2_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_V3_SQL,
@@ -118,6 +119,7 @@ interface ActiveSessionRow {
   readonly activeGenerationId: string;
   readonly eventCount: number;
   readonly generationRevision: number;
+  readonly inheritedEventCount: number;
   readonly headHash: string;
   readonly headerJson: string;
   readonly sessionId: string;
@@ -211,6 +213,7 @@ interface ForkCheckpointCopy {
 }
 
 interface ForkTargetStageInput {
+  readonly inheritedEventCount: number;
   readonly checkpoints: readonly ForkCheckpointCopy[];
   readonly createdAt: number;
   readonly events: readonly SessionEvent[];
@@ -294,6 +297,7 @@ const EXPECTED_COLUMNS = Object.freeze({
     "last_event_seq",
     "prepared_at",
     "settled_at",
+    "directory_plan_json",
   ],
   delete_journals: [
     "token", "client_mutation_id", "request_fingerprint", "session_id",
@@ -369,6 +373,7 @@ const EXPECTED_COLUMNS = Object.freeze({
     "event_count",
     "head_hash",
     "created_at",
+    "inherited_event_count",
   ],
   stable_boundaries: [
     "boundary_id",
@@ -582,6 +587,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       const events = this.#readAndValidateEvents(row);
       return {
         meta: this.#decodeHeader(row),
+        inheritedEventCount: SessionLogOffset(row.inheritedEventCount),
         events,
         revision: this.#revision(row),
       };
@@ -606,6 +612,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       signal?.throwIfAborted();
       return {
         meta: this.#decodeHeader(row),
+        inheritedEventCount: SessionLogOffset(row.inheritedEventCount),
         events,
       };
     });
@@ -732,7 +739,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
                s.head_hash,
                g.state AS generation_state,
                g.revision AS generation_revision,
-               g.header_json
+               g.header_json, g.inherited_event_count
           FROM sessions s
           LEFT JOIN session_generations g
             ON g.session_id = s.id AND g.generation_id = s.active_generation_id
@@ -890,8 +897,8 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
             checkpoint_id, session_id, generation_id, product_turn_id,
             client_operation_id, dsh_turn, call_id, path, tool, prior_sha256,
             expected_sha256, actual_sha256, state, policy_revision,
-            last_event_phase, last_event_seq, prepared_at, settled_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'prepared', ?, NULL, NULL, ?, NULL)
+            last_event_phase, last_event_seq, prepared_at, settled_at, directory_plan_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'prepared', ?, NULL, NULL, ?, NULL, ?)
         `).run(
           input.checkpointId,
           input.sessionId,
@@ -906,6 +913,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
           input.expectedSha256,
           input.policyRevision,
           preparedAt,
+          input.directoryPlan === undefined ? null : JSON.stringify(validateCheckpointDirectoryPlan(input.directoryPlan)),
         );
         database.exec("COMMIT");
       } catch (error) {
@@ -1017,6 +1025,53 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
              OR c.last_event_phase IS NULL OR c.last_event_phase <> c.state)
          ORDER BY c.prepared_at, c.checkpoint_id
       `).all(sessionId) as unknown[];
+      return Object.freeze(rows.map((row) => this.#decodeCheckpoint(row)));
+    });
+  }
+
+  updateDirectoryPlan(
+    checkpointId: string,
+    expected: CheckpointDirectoryPlan,
+    next: CheckpointDirectoryPlan,
+    signal?: AbortSignal,
+  ): Promise<ProductCheckpointRecord> {
+    const before = validateCheckpointDirectoryPlan(expected);
+    const after = validateCheckpointDirectoryPlan(next);
+    if (before.anchor.path !== after.anchor.path || before.entries.length !== after.entries.length
+      || before.entries.some((entry, index) => entry.path !== after.entries[index]?.path)) {
+      return Promise.reject(new TypeError("checkpoint directory intent cannot change paths"));
+    }
+    const known = this.#readCheckpoint(checkpointId);
+    if (known === undefined) return Promise.reject(new Error("checkpoint directory owner is unavailable"));
+    return this.#locks.run(known.sessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      this.#assertSchema();
+      const changed = this.#requireDatabase().prepare(
+        "UPDATE checkpoint_records SET directory_plan_json = ? WHERE checkpoint_id = ? AND directory_plan_json = ?",
+      ).run(JSON.stringify(after), checkpointId, JSON.stringify(before));
+      const result = this.#readCheckpoint(checkpointId);
+      if (result === undefined || (changed.changes !== 1 && JSON.stringify(result.directoryPlan) !== JSON.stringify(after))) {
+        throw new Error("checkpoint directory journal changed concurrently");
+      }
+      return result;
+    });
+  }
+
+  listRewindDirectoryPlans(token: string, signal?: AbortSignal): Promise<readonly ProductCheckpointRecord[]> {
+    if (!IDENTIFIER_PATTERN.test(token)) return Promise.reject(new TypeError("rewind token is invalid"));
+    const known = this.#readRewind(token);
+    if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+      signal?.throwIfAborted();
+      this.#assertSchema();
+      const rows = this.#requireDatabase().prepare(`
+        SELECT c.* FROM checkpoint_records AS c
+          JOIN mutation_journals AS m ON m.session_id = c.session_id AND m.source_generation_id = c.generation_id
+          JOIN stable_boundaries AS b ON b.boundary_id = m.boundary_id
+         WHERE m.token = ? AND c.dsh_turn > CASE WHEN b.policy_version = 'genesis-boundary-v1' THEN 0 ELSE b.turn END
+           AND c.state = 'settled' AND c.directory_plan_json IS NOT NULL
+         ORDER BY length(c.path), c.path, c.prepared_at, c.checkpoint_id
+      `).all(token) as unknown[];
       return Object.freeze(rows.map((row) => this.#decodeCheckpoint(row)));
     });
   }
@@ -1805,8 +1860,8 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         database.prepare(`
           INSERT INTO session_generations(
             session_id, generation_id, header_json, origin, state,
-            revision, event_count, head_hash, created_at
-          ) VALUES (?, ?, ?, 'rewind', 'staging', ?, ?, ?, ?)
+            revision, event_count, head_hash, created_at, inherited_event_count
+          ) VALUES (?, ?, ?, 'rewind', 'staging', ?, ?, ?, ?, ?)
         `).run(
           active.sessionId,
           targetGenerationId,
@@ -1815,6 +1870,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
           targetEventCount,
           targetHeadHash,
           committedAt,
+          Math.min(active.inheritedEventCount, boundary.seqExclusive),
         );
         database.prepare(`
           INSERT INTO session_events(session_id, generation_id, seq, type, time, envelope_json, chain_hash)
@@ -2153,25 +2209,27 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
   }
 
   appendBatch(
-    meta: SessionHeader,
+    storage: SessionStorageMetadata,
     events: readonly SessionEvent[],
     isMaterialized: boolean,
   ): Promise<void> {
+    const { meta, inheritedEventCount } = storage;
     return this.#locks.run(meta.id, undefined, () => {
-      this.#appendBatch(meta, events, isMaterialized);
+      this.#appendBatch(meta, events, isMaterialized, inheritedEventCount);
     });
   }
 
   commitRepair(
-    meta: SessionHeader,
+    storage: SessionStorageMetadata,
     tornMarker: unknown,
     closers: readonly SessionEvent[],
   ): Promise<void> {
+    const { meta, inheritedEventCount } = storage;
     return this.#locks.run(meta.id, undefined, () => {
       if (tornMarker !== undefined) {
         throw new Error(`session ${meta.id} product SQLite store cannot contain a torn physical row`);
       }
-      this.#appendBatch(meta, closers, true);
+      this.#appendBatch(meta, closers, true, inheritedEventCount);
     });
   }
 
@@ -2477,6 +2535,40 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         throw new Error("product SQLite persistence v6 purge schema migration broke foreign keys");
       }
     }
+    if (version === 7 || version === 6) {
+      this.#assertMigrationMetadata(7);
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.exec(PRODUCT_INHERITED_PREFIX_SCHEMA_SQL);
+        const rows = database.prepare("SELECT session_id, generation_id, header_json, event_count FROM session_generations").all();
+        const update = database.prepare("UPDATE session_generations SET inherited_event_count = ? WHERE session_id = ? AND generation_id = ?");
+        for (const value of rows) {
+          const row = asRecord(value, "legacy storage metadata");
+          const header = JSON.parse(rowString(row, "header_json", "legacy storage metadata")) as Record<string, unknown>;
+          const cut = header.seedLength ?? 0;
+          if (!Number.isSafeInteger(cut) || Number(cut) < 0 || Number(cut) > Number(row.event_count)) {
+            throw new Error("legacy Session inherited prefix is invalid");
+          }
+          update.run(Number(cut), rowString(row, "session_id", "legacy storage metadata"), rowString(row, "generation_id", "legacy storage metadata"));
+        }
+        database.prepare("UPDATE store_meta SET schema_version = 8 WHERE singleton = 1").run();
+        database.exec("PRAGMA user_version = 8; COMMIT");
+        version = 8;
+      } catch (error) {
+        this.#rollback(error, "v7 inherited Session prefix migration");
+      }
+    }
+    if (version === 8) {
+      this.#assertMigrationMetadata(8);
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.exec(PRODUCT_CHECKPOINT_DIRECTORIES_MIGRATION_SQL);
+        database.prepare("UPDATE store_meta SET schema_version = 9 WHERE singleton = 1").run();
+        database.exec("PRAGMA user_version = 9; COMMIT");
+      } catch (error) {
+        this.#rollback(error, "v8 checkpoint directory migration");
+      }
+    }
   }
 
   #assertMigrationMetadata(version: number): void {
@@ -2507,13 +2599,13 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     });
     if (JSON.stringify(schemaRows) !== JSON.stringify(EXPECTED_SCHEMA_ROWS)
       || JSON.stringify(schemaRows.map(({ name }) => name)) !== JSON.stringify(PRODUCT_PERSISTENCE_TABLES)) {
-      throw new Error("product SQLite persistence table authority differs from schema v6");
+      throw new Error("product SQLite persistence table authority differs from schema v9");
     }
     for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
       const columns = (database.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all() as unknown[])
         .map((row) => rowString(asRecord(row, `${table} column`), "name", `${table} column`));
       if (JSON.stringify(columns) !== JSON.stringify(expected)) {
-        throw new Error(`product SQLite persistence ${table} columns differ from schema v5`);
+        throw new Error(`product SQLite persistence ${table} columns differ from schema v9`);
       }
     }
     const meta = asRecord(database.prepare(
@@ -2538,7 +2630,9 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     }
   }
 
-  #appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): void {
+  #appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean, inheritedEventCount: SessionLogOffset): void {
+    SessionLogOffset(inheritedEventCount);
+    if (!meta.isSeeded && inheritedEventCount !== 0) throw new Error("unseeded Session has inherited events");
     if (events.length === 0) return;
     const database = this.#requireDatabase();
     this.#assertSchema();
@@ -2566,8 +2660,8 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
           "INSERT INTO sessions(id, active_generation_id, state, revision, event_count, head_hash, created_at) VALUES (?, ?, 'active', 0, 0, ?, ?)",
         ).run(meta.id, generationId, EMPTY_HEAD_HASH, createdAt);
         database.prepare(
-          "INSERT INTO session_generations(session_id, generation_id, header_json, origin, state, revision, event_count, head_hash, created_at) VALUES (?, ?, ?, 'create', 'active', 0, 0, ?, ?)",
-        ).run(meta.id, generationId, headerJson, EMPTY_HEAD_HASH, createdAt);
+          "INSERT INTO session_generations(session_id, generation_id, header_json, origin, state, revision, event_count, head_hash, created_at, inherited_event_count) VALUES (?, ?, ?, 'create', 'active', 0, 0, ?, ?, ?)",
+        ).run(meta.id, generationId, headerJson, EMPTY_HEAD_HASH, createdAt, inheritedEventCount);
         row = this.#readActiveSession(meta.id, false);
       } else if (row === undefined) {
         throw new Error(`session ${meta.id} has no active storage generation`);
@@ -2581,7 +2675,10 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         `session ${meta.id} header`,
         PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes,
       );
-      if (row.headerJson !== headerJson) throw new Error(`session ${meta.id} immutable header changed`);
+      if (snapshotCanonicalJson(this.#decodeHeader(row), "stored Session header") !== headerJson
+        || row.inheritedEventCount !== inheritedEventCount) {
+        throw new Error(`session ${meta.id} immutable storage metadata changed`);
+      }
       let expectedSeq = row.eventCount;
       let headHash = row.headHash;
       const insert = database.prepare(
@@ -2626,7 +2723,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
              s.event_count,
              s.head_hash,
              g.revision AS generation_revision,
-             g.header_json
+             g.header_json, g.inherited_event_count
         FROM sessions s
         JOIN session_generations g
           ON g.session_id = s.id AND g.generation_id = s.active_generation_id
@@ -3433,7 +3530,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       createdAt: record.createdAt,
       id: record.targetRuntimeSessionId as SessionId,
       parentSession: source.sessionId as SessionId,
-      seedLength: boundary.seqExclusive,
+      isSeeded: true,
     }) as SessionHeader;
     const receiptEvent = createProductForkReceiptEvent(boundary.seqExclusive, record.createdAt, {
       clientMutationId: record.clientMutationId,
@@ -3482,6 +3579,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     });
     const targetStore = await this.#forkTargetStore(record.targetRuntimeHome);
     await targetStore.#stageForkTarget(Object.freeze({
+      inheritedEventCount: boundary.seqExclusive,
       checkpoints: Object.freeze(checkpoints),
       createdAt: record.createdAt,
       events,
@@ -3498,7 +3596,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       const database = this.#requireDatabase();
       const existing = database.prepare(`
         SELECT s.state AS session_state, s.active_generation_id, s.event_count, s.head_hash,
-               g.state AS generation_state, g.header_json
+               g.state AS generation_state, g.header_json, g.inherited_event_count
           FROM sessions AS s JOIN session_generations AS g
             ON g.session_id = s.id AND g.generation_id = s.active_generation_id
          WHERE s.id = ?
@@ -3507,6 +3605,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         const row = asRecord(existing, "fork target staging");
         if (row.session_state !== "tombstoned" || row.generation_state !== "staging"
           || row.active_generation_id !== stage.generationId
+          || row.inherited_event_count !== stage.inheritedEventCount
           || row.event_count !== stage.events.length || row.head_hash !== stage.headHash
           || row.header_json !== snapshotCanonicalJson(
             stage.header,
@@ -3543,9 +3642,9 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         database.prepare(`
           INSERT INTO session_generations(
             session_id, generation_id, header_json, origin, state,
-            revision, event_count, head_hash, created_at
-          ) VALUES (?, ?, ?, 'fork', 'staging', 0, ?, ?, ?)
-        `).run(stage.sessionId, stage.generationId, headerJson, stage.events.length, stage.headHash, stage.createdAt);
+            revision, event_count, head_hash, created_at, inherited_event_count
+          ) VALUES (?, ?, ?, 'fork', 'staging', 0, ?, ?, ?, ?)
+        `).run(stage.sessionId, stage.generationId, headerJson, stage.events.length, stage.headHash, stage.createdAt, stage.inheritedEventCount);
         const insertEvent = database.prepare(`
           INSERT INTO session_events(session_id, generation_id, seq, type, time, envelope_json, chain_hash)
           VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -3582,8 +3681,8 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
             checkpoint_id, session_id, generation_id, product_turn_id,
             client_operation_id, dsh_turn, call_id, path, tool, prior_sha256,
             expected_sha256, actual_sha256, state, policy_revision,
-            last_event_phase, last_event_seq, prepared_at, settled_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'settled', ?, 'settled', ?, ?, ?)
+            last_event_phase, last_event_seq, prepared_at, settled_at, directory_plan_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'settled', ?, 'settled', ?, ?, ?, ?)
         `);
         for (const copy of stage.checkpoints) {
           const checkpoint = copy.record;
@@ -3598,6 +3697,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
             checkpoint.expectedSha256, checkpoint.actualSha256 ?? checkpoint.expectedSha256,
             checkpoint.policyRevision, checkpoint.lastEventSeq ?? 0,
             checkpoint.preparedAt, checkpoint.settledAt ?? stage.createdAt,
+            checkpoint.directoryPlan === undefined ? null : JSON.stringify(checkpoint.directoryPlan),
           );
         }
         database.exec("COMMIT");
@@ -3734,7 +3834,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
              s.event_count,
              s.head_hash,
              g.revision AS generation_revision,
-             g.header_json
+             g.header_json, g.inherited_event_count
         FROM sessions s
         JOIN session_generations g
           ON g.session_id = s.id AND g.generation_id = s.active_generation_id
@@ -3751,12 +3851,14 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       generationRevision: rowInteger(row, "generation_revision", "active Session"),
       headHash: rowString(row, "head_hash", "active Session"),
       headerJson: rowString(row, "header_json", "active Session"),
+      inheritedEventCount: rowInteger(row, "inherited_event_count", "active Session"),
       sessionId: rowString(row, "session_id", "active Session"),
       sessionRevision: rowInteger(row, "session_revision", "active Session"),
     };
     if (decoded.activeGenerationId.length === 0 || !HASH_PATTERN.test(decoded.headHash)
       || decoded.sessionRevision !== decoded.generationRevision
       || decoded.eventCount > PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents
+      || decoded.inheritedEventCount > decoded.eventCount
       || Buffer.byteLength(decoded.headerJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes) {
       throw new Error("active Session generation identity is inconsistent");
     }
@@ -3909,7 +4011,19 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       || (snapshot as Record<string, unknown>).id !== row.sessionId) {
       throw new Error(`session ${row.sessionId} header is incompatible with its locator`);
     }
-    return snapshot as unknown as SessionHeader;
+    const record = snapshot as Record<string, unknown>;
+    const { seedLength: legacyCut, ...header } = record;
+    if (legacyCut !== undefined && (!Number.isSafeInteger(legacyCut) || Number(legacyCut) < 0)) {
+      throw new Error(`session ${row.sessionId} legacy inherited prefix is invalid`);
+    }
+    if (header.isSeeded !== undefined && typeof header.isSeeded !== "boolean") {
+      throw new Error(`session ${row.sessionId} seeded marker is invalid`);
+    }
+    const isSeeded = header.isSeeded ?? (Number(legacyCut ?? 0) > 0 || row.inheritedEventCount > 0);
+    if (!isSeeded && row.inheritedEventCount !== 0) {
+      throw new Error(`session ${row.sessionId} inherited prefix disagrees with its header`);
+    }
+    return { ...header, isSeeded } as unknown as SessionHeader;
   }
 
   #revision(row: ActiveSessionRow): PersistenceRevision {
@@ -3943,7 +4057,9 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       || !HASH_PATTERN.test(expectedSha256)) {
       throw new Error("checkpoint record state or digest is invalid");
     }
+    const directoryJson = rowNullableString(row, "directory_plan_json", "checkpoint record");
     return Object.freeze({
+      ...(directoryJson === null ? {} : { directoryPlan: validateCheckpointDirectoryPlan(JSON.parse(directoryJson) as unknown) }),
       ...(actualSha256 === null ? {} : { actualSha256 }),
       callId: rowString(row, "call_id", "checkpoint record"),
       checkpointId: rowString(row, "checkpoint_id", "checkpoint record"),

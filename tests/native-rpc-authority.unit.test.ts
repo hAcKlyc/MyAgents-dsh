@@ -9,7 +9,7 @@ import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 
 describe("native RPC engine authority", () => {
-  it("refuses a bare Context backed by the repository's unpatched rc6 graph", async () => {
+  it("refuses a bare Context without a composition-issued lifecycle authority", async () => {
     const input = new PassThrough();
     const output = new PassThrough();
     const root = new Context();
@@ -31,7 +31,7 @@ describe("native RPC engine authority", () => {
         output,
         runtimeGeneration: "unverified-generation",
         platformTarget: "darwin-arm64",
-      })).rejects.toThrow("accepted patched runtime requires");
+      })).rejects.toThrow(/accepted patched runtime requires|native RPC requires a direct-root RuntimeProcessLifecycle authority/u);
     } finally {
       await root.fiber.dispose();
       input.destroy();

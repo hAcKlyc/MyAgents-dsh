@@ -88,6 +88,8 @@ The target architecture makes MyAgents and the standalone SDK two Hosts of the s
 
 The Reference Web Host is a third Host of the same contract. It may expose an ephemeral loopback-only browser carrier, but the carrier terminates in the Host process: the Runtime remains an unchanged stdio child with one primary root Session. Multiple browser-visible Sessions map to separate Runtime processes while active and to Host-owned routing metadata while cold.
 
+The MyAgents Host separates shared extension declarations from Runtime-specific Skill admission; Runtime retains execution authority and rejects unsupported execution-context metadata per component. This source behavior and the remaining UI/generation work are recorded in [Declarative components](./tech_docs/boundaries/declarative-components.md).
+
 ## 4. Layer model
 
 The detailed current implementation is divided by authority and lifecycle domain. Domain indexes are navigation; the linked module guides own current subsystem explanation.
@@ -129,6 +131,7 @@ The native protocol is bidirectional:
 Product coordination is implemented inside Cordis as DSH-native services:
 
 - `SdkOperationService`: prompt admission, idempotency, turn correlation, terminal settlement, and operation lookup.
+- Identified input receipts remain owned by that service after terminal settlement; exact retries read durable consumption/cancellation without creating another turn. Per-message claims and the distinct operation turn set are described in [Operations/messages/turns](./tech_docs/runtime/operations-messages-and-turns.md).
 - `ProductComponentService`: desired/effective component staging and atomic promotion.
 - `HostPortService` definitions and RPC-backed providers.
 - `ProductSessionService`: generation-wide canonical workspace binding, one-primary-Session admission and exact DSH `AgentHandle` ownership, native RPC session projection, read cursors, and mutation coordination. The official composition installs its exact-object permit through the pinned public `SessionStore` and `AgentRegistry` pre-publication guards; DSH remains the Session/Agent registry and lifecycle authority.
@@ -151,11 +154,11 @@ MyAgents-owned plugins implement compatibility and product policy through DSH se
 - safe WebFetch and model/provider policy;
 - Host-backed attachment and declarative extension providers.
 
-TaskGraph is one of those product-owned plugins. Its canonical Task metadata is a bounded flat record of JSON scalar values; nested objects, arrays, and recursive schema references are not part of the model-visible contract. That portable schema is identical for Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses and is not rewritten per Provider. Root and child Agents share this one root-Session TaskGraph; mutation events record their exact Product tool origin. The exact rule and maintenance gate live in [Agent tools and policy](./tech_docs/execution/tool-runtime-and-policy.md).
+TaskGraph is one of those product-owned plugins. Its canonical Task metadata is a bounded flat record of JSON scalar values; nested objects, arrays, and recursive schema references are not part of the model-visible contract. That portable schema is identical for Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses and is not rewritten per Provider. Root and child Agents share this one root-Session TaskGraph; mutation events record their exact Product tool origin and, for new events, the registered actor. TaskUpdate atomically fills an omitted owner only for an unassigned task; transfer remains controlled. The exact rule and maintenance gate live in [Agent tools and policy](./tech_docs/execution/tool-runtime-and-policy.md).
 
 The official model plane keeps two deliberately different adapter owners behind the one DSH `ctx.llm` service. `dsh-llm-deepseek` exclusively owns `deepseek-official` and its DeepSeek-native Files/search behavior. The accepted patched `dsh-llm-pi-ai@0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a` and separately pinned/patched pi-ai `0.82.1` are mounted dormant and own only Host-declared Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes. The adapter patches preserve generic Provider-owned content through the one DSH conversation; they add no second transport or loop. The required patched `dsh-authorization` peer is packaged explicitly but no authorization service/login flow is mounted or advertised. A root-only in-memory `HostSettingsProvider` atomically replaces its non-secret route document during Session/config admission; it is not a user configuration store. Request middleware holds one reverse-port credential scope across adapter iterator creation, each read and cleanup, and sanitizes both thrown failures and in-stream failure terminals before persistence. Failed admission restores the prior settings and credential binding.
 
-Canonical Web tools remain in the same `ctx.tools` pipeline. `deepseek-official` uses the native DeepSeek web plane; other ordinary API routes use the versioned Host canonical-web capability when it is available, dispatching through the existing `host/tool/execute` reverse port after normal schema, policy, permission, Hook and operation-authority checks. Web availability is route-dependent and never gates base model admission. The Host selects Search by API family: Anthropic Messages uses the Claude Code-compatible nested Messages server tool, while standalone Search products require an explicit backend. Provider-owned activity returned inside a model request remains distinct durable assistant content and projects as `provider_tool`; it does not claim canonical permission/Hooks or drive root loading/terminal state.
+Canonical Web tools remain in the same `ctx.tools` pipeline. `deepseek-official` retains its native model adapter; both Web tools use the versioned Host canonical-web capability whenever available, including fixed-endpoint DeepSeek server search and utility requests, so the Host owns the effective Web proxy policy. Without that capability, the explicit standalone direct profile retains the Runtime DeepSeek Web implementation. Other ordinary API routes also delegate Web through that capability. Reverse requests use the existing `host/tool/execute` port after normal schema, policy, permission, Hook and operation-authority checks, retaining the root Session binding for child calls. Web availability is route-dependent and never gates base model admission. The Host selects Search by API family: Anthropic Messages uses the nested Messages server tool, while standalone Search products require an explicit backend. Successful empty searches remain valid; compatible correlated server results are normalized, partial or missing structure retains bounded service text with explicit uncertainty, and explicit service errors remain failures. Exact transport and result ownership is maintained in [Web/network](./tech_docs/boundaries/web-and-network.md). Provider-owned activity, including correlated generic server results preserved by the pi-ai seam, remains distinct durable assistant content and projects as `provider_tool`; it does not claim canonical permission/Hooks or drive root loading/terminal state.
 
 ### 4.5 DSH foundation
 
@@ -327,6 +330,11 @@ Operation birth freezes the effective model profile, optional Host-authoritative
 
 DSH append-only Session events are the single durable model-conversation source. MyAgents product events declaration-merge into the same Session event vocabulary; they do not create another transcript database. The persistence profile must also register the frozen product event vocabulary as known required events. The pinned stock coordinator's build-generated event set does not include downstream declaration merges, so the official profile requires a minimal known-event predicate seam or an equivalent public-contract coordinator; recovery-critical events are never marked ignorable to bypass validation.
 
+The DSH 0.1.2 source candidate migrates storage metadata to SQLite schema 8 and composes
+the official process-local SessionQuery index over that same authority. Legacy header/event
+bytes remain intact. See [Sessions, persistence and recovery](./tech_docs/state/sessions-persistence-and-recovery.md)
+for inherited-prefix migration and query ownership; new artifact acceptance remains in UPG.
+
 The native RPC `session/read` projection exposes versioned, engine-neutral durable events or bounded chunks. Protocol `2.1.0` additionally exposes one opaque, postcondition-bound genesis prefix before the first product operation, so an admitted first turn can use the same transactional rewind owner as later turns. It does not expose Pi native entry types or pretend that a DSH session has a Pi leaf identity.
 
 MyAgents retains a Host-side pending DSH root-admission journal across Runtime process loss. A new
@@ -346,7 +354,7 @@ The current public DSH persistence seam is append-only and has no delete, replac
 
 ## 10. Tool and policy architecture
 
-All model-visible tools use DSH `ctx.tools`. A product tool is considered native to this distribution when it registers into `ctx.tools`, even if its exact definition and executor are maintained by MyAgents. Root, foreground-child and background-child calls share this execution plane: WorkRegistry derives immutable child authority from the parent Product operation, while the common tool runtime rechecks visibility, origin, Hooks, permission and delayed execution policy. Child roles can narrow the parent catalog but cannot widen it or create another ToolRuntime.
+All model-visible tools use DSH `ctx.tools`. A product tool is considered native to this distribution when it registers into `ctx.tools`, even if its exact definition and executor are maintained by MyAgents. Root, foreground-child and background-child calls share this execution plane: WorkRegistry derives immutable child authority from the parent Product operation, while the common tool runtime rechecks visibility, origin, Hooks, permission and delayed execution policy. Child roles can narrow the parent catalog but cannot widen it or create another ToolRuntime. General, Explore, Plan and custom roles retain context in both modes; ProductWork separately owns activation completion, handle closure and epoch-correlated quiet Inbox reports, with independent active/retained limits. New child births freeze the selected Host model before materialization and use one root capacity FIFO with durable queued/started/waiting facts. Eligible roles may delegate through the Host-configured depth (default one); DSH owns actual parent Sessions, ProductWork owns the root ledger and shared capacity, and permission interaction waits borrow this capacity owner through composition. See [Child agents and background work](./tech_docs/execution/child-agents-and-background-work.md) for source behavior and remaining acceptance boundaries.
 
 For each target tool:
 
@@ -422,7 +430,7 @@ Host ports are Service Definitions consumed by runtime plugins and provided by t
 - PreToolUse, PostToolUse, and PermissionRequest Hooks;
 - attachment put/acquire/release leases.
 
-The runtime may execute model network requests through selected DSH LLM adapters, but the Host remains the authority for the route, profile, credential reference, and secret material. Secret material is resolved only for one model request or MCP connection attempt. Non-DeepSeek Session birth also requires the immutable Host canonical-web capability because the accepted MyAgents profile promises all 20 tools; an unavailable backend is rejected before a turn rather than represented by an inert tool.
+The runtime may execute model network requests through selected DSH LLM adapters, but the Host remains the authority for the route, profile, credential reference, and secret material. Secret material is resolved only for one model request or MCP connection attempt. Host canonical-web support is an optional, separately admitted capability; its absence never blocks base model admission. The effective catalog and individual Web calls expose route-dependent availability.
 
 Reverse requests carry runtime generation, session, operation, turn, tool, and component identities sufficient to reject stale responses. Cancellation is explicit and settles exactly once.
 
@@ -442,7 +450,7 @@ Non-secret desired configuration and declarative component snapshots are stored 
 
 ## 13. Managed files and session mutations
 
-The v1 checkpoint claim covers only root-origin `Write` and `Edit` executed through the official governed definitions. Before the side effect, the checkpoint plugin persists an immutable correlation and preimage or absence fact. Commit, abort, and crash adjudication use canonical paths and content hashes.
+The v1 checkpoint claim covers only root-origin `Write` and `Edit` executed through the official governed definitions. Before the side effect, the checkpoint plugin persists an immutable correlation and preimage or absence fact. Write parent creation shares that journal: SQLite v9 records planned paths and created directory identities, cleanup removes only owned unchanged empty directories, and rewind rollback restores removed parents before file bytes. New-file child Write uses the same service with child-Session records for directory recovery, while remaining outside root rewind coverage. The platform filesystem Provider owns mkdir/rmdir and path identity checks. File replay adjudicates both sealed hashes across filesystem/SQLite phase gaps. See [Mutations and checkpoints](./tech_docs/state/mutations-and-checkpoints.md#8-checkpoint-coverage-and-limits) for limits and the unproven mkdir-receipt window.
 
 Rewind, fork, and delete use prepare/commit/rollback-or-abort/status protocols. A mutation-fenced `recovery_required` Session also accepts only an exact replay of its already prepared request so the Host can recover the durable random token after a crash between Runtime prepare and Host journal publication; store fingerprint/capacity checks reject a new mutation. They coordinate:
 
@@ -513,3 +521,7 @@ The early seam review identified authoritative PreToolUse input rewriting, exact
 - Product profiles and canonical tool contracts have independent revisions and digests.
 - Future Agent SDK compatibility is versioned by manifest, not inferred from package version alone.
 - Protocol 1.1 from the Pi runtime is a migration source, not the DSH wire identity. The engine-neutral DSH protocol begins at candidate major version 2.
+
+The native Host collaboration controls are owned by [ProductWork](./tech_docs/execution/child-agents-and-background-work.md); explicit reopen preserves old epochs and never revives a subtree implicitly. The [primary Session owner](./tech_docs/state/sessions-persistence-and-recovery.md) publishes readiness before the awaited recovery-activation hook. [SDK operation admission](./tech_docs/runtime/operations-messages-and-turns.md) owns Root wake for collaboration while DSH retains actual message provenance and conversation authority.
+
+The [operation module](./tech_docs/runtime/operations-messages-and-turns.md) versions new native-attempt token accounting while preserving unmarked historical terminal derivation. Unknown billing data is independent of successful answer completion; [compaction](./tech_docs/execution/compaction.md) owns summary/repair receipts and the [child module](./tech_docs/execution/child-agents-and-background-work.md) excludes inherited usage.

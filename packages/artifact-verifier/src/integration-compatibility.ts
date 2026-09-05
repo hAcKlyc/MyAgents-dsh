@@ -50,8 +50,8 @@ export interface MyAgentsDshCompatibilityManifestV1 {
   readonly platforms: readonly IntegrationPlatformEvidence[];
   readonly apiFamilies: readonly Readonly<{
     id: "anthropic-messages" | "openai-completions" | "openai-responses";
-    adapter: "@deepseek-ai/dsh-llm-pi-ai@0.1.1-rc.2";
-    piAiVersion: "0.82.1";
+    adapter: string;
+    piAiVersion: "0.84.2";
     compatibilityProfileVersion: 1;
     credentialMode: "request-scoped-api-key";
     routeAdmission: "host-declared-api-family";
@@ -139,8 +139,8 @@ const apiFamilies = Object.freeze(([
   "openai-responses",
 ] as const).map((id) => Object.freeze({
   id,
-  adapter: "@deepseek-ai/dsh-llm-pi-ai@0.1.1-rc.2" as const,
-  piAiVersion: "0.82.1" as const,
+  adapter: `@deepseek-ai/dsh-llm-pi-ai@${ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion}`,
+  piAiVersion: "0.84.2" as const,
   compatibilityProfileVersion: 1 as const,
   credentialMode: "request-scoped-api-key" as const,
   routeAdmission: "host-declared-api-family" as const,

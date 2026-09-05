@@ -473,7 +473,10 @@ const parseWorkspaceSkillDocument = (source: string): ParsedSkillDocument => {
   if (body.length === 0 || Buffer.byteLength(body, "utf8") > MAX_SKILL_SOURCE_BYTES) {
     throw new TypeError("workspace Skill instruction body is empty or too large");
   }
-  return Object.freeze({ argumentNames, body });
+  // Workspace metadata is guidance, never a permission grant. Preserve the
+  // authored allowed-tools declaration when rendering instead of silently
+  // dropping it while stripping ordinary frontmatter.
+  return Object.freeze({ argumentNames, body: /^allowed-tools\s*:/mu.test(frontmatter) ? normalized.trim() : body });
 };
 
 const matchingVersion = (left: FsInfo | FsPathInfo, right: FsInfo | FsPathInfo): boolean =>
@@ -1112,6 +1115,10 @@ export class ProductSkillService extends Service {
       throw new TypeError("dynamic Skill source digest is invalid");
     }
     if (sha256(content) !== registration.sourceSha256) throw new TypeError("dynamic Skill content digest differs");
+    const frontmatter = /^---\n([\s\S]*?)\n---(?:\n|$)/u.exec(content.replaceAll("\r\n", "\n"))?.[1];
+    if (frontmatter !== undefined && /^(?:context|agent)\s*:\s*\S/mu.test(frontmatter)) {
+      throw new TypeError("Skill execution context/agent metadata is not supported by this Runtime");
+    }
     const resourceRoot = registration.resourceRoot === undefined
       ? undefined
       : boundedText(registration.resourceRoot, 8_192, "dynamic Skill resource root");

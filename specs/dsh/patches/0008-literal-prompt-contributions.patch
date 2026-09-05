@@ -1,8 +1,8 @@
 diff --git a/packages/core/system-prompt/src/index.ts b/packages/core/system-prompt/src/index.ts
-index ffc052e0b9..190badb086 100644
+index fba1b51f50..4df4f355db 100644
 --- a/packages/core/system-prompt/src/index.ts
 +++ b/packages/core/system-prompt/src/index.ts
-@@ -65,6 +65,8 @@ export interface PromptSection {
+@@ -64,6 +64,8 @@ export interface PromptSection {
     * interpolated later, by {@link renderPrompt}.
     */
    readonly text: string | ((context: AssembleContext) => string)
@@ -11,7 +11,7 @@ index ffc052e0b9..190badb086 100644
    /**
     * Treat this contribution as the complete system prompt. Assembly still
     * runs the cooperative waterfall so tools, contexts, and variables can be
-@@ -82,6 +84,8 @@ export interface PromptContext {
+@@ -81,6 +83,8 @@ export interface PromptContext {
    readonly order: number
    /** Static text or a provider evaluated for each assembly. Empty text contributes nothing. */
    readonly text: string | ((context: AssembleContext) => string)
@@ -20,7 +20,7 @@ index ffc052e0b9..190badb086 100644
  }
  
  /** One section of an assembly: {@link PromptSection} with its text resolved. */
-@@ -90,6 +94,8 @@ export interface AssembledSection {
+@@ -89,6 +93,8 @@ export interface AssembledSection {
    name: string
    /** The resolved (but not yet interpolated) section text. */
    text: string
@@ -29,7 +29,7 @@ index ffc052e0b9..190badb086 100644
  }
  
  /** One resolved dynamic context contribution. */
-@@ -98,6 +104,8 @@ export interface AssembledContext {
+@@ -97,6 +103,8 @@ export interface AssembledContext {
    name: string
    /** The resolved text before variable interpolation. */
    text: string
@@ -38,7 +38,7 @@ index ffc052e0b9..190badb086 100644
  }
  
  /** Tool schemas visible in one assembly and their pre-restriction name set. */
-@@ -211,7 +219,9 @@ export interface Config {
+@@ -262,7 +270,9 @@ export interface Config {
   */
  export function renderPrompt(assembly: PromptAssembly): string {
    return assembly.sections
@@ -49,7 +49,7 @@ index ffc052e0b9..190badb086 100644
      .filter(text => text.length > 0)
      .join('\n\n')
  }
-@@ -250,7 +260,12 @@ export function joinContextSections(sections: readonly ContextSnapshotSection[])
+@@ -301,7 +311,12 @@ export function joinContextSections(sections: readonly ContextSnapshotSection[])
   */
  export function renderContextSections(assembly: PromptAssembly): ContextSnapshotSection[] {
    return assembly.contexts
@@ -63,7 +63,7 @@ index ffc052e0b9..190badb086 100644
      .filter(section => section.text.length > 0)
  }
  
-@@ -512,6 +527,7 @@ export class SystemPrompt extends Service {
+@@ -581,6 +596,7 @@ export class SystemPrompt extends Service {
          const assembled = {
            name: section.name,
            text: typeof section.text === 'function' ? section.text(context) : section.text,
@@ -71,7 +71,7 @@ index ffc052e0b9..190badb086 100644
          }
          if (section.complete === true) completeSection = { ...assembled }
          return assembled
-@@ -525,6 +541,7 @@ export class SystemPrompt extends Service {
+@@ -594,6 +610,7 @@ export class SystemPrompt extends Service {
            .map(entry => ({
              name: entry.name,
              text: typeof entry.text === 'function' ? entry.text(context) : entry.text,
@@ -80,10 +80,10 @@ index ffc052e0b9..190badb086 100644
        tools: orderTools(collected, this.toolOrder, knownNames),
        variables,
 diff --git a/packages/core/system-prompt/tests/system-prompt.spec.ts b/packages/core/system-prompt/tests/system-prompt.spec.ts
-index cf196892a7..80f2d328b7 100644
+index 9818c50f94..0fb0cc665b 100644
 --- a/packages/core/system-prompt/tests/system-prompt.spec.ts
 +++ b/packages/core/system-prompt/tests/system-prompt.spec.ts
-@@ -365,6 +365,25 @@ describe('SystemPrompt', () => {
+@@ -407,6 +407,25 @@ describe('SystemPrompt', () => {
      })).toThrow('unknown prompt variable "{{missing}}" in context "policy"; registered variables: (none)')
    })
  
@@ -109,7 +109,7 @@ index cf196892a7..80f2d328b7 100644
    it('emits system-prompt/change when a tool provider is registered and disposed', async () => {
      const ctx = new Context()
      await ctx.plugin(SystemPrompt)
-@@ -485,6 +504,25 @@ describe('SystemPrompt', () => {
+@@ -527,6 +546,25 @@ describe('SystemPrompt', () => {
        expect(renderPrompt(await ctx.systemPrompt.assemble())).toBe(`${IDENTITY}\n\nYou run on deepseek-v4 in /work.`)
      })
  
@@ -136,10 +136,10 @@ index cf196892a7..80f2d328b7 100644
        const ctx = new Context()
        await ctx.plugin(SystemPrompt)
 diff --git a/packages/subagent/subagent-in-process-driver/src/index.ts b/packages/subagent/subagent-in-process-driver/src/index.ts
-index fd1ebff2be..1e4a63d0f0 100644
+index 4ca07b8436..316d73fb3f 100644
 --- a/packages/subagent/subagent-in-process-driver/src/index.ts
 +++ b/packages/subagent/subagent-in-process-driver/src/index.ts
-@@ -121,6 +121,7 @@ export async function startInProcessRun(
+@@ -123,6 +123,7 @@ export async function startInProcessRun(
      appendDelegatedPolicyOverrides((childCtx.agent as Agent).session, inherited)
      applyChildComposition(childCtx, parent, {
        persona: request.persona,
@@ -148,10 +148,10 @@ index fd1ebff2be..1e4a63d0f0 100644
      })
      if (request.outputSchema !== undefined) {
 diff --git a/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts b/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
-index 74aefb4ebd..714208abbc 100644
+index c46f99514f..e44f6897ac 100644
 --- a/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
 +++ b/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
-@@ -402,6 +402,19 @@ describe('dsh-subagent-spawn-in-process', () => {
+@@ -412,6 +412,19 @@ describe('dsh-subagent-spawn-in-process', () => {
        await run.dispose()
      })
  
@@ -172,10 +172,10 @@ index 74aefb4ebd..714208abbc 100644
        const { ctx, parent, adapter } = await setup([
          // The child tries the denied tool anyway, then answers.
 diff --git a/packages/subagent/subagent/src/child-agent.ts b/packages/subagent/subagent/src/child-agent.ts
-index 7582338858..81ce7d094b 100644
+index 228b9de2f2..d0d43636bf 100644
 --- a/packages/subagent/subagent/src/child-agent.ts
 +++ b/packages/subagent/subagent/src/child-agent.ts
-@@ -123,6 +123,8 @@ export function childSessionMeta(
+@@ -159,6 +159,8 @@ export function childSessionMeta(
  export interface ChildComposition {
    /** Per-child persona shadowing the deployment persona. */
    readonly persona?: string | undefined
@@ -184,24 +184,16 @@ index 7582338858..81ce7d094b 100644
    /** Per-child tool scoping. */
    readonly toolFilter?: ToolRestriction | undefined
  }
-@@ -169,7 +171,14 @@ export function applyChildComposition(
-   // Order 120: after the sandbox:policy (110) and approval:policy (115) sentences.
-   childCtx.systemPrompt.context({ name: 'subagent:delegation', order: 120, text: SUBAGENT_DELEGATION_CONTEXT })
-   if (composition.persona !== undefined) {
--    childCtx.systemPrompt.section({ name: 'deployment:persona', order: 0, text: composition.persona })
-+    childCtx.systemPrompt.section({
-+      name: 'deployment:persona',
-+      order: 0,
-+      text: composition.persona,
-+      ...composition.personaInterpolate === undefined
-+        ? {}
-+        : { interpolate: composition.personaInterpolate },
-+    })
+@@ -212,6 +214,7 @@ export function applyChildComposition(
+       name: 'deployment:persona',
+       order: childCtx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA'),
+       text: composition.persona,
++      ...composition.personaInterpolate === undefined ? {} : { interpolate: composition.personaInterpolate },
+     })
    }
    if (composition.toolFilter !== undefined) childCtx.tools.restrict(composition.toolFilter)
- }
 diff --git a/packages/subagent/subagent/src/continuation.ts b/packages/subagent/subagent/src/continuation.ts
-index 35ecac6e3a..9c7be54d4a 100644
+index 24928446ea..cb75377f85 100644
 --- a/packages/subagent/subagent/src/continuation.ts
 +++ b/packages/subagent/subagent/src/continuation.ts
 @@ -273,7 +273,11 @@ interface MaterializeInputs {
@@ -215,77 +207,65 @@ index 35ecac6e3a..9c7be54d4a 100644
 +    toolFilter?: ToolRestriction | undefined
 +  }
    signal: AbortSignal
+   residencyOnly?: boolean
  }
- 
-@@ -441,6 +445,9 @@ export class SubagentContinuationManager {
-       ...agentProvider !== undefined ? { agentProvider } : {},
+@@ -480,6 +484,7 @@ export class SubagentContinuationManager {
        ...agentModel !== undefined ? { agentModel } : {},
+       ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
        ...request.persona !== undefined ? { persona: request.persona } : {},
-+      ...request.personaInterpolate !== undefined
-+        ? { personaInterpolate: request.personaInterpolate }
-+        : {},
++      ...request.personaInterpolate === undefined ? {} : { personaInterpolate: request.personaInterpolate },
        ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
        settlementDelivery,
      })
-@@ -478,7 +485,11 @@ export class SubagentContinuationManager {
-         parent,
-         create: { seed, meta: childSessionMeta(parent, childDepth, lineageSeedLength), delegatedPolicies },
-         agentOptions: resolveChildAgentOptions(parent, request.agentOptions, childDepth),
+@@ -522,7 +527,7 @@ export class SubagentContinuationManager {
+           delegatedPolicies,
+         },
+         agentOptions,
 -        composition: { persona: request.persona, toolFilter: request.toolFilter },
-+        composition: {
-+          persona: request.persona,
-+          personaInterpolate: request.personaInterpolate,
-+          toolFilter: request.toolFilter,
-+        },
++        composition: { persona: request.persona, personaInterpolate: request.personaInterpolate, toolFilter: request.toolFilter },
          signal: spec.signal,
        })
        return this.submitMaterialized(
-@@ -1059,7 +1070,11 @@ export class SubagentContinuationManager {
-           ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
-           ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
+@@ -1116,7 +1121,7 @@ export class SubagentContinuationManager {
+             ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
+             : {},
          },
 -        composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter },
-+        composition: {
-+          persona: descriptor.persona,
-+          personaInterpolate: descriptor.personaInterpolate,
-+          toolFilter: descriptor.toolFilter,
-+        },
-         signal,
++        composition: { persona: descriptor.persona, personaInterpolate: descriptor.personaInterpolate, toolFilter: descriptor.toolFilter },
+         signal: signal,
        })
      } catch (error: unknown) {
 diff --git a/packages/subagent/subagent/src/descriptor.ts b/packages/subagent/subagent/src/descriptor.ts
-index c01f1ad1a1..e21739ee72 100644
+index 75f39f5418..59a9eef977 100644
 --- a/packages/subagent/subagent/src/descriptor.ts
 +++ b/packages/subagent/subagent/src/descriptor.ts
-@@ -44,7 +44,8 @@ declare module '@deepseek-ai/dsh-session/types' {
-  * Supporting another composition input is a deliberate version change, never
+@@ -46,6 +46,7 @@ declare module '@deepseek-ai/dsh-session/types' {
   * an implicit extra field.
   */
--export const SUBAGENT_DESCRIPTOR_VERSION = 3
-+export const SUBAGENT_DESCRIPTOR_VERSION = 4
+ export const SUBAGENT_DESCRIPTOR_VERSION = 5
 +const LEGACY_SUBAGENT_DESCRIPTOR_VERSION = 3
  
  /** Fields shared by every supported `subagent/descriptor` payload. */
  interface SubagentDescriptorBase {
-@@ -78,6 +79,8 @@ export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBas
-   readonly agentModel?: string
+@@ -81,6 +82,8 @@ export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBas
+   readonly agentReasoningEffort?: ReasoningEffortId
    /** Per-child persona that shadows the deployment persona on resume. */
    readonly persona?: string
-+  /** Whether the persona uses strict Prompt-variable interpolation; omitted means true. */
++  /** Strict interpolation by default; false preserves literal external text. */
 +  readonly personaInterpolate?: boolean
    /** Child tool scoping reapplied on resume. */
    readonly toolFilter?: ToolRestriction
    /** Whether each residency epoch reports settlement to its parent or an external product owner. */
-@@ -115,6 +118,8 @@ export interface ContinuableSubagentDescriptorInput extends SubagentDescriptorIn
-   readonly agentModel?: string
+@@ -120,6 +123,8 @@ export interface ContinuableSubagentDescriptorInput extends SubagentDescriptorIn
+   readonly agentReasoningEffort?: ReasoningEffortId
    /** Requested per-child persona. */
    readonly persona?: string
-+  /** Whether the persona uses strict Prompt-variable interpolation; omitted means true. */
++  /** Strict interpolation by default; false preserves literal external text. */
 +  readonly personaInterpolate?: boolean
    /** Requested child tool scoping. */
    readonly toolFilter?: ToolRestriction
    /** Settlement owner selected at initial continuable admission. */
-@@ -133,7 +138,7 @@ const DESCRIPTOR_BASE_KEYS = [
+@@ -138,7 +143,7 @@ const DESCRIPTOR_BASE_KEYS = [
    'label',
  ] as const
  const ONE_SHOT_DESCRIPTOR_KEYS = new Set(DESCRIPTOR_BASE_KEYS)
@@ -294,7 +274,7 @@ index c01f1ad1a1..e21739ee72 100644
    ...DESCRIPTOR_BASE_KEYS,
    'agentProvider',
    'agentModel',
-@@ -141,6 +146,10 @@ const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
+@@ -147,6 +152,10 @@ const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
    'toolFilter',
    'settlementDelivery',
  ])
@@ -305,7 +285,7 @@ index c01f1ad1a1..e21739ee72 100644
  const TOOL_FILTER_KEYS = new Set(['allow', 'deny'])
  
  /** Whether a persisted JSON value is an object record. */
-@@ -166,6 +175,16 @@ function optionalString(value: Record<string, unknown>, key: string): string | u
+@@ -172,6 +181,16 @@ function optionalString(value: Record<string, unknown>, key: string): string | u
    return field
  }
  
@@ -322,18 +302,7 @@ index c01f1ad1a1..e21739ee72 100644
  /** Read one optional string-array field from a persisted tool restriction. */
  function optionalStringArray(value: Record<string, unknown>, key: string): string[] | undefined {
    if (!Object.hasOwn(value, key)) return undefined
-@@ -206,7 +225,9 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
-   if (typeof version !== 'number') {
-     throw new Error('persisted subagent descriptor version must be a number')
-   }
--  if (version !== SUBAGENT_DESCRIPTOR_VERSION) return undefined
-+  if (version !== SUBAGENT_DESCRIPTOR_VERSION && version !== LEGACY_SUBAGENT_DESCRIPTOR_VERSION) {
-+    return undefined
-+  }
- 
-   const mode = value['mode']
-   if (mode !== 'one-shot' && mode !== 'continuable') {
-@@ -214,7 +235,11 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
+@@ -220,7 +239,11 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
    }
    assertKnownKeys(
      value,
@@ -346,7 +315,7 @@ index c01f1ad1a1..e21739ee72 100644
      'payload',
    )
    const provider = value['provider']
-@@ -224,7 +249,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
+@@ -230,7 +253,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
    if (mode === 'one-shot') {
      const label = optionalString(value, 'label')
      return {
@@ -355,15 +324,15 @@ index c01f1ad1a1..e21739ee72 100644
        mode,
        provider,
        ...label !== undefined ? { label } : {},
-@@ -237,6 +262,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
-   const agentProvider = optionalString(value, 'agentProvider')
+@@ -244,6 +267,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
    const agentModel = optionalString(value, 'agentModel')
+   const agentReasoningEffort = optionalString(value, 'agentReasoningEffort') as ReasoningEffortId | undefined
    const persona = optionalString(value, 'persona')
 +  const personaInterpolate = optionalBoolean(value, 'personaInterpolate')
    const toolFilter = Object.hasOwn(value, 'toolFilter')
      ? parseToolFilter(value['toolFilter'])
      : undefined
-@@ -245,13 +271,14 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
+@@ -252,7 +276,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
      throw new Error('persisted subagent descriptor settlementDelivery must be "parent" or "external"')
    }
    return {
@@ -372,28 +341,27 @@ index c01f1ad1a1..e21739ee72 100644
      mode,
      provider,
      label,
-     ...agentProvider !== undefined ? { agentProvider } : {},
+@@ -260,6 +284,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
      ...agentModel !== undefined ? { agentModel } : {},
+     ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
      ...persona !== undefined ? { persona } : {},
-+    ...personaInterpolate !== undefined ? { personaInterpolate } : {},
++    ...personaInterpolate === undefined ? {} : { personaInterpolate },
      ...toolFilter !== undefined ? { toolFilter } : {},
      ...settlementDelivery !== undefined ? { settlementDelivery } : {},
    }
-@@ -294,6 +321,9 @@ export function snapshotSubagentDescriptor(input: SubagentDescriptorInput): Suba
-       ...input.agentProvider !== undefined ? { agentProvider: input.agentProvider } : {},
+@@ -303,6 +328,7 @@ export function snapshotSubagentDescriptor(input: SubagentDescriptorInput): Suba
        ...input.agentModel !== undefined ? { agentModel: input.agentModel } : {},
+       ...input.agentReasoningEffort !== undefined ? { agentReasoningEffort: input.agentReasoningEffort } : {},
        ...input.persona !== undefined ? { persona: input.persona } : {},
-+      ...input.personaInterpolate !== undefined
-+        ? { personaInterpolate: input.personaInterpolate }
-+        : {},
++      ...input.personaInterpolate === undefined ? {} : { personaInterpolate: input.personaInterpolate },
        ...input.toolFilter !== undefined ? { toolFilter: input.toolFilter } : {},
        ...input.settlementDelivery !== undefined ? { settlementDelivery: input.settlementDelivery } : {},
      }
 diff --git a/packages/subagent/subagent/src/types.ts b/packages/subagent/subagent/src/types.ts
-index b01c1ca984..4b7b2247e0 100644
+index 61ebaeef28..051cf05e79 100644
 --- a/packages/subagent/subagent/src/types.ts
 +++ b/packages/subagent/subagent/src/types.ts
-@@ -152,6 +152,11 @@ export interface SubagentStartRequest {
+@@ -160,6 +160,11 @@ export interface SubagentStartRequest {
     * persona (strict `{{…}}` interpolation against the registered variables).
     */
    readonly persona?: string
@@ -406,71 +374,73 @@ index b01c1ca984..4b7b2247e0 100644
  
  /**
 diff --git a/packages/subagent/subagent/tests/continuation.spec.ts b/packages/subagent/subagent/tests/continuation.spec.ts
-index c79fbbc925..eba76c715a 100644
+index 2794c31ce8..0624609d48 100644
 --- a/packages/subagent/subagent/tests/continuation.spec.ts
 +++ b/packages/subagent/subagent/tests/continuation.spec.ts
-@@ -463,26 +463,37 @@ describe('SubagentRuntime.startContinuable', () => {
-   })
- 
-   it('records the declared persona in the descriptor and reapplies it on cold resume', async () => {
--    const { ctx, parent } = await setup([textResponse('scoped'), textResponse('resumed')])
-+    const { ctx, parent, adapter } = await setup([
-+      textResponse('scoped'),
-+      textResponse('parent settlement'),
-+      textResponse('resumed'),
-+    ])
-     const started = await ctx.subagents.startContinuable({
-       ...startSpec(parent),
-       request: {
-         prompt: message('scoped work'),
-         parent,
--        persona: 'You are scoped.',
-+        persona: 'You are scoped with {{name}}.',
-+        personaInterpolate: false,
-       },
-     })
-     await waitNoActivation(ctx, started.childId)
- 
-     const loaded = await ctx.sessionPersistence.load(started.childId)
-     const descriptor = loaded.events.find(event => event.type === 'subagent/descriptor')
--    expect(descriptor?.data).toMatchObject({ persona: 'You are scoped.' })
-+    expect(descriptor?.data).toMatchObject({
-+      persona: 'You are scoped with {{name}}.',
-+      personaInterpolate: false,
-+    })
-+    expect(adapter.requests[0]!.system).toContain('You are scoped with {{name}}.')
- 
-     // Cold resume reconstructs the declared composition from that descriptor.
-     await followup(ctx, parent, started.childId, message('resume it'))
-     await waitNoActivation(ctx, started.childId)
+@@ -542,6 +542,33 @@ describe('SubagentRuntime.startContinuable', () => {
      const resumed = await ctx.sessionPersistence.load(started.childId)
      expect(hasUserText(resumed.events, 'resume it')).toBe(true)
-+    expect(adapter.requests.filter(request =>
-+      request.system?.includes('You are scoped with {{name}}.'))).toHaveLength(2)
    })
++
++  it('preserves literal persona on fresh execution and cold resume', async () => {
++    const { ctx, parent, adapter } = await setup([textResponse('scoped'), textResponse('resumed')])
++    parkParent(ctx, parent)
++    const started = await ctx.subagents.startContinuable({
++      ...startSpec(parent),
++      request: {
++        prompt: message('scoped work'),
++        parent,
++        persona: 'Keep {{unknown}} and {{ malformed }} literal.',
++        personaInterpolate: false,
++      },
++    })
++    await waitNoActivation(ctx, started.childId)
++
++    const loaded = await ctx.sessionPersistence.load(started.childId)
++    const descriptor = loaded.events.find(event => event.type === 'subagent/descriptor')
++    expect(descriptor?.data).toMatchObject({ persona: 'Keep {{unknown}} and {{ malformed }} literal.' })
++
++    // Cold resume reconstructs the declared composition from that descriptor.
++    await queuePrompt(ctx, parent, started.childId, message('resume it'))
++    await waitNoActivation(ctx, started.childId)
++    const resumed = await ctx.sessionPersistence.load(started.childId)
++    expect(hasUserText(resumed.events, 'resume it')).toBe(true)
++    expect(adapter.requests).toHaveLength(2)
++    for (const request of adapter.requests) expect(request.system).toContain('Keep {{unknown}} and {{ malformed }} literal.')
++  })
  })
  
+ describe('continuable image Queue prompts', () => {
+@@ -725,7 +752,7 @@ describe('direct-child Queue residency routing', () => {
+       started.childId,
+       structuredClone(loaded.events),
+       structuredClone(loaded.meta),
+-      { inheritedEventCount: loaded.inheritedEventCount },
++      loaded.inheritedEventCount,
+     )
+     const persistedBefore = loaded.events.length
+     const pending = createUserMessage({
 diff --git a/packages/subagent/subagent/tests/service.spec.ts b/packages/subagent/subagent/tests/service.spec.ts
-index 05e9785611..2a5b9c6fe4 100644
+index e74c684405..d4171d4161 100644
 --- a/packages/subagent/subagent/tests/service.spec.ts
 +++ b/packages/subagent/subagent/tests/service.spec.ts
-@@ -349,6 +349,7 @@ describe('subagent descriptors', () => {
-       agentProvider: 'deepseek',
+@@ -355,6 +355,7 @@ describe('subagent descriptors', () => {
        agentModel: 'chat',
+       agentReasoningEffort: ReasoningEffortId('high'),
        persona: 'reviewer',
 +      personaInterpolate: false,
        toolFilter: { allow: ['read'], deny: ['bash'] },
      }
      expect(snapshotSubagentDescriptor({
-@@ -358,6 +359,7 @@ describe('subagent descriptors', () => {
-       agentProvider: complete.agentProvider,
+@@ -365,6 +366,7 @@ describe('subagent descriptors', () => {
        agentModel: complete.agentModel,
+       agentReasoningEffort: complete.agentReasoningEffort,
        persona: complete.persona,
 +      personaInterpolate: complete.personaInterpolate,
        toolFilter: complete.toolFilter,
      })).toEqual(complete)
      expect(foldSubagentDescriptor([event(complete)])).toEqual(complete)
-@@ -382,6 +384,13 @@ describe('subagent descriptors', () => {
+@@ -389,6 +391,20 @@ describe('subagent descriptors', () => {
      expect(foldSubagentDescriptor([
        event({ version: SUBAGENT_DESCRIPTOR_VERSION + 1, provider: 'spawn' }),
      ])).toBeUndefined()
@@ -481,10 +451,17 @@ index 05e9785611..2a5b9c6fe4 100644
 +      label: 'legacy child',
 +      persona: 'legacy {{name}}',
 +    })])).toMatchObject({ version: 3, persona: 'legacy {{name}}' })
++    expect(foldSubagentDescriptor([event({
++      version: 4, mode: 'continuable', provider: 'spawn', label: 'old product child',
++      persona: 'literal {{unknown}}', personaInterpolate: false, settlementDelivery: 'external',
++    })])).toMatchObject({ version: 4, personaInterpolate: false, settlementDelivery: 'external' })
++    expect(() => foldSubagentDescriptor([event({
++      version: 4, mode: 'continuable', provider: 'spawn', label: 'invalid', requiredUnknownPolicy: true,
++    })])).toThrow()
      expect(() => snapshotSubagentDescriptor({
        mode: 'continuable',
        provider: 'spawn',
-@@ -455,6 +464,13 @@ describe('subagent descriptors', () => {
+@@ -469,6 +485,13 @@ describe('subagent descriptors', () => {
        label: 'l',
        persona: {},
      }, 'persona must be a string'],

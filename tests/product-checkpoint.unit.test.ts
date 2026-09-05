@@ -19,9 +19,9 @@ import type {
 } from "@myagents-dsh/tool-runtime-product";
 import { LocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 import { createHash } from "node:crypto";
-import { link, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -78,11 +78,13 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
 
-const checkpointHarness = async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-checkpoint-harness-")));
-  roots.push(root);
+const checkpointHarness = async (options: Readonly<{ nativeFs?: boolean; reopenRuntimeHome?: string }> = {}) => {
+  const root = options.reopenRuntimeHome === undefined
+    ? await realpath(await mkdtemp(join(tmpdir(), "myagents-checkpoint-harness-")))
+    : dirname(options.reopenRuntimeHome);
+  if (!roots.includes(root)) roots.push(root);
   const runtimeHome = join(root, "runtime-home");
-  await mkdir(runtimeHome, { mode: 0o700 });
+  if (options.reopenRuntimeHome === undefined) await mkdir(runtimeHome, { mode: 0o700 });
   const context = new Context();
   await context.plugin(SessionStore);
   const platform = selectPlatformAdapter("darwin-arm64");
@@ -95,13 +97,29 @@ const checkpointHarness = async () => {
     writeBatchMaxDelayMs: 1,
   });
   if (store === undefined) throw new Error("checkpoint Store fixture did not register");
-  const session = context.sessions.create(SessionId("checkpoint-primary"), {
-    meta: { cwd: "/fixture/workspace" },
-  });
-  session.append("turn/start", { turn: 1 });
+  let session: Session;
+  if (options.reopenRuntimeHome === undefined) {
+    session = context.sessions.create(SessionId("checkpoint-primary"), { meta: { cwd: "/fixture/workspace" } });
+    session.append("turn/start", { turn: 1 });
+  } else {
+    const preparation = await context.sessionPersistence.prepare(SessionId("checkpoint-primary"));
+    session = preparation.session;
+    try {
+      context.effect(function* () {
+        yield context.sessions.enter(session);
+        context.sessions.announce(session);
+      });
+    } finally {
+      preparation[Symbol.dispose]();
+    }
+  }
   await context.sessions.flush(session);
   const agent = Object.freeze({ id: session.id, session }) as unknown as Agent;
-  const executionEnvironment = environment(runtimeHome);
+  const workspace = options.nativeFs === true ? join(root, "workspace") : "/fixture/workspace";
+  if (options.nativeFs === true && options.reopenRuntimeHome === undefined) await mkdir(workspace);
+  const platformTarget = `${process.platform}-${process.arch}` as "darwin-arm64" | "linux-x64" | "win32-x64";
+  const executionEnvironment = environment(runtimeHome, workspace, platformTarget);
+  if (options.nativeFs === true) await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(platformTarget) });
   let bytes: Uint8Array | undefined = Buffer.from("before", "utf8");
   let snapshotOverride: unknown;
   const capture = (): Promise<ProductCheckpointFileSnapshot> => Promise.resolve(
@@ -121,12 +139,24 @@ const checkpointHarness = async () => {
     bytes = targetBytes === undefined ? undefined : Uint8Array.from(targetBytes);
     return capture();
   };
+  let failDirectoryReceipt = false;
+  const registeredStore = store;
+  const checkpointStore = Object.freeze<ProductCheckpointStore>({
+    ...registeredStore,
+    updateDirectoryPlan: async (id, expected, next, signal) => {
+      if (failDirectoryReceipt) {
+        failDirectoryReceipt = false;
+        throw new Error("fixture directory receipt disk failure");
+      }
+      return await registeredStore.updateDirectoryPlan(id, expected, next, signal);
+    },
+  });
   await context.plugin(ProductCheckpointService, {
     durability: Object.freeze({ flush: (candidate: Session) => context.sessions.flush(candidate) }),
     environment: () => executionEnvironment,
-    io: Object.freeze({ capture, restore }),
+    io: options.nativeFs === true ? (context.fs as LocalWorkspaceFileSystem).createCheckpointIoAuthority() : Object.freeze({ capture, restore }),
     requireAgent: () => agent,
-    store: () => store,
+    store: () => checkpointStore,
   });
   const product = Object.freeze({
     agent,
@@ -145,16 +175,172 @@ const checkpointHarness = async () => {
     agent,
     context,
     databasePath: productSessionDatabasePath(platform, runtimeHome),
+    workspace,
+    executionEnvironment,
     getBytes: () => bytes === undefined ? undefined : Uint8Array.from(bytes),
     product,
     session,
     setBytes: (value: Uint8Array | undefined) => { bytes = value; },
     setSnapshot: (value: unknown) => { snapshotOverride = value; },
+    failNextDirectoryReceipt: () => { failDirectoryReceipt = true; },
     store,
   });
 };
 
 describe("ProductCheckpointService", () => {
+  it("retains an unproven mkdir after receipt persistence fails and never publishes the file", async () => {
+    const state = await checkpointHarness({ nativeFs: true });
+    const path = join(state.workspace, "unproven", "nested", "file.txt");
+    const after = Buffer.from("must not publish");
+    state.failNextDirectoryReceipt();
+    await expect(state.context.productCheckpoint.prepare(state.product, {
+      path, tool: "Write", afterBytes: after, afterSha256: digest(after),
+    })).rejects.toThrow("fixture directory receipt disk failure");
+    expect((await lstat(join(state.workspace, "unproven"))).isDirectory()).toBe(true);
+    await expect(lstat(join(state.workspace, "unproven", "nested"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(path)).rejects.toMatchObject({ code: "ENOENT" });
+    await state.context.productCheckpoint.reconcile(state.agent);
+    expect((await lstat(join(state.workspace, "unproven"))).isDirectory()).toBe(true);
+    const database = new DatabaseSync(state.databasePath, { readOnly: true });
+    const row = database.prepare("SELECT state, directory_plan_json FROM checkpoint_records").get();
+    expect(row?.state).toBe("aborted");
+    expect(JSON.parse(String(row?.directory_plan_json))).toMatchObject({
+      entries: [{ path: join(state.workspace, "unproven"), state: "planned" }, { state: "planned" }],
+    });
+    database.close();
+    await state.context.fiber.dispose();
+  });
+
+  it("journals missing Write parents, aborts owned empty directories, and preserves foreign contents", async () => {
+    const state = await checkpointHarness({ nativeFs: true });
+    const path = join(state.workspace, "created", "nested", "file.txt");
+    const after = Buffer.from("created file");
+    const handle = await state.context.productCheckpoint.prepare(state.product, {
+      path, tool: "Write", afterBytes: after, afterSha256: digest(after),
+    });
+    const prepared = await state.store.get(handle.receipt.checkpointId);
+    expect(prepared?.directoryPlan?.entries).toMatchObject([
+      { path: join(state.workspace, "created"), state: "created" },
+      { path: join(state.workspace, "created", "nested"), state: "created" },
+    ]);
+    for (const entry of prepared?.directoryPlan?.entries ?? []) expect(typeof entry.identity).toBe("string");
+    await expect(lstat(path)).rejects.toMatchObject({ code: "ENOENT" });
+    await handle.verify?.();
+    await handle.abort();
+    await expect(lstat(join(state.workspace, "created"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await state.store.get(handle.receipt.checkpointId))?.directoryPlan?.entries.map((entry) => entry.state))
+      .toEqual(["removed", "removed"]);
+
+    const second = await state.context.productCheckpoint.prepare({ ...state.product, callId: "write-foreign" }, {
+      path, tool: "Write", afterBytes: after, afterSha256: digest(after),
+    });
+    const foreign = join(state.workspace, "created", "nested", "foreign.txt");
+    await writeFile(foreign, "external content");
+    await second.abort();
+    expect(await readFile(foreign, "utf8")).toBe("external content");
+    expect((await state.store.get(second.receipt.checkpointId))?.phase).toBe("aborted");
+    const controller = new AbortController();
+    const cancelled = await state.context.productCheckpoint.prepare({
+      ...state.product, callId: "write-cancelled", signal: controller.signal,
+    }, {
+      path: join(state.workspace, "cancelled", "file.txt"), tool: "Write", afterBytes: after, afterSha256: digest(after),
+    });
+    controller.abort(new Error("fixture cancellation"));
+    await cancelled.abort();
+    await expect(lstat(join(state.workspace, "cancelled"))).rejects.toMatchObject({ code: "ENOENT" });
+    await state.context.fiber.dispose();
+  });
+
+  it("recovers a prepared directory tree after a crash and refuses replacement identities before Write", async () => {
+    const state = await checkpointHarness({ nativeFs: true });
+    const path = join(state.workspace, "created", "nested", "file.txt");
+    const after = Buffer.from("new file");
+    const handle = await state.context.productCheckpoint.prepare(state.product, {
+      path, tool: "Write", afterBytes: after, afterSha256: digest(after),
+    });
+    // No file publication and no handle settlement: reopen the durable prepare with
+    // a fresh Store, Cordis scope, checkpoint service and Session identity object.
+    await state.context.fiber.dispose();
+    const resumed = await checkpointHarness({ nativeFs: true, reopenRuntimeHome: state.executionEnvironment.runtimeHome });
+    await resumed.context.productCheckpoint.reconcile(resumed.agent);
+    await expect(lstat(join(state.workspace, "created"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await resumed.store.get(handle.receipt.checkpointId))?.phase).toBe("aborted");
+
+    const replacement = await resumed.context.productCheckpoint.prepare({ ...resumed.product, callId: "write-replacement" }, {
+      path, tool: "Write", afterBytes: after, afterSha256: digest(after),
+    });
+    await rename(join(state.workspace, "created"), join(state.workspace, "moved-original"));
+    await mkdir(join(state.workspace, "created", "nested"), { recursive: true });
+    await expect(replacement.verify?.()).rejects.toMatchObject({ code: "mutation_conflict" });
+    await replacement.abort();
+    expect((await lstat(join(state.workspace, "created", "nested"))).isDirectory()).toBe(true);
+    expect((await lstat(join(state.workspace, "moved-original", "nested"))).isDirectory()).toBe(true);
+    await resumed.context.fiber.dispose();
+  });
+
+  it("rewinds shared directory trees and restores their new identities when the rewind rolls back", async () => {
+    const state = await checkpointHarness({ nativeFs: true });
+    state.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    await state.context.sessions.flush(state.session);
+    const persistence = state.context.sessionPersistence as ProductSqliteSessionPersistence;
+    const targetStableBoundaryId = (await persistence.readSession({
+      maxResultBytes: 65_536, runtimeGeneration: "directory-rewind-generation", runtimeSessionId: String(state.session.id),
+    })).durableHead.stableBoundaryId;
+    if (targetStableBoundaryId === undefined) throw new Error("directory rewind fixture lacks a boundary");
+    state.session.append("turn/start", { turn: 2 });
+    const paths = [join(state.workspace, "created", "a.txt"), join(state.workspace, "created", "nested", "b.txt")] as const;
+    const contents = [Buffer.from("first"), Buffer.from("second")];
+    for (const [index, path] of paths.entries()) {
+      const after = contents[index];
+      if (after === undefined) throw new Error("directory rewind fixture lacks bytes");
+      const handle = await state.context.productCheckpoint.prepare({
+        ...state.product, callId: `directory-write-${index}`, dshTurn: 2,
+        clientOperationId: "directory-operation-2", productTurnId: "directory-turn-2",
+      }, { path, tool: "Write", afterBytes: after, afterSha256: digest(after) });
+      await handle.verify?.();
+      await writeFile(path, after);
+      await handle.commit();
+      await state.context.productCheckpoint.reconcile(state.agent);
+    }
+    state.session.append("turn/end", { turn: 2, reason: { kind: "completed" } });
+    await state.context.sessions.flush(state.session);
+    const source = state.session.snapshotEvents();
+    const rewind = await persistence.prepareRewind({
+      clientMutationId: "directory-rewind", runtimeSessionId: String(state.session.id), targetStableBoundaryId,
+      sourceTranscriptPostcondition: productTranscriptPostcondition(source),
+      targetTranscriptPostcondition: productTranscriptPostcondition(source.slice(0, 2)),
+    });
+    await state.context.productCheckpoint.prepareRewindFiles(rewind.token);
+    // Simulate the filesystem side of publication winning a process crash before
+    // the SQLite file-plan phase advances. Commit replay must recognize that side.
+    await rm(paths[0]);
+    for (let iteration = 0; iteration < 2; iteration += 1) {
+      await state.context.productCheckpoint.publishRewindFiles(rewind.token);
+      await expect(lstat(join(state.workspace, "created"))).rejects.toMatchObject({ code: "ENOENT" });
+      if (iteration === 0) {
+        for (const record of await state.store.listRewindDirectoryPlans(rewind.token)) {
+          if (record.directoryPlan === undefined) throw new Error("directory fixture lost its plan");
+          await state.store.updateDirectoryPlan(record.checkpointId, record.directoryPlan, {
+            ...record.directoryPlan,
+            entries: record.directoryPlan.entries.map((entry) => ({ ...entry, state: "removing" as const })),
+          });
+        }
+      }
+      await state.context.productCheckpoint.rollbackRewindFiles(rewind.token);
+      for (const [index, path] of paths.entries()) expect(await readFile(path)).toEqual(contents[index]);
+      const records = await state.store.listRewindDirectoryPlans(rewind.token);
+      expect(records).toHaveLength(2);
+      for (const record of records) expect(record.directoryPlan?.entries.every((entry) => entry.state === "created")).toBe(true);
+    }
+    // A rollback request while the main mutation is still prepared must also undo
+    // an unjournaled file publication instead of silently marking it rolled back.
+    await rm(paths[1]);
+    await state.context.productCheckpoint.rollbackRewindFiles(rewind.token);
+    expect(await readFile(paths[1])).toEqual(contents[1]);
+    await persistence.rollbackRewind(rewind.token, "directory-rewind");
+    await state.context.fiber.dispose();
+  });
+
   it("seals, publishes, and rolls back the exact managed-file rewind plan", async () => {
     const state = await checkpointHarness();
     state.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
@@ -196,7 +382,7 @@ describe("ProductCheckpointService", () => {
     await state.context.productCheckpoint.reconcile(state.agent);
     state.session.append("turn/end", { turn: 2, reason: { kind: "completed" } });
     await state.context.sessions.flush(state.session);
-    const sourceEvents = [...state.session.events];
+    const sourceEvents = [...state.session.snapshotEvents()];
     const target = sourceEvents.slice(0, 2);
     const record = await persistence.prepareRewind({
       clientMutationId: "checkpoint-rewind-1",
@@ -434,7 +620,7 @@ describe("ProductCheckpointService", () => {
     expect(foldProductCheckpoints(state.session).has(prepared.checkpointId)).toBe(false);
 
     await state.context.productCheckpoint.reconcile(state.agent);
-    expect(state.session.events.filter((event) => event.type === "myagents/checkpoint/state")
+    expect(state.session.snapshotEvents().filter((event) => event.type === "myagents/checkpoint/state")
       .map((event) => event.data.phase)).toEqual(["prepared", "aborted"]);
     expect(await state.store.listUnsettled(String(state.session.id))).toEqual([]);
     await state.context.fiber.dispose();

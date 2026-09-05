@@ -1,137 +1,22 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-08-29",
+  "recordedAt": "2026-09-05",
   "authority": {
     "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
-    "commit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
-    "tree": "53915efe4e2126cc7779b73dfc8a3bcec5318c44",
-    "declaredRelease": "0.1.1-rc.2",
+    "commit": "a66e4702047846cdaa10c66c9d3df3951f5ea70d",
+    "tree": "27ab636bb3d77e698f5637e518db44ae1f61e262",
+    "declaredRelease": "0.1.2-rc.1",
     "executablePackageAssociation": "unproven",
     "files": [
       {
-        "path": "packages/core/agent/src/runtime-types.ts",
-        "blob": "7d713f8c77112f8e74150bc060ec677bb5107f90",
-        "sha256": "c2151e5b245fef908e8fcb0a1ea8d0a32e222c753cbaea23aee6dc865e2d6010"
-      },
-      {
-        "path": "packages/core/agent/src/index.ts",
-        "blob": "81052096dc057b69cc454c4db870a0edb7b4ae9f",
-        "sha256": "e4986fec8aa6e991378f0195df4e931e4ca5bf31b2af886f55a3242691db6804"
-      },
-      {
-        "path": "packages/core/agent-loop/src/agent.ts",
-        "blob": "3ef1ec7aa462ee561485a7472f4347d31bbd88bb",
-        "sha256": "8288214410df9e8f611df17768f667eeee67351bfcaf8c5bf92a38f6a5f9117f"
-      },
-      {
-        "path": "packages/session/session-persistence/src/coordinator.ts",
-        "blob": "63def62528dcb7dc0d728365a19949dd531d20fb",
-        "sha256": "80f044b43da1224e0e97208d27d0451f29f8acb579a43389af398eb36f98c096"
-      },
-      {
-        "path": "packages/core/session/src/index.ts",
-        "blob": "2d82a88623cf8b8d381f9ba905ba2e7088cbfe12",
-        "sha256": "9594e128e8b170845d703e37a54902cd0cd8b2e73e8555e94594575bd18af8f9"
-      },
-      {
-        "path": "packages/core/agent-loop/tests/cancel.spec.ts",
-        "blob": "992f4b62843e0e8d180d8cc3e8ab4ee1ec303686",
-        "sha256": "2b887b61be648f46d53940b73c503d7327e093bef70597e5f749bcf25cc841a3"
-      },
-      {
-        "path": "packages/core/scope/src/scoped-events.generated.ts",
-        "blob": "672914c5c30f1ef683994e5ed213888505aff332",
-        "sha256": "640535447222732e8ea276d4c5d461d00a7300d8aabc37624d3233246cc231ec"
-      },
-      {
-        "path": "packages/core/scope/tests/invariant.spec.ts",
-        "blob": "345766b04231d36c96c431543a8607cdba9acd48",
-        "sha256": "6c9b41559c4a77482c40bb521087c7b1d4b15b0aff30c1d2c179168760faa518"
-      },
-      {
-        "path": "packages/session/session-persistence/tests/persistence.spec.ts",
-        "blob": "6c63d72b9f3da1c8b8af5bc245c45db4d47a5aa3",
-        "sha256": "a52b9436b5254f5c9728cc9b953c6afdbbe2aa3e527f96c444531f9dcedbd8d3"
-      },
-      {
-        "path": "packages/subagent/subagent/src/continuation.ts",
-        "blob": "652a3ba6c8919a1a96e1e716403d5d8a27f37df5",
-        "sha256": "fbcbd65ada6dc1e7262e512269e4b7728fcc093f1eecab97fd77179478b3ca94"
-      },
-      {
-        "path": "packages/subagent/subagent/src/types.ts",
-        "blob": "17978550abd1e12c96fba3186cdf2e0bb06c5176",
-        "sha256": "c21829a95caf7fe95e817d6a13d92cf3b58038cee3f7c2a426d8cc67e8b91b59"
-      },
-      {
-        "path": "packages/subagent/subagent/src/descriptor.ts",
-        "blob": "6d9dedee75b70fcbb2eec44a897645c7b8a21e39",
-        "sha256": "ab5886a1dc3bdc97fdb0372f5d7b64ff90c2205079621d5af11c1960babfceb1"
-      },
-      {
-        "path": "packages/subagent/subagent/src/index.ts",
-        "blob": "45b96a2311599da455af146313888460d1548ea1",
-        "sha256": "14e7c3b7079214a978548b64028f5c4d16d3f2f81a8ccf99e089dcd370e63b6c"
-      },
-      {
-        "path": "packages/subagent/subagent/tests/continuation.spec.ts",
-        "blob": "6cf1aea5a896d207964b154999b6ed2b5756bfff",
-        "sha256": "012c144242922439987490e5ae223f90f68cba200c1c4fd3aba4b27453da4f3a"
-      },
-      {
-        "path": "packages/subagent/subagent/tests/service.spec.ts",
-        "blob": "05e9785611e1436fd2ffe8a9a22a680b417d7fc0",
-        "sha256": "340c4715db61a9d4a647643b1f1eccf412770df5803c7f067d8807719ed6f268"
-      },
-      {
-        "path": "packages/subagent/subagent-in-process-driver/src/index.ts",
-        "blob": "fd1ebff2be381f451752a292abb166834a6e1bdf",
-        "sha256": "2aadb343b2d189e9ccf17e365669a82c0dd85724465b056ab18d3425b66d9f99"
-      },
-      {
-        "path": "packages/subagent/subagent-in-process-driver/tests/subagent-in-process-driver.spec.ts",
-        "blob": "823890d9348a4ad53ce9e261d30744e716d81c7a",
-        "sha256": "1d78132f1700dabb905e61ec6c98abb12d59285b7c03a1ab6bdb684f59d8d185"
-      },
-      {
-        "path": "packages/subagent/subagent-spawn-in-process/src/index.ts",
-        "blob": "dcd036e4ad1390ad7b9b54e56ae1cdd100d6feb0",
-        "sha256": "164934735d7bbd6e2c6cdeffec511dfa89c20b3b67e5bfef55c1870731033de9"
-      },
-      {
-        "path": "packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts",
-        "blob": "74aefb4ebda78301e08882217687426979afa5bc",
-        "sha256": "2329f4e94cfca6653699d03e11d89822fc6796caa6678a73b88944f2472fd703"
-      },
-      {
-        "path": "packages/subagent/subagent-fork-in-process/src/index.ts",
-        "blob": "1f8e48b8c8b5fd0d15c9df47217cc005ab927c66",
-        "sha256": "37524d70eb24e101f9e5ba93b7745ca28499eba795ae55b8b397ba4a078642f0"
-      },
-      {
-        "path": "packages/subagent/subagent-fork-in-process/tests/subagent-fork-in-process.spec.ts",
-        "blob": "6d763b7c0aa1b36ed8b1a588539e49ce49d4090b",
-        "sha256": "66b560e14358f51c77df18171d1c54f1a1f90feb0303e7195733884ca9d43d76"
-      },
-      {
-        "path": "packages/llm/llm-deepseek/src/translate.ts",
-        "blob": "f1a626735550567e7126cf6121de23c1db56df35",
-        "sha256": "69d9b348778fc657fef33262727b64f11c9afde81119302ad80b2a3d1dec5602"
-      },
-      {
-        "path": "packages/llm/llm-deepseek/tests/translate.spec.ts",
-        "blob": "e5a98d1c676877e05e2084f648ffc59e8d91f2e7",
-        "sha256": "48c2279588133f09b3385ebd547398f9f991ecb61210e499c1ec848e89dcb945"
-      },
-      {
         "path": "packages/compaction/compaction-basic/src/index.ts",
-        "blob": "9a5dcca2e19cfac6a7b60e95dbcf9ea096327a1a",
-        "sha256": "d902d83329a1eda4ed7e29aa459c1a9663a19d5b7d95c76af118cb2c510a2edd"
+        "blob": "7a6ce3dabae76f9545ce9ad53815613084c553c7",
+        "sha256": "f824fc6f586c6ec7ae26442656d789accd0b5124924886e91b480bc587b1491d"
       },
       {
         "path": "packages/compaction/compaction-basic/src/region.ts",
-        "blob": "1472a4e68cc4362bb190518e046f34a5b21e88fe",
-        "sha256": "3e3d995cb88d5cf8e5f14088d9bb0da1c99e55990fda5a75e06094fa936c42f9"
+        "blob": "c639814ce79987193003f1c44d4b3f2acf69221d",
+        "sha256": "79debc14a677e42a952407e58a0134ee003bbef3a85809d17ae399b003a44573"
       },
       {
         "path": "packages/compaction/compaction-basic/src/summarizer.ts",
@@ -145,53 +30,23 @@
       },
       {
         "path": "packages/compaction/compaction-basic/tests/compaction-basic.spec.ts",
-        "blob": "2cf07d3f706e5350e3c3484fd0d6a96171e8072b",
-        "sha256": "2896acd63a7f9872a6531079f2668c7fe24836cc3c5a049a57fff4d965fd5861"
+        "blob": "e6ed88274bf7b581fcb031ff0bdca78140f062b9",
+        "sha256": "a69dec7dfff641d4b831d437ade255243957ef10daf0c83733604dd0076a5285"
       },
       {
         "path": "packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts",
-        "blob": "867d11c2a66ff766011de24ad6af5f8f2502b6e7",
-        "sha256": "b5b8115a2ef574e5ed8f85def0514ba6fc2aba0ef8d03ffc7f7050557c4dbc16"
+        "blob": "f7b44e19405910d10cc1338268d44e3891aa0f12",
+        "sha256": "917c4718ce54909e3fbe51f0b61c8a3d9bc5cc2a611ad621ee2ca8ad72ef8f39"
       },
       {
         "path": "packages/compaction/compaction/src/invariant.ts",
-        "blob": "7252fb06b0803ebbfa00229e3672f0ad29466709",
-        "sha256": "c1b124bfc0b6a3fa227faccae90e21a4695c642390e9a3e51f5c77d59e5c4ff4"
+        "blob": "ce19a6670f605dc6a6584b0fc75661127ceb1817",
+        "sha256": "769e34088246b542a039891cead8fc9f68d50dfbc5ae80790aa10f11da30440a"
       },
       {
         "path": "packages/compaction/compaction/src/types.ts",
-        "blob": "0ad5796d933aed3d4a551721cbce8ed1a3052a0a",
-        "sha256": "72a52bbac6cb2143d3efd09880dea175dc4c91b26a2be6580b57c23b9c2cf254"
-      },
-      {
-        "path": "packages/llm/token-meter/src/estimate.ts",
-        "blob": "1e02428086ec5e55aba16a1759bc26ee5384dbe1",
-        "sha256": "0602d0ef294143290a327a4d4d393cf9807b3a40902079c32b5eca3c236fed3f"
-      },
-      {
-        "path": "packages/llm/token-meter/src/index.ts",
-        "blob": "2fa53f78f1c4aa64527c111e408fdfe713f832f7",
-        "sha256": "bbc45ac18017f2000c2021e170eadcbe1535454a88064f7a610ce95d390c0a6c"
-      },
-      {
-        "path": "packages/llm/token-meter/src/types.ts",
-        "blob": "779bd8e2716d31584caf1f01568ba5a63d794694",
-        "sha256": "24f98b3447c523ce071495f64fac34cdfae974fa957205993d0dc1395fbb3597"
-      },
-      {
-        "path": "packages/core/system-prompt/src/index.ts",
-        "blob": "ffc052e0b9b1a7c1e3eefa0851ac1499266d02ea",
-        "sha256": "a148facca99d8ae6ee2cb3376dcded586bbd4f0f82ba476148e846160b2a8fee"
-      },
-      {
-        "path": "packages/core/system-prompt/tests/system-prompt.spec.ts",
-        "blob": "cf196892a767306588ce826c694ab5d3ba3fbf98",
-        "sha256": "2682f5c374a492dbb431dee5438db2f2a619dd8c3a6fe6f8bc78a641a2e30e4d"
-      },
-      {
-        "path": "packages/subagent/subagent/src/child-agent.ts",
-        "blob": "7582338858f470909494ef8640e06c4b09b81561",
-        "sha256": "ea7b6f6fc209175d9a83154ef9f60ccb34ab3a87e966d34c908c5b7215612877"
+        "blob": "5a7d12c1b21a9ed55287a1935a3f8104d30722b9",
+        "sha256": "72859150e72a6f75bd97a637f12c2488132f039eefa1ebd4294561b21ac918ef"
       },
       {
         "path": "packages/context/agent-instructions/src/config.ts",
@@ -200,38 +55,203 @@
       },
       {
         "path": "packages/context/agent-instructions/src/files.ts",
-        "blob": "291619a983c87729f172c49b5a3d0d0e95773e79",
-        "sha256": "28ed9f7fc2b65cbdf091d1e59783493fcf726aedc46e3391c83e4bf1612bb1a2"
+        "blob": "01492e3e91245cedb2a0200d24d8fbafd329a757",
+        "sha256": "eb6d69528e3f2390b84ee1f7a47732ab02d17c37a5fde4e3315ad75dac37a7af"
       },
       {
         "path": "packages/context/agent-instructions/src/index.ts",
-        "blob": "1b00960adba1fde96f72a609d88abebf0f7c31fc",
-        "sha256": "481e6a6b4b975af24b20231e320c489948ff9d13355f23bcc2959a49f682db5e"
+        "blob": "f614926241e2a4f74ade02e40f36551839e89c8e",
+        "sha256": "6b1c6068a63e45110e73137a25d586eeef5685391745faa83834ae4f99eb223b"
       },
       {
         "path": "packages/context/agent-instructions/src/state.ts",
-        "blob": "30e700eda58e67557135bcbc619b446f9a449a21",
-        "sha256": "498d29bdad965b8ce32dd5e3e5514f43c43760d67fe1b7fc33ca794c1372b7fa"
+        "blob": "fb25e262f93c470ac9d5c3def440f4c8f5d6327e",
+        "sha256": "14feffbe8fde153d84996d4f11c0d76a1e42500da7284267cb842f49078259e8"
       },
       {
         "path": "packages/context/agent-instructions/tests/agent-instructions.spec.ts",
-        "blob": "4fc60bc78dd754502598181ab3f91ed541d90f69",
-        "sha256": "fea67cb6812b434a73e9ae59e1aad7c13f41bca143af0508f50d73fb5d407f2a"
+        "blob": "af270437b1270c0e54db2ec33093ee2ebd08bdd4",
+        "sha256": "3da59267f644c9612f2e2414265eb5fc63a12eeace8349aed0d0e63859f92362"
+      },
+      {
+        "path": "packages/core/agent-loop/src/agent.ts",
+        "blob": "1b8448e6930eb6d579594d429882038d44e3e269",
+        "sha256": "cc14a38d5cf32003699a9342286b597eccf35cec79740c28552e229ead43b4f8"
+      },
+      {
+        "path": "packages/core/agent-loop/tests/cancel.spec.ts",
+        "blob": "4c148d663d7645a34fb260a6640e77d65221cc5a",
+        "sha256": "387651c95aee1a483a9f61598af100d0f0a45913c9108f0a5d9d44cf62f159a9"
+      },
+      {
+        "path": "packages/core/agent/package.json",
+        "blob": "60ffb53923306bd7465d3e1f51355d8db6d92f61",
+        "sha256": "2ae55b213db975a652176f7b2816f655edd870e9f37a70c1df9cc0294af9c72d"
+      },
+      {
+        "path": "packages/core/agent/src/index.ts",
+        "blob": "6e3db1edb01ab5e5b01f4f6e29a41a8191b6b4d6",
+        "sha256": "4cc94c44f38356e0574a3b82142687351a87f6cf1c511d8c49f81f336d147419"
+      },
+      {
+        "path": "packages/core/agent/src/runtime-types.ts",
+        "blob": "c8bc08ecbbde72b6608cc4ecb292b579d6e4493d",
+        "sha256": "427050148a2bb47f9e0d8f276a45bdcd88ce2c0671ae50d3ac5cc7ac75a58cb8"
+      },
+      {
+        "path": "packages/core/scope/src/scoped-events.generated.ts",
+        "blob": "e7f24ca4cb49f759123f0f8689ddb304bd33ce8e",
+        "sha256": "cffbbe867424b4f208420bf2ea8511d1c44e14dceba32f611832555c952c1ac1"
+      },
+      {
+        "path": "packages/core/scope/tests/invariant.spec.ts",
+        "blob": "2adc3d787b5da843260d6e822548fbe7152e7701",
+        "sha256": "4e5041774bc7605213bf688dfc24db1dc35f1163220396a05a094b038f9ad4f1"
+      },
+      {
+        "path": "packages/core/session/src/index.ts",
+        "blob": "c55cc5fb6af84668388905b7cbc7e6b7565a2eb9",
+        "sha256": "eb568db264cd2d6092240b8cdb9dfd60172a02d581960fbb09bfb7768bdc67f1"
+      },
+      {
+        "path": "packages/core/system-prompt/src/index.ts",
+        "blob": "fba1b51f50bc3f98d1d40b9424bb690a68489518",
+        "sha256": "be62470215076483070d4c785eceed489cbbed4792bd6c30a299a7459954d73c"
+      },
+      {
+        "path": "packages/core/system-prompt/tests/system-prompt.spec.ts",
+        "blob": "9818c50f94db1f01fc1e05dd482441a69112b3bd",
+        "sha256": "5485507ebf4af905499b94cc910b6e01b4b75ddc73874c6305ecdc1bd43378ce"
+      },
+      {
+        "path": "packages/llm/llm-deepseek/src/translate.ts",
+        "blob": "0a3529f961d48fa5adff021e646988b5d3d4cd16",
+        "sha256": "cdaa9490a3bf2d69b364ddcae4f8d534cf437d1db51680b5b625c91f2db5c12d"
+      },
+      {
+        "path": "packages/llm/llm-deepseek/tests/translate.spec.ts",
+        "blob": "ccdf58bdf6404f7be07e72ae744c98e54d0aba9f",
+        "sha256": "c951f2f35e58482ed1b3b9350b820f3dc972f60a19317178c7199204f2ce160c"
       },
       {
         "path": "packages/llm/llm-pi-ai/src/replay.ts",
-        "blob": "aa9d542e335bf793b9b4ccebe0e548ce966655f3",
-        "sha256": "dc5203bc43e707f5f469d35272a533631c4dbf4adc57332e7acbdd7d33345e8a"
+        "blob": "bae4cfc40da591ec85718393b13b24f1fcd86397",
+        "sha256": "f498060e4d798ece0780788600f70d1b93bc451886982bd177809cff0fc86548"
       },
       {
         "path": "packages/llm/llm-pi-ai/src/stream.ts",
-        "blob": "d45df45a39b80b555cecab8741c66dbff1654442",
-        "sha256": "5375a5be66ddbc65893c0af544b788cb9e3c56e8d2e4b53a99eacd539aae2be4"
+        "blob": "203e63905244d6b8f4494efd53db1fc851931da3",
+        "sha256": "24dcdd27a58b7b864973ba50dfeed57b7c25c86f040d66010fa6e69ee184362b"
       },
       {
         "path": "packages/llm/llm-pi-ai/tests/convert.spec.ts",
-        "blob": "c540f2d50b281a030a6007e66a2b5624df8659dc",
-        "sha256": "4350556d679ee126bc58a1d9f583b016da61756f33dd91b2a13924717f0ca446"
+        "blob": "c80df43df13c314636413b16251886363d2c6619",
+        "sha256": "d687e7ec66f6752ab8b083ec833198bf956fe0a6174fd73c265ae140d0b173bf"
+      },
+      {
+        "path": "packages/llm/token-meter/src/estimate.ts",
+        "blob": "4c633c1a060e7123b3b9d4bfdca06255ba9478d5",
+        "sha256": "002d8cf11416228ba2be76ac2ac81f57c204a2f200c75aaae57cbff1c6e87272"
+      },
+      {
+        "path": "packages/llm/token-meter/src/index.ts",
+        "blob": "5e045223e305186db44cd6aee2c326ec95ceb9e5",
+        "sha256": "08fdbf1c86cd826f9ba52f4458e52968635c36c7c92a50a3cd95f489a3fde371"
+      },
+      {
+        "path": "packages/llm/token-meter/src/surface-fold.ts",
+        "blob": "ae293a7f57e3c03db2711a41db68298deb252df1",
+        "sha256": "dc49cff53a7a0565108037da615589239dd071248814cc40ad2c5104da58fce9"
+      },
+      {
+        "path": "packages/llm/token-meter/src/types.ts",
+        "blob": "487e031385da91e4f900ce3bf471f7bac791e6b5",
+        "sha256": "d0c153b4ff135839c072b1c57056366003028fb2f5ba7ea745845580c5fcb08f"
+      },
+      {
+        "path": "packages/session/session-persistence/src/coordinator.ts",
+        "blob": "c16fae6d40f30e2d9a868d02690d148f5e50136c",
+        "sha256": "d09807368869addfe29e4e9dea4f6ddbf55974699c8c589c29f0df8a3ddced1c"
+      },
+      {
+        "path": "packages/session/session-persistence/tests/persistence.spec.ts",
+        "blob": "dd002882f73bc424ff23a2b8ed9e89c5718a28e2",
+        "sha256": "97f30f018dfeb04faa86a5f06c38e58090775b474b6887efaf76ec2da52c0dd7"
+      },
+      {
+        "path": "packages/subagent/subagent-fork-in-process/src/index.ts",
+        "blob": "0e0311ebb589ee247595a81df94e262fc183dcd6",
+        "sha256": "6cf3aa737e249afcdae7fb3e40c41f33ba6780ac3570f52726e8a661ff0a473e"
+      },
+      {
+        "path": "packages/subagent/subagent-fork-in-process/tests/subagent-fork-in-process.spec.ts",
+        "blob": "021982449723ca9bb7fb3869b62c268ced8a6827",
+        "sha256": "41d16a5d370b5a66e3113ca7ad363c07ca1b3085d8d4ed8da5237a2d45ddd604"
+      },
+      {
+        "path": "packages/subagent/subagent-in-process-driver/src/index.ts",
+        "blob": "4ca07b84365bdd303d6983724cb7a196fde03a35",
+        "sha256": "21e54c4932132253b8098770212b847cfedde53432159701b09af0000d87e3e1"
+      },
+      {
+        "path": "packages/subagent/subagent-in-process-driver/tests/subagent-in-process-driver.spec.ts",
+        "blob": "df0250cf3fbdc593d0aa08e8ab1ff4fdb701c67a",
+        "sha256": "23f25f2a59b7d5f6f84cfde1db2c71499bf58c74ad4f3bad3d8e2df66ee668bf"
+      },
+      {
+        "path": "packages/subagent/subagent-spawn-in-process/src/index.ts",
+        "blob": "73811155c1979f5328309b106dfe53a961ede7c9",
+        "sha256": "0401c302d49b44a779d1e6ba93f817f43a8fe67974840c432d881792ff14fe66"
+      },
+      {
+        "path": "packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts",
+        "blob": "c46f99514fee5dbb0e9507dc98315967767cedc5",
+        "sha256": "f5fdcf79ad698b6b58bcd801d2a75ea5715356199d392736cd93e9128d92abcb"
+      },
+      {
+        "path": "packages/subagent/subagent/src/child-agent.ts",
+        "blob": "228b9de2f226f51602bae4bce500aa4d1dbd01b1",
+        "sha256": "4a5fc00efebdccf99016868327e029825a5f1e3dbe440ec8b0b90fd69c4becb1"
+      },
+      {
+        "path": "packages/subagent/subagent/src/continuation.ts",
+        "blob": "2103ce2270fe3f39769723f43390ad2fc73d603e",
+        "sha256": "746dd3ddd623d2f476a44c31ff11a35b33b9271f0a85b06c85f5d5c14835a5bd"
+      },
+      {
+        "path": "packages/subagent/subagent/src/descriptor.ts",
+        "blob": "de9191cc50fff632e3a9ff1c61e14a534df961a8",
+        "sha256": "00b5dc5d259f78ab9fb66cf7aa4f1c08835f471f2379e6fab79f7e03791c614c"
+      },
+      {
+        "path": "packages/subagent/subagent/src/index.ts",
+        "blob": "28e50930cd85a821bcf10c78c6400708b68d11cd",
+        "sha256": "173e3e150ad24758c52156a9a3b27ec6632f780a999feeeee6f584601c5bd653"
+      },
+      {
+        "path": "packages/subagent/subagent/src/lifecycle.ts",
+        "blob": "ba2db8e62c290f199e938acdae4a21f17f111c14",
+        "sha256": "337914253c7d4b60f314f552d876f88a5c624e8385a469feb341ffa8aac06c31"
+      },
+      {
+        "path": "packages/subagent/subagent/src/types.ts",
+        "blob": "9ee1e09aef880de637fa2754d6a25e3efd69d89a",
+        "sha256": "268a9b1e38e268aa16af1bade378fecb62afd9cbcfa8b2870295e1d6ef2f9af0"
+      },
+      {
+        "path": "packages/subagent/subagent/tests/continuation.spec.ts",
+        "blob": "851720f2285cb25d376ad4c7f1a9c59388d8bbfb",
+        "sha256": "6952892c363a67d000dc4d9403cd8facb8942fcc994ba9f3c148c55f5218338b"
+      },
+      {
+        "path": "packages/subagent/subagent/tests/service.spec.ts",
+        "blob": "e74c6844053a46bfa115d160c46785130c59bf7d",
+        "sha256": "04a5aee574a326f0954ac55ee184ec4d81ce172d0360bedd9cc7e0a7d2d54182"
+      },
+      {
+        "path": "pnpm-lock.yaml",
+        "blob": "4521b1bbf42de10ad2c19e85523b56661d19d8f7",
+        "sha256": "e12083149a77f790d39b64d018b6b8745c6a7aa95777ecb73e0a2f5ed5fdd0d9"
       }
     ]
   },
@@ -240,52 +260,52 @@
     {
       "order": 1,
       "path": "specs/dsh/patches/0001-agent-wake-pending.patch",
-      "sha256": "d63439d4a53e9d05a4305271e7fed7a18603d281e9b44652f2d36b04b2b62c93"
+      "sha256": "c44592b38cd23ad3482aa8cab1720bbabbcceec4652cf390a11ee86309e1d731"
     },
     {
       "order": 2,
       "path": "specs/dsh/patches/0002-pre-assistant-commit.patch",
-      "sha256": "c82eec3e996a0cc247e8e4e1f51ecedb78c5292e3f6cdc91ba2cc283ba3d4716"
+      "sha256": "b108785086867f3ce89602cea20678ab37edee6217fe3a524b13951e4d66be1a"
     },
     {
       "order": 3,
       "path": "specs/dsh/patches/0003-persistence-known-event-predicate.patch",
-      "sha256": "d56fc3f327f8e66fe305a891812d2e46a8104c75f9022c506fbbd0a329d2f84d"
+      "sha256": "4b44f0c3c5654db13f5454d2b570bc71fd0f3cb015afd1bb147920a8b48f558c"
     },
     {
       "order": 4,
       "path": "specs/dsh/patches/0004-publication-guards.patch",
-      "sha256": "39b743ea5446f9aa5c2ef1b4be65ff5c549cf98fea4b435d89541a5f060c6541"
+      "sha256": "b653777cbdecac746742c364ec4b6de0e22b6b5457b9a892a8fc8100a097df24"
     },
     {
       "order": 5,
       "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
-      "sha256": "31f3287cb960476f9f572a890269de29c4511642b9f632f206293c5541869efc"
+      "sha256": "e3ccc6bba56f4f99b41ced22f32d8a71f1eb49a867f93dbe35e5c578470e37f4"
     },
     {
       "order": 6,
       "path": "specs/dsh/patches/0006-deepseek-stream-tool-identity.patch",
-      "sha256": "784f48b280c80157e3416fd565d36fb0fc12ea39366e6df9e6a1252f7399d6f6"
+      "sha256": "56ec4a9543224b7519e6cafc0bdb4852ed77ee44948dc62edeb75aeee80104b8"
     },
     {
       "order": 7,
       "path": "specs/dsh/patches/0007-capacity-safe-compaction.patch",
-      "sha256": "98a45e3b5ae9abdba8afefd5a44ca95bdc69a58b9d1728ea707401fab2f6ed07"
+      "sha256": "f54be3c28ac0ffec6f69b463c861cff05bc7c55065240925d4fc5b0d3071ca77"
     },
     {
       "order": 8,
       "path": "specs/dsh/patches/0008-literal-prompt-contributions.patch",
-      "sha256": "d4ce8705e61df9104069da8c0756356e15fc0a12874012e55786d74159dbfd0d"
+      "sha256": "85245d66b345315b4c7a5cb84f5321f922ea20990bef3bc740d6d64292c32541"
     },
     {
       "order": 9,
       "path": "specs/dsh/patches/0009-agent-instruction-selection.patch",
-      "sha256": "d093c06fd8e272849888f64869022ed61df93524bb1bb68fc17045d5dd39edc9"
+      "sha256": "132e41beadedb0ac2d728c16077349ef279dbf09b6744dd59d68e91784936fa3"
     },
     {
       "order": 10,
       "path": "specs/dsh/patches/0010-pi-ai-provider-content.patch",
-      "sha256": "0a4b4cfe7dbb6843a6a07dc9a79fd8c88c13d6c239d6436a4de474243236509c"
+      "sha256": "28ab120eb22b29f5cf40d7e6338feac77871d106222c5b1baf25d7e37169f625"
     }
   ],
   "decisions": [
@@ -299,7 +319,7 @@
       "patch": {
         "order": 1,
         "path": "specs/dsh/patches/0001-agent-wake-pending.patch",
-        "sha256": "d63439d4a53e9d05a4305271e7fed7a18603d281e9b44652f2d36b04b2b62c93"
+        "sha256": "c44592b38cd23ad3482aa8cab1720bbabbcceec4652cf390a11ee86309e1d731"
       },
       "executableEvidence": [
         "actual Inbox FIFO reorder under remove/reinsert",
@@ -320,7 +340,7 @@
       "patch": {
         "order": 2,
         "path": "specs/dsh/patches/0002-pre-assistant-commit.patch",
-        "sha256": "c82eec3e996a0cc247e8e4e1f51ecedb78c5292e3f6cdc91ba2cc283ba3d4716"
+        "sha256": "b108785086867f3ce89602cea20678ab37edee6217fe3a524b13951e4d66be1a"
       },
       "executableEvidence": [
         "model-order multi-call transformation",
@@ -341,7 +361,7 @@
       "patch": {
         "order": 3,
         "path": "specs/dsh/patches/0003-persistence-known-event-predicate.patch",
-        "sha256": "d56fc3f327f8e66fe305a891812d2e46a8104c75f9022c506fbbd0a329d2f84d"
+        "sha256": "4b44f0c3c5654db13f5454d2b570bc71fd0f3cb015afd1bb147920a8b48f558c"
       },
       "executableEvidence": [
         "real coordinator append/inspect/prepare/load/replacement accepts the exact product predicate",
@@ -377,7 +397,7 @@
       "patch": {
         "order": 4,
         "path": "specs/dsh/patches/0004-publication-guards.patch",
-        "sha256": "39b743ea5446f9aa5c2ef1b4be65ff5c549cf98fea4b435d89541a5f060c6541"
+        "sha256": "b653777cbdecac746742c364ec4b6de0e22b6b5457b9a892a8fc8100a097df24"
       },
       "executableEvidence": [
         "Session guard rejects before store or attachment mutation",
@@ -394,16 +414,20 @@
       "status": "required_upstream_patch_accepted",
       "adr": "specs/adr/0006-product-owned-continuable-lifecycle.md",
       "rejected": "allow-stock-parent-notice-or-interrupt-only-teardown-to-escape-product-work-ownership",
-      "selectedPublicApi": "stock SubagentRuntime.registerContinuableSetup/drainContinuableChildren plus patched ContinuableStartSpec.settlementDelivery, SubagentRunEndInfo.infrastructureFailure, and SubagentRuntime.resumeContinuable",
+      "selectedPublicApi": "stock SubagentRuntime.drainContinuableChildren plus patched registerContinuableSetup, deliverContinuable, withContinuableAncestors, ContinuableStartSpec.settlementDelivery, SubagentRunEndInfo.infrastructureFailure, and resumeContinuable",
       "patch": {
         "order": 5,
         "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
-        "sha256": "31f3287cb960476f9f572a890269de29c4511642b9f632f206293c5541869efc"
+        "sha256": "e3ccc6bba56f4f99b41ced22f32d8a71f1eb49a867f93dbe35e5c578470e37f4"
       },
       "executableEvidence": [
         "stock callers retain parent settlement delivery by default",
         "trusted composition setup installs only into unpublished continuable child scopes and revokes with the existing Activation lifecycle",
-        "external ownership suppresses the automatic parent notice",
+        "external ownership suppresses the automatic parent notice and lets completed parents release while background descendants continue",
+        "composition delivery retains exact source and steer/queue scheduling through live and cold admission",
+        "scoped ancestor residency follows exact durable direct-parent edges without synthetic Inbox input, model turns or activation events; parked pending identities remain owned until explicit wake",
+        "concurrent ancestry callers share one retained handle and stale parent objects cannot create new children after release",
+        "scoped subtree drain follows durable ancestor identities after the original parent Agent was evicted",
         "the delivery owner survives durable descriptor load and cold resume",
         "external ownership makes the existing final child-Session flush strict before handle release",
         "a strict durability failure rejects the upstream selected-child drain and marks the terminal edge without relabeling child model errors",
@@ -411,7 +435,7 @@
         "cold recovery wakes one exact already-durable Inbox identity without reinsertion",
         "all reconstructed pending FIFO identities retain Activation ownership until claimed or discarded"
       ],
-      "removalCondition": "an installed DSH release exposes equivalent durable settlement ownership, strict external final durability, and no-reinsert pending wake; setup and selected-child drain are already stock"
+      "removalCondition": "an installed DSH release exposes equivalent durable settlement ownership, strict external final durability, no-reinsert pending wake, and scoped cold-ancestor residency; trusted setup was removed in rc.1 and remains patched; selected-child drain is stock"
     },
     {
       "id": "DSH-SEAM-007",
@@ -423,7 +447,7 @@
       "patch": {
         "order": 6,
         "path": "specs/dsh/patches/0006-deepseek-stream-tool-identity.patch",
-        "sha256": "784f48b280c80157e3416fd565d36fb0fc12ea39366e6df9e6a1252f7399d6f6"
+        "sha256": "56ec4a9543224b7519e6cafc0bdb4852ed77ee44948dc62edeb75aeee80104b8"
       },
       "executableEvidence": [
         "an established V4-Flash tool id and name survive empty continuation fields",
@@ -443,14 +467,14 @@
       "patch": {
         "order": 7,
         "path": "specs/dsh/patches/0007-capacity-safe-compaction.patch",
-        "sha256": "98a45e3b5ae9abdba8afefd5a44ca95bdc69a58b9d1728ea707401fab2f6ed07"
+        "sha256": "f54be3c28ac0ffec6f69b463c861cff05bc7c55065240925d4fc5b0d3071ca77"
       },
       "executableEvidence": [
         "one singleton estimator prices durable pressure and exact summary requests",
         "summary output cap follows the independently resolved summary model",
         "known-overflow summary requests fail before Provider call and durable bracket",
         "the largest fitting tool-balanced older range is selected",
-        "Prompt v2 shallow validation permits at most one repair and aggregates usage",
+        "Prompt v2 shallow validation permits at most one repair and aggregates usage only when every call reports it, preserving unknown buckets and exact totals",
         "direct stream-call count remains backward compatible for old one-call events",
         "content-free telemetry excludes synthetic secret and checkpoint canaries",
         "stock manual, automatic pressure, and Provider-overflow regressions remain green"
@@ -467,7 +491,7 @@
       "patch": {
         "order": 8,
         "path": "specs/dsh/patches/0008-literal-prompt-contributions.patch",
-        "sha256": "d4ce8705e61df9104069da8c0756356e15fc0a12874012e55786d74159dbfd0d"
+        "sha256": "85245d66b345315b4c7a5cb84f5321f922ea20990bef3bc740d6d64292c32541"
       },
       "executableEvidence": [
         "sections and contexts preserve literal brace examples while omitted flags retain strict interpolation",
@@ -487,7 +511,7 @@
       "patch": {
         "order": 9,
         "path": "specs/dsh/patches/0009-agent-instruction-selection.patch",
-        "sha256": "d093c06fd8e272849888f64869022ed61df93524bb1bb68fc17045d5dd39edc9"
+        "sha256": "132e41beadedb0ac2d728c16077349ef279dbf09b6744dd59d68e91784936fa3"
       },
       "executableEvidence": [
         "first selection loads one non-empty candidate per directory and falls through confirmed empty files",
@@ -508,7 +532,7 @@
       "patch": {
         "order": 10,
         "path": "specs/dsh/patches/0010-pi-ai-provider-content.patch",
-        "sha256": "0a4b4cfe7dbb6843a6a07dc9a79fd8c88c13d6c239d6436a4de474243236509c"
+        "sha256": "28ab120eb22b29f5cf40d7e6338feac77871d106222c5b1baf25d7e37169f625"
       },
       "executableEvidence": [
         "Provider call and result blocks remain ordered structured non-executable content",
@@ -534,6 +558,7 @@
       "packages/session/session-persistence/tests/persistence.spec.ts",
       "packages/subagent/subagent/tests/continuation.spec.ts",
       "packages/subagent/subagent/tests/service.spec.ts",
+      "packages/subagent/subagent/tests/activation-setup-registry.spec.ts",
       "packages/subagent/subagent-in-process-driver/tests/subagent-in-process-driver.spec.ts",
       "packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts",
       "packages/subagent/subagent-fork-in-process/tests/subagent-fork-in-process.spec.ts",

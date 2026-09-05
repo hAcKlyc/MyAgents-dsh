@@ -1,5 +1,5 @@
 import { Context } from "@deepseek-ai/cordis";
-import { CallId } from "@deepseek-ai/dsh-llm";
+import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import {
@@ -418,7 +418,7 @@ describe("generation-owned MCP component compiler", () => {
     expect(effects.slice(0, 2)).toEqual(["connect:1", "list:1"]);
     const outcome = await root.tools.execute({
       arguments: Object.freeze({ value: "hello" }),
-      callId: CallId("call-one"),
+      callId: ToolCallId("call-one"),
       name: "mcp__fixture__echo",
       signal: new AbortController().signal,
     });
@@ -457,7 +457,7 @@ describe("generation-owned MCP component compiler", () => {
     expect(root.tools.get("mcp__fixture__echo")).not.toBe(definition);
     const replacement = await root.tools.execute({
       arguments: Object.freeze({ value: "replacement" }),
-      callId: CallId("call-two"),
+      callId: ToolCallId("call-two"),
       name: "mcp__fixture__echo",
       signal: new AbortController().signal,
     });
@@ -591,7 +591,7 @@ describe("generation-owned MCP component compiler", () => {
     });
     const outcome = await root.tools.execute({
       arguments: Object.freeze({}),
-      callId: CallId("credential-call"),
+      callId: ToolCallId("credential-call"),
       name: "mcp__fixture__echo",
       signal: new AbortController().signal,
     });
@@ -645,7 +645,7 @@ describe("generation-owned MCP component compiler", () => {
     });
     const call = root.tools.execute({
       arguments: Object.freeze({}),
-      callId: CallId("wait-call"),
+      callId: ToolCallId("wait-call"),
       name: "mcp__fixture__wait",
       signal: new AbortController().signal,
     });

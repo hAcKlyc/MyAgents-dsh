@@ -6,6 +6,12 @@
 
 Current disposition (2026-09-03): retained as `DSH-SEAM-011` / patch 0010, paired with the pinned `pi-ai` patch authority under `specs/pi-ai/`.
 
+Self-test correction (2026-09-05): the same pi-ai seam also retains generic `tool_result` when
+its ID belongs to an observed server/MCP call in that response. Tool naming and opaque result
+envelopes do not gate preservation. Unrelated/client results are never promoted to Provider
+activity. The upstream revision and DSH patch remain pinned; updated isolated pi-ai source/build/SSE
+evidence passes, while replacement Runtime/platform/handoff acceptance remains open.
+
 ## Context
 
 Anthropic Messages-compatible Providers can emit server-side tool call/result content such as Web Search. The pinned `pi-ai` adapter discards those typed blocks, while DSH can durably assemble unknown complete content blocks but must never execute Provider-owned activity through `ctx.tools`.

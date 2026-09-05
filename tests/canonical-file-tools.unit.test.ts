@@ -1,6 +1,7 @@
+import { SessionSeq } from "@deepseek-ai/dsh-session";
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import { CallId, createToolResultMessage } from "@deepseek-ai/dsh-llm";
+import { ToolCallId, createToolResultMessage } from "@deepseek-ai/dsh-llm";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
@@ -126,6 +127,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
     }),
   });
   const operation = Object.freeze({
+    origin: "user" as const,
     acceptedAt: 1,
     birth: Object.freeze({
       componentDigest: "b".repeat(64),
@@ -249,7 +251,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
     signal = new AbortController().signal,
   ) => {
     call += 1;
-    const callId = CallId(`call-${call}`);
+    const callId = ToolCallId(`call-${call}`);
     const result = await context.tools.execute({
       agent,
       arguments: args,
@@ -271,7 +273,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
         step: 1,
         turn: 1,
       }),
-      seq: durableSequence,
+      seq: SessionSeq(durableSequence),
       surfaceOp: "append" as const,
       time: durableSequence,
       type: "tool/result" as const,
@@ -292,7 +294,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
     args: unknown,
   ) => {
     call += 1;
-    const callId = CallId(`child-call-${call}`);
+    const callId = ToolCallId(`child-call-${call}`);
     const result = await context.tools.execute({
       agent: childAgent,
       arguments: args,
@@ -307,7 +309,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
         step: 1,
         turn: 1,
       }),
-      seq: durableSequence,
+      seq: SessionSeq(durableSequence),
       surfaceOp: "append" as const,
       time: durableSequence,
       type: "tool/result" as const,
@@ -446,7 +448,7 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("distinguishes an absent Write parent and ls root without creating directories", async () => {
+  it("requires a checkpoint directory authority to create Write parents and rejects an absent ls root", async () => {
     const state = await harness();
     const missingDirectory = join(state.workspace, "missing-parent");
     const write = await state.execute("Write", {
@@ -455,9 +457,9 @@ describe("canonical filesystem tools", () => {
     });
     expect(write).toMatchObject({
       isError: true,
-      error: { info: { code: "directory_not_found" } },
+      error: { info: { code: "FS_NOT_FOUND" } },
     });
-    expect(JSON.stringify(write)).toContain("Write parent directory does not exist");
+    expect(state.checkpoints).toContain("abort");
     await expect(realpath(missingDirectory)).rejects.toMatchObject({ code: "ENOENT" });
 
     const list = await state.execute("ls", { path: "missing-root" });

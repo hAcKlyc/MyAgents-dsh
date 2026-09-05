@@ -1,24 +1,27 @@
+import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
+import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
+type ContinuableSetupContribution = Parameters<Context["subagents"]["registerContinuableSetup"]>[0];
 import { createHash } from "node:crypto";
 
 import { Context, Service } from "@deepseek-ai/cordis";
 import { AgentRegistry, Inbox, type Agent } from "@deepseek-ai/dsh-agent";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import {
-  CallId,
+  ToolCallId,
   MessageId,
   createToolResultMessage,
   freezeMessage,
   type ContentBlock,
   type MessageSource,
+  type UserMessage,
 } from "@deepseek-ai/dsh-llm";
-import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
+import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { createScope, scopeTarget } from "@deepseek-ai/dsh-scope";
 import {
   SUBAGENT_DESCRIPTOR_VERSION,
   foldSubagentDescriptor,
   seedDescriptorTurn,
   snapshotSubagentDescriptor,
-  type ContinuableSetupContribution,
   type ContinuableStart,
   type ContinuableStartSpec,
   type SubagentRuntime,
@@ -30,8 +33,9 @@ import {
   ProductWorkService,
   validateProductWorkEventData,
   type ProductWorkSettledEventData,
+  type ProductWorkServiceConfig,
 } from "@myagents-dsh/tools-agent";
-import { ProductToolError } from "@myagents-dsh/tool-runtime-product";
+import { ProductPermissionError, ProductToolError } from "@myagents-dsh/tool-runtime-product";
 import type {
   ProductRetainedOutputAuthority,
   ProductRetainedOutputFile,
@@ -54,10 +58,20 @@ const fakeAgent = (
     cancel: () => undefined,
     followup: () => undefined,
     id: SessionId(id),
-    inbox: Object.freeze({}),
+    get inbox() { return new Inbox(session, { claimed: () => undefined, discarded: () => undefined, inserted: () => undefined }); },
+    inject: (message: UserMessage) => {
+      const inbox = new Inbox(session, {
+        claimed: () => undefined,
+        discarded: () => undefined,
+        inserted: () => undefined,
+      });
+      inbox.append("next-step", message);
+    },
     options: Object.freeze({ model: "fixture-model", provider: "fixture-provider" }),
     runMaintenance: <T>(operation: (signal: AbortSignal) => Promise<T>) => operation(new AbortController().signal),
-    send: () => undefined,
+    send: (message: UserMessage, target: "next-step" | "next-turn") => {
+      new Inbox(session, { claimed: () => undefined, discarded: () => undefined, inserted: () => undefined }).append(target, message);
+    },
     session,
     status: "idle" as const,
     steer: () => undefined,
@@ -106,13 +120,14 @@ class FakeContinuableSubagents extends Service {
   }
 
   async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart> {
-    const childId = SessionId(`child-${String(this.children.size + 1)}`);
+    const childId = spec.childId ?? SessionId(`child-${String(this.children.size + 1)}`);
     const descriptor = snapshotSubagentDescriptor({
       ...(spec.request.agentOptions?.model === undefined ? {} : { agentModel: spec.request.agentOptions.model }),
       ...(spec.request.agentOptions?.provider === undefined ? {} : { agentProvider: spec.request.agentOptions.provider }),
       label: spec.label,
       mode: "continuable",
       ...(spec.request.persona === undefined ? {} : { persona: spec.request.persona }),
+      ...(spec.request.personaInterpolate === undefined ? {} : { personaInterpolate: spec.request.personaInterpolate }),
       provider: spec.provider,
       ...(spec.settlementDelivery === undefined ? {} : { settlementDelivery: spec.settlementDelivery }),
       ...(spec.request.toolFilter === undefined ? {} : { toolFilter: spec.request.toolFilter }),
@@ -123,15 +138,16 @@ class FakeContinuableSubagents extends Service {
         ...(spec.request.parent.session.header.cwd === undefined ? {} : {
           cwd: spec.request.parent.session.header.cwd,
         }),
-        delegationDepth: 1,
+        delegationDepth: (spec.request.parent.session.header.delegationDepth ?? 0) + 1,
         origin: "subagent",
         parentSession: spec.request.parent.id,
-        seedLength: 0,
+        isSeeded: false,
       },
       seed: seedDescriptorTurn(childId, undefined, descriptor),
     });
     const detachSession = this.ctx.sessions.enter(session);
     const { agent: child, disposeScope } = fakeAgent(this.ctx, childId, session);
+    Object.defineProperty(child, "options", { value: Object.freeze({ ...child.options, ...spec.request.agentOptions }) });
     const childContext = child.ctx;
     const setupDisposers: (() => void)[] = [];
     try {
@@ -205,14 +221,46 @@ class FakeContinuableSubagents extends Service {
     for (const childId of childIds) await this.retireContinuable(childId, parent);
   }
 
-  resumeContinuable(parent: Agent, childId: SessionId, messageId: MessageId): Promise<boolean> {
-    const child = this.children.get(childId);
-    const session = child?.agent.session ?? this.ctx.sessions.get(childId);
+  async withContinuableAncestors<T>(root: Agent, ancestors: readonly SessionId[], _options: Readonly<{ signal: AbortSignal }>, operation: (parent: Agent) => Promise<T>): Promise<T> {
+    let parent = root;
+    for (const id of ancestors) {
+      const child = this.materializeFixture(parent, id);
+      if (child?.session.header.parentSession !== parent.id) throw new Error("fixture ancestry is unavailable or foreign");
+      parent = child;
+    }
+    return await operation(parent);
+  }
+
+  private materializeFixture(parent: Agent, childId: SessionId): Agent | undefined {
+    const existing = this.children.get(childId)?.agent;
+    if (existing !== undefined) return existing;
+    const session = this.ctx.sessions.get(childId);
+    if (session?.header.parentSession !== parent.id) return undefined;
+    const { agent, disposeScope } = fakeAgent(this.ctx, childId, session);
+    const descriptor = foldSubagentDescriptor(session.snapshotEvents());
+    if (descriptor?.mode !== "continuable") throw new Error("fixture materialization requires a continuable descriptor");
+    Object.defineProperty(agent, "options", { value: Object.freeze({ ...agent.options, model: descriptor.agentModel, provider: descriptor.agentProvider }) });
+    const disposers: (() => void)[] = [];
+    for (const setup of this.setups) {
+      const dispose = setup(agent.ctx);
+      if (typeof dispose === "function") disposers.push(dispose);
+    }
+    this.children.set(childId, Object.freeze({
+      agent, detachAgent: this.ctx.agents.register(agent), detachSession: () => undefined,
+      disposeSetup: async () => { for (const dispose of disposers.reverse()) dispose(); await disposeScope(); },
+    }));
+    return agent;
+  }
+
+  async resumeContinuable(parent: Agent, childId: SessionId, messageId: MessageId): Promise<boolean> {
+    const child = this.materializeFixture(parent, childId);
+    const session = child?.session;
     if (session?.header.parentSession !== parent.id) {
-      return Promise.reject(new Error("unknown or foreign child"));
+      throw new Error("unknown or foreign child");
     }
     this.resumed.push(String(messageId));
-    return Promise.resolve(true);
+    if (child !== undefined && !this.runs.has(childId)) this.startEpoch(child, "fixture-spawn");
+    return await Promise.resolve(true);
   }
 
   async drainContinuableDescendants(parents: readonly Agent[]): Promise<void> {
@@ -225,16 +273,16 @@ class FakeContinuableSubagents extends Service {
     }
   }
 
-  followup(
+  deliverContinuable(
     parent: Agent,
     childId: SessionId,
     content: ContentBlock[],
-    options: Readonly<{ source: MessageSource }>,
+    options: Readonly<{ source: MessageSource; delivery?: "steer" | "queue" }>,
   ): Promise<MessageId> {
     let child = this.children.get(childId);
     if (child === undefined) {
       const session = this.ctx.sessions.get(childId);
-      if (session?.header.parentSession === parent.id && foldSubagentDescriptor(session.events)?.mode === "continuable") {
+      if (session?.header.parentSession === parent.id && foldSubagentDescriptor(session.snapshotEvents())?.mode === "continuable") {
         const prepared = fakeAgent(this.ctx, childId, session);
         const setupDisposers: (() => void)[] = [];
         for (const setup of this.setups) {
@@ -270,7 +318,7 @@ class FakeContinuableSubagents extends Service {
       discarded: () => undefined,
       inserted: () => undefined,
     });
-    inbox.append("next-turn", freezeMessage({ id, role: "user", content, source: options.source }));
+    inbox.append(options.delivery === "steer" ? "next-step" : "next-turn", freezeMessage({ id, role: "user", content, source: options.source }));
     this.followups.push(id);
     if (this.failFollowupAfterInsert) {
       this.failFollowupAfterInsert = false;
@@ -396,6 +444,7 @@ class FakeContinuableSubagents extends Service {
     run.turn += 1;
     child.agent.session.append("turn/start", { turn: run.turn });
     inbox.claim("next-turn", run.turn);
+    inbox.claim("next-step", run.turn);
     child.agent.session.append("step/start", { turn: run.turn, step: 1 });
     child.agent.session.append("assistant/message", {
       turn: run.turn,
@@ -443,7 +492,7 @@ interface Harness {
     callId?: string,
     signal?: AbortSignal,
   ): Promise<unknown>;
-  executeAs(agentId: string, name: "SendMessage" | "TaskStop", args: unknown, callId?: string): Promise<unknown>;
+  executeAs(agentId: string, name: "Agent" | "SendMessage" | "TaskStop", args: unknown, callId?: string): Promise<unknown>;
   failNextFlush(): void;
   failNextFollowupAfterInsert(): void;
   failNextFollowupBeforeInsert(): void;
@@ -451,9 +500,13 @@ interface Harness {
 }
 
 interface HarnessOptions {
+  readonly messageDelivery?: NonNullable<ProductWorkServiceConfig["messageDelivery"]>;
+  readonly limits?: NonNullable<ProductWorkServiceConfig["limits"]>;
+  readonly models?: Required<Pick<ProductWorkServiceConfig, "selectModel" | "assertModel">>;
+  readonly rootEvents?: readonly SessionEvent[];
   readonly assertCurrent?: () => void;
   readonly authorize?: (request: Readonly<{ permissionClass: string; target: string; tool: string }>) => Promise<void>;
-  readonly beforeProductWork?: (session: Session, context: Context) => void;
+  readonly beforeProductWork?: (session: Session, context: Context) => void | Promise<void>;
   readonly initialize?: boolean;
   readonly recoveredOutputPaths?: ReadonlyMap<string, readonly string[]>;
   readonly requireAgentUnavailable?: boolean;
@@ -471,8 +524,11 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
     list: () => Promise.resolve([]),
   }) as never);
 
-  const session = context.sessions.create(SessionId("work-root"), { meta: { cwd: "/tmp/myagents-work-fixture" } });
-  options.beforeProductWork?.(session, context);
+  const session = context.sessions.create(SessionId("work-root"), {
+    meta: { cwd: "/tmp/myagents-work-fixture" },
+    ...(options.rootEvents === undefined ? {} : { seed: options.rootEvents }),
+  });
+  await options.beforeProductWork?.(session, context);
   const { agent, disposeScope } = fakeAgent(context, "work-root", session);
   context.effect(() => disposeScope);
   context.agents.register(agent);
@@ -524,7 +580,8 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
       tool: string;
     }>) => options.authorize?.(request) ?? Promise.resolve(),
     resolve: (exec: ToolRunContext): ProductToolContext => Object.freeze({
-      agent,
+      agent: exec.agent,
+      rootAgent: agent,
       birth: Object.freeze({
         componentDigest: "b".repeat(64),
         componentRevision: "components-v1",
@@ -535,13 +592,16 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
       clientOperationId: "operation-v1",
       dshTurn: 1,
       environment: Object.freeze({ runtimeHome }),
-      origin: "root",
+      origin: exec.agent === agent ? "root" : "background_child",
       productTurnId: "product-turn-v1",
       rootCallId: String(exec.rootCallId),
       signal: exec.signal,
     }) as ProductToolContext,
   }) as never);
   const productWorkFiber = await context.plugin(ProductWorkService, {
+    ...(options.messageDelivery === undefined ? {} : { messageDelivery: options.messageDelivery }),
+    ...options.models,
+    ...(options.limits === undefined ? {} : { limits: options.limits }),
     durability: Object.freeze({
       flush: (target: Session) => {
         flushes.push(`${target.id}:${String(target.seq)}`);
@@ -555,7 +615,7 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
     output,
     publication: Object.freeze({
       prepare: (child: Agent, parent: Agent) => {
-        expect(parent).toBe(agent);
+        expect(parent === agent || context.productWork.isKnownCollaborator(agent, parent.id)).toBe(true);
         publicationChildren.push(child.id);
         return () => undefined;
       },
@@ -580,14 +640,14 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
       signal = new AbortController().signal,
     ) => {
       call += 1;
-      const callId = CallId(requestedCallId ?? `${name.toLowerCase()}-${String(call)}`);
+      const callId = ToolCallId(requestedCallId ?? `${name.toLowerCase()}-${String(call)}`);
       return await context.tools.execute({ agent, arguments: args, callId, name, rootCallId: callId, signal });
     },
-    executeAs: async (agentId: string, name: "SendMessage" | "TaskStop", args: unknown, requestedCallId?: string) => {
+    executeAs: async (agentId: string, name: "Agent" | "SendMessage" | "TaskStop", args: unknown, requestedCallId?: string) => {
       const child = subagents.childAgent(agentId);
       if (child === undefined) throw new Error("fixture child is unavailable");
       call += 1;
-      const callId = CallId(requestedCallId ?? `${name.toLowerCase()}-${String(call)}`);
+      const callId = ToolCallId(requestedCallId ?? `${name.toLowerCase()}-${String(call)}`);
       return await context.tools.execute({
         agent: child,
         arguments: args,
@@ -718,7 +778,7 @@ const seedAgentOperationCall = (
   });
   session.append("tool/call", {
     arguments: authority.rawArguments ?? JSON.stringify(authority.args),
-    callId: CallId(authority.callId),
+    callId: ToolCallId(authority.callId),
     name: "Agent",
     step: 1,
     turn: authority.turn,
@@ -730,13 +790,13 @@ const seedRejectedAgentOperationCall = (
   authority: Parameters<typeof seedAgentOperationCall>[1],
 ): void => {
   seedAgentOperationCall(session, authority);
-  const call = session.events.findLast((event) => event.type === "tool/call"
+  const call = session.snapshotEvents().findLast((event) => event.type === "tool/call"
     && event.data.callId === authority.callId);
   if (call?.type !== "tool/call") throw new Error("fixture Agent call was not durably appended");
   session.append("tool/result", {
     error: { code: "TOOL_INPUT_INVALID", name: "ToolInputError" },
     message: createToolResultMessage({
-      callId: CallId(authority.callId),
+      callId: ToolCallId(authority.callId),
       content: [Object.freeze({ type: "text", text: "Agent input is invalid" })],
       isError: true,
     }),
@@ -811,6 +871,17 @@ const seedSettledForegroundWork = (
 };
 
 describe("canonical Agent Work projection", () => {
+  it.each([true, false])("preserves trusted permission errors and sanitizes unknown admission failures (trusted=%s)", async (trusted) => {
+    const privateCause = new Error("synthetic-private-cause https://example.test/?key=fixture-secret");
+    const failure = trusted ? new ProductPermissionError("permission_revision_stale", "Permission revision changed", { cause: privateCause }) : privateCause;
+    const state = await harness({ authorize: () => Promise.reject(failure) });
+    const result = await state.execute("Agent", { description: "Check permission", prompt: "Synthetic request" });
+    expect(result).toMatchObject({ isError: true, error: { info: { code: trusted ? "permission_revision_stale" : "child_failed" } } });
+    expect(JSON.stringify(result)).not.toContain("fixture-secret");
+    expect(JSON.stringify(result)).not.toContain("synthetic-private-cause");
+    expect(state.subagents.childIds()).toEqual([]);
+  });
+
   it("gives Explore the Claude Code-style read/search/Bash surface while hiding mutations and child spawn", async () => {
     const state = await harness();
     const disposers = ["Read", "Write", "Bash", "TaskCreate", "AskUserQuestion", "EnterPlanMode"].map((name) =>
@@ -830,10 +901,11 @@ describe("canonical Agent Work projection", () => {
         prompt: "只读检查当前实现。",
         subagent_type: "Explore",
       });
+      expect((started as { error?: unknown }).error).toBeUndefined();
       const childId = (started as { value: { agentId: string } }).value.agentId;
       const child = state.subagents.childAgent(childId);
       if (child === undefined) throw new Error("Explore fixture child was not published");
-      const descriptor = foldSubagentDescriptor(child.session.events);
+      const descriptor = foldSubagentDescriptor(child.session.snapshotEvents());
       if (descriptor?.mode !== "continuable") throw new Error("Explore fixture descriptor is not continuable");
       const names = descriptor.toolFilter?.allow ?? [];
       expect(names).toEqual(expect.arrayContaining(["Read", "Bash", "TaskStop", "SendMessage"]));
@@ -904,6 +976,266 @@ describe("canonical Agent Work projection", () => {
     expect(() => authority.assertCurrent()).toThrow("active DSH execution boundary");
   });
 
+  it("freezes the Host-selected child route durably before DSH materializes it", async () => {
+    const selected = Object.freeze({ model: "selected-model", provider: "selected-provider", profileRevision: "selected-profile-v1", selection: "agent" as const });
+    const selectModel = vi.fn(() => selected);
+    const assertModel = vi.fn();
+    const state = await harness({ models: { selectModel, assertModel } });
+    const start = state.subagents.startContinuable.bind(state.subagents);
+    const startSpy = vi.spyOn(state.subagents, "startContinuable").mockImplementation(async (spec) => {
+      const birth = state.agent.session.snapshotEvents().find((event) => event.type === "myagents/work/created");
+      expect(birth?.data).toMatchObject({ admission: "reserved", agentId: spec.childId, birth: {
+        model: selected.model, provider: selected.provider, selectedModelProfileRevision: selected.profileRevision,
+        modelSelection: "agent",
+      } });
+      expect(birth?.data.initialMessageId).toBeUndefined();
+      expect(state.flushes).toContain(`${state.agent.id}:${String(state.agent.session.seq)}`);
+      expect(state.context.productWork.snapshot()[0]?.activation.state).toBe("queued");
+      return await start(spec);
+    });
+    const args = { description: "Inspect authorized model", prompt: "Analyze the synthetic fixture.", model: "selected-profile-v1" };
+    const first = await state.execute("Agent", args, "selected-model-call");
+    expect(first).toMatchObject({ isError: false, value: { model: "selected-model" } });
+    await expect(state.execute("Agent", args, "selected-model-call")).resolves.toEqual(first);
+    expect(selectModel).toHaveBeenCalledOnce();
+    expect(startSpy).toHaveBeenCalledOnce();
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/started")).toHaveLength(1);
+  });
+
+  it("keeps a retained child's authorized model independent of later root configuration revisions", async () => {
+    const selected = Object.freeze({ model: "selected-model", provider: "selected-provider", profileRevision: "selected-profile-v1", selection: "fixed" as const });
+    let revoked = false;
+    const state = await harness({ models: { selectModel: () => selected, assertModel: () => { if (revoked) throw new Error("selected child profile revoked"); } } });
+    const args = { description: "Retain selected profile", prompt: "Keep exact birth authority after a root setting change." };
+    seedAgentOperationCall(state.agent.session, { args, callId: "retained-model", clientOperationId: "operation-v1", productTurnId: "product-turn-v1", turn: 1 });
+    const started = await state.execute("Agent", args, "retained-model");
+    const child = state.subagents.childAgent((started as { value: { agentId: string } }).value.agentId);
+    if (child === undefined) throw new Error("missing selected child");
+    child.session.append("turn/start", { turn: 1 });
+    const authority = state.context.productWork.createChildModelRequestAuthority(child, "new-root-config", "new-root-profile");
+    expect(() => authority.assertCurrent()).not.toThrow();
+    revoked = true;
+    expect(() => authority.assertCurrent()).toThrow("selected child profile revoked");
+  });
+
+  it("recovers a reserved child after a crash before DSH creation without selecting its model again", async () => {
+    const selected = Object.freeze({ model: "selected-model", provider: "selected-provider", profileRevision: "selected-profile-v1", selection: "fixed" as const });
+    const state = await harness({ models: { selectModel: () => selected, assertModel: () => undefined } });
+    const args = { description: "Recover selected model", prompt: "Use the already selected route after restart." };
+    seedAgentOperationCall(state.agent.session, { args, callId: "reserve-recovery", clientOperationId: "operation-v1", productTurnId: "product-turn-v1", turn: 1 });
+    await state.execute("Agent", args, "reserve-recovery");
+    const birth = state.agent.session.snapshotEvents().find((event) => event.type === "myagents/work/created");
+    if (birth === undefined) throw new Error("missing fixture birth");
+    const selectModel = vi.fn(() => { throw new Error("recovery must not select a new model"); });
+    const assertModel = vi.fn();
+    const recovered = await harness({
+      rootEvents: state.agent.session.snapshotEvents().slice(0, birth.seq + 1), models: { selectModel, assertModel },
+    });
+    await vi.waitFor(() => expect(recovered.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/started")).toHaveLength(1));
+    expect(selectModel).not.toHaveBeenCalled();
+    expect(assertModel).toHaveBeenCalledWith(selected);
+    expect(recovered.context.productWork.snapshot()[0]).toMatchObject({ agentId: birth.data.agentId, model: selected.model });
+    expect(recovered.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/created")).toHaveLength(1);
+    expect(recovered.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/started")).toHaveLength(1);
+  });
+
+  it("restores several reserved children through the same bounded capacity queue", async () => {
+    const source = await harness();
+    const args = { description: "Recover queued child", prompt: "Wait for one execution slot." };
+    seedAgentOperationCall(source.agent.session, { args, callId: "queued-recovery-a", clientOperationId: "operation-v1", productTurnId: "product-turn-v1", turn: 1 });
+    source.agent.session.append("tool/call", { arguments: JSON.stringify(args), callId: ToolCallId("queued-recovery-b"), name: "Agent", step: 1, turn: 1 });
+    await Promise.all([source.execute("Agent", args, "queued-recovery-a"), source.execute("Agent", args, "queued-recovery-b")]);
+    const events = source.agent.session.snapshotEvents().filter((event) => event.type !== "myagents/work/started").map((event, index) => Object.freeze({
+      ...event, seq: index as typeof event.seq,
+      data: event.type === "myagents/work/created" ? { ...event.data, eventSeq: index } : event.data,
+    }) as SessionEvent);
+    const recovered = await harness({ rootEvents: events, limits: () => ({ maxDepth: 1, maxActiveChildren: 1, maxRetainedChildren: 4 }) });
+    await vi.waitFor(() => expect(recovered.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/started")).toHaveLength(1));
+    expect(recovered.context.productWork.snapshot().map((work) => work.activation.state)).toEqual(["running", "queued"]);
+    const first = recovered.context.productWork.snapshot()[0];
+    if (first === undefined) throw new Error("missing recovered first child");
+    recovered.subagents.emitEnd(first.agentId, "first recovered activation completed");
+    await vi.waitFor(() => expect(recovered.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/started")).toHaveLength(2));
+    expect(recovered.context.productWork.snapshot()[1]?.activation.state).toBe("running");
+  });
+
+  it("reads native tree metrics through at most four disposable query leases without starting model work", async () => {
+    let activeReads = 0;
+    let maximumReads = 0;
+    let released = 0;
+    let releaseReads: (() => void) | undefined;
+    const barrier = new Promise<void>(resolve => { releaseReads = resolve; });
+    const state = await harness({ beforeProductWork: async (_session, context) => {
+      await context.plugin(SessionProjectionRegistry);
+      await context.plugin(TokenMeter);
+      context.provide("sessionQuery", { observeSession: async (id: string) => {
+        activeReads++; maximumReads = Math.max(maximumReads, activeReads);
+        await barrier;
+        const session = context.sessions.get(SessionId(id));
+        if (session === undefined) throw new Error("query fixture Session is absent");
+        const events = session.snapshotEvents();
+        return { header: session.header, inheritedEventCount: session.inheritedEventCount, events, source: "live", cursor: session.seq - 1,
+          projections: context.sessionProjections.snapshot(session),
+          [Symbol.dispose]() { released++; activeReads--; },
+        };
+      } } as never);
+    } });
+    for (let index = 0; index < 6; index++) await state.execute("Agent", { description: "Read-only tree", prompt: "Retain this Agent." });
+    const first = state.subagents.childAgent(state.context.productWork.snapshot()[0]?.agentId ?? "");
+    if (first === undefined) throw new Error("missing query child");
+    first.session.append("request/context", { provider: "fixture-provider", model: "fixture-model", contextWindow: 100_000 });
+    first.session.append("assistant/chunk", { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 4, cacheWriteTokens: 0 } } });
+    const rootBefore = state.agent.session.snapshotEvents();
+    const childIds = state.subagents.childIds();
+    const listing = state.context.productWork.readSnapshots(new AbortController().signal);
+    await vi.waitFor(() => expect(maximumReads).toBe(4));
+    releaseReads?.();
+    const result = await listing;
+    expect(result).toHaveLength(6);
+    expect(result[0]).toMatchObject({ totalUsage: { inputTokens: 10, outputTokens: 2, totalTokens: 16 }, context: { capacity: 100_000, providerInputTokens: 14, projectedInputTokens: 14 } });
+    expect(result[1]?.totalUsage).toBeUndefined();
+    expect(released).toBe(6); expect(activeReads).toBe(0); expect(maximumReads).toBe(4);
+    expect(state.agent.session.snapshotEvents()).toEqual(rootBefore);
+    expect(state.subagents.childIds()).toEqual(childIds);
+  });
+
+  it("keeps a completed parent independent of background descendants and wakes its next activation with their report", async () => {
+    const state = await harness({ limits: () => ({ maxDepth: 2, maxActiveChildren: 3, maxRetainedChildren: 8 }) });
+    const first = await state.execute("Agent", { description: "Parent", prompt: "Delegate." });
+    const parentId = (first as { value: { agentId: string } }).value.agentId;
+    const nested = await state.executeAs(parentId, "Agent", { description: "Nested", prompt: "Finish later." });
+    const childId = (nested as { value: { agentId: string } }).value.agentId;
+    state.subagents.emitEnd(parentId, "Parent activation is complete.");
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]).toMatchObject({ handleState: "open", activation: { ordinal: 1, state: "completed" } }));
+    expect(state.context.productWork.snapshot()[1]?.activation.state).toBe("running");
+    state.subagents.emitEnd(childId, "Late descendant result.");
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]?.activation).toMatchObject({ ordinal: 2, state: "running" }));
+    const report = state.agent.session.snapshotEvents().find((event) => event.type === "myagents/work/message" && event.data.sender === childId);
+    expect(report?.data).toMatchObject({ recipient: parentId });
+    expect(state.agent.session.snapshotEvents().flatMap((event) => event.type === "agent/inbox/spliced" ? event.data.inserted : []).filter((message) => message.source.kind === "agent-message" && message.source.senderSessionId === childId)).toHaveLength(0);
+  });
+
+  it("requires an explicit Host reopen for a stopped retained handle, preserving earlier epochs and rejecting stale stop", async () => {
+    const state = await harness();
+    const first = await state.execute("Agent", { description: "Retained", prompt: "Keep this context." });
+    const agentId = (first as { value: { agentId: string } }).value.agentId;
+    state.subagents.emitEnd(agentId, "Original successful result.");
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]?.activation.state).toBe("completed"));
+    const initial = state.context.productWork.snapshot()[0];
+    if (initial === undefined) throw new Error("missing Work snapshot");
+    const signal = new AbortController().signal;
+    const retainedSession = state.subagents.childAgent(agentId)?.session;
+    if (retainedSession === undefined) throw new Error("missing retained Session");
+    await state.context.productWork.stopFromHost(agentId, initial.handleRevision, signal);
+    state.context.sessions.enter(retainedSession);
+    const closed = state.context.productWork.snapshot()[0];
+    if (closed === undefined) throw new Error("missing closed Work snapshot");
+    expect(closed.handleState).toBe("closed");
+    await expect(state.execute("SendMessage", { to: agentId, summary: "Automatic", message: "Must not revive." })).resolves.toMatchObject({ isError: true });
+    await state.context.productWork.resumeFromHost(agentId, "user-reopen-1", closed.handleRevision, signal);
+    const reopened = state.context.productWork.snapshot()[0];
+    if (reopened === undefined) throw new Error("missing reopened Work snapshot");
+    expect(reopened).toMatchObject({ handleState: "open", result: "Original successful result.", activation: { ordinal: 1, state: "completed" } });
+    expect(reopened.handleRevision).toBeGreaterThan(closed.handleRevision);
+    await state.context.productWork.resumeFromHost(agentId, "user-reopen-1", closed.handleRevision, signal);
+    await expect(state.context.productWork.stopFromHost(agentId, closed.handleRevision, signal)).rejects.toThrow("older Agent handle revision");
+    await state.context.productWork.messageFromHost(agentId, "user-follow-up-1", "Continue from the retained context.", signal);
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]?.activation.ordinal).toBe(2));
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/reopened")).toHaveLength(1);
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/settled")).toHaveLength(1);
+  });
+
+  it("executes real parent-child-grandchild delegation under one root ledger and enforces depth and role limits", async () => {
+    const state = await harness({ limits: () => ({ maxDepth: 2, maxActiveChildren: 4, maxRetainedChildren: 8 }) });
+    const first = await state.execute("Agent", { description: "Parent", prompt: "Delegate a bounded part of the task." }, "tree-parent");
+    const parentId = (first as { value: { agentId: string } }).value.agentId;
+    const nested = await state.executeAs(parentId, "Agent", { description: "Nested", prompt: "Complete the delegated part." }, "tree-nested");
+    expect(nested).toMatchObject({ isError: false, value: { state: "background" } });
+    const nestedId = (nested as { value: { agentId: string } }).value.agentId;
+    const child = state.subagents.childAgent(nestedId);
+    expect(child?.session.header.parentSession).toBe(parentId);
+    const births = state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/created");
+    expect(births.map((event) => event.data.birth.depth)).toEqual([1, 2]);
+    expect(births[1]?.data.birth.parentSessionId).toBe(parentId);
+    expect(state.subagents.childAgent(parentId)?.session.snapshotEvents().some((event) => event.type === "myagents/work/created")).toBe(false);
+    await expect(state.executeAs(nestedId, "Agent", { description: "Too deep", prompt: "Must reject." })).resolves.toMatchObject({ isError: true, error: { info: { code: "child_agent_nesting_forbidden" } } });
+    await expect(state.executeAs(nestedId, "TaskStop", { task_id: (first as { value: { taskId: string } }).value.taskId })).resolves.toMatchObject({ isError: true, error: { info: { code: "task_stop_failed" } } });
+    await expect(state.executeAs(nestedId, "SendMessage", { to: "parent", summary: "Nested result", message: "The direct parent receives this." })).resolves.toMatchObject({ isError: false, value: { recipient: parentId } });
+    await expect(state.execute("SendMessage", { to: nestedId, summary: "Root request", message: "Root can address the same-tree descendant." })).resolves.toMatchObject({ isError: false, value: { recipient: nestedId } });
+    const plan = await state.execute("Agent", { description: "Plan role", prompt: "Research only.", subagent_type: "Plan" }, "tree-plan");
+    await expect(state.executeAs((plan as { value: { agentId: string } }).value.agentId, "Agent", { description: "Forbidden role", prompt: "Must reject." })).resolves.toMatchObject({ isError: true, error: { info: { code: "child_agent_nesting_forbidden" } } });
+    await expect(state.execute("TaskStop", { task_id: (first as { value: { taskId: string } }).value.taskId }, "stop-tree")).resolves.toMatchObject({ isError: false, value: { terminal: "aborted" } });
+    expect(state.context.productWork.snapshot().slice(0, 2).map((work) => work.handleState)).toEqual(["closed", "closed"]);
+    expect(state.subagents.childIds()).toEqual([(plan as { value: { agentId: string } }).value.agentId]);
+  });
+
+  it.each([false, true])("releases a waiting parent's execution slot for nested work (background=%s)", async (background) => {
+    const state = await harness({ limits: () => ({ maxDepth: 2, maxActiveChildren: 1, maxRetainedChildren: 4 }) });
+    const first = await state.execute("Agent", { description: "Parent", prompt: "Delegate using the single execution slot." });
+    const parentId = (first as { value: { agentId: string } }).value.agentId;
+    const nested = state.executeAs(parentId, "Agent", { description: "Nested", prompt: "Use the released slot.", run_in_background: background });
+    await vi.waitFor(() => expect(state.subagents.childIds()).toHaveLength(2));
+    const childId = state.subagents.childIds().find((id) => id !== parentId);
+    if (childId === undefined) throw new Error("nested child did not acquire the released slot");
+    state.subagents.emitEnd(childId, "nested work completed");
+    await expect(nested).resolves.toMatchObject({ isError: false, value: { state: background ? "background" : "succeeded" } });
+    expect(state.context.productWork.snapshot().find((work) => work.agentId === parentId)?.activation.state).toBe("running");
+  });
+
+  it("cold-recovers a reserved descendant through its retained direct parent without reselecting either model", async () => {
+    const limits = () => ({ maxDepth: 2, maxActiveChildren: 2, maxRetainedChildren: 4 });
+    const source = await harness({ limits });
+    const parentArgs = { description: "Cold parent", prompt: "Delegate and retain the parent identity." };
+    seedAgentOperationCall(source.agent.session, { args: parentArgs, callId: "cold-tree-parent", clientOperationId: "operation-v1", productTurnId: "product-turn-v1", turn: 1 });
+    const first = await source.execute("Agent", parentArgs, "cold-tree-parent");
+    const parentId = (first as { value: { agentId: string } }).value.agentId;
+    const parent = source.subagents.childAgent(parentId);
+    if (parent === undefined) throw new Error("missing parent");
+    const args = { description: "Cold nested child", prompt: "Recover the existing delegation." };
+    parent.session.append("tool/call", { arguments: JSON.stringify(args), callId: ToolCallId("cold-tree-nested"), name: "Agent", step: 1, turn: 1 });
+    await source.executeAs(parentId, "Agent", args, "cold-tree-nested");
+    const birth = source.agent.session.snapshotEvents().find((event) => event.type === "myagents/work/created" && event.data.birth.depth === 2);
+    if (birth?.type !== "myagents/work/created") throw new Error("missing nested birth");
+    source.subagents.emitEnd(parentId, "parent activation completed independently");
+    await vi.waitFor(() => expect(source.context.productWork.snapshot()[0]?.activation.state).toBe("completed"));
+    const parentEvents = parent.session.snapshotEvents();
+    const selectModel = vi.fn(() => { throw new Error("cold recovery must preserve model selection"); });
+    const recovered = await harness({
+      limits, models: { selectModel, assertModel: () => undefined },
+      rootEvents: source.agent.session.snapshotEvents().slice(0, birth.seq + 1),
+      beforeProductWork: (_root, context) => {
+        const restored = context.sessions.prepare(parent.id, { meta: { ...parent.session.header }, seed: parentEvents });
+        const detach = context.sessions.enter(restored);
+        context.effect(() => detach);
+        context.sessions.announce(restored);
+      },
+    });
+    await vi.waitFor(() => expect(recovered.subagents.childAgent(birth.data.agentId)?.session.header.parentSession).toBe(parentId));
+    expect(selectModel).not.toHaveBeenCalled();
+    expect(recovered.subagents.resumed).toEqual([]);
+    const restoredEvents = recovered.context.sessions.get(parent.id)?.snapshotEvents() ?? [];
+    expect(restoredEvents.slice(0, parentEvents.length)).toEqual(parentEvents);
+    expect(restoredEvents.slice(parentEvents.length).every((event) => event.type === "session/end-seed")).toBe(true);
+    await vi.waitFor(() => expect(recovered.context.productWork.snapshot().map((work) => work.activation.state)).toEqual(["completed", "running"]));
+  });
+
+  it("lets human waiting release capacity and requires fair readmission after the answer", async () => {
+    const state = await harness({ limits: () => ({ maxDepth: 1, maxActiveChildren: 1, maxRetainedChildren: 3 }) });
+    const first = await state.execute("Agent", { description: "Wait for a person", prompt: "Ask a bounded question." });
+    const child = state.subagents.childAgent((first as { value: { agentId: string } }).value.agentId);
+    if (child === undefined) throw new Error("missing waiting child");
+    let answer: (value: string) => void = () => undefined;
+    const response = new Promise<string>((resolve) => { answer = resolve; });
+    const waiting = state.context.productWork.withWaitingAgent(child, "interaction", new AbortController().signal, () => response);
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]?.activation.state).toBe("waiting_interaction"));
+    const second = await state.execute("Agent", { description: "Use released capacity", prompt: "Run while the person decides." });
+    answer("approved");
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]?.activation.state).toBe("queued"));
+    state.subagents.emitEnd((second as { value: { agentId: string } }).value.agentId, "capacity available again");
+    await expect(waiting).resolves.toBe("approved");
+    expect(state.context.productWork.snapshot()[0]?.activation.state).toBe("running");
+  });
+
   it("uses one durable Work identity and exact quiescent TaskStop retirement", async () => {
     const state = await harness();
     const started = await state.execute("Agent", {
@@ -934,10 +1266,13 @@ describe("canonical Agent Work projection", () => {
     expect(state.subagents.childIds()).toEqual([]);
     expect(state.subagents.retired).toHaveLength(1);
     expect(state.finalizedOutputs.get(value.outputPath)).toBe("fixture review complete");
-    expect(state.agent.session.events.filter((event) => event.type.startsWith("myagents/work/"))
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type.startsWith("myagents/work/"))
       .map((event) => event.type)).toEqual([
         "myagents/work/created",
+        "myagents/work/started",
         "myagents/work/epoch",
+        "myagents/work/message-intent",
+        "myagents/work/message",
         "myagents/work/stopping",
         "myagents/work/settled",
       ]);
@@ -1035,7 +1370,7 @@ describe("canonical Agent Work projection", () => {
     await vi.waitFor(() => {
       expect(() => state.context.productWork.snapshot()).toThrow("product work durability became uncertain");
     });
-    expect(state.agent.session.events.filter((event) => event.type === "myagents/work/epoch")).toEqual([]);
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/epoch")).toEqual([]);
   });
 
   it("accumulates every assistant reply with stable live and resumed epoch separators", async () => {
@@ -1065,7 +1400,7 @@ describe("canonical Agent Work projection", () => {
         + "\n\n--- resumed child run ---\nthird reply",
       );
     });
-    const epochs = state.agent.session.events.filter((event) => event.type === "myagents/work/epoch");
+    const epochs = state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/epoch");
     expect(epochs).toHaveLength(2);
     expect(epochs.map((event) => (event.data as { ordinal: number }).ordinal)).toEqual([1, 2]);
   });
@@ -1083,7 +1418,7 @@ describe("canonical Agent Work projection", () => {
     await vi.waitFor(() => {
       expect(state.finalizedOutputs.get(value.outputPath)).toBe("intermediate child result");
     });
-    expect(state.agent.session.events.filter((event) => event.type === "myagents/work/epoch")).toEqual([]);
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/epoch")).toEqual([]);
     expect(state.context.productWork.snapshot()).toEqual([expect.objectContaining({
       state: "running",
       outputPath: value.outputPath,
@@ -1113,6 +1448,7 @@ describe("canonical Agent Work projection", () => {
     const state = await harness({
       beforeProductWork: (root, context) => {
         const descriptor = snapshotSubagentDescriptor({
+          personaInterpolate: false,
           agentModel: "fixture-model",
           agentProvider: "fixture-provider",
           label: taskId,
@@ -1131,14 +1467,14 @@ describe("canonical Agent Work projection", () => {
             delegationDepth: 1,
             origin: "subagent",
             parentSession: root.id,
-            seedLength: 0,
+            isSeeded: false,
           },
           seed: seedDescriptorTurn(childId, undefined, descriptor),
         });
         const detach = context.sessions.enter(child);
         context.effect(() => detach);
         context.sessions.announce(child);
-        const initialChildEventSeq = child.events.length;
+        const initialChildEventSeq = child.snapshotEvents().length;
         const inbox = new Inbox(child, {
           claimed: () => undefined,
           discarded: () => undefined,
@@ -1248,9 +1584,9 @@ describe("canonical Agent Work projection", () => {
       },
     });
 
-    expect(state.subagents.resumed).toEqual([pendingMessageId]);
+    await vi.waitFor(() => expect(state.subagents.resumed).toEqual([pendingMessageId]));
     expect(state.finalizedOutputs.get(outputPath)).toBe("recovered first reply");
-    const epoch = state.agent.session.events.find((event) => event.type === "myagents/work/epoch");
+    const epoch = state.agent.session.snapshotEvents().find((event) => event.type === "myagents/work/epoch");
     expect(epoch).toBeDefined();
     const epochData = epoch?.data as { childStartSeq: number; ordinal: number; stopReason: string } | undefined;
     expect(epochData?.ordinal).toBe(1);
@@ -1269,6 +1605,7 @@ describe("canonical Agent Work projection", () => {
     await expect(harness({
       beforeProductWork: (root, context) => {
         const descriptor = snapshotSubagentDescriptor({
+          personaInterpolate: false,
           agentModel: "fixture-model",
           agentProvider: "fixture-provider",
           label: taskId,
@@ -1283,13 +1620,13 @@ describe("canonical Agent Work projection", () => {
           toolFilter: { allow: ["TaskStop", "SendMessage"] },
         });
         const child = context.sessions.prepare(childId, {
-          meta: { delegationDepth: 1, origin: "subagent", parentSession: root.id, seedLength: 0 },
+          meta: { delegationDepth: 1, origin: "subagent", parentSession: root.id, isSeeded: false },
           seed: seedDescriptorTurn(childId, undefined, descriptor),
         });
         const detach = context.sessions.enter(child);
         context.effect(() => detach);
         context.sessions.announce(child);
-        const initialChildEventSeq = child.events.length;
+        const initialChildEventSeq = child.snapshotEvents().length;
         new Inbox(child, {
           claimed: () => undefined,
           discarded: () => undefined,
@@ -1372,7 +1709,7 @@ describe("canonical Agent Work projection", () => {
     expect(state.subagents.childIds()).toHaveLength(1);
     expect(state.subagents.retired).toHaveLength(0);
     expect(state.discardedOutputs).toHaveLength(0);
-    expect(state.agent.session.events.filter((event) => event.type === "myagents/work/created")).toHaveLength(1);
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/created")).toHaveLength(1);
   });
 
   it("cold-reconstructs a child accepted before its durable root Work owner", async () => {
@@ -1391,6 +1728,7 @@ describe("canonical Agent Work projection", () => {
       beforeProductWork: (root, context) => {
         seedAgentOperationCall(root, { args, callId, clientOperationId, productTurnId, turn: 1 });
         const descriptor = snapshotSubagentDescriptor({
+          personaInterpolate: false,
           agentModel: "fixture-model",
           agentProvider: "fixture-provider",
           label: taskId,
@@ -1405,7 +1743,7 @@ describe("canonical Agent Work projection", () => {
           toolFilter: { allow: ["TaskStop", "SendMessage"] },
         });
         const child = context.sessions.prepare(childId, {
-          meta: { delegationDepth: 1, origin: "subagent", parentSession: root.id, seedLength: 0 },
+          meta: { delegationDepth: 1, origin: "subagent", parentSession: root.id, isSeeded: false },
           seed: seedDescriptorTurn(childId, undefined, descriptor),
         });
         const detach = context.sessions.enter(child);
@@ -1428,8 +1766,8 @@ describe("canonical Agent Work projection", () => {
     expect(state.context.productWork.snapshot()).toEqual([
       expect.objectContaining({ agentId: childId, mode: "continuable", outputPath, taskId }),
     ]);
-    expect(state.agent.session.events.filter((event) => event.type === "myagents/work/created")).toHaveLength(1);
-    expect(state.subagents.resumed).toEqual([initialMessageId]);
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/created")).toHaveLength(1);
+    await vi.waitFor(() => expect(state.subagents.resumed).toEqual([initialMessageId]));
     expect(state.discardedOutputs).toEqual([]);
   });
 
@@ -1458,7 +1796,7 @@ describe("canonical Agent Work projection", () => {
     expect(state.context.productWork.snapshot()).toEqual([]);
     expect(state.discardedOutputs).toEqual([outputPath]);
     expect(state.subagents.childIds()).toEqual([]);
-    expect(state.agent.session.events.filter((event) => event.type === "myagents/work/created")).toEqual([]);
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/created")).toEqual([]);
   });
 
   it("cold-completes the initial Inbox boundary for an already accepted descriptor-only child", async () => {
@@ -1481,6 +1819,7 @@ describe("canonical Agent Work projection", () => {
           turn: 1,
         });
         const descriptor = snapshotSubagentDescriptor({
+          personaInterpolate: false,
           agentModel: "fixture-model",
           agentProvider: "fixture-provider",
           label: taskId,
@@ -1495,7 +1834,7 @@ describe("canonical Agent Work projection", () => {
           toolFilter: { allow: ["TaskStop", "SendMessage"] },
         });
         const child = context.sessions.prepare(childId, {
-          meta: { delegationDepth: 1, origin: "subagent", parentSession: root.id, seedLength: 0 },
+          meta: { delegationDepth: 1, origin: "subagent", parentSession: root.id, isSeeded: false },
           seed: seedDescriptorTurn(childId, undefined, descriptor),
         });
         const detach = context.sessions.enter(child);
@@ -1510,8 +1849,8 @@ describe("canonical Agent Work projection", () => {
     ]);
     expect(state.subagents.childIds()).toEqual([childId]);
     expect(state.subagents.followups).toHaveLength(1);
-    expect(state.subagents.resumed).toEqual(state.subagents.followups);
-    expect(state.agent.session.events.filter((event) => event.type === "myagents/work/created")).toHaveLength(1);
+    await vi.waitFor(() => expect(state.subagents.resumed).toEqual(state.subagents.followups));
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/created")).toHaveLength(1);
     expect(state.discardedOutputs).toEqual([]);
   });
 
@@ -1535,7 +1874,7 @@ describe("canonical Agent Work projection", () => {
     expect(state.subagents.childIds()).toHaveLength(1);
   });
 
-  it("durably settles a rejected foreground run and does not start it again on exact retry", async () => {
+  it("durably records a failed foreground activation and does not start it again on exact retry", async () => {
     const state = await harness();
     const args = {
       description: "Review the fixture",
@@ -1545,13 +1884,17 @@ describe("canonical Agent Work projection", () => {
     state.subagents.failNextForeground();
     const first = await state.execute("Agent", args, "foreground-failure");
     expect(first).toMatchObject({ isError: true, error: { info: { code: "child_failed" } } });
-    expect(state.agent.session.events.filter((event) => event.type.startsWith("myagents/work/"))
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type.startsWith("myagents/work/"))
       .map((event) => event.type)).toEqual([
         "myagents/work/created",
+        "myagents/work/started",
         "myagents/work/epoch",
-        "myagents/work/settled",
+        "myagents/work/message-intent",
+        "myagents/work/message",
       ]);
-    expect(state.context.productWork.snapshot()).toEqual([expect.objectContaining({ state: "failed" })]);
+    expect(state.context.productWork.snapshot()).toMatchObject([{
+      state: "failed", handleState: "open", activation: { state: "failed" },
+    }]);
 
     const retry = await state.execute("Agent", args, "foreground-failure");
     expect(retry).toMatchObject({ isError: true, error: { info: { code: "child_failed" } } });
@@ -1578,9 +1921,10 @@ describe("canonical Agent Work projection", () => {
     });
     expect(state.subagents.retired).toEqual([childId]);
     expect(state.subagents.childIds()).toEqual([]);
-    expect(state.agent.session.events.filter((event) => event.type.startsWith("myagents/work/"))
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type.startsWith("myagents/work/"))
       .map((event) => event.type)).toEqual([
         "myagents/work/created",
+        "myagents/work/started",
         "myagents/work/stopping",
         "myagents/work/settled",
       ]);
@@ -1609,7 +1953,7 @@ describe("canonical Agent Work projection", () => {
     });
     expect(state.subagents.retired).toEqual([childId]);
     expect(state.subagents.childIds()).toEqual([]);
-    expect(state.agent.session.events.filter((event) => event.type === "myagents/work/settled")).toEqual([]);
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/settled")).toEqual([]);
     expect(() => state.context.productWork.snapshot()).toThrow("product work durability became uncertain");
   });
 
@@ -1636,6 +1980,185 @@ describe("canonical Agent Work projection", () => {
     ]);
   });
 
+  it.each(["general", "Explore", "Plan"].flatMap((role) => [false, true].map((background) => ({ role, background }))))(
+    "retains $role context with background=$background across completed activations and explicit stop",
+    async ({ role, background }) => {
+      const state = await harness();
+      if (!background) state.subagents.succeedNextForeground("first activation result");
+      const started = await state.execute("Agent", {
+        description: "Research a synthetic fixture", prompt: "Inspect the assigned fixture.",
+        subagent_type: role, run_in_background: background,
+      });
+      expect(started).toMatchObject({ isError: false });
+      const { agentId, taskId } = (started as { value: { agentId: string; taskId: string } }).value;
+      if (background) state.subagents.emitEnd(agentId, "first activation result");
+      await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]).toMatchObject({
+        handleState: "open", result: "first activation result",
+        activation: { ordinal: 1, state: "completed" },
+      }));
+      const first = state.context.productWork.snapshot()[0];
+      const reports = () => state.agent.session.snapshotEvents().filter((event) =>
+        event.type === "myagents/work/message-intent" && event.data.completionEpochId !== undefined);
+      await vi.waitFor(() => expect(reports()).toHaveLength(1));
+      const messages = state.agent.session.snapshotEvents().flatMap((event) => event.type === "agent/inbox/spliced"
+        ? event.data.inserted : []);
+      const report = messages.find((message) => message.source.kind === "subagent-report");
+      expect(report).toBeDefined();
+      expect(ownsProductWorkRootContextMessage(state.agent.session, report?.source, String(report?.id))).toBe(true);
+      await expect(state.execute("SendMessage", {
+        to: agentId, summary: "Continue", message: "Inspect the next fixture in the same context.",
+      })).resolves.toMatchObject({ isError: false, value: { state: "delivered" } });
+      await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]).toMatchObject({
+        handleState: "open", activation: { ordinal: 2, state: "running" },
+      }));
+      expect(state.context.productWork.snapshot()[0]?.activation.id).not.toBe(first?.activation.id);
+      state.subagents.emitEnd(agentId, "second activation result");
+      await vi.waitFor(() => expect(reports()).toHaveLength(2));
+      expect(state.context.productWork.snapshot()[0]).toMatchObject({
+        result: "second activation result", handleState: "open", activation: { ordinal: 2, state: "completed" },
+      });
+      await expect(state.execute("TaskStop", { task_id: taskId })).resolves.toMatchObject({ isError: false });
+      expect(state.context.productWork.snapshot()[0]).toMatchObject({
+        result: "second activation result", handleState: "closed", activation: { ordinal: 2, state: "completed" },
+      });
+      await expect(state.execute("SendMessage", {
+        to: agentId, summary: "Unrequested restart", message: "Try to restart the closed handle.",
+      })).resolves.toMatchObject({ isError: true });
+      expect(reports()).toHaveLength(2);
+    },
+  );
+
+  it.each(["before-intent", "after-intent", "after-insertion", "after-receipt"])(
+    "recovers one quiet completion report at the %s crash boundary without rerunning the child",
+    async (boundary) => {
+      const state = await harness();
+      const started = await state.execute("Agent", { description: "Recovery fixture", prompt: "Complete one fixture." });
+      const { agentId } = (started as { value: { agentId: string } }).value;
+      state.subagents.emitEnd(agentId, "durable completed fixture");
+      await vi.waitFor(() => expect(state.agent.session.snapshotEvents().some((event) => event.type === "myagents/work/message")).toBe(true));
+      const child = state.context.sessions.get(SessionId(agentId));
+      if (child === undefined) throw new Error("fixture child Session is absent");
+      const events = state.agent.session.snapshotEvents();
+      const intent = events.find((event) => event.type === "myagents/work/message-intent");
+      const receipt = events.find((event) => event.type === "myagents/work/message");
+      if (intent === undefined || receipt === undefined) throw new Error("fixture report is absent");
+      const end = boundary === "before-intent" ? intent.seq
+        : boundary === "after-intent" ? intent.seq + 1
+          : boundary === "after-insertion" ? receipt.seq : receipt.seq + 1;
+      const recovered = await harness({
+        rootEvents: events.slice(0, end),
+        beforeProductWork: (_root, context) => {
+          const replay = context.sessions.prepare(child.id, { seed: child.snapshotEvents(), meta: child.header });
+          const detach = context.sessions.enter(replay);
+          context.effect(() => detach);
+          context.sessions.announce(replay);
+        },
+      });
+      expect(recovered.context.productWork.snapshot()[0]).toMatchObject({
+        handleState: "open", activation: { ordinal: 1, state: "completed" },
+      });
+      expect(recovered.subagents.resumed).toEqual([]);
+      const reportIntents = recovered.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/message-intent");
+      const reportReceipts = recovered.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/message");
+      const reports = recovered.agent.session.snapshotEvents().flatMap((event) => event.type === "agent/inbox/spliced"
+        ? event.data.inserted.filter((message) => message.source.kind === "subagent-report") : []);
+      expect(reportIntents).toHaveLength(1);
+      expect(reportReceipts).toHaveLength(1);
+      expect(reports).toHaveLength(1);
+    },
+  );
+
+  it("counts active child slots separately from retained completed handles", async () => {
+    const state = await harness();
+    const handles = await Promise.all(Array.from({ length: 32 }, (_, index) => state.execute("Agent", {
+      description: `Fixture ${String(index)}`, prompt: "Hold the active fixture.",
+    }, `capacity-${String(index)}`)));
+    expect(handles.every((value) => !(value as { isError: boolean }).isError)).toBe(true);
+    const queued = state.execute("Agent", { description: "Full execution capacity", prompt: "Hold." });
+    await vi.waitFor(() => expect(state.context.productWork.snapshot().at(-1)).toMatchObject({ activation: { state: "queued" } }));
+    expect(state.subagents.childIds()).toHaveLength(32);
+    const first = (handles[0] as { value: { agentId: string } }).value.agentId;
+    state.subagents.emitEnd(first, "slot released while context remains open");
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]).toMatchObject({
+      handleState: "open", activation: { state: "completed" },
+    }));
+    await expect(queued).resolves.toMatchObject({ isError: false });
+    expect(state.context.productWork.snapshot()).toHaveLength(33);
+    const followup = state.execute("SendMessage", { to: first, summary: "Continue", message: "Resume when capacity permits." });
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]?.activation).toMatchObject({ ordinal: 2, state: "queued" }));
+    const second = (handles[1] as { value: { agentId: string } }).value.agentId;
+    state.subagents.emitEnd(second, "slot released for FIFO follow-up");
+    await expect(followup).resolves.toMatchObject({ isError: false });
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]?.activation).toMatchObject({ ordinal: 2, state: "running" }));
+  });
+
+  it("cancels a queued follow-up on TaskStop without blocking later collaboration messages", async () => {
+    const state = await harness({ limits: () => ({ maxDepth: 1, maxActiveChildren: 1, maxRetainedChildren: 3 }) });
+    const first = await state.execute("Agent", { description: "Retained recipient", prompt: "Complete the first activation." });
+    const { agentId, taskId } = (first as { value: { agentId: string; taskId: string } }).value;
+    state.subagents.emitEnd(agentId, "first activation complete");
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]?.activation.state).toBe("completed"));
+    const second = await state.execute("Agent", { description: "Occupy capacity", prompt: "Wait while the other handle is closed." });
+    const args = { to: agentId, summary: "Queued continuation", message: "This should be canceled before delivery." };
+    const queued = state.execute("SendMessage", args, "cancel-queued-message");
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]?.activation.state).toBe("queued"));
+    await expect(state.execute("TaskStop", { task_id: taskId })).resolves.toMatchObject({ isError: false });
+    await expect(queued).resolves.toMatchObject({ isError: true, error: { info: { code: "delivery_failed" } } });
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/message-canceled")).toHaveLength(1);
+    await expect(state.execute("SendMessage", args, "cancel-queued-message")).resolves.toMatchObject({ isError: true });
+    await expect(state.execute("SendMessage", { to: (second as { value: { agentId: string } }).value.agentId, summary: "Still reachable", message: "The canceled message does not block this." })).resolves.toMatchObject({ isError: false });
+  });
+
+  it.each(["realtime", "turn"] as const)("freezes collaboration timing separately from user-input settings (%s)", async (initial) => {
+    let delivery: "realtime" | "turn" = initial;
+    const state = await harness({ messageDelivery: () => delivery });
+    const started = await state.execute("Agent", { description: "Receive collaboration", prompt: "Wait for a real sender." });
+    const childId = (started as { value: { agentId: string } }).value.agentId;
+    const args = { to: childId, summary: "Bounded instruction", message: "Use the configured collaboration boundary." };
+    const first = await state.execute("SendMessage", args, "timed-collaboration");
+    const insertions = () => state.subagents.childAgent(childId)?.session.snapshotEvents().filter((event) => event.type === "agent/inbox/spliced"
+      && event.data.inserted.some((message) => message.source.kind === "agent-message")) ?? [];
+    expect(insertions()).toHaveLength(1);
+    expect(insertions()[0]?.data).toMatchObject({ target: initial === "realtime" ? "next-step" : "next-turn", inserted: [{ source: { kind: "agent-message", senderSessionId: state.agent.id } }] });
+    delivery = initial === "realtime" ? "turn" : "realtime";
+    await expect(state.execute("SendMessage", args, "timed-collaboration")).resolves.toEqual(first);
+    expect(insertions()).toHaveLength(1);
+    expect(state.agent.session.snapshotEvents().find((event) => event.type === "myagents/work/message-intent")?.data).toMatchObject({ deliveryTiming: initial });
+  });
+
+  it("TaskStop closes a queued reservation without waiting for an occupied execution slot", async () => {
+    const state = await harness({ limits: () => ({ maxDepth: 1, maxActiveChildren: 1, maxRetainedChildren: 3 }) });
+    await state.execute("Agent", { description: "Occupy slot", prompt: "Wait." }, "occupy");
+    const pending = state.execute("Agent", { description: "Queued", prompt: "Stop before starting." }, "queued-stop");
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()).toHaveLength(2));
+    const queued = state.context.productWork.snapshot()[1];
+    await expect(state.execute("TaskStop", { task_id: queued?.taskId }, "stop-queued")).resolves.toMatchObject({
+      isError: false, value: { terminal: "aborted" },
+    });
+    await expect(pending).resolves.toMatchObject({ isError: true });
+    expect(state.subagents.childIds()).toHaveLength(1);
+    expect(state.context.productWork.snapshot()[1]).toMatchObject({ handleState: "closed", state: "aborted" });
+  });
+
+  it("cancels a queued child durably and grants the next reservation the released root slot", async () => {
+    const state = await harness({ limits: () => ({ maxDepth: 1, maxActiveChildren: 1, maxRetainedChildren: 4 }) });
+    const first = await state.execute("Agent", { description: "First", prompt: "Hold the slot." }, "first");
+    const controller = new AbortController();
+    const cancelled = state.execute("Agent", { description: "Second", prompt: "Cancel before execution." }, "second", controller.signal);
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()).toHaveLength(2));
+    const third = state.execute("Agent", { description: "Third", prompt: "Wait for the slot." }, "third");
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()).toHaveLength(3));
+    const queuedId = state.context.productWork.snapshot()[2]?.activation.id;
+    controller.abort(new Error("synthetic queued cancellation"));
+    await expect(cancelled).resolves.toMatchObject({ isError: true });
+    expect(state.context.productWork.snapshot()[1]).toMatchObject({ handleState: "closed", state: "aborted" });
+    expect(state.subagents.childIds()).toHaveLength(1);
+    state.subagents.emitEnd((first as { value: { agentId: string } }).value.agentId, "first completed");
+    await expect(third).resolves.toMatchObject({ isError: false });
+    expect(state.context.productWork.snapshot()[2]?.activation).toMatchObject({ id: queuedId, state: "running" });
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/started")).toHaveLength(2);
+  });
+
   it("durably correlates one exact SendMessage retry to one DSH Inbox insertion", async () => {
     const state = await harness();
     const started = await state.execute("Agent", {
@@ -1649,7 +2172,7 @@ describe("canonical Agent Work projection", () => {
     const second = await state.execute("SendMessage", args, "message-exact-retry");
     expect(second).toEqual(first);
     expect(state.subagents.followups).toHaveLength(1);
-    expect(state.agent.session.events.filter((event) => event.type.startsWith("myagents/work/message"))
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type.startsWith("myagents/work/message"))
       .map((event) => event.type)).toEqual([
         "myagents/work/message-intent",
         "myagents/work/message",
@@ -1680,7 +2203,7 @@ describe("canonical Agent Work projection", () => {
     await expect(state.execute("SendMessage", first, "ordered-first")).resolves.toMatchObject({ isError: false });
     await expect(state.execute("SendMessage", second, "ordered-second")).resolves.toMatchObject({ isError: false });
     expect(state.subagents.followups).toHaveLength(2);
-    expect(state.agent.session.events.filter((event) => event.type === "myagents/work/message")
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/message")
       .map((event) => (event.data as { sequence: number }).sequence)).toEqual([1, 2]);
   });
 
@@ -1711,7 +2234,7 @@ describe("canonical Agent Work projection", () => {
     await expect(state.executeAs(value.agentId, "TaskStop", { task_id: value.taskId }, "self-stop"))
       .resolves.toMatchObject({ error: { info: { code: "task_stop_failed" } }, isError: true });
     expect(state.subagents.retired).toEqual([]);
-    expect(state.agent.session.events.filter((event) => event.type === "myagents/work/stopping")).toEqual([]);
+    expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/stopping")).toEqual([]);
   });
 
   it("closes admission and drains an in-flight tool callback before ProductWork cleanup", async () => {
@@ -1751,14 +2274,16 @@ describe("canonical Agent Work projection", () => {
     const secondId = (second as { value: { agentId: string } }).value.agentId;
 
     let ownedBeforeReceipt = false;
-    state.subagents.onNextReportInsertion((messageId, child) => {
+    const inject = state.agent.inject.bind(state.agent);
+    const insertion = vi.spyOn(state.agent, "inject").mockImplementationOnce((message) => {
+      inject(message);
       ownedBeforeReceipt = state.context.productWork.ownsRootContextMessage(
         state.agent,
-        Object.freeze({ kind: "subagent-report", form: "relay", senderSessionId: child.id }),
-        messageId,
+        message.source,
+        message.id,
       );
+      throw new Error("synthetic report response loss after insertion");
     });
-    state.failNextReportAfterInsert();
     const parentReport = await state.executeAs(firstId, "SendMessage", {
       to: "parent",
       summary: "First review",
@@ -1768,9 +2293,9 @@ describe("canonical Agent Work projection", () => {
       isError: false,
       value: { recipient: state.agent.id, state: "delivered", sequence: 1 },
     });
-    expect(state.subagents.reports).toHaveLength(1);
+    expect(insertion).toHaveBeenCalledTimes(1);
     expect(ownedBeforeReceipt).toBe(true);
-    const delivery = state.agent.session.events.find((event) => event.type === "myagents/work/message");
+    const delivery = state.agent.session.snapshotEvents().find((event) => event.type === "myagents/work/message");
     expect(delivery).toBeDefined();
     expect(state.context.productWork.ownsRootContextMessage(
       state.agent,
@@ -1790,7 +2315,7 @@ describe("canonical Agent Work projection", () => {
     }, "child-sibling-report");
     expect(sibling).toMatchObject({
       isError: false,
-      value: { recipient: secondId, state: "delivered", sequence: 2 },
+      value: { recipient: secondId, state: "queued", sequence: 2 },
     });
     expect(state.subagents.followups).toHaveLength(1);
     await expect(state.executeAs(firstId, "SendMessage", {
@@ -1803,7 +2328,7 @@ describe("canonical Agent Work projection", () => {
     });
   });
 
-  it("fences after an uncertain root creation flush without deleting accepted child evidence", async () => {
+  it("fences an uncertain reserved birth flush before starting a child or deleting its output", async () => {
     const state = await harness();
     state.failNextFlush();
     await expect(state.execute("Agent", {
@@ -1814,7 +2339,7 @@ describe("canonical Agent Work projection", () => {
       error: { info: { code: "task_stop_failed" } },
     });
     expect(state.subagents.childIds()).toEqual([]);
-    expect(state.subagents.retired).toHaveLength(1);
+    expect(state.subagents.retired).toHaveLength(0);
     expect(state.discardedOutputs).toHaveLength(0);
   });
 

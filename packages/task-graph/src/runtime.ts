@@ -4,7 +4,7 @@ import { types as utilTypes } from "node:util";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
-import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
+import { SessionId, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
@@ -56,6 +56,7 @@ export interface ProductTaskGraphSnapshot {
 export interface ProductTaskGraphServiceConfig {
   readonly durability: Readonly<{ flush(session: Session): Promise<unknown> }>;
   readonly requireAgent: () => Agent;
+  readonly isKnownCollaborator?: (root: Agent, agentId: string) => boolean;
 }
 
 export const PRODUCT_TASK_EVENT_TYPES = Object.freeze([
@@ -74,6 +75,7 @@ const eventSha256Schema = Type.String({ pattern: "^[a-f0-9]{64}$" });
 const eventSequenceSchema = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
 const taskSequenceSchema = Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER });
 const taskMutationAuthoritySchema = strictObject({
+  actorId: Type.Optional(eventIdentifierSchema),
   callId: eventIdentifierSchema,
   clientOperationId: eventIdentifierSchema,
   dshTurn: taskSequenceSchema,
@@ -153,7 +155,7 @@ declare module "@deepseek-ai/cordis" {
   }
 }
 
-declare module "@deepseek-ai/dsh-session" {
+declare module "@deepseek-ai/dsh-session/types" {
   interface SessionEventMap {
     "myagents/task/created": ProductTaskCreatedEventData;
     "myagents/task/updated": ProductTaskUpdatedEventData;
@@ -383,7 +385,7 @@ const parseMutationAuthority = (value: unknown, description: string): TaskMutati
   const authority = exactDataObject(value, [
     "callId", "clientOperationId", "dshTurn", "origin", "productTurnId",
     "toolCatalogDigest", "toolCatalogRevision",
-  ], [], description);
+  ], ["actorId"], description);
   if (!Number.isSafeInteger(authority.dshTurn) || (authority.dshTurn as number) < 1
     || (authority.origin !== "root" && authority.origin !== "foreground_child"
       && authority.origin !== "background_child")) {
@@ -394,6 +396,7 @@ const parseMutationAuthority = (value: unknown, description: string): TaskMutati
     throw new ProductTaskGraphFoldError(`${description} catalog digest must be SHA-256`);
   }
   return Object.freeze({
+    ...(authority.actorId === undefined ? {} : { actorId: boundedIdentifier(authority.actorId, `${description} actor id`) }),
     callId: boundedIdentifier(authority.callId, `${description} call id`),
     clientOperationId: boundedIdentifier(authority.clientOperationId, `${description} operation id`),
     dshTurn: authority.dshTurn as number,
@@ -405,6 +408,7 @@ const parseMutationAuthority = (value: unknown, description: string): TaskMutati
 };
 
 const authorityForContext = (context: ProductToolContext): TaskMutationAuthority => Object.freeze({
+  actorId: context.agent === productRootAgent(context) ? "root" : boundedIdentifier(context.agent.id, "TaskGraph actor id"),
   callId: boundedIdentifier(context.callId, "TaskGraph call id"),
   clientOperationId: boundedIdentifier(context.clientOperationId, "TaskGraph operation id"),
   dshTurn: context.dshTurn,
@@ -489,6 +493,7 @@ const applyUpdate = (
   taskId: string,
   patch: JsonObject,
   sequence: number,
+  authority: TaskMutationAuthority,
 ): readonly InternalTaskNode[] => {
   const tasks = tasksValue.map((task) => freezeTask(task));
   const index = tasks.findIndex((task) => task.id === taskId);
@@ -497,6 +502,11 @@ const applyUpdate = (
   if (current === undefined) throw new ProductToolError("task_not_found", `Task does not exist: ${taskId}`);
   if (current.status === "completed" || current.status === "cancelled") {
     throw new ProductToolError("task_terminal_conflict", `Task is terminal: ${taskId}`);
+  }
+  const actor = authority.actorId;
+  if (actor !== undefined && ((authority.origin === "root") !== (actor === "root")
+    || (current.owner !== undefined && actor !== "root" && actor !== current.owner))) {
+    throw new ProductToolError("task_graph_conflict", "TaskUpdate caller does not own this task");
   }
   const changedFields = TASK_UPDATE_FIELDS.filter((field) => Object.hasOwn(patch, field));
   if (changedFields.length === 0) {
@@ -511,10 +521,10 @@ const applyUpdate = (
   });
   if (Object.hasOwn(patch, "owner")) {
     const owner = patch.owner as string;
-    if (owner !== "root") {
+    if (actor === undefined && owner !== "root") {
       throw new ProductToolError("task_graph_conflict", "Task owner is outside the current collaboration domain");
     }
-    if (next.owner !== undefined && next.owner !== owner) {
+    if (actor === undefined && next.owner !== undefined && next.owner !== owner) {
       throw new ProductToolError("task_graph_conflict", `Task is already owned by ${next.owner}`);
     }
     next = freezeTask({ ...next, owner });
@@ -755,7 +765,7 @@ export const foldProductTaskGraph = (
       throw new ProductTaskGraphFoldError("durable TaskUpdate event differs from the prior graph authority");
     }
     try {
-      tasks = applyUpdate(tasks, data.taskId, data.patch, expectedSequence);
+      tasks = applyUpdate(tasks, data.taskId, data.patch, expectedSequence, data.authority);
     } catch (error) {
       throw new ProductTaskGraphFoldError("durable TaskUpdate event violates TaskGraph rules", { cause: error });
     }
@@ -781,7 +791,7 @@ const exactNativePromise = <T>(value: unknown, description: string): Promise<T> 
 };
 
 const validateConfig = (value: unknown): ProductTaskGraphServiceConfig => {
-  const config = exactDataObject(value, ["durability", "requireAgent"], [], "ProductTaskGraphService config");
+  const config = exactDataObject(value, ["durability", "requireAgent"], ["isKnownCollaborator"], "ProductTaskGraphService config");
   const durability = exactDataObject(config.durability, ["flush"], [], "TaskGraph durability authority");
   const flushDescriptor = Object.getOwnPropertyDescriptor(durability, "flush");
   const agentDescriptor = Object.getOwnPropertyDescriptor(config, "requireAgent");
@@ -793,9 +803,14 @@ const validateConfig = (value: unknown): ProductTaskGraphServiceConfig => {
   }
   const flush = flushDescriptor.value as (session: Session) => Promise<unknown>;
   const requireAgent = agentDescriptor.value as () => Agent;
+  if (config.isKnownCollaborator !== undefined && (typeof config.isKnownCollaborator !== "function" || utilTypes.isProxy(config.isKnownCollaborator))) {
+    throw new TypeError("TaskGraph collaborator authority must be a non-Proxy function");
+  }
+  const isKnownCollaborator = config.isKnownCollaborator as ProductTaskGraphServiceConfig["isKnownCollaborator"];
   return Object.freeze({
     durability: Object.freeze({ flush: (session: Session) => Reflect.apply(flush, durability, [session]) }),
     requireAgent: () => Reflect.apply(requireAgent, config, []),
+    ...(isKnownCollaborator === undefined ? {} : { isKnownCollaborator: (root: Agent, agentId: string) => Reflect.apply(isKnownCollaborator, config, [root, agentId]) }),
   });
 };
 
@@ -814,7 +829,7 @@ type TaskEventPermit = Readonly<{
 }>;
 
 export class ProductTaskGraphService extends Service {
-  static inject = ["productTools", "sessions", "tools"];
+  static inject = ["agents", "productTools", "sessions", "tools"];
   private readonly configValue: ProductTaskGraphServiceConfig;
   private readonly settlements = new Set<Promise<unknown>>();
   private tail: Promise<void> = Promise.resolve();
@@ -872,7 +887,7 @@ export class ProductTaskGraphService extends Service {
       throw new ProductToolError("task_graph_unavailable", "TaskGraph belongs to the exact primary root Agent");
     }
     try {
-      return foldProductTaskGraph(agent.session.events, String(agent.session.id));
+      return foldProductTaskGraph(agent.session.snapshotEvents(), String(agent.session.id));
     } catch (error) {
       this.failure ??= error;
       throw new ProductToolError("task_graph_unavailable", "durable TaskGraph projection cannot be trusted", { cause: error });
@@ -882,7 +897,7 @@ export class ProductTaskGraphService extends Service {
   validatePersisted(agent: Agent): ProductTaskGraphSnapshot {
     this.assertHealthy();
     try {
-      return foldProductTaskGraph(agent.session.events, String(agent.session.id));
+      return foldProductTaskGraph(agent.session.snapshotEvents(), String(agent.session.id));
     } catch (error) {
       this.failure ??= error;
       throw new ProductToolError(
@@ -1057,10 +1072,29 @@ export class ProductTaskGraphService extends Service {
         for (const field of TASK_UPDATE_FIELDS) {
           if (Object.hasOwn(args, field)) patch[field] = args[field];
         }
+        const authority = authorityForContext(context);
+        if (this.ctx.agents.get(context.agent.id) !== context.agent
+          || ((context.origin === "root") !== (context.agent === rootAgent))
+          || (context.agent !== rootAgent && (context.agent.session.header.origin !== "subagent"
+            || !(this.configValue.isKnownCollaborator?.(rootAgent, context.agent.id)
+              ?? context.agent.session.header.parentSession === rootAgent.id)))) {
+          throw new ProductToolError("task_graph_conflict", "TaskUpdate caller lacks its registered collaboration identity");
+        }
+        const task = before.tasks.find((candidate) => candidate.id === taskId);
+        if (patch.status === "in_progress" && patch.owner === undefined && task?.owner === undefined) {
+          patch.owner = authority.actorId;
+        }
+        if (patch.owner !== undefined && patch.owner !== "root") {
+          const owner = this.ctx.agents.get(SessionId(patch.owner as string));
+          const known = this.configValue.isKnownCollaborator?.(rootAgent, patch.owner as string)
+            ?? (owner?.session.header.origin === "subagent" && owner.session.header.parentSession === rootAgent.id);
+          if (!known) {
+            throw new ProductToolError("task_graph_conflict", "Task owner is outside the current collaboration domain");
+          }
+        }
         const changedFields = TASK_UPDATE_FIELDS.filter((field) => Object.hasOwn(patch, field));
         const taskSequence = before.sequence + 1;
         const transitionPayload = { taskId, patch, changedFields };
-        const authority = authorityForContext(context);
         const revision = transitionRevision(
           before.revision,
           String(rootAgent.session.id),
@@ -1129,7 +1163,7 @@ export class ProductTaskGraphService extends Service {
           type,
         }) as SessionEvent;
         const candidate = foldProductTaskGraph(
-          Object.freeze([...rootAgent.session.events, synthetic]),
+          Object.freeze([...rootAgent.session.snapshotEvents(), synthetic]),
           String(rootAgent.session.id),
         );
         project(candidate, plan.revision, plan);

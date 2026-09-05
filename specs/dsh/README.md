@@ -6,9 +6,9 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 ## Two authorities, deliberately not conflated
 
-- Source/design evidence is `deepseek-harness@b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` (tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`), whose manifests declare `0.1.1-rc.2`.
-- Development dependency evidence is the public npm `0.1.1-rc.2` package set plus `@deepseek-ai/cordis@4.0.1`, pinned by exact versions, tarball URLs, and SHA-512 integrities in `package-lock.json`.
-- Candidate executable authority is the source-built, ten-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a`, content-addressed by manifest SHA-256 `b53667aed87f2b9cd0dbc8fb02f097e4fb9127227705f78d132bbedae7ed46aa`. Its Provider-content seam also binds the separately pinned and patched pi-ai `0.82.1` authority under `specs/pi-ai/`.
+- Source/design evidence is `deepseek-harness@a66e4702047846cdaa10c66c9d3df3951f5ea70d` (tree `27ab636bb3d77e698f5637e518db44ae1f61e262`), whose manifests declare `0.1.2-rc.1`.
+- Development dependency evidence is the public npm `0.1.2-rc.1` package set plus `@deepseek-ai/cordis@4.0.2`, pinned by exact versions, tarball URLs, and SHA-512 integrities in `package-lock.json`.
+- Candidate executable authority is the source-built, ten-patch artifact `0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd`, content-addressed by manifest SHA-256 `b081b253d3337761ac6a1f15d3667cd9ff36b966ffdf93325ada4c2391168575`. Its Provider-content seam also binds the separately pinned and patched pi-ai `0.84.2` authority under `specs/pi-ai/`.
 
 The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 
@@ -34,13 +34,13 @@ These patches target the fixed rc.2 source/design authority. They are not claime
 
 ## Batch 1 upstream rebaseline
 
-`B1-DSH-R1` is the accepted release-blocking refresh of this authority. On 2026-08-23 the official checkout was fetched through lightweight tag `dsh-v0.1.1-rc.2`, exact commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`, 854 commits beyond the prior rc.5 source baseline. The source, lock, reduced patch series, public compile fixtures, 52-package bundle, clean consumer, real AgentLoop, and commit-bound Runtime artifact were accepted at implementation commit `336899ee0a4d4cf7614031cfaddb358a7400c529`; the candidate profile remains `workstream-evidence-only`.
+`B1-DSH-R1` is the accepted release-blocking refresh of this authority. On 2026-08-23 the official checkout was fetched through lightweight tag `dsh-v0.1.2-rc.1`, exact commit `a66e4702047846cdaa10c66c9d3df3951f5ea70d`, tree `27ab636bb3d77e698f5637e518db44ae1f61e262`, 854 commits beyond the prior rc.5 source baseline. The source, lock, reduced patch series, public compile fixtures, 52-package bundle, clean consumer, real AgentLoop, and commit-bound Runtime artifact were accepted at implementation commit `336899ee0a4d4cf7614031cfaddb358a7400c529`; the candidate profile remains `workstream-evidence-only`.
 
-The versioned review matrix is [upstream-rebaseline-0.1.1-rc.2.md](./upstream-rebaseline-0.1.1-rc.2.md).
+The versioned review matrix is [upstream-rebaseline-0.1.2-rc.1.md](./upstream-rebaseline-0.1.2-rc.1.md).
 
-The mandatory post-Workstream-4 refresh is recorded in [upstream-refresh-b1-final-0.1.1-rc.2.md](./upstream-refresh-b1-final-0.1.1-rc.2.md). A final G6 preflight again found the newest release and `origin/master` identical to the immutable rc.2 pin, then caught an official-route V4-Flash stream defect in that exact source. The accepted six-patch source gate and rebuilt 54-package bundle include the minimal translator correction and regression.
+The mandatory post-Workstream-4 refresh is recorded in [upstream-refresh-b1-final-0.1.2-rc.1.md](./upstream-refresh-b1-final-0.1.2-rc.1.md). A final G6 preflight again found the newest release and `origin/master` identical to the immutable rc.2 pin, then caught an official-route V4-Flash stream defect in that exact source. The accepted six-patch source gate and rebuilt 54-package bundle include the minimal translator correction and regression.
 
-The focused compaction P0 refresh is recorded in [upstream-refresh-b1-compaction-p0-0.1.1-rc.2.md](./upstream-refresh-b1-compaction-p0-0.1.1-rc.2.md). It keeps the same immutable upstream commit, directly composes the official Tool Result Pruner, and adds only patch 0007 for summary-request estimation, capacity-safe range selection, structured checkpoint validation/repair, and content-free telemetry that the public rc.2 seams cannot express.
+The focused compaction P0 refresh is recorded in [upstream-refresh-b1-compaction-p0-0.1.2-rc.1.md](./upstream-refresh-b1-compaction-p0-0.1.2-rc.1.md). It keeps the same immutable upstream commit, directly composes the official Tool Result Pruner, and adds only patch 0007 for summary-request estimation, capacity-safe range selection, structured checkpoint validation/repair, and content-free telemetry that the public rc.2 seams cannot express.
 
 The refresh compares public APIs and behavior, not only package versions. Patches 0001–0004 remain required and were rebased with new source/blob evidence. Patch 0005 was reduced: ProductWork now uses upstream caller-reserved identity and `drainContinuableChildren`, while the patch retains only exact external settlement delivery, strict final durability, resume/no-reinsert recovery, and infrastructure-failure attribution that rc.2 still lacks.
 

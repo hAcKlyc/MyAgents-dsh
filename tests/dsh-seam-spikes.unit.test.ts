@@ -1,3 +1,4 @@
+import { SessionSeq } from "@deepseek-ai/dsh-session";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -6,7 +7,7 @@ import {
   foldConsumedWork,
 } from "@deepseek-ai/dsh-agent";
 import {
-  CallId,
+  ToolCallId,
   MessageId,
   freezeMessage,
   type AssistantMessage,
@@ -54,14 +55,14 @@ function assistantWithTwoCalls(): AssistantMessage {
       { type: "text", text: "before" },
       {
         type: "tool-call",
-        id: CallId("call-a"),
+        id: ToolCallId("call-a"),
         name: "Read",
         arguments: "{\"path\":\"old-a\",\"offset\":0}",
       },
       { type: "reasoning", text: "between" },
       {
         type: "tool-call",
-        id: CallId("call-b"),
+        id: ToolCallId("call-b"),
         name: "Write",
         arguments: "{\"path\":\"old-b\",\"content\":\"draft\"}",
       },
@@ -325,11 +326,11 @@ describe("operation correlation and restart wake spike", () => {
     const { inbox, session } = makeSpikeInbox("wake-consumed-work");
     const pending = makeSpikeUserMessage("pending-consumed", "pending");
     inbox.append("next-turn", pending);
-    const before = foldConsumedWork(session.events);
+    const before = foldConsumedWork(session.snapshotEvents());
     expect(wakeExistingPending(inbox, pending.id, () => undefined)).toBe(true);
-    expect(foldConsumedWork(session.events)).toEqual(before);
+    expect(foldConsumedWork(session.snapshotEvents())).toEqual(before);
     inbox.clear();
-    expect(foldConsumedWork(session.events).droppedUnrun).toBe(true);
+    expect(foldConsumedWork(session.snapshotEvents()).droppedUnrun).toBe(true);
   });
 
   it("rejects remove/reinsert because it changes durable FIFO order", () => {
@@ -349,13 +350,13 @@ describe("operation correlation and restart wake spike", () => {
     const second = makeSpikeUserMessage("message-b", "second");
     inbox.append("next-turn", first);
     inbox.append("next-turn", second);
-    const beforeWake = session.events.length;
+    const beforeWake = session.snapshotEvents().length;
     let wakeSignals = 0;
 
     expect(wakeExistingPending(inbox, first.id, () => { wakeSignals += 1; })).toBe(true);
     expect(wakeExistingPending(inbox, first.id, () => { wakeSignals += 1; })).toBe(true);
     expect(wakeSignals).toBe(2);
-    expect(session.events).toHaveLength(beforeWake);
+    expect(session.snapshotEvents()).toHaveLength(beforeWake);
     expect(inbox.nextTurn.map(({ id }) => id)).toEqual([first.id, second.id]);
 
     expect(inbox.claim("next-turn", 1).map(({ id }) => id)).toEqual([first.id]);
@@ -463,8 +464,8 @@ describe("authoritative PreToolUse spike", () => {
       name,
       rawArguments,
     }))).toEqual([
-      { callId: CallId("call-a"), name: "Read", rawArguments: "{\"offset\":3,\"path\":\"new-a\"}" },
-      { callId: CallId("call-b"), name: "Write", rawArguments: "{\"content\":\"published\",\"path\":\"new-b\"}" },
+      { callId: ToolCallId("call-a"), name: "Read", rawArguments: "{\"offset\":3,\"path\":\"new-a\"}" },
+      { callId: ToolCallId("call-b"), name: "Write", rawArguments: "{\"content\":\"published\",\"path\":\"new-b\"}" },
     ]);
     expect(prepared.message.content[0]).toEqual(original.content[0]);
     expect(prepared.message.content[2]).toEqual(original.content[2]);
@@ -472,7 +473,7 @@ describe("authoritative PreToolUse spike", () => {
 
     const session = Session.create(SessionId("pretool-authoritative"));
     commitPreparedAssistant(session, prepared, 1, 1);
-    const durableCalls = session.events
+    const durableCalls = session.snapshotEvents()
       .filter((event) => event.type === "tool/call")
       .map((event) => event.data.arguments);
     const replayCalls = session.deriveMessages()[0]?.content
@@ -540,7 +541,7 @@ describe("authoritative PreToolUse spike", () => {
     for (const run of scenarios) {
       const session = Session.create(SessionId("pretool-atomic"));
       await expect(run()).rejects.toThrow();
-      expect(session.events).toHaveLength(0);
+      expect(session.snapshotEvents()).toHaveLength(0);
     }
   });
 
@@ -595,19 +596,24 @@ describe("product persistence and mutation spike", () => {
       rootMessageId: "message-1",
     });
 
-    expect(unsupportedRequiredEvents(session.events, (type) => KNOWN_SESSION_EVENT_TYPES.has(type))).toEqual([
+    expect(unsupportedRequiredEvents(session.snapshotEvents(), (type) => KNOWN_SESSION_EVENT_TYPES.has(type))).toEqual([
       "myagents/operation/accepted@0",
     ]);
-    expect(unsupportedRequiredEvents(session.events, productKnownEventType)).toEqual([]);
+    expect(unsupportedRequiredEvents(session.snapshotEvents(), productKnownEventType)).toEqual([]);
     expect(PRODUCT_REQUIRED_EVENT_TYPES.every(productKnownEventType)).toBe(true);
     expect(Object.keys(PRODUCT_REQUIRED_EVENT_SCHEMAS)).toEqual([
       "myagents/task/created",
       "myagents/task/updated",
       "myagents/work/created",
+      "myagents/work/started",
       "myagents/work/epoch",
+      "myagents/work/activated",
       "myagents/work/message-intent",
       "myagents/work/message",
+      "myagents/work/message-canceled",
       "myagents/work/stopping",
+      "myagents/work/reopened",
+      "myagents/work/phase",
       "myagents/work/settled",
     ]);
     expect(productKnownRequiredEventSchema("myagents/task/created"))
@@ -668,15 +674,15 @@ describe("product persistence and mutation spike", () => {
       { surfaceOp: "append", sourceEventSeqs: [] },
     );
     source.append("turn/end", { turn: 1, reason: { kind: "completed" } });
-    const boundary = source.events.length;
+    const boundary = source.snapshotEvents().length;
     const expectedMessages = source.deriveMessages();
     source.append("turn/start", { turn: 2 });
     source.append("turn/end", { turn: 2, reason: { kind: "blocked" } });
 
     const rewound = rewindToStablePrefix(source, "rewind-target", boundary);
     expect(rewound.deriveMessages()).toEqual(expectedMessages);
-    expect(rewound.events.slice(0, boundary)).toEqual(source.events.slice(0, boundary));
-    expect(rewound.events.some((event) =>
+    expect(rewound.snapshotEvents().slice(0, boundary)).toEqual(source.snapshotEvents().slice(0, boundary));
+    expect(rewound.snapshotEvents().some((event) =>
       event.type === "assistant/message" &&
       event.data.message.content.some((block) =>
         block.type === "text" && block.text.includes("placeholder"),
@@ -714,11 +720,11 @@ describe("product persistence and mutation spike", () => {
     source.append("turn/start", { turn: 1 });
     source.append("user/message", makeSpikeUserMessage("generation-user", "hello"), { surfaceOp: "append" });
     source.append("turn/end", { turn: 1, reason: { kind: "completed" } });
-    const boundary = source.events.length;
+    const boundary = source.snapshotEvents().length;
     source.append("turn/start", { turn: 2 });
     source.append("turn/end", { turn: 2, reason: { kind: "blocked" } });
 
-    const harness = new SharedGenerationMutationHarness(source.events);
+    const harness = new SharedGenerationMutationHarness(source.snapshotEvents());
     const firstPreparation = harness.prepare();
     expect(harness.prepare()).toBe(firstPreparation);
     const staleRevision = firstPreparation.revision;
@@ -726,7 +732,7 @@ describe("product persistence and mutation spike", () => {
     const appendGate = Promise.withResolvers<undefined>();
     const appended = harness.append({
       type: "turn/start",
-      seq: source.events.length,
+      seq: SessionSeq(source.snapshotEvents().length),
       time: 10,
       data: { turn: 3 },
     }, async () => {
@@ -751,13 +757,13 @@ describe("product persistence and mutation spike", () => {
     const publishedRevision = await harness.publishRewind(stableRevision, boundary);
     expect(publishedRevision).not.toBe(stableRevision);
     const cold = harness.inspectCold();
-    expect(cold).toEqual(source.events.slice(0, boundary));
-    expect(source.events).toHaveLength(boundary + 2);
-    const expected = Session.create(SessionId("generation-expected"), source.events.slice(0, boundary));
+    expect(cold).toEqual(source.snapshotEvents().slice(0, boundary));
+    expect(source.snapshotEvents()).toHaveLength(boundary + 2);
+    const expected = Session.create(SessionId("generation-expected"), source.snapshotEvents().slice(0, boundary));
     const reloaded = Session.create(SessionId("generation-reloaded"), cold);
     expect(reloaded.deriveMessages()).toEqual(expected.deriveMessages());
     expect(cold.filter((event) => event.type.startsWith("myagents/")).map((event) => event.data))
-      .toEqual(source.events.slice(0, boundary)
+      .toEqual(source.snapshotEvents().slice(0, boundary)
         .filter((event) => event.type.startsWith("myagents/"))
         .map((event) => event.data));
   });
@@ -766,11 +772,11 @@ describe("product persistence and mutation spike", () => {
     const source = Session.create(SessionId("delete-source"));
     source.append("turn/start", { turn: 1 });
     source.append("turn/end", { turn: 1, reason: { kind: "completed" } });
-    const harness = new SharedGenerationMutationHarness(source.events, "delete-source");
+    const harness = new SharedGenerationMutationHarness(source.snapshotEvents(), "delete-source");
     const backend: PersistenceBackend<never> = harness;
 
     const loaded = await backend.loadStored(SessionId("delete-source"));
-    expect(loaded?.events).toEqual(source.events);
+    expect(loaded?.events).toEqual(source.snapshotEvents());
     expect(await backend.readStoredRevision(SessionId("delete-source"))).toBe(
       harness.currentRevision(),
     );
@@ -781,7 +787,7 @@ describe("product persistence and mutation spike", () => {
     expect(() => harness.prepareDelete("delete-1", "stale-revision"))
       .toThrow("revision changed");
     const stalePreparation = harness.prepareDelete("delete-1", harness.currentRevision());
-    await harness.publishRewind(harness.currentRevision(), source.events.length);
+    await harness.publishRewind(harness.currentRevision(), source.snapshotEvents().length);
     await expect(harness.commitDelete(stalePreparation)).rejects.toThrow("revision changed");
 
     const prepared = harness.prepareDelete("delete-1", harness.currentRevision());
@@ -826,7 +832,7 @@ describe("product persistence and mutation spike", () => {
     expect(() => harness.inspectCold()).toThrow("recoverably tombstoned");
     await expect(harness.append({
       type: "turn/start",
-      seq: source.events.length,
+      seq: SessionSeq(source.snapshotEvents().length),
       time: 10,
       data: { turn: 2 },
     })).rejects.toThrow("live writer is retired");
@@ -884,10 +890,10 @@ describe("accepted DSH seam decision registry", () => {
         files: Array<{ blob: string; sha256: string }>;
       };
     };
-    expect(evidence.authority.commit).toBe("b150a551b8d465e31e418e1b2eaf5e79bbb7d28e");
-    expect(evidence.authority.declaredRelease).toBe("0.1.1-rc.2");
+    expect(evidence.authority.commit).toBe("a66e4702047846cdaa10c66c9d3df3951f5ea70d");
+    expect(evidence.authority.declaredRelease).toBe("0.1.2-rc.1");
     expect(evidence.authority.executablePackageAssociation).toBe("unproven");
-    expect(evidence.authority.files).toHaveLength(45);
+    expect(evidence.authority.files).toHaveLength(49);
     expect(evidence.authority.files.every(({ blob, sha256 }) =>
       /^[0-9a-f]{40}$/u.test(blob) && /^[0-9a-f]{64}$/u.test(sha256))).toBe(true);
   });

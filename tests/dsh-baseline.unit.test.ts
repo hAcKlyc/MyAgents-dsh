@@ -42,12 +42,12 @@ describe("DSH dependency authority", () => {
     expect(generated).toBe(baselineBytes);
     expect(baseline.executableBaseline).toEqual({
       registry: "https://registry.npmjs.org",
-      dshRelease: "0.1.1-rc.2",
+      dshRelease: "0.1.2-rc.1",
       sourceAssociation: "unproven",
-      directPackageCount: 50,
-      productionPackageCount: 315,
+      directPackageCount: 52,
+      productionPackageCount: 322,
     });
-    expect(baseline.productionPackages.filter(({ name }) => name.startsWith("@deepseek-ai/"))).toHaveLength(63);
+    expect(baseline.productionPackages.filter(({ name }) => name.startsWith("@deepseek-ai/"))).toHaveLength(71);
     expect(baseline.productionPackages.every(({ integrity, license }) => integrity.startsWith("sha512-") && license.length > 0)).toBe(true);
   });
 

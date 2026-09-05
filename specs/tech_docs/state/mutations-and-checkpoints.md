@@ -64,13 +64,15 @@ File plans use only settled checkpoints after the boundary and require strict ha
 each path. Manual/untracked gaps or external drift produce conflict. Each file checkpoint is capped
 at 8 MiB. Coverage still excludes shell, child and external changes.
 
-One current crash-safety gap must remain visible: file restore occurs before its file plan is marked
-published, and all files are published before the main SQLite rewind journal advances from
-`prepared` to `committing`. A process crash in that interval can leave restored files while later
-rollback marks the main mutation rolled back, or can make commit replay conflict with changed
-source hashes. Existing tests cover ordered execution and in-process compensation, not every
-cross-filesystem/SQLite crash point. Conversation locator publication itself remains transactional;
-the broader "no half-rewound files" claim is not currently valid.
+File publication and SQLite phase updates are separate durable operations. Replay now captures each
+file and accepts only the sealed source or target hash (including recorded absence). Commit finishes
+a target already published before a crash; rollback restores an unjournaled publication even while
+the main mutation remains `prepared`. An unrelated hash fences the operation. After all target files
+settle, cleanup processes directory plans deepest first. Rollback restores journaled removed parents
+before restoring file bytes and records replacement inode receipts before proceeding. Conversation
+locator publication remains a separate SQLite transaction; no cross-filesystem atomicity is claimed.
+Source tests exercise both file-plan phase gaps and interrupted directory-removal receipts. Native
+process-crash/platform acceptance must be bound to the final Runtime artifact.
 
 ## 6. Fork
 
@@ -97,9 +99,28 @@ Runtime purge success.
 
 ## 8. Checkpoint coverage and limits
 
-The current rollback claim is deliberately narrow: root-origin governed canonical `Write` and `Edit` calls. It excludes Bash, child agents, MCP/Host tools, external processes, ungoverned files and modifications outside the recorded tool preimage. Child file calls still receive normal permission/policy but are not checkpoint-covered.
+The root rewind claim covers governed canonical `Write` and `Edit` only. It excludes Bash, child
+files, MCP/Host tools, external processes and unrecorded preimages. New-file child `Write` now uses the same
+checkpoint service and SQLite tables internally, keyed by the child Session, to govern parent creation
+and abort/crash cleanup; root rewind queries select the root Session only and child results carry no
+root checkpoint receipt. This does not extend the root file rollback claim.
 
-This boundary must be visible to Hosts. Expanding it requires a concrete side-effect owner and journal/compensation semantics; a directory snapshot or marketing label cannot silently broaden the claim.
+SQLite schema v9 adds an optional directory plan to checkpoint records. Existing v8 records migrate
+with no directory ownership. Plans contain at most 64 missing parents under an existing canonical
+anchor. Each entry advances through `planned`, `created`, `removing`, `removed` and (on rollback)
+`restoring`, retaining exact directory identities. The immutable checkpoint/DSH event correlation
+continues to own the file operation. A fork copies recorded checkpoint directory facts with its
+checkpoint preimages; it does not infer ownership from the current workspace.
+
+The plan is persisted before mkdir; an inode receipt is persisted before the next mkdir or file
+publication. Cleanup uses non-recursive rmdir only for a recorded, unchanged, empty directory.
+External files keep their containing directories intact. Replaced directories are retained. A crash
+or storage failure after mkdir but before its inode receipt can leave an empty planned directory:
+its ownership is unproven, so recovery retains it and never adopts its identity to authorize file
+publication or deletion. A restoration in that uncertain window fences further compensation.
+Cancellation records cleanup through an independent signal. Primary and child Agents reconcile
+unsettled checkpoint facts before their first model step; checkpoint prepare also enforces recovery
+before a resumed tool can mutate files.
 
 ## 9. Recovery behavior
 
@@ -121,9 +142,7 @@ Add a mutation only when its source boundary, candidate, external side effects, 
 commit point and crash recovery can be stated exactly. Reuse the shared Store authority and
 prepare/settle/status pattern without pretending cross-Store or filesystem/SQLite work is one atomic
 transaction. For new rollback coverage, define the executing owner, preimage format, idempotent
-restore and irrecoverable-failure behavior before changing claims. The two known gaps above require
-exact-journal admission tests and process-crash tests between every file-plan/main-journal boundary
-before stronger recovery claims are restored.
+restore and irrecoverable-failure behavior before changing claims. Exact-journal admission and process-crash campaigns must remain acceptance gates; source hash adjudication does not replace final-artifact evidence.
 
 ## 11. Verification and implementation map
 
@@ -135,4 +154,4 @@ before stronger recovery claims are restored.
 | File capture/restore I/O | `packages/tools-fs/src/local-filesystem.ts` |
 | Host mutation journal/orchestration | `packages/web-host/src/mutation-store.ts`, `reference-profile.ts` |
 | Exact mutation shapes | `packages/protocol/src/contract-source.ts` |
-| Tests | `tests/product-persistence.unit.test.ts`, `tests/product-checkpoint.unit.test.ts`, `tests/primary-session-admission.unit.test.ts`, `tests/web-host-mutation-store.unit.test.ts`, `tests/web-host-reference-profile.unit.test.ts` and packed campaigns; current tests do not cover the documented rewind crash window |
+| Tests | `tests/product-persistence.unit.test.ts`, `tests/product-checkpoint.unit.test.ts`, `tests/primary-session-admission.unit.test.ts`, `tests/web-host-mutation-store.unit.test.ts`, `tests/web-host-reference-profile.unit.test.ts` and packed campaigns; source tests cover unjournaled file publication and interrupted directory cleanup |

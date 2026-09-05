@@ -260,6 +260,10 @@ const execute = async (family: ApiFamily, kind: ReplyKind = "text"): Promise<Rea
         }],
       } : {}),
     })) chunks.push(chunk);
+    expect(chunks, "Provider must finish through the intercepted transport").toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "finish", reason: { kind: kind === "tool" ? "tool-calls" : "stop" } })]),
+    );
+    expect(globalThis.fetch).toHaveBeenCalled();
     const request = await observed.promise;
     return Object.freeze({ chunks: Object.freeze(chunks), request });
   } finally {

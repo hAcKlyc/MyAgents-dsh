@@ -93,6 +93,7 @@ const runtimeCompositionSourcePaths = [
   "packages/host-ports/src/credential-provider.ts",
   "packages/host-ports/src/service.ts",
   "packages/checkpoint/src/index.ts",
+  "packages/checkpoint/src/directories.ts",
   "packages/checkpoint/src/runtime.ts",
   "packages/operation-runtime/src/events.ts",
   "packages/operation-runtime/src/fold.ts",
@@ -100,6 +101,7 @@ const runtimeCompositionSourcePaths = [
   "packages/operation-runtime/src/limits.ts",
   "packages/operation-runtime/src/service.ts",
   "packages/operation-runtime/src/terminal.ts",
+  "packages/operation-runtime/src/token-accounting.ts",
   "packages/persistence-product/src/delete.ts",
   "packages/persistence-product/src/compaction.ts",
   "packages/persistence-product/src/fork.ts",
@@ -134,6 +136,7 @@ const runtimeCompositionSourcePaths = [
   "packages/rpc-server/src/event-projector.ts",
   "packages/rpc-server/src/native-rpc-service.ts",
   "packages/runtime-product/src/composition.ts",
+  "packages/runtime-product/src/collaboration-policy.ts",
   "packages/runtime-product/src/host-interaction.ts",
   "packages/runtime-product/src/host-model.ts",
   "packages/runtime-product/src/host-settings.ts",
@@ -164,6 +167,7 @@ const runtimeCompositionSourcePaths = [
   "packages/tools-agent/src/index.ts",
   "packages/tools-agent/src/skill-runtime.ts",
   "packages/tools-agent/src/work-runtime.ts",
+  "packages/tools-agent/src/work-lineage.ts",
   "packages/tools-fs/src/canonical-file-tools.ts",
   "packages/tools-fs/src/index.ts",
   "packages/tools-fs/src/local-filesystem.ts",
@@ -216,7 +220,7 @@ const runtimeNodeTypesVersion = "24.13.3" as const;
 const officialPiAiAdapterPackage = "@deepseek-ai/dsh-llm-pi-ai" as const;
 const officialPiAiAuthorizationPeerPackage = "@deepseek-ai/dsh-authorization" as const;
 const officialPiAiCorePackage = "@earendil-works/pi-ai" as const;
-const officialPiAiCoreVersion = "0.82.1" as const;
+const officialPiAiCoreVersion = "0.84.2" as const;
 const run = (
   command: string,
   args: readonly string[],
@@ -1098,7 +1102,7 @@ const main = (): void => {
     const buildRoot = cleanBuildRuntimeComposition(temporaryRoot, environment);
     run("npm", ["ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], consumerRoot, environment);
     prepareRuntimeConsumerOverrides(consumerRoot);
-    const patchedPiAiTarball = resolve(bundleRoot, "earendil-works-pi-ai-patched-0.82.1.tgz");
+    const patchedPiAiTarball = resolve(bundleRoot, "earendil-works-pi-ai-patched-0.84.2.tgz");
     verifyPiAiSource(piAiSourceRoot, {
       compileAndTest: true,
       npmCache: values["npm-cache"],

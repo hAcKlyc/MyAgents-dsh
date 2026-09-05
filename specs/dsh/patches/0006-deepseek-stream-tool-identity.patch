@@ -1,8 +1,8 @@
 diff --git a/packages/llm/llm-deepseek/src/translate.ts b/packages/llm/llm-deepseek/src/translate.ts
-index f1a626735..c8e651b2f 100644
+index 0a3529f961..545f6aae3a 100644
 --- a/packages/llm/llm-deepseek/src/translate.ts
 +++ b/packages/llm/llm-deepseek/src/translate.ts
-@@ -156,8 +156,9 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
+@@ -166,8 +166,9 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
            toolBlocks.set(call.index, block)
            yield { type: 'block-start', index: block.index, blockType: 'tool-call' }
          }
@@ -15,7 +15,7 @@ index f1a626735..c8e651b2f 100644
          block.text += fragment
          yield {
 diff --git a/packages/llm/llm-deepseek/tests/translate.spec.ts b/packages/llm/llm-deepseek/tests/translate.spec.ts
-index e5a98d1c6..8a8650307 100644
+index ccdf58bdf6..30f6b6bf4e 100644
 --- a/packages/llm/llm-deepseek/tests/translate.spec.ts
 +++ b/packages/llm/llm-deepseek/tests/translate.spec.ts
 @@ -123,6 +123,27 @@ describe('translate: tool calls', () => {

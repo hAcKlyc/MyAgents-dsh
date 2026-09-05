@@ -363,6 +363,18 @@
                                   "admittedAt"
                                 ],
                                 "properties": {
+                                  "origin": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "const": "user"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "collaboration"
+                                      }
+                                    ]
+                                  },
                                   "clientOperationId": {
                                     "type": "string",
                                     "minLength": 1,
@@ -422,8 +434,7 @@
                                     "type": "object",
                                     "required": [
                                       "kind",
-                                      "assistantEventId",
-                                      "usage"
+                                      "assistantEventId"
                                     ],
                                     "properties": {
                                       "kind": {
@@ -2118,6 +2129,8 @@
                               "snapshot": {
                                 "type": "object",
                                 "required": [
+                                  "activation",
+                                  "handleState",
                                   "taskId",
                                   "parentToolCallId",
                                   "agentId",
@@ -2129,6 +2142,219 @@
                                   "startedAt"
                                 ],
                                 "properties": {
+                                  "totalUsage": {
+                                    "type": "object",
+                                    "required": [
+                                      "inputTokens",
+                                      "outputTokens",
+                                      "cacheReadTokens",
+                                      "cacheWriteTokens",
+                                      "totalTokens",
+                                      "costUsd"
+                                    ],
+                                    "properties": {
+                                      "inputTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "outputTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "cacheReadTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "cacheWriteTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "totalTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "costUsd": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number",
+                                            "minimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "context": {
+                                    "type": "object",
+                                    "properties": {
+                                      "capacity": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                      },
+                                      "projectedInputTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "providerInputTokens": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "tree": {
+                                    "type": "object",
+                                    "required": [
+                                      "rootAgentId",
+                                      "parentAgentId",
+                                      "depth"
+                                    ],
+                                    "properties": {
+                                      "rootAgentId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "parentAgentId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "depth": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 8
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "modelRoute": {
+                                    "type": "object",
+                                    "required": [
+                                      "provider",
+                                      "profileRevision",
+                                      "selection"
+                                    ],
+                                    "properties": {
+                                      "provider": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "profileRevision": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "selection": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "const": "inherit"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "fixed"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "agent"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "lastActivityAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  },
+                                  "activation": {
+                                    "type": "object",
+                                    "required": [
+                                      "id",
+                                      "ordinal",
+                                      "state"
+                                    ],
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "ordinal": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 10000
+                                      },
+                                      "state": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "const": "queued"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "running"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "waiting_interaction"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "waiting_child"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "waiting_delivery"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "completed"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "failed"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "aborted"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "handleRevision": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "handleState": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "const": "open"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "stopping"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "closed"
+                                      }
+                                    ]
+                                  },
                                   "taskId": {
                                     "type": "string",
                                     "minLength": 1,
@@ -4682,6 +4908,18 @@
                                       "admittedAt"
                                     ],
                                     "properties": {
+                                      "origin": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "const": "user"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "collaboration"
+                                          }
+                                        ]
+                                      },
                                       "clientOperationId": {
                                         "type": "string",
                                         "minLength": 1,
@@ -4741,8 +4979,7 @@
                                         "type": "object",
                                         "required": [
                                           "kind",
-                                          "assistantEventId",
-                                          "usage"
+                                          "assistantEventId"
                                         ],
                                         "properties": {
                                           "kind": {
@@ -6437,6 +6674,8 @@
                                   "snapshot": {
                                     "type": "object",
                                     "required": [
+                                      "activation",
+                                      "handleState",
                                       "taskId",
                                       "parentToolCallId",
                                       "agentId",
@@ -6448,6 +6687,219 @@
                                       "startedAt"
                                     ],
                                     "properties": {
+                                      "totalUsage": {
+                                        "type": "object",
+                                        "required": [
+                                          "inputTokens",
+                                          "outputTokens",
+                                          "cacheReadTokens",
+                                          "cacheWriteTokens",
+                                          "totalTokens",
+                                          "costUsd"
+                                        ],
+                                        "properties": {
+                                          "inputTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "outputTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "cacheReadTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "cacheWriteTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "totalTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "costUsd": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number",
+                                                "minimum": 0
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      },
+                                      "context": {
+                                        "type": "object",
+                                        "properties": {
+                                          "capacity": {
+                                            "type": "integer",
+                                            "minimum": 1
+                                          },
+                                          "projectedInputTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "providerInputTokens": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      },
+                                      "tree": {
+                                        "type": "object",
+                                        "required": [
+                                          "rootAgentId",
+                                          "parentAgentId",
+                                          "depth"
+                                        ],
+                                        "properties": {
+                                          "rootAgentId": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "parentAgentId": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "depth": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 8
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      },
+                                      "modelRoute": {
+                                        "type": "object",
+                                        "required": [
+                                          "provider",
+                                          "profileRevision",
+                                          "selection"
+                                        ],
+                                        "properties": {
+                                          "provider": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "profileRevision": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "selection": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "const": "inherit"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "fixed"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "agent"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      },
+                                      "lastActivityAt": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                      },
+                                      "activation": {
+                                        "type": "object",
+                                        "required": [
+                                          "id",
+                                          "ordinal",
+                                          "state"
+                                        ],
+                                        "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "ordinal": {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 10000
+                                          },
+                                          "state": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "const": "queued"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "running"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "waiting_interaction"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "waiting_child"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "waiting_delivery"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "completed"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "failed"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "aborted"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      },
+                                      "handleRevision": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "handleState": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "const": "open"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "stopping"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "closed"
+                                          }
+                                        ]
+                                      },
                                       "taskId": {
                                         "type": "string",
                                         "minLength": 1,
@@ -7902,6 +8354,18 @@
                                 "admittedAt"
                               ],
                               "properties": {
+                                "origin": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "const": "user"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "collaboration"
+                                    }
+                                  ]
+                                },
                                 "clientOperationId": {
                                   "type": "string",
                                   "minLength": 1,
@@ -7961,8 +8425,7 @@
                                   "type": "object",
                                   "required": [
                                     "kind",
-                                    "assistantEventId",
-                                    "usage"
+                                    "assistantEventId"
                                   ],
                                   "properties": {
                                     "kind": {
@@ -9657,6 +10120,8 @@
                             "snapshot": {
                               "type": "object",
                               "required": [
+                                "activation",
+                                "handleState",
                                 "taskId",
                                 "parentToolCallId",
                                 "agentId",
@@ -9668,6 +10133,219 @@
                                 "startedAt"
                               ],
                               "properties": {
+                                "totalUsage": {
+                                  "type": "object",
+                                  "required": [
+                                    "inputTokens",
+                                    "outputTokens",
+                                    "cacheReadTokens",
+                                    "cacheWriteTokens",
+                                    "totalTokens",
+                                    "costUsd"
+                                  ],
+                                  "properties": {
+                                    "inputTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "outputTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "cacheReadTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "cacheWriteTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "totalTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "costUsd": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "context": {
+                                  "type": "object",
+                                  "properties": {
+                                    "capacity": {
+                                      "type": "integer",
+                                      "minimum": 1
+                                    },
+                                    "projectedInputTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "providerInputTokens": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "tree": {
+                                  "type": "object",
+                                  "required": [
+                                    "rootAgentId",
+                                    "parentAgentId",
+                                    "depth"
+                                  ],
+                                  "properties": {
+                                    "rootAgentId": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 256,
+                                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                    },
+                                    "parentAgentId": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 256,
+                                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                    },
+                                    "depth": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 8
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "modelRoute": {
+                                  "type": "object",
+                                  "required": [
+                                    "provider",
+                                    "profileRevision",
+                                    "selection"
+                                  ],
+                                  "properties": {
+                                    "provider": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 256,
+                                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                    },
+                                    "profileRevision": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 256,
+                                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                    },
+                                    "selection": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "const": "inherit"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "fixed"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "agent"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "lastActivityAt": {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
+                                "activation": {
+                                  "type": "object",
+                                  "required": [
+                                    "id",
+                                    "ordinal",
+                                    "state"
+                                  ],
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 256,
+                                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                    },
+                                    "ordinal": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 10000
+                                    },
+                                    "state": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "const": "queued"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "running"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "waiting_interaction"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "waiting_child"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "waiting_delivery"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "completed"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "failed"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "aborted"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "handleRevision": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "handleState": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "const": "open"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "stopping"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "closed"
+                                    }
+                                  ]
+                                },
                                 "taskId": {
                                   "type": "string",
                                   "minLength": 1,

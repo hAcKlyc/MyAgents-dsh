@@ -23,6 +23,7 @@ import {
   realpath,
   rename,
   rm,
+  rmdir,
   stat,
   unlink,
 } from "node:fs/promises";
@@ -47,6 +48,8 @@ import type {
   ProductToolExecutionEnvironment,
 } from "@myagents-dsh/tool-runtime-product";
 import type {
+  CheckpointDirectoryIdentity,
+  CheckpointDirectoryPlan,
   ProductCheckpointFileSnapshot,
   ProductCheckpointIoAuthority,
 } from "@myagents-dsh/checkpoint";
@@ -247,12 +250,23 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     if (existing !== undefined) {
       canonical = this.adapterValue.normalizeAbsolutePath(existing);
     } else {
-      const parent = this.pathValue.dirname(lexical);
-      const parentCanonical = await realpath(parent).catch((error: unknown) =>
-        fsError(error, "filesystem parent path resolution failed"));
-      canonical = this.adapterValue.normalizeAbsolutePath(
-        this.pathValue.join(parentCanonical, this.pathValue.basename(lexical)),
-      );
+      let parent = this.pathValue.dirname(lexical);
+      const missing = [this.pathValue.basename(lexical)];
+      let parentCanonical: string | undefined;
+      for (let depth = 0; depth <= 64; depth += 1) {
+        abortError(opts.signal);
+        parentCanonical = await realpath(parent).catch((error: unknown) => {
+          if (errorCode(error) === "ENOENT") return undefined;
+          return fsError(error, "filesystem parent path resolution failed");
+        });
+        if (parentCanonical !== undefined) break;
+        const next = this.pathValue.dirname(parent);
+        if (next === parent || depth === 64) throw new FsError("filesystem missing parent depth exceeds its bound", "FS_SANDBOX_DENIED");
+        missing.unshift(this.pathValue.basename(parent));
+        parent = next;
+      }
+      if (parentCanonical === undefined) throw new FsError("filesystem parent is unavailable", "FS_NOT_FOUND");
+      canonical = this.adapterValue.normalizeAbsolutePath(this.pathValue.join(parentCanonical, ...missing));
     }
     abortError(opts.signal);
     const key = String(FsTargetKey(canonical));
@@ -976,6 +990,16 @@ export class LocalWorkspaceFileSystem extends FileSystem {
 
   createCheckpointIoAuthority(): ProductCheckpointIoAuthority {
     return Object.freeze({
+      directories: Object.freeze({
+        plan: async (environment: ProductToolExecutionEnvironment, path: string, signal: AbortSignal) =>
+          await this.planCheckpointParents(environment, path, signal),
+        inspect: async (environment: ProductToolExecutionEnvironment, path: string, signal: AbortSignal) =>
+          await this.inspectCheckpointDirectory(environment, path, signal),
+        create: async (environment: ProductToolExecutionEnvironment, path: string, parent: CheckpointDirectoryIdentity, signal: AbortSignal) =>
+          await this.createCheckpointDirectory(environment, path, parent, signal),
+        remove: async (environment: ProductToolExecutionEnvironment, path: string, identity: string, signal: AbortSignal) =>
+          await this.removeCheckpointDirectory(environment, path, identity, signal),
+      }),
       capture: async (
         environment: ProductToolExecutionEnvironment,
         path: string,
@@ -1045,6 +1069,92 @@ export class LocalWorkspaceFileSystem extends FileSystem {
         allowMissingLeaf: boolean,
         signal: AbortSignal,
       ) => await this.resolvePlanArtifact(runtimeHome, sessionId, path, allowMissingLeaf, signal),
+    });
+  }
+
+  private async inspectCheckpointDirectory(
+    environment: ProductToolExecutionEnvironment, path: string, signal: AbortSignal,
+  ): Promise<string | undefined> {
+    abortError(signal);
+    if (environment.platformTarget !== this.adapterValue.target || path.length > 8192
+      || this.adapterValue.normalizeAbsolutePath(path) !== path) {
+      throw new FsError("checkpoint directory authority is invalid", "FS_SANDBOX_DENIED");
+    }
+    const target = await this.resolve(path, { signal });
+    if (target.displayPath !== path) throw new FsError("checkpoint directory aliases are forbidden", "FS_SANDBOX_DENIED");
+    let contained = false;
+    for (const rootPath of environment.workspace.allowedWriteRoots) {
+      const root = await this.resolve(rootPath, { signal });
+      const rootInfo = await lstat(rootPath);
+      if (root.displayPath !== rootPath || !rootInfo.isDirectory() || rootInfo.isSymbolicLink()) {
+        throw new FsError("checkpoint directory write root changed", "FS_SANDBOX_DENIED");
+      }
+      if (this.contains(root, target)) contained = true;
+    }
+    if (!contained) throw new FsError("checkpoint directory is outside write roots", "FS_SANDBOX_DENIED");
+    const info = await lstat(path).catch((error: unknown) => {
+      if (errorCode(error) === "ENOENT") return undefined;
+      return fsError(error, "checkpoint directory inspection failed");
+    });
+    abortError(signal);
+    if (info === undefined) return undefined;
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new FsError("checkpoint parent is not a real directory", "FS_STALE_VERSION");
+    return directoryIdentityOf(info);
+  }
+
+  private async planCheckpointParents(
+    environment: ProductToolExecutionEnvironment, path: string, signal: AbortSignal,
+  ): Promise<CheckpointDirectoryPlan | undefined> {
+    await this.captureCheckpointFile(environment, path, 8 * 1024 * 1024, signal);
+    let parent = this.pathValue.dirname(path);
+    const missing: string[] = [];
+    for (let depth = 0; depth <= 64; depth += 1) {
+      const identity = await this.inspectCheckpointDirectory(environment, parent, signal);
+      if (identity !== undefined) {
+        if (missing.length === 0) return undefined;
+        return Object.freeze({
+          anchor: Object.freeze({ path: parent, identity }),
+          entries: Object.freeze(missing.reverse().map((path) => Object.freeze({ path, state: "planned" as const }))),
+        });
+      }
+      if (depth === 64) throw new FsError("checkpoint parent plan exceeds its depth bound", "FS_SANDBOX_DENIED");
+      missing.push(parent);
+      parent = this.pathValue.dirname(parent);
+    }
+    throw new FsError("checkpoint parent plan is unavailable", "FS_NOT_FOUND");
+  }
+
+  private async createCheckpointDirectory(
+    environment: ProductToolExecutionEnvironment, path: string, parent: CheckpointDirectoryIdentity, signal: AbortSignal,
+  ): Promise<string> {
+    if (this.pathValue.dirname(path) !== parent.path
+      || await this.inspectCheckpointDirectory(environment, parent.path, signal) !== parent.identity
+      || await this.inspectCheckpointDirectory(environment, path, signal) !== undefined) {
+      throw new FsError("checkpoint directory creation identity changed", "FS_STALE_VERSION");
+    }
+    await mkdir(path, { mode: 0o755 }).catch((error: unknown) => fsError(error, "checkpoint directory creation failed"));
+    // Capture an inode even if cancellation arrives immediately after mkdir. The caller
+    // journals this receipt with an independent signal before honoring cancellation.
+    const receiptSignal = new AbortController().signal;
+    const identity = await this.inspectCheckpointDirectory(environment, path, receiptSignal);
+    if (identity === undefined || await this.inspectCheckpointDirectory(environment, parent.path, receiptSignal) !== parent.identity) {
+      throw new FsError("checkpoint directory changed during creation", "FS_STALE_VERSION");
+    }
+    return identity;
+  }
+
+  private async removeCheckpointDirectory(
+    environment: ProductToolExecutionEnvironment, path: string, identity: string, signal: AbortSignal,
+  ): Promise<boolean> {
+    if (environment.workspace.allowedWriteRoots.includes(path)) throw new FsError("checkpoint cannot remove a write root", "FS_SANDBOX_DENIED");
+    const actual = await this.inspectCheckpointDirectory(environment, path, signal);
+    if (actual === undefined) return true;
+    if (actual !== identity) return false;
+    abortError(signal);
+    return await rmdir(path).then(() => true).catch((error: unknown) => {
+      if (["ENOTEMPTY", "EEXIST"].some((code) => code === errorCode(error))) return false;
+      if (errorCode(error) === "ENOENT") return true;
+      return fsError(error, "checkpoint empty directory removal failed");
     });
   }
 
