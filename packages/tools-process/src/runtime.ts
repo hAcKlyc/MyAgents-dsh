@@ -832,6 +832,11 @@ export class ProductProcessRuntime extends Service {
       permissionClass,
       target: upstreamProduct.environment.workspace.canonicalRoot,
       tool: "Bash",
+      display: Object.freeze({
+        command: args.command as string,
+        cwd: initialAuthority.cwd,
+        ...(args.description === undefined ? {} : { description: args.description as string }),
+      }),
     });
     const timeoutMs = (args.timeout as number | undefined) ?? 120_000;
     const deadlineController = new AbortController();

@@ -60,6 +60,7 @@ type ProductPermissionRequest = Readonly<{
   permissionClass: ProductPermissionClass;
   target: string;
   tool: string;
+  display?: ProductToolPermissionRequest["display"];
 }>;
 
 export interface ProductPermissionRuleEvent {
@@ -108,6 +109,7 @@ export interface ProductPermissionInteractionRequest {
   readonly tool: string;
   readonly permissionClass: ProductPermissionClass;
   readonly target: string;
+  readonly display?: ProductToolPermissionRequest["display"];
   readonly origin: ProductToolOrigin;
   readonly expectedPermissionRevision: string;
   readonly interactionScenarioRevision: string;
@@ -1346,14 +1348,31 @@ export class ProductPermissionService extends Service {
     const request = exactOwnDataObject(
       rawRequest,
       ["permissionClass", "target", "tool"],
-      [],
+      ["display"],
       "product tool permission request",
     );
     const tool = validateToolName(request.tool, "permission request tool");
+    let display: ProductToolPermissionRequest["display"];
+    if (request.display !== undefined) {
+      const value = exactOwnDataObject(request.display, ["command", "cwd"], ["description"], "permission display");
+      if (tool !== "Bash" || typeof value.command !== "string" || value.command.length === 0
+        || value.command.length > 262_144 || typeof value.cwd !== "string"
+        || value.cwd !== context.environment.workspace.canonicalRoot
+        || (value.description !== undefined
+          && (typeof value.description !== "string" || value.description.length > 512))) {
+        throw new TypeError("permission display must describe the governed Bash operation");
+      }
+      display = Object.freeze({
+        command: value.command,
+        cwd: value.cwd,
+        ...(value.description === undefined ? {} : { description: value.description }),
+      });
+    }
     const normalized: ProductPermissionRequest = Object.freeze({
       permissionClass: validatePermissionClass(request.permissionClass, tool),
       target: boundedTarget(request.target),
       tool,
+      ...(display === undefined ? {} : { display }),
     });
     return await this.authorizeNormalized(context, normalized);
   }
@@ -1501,6 +1520,7 @@ export class ProductPermissionService extends Service {
       permissionClass: request.permissionClass,
       target: request.target,
       origin: context.origin,
+      ...(request.display === undefined ? {} : { display: request.display }),
       expectedPermissionRevision: context.birth.permissionRevision,
       interactionScenarioRevision: context.birth.interactionScenarioRevision,
       signal: controller.signal,

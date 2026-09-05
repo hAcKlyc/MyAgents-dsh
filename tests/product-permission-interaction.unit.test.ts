@@ -177,6 +177,27 @@ const request = (
 ): ProductToolPermissionRequest => Object.freeze({ permissionClass, target, tool });
 
 describe("product permission policy and local interaction provider", () => {
+  it("carries operation display to the Host without persisting it or changing rule matching", async () => {
+    const local = provider("scenario-v1", (pending, settlement) => response(pending, "always_allow", settlement));
+    const state = await mounted(local.provider);
+    const product = (revision?: string) => ({
+      ...state.product(revision),
+      environment: { workspace: { canonicalRoot: "/workspace" } } as ProductToolContext["environment"],
+    });
+    const display = { command: "printf first", cwd: "/workspace", description: "First command" };
+    await expect(state.context.productPermission.authorize(product(), {
+      ...request("Bash", "process.execute", "/workspace"), display,
+    })).resolves.toBe("allow");
+    expect(local.permissionRequests[0]?.display).toEqual(display);
+    expect(JSON.stringify(state.session.events)).not.toContain("printf first");
+    expect(JSON.stringify(state.session.events)).not.toContain('"display"');
+    const revision = state.context.productPermission.currentRevision(state.agent);
+    await expect(state.context.productPermission.authorize(product(revision), {
+      ...request("Bash", "process.execute", "/workspace"),
+      display: { command: "printf second", cwd: "/workspace" },
+    })).resolves.toBe("allow");
+    expect(local.permissionRequests).toHaveLength(1);
+  });
   it("durably transitions the permission base at a quiescent configuration boundary", async () => {
     const first = provider("scenario-v1", (pending, settlement) => response(pending, "deny", settlement));
     const second = provider("scenario-v2", (pending, settlement) => response(pending, "deny", settlement));

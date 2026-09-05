@@ -303,8 +303,9 @@ const harness = async (options: Readonly<{
   let permissionDecision: "allow" | "deny" = "allow";
   let permissionPromise: Promise<"allow" | "deny"> | undefined;
   let currentOperation: ProductOperationRecord = operation;
+  const authorize = vi.fn(() => permissionPromise ?? Promise.resolve(permissionDecision));
   context.provide("productPermission", {
-    authorize: () => permissionPromise ?? Promise.resolve(permissionDecision),
+    authorize,
   } as never);
   await context.plugin(ProductToolRuntime, {
     catalog: () => catalog,
@@ -375,6 +376,7 @@ const harness = async (options: Readonly<{
   return {
     agent,
     config,
+    authorize,
     context,
     disposeAgent: () => agentScope.dispose(),
     environment,
@@ -397,6 +399,20 @@ const harness = async (options: Readonly<{
 };
 
 describe("canonical process tools", () => {
+  it("presents the full Bash command and actual working directory before execution", async () => {
+    const state = await harness();
+    state.setPermission("deny");
+    const command = `printf '%s' '${"example".repeat(160)}'`;
+    await state.execute({ command, description: "Inspect an example" });
+    expect(state.authorize).toHaveBeenCalledWith(expect.anything(), {
+      tool: "Bash",
+      permissionClass: "process.execute",
+      target: state.environment.workspace.canonicalRoot,
+      display: { command, cwd: state.environment.workspace.canonicalRoot, description: "Inspect an example" },
+    });
+    expect(state.fakeSubprocess.specs).toHaveLength(0);
+    await state.context.fiber.dispose();
+  });
   it("preserves bounded permission failures instead of reporting a spawn failure", async () => {
     const state = await harness();
     const denied = Promise.reject<"allow" | "deny">(new ProductPermissionError(

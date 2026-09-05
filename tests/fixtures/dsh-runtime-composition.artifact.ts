@@ -1434,6 +1434,7 @@ hostPeer.registerRequestHandler("host/interaction/request", (params, context) =>
     }>[];
     target?: unknown;
     tool?: unknown;
+    display?: { command: string; cwd: string; description?: string };
   }>;
   let decision: "allow_once" | "always_allow" | "answered";
   let value: unknown;
@@ -1447,6 +1448,13 @@ hostPeer.registerRequestHandler("host/interaction/request", (params, context) =>
     assert.equal(typeof schema.permissionClass, "string");
     assert.equal(typeof schema.target, "string");
     assert.equal(typeof schema.tool, "string");
+    if (schema.tool === "Bash") {
+      assert.equal(typeof schema.display?.command, "string");
+      assert.equal(schema.display?.cwd, schema.target);
+      if (schema.display?.command === "printf artifact-bash") {
+        assert.deepEqual(schema.display, { command: "printf artifact-bash", cwd: schema.target });
+      }
+    }
     if (schema.tool !== "Agent" || schema.target !== "Verify child model lineage") {
       fileToolEvidence.push(`permission:${String(schema.tool)}:${String(schema.target)}`);
     }

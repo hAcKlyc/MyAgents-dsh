@@ -128,6 +128,8 @@ export interface ProductToolPermissionRequest {
   readonly permissionClass: string;
   readonly target: string;
   readonly tool: CanonicalToolName;
+  /** Ephemeral operation details for Host review; never part of permission matching. */
+  readonly display?: Readonly<{ command: string; cwd: string; description?: string }>;
 }
 
 export interface ProductExternalToolPermissionRequest {

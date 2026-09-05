@@ -661,6 +661,8 @@ Every request carries product session, runtime generation, credential reference,
 
 Register-then-respond prevents an RPC response timeout from being treated as a user decision.
 
+The permission interaction's extensible schema may include optional `display` data for Host review. Bash supplies the complete command, sealed working directory and optional description through the existing bounded envelope. These fields are ephemeral presentation, never authorization keys or durable rule content; see [Permissions and interactions](../execution/permissions-interactions-and-plan.md#5-blocking-interactions). The normative protocol `2.5.0` envelope and generated-client digest are unchanged.
+
 ### 14.3 Host tools and Hooks
 
 `host/tool/execute` carries exact generation/session/turn/tool-call identities, tool name, and canonical input. The result is `succeeded`, `failed`, or `aborted` with bounded text/attachment content, structured JSON, and optional code.

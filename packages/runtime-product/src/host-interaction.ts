@@ -166,6 +166,7 @@ class ProductHostInteractionBridge {
       permissionClass: request.permissionClass,
       target: request.target,
       tool: request.tool,
+      ...(request.display === undefined ? {} : { display: request.display }),
     }));
     const wireRequest: InteractionRequest = Object.freeze({
       interactionId: request.interactionId,

@@ -32,6 +32,7 @@ describe("Host interaction bridge", () => {
       tool: "Bash",
       permissionClass: "process.execute",
       target: "workspace-command",
+      display: { command: `printf '%s' '${"example".repeat(160)}'`, cwd: "/workspace", description: "Inspect" },
       origin: "root",
       expectedPermissionRevision: "permission-v1",
       interactionScenarioRevision: "scenario-v1",
@@ -57,6 +58,12 @@ describe("Host interaction bridge", () => {
       resolve: resolveSettlement,
       reject: rejectSettlement,
     });
+    expect(requestInteraction).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      schema: {
+        origin: "root", permissionClass: "process.execute", target: "workspace-command", tool: "Bash",
+        display: request.display,
+      },
+    }));
     const response = bridge.controller.respond({
       interactionId: request.interactionId,
       expectedRevision: request.expectedPermissionRevision,

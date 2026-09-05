@@ -388,6 +388,8 @@ Permission mode is the fallback policy after hard guards, PermissionRequest Hook
 
 An acknowledged interactive desktop request waits without a human-decision wall-clock timeout. The Host registration and response RPCs remain bounded, operation/Session cancellation remains authoritative, and permissionable tool execution arms its cooperative deadline only after authorization settles. This placement uses the public optional DSH timeout seam and does not patch DSH Core.
 
+Bash approval carries ephemeral full command, sealed working directory and optional description through the existing interaction schema. This review projection never changes permission tuple matching or durable rule contents; its ownership is documented in [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md#5-blocking-interactions).
+
 ## 11. Declarative component lifecycle
 
 Host extension input contains descriptors and content resources, never executable plugin code. `ProductComponentService` compiles a snapshot into a prepared component generation:
