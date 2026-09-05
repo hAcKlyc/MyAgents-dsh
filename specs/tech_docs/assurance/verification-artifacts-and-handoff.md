@@ -151,3 +151,5 @@ closure, scan the outer inventory, require the expected digest, and cross-check 
 profile/protocol identities. Exact signing and notarization belong to the consuming release
 pipeline. Local unsigned development acceptance may prove functionality but cannot be relabeled as
 signed distribution evidence.
+
+The pre-artifact campaign accepts `--dsh-source /absolute/path/to/official-checkout` when the optional sibling checkout lacks the pinned upstream object. It runs the same source/blob/compile verification on that exact checkout and records the commands; it does not mutate or replace the sibling checkout.

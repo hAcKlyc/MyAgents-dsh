@@ -151,7 +151,7 @@ export const resolveExternalOutputRoot = (requested: string, root = repositoryRo
   return candidate;
 };
 
-export const createGatePlan = (outputRoot: string): readonly GateCommand[] => {
+export const createGatePlan = (outputRoot: string, dshSource?: string): readonly GateCommand[] => {
   const reportPath = (name: string): string => resolve(outputRoot, "raw", `${name}.json`);
   const vitest = (id: string, files: readonly string[], timeoutMs: number): GateCommand => ({
     id,
@@ -174,8 +174,10 @@ export const createGatePlan = (outputRoot: string): readonly GateCommand[] => {
     timeoutMs,
   });
   const plan: GateCommand[] = [
-    npm("dsh-source", ["run", "check:dsh-source"], 180_000),
-    npm("dsh-seams-source", ["run", "check:dsh-seams-source"], 300_000),
+    npm("dsh-source", dshSource === undefined ? ["run", "check:dsh-source"]
+      : ["exec", "--", "tsx", "scripts/snapshot-dsh-baseline.ts", "--check", "--check-source", dshSource], 180_000),
+    npm("dsh-seams-source", dshSource === undefined ? ["run", "check:dsh-seams-source"]
+      : ["exec", "--", "tsx", "scripts/verify-dsh-seams.ts", "--check-source", dshSource, "--compile-test"], 300_000),
     vitest("fault-matrix", faultMatrixFiles, 300_000),
   ];
   for (let iteration = 1; iteration <= BATCH_1_SOAK_ITERATIONS; iteration += 1) {
@@ -218,7 +220,7 @@ const assertCleanRepository = (): string => {
 const main = (): void => {
   const { values } = parseArgs({
     allowPositionals: false,
-    options: { output: { type: "string" } },
+    options: { output: { type: "string" }, "dsh-source": { type: "string" } },
   });
   const outputRoot = values.output === undefined
     ? mkdtempSync(resolve(tmpdir(), "myagents-dsh-b1-pre-artifact-"))
@@ -231,7 +233,8 @@ const main = (): void => {
   const npmVersion = runText("npm", ["--version"], 30_000);
   const evidence: CommandEvidence[] = [];
   try {
-    for (const phase of createGatePlan(outputRoot)) {
+    for (const phase of createGatePlan(outputRoot, values["dsh-source"] === undefined
+      ? undefined : realpathSync(resolve(values["dsh-source"])))) {
       process.stdout.write(`[B1-G4] ${phase.id}\n`);
       const output = runText(phase.command, phase.args, phase.timeoutMs);
       writeFileSync(resolve(outputRoot, "raw", `${phase.id}.log`), `${output}\n`, { mode: 0o400 });
