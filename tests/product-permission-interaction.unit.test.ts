@@ -1145,7 +1145,7 @@ describe("product permission policy and local interaction provider", () => {
   it("accepts a trusted interaction provider with an observation Proxy", async () => {
     const local = provider("scenario-observed-provider", (pending, settlement) => response(pending, "allow_once", settlement));
     let reads = 0;
-    const observed = new Proxy(local.provider, { get(target, key, receiver) { reads += 1; return Reflect.get(target, key, receiver); } });
+    const observed = new Proxy(local.provider, { get(target, key, receiver) { reads += 1; return Reflect.get(target, key, receiver) as unknown; } });
     const state = await mounted(observed);
     await expect(state.context.productPermission.authorize(state.product(), request())).resolves.toBe("allow");
     expect(reads).toBeGreaterThan(0);
