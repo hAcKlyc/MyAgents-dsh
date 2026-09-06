@@ -5,17 +5,17 @@ repository_root="$(cd "$(dirname "$0")" && pwd -P)"
 cd "$repository_root"
 
 runtime_node="${MYAGENTS_DSH_NODE:-}"
-if [[ -z "$runtime_node" ]] && [[ "$(node --version 2>/dev/null || true)" == "v24.14.0" ]]; then
+if [[ -z "$runtime_node" ]] && [[ "$(node --version 2>/dev/null || true)" == "v24.20.0" ]]; then
   runtime_node="$(command -v node)"
 fi
 if [[ -z "$runtime_node" ]]; then
-  cached_node="${HOME}/Library/Caches/MyAgents-dsh/toolchain/node-v24.14.0-darwin-arm64/bin/node"
+  cached_node="${HOME}/Library/Caches/MyAgents-dsh/toolchain/node-v24.20.0-darwin-arm64/bin/node"
   if [[ -x "$cached_node" ]]; then
     runtime_node="$cached_node"
   fi
 fi
-if [[ -z "$runtime_node" || ! -x "$runtime_node" || "$("$runtime_node" --version 2>/dev/null || true)" != "v24.14.0" ]]; then
-  echo "MyAgents-dsh Web Host requires the exact Node v24.14.0 runtime." >&2
+if [[ -z "$runtime_node" || ! -x "$runtime_node" || "$("$runtime_node" --version 2>/dev/null || true)" != "v24.20.0" ]]; then
+  echo "MyAgents-dsh Web Host requires the exact Node v24.20.0 runtime." >&2
   echo "Install the packaged toolchain or set MYAGENTS_DSH_NODE to its absolute node executable." >&2
   exit 1
 fi

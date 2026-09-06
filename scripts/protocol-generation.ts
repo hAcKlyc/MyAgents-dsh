@@ -56,7 +56,7 @@ const initializeParams = {
     version: "0.1.0",
     platform: "fixture",
     arch: "fixture",
-    nodeVersion: "v24.14.0",
+    nodeVersion: "v24.20.0",
   },
   productSessionId: "product-session-1",
   runtimeHome: "/fixture/runtime-home",

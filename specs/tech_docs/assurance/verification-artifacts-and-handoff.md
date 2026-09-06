@@ -107,6 +107,14 @@ manifest. A complete adapter whose native campaign has not run is labeled
 Runtime-bound or schema-validated. It is a limitation label, not proof of a native campaign.
 MyAgents may advertise only claims accepted by the release authority beyond these structural checks.
 
+## Node 24.20 toolchain refresh
+
+The current build policy pins Node `24.20.0` and npm `11.19.0`, matching MyAgents `0.4.15`'s official bundled distribution. Root engines/devEngines, CI, launchers, protocol fixtures, Runtime self-check and artifact construction share that exact requirement. The official DSH source and patch series stay fixed; rebuilding their artifact changes the build provenance and accepted manifest digest. Earlier Node `24.14.0` / npm `11.15.0` deliveries remain immutable historical evidence.
+
+Source validation must consume the accepted patched DSH packages through the package installer; an untouched registry install does not contain the session-projection and other public-seam patches used by this Runtime. The accepted artifact manifest and offline consumer lock provide those package bytes; never edit installed package source to emulate the patches.
+
+The subsequent Runtime/native/handoff receipts belong to the Host integration ledger and external release record. Windows/Linux remain pending native validation until campaigns run on those platforms.
+
 ## 7. Rebuild and update rule
 
 Any change that alters sealed Runtime authority, evidence bytes or outer output produces a new

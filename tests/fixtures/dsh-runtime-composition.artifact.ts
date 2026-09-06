@@ -1601,7 +1601,7 @@ const initializeRequest: InitializeParams = {
     version: "0.1.0",
     platform: "darwin",
     arch: "arm64",
-    nodeVersion: "24.14.0",
+    nodeVersion: "24.20.0",
   },
   productSessionId: "artifact-product-session",
   runtimeHome: fixtureRuntimeHome,

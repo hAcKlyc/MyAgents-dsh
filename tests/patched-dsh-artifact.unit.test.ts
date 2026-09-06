@@ -88,8 +88,8 @@ describe("patched DSH artifact authority", () => {
     expect(first.patchSeriesSha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(first.patches).toHaveLength(10);
     expect(first.toolchain).toEqual({
-      node: "24.14.0",
-      npm: "11.15.0",
+      node: "24.20.0",
+      npm: "11.19.0",
       pnpm: "11.7.0",
       typescript: "5.9.3",
     });
@@ -108,8 +108,8 @@ describe("patched DSH artifact authority", () => {
       npmUserAgent: "npm/11.13.0 node/v24.17.0 darwin arm64",
       pnpmVersion: "11.8.0",
     })).toEqual([
-      "Node must be 24.14.0; received v24.17.0",
-      "npm must be 11.15.0; received 11.13.0",
+      "Node must be 24.20.0; received v24.17.0",
+      "npm must be 11.19.0; received 11.13.0",
       "pnpm must be 11.7.0; received 11.8.0",
     ]);
   });

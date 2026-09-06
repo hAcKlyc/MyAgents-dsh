@@ -882,7 +882,7 @@ const buildInstalledRuntimeCandidate = (
     version: protocolMetaJson.runtimeVersion,
     private: true,
     type: "module",
-    engines: { node: "24.14.0", npm: "11.15.0" },
+    engines: { node: "24.20.0", npm: "11.19.0" },
     dependencies: orderedDependencies,
     overrides: orderedOverrides,
   }, null, 2)}\n`);
@@ -953,8 +953,8 @@ const assertRuntimeProcessEvidence = (
       return code === "protocol_eof" || code === "protocol_output_closed";
     });
   if (selfCheck.formatVersion !== 1 || selfCheck.mode !== "self-check"
-    || selfCheckRuntime.requiredNodeVersion !== "24.14.0"
-    || selfCheckRuntime.actualNodeVersion !== "24.14.0"
+    || selfCheckRuntime.requiredNodeVersion !== "24.20.0"
+    || selfCheckRuntime.actualNodeVersion !== "24.20.0"
     || selfCheckRuntime.activation !== "workstream-evidence-only"
     || selfCheckRuntime.artifactManifestSha256 !== expectedRuntimeManifestSha256
     || !Number.isSafeInteger(selfCheckRuntime.artifactFileCount)

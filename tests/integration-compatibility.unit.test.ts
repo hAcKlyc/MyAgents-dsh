@@ -63,7 +63,7 @@ beforeAll(() => {
       inputs,
       repositoryHead: "e".repeat(40),
       rootLockSha256: "d".repeat(64),
-      toolchain: { node: "24.14.0", npm: "11.15.0", typescript: "5.9.3" },
+      toolchain: { node: "24.20.0", npm: "11.19.0", typescript: "5.9.3" },
     },
     dsh: {
       artifactManifestSha256: ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256,

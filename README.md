@@ -63,7 +63,7 @@ See [Architecture](./specs/ARCHITECTURE.md) for ownership and data flow, and [Co
 
 The Reference Web Host is useful for the W5 browser product, but it currently runs the older frozen Runtime recorded in the status table. It is not the Batch 3 integration artifact.
 
-Use exact Node `24.14.0` and npm `11.15.0`, install dependencies, put `DEEPSEEK_API_KEY` in the ignored repository-local `.env`, and run:
+Use exact Node `24.20.0` and npm `11.19.0`, install dependencies, put `DEEPSEEK_API_KEY` in the ignored repository-local `.env`, and run:
 
 ```bash
 npm ci
@@ -89,7 +89,7 @@ Before leaving the current machine:
 
 On the new machine:
 
-1. obtain the exact Git commit and install Node `24.14.0` / npm `11.15.0`;
+1. obtain the exact Git commit and install Node `24.20.0` / npm `11.19.0`;
 2. run `npm ci` and the four repository gates below;
 3. verify the transferred Batch 3 handoff byte-for-byte with expected digest `437dd66c…`, then read its generated root `README.md` as the semantic entrypoint before MyAgents integration;
 4. recreate `.env` locally only when using a real provider;

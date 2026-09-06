@@ -50,8 +50,8 @@ const fixture = (): CreateBatch1HandoffInput => {
   return {
   source: { repository: "MyAgents-dsh", commit: "b".repeat(40), dirty: false },
   build: {
-    node: "24.14.0",
-    npm: "11.15.0",
+    node: "24.20.0",
+    npm: "11.19.0",
     typescript: "5.9.3",
     lockSha256: digest(1),
     builderAuthoritySha256: digest(2),

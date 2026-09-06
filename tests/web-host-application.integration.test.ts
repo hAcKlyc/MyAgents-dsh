@@ -48,7 +48,7 @@ const createArtifact = async (root: string): Promise<Readonly<{ root: string; ma
       repositoryHead: "e".repeat(40),
       rootLockSha256: "d".repeat(64),
       builderAuthoritySha256: createHash("sha256").update(JSON.stringify(inputs)).digest("hex"),
-      toolchain: { node: "24.14.0", npm: "11.15.0", typescript: "5.9.3" },
+      toolchain: { node: "24.20.0", npm: "11.19.0", typescript: "5.9.3" },
       inputs,
     },
     dsh: {
@@ -81,7 +81,7 @@ const initialize = (
     version: "0.0.0",
     platform: "darwin",
     arch: "arm64",
-    nodeVersion: "24.14.0",
+    nodeVersion: "24.20.0",
   },
   productSessionId: row.webSessionId,
   runtimeHome: paths.runtimeHome,

@@ -204,7 +204,7 @@ Build-time packages create and verify:
 
 The current build also creates the Reference Web artifact and the immutable Batch 3 integration handoff. Building an Agent SDK package is a Batch 2 extension of this layer, not current behavior.
 
-Build-time verification is not a runtime plugin.
+Build-time verification is not a runtime plugin. Node/npm toolchain and immutable rebuild ownership are documented in [verification and handoff](./tech_docs/assurance/verification-artifacts-and-handoff.md#node-2420-toolchain-refresh); the current exact pair is Node `24.20.0` / npm `11.19.0`.
 
 Dynamic acceptance has four deliberately separate Agent roles. The Development Main Agent, currently Codex, owns implementation and final finding adjudication. External independent Tester Agents operate test-only scenarios through the Standard Test Host and generated client. The packed Runtime's DSH Root Agent is the system under test. DSH child/subagents are nested Runtime capabilities under test. Tester Agents never enter the Runtime protocol, Session, WorkRegistry, artifact, or product distribution, and Runtime Agents never receive hidden test rubrics or prior reports.
 
