@@ -17,6 +17,7 @@
     "src/tool-catalog-schema.ts",
     "src/tool-catalog.ts",
     "src/validation.ts",
-    "generated/host-client.generated.ts"
+    "generated/host-client.generated.ts",
+    "generated/public-contract.generated.ts"
   ]
 }

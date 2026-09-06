@@ -60,7 +60,7 @@ type ProductPermissionRequest = Readonly<{
   permissionClass: ProductPermissionClass;
   target: string;
   tool: string;
-  display?: ProductToolPermissionRequest["display"];
+  review?: ProductToolPermissionRequest["review"];
 }>;
 
 export interface ProductPermissionRuleEvent {
@@ -115,10 +115,12 @@ export interface ProductPermissionInteractionRequest {
   readonly productTurnId: string;
   readonly dshTurn: number;
   readonly callId: string;
+  readonly rootCallId: string;
+  readonly ruleTtlMs: number;
   readonly tool: string;
   readonly permissionClass: ProductPermissionClass;
   readonly target: string;
-  readonly display?: ProductToolPermissionRequest["display"];
+  readonly review?: ProductToolPermissionRequest["review"];
   readonly origin: ProductToolOrigin;
   readonly expectedPermissionRevision: string;
   readonly interactionScenarioRevision: string;
@@ -408,21 +410,11 @@ const snapshotSessionEvents = (value: unknown): readonly SessionEventSnapshot[] 
   return Object.freeze(snapshots);
 };
 
-const exactNativePromise = <T>(value: unknown, description: string): Promise<T> => {
-  if (value !== null && typeof value === "object" && utilTypes.isProxy(value)) {
-    throw new TypeError(`${description} must not be a Proxy`);
-  }
-  if (!utilTypes.isPromise(value)
-    || Object.getPrototypeOf(value) !== Promise.prototype
-    || Reflect.ownKeys(value).length !== 0) {
-    throw new TypeError(`${description} must return an exact native Promise`);
-  }
-  return value as Promise<T>;
-};
+
 
 const exactLocalDisposer = (value: unknown): ProductLocalInteractionDisposer => {
-  if (typeof value !== "function" || utilTypes.isProxy(value)) {
-    throw new TypeError("local interaction registration must return a synchronous non-Proxy disposer");
+  if (typeof value !== "function") {
+    throw new TypeError("local interaction registration must return a synchronous disposer");
   }
   return value as ProductLocalInteractionDisposer;
 };
@@ -776,21 +768,13 @@ const dataFunction = (
   key: string,
   description: string,
 ): ((...args: never[]) => unknown) => {
-  const descriptor = Object.getOwnPropertyDescriptor(owner, key);
-  if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)
-    || typeof descriptor.value !== "function" || utilTypes.isProxy(descriptor.value)) {
-    throw new TypeError(`${description} must be an enumerable non-Proxy own data function`);
-  }
-  return descriptor.value as (...args: never[]) => unknown;
+  const method = owner[key];
+  if (typeof method !== "function") throw new TypeError(`${description} must be callable`);
+  return method as (...args: never[]) => unknown;
 };
 
 const validateInteractionProvider = (value: unknown): ProductLocalInteractionProvider => {
-  const provider = exactOwnDataObject(
-    value,
-    ["revision", "decidePermission", "answerQuestions"],
-    [],
-    "local interaction provider",
-  );
+  const provider = value as JsonObject;
   const revision = boundedIdentifier(provider.revision, "interaction scenario revision");
   const decidePermission = dataFunction(provider, "decidePermission", "local permission responder");
   const answerQuestions = dataFunction(provider, "answerQuestions", "local question responder");
@@ -854,11 +838,11 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
     ruleTtlMs: config.ruleTtlMs,
   });
   const clock = dataFunction(config, "clock", "permission clock");
-  const durability = exactOwnDataObject(config.durability, ["flush"], [], "permission durability authority");
+  const durability = config.durability as JsonObject;
   const flush = dataFunction(durability, "flush", "permission durability flush");
   const hook = config.hook === undefined
     ? undefined
-    : exactOwnDataObject(config.hook, ["authorize"], [], "permission Hook authority");
+    : config.hook as JsonObject;
   const authorizeHook = hook === undefined
     ? undefined
     : dataFunction(hook, "authorize", "permission Hook authorizer");
@@ -1125,14 +1109,12 @@ export class ProductPermissionService extends Service {
         this.assertRuleMutationBoundary();
         return this.trackDurableMutation(
           this.grantRule(agent, request),
-          "permission rule grant settlement",
         );
       },
       revokeRule: (agent: Agent, request: ProductPermissionRuleRevokeRequest) => {
         this.assertRuleMutationBoundary();
         return this.trackDurableMutation(
           this.revokeRule(agent, request),
-          "permission rule revoke settlement",
         );
       },
     }));
@@ -1298,10 +1280,7 @@ export class ProductPermissionService extends Service {
         fromRevision: previous.latestRevision,
         revision: nextBase,
       });
-      const pending = exactNativePromise<boolean>(
-        this.configValue.durability.flush(agent.session),
-        "permission configuration durability flush",
-      );
+      const pending = Promise.resolve<boolean>(this.configValue.durability.flush(agent.session));
       if (!(await pending)) {
         throw new ProductPermissionError(
           "permission_durability_unavailable",
@@ -1395,31 +1374,15 @@ export class ProductPermissionService extends Service {
     const request = exactOwnDataObject(
       rawRequest,
       ["permissionClass", "target", "tool"],
-      ["display"],
+      ["review"],
       "product tool permission request",
     );
     const tool = validateToolName(request.tool, "permission request tool");
-    let display: ProductToolPermissionRequest["display"];
-    if (request.display !== undefined) {
-      const value = exactOwnDataObject(request.display, ["command", "cwd"], ["description"], "permission display");
-      if (tool !== "bash" || typeof value.command !== "string" || value.command.length === 0
-        || value.command.length > 262_144 || typeof value.cwd !== "string"
-        || value.cwd !== context.environment.workspace.canonicalRoot
-        || (value.description !== undefined
-          && (typeof value.description !== "string" || value.description.length > 512))) {
-        throw new TypeError("permission display must describe the governed Bash operation");
-      }
-      display = Object.freeze({
-        command: value.command,
-        cwd: value.cwd,
-        ...(value.description === undefined ? {} : { description: value.description }),
-      });
-    }
     const normalized: ProductPermissionRequest = Object.freeze({
       permissionClass: validatePermissionClass(request.permissionClass, tool),
       target: boundedTarget(request.target),
       tool,
-      ...(display === undefined ? {} : { display }),
+      ...(rawRequest.review === undefined ? {} : { review: rawRequest.review }),
     });
     return await this.authorizeNormalized(context, normalized);
   }
@@ -1433,7 +1396,7 @@ export class ProductPermissionService extends Service {
     const request = exactOwnDataObject(
       rawRequest,
       ["permissionClass", "target", "tool"],
-      [],
+      ["review"],
       "external product tool permission request",
     );
     const tool = boundedIdentifier(request.tool, "external permission tool");
@@ -1441,6 +1404,7 @@ export class ProductPermissionService extends Service {
       permissionClass: validateProductPermissionClass(request.permissionClass, tool),
       target: boundedTarget(request.target),
       tool,
+      ...(request.review === undefined ? {} : { review: request.review as ProductToolPermissionRequest["review"] }),
     });
     return await this.authorizeNormalized(context, normalized);
   }
@@ -1457,10 +1421,7 @@ export class ProductPermissionService extends Service {
     }
     await this.readOperationPolicy(context);
     if (this.configValue.hook !== undefined) {
-      const hookDecision: unknown = await exactNativePromise(
-        this.configValue.hook.authorize(context, normalized),
-        "permission Hook authority",
-      );
+      const hookDecision: unknown = await Promise.resolve(this.configValue.hook.authorize(context, normalized));
       context.signal.throwIfAborted();
       if (hookDecision === "deny") return "deny";
       if (hookDecision === "allow_once") {
@@ -1556,6 +1517,7 @@ export class ProductPermissionService extends Service {
     if (context.signal.aborted) controller.abort(context.signal.reason);
     else context.signal.addEventListener("abort", onAbort, { once: true });
     const interactionId = `permission-${sha256(JSON.stringify([
+      context.agent.id,
       context.clientOperationId,
       context.productTurnId,
       context.dshTurn,
@@ -1572,11 +1534,13 @@ export class ProductPermissionService extends Service {
       productTurnId: context.productTurnId,
       dshTurn: context.dshTurn,
       callId: context.callId,
+      rootCallId: context.rootCallId,
+      ruleTtlMs: this.configValue.ruleTtlMs,
       tool: request.tool,
       permissionClass: request.permissionClass,
       target: request.target,
       origin: context.origin,
-      ...(request.display === undefined ? {} : { display: request.display }),
+      ...(request.review === undefined ? {} : { review: request.review }),
       expectedPermissionRevision: latestRevision,
       interactionScenarioRevision: context.birth.interactionScenarioRevision,
       signal: controller.signal,
@@ -1784,10 +1748,7 @@ export class ProductPermissionService extends Service {
 
   private async flushRuleMutation(session: Session, revision: string, description: string): Promise<void> {
     try {
-      const pending = exactNativePromise<boolean>(
-        this.configValue.durability.flush(session),
-        `${description} durability flush`,
-      );
+      const pending = Promise.resolve<boolean>(this.configValue.durability.flush(session));
       if (!(await pending)) {
         throw new Error(`no Session durability Provider participated in the ${description} flush`);
       }
@@ -2016,7 +1977,7 @@ export class ProductPermissionService extends Service {
     this.trackDurabilitySettlement(result);
     let pending: Promise<T>;
     try {
-      pending = exactNativePromise<T>(execute(), "permission durability settlement");
+      pending = Promise.resolve<T>(execute());
     } catch (error) {
       rejectResult?.(error instanceof Error
         ? error
@@ -2032,8 +1993,8 @@ export class ProductPermissionService extends Service {
     return result;
   }
 
-  private trackDurableMutation<T>(task: Promise<T>, description: string): Promise<T> {
-    const pending = exactNativePromise<T>(task, description);
+  private trackDurableMutation<T>(task: Promise<T>): Promise<T> {
+    const pending = Promise.resolve<T>(task);
     this.trackDurabilitySettlement(pending);
     return pending;
   }

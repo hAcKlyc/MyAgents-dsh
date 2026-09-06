@@ -15,6 +15,7 @@ import type { HostPortTransportLifecycle } from "@myagents-dsh/host-ports";
 import {
   BATCH1_RUNTIME_CAPABILITIES,
   DSH_ENGINE_VERSION,
+  EXECUTION_ENVIRONMENT_FACTS,
   JsonRpcPeer,
   PROTOCOL_VERSION,
   ProtocolError,
@@ -339,6 +340,7 @@ const emptyActiveCounts = () => ({
 type NativeRpcCompositionCapabilities = Readonly<{
   bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   bindHostCapabilities: (capabilities: InitializeParams["hostCapabilities"]) => void;
+  bindExecutionEnvironment: (environment: unknown) => void;
   hostPorts: HostPortTransportLifecycle;
   installPersistence: (runtimeHome: string) => Promise<void>;
   commandInvoke: (
@@ -440,6 +442,7 @@ export class NativeRpcServer extends Service {
     nativeRpcCompositionCapabilities.set(this, Object.freeze({
       bindAttachmentLeaseLimit: compositionAuthority.bindAttachmentLeaseLimit,
       bindHostCapabilities: compositionAuthority.bindHostCapabilities,
+      bindExecutionEnvironment: compositionAuthority.bindExecutionEnvironment,
       commandInvoke: compositionAuthority.commandInvoke,
       configApply: compositionAuthority.configApply,
       planApply: compositionAuthority.planApply,
@@ -770,15 +773,15 @@ export class NativeRpcServer extends Service {
     }
     assertCompatibleProtocol(params.protocol.minVersion, params.protocol.maxVersion);
     validateInitializationEnvironment(params, this.configValue.platformTarget);
-    this.productSessionValue.bindExecutionEnvironment({
+    compositionCapabilitiesOf(this).bindExecutionEnvironment({
       attachmentStagingRoot: params.executionEnvironment.attachmentStagingRoot,
-      checkpoint: params.executionEnvironment.checkpoint,
+      checkpoint: { ...EXECUTION_ENVIRONMENT_FACTS.checkpoint, policyRevision: params.executionEnvironment.checkpoint.policyRevision },
       digest: params.executionEnvironment.digest,
-      environment: params.executionEnvironment.environment,
-      executables: params.executionEnvironment.executables,
+      environment: { ...params.executionEnvironment.environment, inheritedKeys: [], secretValues: EXECUTION_ENVIRONMENT_FACTS.secretValues },
+      executables: { ...params.executionEnvironment.executables, pathPolicy: EXECUTION_ENVIRONMENT_FACTS.pathPolicy },
       network: params.executionEnvironment.network,
       platformTarget: this.configValue.platformTarget,
-      process: params.executionEnvironment.process,
+      process: { ...params.executionEnvironment.process, killTreeOnAbort: EXECUTION_ENVIRONMENT_FACTS.killTreeOnAbort },
       revision: params.executionEnvironment.revision,
       runtimeHome: params.runtimeHome,
       workspace: params.executionEnvironment.workspace,

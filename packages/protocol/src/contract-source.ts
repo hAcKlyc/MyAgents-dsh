@@ -10,7 +10,7 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "3.0.0" as const;
+export const PROTOCOL_VERSION = "3.1.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
@@ -81,6 +81,12 @@ export const ProtocolLimitsSchema = strictObject({
   eventQueueHighWatermark: Type.Integer({ minimum: 1, maximum: 100_000 }),
 });
 
+/** Fixed Runtime facts, not Host policy choices. Optional legacy request literals project here. */
+export const EXECUTION_ENVIRONMENT_FACTS = Object.freeze({
+  pathPolicy: "sealed" as const, secretValues: "reverse-port-only" as const, killTreeOnAbort: true as const,
+  checkpoint: Object.freeze({ mode: "managed-file-tools" as const, version: 1 as const, trackedTools: Object.freeze(["Write", "Edit"] as const), tracksShell: false as const, tracksChildAgents: false as const, tracksExternalChanges: false as const }),
+});
+
 export const ExecutionEnvironmentProfileSchema = strictObject({
   revision,
   digest: sha256,
@@ -96,12 +102,12 @@ export const ExecutionEnvironmentProfileSchema = strictObject({
     ripgrepRef: identifier,
     shellDialect: Type.Union([Type.Literal("bash"), Type.Literal("pwsh")]),
     allowedCommandRefs: Type.Array(identifier, { maxItems: 128, uniqueItems: true }),
-    pathPolicy: Type.Literal("sealed"),
+    pathPolicy: Type.Optional(Type.Literal("sealed")),
   }),
   environment: strictObject({
     allowedKeys: Type.Array(identifier, { maxItems: 256, uniqueItems: true }),
-    inheritedKeys: Type.Array(identifier, { maxItems: 256, uniqueItems: true }),
-    secretValues: Type.Literal("reverse-port-only"),
+    inheritedKeys: Type.Optional(Type.Array(identifier, { maxItems: 0 })),
+    secretValues: Type.Optional(Type.Literal("reverse-port-only")),
   }),
   network: Type.Union([
     strictObject({ mode: Type.Literal("deny") }),
@@ -110,16 +116,16 @@ export const ExecutionEnvironmentProfileSchema = strictObject({
   process: strictObject({
     backgroundRetention: Type.Union([Type.Literal("allow"), Type.Literal("deny")]),
     maxChildren: Type.Integer({ minimum: 1, maximum: 128 }),
-    killTreeOnAbort: Type.Literal(true),
+    killTreeOnAbort: Type.Optional(Type.Literal(true)),
   }),
   checkpoint: strictObject({
-    mode: Type.Literal("managed-file-tools"),
-    version: Type.Literal(1),
+    mode: Type.Optional(Type.Literal("managed-file-tools")),
+    version: Type.Optional(Type.Literal(1)),
     policyRevision: revision,
-    trackedTools: Type.Tuple([Type.Literal("Write"), Type.Literal("Edit")]),
-    tracksShell: Type.Literal(false),
-    tracksChildAgents: Type.Literal(false),
-    tracksExternalChanges: Type.Literal(false),
+    trackedTools: Type.Optional(Type.Tuple([Type.Literal("Write"), Type.Literal("Edit")])),
+    tracksShell: Type.Optional(Type.Literal(false)),
+    tracksChildAgents: Type.Optional(Type.Literal(false)),
+    tracksExternalChanges: Type.Optional(Type.Literal(false)),
   }),
   attachmentStagingRoot: absolutePath,
   planDirectory: Type.Optional(absolutePath),
@@ -144,6 +150,7 @@ const capability = <Schema extends TSchema>(schema: Schema) => Type.Union([schem
 
 export const RuntimeCapabilityProfileSchema = strictObject({
   profile: identifier,
+  executionEnvironment: strictObject({ pathPolicy: Type.Literal("sealed"), secretValues: Type.Literal("reverse-port-only"), killTreeOnAbort: Type.Literal(true), checkpoint: strictObject({ mode: Type.Literal("managed-file-tools"), version: Type.Literal(1), trackedTools: Type.Tuple([Type.Literal("Write"), Type.Literal("Edit")]), tracksShell: Type.Literal(false), tracksChildAgents: Type.Literal(false), tracksExternalChanges: Type.Literal(false) }) }),
   sessions: strictObject({
     resume: capability(Type.Literal("dsh-native")),
     history: capability(Type.Literal("dsh-event-log-read-v1")),
@@ -733,6 +740,23 @@ const applyResult = strictObject({
   components: Type.Array(componentStatus, { maxItems: 2_048 }),
 });
 
+/** Ephemeral review of normalized effects; permission matching remains a separate authority. */
+export const PermissionOperationSchema = Type.Union([
+  strictObject({ kind: Type.Literal("command"), dialect: Type.Union([Type.Literal("bash"), Type.Literal("pwsh")]), command: Type.String(), cwd: absolutePath, description: Type.Optional(Type.String()) }),
+  strictObject({ kind: Type.Literal("web_search"), query: Type.String(), provider: identifier, allowedDomains: Type.Optional(Type.Array(Type.String())), blockedDomains: Type.Optional(Type.Array(Type.String())) }),
+  strictObject({ kind: Type.Literal("web_fetch"), url: Type.String(), prompt: Type.String() }),
+  strictObject({ kind: Type.Literal("file_change"), path: absolutePath, action: Type.Union([Type.Literal("create"), Type.Literal("write"), Type.Literal("edit")]), before: Type.Optional(Type.String()), after: Type.String(), replacements: Type.Optional(nonNegativeInteger) }),
+  strictObject({ kind: Type.Literal("generic"), action: Type.String(), target: Type.String(), arguments: Type.Optional(Type.Unknown()) }),
+]);
+export type PermissionOperation = Static<typeof PermissionOperationSchema>;
+export const PermissionReviewSchema = strictObject({
+  operation: PermissionOperationSchema,
+  actor: strictObject({ agentId: identifier, origin: Type.Union([Type.Literal("root"), Type.Literal("foreground_child"), Type.Literal("background_child")]) }),
+  scope: strictObject({ tool: identifier, permissionClass: identifier, target: Type.String(), lifetimeMs: nonNegativeInteger, owner: Type.Literal("session_tree") }),
+});
+export type PermissionReview = Static<typeof PermissionReviewSchema>;
+export const PermissionReviewReferenceSchema = strictObject({ attachmentId: identifier, mimeType: Type.Literal("application/json"), sizeBytes: nonNegativeInteger, sha256 });
+
 export const HostRequestAuthoritySchema = strictObject({
   requestId: identifier,
   runtimeGeneration: identifier,
@@ -986,7 +1010,7 @@ export const RPC_METHODS = {
   "interaction/respond": method("host_to_runtime", strictObject({ interactionId: identifier, expectedRevision: revision, decision: Type.Union([Type.Literal("deny"), Type.Literal("allow_once"), Type.Literal("always_allow"), Type.Literal("answered"), Type.Literal("cancelled")]), value: Type.Optional(Type.Unknown()) }), Type.Union([strictObject({ state: Type.Literal("applied"), effectivePolicyRevision: revision }), strictObject({ state: Type.Literal("rejected"), code: identifier }), strictObject({ state: Type.Literal("already_settled") }), strictObject({ state: Type.Literal("expired") })])),
   "utility/run": method("host_to_runtime", strictObject({ clientOperationId: identifier, prompt: Type.String({ minLength: 1, maxLength: 1_000_000 }), systemPrompt: Type.String({ maxLength: 1_000_000 }), modelProfileRevision: revision, maxTokens: Type.Integer({ minimum: 1 }) }), strictObject({ state: Type.Union([Type.Literal("succeeded"), Type.Literal("failed"), Type.Literal("aborted")]), text: Type.Optional(Type.String({ maxLength: 1_000_000 })), usage: Type.Optional(TokenUsageSchema), code: Type.Optional(identifier) })),
   "host/credential/resolve": method("runtime_to_host", credentialResolve, credentialResolveResult),
-  "host/interaction/request": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, interactionId: identifier, kind: Type.Union([Type.Literal("permission"), Type.Literal("ask_user"), Type.Literal("plan_approval")]), schema: Type.Unknown(), permissionAction: Type.Optional(identifier), desiredPolicyRevision: revision, scenario: identifier, cancellationToken: identifier }), strictObject({ registered: Type.Literal(true) })),
+  "host/interaction/request": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, interactionId: identifier, kind: Type.Union([Type.Literal("permission"), Type.Literal("ask_user"), Type.Literal("plan_approval")]), schema: Type.Unknown(), review: Type.Optional(PermissionReviewSchema), reviewRef: Type.Optional(PermissionReviewReferenceSchema), permissionAction: Type.Optional(identifier), desiredPolicyRevision: revision, scenario: identifier, cancellationToken: identifier }), strictObject({ registered: Type.Literal(true) })),
   "host/tool/execute": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, tool: identifier, input: Type.Unknown() }), hostToolResult),
   "host/hook/execute": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, hookId: identifier, event: Type.Union([Type.Literal("PreToolUse"), Type.Literal("PostToolUse"), Type.Literal("PermissionRequest")]), tool: identifier, input: Type.Unknown(), result: Type.Optional(hostToolResult), origin: Type.Union([Type.Literal("root"), Type.Literal("foreground_child"), Type.Literal("background_child")]), agentId: Type.Optional(identifier), permissionMode: Type.Optional(identifier) }), hostHookResult),
   "host/attachment/put": method("runtime_to_host", strictObject({ authority: HostRequestAuthoritySchema, mimeType: identifier, name: Type.String({ maxLength: 512 }), sizeBytes: nonNegativeInteger, sha256, stagingPath: absolutePath }), attachmentRef),
@@ -1042,6 +1066,7 @@ export const REFERENCE_PROTOCOL_LIMITS: ProtocolLimits = {
   eventQueueHighWatermark: 2_048,
 };
 export const REFERENCE_RUNTIME_CAPABILITIES: RuntimeCapabilityProfile = {
+  executionEnvironment: { ...EXECUTION_ENVIRONMENT_FACTS, checkpoint: { ...EXECUTION_ENVIRONMENT_FACTS.checkpoint, trackedTools: ["Write", "Edit"] } },
   profile: "myagents-dsh-foundation-v1",
   sessions: { resume: "dsh-native", history: "dsh-event-log-read-v1", compact: "operation-event-v1", fork: "transactional-stable-boundary-v1", rewind: "transactional-stable-boundary-v1", delete: "transactional-tombstone-v1" },
   turns: { steer: "dsh-step-boundary", followUp: "identified-fifo", interrupt: "abort-signal", terminal: "durable-explicit", idempotency: "client-operation-id" },
@@ -1056,6 +1081,7 @@ export const REFERENCE_RUNTIME_CAPABILITIES: RuntimeCapabilityProfile = {
 };
 
 export const BATCH1_RUNTIME_CAPABILITIES = Object.freeze({
+  executionEnvironment: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.executionEnvironment }),
   profile: "myagents-dsh-batch-1-candidate-v1",
   sessions: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.sessions }),
   turns: Object.freeze({ ...REFERENCE_RUNTIME_CAPABILITIES.turns }),

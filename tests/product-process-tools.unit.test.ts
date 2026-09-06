@@ -6,6 +6,9 @@ import * as ToolPwsh from "@deepseek-ai/dsh-tool-pwsh";
 import * as ToolJobs from "@deepseek-ai/dsh-tool-jobs";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
+import { SessionStore, SessionId } from "@deepseek-ai/dsh-session";
+import { ApprovalService } from "@deepseek-ai/dsh-user-approval";
+import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import type { JobId } from "@deepseek-ai/dsh-jobs";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
@@ -28,6 +31,10 @@ import {
 } from "@myagents-dsh/tool-contracts";
 import {
   ProductPermissionError,
+  ProductPermissionService,
+  type ProductLocalInteractionProvider,
+  type ProductPermissionInteractionRequest,
+  type ProductLocalInteractionSettlement,
   ProductToolRuntime,
   type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
@@ -42,7 +49,7 @@ import { LocalWorkspaceFileSystem, requireLocalWorkspaceFileSystem } from "@myag
 import { createHash } from "node:crypto";
 import { chmod, mkdtemp, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const temporaryRoots: string[] = [];
@@ -187,6 +194,9 @@ const catalog = Object.freeze({
 const harness = async (options: Readonly<{
   backgroundRetention?: "allow" | "deny";
   dialect?: "bash" | "pwsh";
+  realPermission?: ProductLocalInteractionProvider;
+  permissionMode?: "default" | "bypassPermissions";
+  readEnvironment?: ProductProcessRuntimeConfig["readEnvironment"];
 }> = {}) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-process-tools-")));
   temporaryRoots.push(root);
@@ -215,9 +225,12 @@ const harness = async (options: Readonly<{
   await context.plugin(AgentRegistry);
   const fakeSubprocess = context.subprocess as FakeSubprocessRuntime;
   const inject = vi.fn<(message: unknown) => void>();
+  if (options.realPermission) await context.plugin(SessionStore);
+  const session = options.realPermission ? context.sessions.create(SessionId("process-agent"), { meta: { cwd: workspace } }) : undefined;
+  session?.append("turn/start", { turn: 1 });
   const agent = {
     id: "process-agent",
-    session: { id: "process-agent", header: { id: "process-agent", cwd: workspace } },
+    session: session ?? { id: "process-agent", header: { id: "process-agent", cwd: workspace } },
     status: "busy",
     inject,
   } as unknown as Agent;
@@ -296,6 +309,7 @@ const harness = async (options: Readonly<{
     shellDialect: options.dialect ?? "bash",
     allowedCommandRefs: Object.freeze(["bash-v1", "node-v1", "ripgrep-v1"]),
     environmentValues: Object.freeze({ PATH: "/usr/bin:/bin" }),
+    ...(options.readEnvironment === undefined ? {} : { readEnvironment: options.readEnvironment }),
     executablePaths,
     executableRefs: Object.freeze({
       shell: "bash-v1",
@@ -311,9 +325,19 @@ const harness = async (options: Readonly<{
   let permissionPromise: Promise<"allow" | "deny"> | undefined;
   let currentOperation: ProductOperationRecord = operation;
   const authorize = vi.fn(() => permissionPromise ?? Promise.resolve(permissionDecision));
-  context.provide("productPermission", {
-    authorize,
-  } as never);
+  if (options.realPermission) {
+    await context.plugin(ApprovalService, { policy: "ask" });
+    await context.plugin(UserQuestionService);
+    await context.plugin(ProductPermissionService, {
+      autoAllowTools: [], clock: Date.now, durability: { flush: () => Promise.resolve(true) },
+      interaction: options.realPermission, interactionRegistrationDeadlineMs: 1_000,
+      maxRules: 8, mode: options.permissionMode ?? "default", ruleTtlMs: 60_000,
+      registerController: () => undefined,
+    });
+    currentOperation = Object.freeze({ ...operation, birth: Object.freeze({ ...operation.birth, permissionRevision: context.productPermission.currentRevision(agent) }) });
+  } else {
+    context.provide("productPermission", { authorize } as never);
+  }
   await context.plugin(ProductToolRuntime, {
     catalog: () => catalog,
     checkpoint: Object.freeze({ prepare: () => Promise.reject(new Error("checkpoint not used")) }),
@@ -370,6 +394,62 @@ const harness = async (options: Readonly<{
 };
 
 describe("official Shell tools with product policy", () => {
+  it.each(["bash", "pwsh"] as const)("uses real permission admission for %s in the workspace and a subdirectory", async (dialect) => {
+    const pending: Array<{ request: ProductPermissionInteractionRequest; settlement: ProductLocalInteractionSettlement<unknown> }> = [];
+    const state = await harness({ dialect, realPermission: {
+      revision: "interaction-v1",
+      decidePermission: (request, settlement) => { pending.push({ request, settlement }); return () => undefined; },
+      answerQuestions: () => { throw new Error("unexpected question"); },
+    } });
+    await mkdir(join(state.workspace, "child"));
+    for (const workdir of [".", "child"]) {
+      const count = state.fakeSubprocess.specs.length;
+      const command = dialect === "pwsh" ? "Get-Date" : "date";
+      const result = state.execute({ command, workdir });
+      await vi.waitFor(() => expect(pending.length).toBe(count + 1));
+      expect(state.fakeSubprocess.specs).toHaveLength(count);
+      const next = pending[count];
+      if (next === undefined) throw new Error("permission was not registered");
+      const { request, settlement } = next;
+      expect(request.review).toMatchObject({ kind: "command", dialect, command, cwd: resolve(state.workspace, workdir) });
+      expect(request.rootCallId).toBe(request.callId);
+      await settlement.resolve({ interactionId: request.interactionId, expectedPermissionRevision: request.expectedPermissionRevision, decision: "allow_once" });
+      expect((await result).isError).not.toBe(true);
+      expect(state.fakeSubprocess.specs[count]?.cwd).toBe(resolve(state.workspace, workdir));
+    }
+    // Dependency verification is limited to the executable this call actually used.
+    expect(state.fakeSubprocess.resolveExecutableCalls).toBe(2);
+    await state.context.fiber.dispose();
+  });
+
+  it.each(["deny", "cancel"] as const)("does not spawn through real permission after %s", async (decision) => {
+    let pending: { request: ProductPermissionInteractionRequest; settlement: ProductLocalInteractionSettlement<unknown> } | undefined;
+    const state = await harness({ realPermission: {
+      revision: "interaction-v1", decidePermission: (request, settlement) => { pending = { request, settlement }; return () => undefined; },
+      answerQuestions: () => { throw new Error("unexpected question"); },
+    } });
+    const abort = new AbortController();
+    const result = state.execute({ command: "date" }, abort.signal);
+    await vi.waitFor(() => expect(pending).toBeDefined());
+    if (pending === undefined) throw new Error("permission was not registered");
+    if (decision === "cancel") abort.abort(new Error("fixture cancellation"));
+    else await pending.settlement.resolve({ interactionId: pending.request.interactionId, expectedPermissionRevision: pending.request.expectedPermissionRevision, decision: "deny" });
+    expect((await result).isError).toBe(true);
+    expect(state.fakeSubprocess.specs).toHaveLength(0);
+    await state.context.fiber.dispose();
+  });
+
+  it("admits the declared environment once and reports missing keys before executing a tool", async () => {
+    const readEnvironment = vi.fn(() => ({ PATH: "/usr/bin:/bin" }));
+    const state = await harness({ readEnvironment });
+    const first = state.context.productProcesses.admitEnvironment(state.environment);
+    expect(state.context.productProcesses.admitEnvironment(state.environment)).toBe(first);
+    expect(readEnvironment).toHaveBeenCalledExactlyOnceWith(["PATH"]);
+    expect(state.fakeSubprocess.specs).toHaveLength(0);
+    const missing = await harness({ readEnvironment: () => ({}) });
+    expect(() => missing.context.productProcesses.admitEnvironment(missing.environment)).toThrow("PATH");
+  });
+
   it("presents the full Bash command and actual working directory before execution", async () => {
     const state = await harness();
     state.setPermission("deny");
@@ -379,7 +459,7 @@ describe("official Shell tools with product policy", () => {
       tool: "bash",
       permissionClass: "process.execute",
       target: state.environment.workspace.canonicalRoot,
-      display: { command, cwd: state.environment.workspace.canonicalRoot, description: "Inspect an example" },
+      review: { kind: "command", dialect: "bash", command, cwd: state.environment.workspace.canonicalRoot, description: "Inspect an example" },
     });
     expect(state.fakeSubprocess.specs).toHaveLength(0);
     await state.context.fiber.dispose();
@@ -414,7 +494,7 @@ describe("official Shell tools with product policy", () => {
     expect(() => resolveProductProcessAuthority(Object.freeze({
       ...state.environment,
       executables: Object.freeze({ ...state.environment.executables, shellRef: "forged-bash" }),
-    }), state.config)).toThrow(/executable references differ|process execution environment is not sealed/u);
+    }), state.config)).toThrow(/executable references/u);
     await state.context.fiber.dispose();
   });
 

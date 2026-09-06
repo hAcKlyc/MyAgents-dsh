@@ -184,6 +184,50 @@ const request = (
 ): ProductToolPermissionRequest => Object.freeze({ permissionClass, target, tool });
 
 describe("product permission policy and local interaction provider", () => {
+  it("accepts a trusted service class returning a Promise subclass", async () => {
+    class ObservedPromise<T> extends Promise<T> {}
+    class PermissionHook {
+      calls = 0;
+      authorize() { this.calls += 1; return ObservedPromise.resolve("allow_once" as const); }
+    }
+    const hook = new PermissionHook();
+    const local = provider("scenario-service-class", (pending, settlement) => response(pending, "deny", settlement));
+    const state = await mounted(local.provider, { hook });
+    await expect(state.context.productPermission.authorize(state.product(), request())).resolves.toBe("allow");
+    expect(hook.calls).toBe(1);
+    expect(local.permissionRequests).toHaveLength(0);
+  });
+
+  it("allows both Web tools by the Host Auto policy while still applying an explicit Hook", async () => {
+    const local = provider("scenario-web-auto", (pending, settlement) => response(pending, "deny", settlement));
+    const hook = vi.fn(() => Promise.resolve("continue" as "continue" | "deny"));
+    const state = await mounted(local.provider, { mode: "acceptEdits", autoAllowTools: ["WebSearch", "WebFetch"], hook: { authorize: hook } });
+    for (const tool of ["WebSearch", "WebFetch"] as const) {
+      await expect(state.context.productPermission.authorize({ ...state.product(), callId: tool }, request(tool, CANONICAL_TOOL_CONTRACTS[tool].permissionClass, "https://example.invalid"))).resolves.toBe("allow");
+    }
+    expect(local.permissionRequests).toHaveLength(0);
+    hook.mockImplementation(() => Promise.resolve("deny"));
+    for (const tool of ["WebSearch", "WebFetch"] as const) {
+      await expect(state.context.productPermission.authorize({ ...state.product(), callId: tool }, request(tool, CANONICAL_TOOL_CONTRACTS[tool].permissionClass, "https://example.invalid"))).resolves.toBe("deny");
+    }
+  });
+
+  it("distinguishes parallel child approvals when the model reuses a tool call ID", async () => {
+    const local = provider("scenario-child-correlation", (pending, settlement) => response(pending, "allow_once", settlement));
+    const state = await mounted(local.provider);
+    const root = state.product();
+    const children = ["child-a", "child-b"].map(id => {
+      const session = state.context.sessions.create(SessionId(id));
+      session.append("turn/start", { turn: 1 });
+      const agent = { ctx: state.context, id, session } as unknown as Agent;
+      state.context.agents.enter(agent, state.agent);
+      return { ...root, agent, rootAgent: state.agent, origin: "foreground_child" as const };
+    });
+    await expect(Promise.all(children.map(child => state.context.productPermission.authorize(child, request())))).resolves.toEqual(["allow", "allow"]);
+    expect(new Set(local.permissionRequests.map(value => value.interactionId)).size).toBe(2);
+    expect(local.permissionRequests.map(value => value.callId)).toEqual([root.callId, root.callId]);
+  });
+
   it("continues independent approvals after Bash Always Allow without widening its grant", async () => {
     const local = provider("scenario-progress", (pending, settlement) =>
       response(pending, pending.tool === "bash" ? "always_allow" : "allow_once", settlement));
@@ -305,24 +349,24 @@ describe("product permission policy and local interaction provider", () => {
     await expect(failure).rejects.toMatchObject({ code: "permission_revision_stale" });
   });
 
-  it("carries operation display to the Host without persisting it or changing rule matching", async () => {
+  it("carries operation review to the Host without persisting it or changing rule matching", async () => {
     const local = provider("scenario-v1", (pending, settlement) => response(pending, "always_allow", settlement));
     const state = await mounted(local.provider);
     const product = (revision?: string) => ({
       ...state.product(revision),
       environment: { workspace: { canonicalRoot: "/workspace" } } as ProductToolContext["environment"],
     });
-    const display = { command: "printf first", cwd: "/workspace", description: "First command" };
+    const review = { kind: "command" as const, dialect: "bash" as const, command: "printf first", cwd: "/workspace", description: "First command" };
     await expect(state.context.productPermission.authorize(product(), {
-      ...request("bash", "process.execute", "/workspace"), display,
+      ...request("bash", "process.execute", "/workspace"), review,
     })).resolves.toBe("allow");
-    expect(local.permissionRequests[0]?.display).toEqual(display);
+    expect(local.permissionRequests[0]?.review).toEqual(review);
     expect(JSON.stringify(state.session.snapshotEvents())).not.toContain("printf first");
-    expect(JSON.stringify(state.session.snapshotEvents())).not.toContain('"display"');
+    expect(JSON.stringify(state.session.snapshotEvents())).not.toContain('"review"');
     const revision = state.context.productPermission.currentRevision(state.agent);
     await expect(state.context.productPermission.authorize(product(revision), {
       ...request("bash", "process.execute", "/workspace"),
-      display: { command: "printf second", cwd: "/workspace" },
+      review: { kind: "command", dialect: "bash", command: "printf second", cwd: "/workspace" },
     })).resolves.toBe("allow");
     expect(local.permissionRequests).toHaveLength(1);
   });
@@ -1098,37 +1142,12 @@ describe("product permission policy and local interaction provider", () => {
       .rejects.toMatchObject({ code: "permission_recovery_required" });
   });
 
-  it("rejects Proxy/accessor authority before invoking traps", async () => {
-    let traps = 0;
-    const target = Object.freeze({
-      revision: "proxy-v1",
-      decidePermission: () => () => undefined,
-      answerQuestions: () => () => undefined,
-    });
-    const proxy = new Proxy(target, {
-      get: () => { traps += 1; return undefined; },
-      getOwnPropertyDescriptor: () => { traps += 1; return undefined; },
-      getPrototypeOf: () => { traps += 1; return Object.prototype; },
-      ownKeys: () => { traps += 1; return []; },
-    });
-    const context = new Context();
-    contexts.push(context);
-    await context.plugin(SessionStore);
-    await context.plugin(AgentRegistry);
-    await context.plugin(SystemPrompt);
-    await context.plugin(ApprovalService);
-    await context.plugin(UserQuestionService);
-
-    await expect(context.plugin(ProductPermissionService, {
-      autoAllowTools: [],
-      clock: Date.now,
-      durability: Object.freeze({ flush: () => Promise.resolve(true) }),
-      interaction: proxy,
-      interactionRegistrationDeadlineMs: 1_000,
-      maxRules: 8,
-      mode: "default",
-      ruleTtlMs: 60_000,
-    })).rejects.toThrow("must not be a Proxy");
-    expect(traps).toBe(0);
+  it("accepts a trusted interaction provider with an observation Proxy", async () => {
+    const local = provider("scenario-observed-provider", (pending, settlement) => response(pending, "allow_once", settlement));
+    let reads = 0;
+    const observed = new Proxy(local.provider, { get(target, key, receiver) { reads += 1; return Reflect.get(target, key, receiver); } });
+    const state = await mounted(observed);
+    await expect(state.context.productPermission.authorize(state.product(), request())).resolves.toBe("allow");
+    expect(reads).toBeGreaterThan(0);
   });
 });

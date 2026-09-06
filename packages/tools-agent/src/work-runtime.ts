@@ -3238,6 +3238,7 @@ export class ProductWorkService extends Service {
             permissionClass: contract.permissionClass,
             target: args.task_id as string,
             tool: "TaskStop",
+            review: { kind: "generic", action: "TaskStop", target: args.task_id as string, arguments: args },
           });
           caller = product.agent;
         } else {
@@ -3280,6 +3281,7 @@ export class ProductWorkService extends Service {
             permissionClass: contract.permissionClass,
             target: args.to as string,
             tool: "SendMessage",
+            review: { kind: "generic", action: "SendMessage", target: args.to as string, arguments: args },
           });
           caller = product.agent;
         } else {
@@ -3338,6 +3340,7 @@ export class ProductWorkService extends Service {
       permissionClass: CANONICAL_TOOL_CONTRACTS.Agent.permissionClass,
       target: args.description as string,
       tool: "Agent",
+      review: { kind: "generic", action: "Agent", target: args.description as string, arguments: args },
     });
     return await runWithProductToolExecutionDeadline(
       product,

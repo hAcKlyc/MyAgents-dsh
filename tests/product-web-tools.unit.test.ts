@@ -565,11 +565,7 @@ describe("safe Web Providers and canonical Web tools", () => {
     await harness.context.fiber.dispose();
   });
 
-  it("rejects accessor/Proxy converter authority and results without invoking traps", async () => {
-    const client = new ProductSafeHttpClient(policy, {
-      lookup: () => Promise.resolve([{ address: "93.184.216.34", family: 4 }]),
-      transport: { dispatch: () => Promise.resolve(response(200, { "content-type": "text/plain" }, ["fixture"])) },
-    });
+  it("rejects accessor-bearing declarative configuration and malformed converter results", async () => {
     let accessorHits = 0;
     const accessorConfig: Record<string, unknown> = {};
     Object.defineProperty(accessorConfig, "fetch", {
@@ -578,24 +574,6 @@ describe("safe Web Providers and canonical Web tools", () => {
     });
     expect(() => validateCanonicalWebToolsConfig(accessorConfig)).toThrow("own-data properties");
     expect(accessorHits).toBe(0);
-
-    let proxyTraps = 0;
-    const contentProxy = new Proxy({ convert: () => Promise.resolve({ content: "fixture", kind: "text", truncated: false }) }, {
-      get: () => { proxyTraps += 1; return undefined; },
-      getOwnPropertyDescriptor: () => { proxyTraps += 1; return undefined; },
-      getPrototypeOf: () => { proxyTraps += 1; return Object.prototype; },
-      ownKeys: () => { proxyTraps += 1; return []; },
-    });
-    const context = new Context();
-    context.provide("productTools", { authorize: () => Promise.resolve(), resolve: () => productContext() } as never);
-    await context.plugin(SystemPrompt);
-    await context.plugin(ToolRuntime, { mode: "native" });
-    await context.plugin(WebRuntime, { fetchProvider: "myagents-safe-fetch" });
-    await expect(context.plugin(CanonicalWebTools, {
-      fetch: { client, content: contentProxy as never, utility: defaultUtility },
-    })).rejects.toThrow("must be an exact plain capability");
-    expect(proxyTraps).toBe(0);
-    await context.fiber.dispose();
 
     let resultGetterHits = 0;
     const converted: Record<string, unknown> = { kind: "text", truncated: false };

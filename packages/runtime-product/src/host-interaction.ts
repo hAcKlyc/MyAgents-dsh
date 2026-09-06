@@ -7,7 +7,7 @@ import type {
   HostPortServiceController,
   InteractionRequest,
 } from "@myagents-dsh/host-ports";
-import type { MethodParams, MethodResult } from "@myagents-dsh/protocol";
+import type { MethodParams, MethodResult, PermissionReview } from "@myagents-dsh/protocol";
 import {
   ProductPermissionError,
   validateProductPermissionInteractionResponse,
@@ -41,7 +41,9 @@ export interface HostInteractionBridgeConfig {
     signal: AbortSignal,
     expectedPermissionRevision: string | undefined,
     deadlineMs: number,
+    correlation?: Readonly<{ callId: string; rootCallId: string }>,
   ) => HostInteractionOperationAuthority;
+  readonly preparePermissionReview?: (request: ProductPermissionInteractionRequest, review: PermissionReview) => Promise<Pick<InteractionRequest, "review" | "reviewRef">>;
   readonly revision: string;
   readonly deadlineMs: number;
 }
@@ -53,7 +55,7 @@ export interface HostInteractionResponseController {
 }
 
 type InteractionState = "registering" | "waiting";
-type TerminalState = "settled" | "expired";
+type TerminalState = "settled" | "expired" | Readonly<{ state: "rejected"; code: string }>;
 
 type InteractionRecord = {
   readonly authority: HostPortRequestAuthority;
@@ -66,6 +68,7 @@ type InteractionRecord = {
     params: MethodParams<"interaction/respond">,
   ) => Promise<ProductLocalInteractionEffectReceipt>;
   state: InteractionState;
+  settlement?: Promise<MethodResult<"interaction/respond">>;
 };
 
 const MAX_TERMINAL_INTERACTIONS = 1_024;
@@ -105,8 +108,10 @@ const interactionId = (
   kind: "ask_user" | "plan_approval",
   authority: HostInteractionOperationAuthority,
   request: AskUserQuestionRequest,
+  agent: Agent,
 ): string => `interaction-${createHash("sha256").update(JSON.stringify([
   kind,
+  agent.id,
   authority.clientOperationId,
   authority.productTurnId,
   authority.dshTurn,
@@ -151,6 +156,7 @@ class ProductHostInteractionBridge {
       request.signal,
       request.expectedPermissionRevision,
       this.#config.deadlineMs,
+      { callId: request.callId, rootCallId: request.rootCallId },
     );
     if (authority.clientOperationId !== request.clientOperationId
       || authority.productTurnId !== request.productTurnId
@@ -166,12 +172,18 @@ class ProductHostInteractionBridge {
       permissionClass: request.permissionClass,
       target: request.target,
       tool: request.tool,
-      ...(request.display === undefined ? {} : { display: request.display }),
     }));
+    const review: PermissionReview = {
+      operation: request.review ?? { kind: "generic", action: request.tool, target: request.target },
+      actor: { agentId: request.agent.id, origin: request.origin },
+      scope: { tool: request.tool, permissionClass: request.permissionClass, target: request.target, lifetimeMs: request.ruleTtlMs, owner: "session_tree" },
+    };
+    const prepareReview = this.#config.preparePermissionReview;
     const wireRequest: InteractionRequest = Object.freeze({
       interactionId: request.interactionId,
       kind: "permission",
       schema,
+      review,
       permissionAction: request.permissionClass,
       desiredPolicyRevision: request.expectedPermissionRevision,
       scenario: request.interactionScenarioRevision,
@@ -194,6 +206,11 @@ class ProductHostInteractionBridge {
         }), request));
       },
       (error) => settlement.reject(error),
+      prepareReview === undefined ? undefined : async () => {
+        const control = { ...wireRequest };
+        delete control.review;
+        return { ...control, ...await prepareReview(request, review) };
+      },
     );
   }
 
@@ -217,7 +234,7 @@ class ProductHostInteractionBridge {
     const kind = request.questions.length === 1 && request.questions[0]?.intent?.kind === "plan-review"
       ? "plan_approval" as const
       : "ask_user" as const;
-    const id = interactionId(kind, authority, request);
+    const id = interactionId(kind, authority, request, agent);
     const schema = boundedSchema(Object.freeze({ questions: request.questions }));
     const wireRequest: InteractionRequest = Object.freeze({
       interactionId: id,
@@ -259,6 +276,7 @@ class ProductHostInteractionBridge {
       params: MethodParams<"interaction/respond">,
     ) => Promise<ProductLocalInteractionEffectReceipt>,
     reject: (error: Error) => void,
+    prepare?: () => Promise<InteractionRequest>,
   ): () => void {
     const id = boundedIdentifier(request.interactionId, "Host interaction id");
     if (this.#active.has(id) || this.#terminal.has(id)) {
@@ -282,7 +300,12 @@ class ProductHostInteractionBridge {
       state: "registering",
     };
     this.#active.set(id, record);
-    const registration = this.#config.hostPorts.requestInteraction(authority, request);
+    const registration = (async () => {
+      const prepared = prepare === undefined ? request : await prepare();
+      if (this.#active.get(id) !== record) return;
+      assertCurrent();
+      await this.#config.hostPorts.requestInteraction(authority, prepared);
+    })();
     void registration.then(
       () => {
         if (this.#active.get(id) === record) {
@@ -324,13 +347,19 @@ class ProductHostInteractionBridge {
     const id = boundedIdentifier(params.interactionId, "Host interaction response id");
     const record = this.#active.get(id);
     if (record === undefined) {
-      return this.#terminal.get(id) === "settled"
+      const terminal = this.#terminal.get(id);
+      if (typeof terminal === "object") return terminal;
+      return terminal === "settled"
         ? Object.freeze({ state: "already_settled" as const })
         : Object.freeze({ state: "expired" as const });
     }
     if (record.state === "registering") {
       await record.registration;
       return this.#respond(params);
+    }
+    if (record.settlement !== undefined) {
+      const result = await record.settlement;
+      return result.state === "applied" ? { state: "already_settled" } : result;
     }
     if (params.expectedRevision !== record.expectedRevision) {
       return Object.freeze({ state: "rejected" as const, code: "interaction_revision_stale" });
@@ -346,33 +375,23 @@ class ProductHostInteractionBridge {
       ));
       return Object.freeze({ state: "rejected" as const, code: "interaction_authority_stale" });
     }
-    this.#active.delete(id);
-    let effect: Promise<ProductLocalInteractionEffectReceipt>;
+    const settlement = this.#settle(record, params);
+    record.settlement = settlement;
+    return await settlement;
+  }
+
+  async #settle(record: InteractionRecord, params: MethodParams<"interaction/respond">): Promise<MethodResult<"interaction/respond">> {
+    const id = record.interactionId;
     try {
-      effect = record.resolve(params);
-    } catch {
-      this.#remember(id, "expired");
-      record.reject(new ProductPermissionError(
-        "interaction_response_invalid",
-        "Host interaction response failed strict validation",
-      ));
-      return Object.freeze({ state: "rejected" as const, code: "interaction_response_invalid" });
-    }
-    try {
-      const receipt = await effect;
+      const receipt = await record.resolve(params);
       this.#remember(id, "settled");
-      return Object.freeze({
-        state: "applied" as const,
-        effectivePolicyRevision: receipt.effectivePolicyRevision ?? record.expectedRevision,
-      });
+      return { state: "applied", effectivePolicyRevision: receipt.effectivePolicyRevision ?? record.expectedRevision };
     } catch (error) {
-      this.#remember(id, "settled");
-      return Object.freeze({
-        state: "rejected" as const,
-        code: error instanceof ProductPermissionError
-          ? error.code
-          : "interaction_effect_failed",
-      });
+      const result = { state: "rejected" as const, code: error instanceof ProductPermissionError ? error.code : "interaction_effect_failed" };
+      this.#remember(id, result);
+      return result;
+    } finally {
+      this.#active.delete(id);
     }
   }
 

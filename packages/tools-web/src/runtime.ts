@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { isPromise, isProxy } from "node:util/types";
+import { isProxy } from "node:util/types";
 
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
@@ -149,6 +149,7 @@ export interface CanonicalWebToolsConfig {
 
 type FetchExecutionStore = {
   readonly context: ProductToolContext;
+  readonly prompt: string;
   fetched?: ProductSafeHttpResult;
 };
 
@@ -277,29 +278,13 @@ const dataMethod = (
   method: string,
   description: string,
 ): Readonly<{ owner: JsonObject; invoke: (...args: never[]) => unknown }> => {
-  if (value === null || typeof value !== "object" || Array.isArray(value) || isProxy(value)
-    || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)
-    || Reflect.ownKeys(value).length !== 1) {
-    throw new TypeError(`${description} must be an exact plain capability`);
-  }
   const owner = value as JsonObject;
-  const descriptor = Object.getOwnPropertyDescriptor(owner, method);
-  if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)
-    || typeof descriptor.value !== "function" || isProxy(descriptor.value)) {
-    throw new TypeError(`${description} must expose one enumerable own-data method`);
-  }
-  return Object.freeze({ owner, invoke: descriptor.value as (...args: never[]) => unknown });
+  const invoke = owner[method];
+  if (typeof invoke !== "function") throw new TypeError(`${description} must expose ${method}`);
+  return { owner, invoke: invoke as (...args: never[]) => unknown };
 };
 
-const nativePromise = async <T>(value: unknown, description: string): Promise<T> => {
-  if (value !== null && typeof value === "object" && isProxy(value)) {
-    throw new ProductToolError("utility_model_failed", `${description} returned a Proxy thenable`);
-  }
-  if (!isPromise(value)) {
-    throw new ProductToolError("utility_model_failed", `${description} did not return a native Promise`);
-  }
-  return value as Promise<T>;
-};
+
 
 const normalizeDomain = (value: string): string => {
   if (value.includes("*") || value.includes("/") || value.includes(":") || value.includes("@")) {
@@ -434,6 +419,7 @@ class ProductFetchProvider implements WebFetchProvider {
         permissionClass: CANONICAL_TOOL_CONTRACTS.WebFetch.permissionClass,
         target: url.origin,
         tool: "WebFetch",
+        review: { kind: "web_fetch", url: url.href, prompt: store.prompt },
       });
     });
     if (fetched.contentType !== "text/html" && fetched.contentType !== "text/plain"
@@ -454,10 +440,7 @@ class ProductFetchProvider implements WebFetchProvider {
             signal: execution.signal,
             statusCode: fetched.statusCode,
           }));
-          return await nativePromise<Readonly<{ content: string; kind: "html" | "text"; truncated: boolean }>>(
-            pending,
-            "WebFetch content converter",
-          );
+          return await Promise.resolve<Readonly<{ content: string; kind: "html" | "text"; truncated: boolean }>>(pending);
         },
       );
       normalized = normalizeCanonicalJson(converted, "WebFetch converted content") as JsonObject;
@@ -514,7 +497,7 @@ class ProductSearchProvider implements WebSearchProvider {
         signal: store.context.signal,
       }));
       detail = normalizeCanonicalJson(
-        await nativePromise<unknown>(pending, "WebSearch Provider"),
+        await Promise.resolve<unknown>(pending),
         "WebSearch Provider result",
       ) as ProductSearchDetail;
       store.context.signal.throwIfAborted();
@@ -639,8 +622,8 @@ export class CanonicalWebTools extends Service {
           [],
           "canonical Host WebFetch capability",
         );
-        if (typeof host.available !== "function" || isProxy(host.available)
-          || typeof host.run !== "function" || isProxy(host.run)) {
+        if (typeof host.available !== "function"
+          || typeof host.run !== "function") {
           throw new TypeError("canonical Host WebFetch capabilities must be own-data functions");
         }
         const owner = host;
@@ -674,9 +657,9 @@ export class CanonicalWebTools extends Service {
       const availableDescriptor = Object.getOwnPropertyDescriptor(search, "available");
       const runDescriptor = Object.getOwnPropertyDescriptor(search, "run");
       if (availableDescriptor === undefined || !("value" in availableDescriptor)
-        || typeof availableDescriptor.value !== "function" || isProxy(availableDescriptor.value)
+        || typeof availableDescriptor.value !== "function"
         || runDescriptor === undefined || !("value" in runDescriptor)
-        || typeof runDescriptor.value !== "function" || isProxy(runDescriptor.value)) {
+        || typeof runDescriptor.value !== "function") {
         throw new TypeError("canonical WebSearch capabilities must be own-data functions");
       }
       const owner = search;
@@ -730,6 +713,7 @@ export class CanonicalWebTools extends Service {
             permissionClass: contract.permissionClass,
             target: requestedUrl.origin,
             tool: "WebFetch",
+            review: { kind: "web_fetch", url: requestedUrl.href, prompt: args.prompt as string },
           });
           return await runWithProductToolExecutionDeadline(product, contract.timeoutMs, async (product) => {
             try {
@@ -740,7 +724,7 @@ export class CanonicalWebTools extends Service {
                 url: requestedUrl.toString(),
               }));
               const result = normalizeCanonicalJson(
-                await nativePromise<unknown>(pending, "Host WebFetch reverse executor"),
+                await Promise.resolve<unknown>(pending),
                 "Host WebFetch result",
               );
               product.signal.throwIfAborted();
@@ -774,7 +758,7 @@ export class CanonicalWebTools extends Service {
             }
           });
         }
-        const store: FetchExecutionStore = { context: product };
+        const store: FetchExecutionStore = { context: product, prompt: args.prompt as string };
         const fetched = await this.#fetchStorage.run(store, () => ctx.web.fetch({ url: args.url as string }, product.signal));
         product.signal.throwIfAborted();
         if (fetched.url !== store.fetched?.finalUrl) {
@@ -784,14 +768,14 @@ export class CanonicalWebTools extends Service {
         return await runWithProductToolExecutionDeadline(product, contract.timeoutMs, async (product) => {
           try {
             product.signal.throwIfAborted();
-            const utilityResult = await nativePromise<unknown>(runUtility(Object.freeze({
+            const utilityResult = await Promise.resolve<unknown>(runUtility(Object.freeze({
               context: product,
               finalUrl: redactUrl(fetched.url),
               prompt: args.prompt as string,
               signal: product.signal,
               source: source.text,
               statusCode: fetched.statusCode,
-            })), "WebFetch utility model");
+            })));
             product.signal.throwIfAborted();
             const utility = normalizeCanonicalJson(utilityResult, "WebFetch utility result") as JsonObject;
             const output = validateCanonicalToolOutput("WebFetch", {
@@ -844,6 +828,7 @@ export class CanonicalWebTools extends Service {
           permissionClass: contract.permissionClass,
           target: `provider:${provider.id}`,
           tool: "WebSearch",
+          review: { kind: "web_search", query: args.query as string, provider: provider.id, ...(allowedDomains === undefined ? {} : { allowedDomains: [...allowedDomains] }), ...(blockedDomains === undefined ? {} : { blockedDomains: [...blockedDomains] }) },
         });
         return await runWithProductToolExecutionDeadline(product, contract.timeoutMs, async (product) => {
           const store: SearchExecutionStore = {

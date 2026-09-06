@@ -671,7 +671,7 @@ Every request carries product session, runtime generation, credential reference,
 
 Register-then-respond prevents an RPC response timeout from being treated as a user decision.
 
-The permission interaction's extensible schema may include optional `display` data for Host review. Bash supplies the complete command, sealed working directory and optional description through the existing bounded envelope. These fields are ephemeral presentation, never authorization keys or durable rule content; see [Permissions and interactions](../execution/permissions-interactions-and-plan.md#5-blocking-interactions). The normative protocol `2.5.0` envelope and generated-client digest are unchanged.
+Protocol 3.1 separates typed permission `review` from the existing policy `schema`. Full operation details, Agent attribution and rule scope travel inline or through the existing JSON attachment port as `reviewRef`; large content is never truncated into an apparently complete approval. The response still settles one `interactionId`. See [Permissions and interactions](../execution/permissions-interactions-and-plan.md#5-blocking-interactions).
 
 ### 14.3 Host tools and Hooks
 
@@ -845,14 +845,15 @@ Host MUST branch on negotiated capability values, not runtime name or version gu
 
 ## 20. Generated artifacts and conformance
 
-The protocol generator emits five byte-stable projections from one contract source:
+The protocol generator emits six byte-stable projections from one contract source:
 
 ```text
 protocol.schema.json
 protocol-meta.json
 protocol-fixtures.json
 host-client.generated.ts
-specs/contracts/protocol-2.5.0-evidence.json
+public-contract.generated.ts
+specs/contracts/protocol-3.1.0-evidence.json
 ```
 
 `canonical-tools.generated.ts` belongs to the separate Tool-contract generator and is consumed by
@@ -884,3 +885,7 @@ Runtime defaults identified follow-up delivery to realtime at a DSH model/tool s
 ### Official Shell migration (protocol 3.0.0)
 
 Initialize executable authority now uses `shellRef` and `shellDialect` (`bash` or `pwsh`), removing `bashRef`/`bashDialect` and the custom Windows supervisor/prelude references. The generated canonical catalog contains both official Shell definitions and the three Jobs definitions, while each platform exposes its selected Shell. Foreground timeout ends execution; explicit background output and cancellation use Jobs. Tool schemas and descriptions come directly from the pinned official plugins. This is a breaking contract revision; use the newly generated client and immutable Runtime together. Legacy `Bash` records remain history, not active tool aliases. Exact shapes remain in `packages/protocol/src/contract-source.ts`.
+
+### Runtime/Host boundary correction (protocol 3.1.0)
+
+The canonical generator now emits a dependency-free `public-contract.generated.ts` alongside schema/client/fixtures. MyAgents imports its method tables, exact request/result types and capability facts; it does not recreate that protocol map. Fixed process/checkpoint/path/credential-channel facts are reported in Runtime capabilities. Their old initialize literals are optional compatibility inputs, while the Host supplies actual choices, references and workspace/environment declarations. Runtime initializes one admitted execution snapshot before tools can run. The contract source remains exact shape authority.

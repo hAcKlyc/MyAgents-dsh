@@ -123,3 +123,7 @@ Root, foreground-child and background-child calls all remain in the one DSH `ctx
 ## 6. Changes and verification
 
 A tool change must update the handwritten contract source, generated catalog/schema/fixtures, product profile digest, implementation, permission and cancellation tests, packed-runtime conformance, and any affected handoff. Do not edit generated Markdown or JSON directly. New definitions are not public merely because a plugin can register them; the exact official profile and compatibility manifest must admit them.
+
+## Trusted service callbacks
+
+Composition-installed callbacks use ordinary Promise/thenable semantics. Promise subclasses, own observation fields and Proxy functions do not establish a security boundary inside trusted Runtime JavaScript. The tool service caches the parsed catalog by its immutable source identity and compares admitted revision/digest during execution. Model arguments, external RPC declarations, path/URL/attachment identity and post-approval policy checks retain their boundary validation.

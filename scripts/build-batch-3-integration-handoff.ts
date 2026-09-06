@@ -175,6 +175,7 @@ const main = (): void => {
   );
 
   copyContract("packages/protocol/generated/host-client.generated.ts", outputRoot);
+  copyContract("packages/protocol/generated/public-contract.generated.ts", outputRoot);
   copyContract("packages/protocol/generated/protocol.schema.json", outputRoot);
   copyContract("packages/protocol/generated/protocol-meta.json", outputRoot);
   copyContract("packages/protocol/generated/protocol-fixtures.json", outputRoot);

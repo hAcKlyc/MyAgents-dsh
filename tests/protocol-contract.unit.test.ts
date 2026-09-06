@@ -69,7 +69,7 @@ describe("candidate-v2 protocol authority", () => {
       return readFile(resolve(repositoryRoot, relativePath), "utf8");
     });
 
-    expect(artifacts.size).toBe(5);
+    expect(artifacts.size).toBe(6);
     expect(drift).toEqual([]);
   });
 

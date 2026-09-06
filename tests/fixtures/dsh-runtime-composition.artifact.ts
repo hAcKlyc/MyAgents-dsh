@@ -1442,7 +1442,6 @@ hostPeer.registerRequestHandler("host/interaction/request", (params, context) =>
     }>[];
     target?: unknown;
     tool?: unknown;
-    display?: { command: string; cwd: string; description?: string };
   }>;
   let decision: "allow_once" | "always_allow" | "answered";
   let value: unknown;
@@ -1457,10 +1456,12 @@ hostPeer.registerRequestHandler("host/interaction/request", (params, context) =>
     assert.equal(typeof schema.target, "string");
     assert.equal(typeof schema.tool, "string");
     if (schema.tool === "bash") {
-      assert.equal(typeof schema.display?.command, "string");
-      assert.equal(schema.display?.cwd, schema.target);
-      if (schema.display?.command === "printf artifact-bash") {
-        assert.deepEqual(schema.display, { command: "printf artifact-bash", cwd: schema.target, description: "Artifact Shell check" });
+      assert.equal(params.review?.operation.kind, "command");
+      if (params.review?.operation.kind !== "command") throw new Error("Expected Shell review");
+      assert.equal(typeof params.review?.operation?.command, "string");
+      assert.equal(params.review?.operation?.cwd, schema.target);
+      if (params.review?.operation?.command === "printf artifact-bash") {
+        assert.deepEqual(params.review?.operation, { kind: "command", dialect: "bash", command: "printf artifact-bash", cwd: schema.target, description: "Artifact Shell check" });
       }
     }
     if (schema.tool !== "Agent" || schema.target !== "Verify child model lineage") {

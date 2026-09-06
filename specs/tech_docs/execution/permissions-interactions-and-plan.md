@@ -80,8 +80,7 @@ tool + permissionClass + target + expiry
 
 Its persisted `origin: root` denotes root-Session ownership, not a caller-origin restriction: a child `always_allow` writes the same shared root policy and later eligible root/child calls may match it. It carries a deterministic rule ID, chained policy revision, creation time and bounded expiry. The official composition permits at most 128 grant events and 128 revocation events and uses a 24-hour TTL. Configuration-base changes clear effective exact rules through the durable revision chain.
 
-Current source-candidate protocol `2.5.0` exposes the same permission and interaction vocabulary
-accepted in `2.3.0`:
+Protocol `3.1.0` preserves the established permission management methods:
 
 | Method | Semantics |
 | --- | --- |
@@ -101,7 +100,11 @@ Target granularity depends on the tool contract. File rules bind the canonical d
 
 ## 5. Blocking interactions
 
-Shell permission registration adds optional ephemeral `schema.display` with the full post-validation `command`, the sealed execution `cwd`, and optional tool `description`. These details travel from the product guard around the official Shell tool through ProductPermission to the existing reverse interaction port. They are review data only: they do not participate in tuple matching, interaction identity, single-flight, Hooks policy, or durable permission events. The existing bounded schema envelope remains authoritative; no command is truncated into an apparently complete preview. Older Hosts may ignore this optional data. MyAgents projects it separately from its legacy 500-character summary and explains the existing Session/workspace scope of Always Allow. This additive payload uses the existing protocol `2.5.0` opaque interaction schema and requires no DSH core patch.
+Protocol 3.1 carries typed ephemeral `review` independently of the authorization `schema`: command/dialect/actual cwd, search query/provider/domain filters, fetch URL/prompt, file changes, or generic arguments. Runtime supplies executing Agent/origin and the actual tool/class/target rule scope and lifetime. Matching and durable rules never consume display data. Shell review accepts both official dialects and governed subdirectories without adding execution restrictions.
+
+The entire review travels inline when it fits the negotiated frame budget, otherwise as an existing JSON attachment reference. MyAgents consumes that reference and uses its existing `/refs` route for large UI payloads, retains full details until settlement/cancellation, and enables approval after successful loading. Failed loading or response delivery stays on the same request with retry; unknown presentation variants use full generic detail. Actual call/rootCall IDs accompany the interaction, while its settlement ID includes the executing Agent to distinguish reused provider call IDs. Concurrent responses share one pending effect, and retries preserve rejected receipts instead of reporting a failed effect as applied.
+
+MyAgents Auto supplies WebSearch and WebFetch together in `autoAllowTools`. This is a Host product default, not a new globally safe permission class; explicit Hooks, network policy and visibility constraints still run. Always Allow retains the Runtime's session-tree scope and configured lifetime, displayed as duration after approval.
 
 Permission, AskUserQuestion and plan approval register through `host/interaction/request`. Registration acknowledgment does not settle the interaction. Host registration and response transport are bounded, but an established desktop interaction has no elapsed human-decision timeout. The Runtime blocks the owning AgentLoop path until `interaction/respond`, explicit operation/Session cancellation or teardown settles it exactly once. Duplicate, late, stale-revision and wrong-operation responses fail closed. Runtime cancellation is projected through `host/interaction/cancel`.
 

@@ -88,13 +88,13 @@ export interface HostInputImageReference {
 
 export interface HostAttachmentPublication {
   readonly bytes: Uint8Array;
-  readonly mediaType: ImageMediaType | "application/pdf";
+  readonly mediaType: ImageMediaType | "application/pdf" | "application/json";
   readonly name: string;
 }
 
 export interface HostAttachmentReference {
   readonly attachmentId: string;
-  readonly mediaType: ImageMediaType | "application/pdf";
+  readonly mediaType: ImageMediaType | "application/pdf" | "application/json";
   readonly name: string;
   readonly sha256: string;
   readonly sizeBytes: number;
@@ -430,14 +430,14 @@ const normalizePublication = (value: HostAttachmentPublication): HostAttachmentP
   );
   const name = safeAttachmentName(input.name);
   if (isProxy(input.bytes) || !(input.bytes instanceof Uint8Array)
-    || input.bytes.byteLength < 1 || input.bytes.byteLength > 20 * 1_024 * 1_024
-    || ![...IMAGE_MEDIA_TYPES, "application/pdf"].includes(input.mediaType as ImageMediaType | "application/pdf")
+    || input.bytes.byteLength < 1 || input.bytes.byteLength > (input.mediaType === "application/json" ? 64 : 20) * 1_024 * 1_024
+    || ![...IMAGE_MEDIA_TYPES, "application/pdf", "application/json"].includes(input.mediaType as ImageMediaType | "application/pdf" | "application/json")
     || name === undefined) {
     throw fixedAttachmentFailure("Host attachment publication is invalid.", "ATTACHMENT_WRITE_FAILED");
   }
   return Object.freeze({
     bytes: Uint8Array.from(input.bytes),
-    mediaType: input.mediaType as ImageMediaType | "application/pdf",
+    mediaType: input.mediaType as ImageMediaType | "application/pdf" | "application/json",
     name,
   });
 };

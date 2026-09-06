@@ -1312,7 +1312,7 @@ describe("canonical Agent Work projection", () => {
       error: { info: { code: "permission_denied" } },
       isError: true,
     });
-    expect(requests).toEqual([
+    expect(requests.map(({ permissionClass, target, tool }) => ({ permissionClass, target, tool }))).toEqual([
       { permissionClass: "agent.spawn", target: "Review permission boundaries", tool: "Agent" },
       { permissionClass: "work.stop", target: value.taskId, tool: "TaskStop" },
       { permissionClass: "agent.message", target: value.agentId, tool: "SendMessage" },

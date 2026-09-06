@@ -20,6 +20,8 @@ export interface ProductProcessRuntimeConfig {
   readonly executableRefs: ExecutableSet;
   readonly shellDialect: "bash" | "pwsh";
   readonly environmentValues: Readonly<Record<string, string>>;
+  /** Trusted composition adapter; invoked once with the Host-declared keys at admission. */
+  readonly readEnvironment?: (keys: readonly string[]) => Readonly<Record<string, string>>;
 }
 export interface ProductProcessWorkspaceAuthority {
   readonly target: FsTarget;
@@ -144,7 +146,9 @@ const exactEnvironmentValues = (value: unknown): Readonly<Record<string, string>
 
 
 const exactConfig = (value: unknown): ProductProcessRuntimeConfig => {
-  const config = exactPlainObject(value, ["allowedCommandRefs", "executableSha256", "executablePaths", "executableRefs", "shellDialect", "environmentValues"], "process configuration");
+  const config = exactPlainObject(value, ["allowedCommandRefs", "executableSha256", "executablePaths", "executableRefs", "shellDialect", "environmentValues",
+    ...(value !== null && typeof value === "object" && Object.hasOwn(value, "readEnvironment") ? ["readEnvironment"] : [])], "process configuration");
+  if (config.readEnvironment !== undefined && typeof config.readEnvironment !== "function") throw new TypeError("process environment adapter must be callable");
   if (config.shellDialect !== "bash" && config.shellDialect !== "pwsh") throw new TypeError("unsupported Shell dialect");
   const set = (value: unknown, label: string, validate: (value: unknown, label: string) => string): ExecutableSet => {
     const record = exactPlainObject(value, ["shell", "bundledNode", "ripgrep"], label);
@@ -163,6 +167,7 @@ const exactConfig = (value: unknown): ProductProcessRuntimeConfig => {
       return value;
     }),
     environmentValues: exactEnvironmentValues(config.environmentValues),
+    ...(config.readEnvironment === undefined ? {} : { readEnvironment: config.readEnvironment as NonNullable<ProductProcessRuntimeConfig["readEnvironment"]> }),
   });
 };
 export const validateProductProcessRuntimeConfig = exactConfig;
@@ -254,7 +259,8 @@ export class ProductSubprocessRuntime extends LocalSubprocessRuntime {
 
 export class ProductProcessRuntime extends Service {
   static inject = ["productTools", "subprocess", "tools"];
-  private readonly config: ProductProcessRuntimeConfig;
+  private config: ProductProcessRuntimeConfig;
+  private admitted: Readonly<{ revision: string; digest: string; authority: ResolvedProductProcessAuthority }> | undefined;
   private readonly io: ProductProcessIoAuthority;
   private readonly runtimeContext: Context;
   private readonly calls = new AsyncLocalStorage<Readonly<{ product: ProductToolContext; cwd: string; shell: boolean }>>();
@@ -294,11 +300,10 @@ export class ProductProcessRuntime extends Service {
         permissionClass: CANONICAL_TOOL_CONTRACTS[exec.name].permissionClass,
         target: exec.name.startsWith("job_") ? (typeof args.job_id === "string" ? args.job_id : product.agent.id) : cwd,
         ...((exec.name === "bash" || exec.name === "pwsh") ? {
-          display: { command: String(args.command), cwd, ...(typeof args.description === "string" ? { description: args.description } : {}) },
-        } : {}),
+          review: { kind: "command", dialect: exec.name, command: String(args.command), cwd, ...(typeof args.description === "string" ? { description: args.description } : {}) },
+        } : { review: { kind: "generic", action: exec.name, target: typeof args.job_id === "string" ? args.job_id : product.agent.id, arguments: args } }),
       });
       if (workspace !== undefined) {
-        await this.preflight(product);
         await this.io.revalidateWorkspace(workspace, cwd, product.signal);
         await this.resolveExecutable("shell", product);
         ctx.productTools.assertCurrent(product, exec.name);
@@ -342,18 +347,29 @@ export class ProductProcessRuntime extends Service {
     return handle;
   }
 
+  /** Initialize owns admission; standalone trusted compositions may admit on first use. */
+  admitEnvironment(environment: ProductToolExecutionEnvironment): ResolvedProductProcessAuthority {
+    if (this.admitted !== undefined) {
+      if (environment.revision !== this.admitted.revision || environment.digest !== this.admitted.digest) {
+        throw new ProductToolError("permission_denied", "execution environment changed after admission");
+      }
+      return this.admitted.authority;
+    }
+    const values = this.config.readEnvironment?.(environment.environment.allowedKeys) ?? this.config.environmentValues;
+    const config = Object.freeze({ ...this.config, environmentValues: exactEnvironmentValues(values) });
+    const authority = resolveAdmittedProcessAuthority(environment, config);
+    this.config = config;
+    this.admitted = Object.freeze({ revision: environment.revision, digest: environment.digest, authority });
+    return authority;
+  }
   authorityFor(product: ProductToolContext): ResolvedProductProcessAuthority {
-    return resolveProductProcessAuthority(product.environment, this.config);
+    return this.admitEnvironment(product.environment);
   }
   snapshot(): Readonly<{ liveProcesses: number }> { return { liveProcesses: this.live.size }; }
   resolveRetainedOutput(product: ProductToolContext, path: string): Promise<FsTarget> {
     const target = this.outputs.get(product.agent)?.get(path);
     if (target === undefined) throw new ProductToolError("path_denied", "Shell output is not owned by this Agent");
     return Promise.resolve(target);
-  }
-  async preflight(product: ProductToolContext): Promise<void> {
-    this.authorityFor(product);
-    await Promise.all([this.resolveExecutable("shell", product), this.resolveExecutable("bundledNode", product), this.resolveExecutable("ripgrep", product)]);
   }
   private async resolveExecutable(key: keyof ExecutableSet, product: ProductToolContext): Promise<string> {
     const path = this.config.executablePaths[key];
@@ -490,8 +506,14 @@ export class ProductProcessRuntime extends Service {
 export const resolveProductProcessAuthority = (
   environment: ProductToolExecutionEnvironment,
   value: ProductProcessRuntimeConfig,
+): ResolvedProductProcessAuthority => resolveAdmittedProcessAuthority(environment, exactConfig(value));
+
+const resolveAdmittedProcessAuthority = (
+  environment: ProductToolExecutionEnvironment,
+  config: ProductProcessRuntimeConfig,
 ): ResolvedProductProcessAuthority => {
-  const config = exactConfig(value);
+  const missing = environment.environment.allowedKeys.filter((key) => !Object.hasOwn(config.environmentValues, key));
+  if (missing.length > 0) throw new TypeError(`execution environment is missing declared keys: ${missing.join(", ")}`);
   const executables = environment.executables;
   const pathPolicy: unknown = executables.pathPolicy;
   const secretValues: unknown = environment.environment.secretValues;
@@ -503,15 +525,15 @@ export const resolveProductProcessAuthority = (
     || secretValues !== "reverse-port-only"
     || environment.environment.inheritedKeys.length !== 0
     || killTreeOnAbort !== true
-    || JSON.stringify(config.allowedCommandRefs) !== JSON.stringify(executables.allowedCommandRefs)
+    || JSON.stringify([...config.allowedCommandRefs].sort()) !== JSON.stringify([...executables.allowedCommandRefs].sort())
     || JSON.stringify(Object.keys(config.environmentValues).sort()) !== JSON.stringify([...environment.environment.allowedKeys].sort())) {
-    throw new ProductToolError("permission_denied", "process execution environment is not sealed");
+    throw new TypeError("process execution environment differs from the configured executable references or environment policy");
   }
   return Object.freeze({
     backgroundRetention: environment.process.backgroundRetention,
     shellPath: config.executablePaths.shell,
     cwd: environment.workspace.canonicalRoot,
-    env: mergeExplicitEnvironment(config.environmentValues),
+    env: Object.freeze(mergeExplicitEnvironment(config.environmentValues)),
     maxChildren: environment.process.maxChildren,
     ripgrepPath: config.executablePaths.ripgrep,
   });

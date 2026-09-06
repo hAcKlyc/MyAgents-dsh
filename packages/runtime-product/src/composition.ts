@@ -160,7 +160,7 @@ import {
   type ProductNetworkPolicy,
   type ProductSafeHttpOpenResponse,
 } from "@myagents-dsh/tools-web";
-import { ProductSessionService, type PrimarySessionState } from "./primary-session.js";
+import { ProductSessionService, validateProductExecutionEnvironment, type PrimarySessionState } from "./primary-session.js";
 import {
   HOST_DEEPSEEK_PROVIDER_ROUTE,
   HostDeepSeekLlmAdapter,
@@ -414,6 +414,7 @@ export interface DshRootCompositionAuthority {
   readonly dispose: () => Promise<void>;
   readonly bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   readonly bindHostCapabilities: (capabilities: InitializeParams["hostCapabilities"]) => void;
+  readonly bindExecutionEnvironment: (environment: unknown) => void;
   readonly hostPorts: HostPortTransportLifecycle;
   readonly installPersistence: (runtimeHome: string) => Promise<void>;
   readonly commandInvoke: (
@@ -547,6 +548,7 @@ const toWirePermissionRuleMutation = (
 type NativeRpcLifecycleAuthorityState = {
   readonly bindAttachmentLeaseLimit: (maxAttachmentLeases: number) => void;
   readonly bindHostCapabilities: (capabilities: InitializeParams["hostCapabilities"]) => void;
+  readonly bindExecutionEnvironment: (environment: unknown) => void;
   readonly context: Context;
   readonly dispose: () => Promise<void>;
   readonly hostPorts: HostPortTransportLifecycle;
@@ -740,6 +742,15 @@ export const claimNativeRpcLifecycleAuthority = (
       state.hostAttachments?.bindLeaseLimit(maxAttachmentLeases),
     bindHostCapabilities: (capabilities) =>
       state.hostModelAuthority?.bindHostCapabilities(capabilities),
+    bindExecutionEnvironment: (value) => {
+      const environment = validateProductExecutionEnvironment(value);
+      try {
+        state.context.get("productProcesses")?.admitEnvironment(environment);
+      } catch (cause) {
+        throw new ProtocolError("protocol_environment_mismatch", cause instanceof Error ? cause.message : "process environment admission failed");
+      }
+      state.context.productSession.bindExecutionEnvironment(environment);
+    },
     consumed: false,
     context: state.context,
     commandInvoke: (params, control) => state.context.productCommands.invoke(params, control),
@@ -954,6 +965,7 @@ export const consumeNativeRpcLifecycleAuthority = (
     artifactVersion: snapshot.artifactVersion,
     bindAttachmentLeaseLimit: state.bindAttachmentLeaseLimit,
     bindHostCapabilities: state.bindHostCapabilities,
+    bindExecutionEnvironment: state.bindExecutionEnvironment,
     commandInvoke: state.commandInvoke,
     configApply: state.configApply,
     planApply: state.planApply,
@@ -1003,7 +1015,29 @@ export const createHostBackedInteractionProvider = (
     hostPorts: root.hostPorts,
     revision: normalized.revision as string,
     deadlineMs: normalized.deadlineMs as number,
-    resolveAuthority: (agent, signal, expectedPermissionRevision, deadlineMs) => {
+    preparePermissionReview: async (request, review) => {
+      const bytes = Buffer.from(JSON.stringify(review), "utf8");
+      const inlineBudget = Math.min(65_536, Math.max(0, root.hostPorts.maxFrameBytes - 4_096));
+      if (bytes.byteLength <= inlineBudget) return { review };
+      const attachments = authority.hostAttachments;
+      if (attachments === undefined) throw new ProtocolError("interaction_unavailable", "permission details attachment service is unavailable");
+      const environment = root.productSession.requireExecutionEnvironment();
+      const runtimeSessionId = root.productSession.snapshot().runtimeSessionId;
+      if (runtimeSessionId === undefined) throw new ProtocolError("primary_session_not_ready", "permission details require an admitted Session");
+      const scope = attachments.createRequestScope({
+        assertCurrent: () => {
+          request.signal.throwIfAborted();
+          if (root.productSession.snapshot().runtimeSessionId !== runtimeSessionId) throw new ProtocolError("interaction_authority_stale", "permission Session was replaced");
+        },
+        deadlineMs: normalized.deadlineMs as number,
+        runtimeSessionId,
+        signal: request.signal,
+        stagingRoot: environment.attachmentStagingRoot,
+      });
+      const ref = await attachments.publish(scope, { bytes, mediaType: "application/json", name: "permission-details.json" });
+      return { reviewRef: { attachmentId: ref.attachmentId, mimeType: "application/json", sizeBytes: ref.sizeBytes, sha256: ref.sha256 } };
+    },
+    resolveAuthority: (agent, signal, expectedPermissionRevision, deadlineMs, correlation) => {
       const resolveOperation = () => agent === root.productSession.requireAgent()
         ? root.sdkOperations.resolveActiveToolOperation(agent)
         : root.productWork.resolveActiveChildToolOperation(agent);
@@ -1058,6 +1092,7 @@ export const createHostBackedInteractionProvider = (
         turnId: initial.operation.productTurnId,
         dshTurn: initial.dshTurn,
         expectedConfigRevision: initial.operation.birth.configRevision,
+        ...correlation,
       }));
       return Object.freeze({
         authority: requestAuthority,
@@ -2661,6 +2696,7 @@ export const composeDshRootServices = async (
           permissionClass,
           target: `${componentKind}:${identity.digest}:${componentId}:${target}`,
           tool: toolName,
+          review: { kind: "generic" as const, action: toolName, target, arguments: execution.arguments },
         }));
         root.productPlan.assertExternalTool(context, toolName);
       },

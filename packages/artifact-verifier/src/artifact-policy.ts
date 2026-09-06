@@ -179,6 +179,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     allowedFiles: [
       "generated/canonical-tools.generated.ts",
       "generated/host-client.generated.ts",
+      "generated/public-contract.generated.ts",
       "generated/protocol-fixtures.json",
       "generated/protocol-meta.json",
       "generated/protocol.schema.json",

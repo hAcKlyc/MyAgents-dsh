@@ -128,19 +128,12 @@ const resolveExecutable = async (name: string, target: PlatformTarget): Promise<
 const sha256File = async (path: string): Promise<string> =>
   createHash("sha256").update(await readFile(path)).digest("hex");
 
-const PROCESS_ENVIRONMENT_KEYS = Object.freeze([
-  "PATH", "HOME", "USER", "LOGNAME", "SHELL",
-  "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USERNAME",
-  "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TMPDIR", "TEMP", "TMP",
-  "SYSTEMROOT", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT",
-]);
-
-const processEnvironmentValues = (): Readonly<Record<string, string>> => Object.freeze(
-  Object.fromEntries(PROCESS_ENVIRONMENT_KEYS.flatMap((key) => {
+/** Host owns the child environment policy. Read only its admitted declarations, never ambient extras. */
+const readProcessEnvironment = (keys: readonly string[]): Readonly<Record<string, string>> =>
+  Object.freeze(Object.fromEntries(keys.flatMap((key) => {
     const value = process.env[key];
-    return typeof value === "string" && value.length > 0 ? [[key, value]] : [];
-  })),
-);
+    return value === undefined ? [] : [[key, value]];
+  })));
 
 const processAuthority = async (target: PlatformTarget) => {
   const platform = selectPlatformAdapter(target);
@@ -157,7 +150,8 @@ const processAuthority = async (target: PlatformTarget) => {
   return Object.freeze({
     shellDialect: platform.shell.dialect,
     allowedCommandRefs: Object.freeze(["runtime-shell", "bundled-node", "bundled-ripgrep"]),
-    environmentValues: processEnvironmentValues(),
+    environmentValues: Object.freeze({}),
+    readEnvironment: readProcessEnvironment,
     executablePaths: Object.freeze({ shell, bundledNode, ripgrep }),
     executableRefs: Object.freeze({ shell: "runtime-shell", bundledNode: "bundled-node", ripgrep: "bundled-ripgrep" }),
     executableSha256: Object.freeze({ shell: shellSha256, bundledNode: nodeSha256, ripgrep: ripgrepSha256 }),

@@ -1252,6 +1252,7 @@ export class ProductSkillService extends Service {
             permissionClass: contract.permissionClass,
             target: `skill:${input.skill}`,
             tool: "Skill",
+            review: { kind: "generic", action: "Skill", target: input.skill, arguments: input },
           });
           return await runWithProductToolExecutionDeadline(
             product,

@@ -11,6 +11,7 @@ import {
   type CanonicalToolName,
   type EffectiveToolCatalogSnapshot,
 } from "@myagents-dsh/tool-contracts";
+import type { PermissionOperation } from "@myagents-dsh/protocol";
 import { types as utilTypes } from "node:util";
 import { isDeepStrictEqual } from "node:util";
 
@@ -127,10 +128,11 @@ export interface ProductToolPermissionRequest {
   readonly target: string;
   readonly tool: CanonicalToolName;
   /** Ephemeral operation details for Host review; never part of permission matching. */
-  readonly display?: Readonly<{ command: string; cwd: string; description?: string }>;
+  readonly review?: PermissionOperation;
 }
 
 export interface ProductExternalToolPermissionRequest {
+  readonly review?: PermissionOperation;
   readonly permissionClass: "host_tool.call" | "mcp.call";
   readonly target: string;
   readonly tool: string;
@@ -187,16 +189,8 @@ export class ProductToolError extends HarnessError {
 
 type JsonObject = Record<string, unknown>;
 
-const exactNativePromise = <T>(value: unknown, description: string): Promise<T> => {
-  if (value !== null && typeof value === "object" && utilTypes.isProxy(value)) {
-    throw new TypeError(`${description} must not return a Proxy thenable`);
-  }
-  if (!utilTypes.isPromise(value) || Object.getPrototypeOf(value) !== Promise.prototype
-    || Reflect.ownKeys(value).length !== 0) {
-    throw new TypeError(`${description} must return an exact native Promise`);
-  }
-  return value as Promise<T>;
-};
+/** Trusted service callbacks follow ordinary Promise/thenable semantics. */
+
 
 /**
  * Apply a cooperative executor deadline after any human authorization has
@@ -208,13 +202,7 @@ export const runWithProductToolExecutionDeadline = async <T>(
   timeoutMs: number | undefined,
   execute: (execution: ProductToolContext) => T | Promise<T>,
 ): Promise<T> => {
-  if (typeof execute !== "function" || utilTypes.isProxy(execute)) {
-    throw new TypeError("tool executor must be a non-proxy function");
-  }
-  const settle = async (value: T | Promise<T>): Promise<T> => {
-    if (!utilTypes.isPromise(value)) return value;
-    return await exactNativePromise<T>(value, "tool executor");
-  };
+  const settle = (value: T | Promise<T>): Promise<T> => Promise.resolve(value);
   if (timeoutMs === undefined) {
     return await settle(execute(context));
   }
@@ -432,8 +420,16 @@ export class ProductToolRuntime extends Service {
     });
   }
 
+  private catalogSource: unknown;
+  private catalogSnapshot: ReturnType<typeof validateEffectiveToolCatalog> | undefined;
+
   catalog(): ReturnType<typeof validateEffectiveToolCatalog> {
-    return validateEffectiveToolCatalog(this.configValue.catalog());
+    const source = this.configValue.catalog();
+    if (this.catalogSnapshot === undefined || this.catalogSource !== source) {
+      this.catalogSnapshot = validateEffectiveToolCatalog(source);
+      this.catalogSource = source;
+    }
+    return this.catalogSnapshot;
   }
 
   resolve(exec: Readonly<ToolExecution>): ProductToolContext {
@@ -457,7 +453,7 @@ export class ProductToolRuntime extends Service {
       || operation.birth.executionEnvironmentDigest !== environment.digest) {
       throw new ProductToolError("tool_environment_stale", "tool call execution environment differs from operation birth");
     }
-    const catalog = validateEffectiveToolCatalog(this.configValue.catalog());
+    const catalog = this.catalog();
     if (operation.birth.toolCatalogRevision !== catalog.revision
       || operation.birth.toolCatalogDigest !== catalog.digest
       || !catalog.effectiveTools.includes(exec.name as CanonicalToolName)
@@ -515,7 +511,7 @@ export class ProductToolRuntime extends Service {
       || operation.birth.executionEnvironmentDigest !== environment.digest) {
       throw new ProductToolError("tool_environment_stale", "tool call execution environment differs from operation birth");
     }
-    const catalog = validateEffectiveToolCatalog(this.configValue.catalog());
+    const catalog = this.catalog();
     if (operation.birth.toolCatalogRevision !== catalog.revision
       || operation.birth.toolCatalogDigest !== catalog.digest) {
       throw new ProductToolError("tool_catalog_stale", "base tool catalog differs from operation birth");
@@ -541,10 +537,7 @@ export class ProductToolRuntime extends Service {
     request: ProductToolPermissionRequest,
   ): Promise<void> {
     context.signal.throwIfAborted();
-    const decision: unknown = await exactNativePromise(
-      this.ctx.productPermission.authorize(context, Object.freeze({ ...request })),
-      "permission authority",
-    );
+    const decision: unknown = await Promise.resolve(this.ctx.productPermission.authorize(context, Object.freeze({ ...request })));
     context.signal.throwIfAborted();
     if (decision !== "allow") {
       throw new ProductToolError("permission_denied", `${request.tool} permission was denied`);
@@ -557,10 +550,7 @@ export class ProductToolRuntime extends Service {
     request: ProductExternalToolPermissionRequest,
   ): Promise<void> {
     context.signal.throwIfAborted();
-    const decision: unknown = await exactNativePromise(
-      this.ctx.productPermission.authorizeExternal(context, Object.freeze({ ...request })),
-      "external permission authority",
-    );
+    const decision: unknown = await Promise.resolve(this.ctx.productPermission.authorizeExternal(context, Object.freeze({ ...request })));
     context.signal.throwIfAborted();
     if (decision !== "allow") {
       throw new ProductToolError("permission_denied", `${request.tool} permission was denied`);
@@ -585,13 +575,13 @@ export class ProductToolRuntime extends Service {
       throw new ProductToolError("tool_operation_denied", "external tool operation changed during permission review");
     }
     const environment = this.configValue.environment();
-    if (!isDeepStrictEqual(environment, context.environment)
+    if (context.environment.revision !== environment.revision || context.environment.digest !== environment.digest
       || operation.birth.executionEnvironmentRevision !== environment.revision
       || operation.birth.executionEnvironmentDigest !== environment.digest) {
       throw new ProductToolError("tool_environment_stale", "tool execution environment changed during permission review");
     }
-    const catalog = validateEffectiveToolCatalog(this.configValue.catalog());
-    if (!isDeepStrictEqual(catalog, context.catalog)
+    const catalog = this.catalog();
+    if (context.catalog.revision !== catalog.revision || context.catalog.digest !== catalog.digest
       || operation.birth.toolCatalogRevision !== catalog.revision
       || operation.birth.toolCatalogDigest !== catalog.digest) {
       throw new ProductToolError("tool_catalog_stale", "base tool catalog changed during permission review");
@@ -614,13 +604,13 @@ export class ProductToolRuntime extends Service {
       throw new ProductToolError("tool_operation_denied", "tool operation authority changed during permission review");
     }
     const environment = this.configValue.environment();
-    if (!isDeepStrictEqual(environment, context.environment)
+    if (context.environment.revision !== environment.revision || context.environment.digest !== environment.digest
       || operation.birth.executionEnvironmentRevision !== environment.revision
       || operation.birth.executionEnvironmentDigest !== environment.digest) {
       throw new ProductToolError("tool_environment_stale", "tool execution environment changed during permission review");
     }
-    const catalog = validateEffectiveToolCatalog(this.configValue.catalog());
-    if (!isDeepStrictEqual(catalog, context.catalog)
+    const catalog = this.catalog();
+    if (context.catalog.revision !== catalog.revision || context.catalog.digest !== catalog.digest
       || operation.birth.toolCatalogRevision !== catalog.revision
       || operation.birth.toolCatalogDigest !== catalog.digest
       || !catalog.effectiveTools.includes(tool)) {
@@ -641,10 +631,7 @@ export class ProductToolRuntime extends Service {
     mode: "read" | "write",
   ): Promise<FsTarget | undefined> {
     context.signal.throwIfAborted();
-    const target: unknown = await exactNativePromise(
-      this.configValue.plan.resolveFileTarget(context, tool, path, mode),
-      "plan file-target authority",
-    );
+    const target: unknown = await Promise.resolve(this.configValue.plan.resolveFileTarget(context, tool, path, mode));
     context.signal.throwIfAborted();
     this.assertCurrent(context, tool);
     if (target === undefined) return undefined;
@@ -656,11 +643,11 @@ export class ProductToolRuntime extends Service {
     request: ProductToolCheckpointRequest,
   ): Promise<ProductToolCheckpointHandle> {
     context.signal.throwIfAborted();
-    const pending = exactNativePromise<unknown>(this.configValue.checkpoint.prepare(context, Object.freeze({
+    const pending = Promise.resolve<unknown>(this.configValue.checkpoint.prepare(context, Object.freeze({
       ...request,
       afterBytes: Uint8Array.from(request.afterBytes),
       ...(request.beforeBytes === undefined ? {} : { beforeBytes: Uint8Array.from(request.beforeBytes) }),
-    })), "checkpoint authority");
+    })));
     const candidate: unknown = await pending;
     let cleanup: (() => Promise<void>) | undefined;
     if (candidate !== null && typeof candidate === "object" && !Array.isArray(candidate)
@@ -671,7 +658,7 @@ export class ProductToolRuntime extends Service {
         const abort = abortDescriptor.value as () => unknown;
         cleanup = async () => {
           const outcome: unknown = Reflect.apply(abort, candidate, []);
-          await exactNativePromise(outcome, "checkpoint abort");
+          await Promise.resolve(outcome);
         };
       }
     }
@@ -698,7 +685,7 @@ export class ProductToolRuntime extends Service {
         if (typeof value !== "function") throw new TypeError(`checkpoint ${key} must be a function`);
         return async () => {
           const outcome: unknown = Reflect.apply(value, candidate, []);
-          await exactNativePromise(outcome, `checkpoint ${key}`);
+          await Promise.resolve(outcome);
         };
       };
       const checkpointId = boundedIdentifier(receipt.checkpointId, "checkpoint id");

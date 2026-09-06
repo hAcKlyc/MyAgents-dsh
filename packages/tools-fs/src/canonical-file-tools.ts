@@ -507,6 +507,7 @@ export class CanonicalFileTools extends Service {
           permissionClass: CANONICAL_TOOL_CONTRACTS.Write.permissionClass,
           target: target.displayPath,
           tool: "Write",
+          review: { kind: "file_change", path: target.displayPath, action: current === undefined ? "create" : "write", after: args.content as string },
         });
         return await runWithProductToolExecutionDeadline(
           product,
@@ -631,6 +632,7 @@ export class CanonicalFileTools extends Service {
           permissionClass: CANONICAL_TOOL_CONTRACTS.Edit.permissionClass,
           target: target.displayPath,
           tool: "Edit",
+          review: { kind: "file_change", path: target.displayPath, action: "edit", before: oldString, after: args.new_string as string, replacements: args.replace_all === true ? replacements : 1 },
         });
         return await runWithProductToolExecutionDeadline(
           product,

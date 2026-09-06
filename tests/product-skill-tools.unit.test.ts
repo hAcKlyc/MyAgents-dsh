@@ -252,10 +252,11 @@ describe("static declarative Skill tool", () => {
         "</skill_content>",
       ].join("\n"),
     }]);
-    expect(state.permissions).toEqual([{
+    expect(state.permissions).toMatchObject([{
       permissionClass: "skill.load",
       target: "skill:fixture-audit",
       tool: "Skill",
+      review: { kind: "generic", action: "Skill", target: "fixture-audit" },
     }]);
     expect(state.context.productSkills.catalog()).toEqual(state.catalog);
   });

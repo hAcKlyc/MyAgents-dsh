@@ -34,10 +34,9 @@ Platform implementation and native validation are separate. A support claim come
 
 ## 4. Sealed process environment
 
-The official Runtime resolves and hashes the selected Shell: `bash` from launcher `PATH` on POSIX, or the official `resolvePwshPath()` result on Windows; Node is `process.execPath`, and ripgrep comes from `@vscode/ripgrep`. It snapshots a
-bounded explicit environment from the launcher when present, including `PATH`, `HOME`, user/shell,
-locale and required Windows variables. Canonical process-tool configuration freezes the allowed
-keys and executable references; each such process call revalidates path, file identity and digest.
+The official Runtime resolves and hashes the selected Shell at composition: `bash` from launcher `PATH` on POSIX or official `resolvePwshPath()` on Windows; Node is `process.execPath`, and ripgrep comes from `@vscode/ripgrep`. The Host constructs ordinary child environment values and derives its declaration from that object. During initialize, the trusted process adapter captures only those declared keys once, validates them, and freezes the generation's effective environment. There is no second product-variable allowlist. Missing declared values fail initialization with key names only; they are configuration errors, not permission denials. MyAgents CLI routing variables remain available to the official Shell.
+
+Tools reuse the admitted environment by revision/digest. After permission waits, Shell checks the current operation and workspace, then verifies only the executable it will launch once. Search verifies ripgrep when used. A Shell command does not rehash Node or ripgrep, and array order does not change an executable-reference set. These checks preserve mutable execution boundaries without treating a frozen configuration as new input on every call.
 
 Official `LocalBashExecutor`/`PwshLocalExecutor` own command argv, encoding, deadlines, collection and cancellation. The selected official `tool-bash` or `tool-pwsh` definition is mounted unchanged. Only one Shell is visible on a platform. The product guard checks permission, Plan/origin/catalog and operation revision, captures the requested workspace before permission, and revalidates its identity and executable before admission. A thin subprocess policy supplies the verified executable, governed cwd and sealed environment to the stock Provider; it does not implement another executor.
 

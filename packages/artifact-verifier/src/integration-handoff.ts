@@ -312,10 +312,10 @@ const assertPlatformEvidenceInventory = (
   }
 };
 
-export const createBatch3IntegrationHandoffManifest = (
+const inspectIntegrationHandoff = (
   root: string,
   platforms: readonly IntegrationPlatformEvidence[],
-): Batch3IntegrationHandoffManifestV1 => {
+): Readonly<{ manifest: Batch3IntegrationHandoffManifestV1; runtime: VerifiedRuntimeArtifact }> => {
   const files = scan(root);
   const runtime = verifyInstalledRuntimeArtifact(resolve(root, "runtime-artifact"));
   if (fileDigest(files, "runtime-artifact/runtime-artifact-v1.json") !== runtime.manifestSha256) {
@@ -333,7 +333,7 @@ export const createBatch3IntegrationHandoffManifest = (
     generatedClientSha256,
     platforms,
   );
-  return Object.freeze({
+  return Object.freeze({ runtime, manifest: Object.freeze({
     schemaVersion: 1 as const,
     kind: "myagents-dsh-batch-3-integration-handoff" as const,
     runtime: Object.freeze({ path: "runtime-artifact" as const, manifestSha256: runtime.manifestSha256 }),
@@ -346,17 +346,22 @@ export const createBatch3IntegrationHandoffManifest = (
       evidenceSha256: Object.freeze([...item.evidenceSha256].sort(compare)),
     })).sort((left, right) => compare(left.target, right.target))),
     files,
-  });
+  }) });
 };
+
+export const createBatch3IntegrationHandoffManifest = (
+  root: string,
+  platforms: readonly IntegrationPlatformEvidence[],
+): Batch3IntegrationHandoffManifestV1 => inspectIntegrationHandoff(root, platforms).manifest;
 
 export const serializeBatch3IntegrationHandoffManifest = (
   value: Batch3IntegrationHandoffManifestV1,
 ): string => `${JSON.stringify(value, null, 2)}\n`;
 
-export const verifyBatch3IntegrationHandoff = (
+export const verifyBatch3IntegrationHandoffReport = (
   root: string,
   expectedManifestSha256?: string,
-): Batch3IntegrationHandoffManifestV1 => {
+): Readonly<{ manifest: Batch3IntegrationHandoffManifestV1; runtime: VerifiedRuntimeArtifact }> => {
   const manifestBytes = readFileSync(resolve(root, BATCH_3_INTEGRATION_HANDOFF_MANIFEST_FILENAME));
   const observedManifestSha256 = sha256(manifestBytes);
   if (expectedManifestSha256 !== undefined
@@ -364,9 +369,13 @@ export const verifyBatch3IntegrationHandoff = (
     throw new TypeError("integration handoff manifest differs from its expected digest");
   }
   const parsed = JSON.parse(manifestBytes.toString("utf8")) as Batch3IntegrationHandoffManifestV1;
-  const expected = createBatch3IntegrationHandoffManifest(root, parsed.platforms);
+  const verification = inspectIntegrationHandoff(root, parsed.platforms);
+  const expected = verification.manifest;
   if (JSON.stringify(parsed) !== JSON.stringify(expected)) {
     throw new TypeError("integration handoff differs from its exact content inventory");
   }
-  return expected;
+  return verification;
 };
+
+export const verifyBatch3IntegrationHandoff = (root: string, expectedManifestSha256?: string): Batch3IntegrationHandoffManifestV1 =>
+  verifyBatch3IntegrationHandoffReport(root, expectedManifestSha256).manifest;

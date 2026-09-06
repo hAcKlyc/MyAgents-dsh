@@ -23,16 +23,18 @@ describe("Host interaction bridge", () => {
     }));
     const rejectSettlement = vi.fn();
     const request: ProductPermissionInteractionRequest = Object.freeze({
-      agent: Object.freeze({}) as Agent,
+      agent: Object.freeze({ id: "agent-review" }) as Agent,
       interactionId: "interaction-immediate-response",
       clientOperationId: "operation-immediate-response",
       productTurnId: "turn-immediate-response",
       dshTurn: 1,
       callId: "call-immediate-response",
+      rootCallId: "call-immediate-response",
+      ruleTtlMs: 86_400_000,
       tool: "bash",
       permissionClass: "process.execute",
       target: "workspace-command",
-      display: { command: `printf '%s' '${"example".repeat(160)}'`, cwd: "/workspace", description: "Inspect" },
+      review: { kind: "command" as const, dialect: "bash" as const, command: `printf '%s' '${"example".repeat(160)}'`, cwd: "/workspace", description: "Inspect" },
       origin: "root",
       expectedPermissionRevision: "permission-v1",
       interactionScenarioRevision: "scenario-v1",
@@ -61,8 +63,8 @@ describe("Host interaction bridge", () => {
     expect(requestInteraction).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       schema: {
         origin: "root", permissionClass: "process.execute", target: "workspace-command", tool: "bash",
-        display: request.display,
       },
+      review: { operation: request.review, actor: { agentId: "agent-review", origin: "root" }, scope: { owner: "session_tree", tool: "bash", permissionClass: "process.execute", target: "workspace-command", lifetimeMs: 86_400_000 } },
     }));
     const response = bridge.controller.respond({
       interactionId: request.interactionId,
@@ -85,4 +87,76 @@ describe("Host interaction bridge", () => {
     expect(rejectSettlement).not.toHaveBeenCalled();
     expect(notifyInteractionCancelled).not.toHaveBeenCalled();
   });
+  it("settles concurrent retries once and preserves failed receipts", async () => {
+    let acknowledge: (result: MethodResult<"host/interaction/request">) => void = () => undefined;
+    const registration = new Promise<MethodResult<"host/interaction/request">>((resolve) => {
+      acknowledge = resolve;
+    });
+    const requestInteraction = vi.fn(() => registration);
+    const notifyInteractionCancelled = vi.fn();
+    const effect = Promise.withResolvers<{ effectivePolicyRevision: string }>();
+    const resolveSettlement = vi.fn(() => effect.promise);
+    const rejectSettlement = vi.fn();
+    const request: ProductPermissionInteractionRequest = Object.freeze({
+      agent: Object.freeze({ id: "agent-review" }) as Agent,
+      interactionId: "interaction-immediate-response",
+      clientOperationId: "operation-immediate-response",
+      productTurnId: "turn-immediate-response",
+      dshTurn: 1,
+      callId: "call-immediate-response",
+      rootCallId: "call-immediate-response",
+      ruleTtlMs: 86_400_000,
+      tool: "bash",
+      permissionClass: "process.execute",
+      target: "workspace-command",
+      review: { kind: "command" as const, dialect: "bash" as const, command: `printf '%s' '${"example".repeat(160)}'`, cwd: "/workspace", description: "Inspect" },
+      origin: "root",
+      expectedPermissionRevision: "permission-v1",
+      interactionScenarioRevision: "scenario-v1",
+      signal: new AbortController().signal,
+    });
+    const bridge = createProductHostInteractionBridge({
+      controller: { notifyInteractionCancelled },
+      hostPorts: { requestInteraction } as unknown as HostPortService,
+      resolveAuthority: () => ({
+        authority: Object.freeze({}) as HostPortRequestAuthority,
+        assertCurrent: vi.fn(),
+        clientOperationId: request.clientOperationId,
+        dshTurn: request.dshTurn,
+        expectedConfigRevision: "config-v1",
+        expectedPermissionRevision: request.expectedPermissionRevision,
+        productTurnId: request.productTurnId,
+      }),
+      revision: "scenario-v1",
+      deadlineMs: 30_000,
+    });
+
+    bridge.provider.decidePermission(request, {
+      resolve: resolveSettlement,
+      reject: rejectSettlement,
+    });
+    expect(requestInteraction).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      schema: {
+        origin: "root", permissionClass: "process.execute", target: "workspace-command", tool: "bash",
+      },
+      review: { operation: request.review, actor: { agentId: "agent-review", origin: "root" }, scope: { owner: "session_tree", tool: "bash", permissionClass: "process.execute", target: "workspace-command", lifetimeMs: 86_400_000 } },
+    }));
+    const response = bridge.controller.respond({
+      interactionId: request.interactionId,
+      expectedRevision: request.expectedPermissionRevision,
+      decision: "allow_once",
+    });
+    await Promise.resolve();
+    expect(resolveSettlement).not.toHaveBeenCalled();
+
+    acknowledge({ registered: true });
+    await vi.waitFor(() => expect(resolveSettlement).toHaveBeenCalledTimes(1));
+    const retry = bridge.controller.respond({ interactionId: request.interactionId, expectedRevision: request.expectedPermissionRevision, decision: "allow_once" });
+    effect.reject(new Error("Synthetic persistence failure"));
+    await expect(response).resolves.toEqual({ state: "rejected", code: "interaction_effect_failed" });
+    await expect(retry).resolves.toEqual({ state: "rejected", code: "interaction_effect_failed" });
+    await expect(bridge.controller.respond({ interactionId: request.interactionId, expectedRevision: request.expectedPermissionRevision, decision: "allow_once" })).resolves.toEqual({ state: "rejected", code: "interaction_effect_failed" });
+    expect(resolveSettlement).toHaveBeenCalledTimes(1);
+  });
+
 });

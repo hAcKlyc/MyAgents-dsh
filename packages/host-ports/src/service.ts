@@ -469,6 +469,9 @@ export class HostPortService extends Service {
     );
   }
 
+  /** The existing peer owns the negotiated transport budget. */
+  get maxFrameBytes(): number { return originalHostPortService(this).#peerValue?.maxFrameBytes ?? 0; }
+
   requestInteraction(
     authority: HostPortRequestAuthority,
     request: InteractionRequest,

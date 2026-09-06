@@ -20,7 +20,7 @@ This file is the canonical documentation-governance guide referenced by `AGENTS.
 | Product scope, decisions and acceptance | The corresponding `prd_*.md` under [prd/](./prd/) |
 | Accepted implementation design and rejected alternatives | The paired `tech_rfc_*.md` under [prd/](./prd/) |
 | How an implemented subsystem works now | [tech_docs/](./tech_docs/) |
-| Exact native wire shapes | `packages/protocol/src/contract-source.ts` and generated projections |
+| Exact native wire shapes and independently consumable Host types | `packages/protocol/src/contract-source.ts` and deterministic schema/client/public-contract projections; the official handoff builder owns delivery |
 | Protocol intent, lifecycle and ownership | [tech_docs/runtime/protocol.md](./tech_docs/runtime/protocol.md) |
 | Durable architectural decisions | [adr/](./adr/) |
 | Canonical generated/acceptance contracts | [contracts/](./contracts/) |
@@ -54,3 +54,5 @@ Versioned PRD filenames use the target program milestone, while `batch` and `wor
 - Preserve generated contracts, DSH seam records, and migration inventories in their existing machine-owned directories and change them only through their owning workflow.
 
 Official Shell/Jobs ownership is maintained in [Platform and local execution](./tech_docs/boundaries/platform-and-local-execution.md), under [UPG-W10](./prd/prd_0.3_myagents_dsh_0_1_2_upgrade.md#7-工作包与内部台账). `packages/tool-contracts/generated/official-shell-tools-v1.json` is generated directly from the pinned official plugins; it is an input snapshot to the canonical catalog generator, never a hand-maintained competing tool definition.
+
+UPG-W11 freezes Runtime source acceptance in its upgrade PRD. The linked actual Host module guide owns the subsequent immutable-delivery/client-acceptance subledger; the Host integration lock and trusted external release record own exact artifact identities. This separates source acceptance from post-freeze release receipts without relabeling evidence after a documentation-only HEAD change.
