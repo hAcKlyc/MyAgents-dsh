@@ -1554,11 +1554,18 @@ export const installCanonicalToolPlane = async (
             // Official delegation seeds "never". Product-managed children use
             // the same permission owner and Host interaction port as the root.
             if (root.approval.overrideOf(child.session) !== "ask") setApprovalPolicy(child.session, "ask");
-            child.ctx.systemPrompt.context({
-              name: "subagent:delegation",
-              order: child.ctx.systemPrompt.getContextOrder("SUBAGENT_DELEGATION"),
-              interpolate: false,
-              text: "You are a delegated subagent in the current Session tree. Use your available tools normally. Product permissions and shared exact grants apply; operations needing approval are sent to the Host. Your role, workspace and delegation limits still apply.",
+            child.ctx.on("system-prompt/assemble", async (_assembly, _context, next) => {
+              const assembled = await next();
+              return {
+                ...assembled,
+                contexts: assembled.contexts.map((context) => context.name === "subagent:delegation"
+                  ? {
+                      ...context,
+                      interpolate: false,
+                      text: "You are a delegated subagent in the current Session tree. Use your available tools normally. Product permissions and shared exact grants apply; operations needing approval are sent to the Host. Your role, workspace and delegation limits still apply.",
+                    }
+                  : context),
+              };
             });
             return cancel;
           } catch (error) {

@@ -1908,6 +1908,7 @@ try {
   const hostModelTerminal = hostModelComposition.context.sdkOperations
     .lookup("artifact-host-model-operation")?.terminal;
   assert.equal(hostModelTerminal?.kind, "succeeded");
+  assert.deepEqual({ requests: hostModelFetchSequence }, { requests: 4 }, "root must finish child and MCP execution before utility calls");
   const utilityBeforeConfig = await hostModelClient.utilityRun({
     clientOperationId: "artifact-host-model-utility-v1",
     prompt: "Return one concise utility result.",
@@ -1915,7 +1916,7 @@ try {
     modelProfileRevision: hostModelProfile.revision,
     maxTokens: 32,
   });
-  assert.equal(utilityBeforeConfig.state, "succeeded");
+  assert.equal(utilityBeforeConfig.state, "succeeded", JSON.stringify(utilityBeforeConfig));
   assert.equal(utilityBeforeConfig.text, "root credential and MCP route verified");
   const nextHostModelProfile = Object.freeze({
     ...hostModelProfile,
