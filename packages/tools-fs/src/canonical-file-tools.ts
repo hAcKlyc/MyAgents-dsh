@@ -46,7 +46,7 @@ export interface CanonicalFileToolsConfig {
     }>>;
   }>;
   readonly retainedOutput?: Readonly<{
-    resolve(context: ProductToolContext, path: string): Promise<FsTarget>;
+    resolve(context: ProductToolContext, path: string): Promise<FsTarget | undefined>;
   }>;
 }
 
@@ -376,6 +376,10 @@ export class CanonicalFileTools extends Service {
         product,
         CANONICAL_TOOL_CONTRACTS.Read.timeoutMs,
         async (product) => {
+      const refreshed = await this.#authorizedTarget(ctx, product, "Read", path, "read");
+      if (String(refreshed.target.targetKey) !== String(target.targetKey)) {
+        throw new ProductToolError("path_denied", "Read target changed while awaiting authorization; retry Read on the intended path");
+      }
       const info = await this.#regularFile(ctx, target, product.signal);
       const extension = extname(target.displayPath).toLowerCase();
       const binary = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf"].includes(extension);
@@ -479,7 +483,8 @@ export class CanonicalFileTools extends Service {
   #writeDefinition(ctx: Context): ToolDefinition {
     return this.#definition("Write", renderMutation, async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
-      const authority = await this.#authorizedTarget(ctx, product, "Write", args.file_path as string, "write");
+      const path = args.file_path as string;
+      const authority = await this.#authorizedTarget(ctx, product, "Write", path, "write");
       const { target } = authority;
       let release = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
       try {
@@ -533,7 +538,7 @@ export class CanonicalFileTools extends Service {
         let published = false;
         const settlement: CheckpointSettlement = {};
         try {
-          const refreshed = await this.#authorizedTarget(ctx, product, "Write", target.displayPath, "write");
+          const refreshed = await this.#authorizedTarget(ctx, product, "Write", path, "write");
           if (String(refreshed.target.targetKey) !== String(target.targetKey)
             || refreshed.checkpointEligible !== authority.checkpointEligible) {
             await settleCheckpoint(checkpoint, settlement, "conflict");
@@ -594,14 +599,14 @@ export class CanonicalFileTools extends Service {
     return this.#definition("Edit", renderMutation, async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
       const path = args.file_path as string;
-      if (extname(path).toLowerCase() === ".ipynb") {
-        throw new ProductToolError("unsupported_format", "Edit does not mutate notebook structure");
-      }
       const authority = await this.#authorizedTarget(ctx, product, "Edit", path, "write");
       const { target } = authority;
+      if (extname(target.displayPath).toLowerCase() === ".ipynb") {
+        throw new ProductToolError("unsupported_format", "Edit does not mutate notebook structure");
+      }
       let release = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
       try {
-        const info = await this.#regularFile(ctx, target, product.signal);
+        await this.#regularFile(ctx, target, product.signal);
         const beforeBytes = await ctx.fs.readBytes(target, product.signal, 20 * 1_024 * 1_024);
         const before = Buffer.from(beforeBytes).toString("utf8");
         if (!Buffer.from(before, "utf8").equals(Buffer.from(beforeBytes))) {
@@ -611,21 +616,10 @@ export class CanonicalFileTools extends Service {
         if (prior?.complete !== true) {
           throw new ProductToolError("read_required", "Read the entire current file before Edit. A partial Read does not qualify; call Read without offset or limit, then retry Edit.");
         }
-        const externalChangesRetained = prior.version !== String(info.version)
-          || prior.sha256 !== sha256(beforeBytes);
         const oldString = args.old_string as string;
-        if (oldString.length === 0) throw new ProductToolError("match_not_found", "old_string must not be empty");
-        const replacements = exactOccurrences(before, oldString);
-        if (replacements === 0) throw new ProductToolError("match_not_found", "old_string was not found exactly");
-        if (args.replace_all !== true && replacements !== 1) {
-          throw new ProductToolError("ambiguous_match", "old_string occurs more than once");
-        }
-        const next = args.replace_all === true
-          ? before.split(oldString).join(args.new_string as string)
-          : before.replace(oldString, args.new_string as string);
-        if (Buffer.byteLength(next, "utf8") > 8 * 1_024 * 1_024) {
-          throw new ProductToolError("mutation_conflict", "Edit result exceeds the mutation bound");
-        }
+        const newString = args.new_string as string;
+        const replaceAll = args.replace_all === true;
+        const { replacements } = this.#editContent(before, oldString, newString, replaceAll);
         release();
         release = () => undefined;
         await ctx.productTools.authorize(product, {
@@ -640,13 +634,31 @@ export class CanonicalFileTools extends Service {
           async (product) => {
         const executionRelease = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
         try {
+        const refreshed = await this.#authorizedTarget(ctx, product, "Edit", path, "write");
+        if (String(refreshed.target.targetKey) !== String(target.targetKey)
+          || refreshed.checkpointEligible !== authority.checkpointEligible) {
+          throw new ProductToolError("mutation_conflict", "Edit target changed; Read the intended file and retry Edit");
+        }
+        const currentInfo = await this.#regularFile(ctx, target, product.signal);
+        const currentBytes = await ctx.fs.readBytes(target, product.signal, 20 * 1_024 * 1_024);
+        const currentText = Buffer.from(currentBytes).toString("utf8");
+        if (!Buffer.from(currentText, "utf8").equals(Buffer.from(currentBytes))) {
+          throw new ProductToolError("unsupported_format", "Edit requires a valid UTF-8 text file");
+        }
+        const currentEdit = this.#editContent(currentText, oldString, newString, replaceAll);
+        if (currentEdit.replacements !== replacements) {
+          throw new ProductToolError("mutation_conflict", "Edit match count changed while awaiting execution; Read the file and retry Edit with the intended replacement range");
+        }
+        const next = currentEdit.next;
+        const externalChangesRetained = prior.version !== String(currentInfo.version)
+          || prior.sha256 !== sha256(currentBytes);
         const afterSha256 = sha256(next);
         const checkpoint = authority.checkpointEligible
           ? await ctx.productTools.prepareCheckpoint(product, {
             afterBytes: Buffer.from(next, "utf8"),
             afterSha256,
-            beforeBytes,
-            beforeSha256: sha256(beforeBytes),
+            beforeBytes: currentBytes,
+            beforeSha256: sha256(currentBytes),
             path: target.displayPath,
             tool: "Edit",
           })
@@ -654,17 +666,9 @@ export class CanonicalFileTools extends Service {
         let published = false;
         const settlement: CheckpointSettlement = {};
         try {
-          const refreshed = await this.#authorizedTarget(ctx, product, "Edit", target.displayPath, "write");
-          if (String(refreshed.target.targetKey) !== String(target.targetKey)
-            || refreshed.checkpointEligible !== authority.checkpointEligible) {
-            await settleCheckpoint(checkpoint, settlement, "conflict");
-            throw new ProductToolError("mutation_conflict", "Edit target identity changed before publication");
-          }
-          const outcome = await ctx.fs.editText(target, {
-            newString: args.new_string as string,
-            oldString,
-            replaceAll: args.replace_all === true,
-          }, { version: info.version }, product.signal);
+          const outcome = await ctx.fs.writeText(target, next, {
+            kind: "replaceIfVersion", version: currentInfo.version,
+          }, product.signal);
           published = true;
           await settleCheckpoint(checkpoint, settlement, "commit");
           ctx.productTools.stageMutation(exec, product, {
@@ -691,6 +695,7 @@ export class CanonicalFileTools extends Service {
           }
           if (error instanceof FsError && error.code === "FS_STALE_VERSION") {
             await settleCheckpoint(checkpoint, settlement, "conflict");
+            throw new ProductToolError("mutation_conflict", "File changed during Edit publication; Read the file and retry Edit", { cause: error });
           } else {
             await settleCheckpoint(checkpoint, settlement, "abort");
           }
@@ -705,6 +710,20 @@ export class CanonicalFileTools extends Service {
         release();
       }
     });
+  }
+
+  #editContent(before: string, oldString: string, newString: string, replaceAll: boolean): Readonly<{ next: string; replacements: number }> {
+    if (oldString.length === 0) throw new ProductToolError("match_not_found", "old_string must not be empty");
+    const replacements = exactOccurrences(before, oldString);
+    if (replacements === 0) throw new ProductToolError("match_not_found", "old_string was not found exactly; Read the current file and retry Edit with the intended text");
+    if (!replaceAll && replacements !== 1) {
+      throw new ProductToolError("ambiguous_match", "old_string occurs more than once; Read the current file and include enough surrounding text to identify one match");
+    }
+    const next = replaceAll ? before.split(oldString).join(newString) : before.replace(oldString, () => newString);
+    if (Buffer.byteLength(next, "utf8") > 8 * 1_024 * 1_024) {
+      throw new ProductToolError("mutation_conflict", "Edit result exceeds the mutation bound");
+    }
+    return { next, replacements };
   }
 
   #globDefinition(ctx: Context): ToolDefinition {
@@ -969,9 +988,9 @@ export class CanonicalFileTools extends Service {
       const truncated = truncateHeadCompleteLines(raw, 50 * 1_024);
       const notices: string[] = [];
       if (entryLimitReached) {
-        notices.push(`${effectiveLimit} entries limit reached. Use limit=${effectiveLimit * 2} for more`);
+        notices.push(`${effectiveLimit} entries limit reached. Increase limit to see more entries, or use a more specific path`);
       }
-      if (truncated.truncated) notices.push("50.0KB limit reached");
+      if (truncated.truncated) notices.push("50.0KB output limit reached. Use a more specific path to reduce the listing");
       const suffix = notices.length === 0 ? "" : `\n\n[${notices.join(". ")}]`;
       return `${truncated.text}${suffix}`;
         },
@@ -994,7 +1013,6 @@ export class CanonicalFileTools extends Service {
         tool === "Grep" ? "Grep path does not exist" : `${tool} root does not exist`,
       );
     }
-    if (pathInfo.type === "symlink") throw new ProductToolError("path_denied", `${tool} rejects symbolic-link roots`);
     const target = await ctx.fs.resolve(input, {
       cwd: product.environment.workspace.canonicalRoot,
       signal: product.signal,
@@ -1079,8 +1097,6 @@ export class CanonicalFileTools extends Service {
     product.signal.throwIfAborted();
     const planTarget = await ctx.productTools.resolvePlanFileTarget(product, tool, path, mode);
     if (planTarget !== undefined) return Object.freeze({ checkpointEligible: false, target: planTarget });
-    const pathInfo = await ctx.fs.lstat(path, undefined, product.signal);
-    if (pathInfo?.type === "symlink") throw new ProductToolError("path_denied", `${tool} rejects symbolic links`);
     let target: FsTarget;
     try {
       target = await ctx.fs.resolve(path, { cwd: product.environment.workspace.canonicalRoot, signal: product.signal });
@@ -1095,9 +1111,6 @@ export class CanonicalFileTools extends Service {
       }
       throw error;
     }
-    if (target.displayPath !== path) {
-      throw new ProductToolError("path_denied", `${tool} requires the exact canonical path without aliases`);
-    }
     const roots = mode === "read"
       ? product.environment.workspace.allowedReadRoots
       : product.environment.workspace.allowedWriteRoots;
@@ -1109,18 +1122,12 @@ export class CanonicalFileTools extends Service {
     }
     if (!contained) {
       if (tool === "Read" && mode === "read") {
-        if (this.#retainedOutput !== undefined) {
-          return Object.freeze({
-            checkpointEligible: false,
-            target: await this.#retainedOutput.resolve(product, path),
-          });
-        }
-        return Object.freeze({
-          checkpointEligible: false,
-          target: await ctx.productProcesses.resolveRetainedOutput(product, path),
-        });
+        const retained = this.#retainedOutput !== undefined
+          ? await this.#retainedOutput.resolve(product, target.displayPath)
+          : await ctx.productProcesses.resolveRetainedOutput(product, target.displayPath);
+        if (retained !== undefined) return Object.freeze({ checkpointEligible: false, target: retained });
       }
-      throw new ProductToolError("path_denied", `${tool} target is outside its operation-frozen roots`);
+      throw new ProductToolError("path_denied", `${tool} target is outside its allowed ${mode} roots: ${target.displayPath}. Use a path inside the configured roots or ask the Host to update the workspace access settings.`);
     }
     // The v1 rollback claim is intentionally root-origin only. Child mutations still
     // use the same governed file tool and permission path, but do not advertise a

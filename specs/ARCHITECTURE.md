@@ -358,6 +358,12 @@ The current public DSH persistence seam is append-only and has no delete, replac
 
 ## 10. Tool and policy architecture
 
+[Filesystem execution](./tech_docs/execution/tool-runtime-and-policy.md#4-state-and-concurrency)
+normalizes caller aliases through the existing Provider and revalidates the original input after
+approval. Concurrent literal Edits use current locked preimages and the same checkpoint/CAS owner.
+[History consumers](./tech_docs/state/sessions-persistence-and-recovery.md) recover stale snapshots
+by discarding all partial pages and retrying the complete read within explicit attempt/page bounds.
+
 Official DSH owns Shell definitions, Bash/PowerShell execution, foreground deadlines, output and background Jobs. MyAgents retains execution authorization and Host projection through public seams. The exact component and lifecycle boundary is maintained in [Platform and local execution](./tech_docs/boundaries/platform-and-local-execution.md#4-sealed-process-environment); `TaskStop` owns Agent handles, and official `job_kill` owns Shell Jobs.
 
 All model-visible tools use DSH `ctx.tools`. A product tool is considered native to this distribution when it registers into `ctx.tools`, even if its exact definition and executor are maintained by MyAgents. Root, foreground-child and background-child calls share this execution plane: WorkRegistry derives immutable child authority from the parent Product operation, while the common tool runtime rechecks visibility, origin, Hooks, permission and delayed execution policy. Child roles can narrow the parent catalog but cannot widen it or create another ToolRuntime. General, Explore, Plan and custom roles retain context in both modes; ProductWork separately owns activation completion, handle closure and epoch-correlated quiet Inbox reports, with independent active/retained limits. New child births freeze the selected Host model before materialization and use one root capacity FIFO with durable queued/started/waiting facts. Eligible roles may delegate through the Host-configured depth (default one); DSH owns actual parent Sessions, ProductWork owns the root ledger and shared capacity, and permission interaction waits borrow this capacity owner through composition. Composition verifies already-disposed child completion against the public durable snapshot before publishing settlement. See [Child agents and background work](./tech_docs/execution/child-agents-and-background-work.md) for source behavior and remaining acceptance boundaries.

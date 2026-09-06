@@ -196,3 +196,35 @@ export class SessionReadAssembler {
     this.#pending = pending;
   }
 }
+
+/** Read one complete snapshot. A stale cursor invalidates every previously read page. */
+export const readSessionSnapshot = async (
+  readPage: (cursor: string | undefined) => Promise<SessionReadPage>,
+  signal?: AbortSignal,
+): Promise<Readonly<{
+  records: readonly SessionReadRecord[];
+  events: readonly VerifiedSessionReadEvent[];
+}>> => {
+  for (let attempt = 0; ; attempt += 1) {
+    const assembler = new SessionReadAssembler();
+    const records: SessionReadRecord[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; ; page += 1) {
+      signal?.throwIfAborted();
+      if (page >= 1_024) throw new ProtocolError("session_read_page_limit", "Session history exceeded its page bound");
+      let result: SessionReadPage;
+      try {
+        result = await readPage(cursor);
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (attempt < 2 && error instanceof ProtocolError && error.retryable
+          && (error.code === "cursor_stale" || error.code === "session_read_unstable")) break;
+        throw error;
+      }
+      assembler.accept(result, cursor);
+      records.push(...result.records);
+      cursor = result.nextCursor;
+      if (cursor === undefined) return Object.freeze({ records: Object.freeze(records), events: assembler.finish() });
+    }
+  }
+};

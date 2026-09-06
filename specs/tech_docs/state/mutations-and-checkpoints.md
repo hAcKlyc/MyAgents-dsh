@@ -99,7 +99,11 @@ Runtime purge success.
 
 ## 8. Checkpoint coverage and limits
 
-The root rewind claim covers governed canonical `Write` and `Edit` only. It excludes Bash, child
+The root rewind claim covers governed canonical `Write` and `Edit` only. Concurrent independent
+`Edit` calls serialize at publication and capture each current preimage in that lock, so their
+checkpoint hashes form a continuous chain. An approved literal edit may retain unrelated changes;
+changed match counts or overlapping edits require a new Read/Edit request, and publication still
+uses a version precondition. It excludes Bash, child
 files, MCP/Host tools, external processes and unrecorded preimages. New-file child `Write` now uses the same
 checkpoint service and SQLite tables internally, keyed by the child Session, to govern parent creation
 and abort/crash cleanup; root rewind queries select the root Session only and child results carry no

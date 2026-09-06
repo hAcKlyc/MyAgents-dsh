@@ -90,9 +90,22 @@ background Bash job as `aborted`; a natural non-zero exit settles as `failed`.
 `Write` creates missing parents inside the operation-frozen write roots before publishing its one
 file mutation. The checkpoint owner persists the missing-parent plan before the first mkdir and
 records each created directory identity before proceeding. The selected filesystem Provider checks
-canonical paths, real directories and parent identity; aliases, replacement races and unknown
-creation receipts cannot authorize file publication. `ls` retains `directory_not_found` for an absent
+canonical targets, real directories and parent identity. Caller aliases resolve through the same
+Provider before allowed-root checks and canonical-target approval; the original input is resolved again
+after approval. Retargeted aliases, replacement races and unknown creation receipts cannot authorize
+file publication. `ls` retains `directory_not_found` for an absent
 root. The generated canonical contract owns these exact tool descriptions and error codes.
+
+Independent `Edit` calls on one file re-read under the existing execution lock, preserve unrelated
+changes and recompute the exact literal replacement. The approved occurrence count cannot expand or
+shrink while waiting. The checkpoint uses that actual current preimage; publication retains version
+CAS. Missing/ambiguous matches and publication races give explicit Read/retry guidance. `Write`
+retains its complete-current-Read precondition. Search tools accept aliases and retain their existing
+opened-root/file identity revalidation. `ls` explains whether entry count or byte output was truncated.
+
+An out-of-root `Read` may resolve an Agent-owned retained output. The optional resolver returns
+`undefined` only for an unregistered path; the file tool then reports its ordinary allowed-root error.
+Registered-output identity/IO errors remain errors from that owner. No second output registry exists.
 
 Root `Write` and `Edit` participate in managed-file rewind. New-file child `Write` uses internal checkpoint
 records for directory preparation, cancellation and crash recovery, keyed by its own DSH Session;

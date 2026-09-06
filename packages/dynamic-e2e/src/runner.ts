@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import {
   PROTOCOL_VERSION,
   REFERENCE_PROTOCOL_LIMITS,
-  SessionReadAssembler,
+  readSessionSnapshot,
   type MethodParams,
 } from "@myagents-dsh/protocol";
 import { launchArtifactRuntime } from "@myagents-dsh/test-host";
@@ -587,26 +587,10 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
         }
       }
       if (asynchronousHostFailures.length > 0) throw new AggregateError(asynchronousHostFailures, "Host interaction response failed");
-      const diagnosticRecords: unknown[] = [];
-      const sessionReadAssembler = new SessionReadAssembler();
-      let cursor: string | undefined;
-      let diagnosticsComplete = false;
-      for (let page = 0; page < 1_024; page += 1) {
-        const requestCursor = cursor;
-        const result = await runtime.client.sessionRead(
-          requestCursor === undefined ? {} : { cursor: requestCursor },
-          { signal: input.signal },
-        );
-        sessionReadAssembler.accept(result, requestCursor);
-        diagnosticRecords.push(...result.records);
-        cursor = result.nextCursor;
-        if (cursor === undefined) {
-          diagnosticsComplete = true;
-          break;
-        }
-      }
-      if (!diagnosticsComplete) throw new Error("dynamic Session diagnostics exceeded their page bound");
-      const durableEvents = sessionReadAssembler.finish();
+      const { records: diagnosticRecords, events: durableEvents } = await readSessionSnapshot(
+        (cursor) => runtime.client.sessionRead(cursor === undefined ? {} : { cursor }, { signal: input.signal }),
+        input.signal,
+      );
       const hostCalls = [
         ...overriddenHostCalls,
         ...runtimes.flatMap((candidate) => candidate.standardHost.calls),
@@ -750,7 +734,7 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           exactArtifactIdentity: initialized.runtimeEngine.buildRevision === input.artifact.dshManifestSha256,
           generatedClientSchemaMatched: initialized.schemaSha256 === input.artifact.protocolSha256,
           zeroActiveResources: activeTotal === 0,
-          diagnosticProjectionComplete: diagnosticsComplete,
+          diagnosticProjectionComplete: true,
           persistenceLifecycleVerified,
           compactionContinuityVerified,
           interactionPlanVerified,

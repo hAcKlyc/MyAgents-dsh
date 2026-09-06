@@ -366,9 +366,8 @@ export class ProductProcessRuntime extends Service {
     return this.admitEnvironment(product.environment);
   }
   snapshot(): Readonly<{ liveProcesses: number }> { return { liveProcesses: this.live.size }; }
-  resolveRetainedOutput(product: ProductToolContext, path: string): Promise<FsTarget> {
+  resolveRetainedOutput(product: ProductToolContext, path: string): Promise<FsTarget | undefined> {
     const target = this.outputs.get(product.agent)?.get(path);
-    if (target === undefined) throw new ProductToolError("path_denied", "Shell output is not owned by this Agent");
     return Promise.resolve(target);
   }
   private async resolveExecutable(key: keyof ExecutableSet, product: ProductToolContext): Promise<string> {

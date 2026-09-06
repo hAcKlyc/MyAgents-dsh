@@ -55,6 +55,13 @@ Session identity
   -> validated fold / read projection / active Agent
 ```
 
+`session/read` cursors identify one snapshot; concurrent appends can invalidate a continuation.
+`readSessionSnapshot` in the public protocol library (used by the dynamic driver), and the MyAgents
+Host history controller discard the entire assembler, including partial event chunks, on retryable
+`cursor_stale` or `session_read_unstable`. They start at the first page, allow at most three complete
+attempts / 1,024 pages per attempt, and honor cancellation. Other transport, identity, hash and
+schema errors propagate without retry. Mutation RPCs are never replayed by this read recovery.
+
 ## 4. Lifecycle
 
 | Operation | Durable meaning |

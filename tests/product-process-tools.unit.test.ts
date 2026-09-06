@@ -747,8 +747,9 @@ describe("official Shell tools with product policy", () => {
       origin: "root", productTurnId: state.operation.productTurnId, rootCallId: "read-spill", signal: new AbortController().signal,
     };
     const target = await state.context.productProcesses.resolveRetainedOutput(product, output);
-    expect(target.displayPath).toBe(output);
-    expect(() => state.context.productProcesses.resolveRetainedOutput({ ...product, agent: { id: "other" } as Agent }, output)).toThrow();
+    expect(target?.displayPath).toBe(output);
+    if (target === undefined) throw new Error("owned retained output is missing");
+    await expect(state.context.productProcesses.resolveRetainedOutput({ ...product, agent: { id: "other" } as Agent }, output)).resolves.toBeUndefined();
     await rename(output, `${output}.original`);
     await writeFile(output, "replacement");
     await expect(state.context.fs.readBytes(target, undefined, 1_024)).rejects.toThrow();

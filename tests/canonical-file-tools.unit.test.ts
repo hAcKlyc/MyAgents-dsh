@@ -213,9 +213,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
       }),
   });
   context.provide("productProcesses", {
-    resolveRetainedOutput: () => Promise.reject(
-      new ProductToolError("path_denied", "fixture path is not a retained process output"),
-    ),
+    resolveRetainedOutput: () => Promise.resolve(undefined),
     runSearch: (
       _product: ProductToolContext,
       workdir: ProductProcessWorkspaceAuthority,
@@ -471,7 +469,7 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("fails closed on partial/stale reads, symlink aliases, traversal, denial, and cancellation", async () => {
+  it("fails closed on partial/stale reads, traversal, denial, and cancellation", async () => {
     const state = await harness();
     const path = join(state.workspace, "guarded.txt");
     await writeFile(path, "one\ntwo\nthree\n");
@@ -488,7 +486,7 @@ describe("canonical filesystem tools", () => {
     const alias = join(state.workspace, "alias.txt");
     await symlink(path, alias);
     await expect(state.execute("Read", { file_path: alias }))
-      .resolves.toMatchObject({ isError: true, error: { info: { code: "path_denied" } } });
+      .resolves.toMatchObject({ isError: false });
     const outside = join(state.root, "outside.txt");
     await writeFile(outside, "secret");
     await expect(state.execute("Read", { file_path: outside }))
@@ -499,6 +497,122 @@ describe("canonical filesystem tools", () => {
       .resolves.toMatchObject({ isError: true });
     expect(await readFile(path, "utf8")).toBe("external-change");
     expect(state.context.productTools.locks.size).toBe(0);
+    await state.context.fiber.dispose();
+  });
+
+  it("preserves a registered retained-output resolver failure instead of reporting an ordinary path miss", async () => {
+    const state = await harness();
+    const path = join(state.root, "retained.txt");
+    await writeFile(path, "retained");
+    vi.spyOn(state.context.productProcesses, "resolveRetainedOutput").mockRejectedValue(
+      new ProductToolError("path_denied", "retained output identity changed"),
+    );
+    const result = await state.execute("Read", { file_path: path });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).toContain("retained output identity changed");
+    expect(JSON.stringify(result)).not.toContain("outside its allowed");
+    await state.context.fiber.dispose();
+  });
+
+  it("resolves directory aliases for file and search tools without extending allowed roots", async () => {
+    const state = await harness();
+    const alias = join(state.root, "workspace-alias");
+    await symlink(state.workspace, alias, "dir");
+    const path = join(alias, "aliased.txt");
+    await expect(state.execute("Write", { file_path: path, content: "before" })).resolves.toMatchObject({ isError: false });
+    await expect(state.execute("Read", { file_path: path })).resolves.toMatchObject({ isError: false });
+    await expect(state.execute("Edit", { file_path: path, old_string: "before", new_string: "after" })).resolves.toMatchObject({ isError: false });
+    for (const [tool, input] of [["ls", { path: alias }], ["Glob", { path: alias, pattern: "*" }], ["Grep", { path: alias, pattern: "after" }]] as const) {
+      await expect(state.execute(tool, input)).resolves.toMatchObject({ isError: false });
+    }
+    expect(await readFile(join(state.workspace, "aliased.txt"), "utf8")).toBe("after");
+    const notebook = join(state.workspace, "notebook.ipynb");
+    const notebookAlias = join(state.workspace, "notebook.txt");
+    await writeFile(notebook, "{}"); await symlink(notebook, notebookAlias);
+    await state.execute("Read", { file_path: notebookAlias });
+    await expect(state.execute("Edit", { file_path: notebookAlias, old_string: "{}", new_string: "[]" }))
+      .resolves.toMatchObject({ isError: true, error: { info: { code: "unsupported_format" } } });
+
+    const outside = join(state.root, "outside.txt");
+    await writeFile(outside, "outside");
+    const escaped = join(state.workspace, "outside-alias");
+    await symlink(outside, escaped);
+    const denied = await state.execute("Read", { file_path: escaped });
+    expect(denied).toMatchObject({ isError: true, error: { info: { code: "path_denied" } } });
+    expect(JSON.stringify(denied)).toContain("outside its allowed read roots");
+    expect(JSON.stringify(denied)).not.toContain("Shell output");
+    await state.context.fiber.dispose();
+  });
+
+  it.each(["Read", "Write", "Edit", "ls", "Glob", "Grep"] as const)("rechecks original %s aliases after permission waiting", async (tool) => {
+    const state = await harness();
+    const first = join(state.workspace, "first");
+    const second = join(state.workspace, "second");
+    await mkdir(first); await mkdir(second);
+    await writeFile(join(first, "file.txt"), "before");
+    await writeFile(join(second, "file.txt"), "other");
+    const alias = join(state.root, "alias");
+    await symlink(first, alias, "dir");
+    const path = join(alias, "file.txt");
+    await state.execute("Read", { file_path: path });
+    const permission = Promise.withResolvers<"allow" | "deny">();
+    state.setPermissionPromise(permission.promise);
+    const count = state.permissions.length;
+    const pending = state.execute(tool, tool === "Read" ? { file_path: path }
+      : tool === "Write" ? { file_path: path, content: "changed" }
+      : tool === "Edit" ? { file_path: path, old_string: "before", new_string: "changed" }
+      : tool === "ls" ? { path: alias }
+      : { path: alias, pattern: "*" });
+    await vi.waitFor(() => expect(state.permissions).toHaveLength(count + 1));
+    await rm(alias); await symlink(second, alias, "dir");
+    permission.resolve("allow");
+    await expect(pending).resolves.toMatchObject({ isError: true });
+    expect(await readFile(join(first, "file.txt"), "utf8")).toBe("before");
+    expect(await readFile(join(second, "file.txt"), "utf8")).toBe("other");
+    await state.context.fiber.dispose();
+  });
+
+  it("rebases concurrent independent Edits under the file lock with contiguous checkpoint preimages", async () => {
+    const state = await harness();
+    const path = join(state.workspace, "parallel.txt");
+    await writeFile(path, "alpha beta");
+    await state.execute("Read", { file_path: path });
+    const permission = Promise.withResolvers<"allow" | "deny">();
+    state.setPermissionPromise(permission.promise);
+    const count = state.permissions.length;
+    const edits = [state.execute("Edit", { file_path: path, old_string: "alpha", new_string: "$&-A" }),
+      state.execute("Edit", { file_path: path, old_string: "beta", new_string: "B" })];
+    await vi.waitFor(() => expect(state.permissions).toHaveLength(count + 2));
+    permission.resolve("allow");
+    const results = await Promise.all(edits);
+    expect(results.every(result => !result.isError)).toBe(true);
+    expect(await readFile(path, "utf8")).toBe("$&-A B");
+    expect(state.checkpointRequests).toHaveLength(2);
+    const [first, second] = state.checkpointRequests;
+    expect(second?.beforeSha256).toBe(first?.afterSha256);
+    expect(second?.beforeBytes).toEqual(first?.afterBytes);
+    expect(state.context.productTools.locks.size).toBe(0);
+    await state.context.fiber.dispose();
+  });
+
+  it.each([false, true])("preserves newer bytes when Edit matches conflict (replaceAll=%s)", async (replaceAll) => {
+    const state = await harness();
+    const path = join(state.workspace, "conflict.txt");
+    await writeFile(path, "alpha beta");
+    await state.execute("Read", { file_path: path });
+    const permission = Promise.withResolvers<"allow" | "deny">();
+    state.setPermissionPromise(permission.promise);
+    const count = state.permissions.length;
+    const pending = state.execute("Edit", { file_path: path, old_string: "alpha", new_string: "A", replace_all: replaceAll });
+    await vi.waitFor(() => expect(state.permissions).toHaveLength(count + 1));
+    const newer = replaceAll ? "alpha alpha beta" : "newer beta";
+    await writeFile(path, newer);
+    permission.resolve("allow");
+    const result = await pending;
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).toContain("Read the");
+    expect(await readFile(path, "utf8")).toBe(newer);
+    expect(state.checkpointRequests).toHaveLength(0);
     await state.context.fiber.dispose();
   });
 
@@ -1196,7 +1310,7 @@ describe("canonical filesystem tools", () => {
     });
     await expect(state.execute("ls", { limit: 0.5 })).resolves.toMatchObject({
       isError: false,
-      value: ".hidden\n\n[0.5 entries limit reached. Use limit=1 for more]",
+      value: ".hidden\n\n[0.5 entries limit reached. Increase limit to see more entries, or use a more specific path]",
     });
     await expect(state.execute("ls", { path: "" })).resolves.toMatchObject({
       isError: false,
@@ -1219,7 +1333,7 @@ describe("canonical filesystem tools", () => {
     }));
     const count = await state.execute("ls", { path: "count-bound" });
     expect(count).toMatchObject({ isError: false });
-    expect((count.value as string).endsWith("[500 entries limit reached. Use limit=1000 for more]")).toBe(true);
+    expect((count.value as string).endsWith("[500 entries limit reached. Increase limit to see more entries, or use a more specific path]")).toBe(true);
     expect(Buffer.byteLength(count.value as string, "utf8")).toBeLessThanOrEqual(50 * 1_024);
     const expandedCount = await state.execute("ls", { path: "count-bound", limit: 1_000 });
     expect(expandedCount).toMatchObject({ isError: false });
@@ -1233,7 +1347,7 @@ describe("canonical filesystem tools", () => {
     const bytes = await state.execute("ls", { path: "byte-bound" });
     expect(bytes.isError ? bytes : null).toBeNull();
     expect(bytes).toMatchObject({ isError: false });
-    expect((bytes.value as string).endsWith("[50.0KB limit reached]")).toBe(true);
+    expect((bytes.value as string).endsWith("[50.0KB output limit reached. Use a more specific path to reduce the listing]")).toBe(true);
     expect(Buffer.byteLength(bytes.value as string, "utf8")).toBeLessThanOrEqual(50 * 1_024);
     await state.context.fiber.dispose();
   });
