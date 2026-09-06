@@ -1490,7 +1490,8 @@ export class ProductPermissionService extends Service {
     if (this.configValue.mode === "bypassPermissions"
       || safeAutoAllow.has(request.permissionClass as PermissionClass)
       || this.configValue.autoAllowTools.includes(request.tool as CanonicalToolName)
-      || (this.configValue.mode === "acceptEdits" && request.permissionClass === "workspace.write")) {
+      || (this.configValue.mode === "acceptEdits" && (request.permissionClass === "workspace.write"
+        || request.tool === "WebSearch" || request.tool === "WebFetch"))) {
       return true;
     }
     return birth.rules.some((rule) => rule.tool === request.tool

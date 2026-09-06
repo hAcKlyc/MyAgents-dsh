@@ -198,10 +198,10 @@ describe("product permission policy and local interaction provider", () => {
     expect(local.permissionRequests).toHaveLength(0);
   });
 
-  it("allows both Web tools by the Host Auto policy while still applying an explicit Hook", async () => {
+  it("allows both Web tools in Auto mode while still applying an explicit Hook", async () => {
     const local = provider("scenario-web-auto", (pending, settlement) => response(pending, "deny", settlement));
     const hook = vi.fn(() => Promise.resolve("continue" as "continue" | "deny"));
-    const state = await mounted(local.provider, { mode: "acceptEdits", autoAllowTools: ["WebSearch", "WebFetch"], hook: { authorize: hook } });
+    const state = await mounted(local.provider, { mode: "acceptEdits", hook: { authorize: hook } });
     for (const tool of ["WebSearch", "WebFetch"] as const) {
       await expect(state.context.productPermission.authorize({ ...state.product(), callId: tool }, request(tool, CANONICAL_TOOL_CONTRACTS[tool].permissionClass, "https://example.invalid"))).resolves.toBe("allow");
     }
@@ -240,13 +240,13 @@ describe("product permission policy and local interaction provider", () => {
         .resolves.toBe("allow");
     }
     expect(local.permissionRequests.map(({ tool }) => tool)).toEqual([
-      "bash", "WebSearch", "WebFetch", "TaskCreate", "Skill", "Agent", "AskUserQuestion",
+      "bash", "TaskCreate", "Skill", "Agent", "AskUserQuestion",
     ]);
     expect(local.permissionRequests.slice(1).every(({ expectedPermissionRevision }) =>
       expectedPermissionRevision === state.context.productPermission.currentRevision(state.agent))).toBe(true);
     await expect(state.context.productPermission.authorize({ ...original, callId: "bash-again" }, request()))
       .resolves.toBe("allow");
-    expect(local.permissionRequests).toHaveLength(7);
+    expect(local.permissionRequests).toHaveLength(5);
     expect(original.birth.permissionRevision).not.toBe(state.context.productPermission.currentRevision(state.agent));
   });
 

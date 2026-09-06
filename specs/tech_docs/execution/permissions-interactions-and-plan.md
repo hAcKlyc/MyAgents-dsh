@@ -39,7 +39,7 @@ The permission mode controls only the fallback after hard guards, Hooks, safe po
 | Mode | Safe read/search | `Write` / `Edit` | Other unapproved tools | Unapproved fallback |
 | --- | --- | --- | --- | --- |
 | `default` | allow | ask | ask | block on Host interaction |
-| `acceptEdits` | allow | allow | ask | block on Host interaction |
+| `acceptEdits` | allow | allow | WebSearch/WebFetch allow; others ask | block on Host interaction |
 | `dontAsk` | allow | deny unless pre-authorized | deny unless pre-authorized | deny without interaction |
 | `bypassPermissions` | allow | allow | allow | allow without permission interaction |
 
@@ -57,7 +57,7 @@ visible current tool + frozen operation birth
        deny       -> deny
        allow_once -> allow this call
        continue   -> continue
-  -> bypassPermissions / safe class / configured autoAllowTools / acceptEdits Write/Edit allowance
+  -> bypassPermissions / safe class / configured autoAllowTools / acceptEdits Write/Edit and WebSearch/WebFetch allowance
   -> unexpired exact durable rule from the operation-birth permission revision
   -> dontAsk denial
   -> executing-Agent + operation-local exact Always Allow grant
@@ -104,7 +104,7 @@ Protocol 3.1 carries typed ephemeral `review` independently of the authorization
 
 The entire review travels inline when it fits the negotiated frame budget, otherwise as an existing JSON attachment reference. MyAgents consumes that reference and uses its existing `/refs` route for large UI payloads, retains full details until settlement/cancellation, and enables approval after successful loading. Failed loading or response delivery stays on the same request with retry; unknown presentation variants use full generic detail. Actual call/rootCall IDs accompany the interaction, while its settlement ID includes the executing Agent to distinguish reused provider call IDs. Concurrent responses share one pending effect, and retries preserve rejected receipts instead of reporting a failed effect as applied.
 
-MyAgents Auto supplies WebSearch and WebFetch together in `autoAllowTools`. This is a Host product default, not a new globally safe permission class; explicit Hooks, network policy and visibility constraints still run. Always Allow retains the Runtime's session-tree scope and configured lifetime, displayed as duration after approval.
+MyAgents Auto selects Runtime `acceptEdits`, whose default policy permits both WebSearch and WebFetch. The Host does not inject a new tool-policy configuration merely to enable this fixed default, so existing Session configuration histories retain their restore identity. Neither becomes a globally safe permission class; explicit Hooks, network policy and visibility constraints still run. Always Allow retains the Runtime's session-tree scope and configured lifetime, displayed as duration after approval.
 
 Permission, AskUserQuestion and plan approval register through `host/interaction/request`. Registration acknowledgment does not settle the interaction. Host registration and response transport are bounded, but an established desktop interaction has no elapsed human-decision timeout. The Runtime blocks the owning AgentLoop path until `interaction/respond`, explicit operation/Session cancellation or teardown settles it exactly once. Duplicate, late, stale-revision and wrong-operation responses fail closed. Runtime cancellation is projected through `host/interaction/cancel`.
 

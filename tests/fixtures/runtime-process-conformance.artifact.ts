@@ -97,6 +97,12 @@ const initializeParams = (): InitializeParams => {
   params.executionEnvironment.workspace.allowedReadRoots = [workspace];
   params.executionEnvironment.workspace.allowedWriteRoots = [workspace];
   params.executionEnvironment.attachmentStagingRoot = attachmentStagingRoot;
+  params.executionEnvironment.environment.allowedKeys = Object.keys(environment).sort();
+  params.executionEnvironment.executables = {
+    shellRef: "runtime-shell", bundledNodeRef: "bundled-node", ripgrepRef: "bundled-ripgrep",
+    shellDialect: process.platform === "win32" ? "pwsh" : "bash", pathPolicy: "sealed",
+    allowedCommandRefs: ["runtime-shell", "bundled-node", "bundled-ripgrep"],
+  };
   if (process.platform === "darwin" && process.arch === "arm64") {
     params.host.platform = "darwin";
     params.host.arch = "arm64";
