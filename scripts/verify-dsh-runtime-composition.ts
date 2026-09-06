@@ -121,6 +121,7 @@ const runtimeCompositionSourcePaths = [
   "packages/product-profile/src/platform-contract.ts",
   "packages/product-profile/src/profile.ts",
   "packages/protocol/generated/host-client.generated.ts",
+  "packages/protocol/generated/public-contract.generated.ts",
   "packages/protocol/generated/canonical-tools.generated.ts",
   "packages/protocol/src/canonical-digests.ts",
   "packages/protocol/src/canonical-json.ts",
@@ -445,6 +446,7 @@ const stageBuiltPackage = (
     for (const filename of [
       "canonical-tools.generated.js",
       "host-client.generated.js",
+      "public-contract.generated.js",
     ]) {
       cpSync(
         resolve(buildRoot, "packages/protocol/generated", filename),
