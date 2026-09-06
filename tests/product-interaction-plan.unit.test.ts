@@ -341,6 +341,22 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     expect(state.context.tools.get("ExitPlanMode")?.timeoutMs).toBeUndefined();
   });
 
+  it("explains an unwritten plan and remains recoverable through Write or the Host selector", async () => {
+    const state = await mounted();
+    const entered = state.output(await state.execute("EnterPlanMode", {})) as Readonly<{ planPath: string }>;
+    const read = await state.execute("Read", { file_path: entered.planPath });
+    expect(read.isError).toBe(true);
+    expect(JSON.stringify(read.content)).toContain("Use Write");
+    const exit = await state.execute("ExitPlanMode", {});
+    expect(exit.isError).toBe(true);
+    expect(JSON.stringify(exit.content)).toContain("No plan has been written");
+    expect(JSON.stringify(exit.content)).toContain(entered.planPath);
+    expect(state.questionRequests).toHaveLength(0);
+    expect((await state.execute("Write", { file_path: entered.planPath, content: "# Synthetic plan\n" })).isError).toBe(false);
+    state.questionResponders.push(state.answer(["Approve"]));
+    expect(state.output(await state.execute("ExitPlanMode", {}))).toMatchObject({ mode: "normal", disposition: "approved" });
+  });
+
   it("lets the Host enter and leave durable plan mode at an explicit revision", async () => {
     const state = await mounted();
     const initial = state.planController.snapshot(state.agent);

@@ -212,6 +212,26 @@ describe("product permission policy and local interaction provider", () => {
     }
   });
 
+  it.each(["default", "acceptEdits", "dontAsk", "bypassPermissions"] as const)("enforces the complete built-in permission matrix in %s", async mode => {
+    const local = provider(`scenario-matrix-${mode}`, (pending, settlement) => response(pending, "deny", settlement));
+    const state = await mounted(local.provider, { mode });
+    const safe = new Set(["Read", "ls", "Glob", "Grep", "job_list", "job_output", "TaskGet", "TaskList", "EnterPlanMode"]);
+    const expectedPrompts: string[] = [];
+    for (const tool of Object.values(CANONICAL_TOOL_CONTRACTS)) {
+      const allowed = mode === "bypassPermissions" || safe.has(tool.name)
+        || (mode === "acceptEdits" && tool.name !== "bash" && tool.name !== "pwsh");
+      await expect(state.context.productPermission.authorize({ ...state.product(), callId: tool.name }, request(tool.name, tool.permissionClass)))
+        .resolves.toBe(allowed ? "allow" : "deny");
+      if (!allowed && mode !== "dontAsk") expectedPrompts.push(tool.name);
+    }
+    expect(local.permissionRequests.map(({ tool }) => tool)).toEqual(expectedPrompts);
+    for (const tool of ["mcp__fixture__write", "mcp__myagents_host__fixture"] as const) {
+      await expect(state.context.productPermission.authorizeExternal({ ...state.product(), callId: tool }, {
+        tool, permissionClass: tool.includes("myagents_host") ? "host_tool.call" : "mcp.call", target: tool,
+      })).resolves.toBe(mode === "bypassPermissions" ? "allow" : "deny");
+    }
+  });
+
   it("distinguishes parallel child approvals when the model reuses a tool call ID", async () => {
     const local = provider("scenario-child-correlation", (pending, settlement) => response(pending, "allow_once", settlement));
     const state = await mounted(local.provider);
@@ -228,10 +248,10 @@ describe("product permission policy and local interaction provider", () => {
     expect(local.permissionRequests.map(value => value.callId)).toEqual([root.callId, root.callId]);
   });
 
-  it("continues independent approvals after Bash Always Allow without widening its grant", async () => {
+  it("continues independent approvals in default mode after Bash Always Allow", async () => {
     const local = provider("scenario-progress", (pending, settlement) =>
       response(pending, pending.tool === "bash" ? "always_allow" : "allow_once", settlement));
-    const state = await mounted(local.provider, { mode: "acceptEdits" });
+    const state = await mounted(local.provider);
     const original = state.product();
     await expect(state.context.productPermission.authorize(original, request())).resolves.toBe("allow");
     for (const tool of ["WebSearch", "WebFetch", "TaskCreate", "Skill", "Agent", "AskUserQuestion"] as const) {
@@ -240,13 +260,13 @@ describe("product permission policy and local interaction provider", () => {
         .resolves.toBe("allow");
     }
     expect(local.permissionRequests.map(({ tool }) => tool)).toEqual([
-      "bash", "TaskCreate", "Skill", "Agent", "AskUserQuestion",
+      "bash", "WebSearch", "WebFetch", "TaskCreate", "Skill", "Agent", "AskUserQuestion",
     ]);
     expect(local.permissionRequests.slice(1).every(({ expectedPermissionRevision }) =>
       expectedPermissionRevision === state.context.productPermission.currentRevision(state.agent))).toBe(true);
     await expect(state.context.productPermission.authorize({ ...original, callId: "bash-again" }, request()))
       .resolves.toBe("allow");
-    expect(local.permissionRequests).toHaveLength(5);
+    expect(local.permissionRequests).toHaveLength(7);
     expect(original.birth.permissionRevision).not.toBe(state.context.productPermission.currentRevision(state.agent));
   });
 
@@ -307,7 +327,7 @@ describe("product permission policy and local interaction provider", () => {
     }
   });
 
-  it("does not lend inline receipts to a sibling Agent and can reconstruct receipts after resume", async () => {
+  it("shares durable exact grants across the Session tree and reconstructs them after resume", async () => {
     const local = provider("scenario-resume-proof", (pending, settlement) => response(pending, "always_allow", settlement));
     const state = await mounted(local.provider);
     const original = state.product();
@@ -317,6 +337,8 @@ describe("product permission policy and local interaction provider", () => {
     const child = { ...state.agent, id: "proof-child", session: childSession } as Agent;
     state.context.agents.enter(child, state.agent);
     await state.context.productPermission.authorize({ ...original, agent: child, origin: "background_child", rootAgent: state.agent }, request());
+    expect(local.permissionRequests).toHaveLength(1);
+    await state.context.productPermission.authorize({ ...original, agent: child, origin: "background_child", rootAgent: state.agent, callId: "other-directory" }, request("bash", "process.execute", "other-directory"));
     expect(local.permissionRequests).toHaveLength(2);
     const resumedLocal = provider("scenario-resume-proof", (pending, settlement) => response(pending, "deny", settlement));
     const resumed = await mounted(resumedLocal.provider);

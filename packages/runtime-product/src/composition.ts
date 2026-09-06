@@ -27,7 +27,7 @@ import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
-import { ApprovalService } from "@deepseek-ai/dsh-user-approval";
+import { ApprovalService, setApprovalPolicy } from "@deepseek-ai/dsh-user-approval";
 import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
 import { WebRuntime } from "@deepseek-ai/dsh-web";
 import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
@@ -1513,7 +1513,7 @@ export const installCanonicalToolPlane = async (
       name: "runtime:shell",
       order: 91,
       interpolate: false,
-      text: `Runtime platform: ${platform.target}. Available Shell tool: ${platform.shell.dialect}. Executable: ${processConfig.executablePaths.shell}. Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. Query the executable's version before relying on version-specific features.`,
+      text: `Runtime platform: ${platform.target}. Available Shell tool: ${platform.shell.dialect}. Executable: ${processConfig.executablePaths.shell}. Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. Query the executable's version before relying on version-specific features. Execution uses the local user's OS permissions; no OS file sandbox is active. Governed file-tool roots do not constrain files or network accessed by shell commands.`,
     });
     if (platform.shell.dialect === "pwsh") {
       fibers.push(await root.plugin(PwshLocalExecutor, { pwshPath: processConfig.executablePaths.shell }));
@@ -1548,11 +1548,24 @@ export const installCanonicalToolPlane = async (
       }),
       output: agentOutput,
       publication: Object.freeze({
-        prepare: (child: Agent, parent: Agent) => root.productSession.prepareChildPublication(
-          authority.childPublicationAuthority,
-          child,
-          parent,
-        ),
+        prepare: (child: Agent, parent: Agent) => {
+          const cancel = root.productSession.prepareChildPublication(authority.childPublicationAuthority, child, parent);
+          try {
+            // Official delegation seeds "never". Product-managed children use
+            // the same permission owner and Host interaction port as the root.
+            if (root.approval.overrideOf(child.session) !== "ask") setApprovalPolicy(child.session, "ask");
+            child.ctx.systemPrompt.context({
+              name: "subagent:delegation",
+              order: child.ctx.systemPrompt.getContextOrder("SUBAGENT_DELEGATION"),
+              interpolate: false,
+              text: "You are a delegated subagent in the current Session tree. Use your available tools normally. Product permissions and shared exact grants apply; operations needing approval are sent to the Host. Your role, workspace and delegation limits still apply.",
+            });
+            return cancel;
+          } catch (error) {
+            cancel();
+            throw error;
+          }
+        },
       }),
       provider: "myagents-spawn",
       messageDelivery: () => authority.hostModelAuthority?.collaborationPolicy().config.messageDelivery ?? "realtime",

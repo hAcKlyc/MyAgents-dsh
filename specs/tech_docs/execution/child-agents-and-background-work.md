@@ -42,6 +42,8 @@ Visibility and execution remain separate. Every child call re-enters the same DS
 
 `EnterPlanMode` remains root-only. `Agent` additionally requires an eligible frozen role catalog and available depth. Background children are also origin-policy denied `AskUserQuestion` and `ExitPlanMode` because they cannot synchronously own a Host interaction. A foreground child may reach otherwise eligible interaction tools; Provider availability, Product permission and the Agent-scoped single-flight interaction owner still decide the call. A permission prompt may therefore originate from a child even though any durable permission rule and the Plan remain root-owned.
 
+The Host-managed child publication seam uses official `setApprovalPolicy(session, "ask")` before model execution, replacing DSH delegation's default `never`. A scoped `subagent:delegation` context states the actual Product policy. Creation and cold materialization use this same seam. The shared permission service applies Action defaults and durable Session-tree exact grants; remaining Shell/extension approvals reach the existing Host reverse port. No child-specific permission engine or upstream patch is involved.
+
 ## 4. Work lifecycle
 
 ```text

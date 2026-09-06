@@ -1066,6 +1066,12 @@ const safeAutoAllow = new Set<PermissionClass>([
   "workspace.read", "workspace.search", "task_graph.read", "session.plan.enter",
 ]);
 
+// Product Action defaults. Shell and extension tools retain explicit approval.
+const actionAutoAllow = new Set<CanonicalToolName>([
+  "Write", "Edit", "WebSearch", "WebFetch", "Skill", "TaskCreate", "TaskUpdate",
+  "Agent", "SendMessage", "TaskStop", "job_kill", "AskUserQuestion", "ExitPlanMode",
+]);
+
 const pendingKey = (agent: Agent, callId: string): string => `${agent.id}\0${callId}`;
 const permissionTupleKey = (
   context: ProductToolContext,
@@ -1435,16 +1441,11 @@ export class ProductPermissionService extends Service {
     const tuple = permissionTupleKey(context, normalized);
     const release = await this.permissionLocks.acquire(tuple, context.signal);
     try {
-      const { fold, birth } = await this.readOperationPolicy(context);
-      if (this.isAutomaticallyAllowed(normalized, birth, this.now())) return "allow";
+      const { fold } = await this.readOperationPolicy(context);
+      // Validated, durable grants have the advertised Session-tree scope even
+      // when a child uses them during the operation that created the grant.
+      if (this.isAutomaticallyAllowed(normalized, fold.history.at(-1)?.rules ?? [], this.now())) return "allow";
       if (this.configValue.mode === "dontAsk") return "deny";
-      if (fold.history.some((snapshot) => snapshot.inlineGrant?.clientOperationId === context.clientOperationId
-        && snapshot.inlineGrant.birthRevision === context.birth.permissionRevision
-        && snapshot.inlineGrant.agentId === String(context.agent.id)
-        && snapshot.inlineGrant.origin === context.origin
-        && snapshot.rules.some((rule) => rule.revision === snapshot.revision
-          && rule.tool === normalized.tool && rule.permissionClass === normalized.permissionClass
-          && rule.target === normalized.target && rule.expiresAt > this.now()))) return "allow";
       return await this.requestApproval(context, normalized, fold.latestRevision);
     } finally {
       release();
@@ -1484,17 +1485,16 @@ export class ProductPermissionService extends Service {
 
   private isAutomaticallyAllowed(
     request: ProductPermissionRequest,
-    birth: ProductPermissionRevisionSnapshot,
+    rules: readonly ProductPermissionRule[],
     now: number,
   ): boolean {
     if (this.configValue.mode === "bypassPermissions"
       || safeAutoAllow.has(request.permissionClass as PermissionClass)
       || this.configValue.autoAllowTools.includes(request.tool as CanonicalToolName)
-      || (this.configValue.mode === "acceptEdits" && (request.permissionClass === "workspace.write"
-        || request.tool === "WebSearch" || request.tool === "WebFetch"))) {
+      || (this.configValue.mode === "acceptEdits" && actionAutoAllow.has(request.tool as CanonicalToolName))) {
       return true;
     }
-    return birth.rules.some((rule) => rule.tool === request.tool
+    return rules.some((rule) => rule.tool === request.tool
       && rule.permissionClass === request.permissionClass
       && rule.target === request.target
       && rule.expiresAt > now);

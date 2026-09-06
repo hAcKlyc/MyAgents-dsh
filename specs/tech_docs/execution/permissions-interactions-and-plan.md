@@ -39,7 +39,7 @@ The permission mode controls only the fallback after hard guards, Hooks, safe po
 | Mode | Safe read/search | `Write` / `Edit` | Other unapproved tools | Unapproved fallback |
 | --- | --- | --- | --- | --- |
 | `default` | allow | ask | ask | block on Host interaction |
-| `acceptEdits` | allow | allow | WebSearch/WebFetch allow; others ask | block on Host interaction |
+| `acceptEdits` | allow | allow | Built-in Skill, task/Agent work, Web and interaction tools allow; Shell and external tools ask | block on Host interaction |
 | `dontAsk` | allow | deny unless pre-authorized | deny unless pre-authorized | deny without interaction |
 | `bypassPermissions` | allow | allow | allow | allow without permission interaction |
 
@@ -57,16 +57,15 @@ visible current tool + frozen operation birth
        deny       -> deny
        allow_once -> allow this call
        continue   -> continue
-  -> bypassPermissions / safe class / configured autoAllowTools / acceptEdits Write/Edit and WebSearch/WebFetch allowance
-  -> unexpired exact durable rule from the operation-birth permission revision
+  -> bypassPermissions / safe class / configured autoAllowTools / acceptEdits built-in Action allowance
+  -> unexpired exact rule from the latest operation-validated durable snapshot
   -> dontAsk denial
-  -> executing-Agent + operation-local exact Always Allow grant
   -> exact-tuple single-flight gate and authority re-check
   -> default/acceptEdits blocking Host permission interaction
   -> execution-time current-authority revalidation
 ```
 
-An operation freezes its permission revision at birth. Each later revision must be a proven additive inline grant from that same operation and birth; external grants, revocations, configuration transitions and unknown history invalidate the old operation even for automatically allowed tools. A successful inline `always_allow` installs proof for the exact executing-Agent/client-operation/origin/tool/class/target tuple only after the durable rule has flushed. This receipt cannot authorize a sibling child or another tuple. Other tuples may independently ask at the progressed revision without replacing their immutable birth. The Host bridge carries that permission-owner-validated card revision unchanged; it checks operation/Session identity, not equality between the card revision and the original birth revision. Repeating that equality check would suppress every new approval after an inline grant.
+An operation freezes its permission revision at birth. Each later revision must be a proven additive inline grant from that same operation and birth; external grants, revocations, configuration transitions and unknown history invalidate the old operation even for automatically allowed tools. A successful inline `always_allow` records its originating Agent/client-operation/origin and exact tool/class/target only after the durable rule has flushed. Once that additive chain is validated, the rule applies throughout the Session tree, including children executing in that same operation. A different tool or target still asks independently. Call-scoped allow-once responses and pending settlement identities are never shared. The Host bridge carries that permission-owner-validated card revision unchanged; it checks operation/Session identity, not equality between the card revision and the original birth revision. Repeating that equality check would suppress every new approval after an inline grant.
 
 Each card records its own expected revision. Out-of-order answers remain valid only across the proven additive chain; exact response identity is still required. Different tuples wait for users independently and serialize append/flush/fold under the root policy commit lock. Reads also wait for that lock, so an appended but unflushed grant cannot authorize concurrent work. Same-tuple single flight is retained. Known `ProductPermissionError` instances inherit `ProductToolError`, preserving permission codes through Skill/Agent/Web domain catches; unknown errors still receive their sanitized domain fallback.
 
@@ -104,7 +103,7 @@ Protocol 3.1 carries typed ephemeral `review` independently of the authorization
 
 The entire review travels inline when it fits the negotiated frame budget, otherwise as an existing JSON attachment reference. MyAgents consumes that reference and uses its existing `/refs` route for large UI payloads, retains full details until settlement/cancellation, and enables approval after successful loading. Failed loading or response delivery stays on the same request with retry; unknown presentation variants use full generic detail. Actual call/rootCall IDs accompany the interaction, while its settlement ID includes the executing Agent to distinguish reused provider call IDs. Concurrent responses share one pending effect, and retries preserve rejected receipts instead of reporting a failed effect as applied.
 
-MyAgents Auto selects Runtime `acceptEdits`, whose default policy permits both WebSearch and WebFetch. The Host does not inject a new tool-policy configuration merely to enable this fixed default, so existing Session configuration histories retain their restore identity. Neither becomes a globally safe permission class; explicit Hooks, network policy and visibility constraints still run. Always Allow retains the Runtime's session-tree scope and configured lifetime, displayed as duration after approval.
+MyAgents Action/Auto selects Runtime `acceptEdits`. Its explicit product defaults permit file reading/search/writing, both Web tools, Skill, TaskCreate/Update/Get/List, Agent, SendMessage, TaskStop, job_list/output/kill, EnterPlanMode, AskUserQuestion and ExitPlanMode. Shell and namespaced Host/MCP tools still require approval unless an exact rule matches. AskUserQuestion still waits for an answer, and ExitPlanMode still requires review of the actual plan. The Host does not inject a new tool-policy configuration merely to enable this fixed default, so existing Session configuration histories retain their restore identity. Neither becomes a globally safe permission class; explicit Hooks, network policy and visibility constraints still run. Always Allow retains the Runtime's session-tree scope and configured lifetime, displayed as duration after approval.
 
 Permission, AskUserQuestion and plan approval register through `host/interaction/request`. Registration acknowledgment does not settle the interaction. Host registration and response transport are bounded, but an established desktop interaction has no elapsed human-decision timeout. The Runtime blocks the owning AgentLoop path until `interaction/respond`, explicit operation/Session cancellation or teardown settles it exactly once. Duplicate, late, stale-revision and wrong-operation responses fail closed. Runtime cancellation is projected through `host/interaction/cancel`. A DSH `unavailable` outcome is an interaction failure, not a user denial: the permission owner preserves its known typed failure or reports `interaction_unavailable` with a Host/retry instruction. An unavailable attempt does not install an allow rule.
 
@@ -114,7 +113,7 @@ An unbounded human wait must not retain an execution resource. Governed file mut
 
 Permission decisions are `deny`, `allow_once`, `always_allow` and `cancelled`. AskUser and plan approval use `answered` or `cancelled`. Calls sharing the same executing Agent, client operation, origin and exact authorization tuple serialize behind one gate: one prompt is pending at a time, an `always_allow` leader releases matching waiters through the exact operation-local proof, while `allow_once`, deny and cancellation remain call-scoped and allow a later waiter to ask independently. Different Agents or tuples never share settlement.
 
-Model-driven interaction tools can deliberately produce two Host interactions. `AskUserQuestion` first authorizes `interaction.ask`, then opens `ask_user`; `ExitPlanMode` first authorizes `session.plan.exit`, then reads exact managed Plan bytes and opens `plan_approval`. `EnterPlanMode` uses the safe `session.plan.enter` class and normally skips a permission card. DSH approval audit facts are written in the executing root or child Session, while durable permission rules and Plan ownership remain in the primary root Session. The Host UI is a disposable projection.
+In `default` mode, model-driven interaction tools can produce two Host interactions; Action/Auto skips the permission card and retains only the question or plan review. `AskUserQuestion` first authorizes `interaction.ask`, then opens `ask_user`; `ExitPlanMode` first authorizes `session.plan.exit`, then reads exact managed Plan bytes and opens `plan_approval`. `EnterPlanMode` uses the safe `session.plan.enter` class and normally skips a permission card. DSH approval audit facts are written in the executing root or child Session, while durable permission rules and Plan ownership remain in the primary root Session. The Host UI is a disposable projection.
 
 ## 6. Host-controlled Plan state
 
@@ -128,6 +127,8 @@ DSH `plan/mode` facts, flushes them, and returns `applied`. A same-mode call ret
 `already_effective` before expected-revision validation.
 
 There is no separate `plan/get`. A Host that lacks the current Plan revision may use the same-mode `already_effective` result as a revision probe, then apply the desired transition. This is Host orchestration over the one Runtime Plan authority, not a second state store.
+
+Entering Plan reserves a managed path; it does not invent plan contents. The plan prompt explicitly tells the Agent to author that file with Write before submission. Missing-file Read/Exit failures explain this recovery and the Host mode selector; identity or stale-content failures retain their distinct validation meaning.
 
 A Host-initiated exit is itself the explicit user/product decision and does not open a second plan-approval interaction. Agent-initiated `ExitPlanMode` still reads the exact managed bytes and requires the existing inline plan review.
 

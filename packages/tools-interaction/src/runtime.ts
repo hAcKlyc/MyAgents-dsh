@@ -608,7 +608,7 @@ export class ProductPlanService extends Service {
           const snapshot = this.snapshot(prompt.agent);
           if (snapshot.mode !== "plan") return "";
           return `Hard plan mode is active. Explore and edit only the managed plan artifact ${snapshot.planPath}. `
-            + "Do not execute processes or perform non-plan mutations. Submit ExitPlanMode for explicit review.";
+            + "Do not execute processes or perform non-plan mutations. The plan path may not exist yet: use Write to author the plan there before submitting ExitPlanMode for explicit review.";
         },
       });
       return async () => {
@@ -849,7 +849,9 @@ export class ProductPlanService extends Service {
       ), "plan artifact resolution result");
     } catch (error) {
       context.signal.throwIfAborted();
-      throw new ProductToolError("plan_artifact_unavailable", "managed plan artifact failed identity validation", { cause: error });
+      throw new ProductToolError("plan_artifact_unavailable", safeErrorCodes(error).has("FS_NOT_FOUND")
+        ? `The plan file does not exist yet. Use Write on ${managedPath} to create it before reading or submitting it.`
+        : "managed plan artifact failed identity validation", { cause: error });
     }
   }
 
@@ -1131,7 +1133,9 @@ export class ProductPlanService extends Service {
       "managed plan artifact read",
     )).then((value) => snapshotPlanRead(value, 240_000)).catch((error: unknown) => {
       signal.throwIfAborted();
-      throw new ProductToolError("stale_plan_revision", "managed plan artifact is missing, invalid, or stale", { cause: error });
+      throw new ProductToolError("stale_plan_revision", safeErrorCodes(error).has("FS_NOT_FOUND")
+        ? `No plan has been written. Use Write on ${path}, then retry ExitPlanMode; the Host mode selector can also leave Plan mode.`
+        : "managed plan artifact is missing, invalid, or stale", { cause: error });
     });
   }
 
