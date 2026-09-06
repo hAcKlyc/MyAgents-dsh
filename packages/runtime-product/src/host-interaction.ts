@@ -329,6 +329,9 @@ class ProductHostInteractionBridge {
     );
     return () => {
       if (this.#active.get(id) !== record) return;
+      // Once answering starts, its receipt owns completion. Normal provider cleanup
+      // may dispose registration before the asynchronous effect returns.
+      if (record.settlement !== undefined) return;
       this.#active.delete(id);
       this.#remember(id, "expired");
       settleRegistration("expired");
@@ -375,7 +378,7 @@ class ProductHostInteractionBridge {
       ));
       return Object.freeze({ state: "rejected" as const, code: "interaction_authority_stale" });
     }
-    const settlement = this.#settle(record, params);
+    const settlement = Promise.resolve().then(() => this.#settle(record, params));
     record.settlement = settlement;
     return await settlement;
   }

@@ -18,9 +18,11 @@ describe("Host interaction bridge", () => {
     });
     const requestInteraction = vi.fn(() => registration);
     const notifyInteractionCancelled = vi.fn();
-    const resolveSettlement = vi.fn(() => Promise.resolve({
-      effectivePolicyRevision: "permission-v2",
-    }));
+    let disposeRegistration: () => void = () => undefined;
+    const resolveSettlement = vi.fn(() => {
+      disposeRegistration();
+      return Promise.resolve({ effectivePolicyRevision: "permission-v2" });
+    });
     const rejectSettlement = vi.fn();
     const request: ProductPermissionInteractionRequest = Object.freeze({
       agent: Object.freeze({ id: "agent-review" }) as Agent,
@@ -56,7 +58,7 @@ describe("Host interaction bridge", () => {
       deadlineMs: 30_000,
     });
 
-    bridge.provider.decidePermission(request, {
+    disposeRegistration = bridge.provider.decidePermission(request, {
       resolve: resolveSettlement,
       reject: rejectSettlement,
     });
