@@ -1577,11 +1577,11 @@ const main = (): void => {
       evidence.canonicalPermissionEvidence,
       "canonical permission and interaction evidence",
     );
-    if (permissionEvidence.asked !== 26
-      || permissionEvidence.decided !== 26
-      || permissionEvidence.durableRules !== 2
+    if (permissionEvidence.asked !== 25
+      || permissionEvidence.decided !== 25
+      || permissionEvidence.durableRules !== 3
       || permissionEvidence.durableRuleRevocations !== 1
-      || permissionEvidence.providerRequests !== 26
+      || permissionEvidence.providerRequests !== 25
       || permissionEvidence.safeToolsAutoAllowed !== true) {
       throw new Error("canonical permission and interaction evidence differs from the exact policy contract");
     }
