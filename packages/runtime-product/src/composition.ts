@@ -1042,14 +1042,9 @@ export const createHostBackedInteractionProvider = (
         ? root.sdkOperations.resolveActiveToolOperation(agent)
         : root.productWork.resolveActiveChildToolOperation(agent);
       const initial = resolveOperation();
-      if (expectedPermissionRevision !== undefined
-        && initial.operation.birth.permissionRevision !== expectedPermissionRevision) {
-        throw new ProtocolError(
-          "interaction_revision_stale",
-          "Host interaction differs from the operation-frozen permission revision",
-          true,
-        );
-      }
+      // The permission owner validates additive inline grants against the frozen
+      // operation birth. Carry its current card revision; transport must not
+      // replace that decision with a second birth-revision equality check.
       if (initial.operation.birth.interactionScenarioRevision !== normalized.revision) {
         throw new ProtocolError(
           "interaction_revision_stale",
@@ -1100,7 +1095,7 @@ export const createHostBackedInteractionProvider = (
         clientOperationId: initial.operation.clientOperationId,
         dshTurn: initial.dshTurn,
         expectedConfigRevision: initial.operation.birth.configRevision,
-        expectedPermissionRevision: initial.operation.birth.permissionRevision,
+        expectedPermissionRevision: expectedPermissionRevision ?? initial.operation.birth.permissionRevision,
         productTurnId: initial.operation.productTurnId,
       });
     },

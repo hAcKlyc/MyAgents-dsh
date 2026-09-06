@@ -119,3 +119,5 @@ Add a backend behind the canonical web Provider/Host capability, not as a second
 | MCP transport | `packages/components-mcp/src/managed-transport.ts` |
 | Component failure isolation | `packages/component-runtime/src/service.ts` |
 | Exact schemas/claims | `packages/tool-contracts/`, `packages/artifact-verifier/src/integration-compatibility.ts` |
+
+HTTP status failures report the actual status code in both Runtime-owned and Host-owned WebFetch. The Host connection error text includes its already-classified system code (for example `ECONNRESET`); raw proxy URLs, credentials and upstream exception messages remain outside model-visible errors.

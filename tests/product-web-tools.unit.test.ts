@@ -558,8 +558,9 @@ describe("safe Web Providers and canonical Web tools", () => {
       .resolves.toMatchObject({ isError: true, error: { info: { code: "network_policy_denied" } } });
     expect(dispatch).not.toHaveBeenCalled();
     harness.setProduct(allowed);
-    await expect(harness.execute("WebFetch", { url: "https://example.com/status", prompt: "fixture" }))
-      .resolves.toMatchObject({ isError: true, error: { info: { code: "unsupported_content" } } });
+    const failedStatus = await harness.execute("WebFetch", { url: "https://example.com/status", prompt: "fixture" });
+    expect(failedStatus).toMatchObject({ isError: true, error: { info: { code: "unsupported_content" } } });
+    expect(JSON.stringify(failedStatus)).toContain("HTTP 503");
     await expect(harness.execute("WebFetch", { url: "https://example.com/binary", prompt: "fixture" }))
       .resolves.toMatchObject({ isError: true, error: { info: { code: "unsupported_content" } } });
     await harness.context.fiber.dispose();

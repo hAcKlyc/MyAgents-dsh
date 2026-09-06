@@ -695,7 +695,7 @@ describe("product permission policy and local interaction provider", () => {
     const state = await mounted(local.provider);
 
     await expect(state.context.productPermission.authorize(state.product(), request()))
-      .resolves.toBe("deny");
+      .rejects.toMatchObject({ code: "interaction_provider_invalid" });
     expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({ outcome: "unavailable" });
     expect(() => state.context.productPermission.currentRevision(state.agent))
       .toThrow(expect.objectContaining({ code: "permission_recovery_required" }));
@@ -713,7 +713,7 @@ describe("product permission policy and local interaction provider", () => {
     const state = await mounted(local.provider);
 
     await expect(state.context.productPermission.authorize(state.product(), request()))
-      .resolves.toBe("deny");
+      .rejects.toMatchObject({ code: "interaction_provider_invalid" });
     expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({ outcome: "unavailable" });
     expect(() => state.context.productPermission.currentRevision(state.agent))
       .toThrow(expect.objectContaining({ code: "permission_recovery_required" }));
@@ -871,13 +871,30 @@ describe("product permission policy and local interaction provider", () => {
     for (const decide of responders) {
       const local = provider(`scenario-${contexts.length}`, decide);
       const state = await mounted(local.provider);
-      await expect(state.context.productPermission.authorize(state.product(), request()))
-        .resolves.toBe("deny");
+      const authorization = state.context.productPermission.authorize(state.product(), request());
+      if (decide === responders[3]) await expect(authorization).resolves.toBe("deny");
+      else await expect(authorization).rejects.toBeInstanceOf(ProductToolError);
       expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({
         outcome: decide === responders[3] ? "rejected" : "unavailable",
       });
       expect(state.context.productPermission.pendingCount).toBe(0);
     }
+  });
+
+  it("distinguishes an unavailable Host from denial and permits a later retry", async () => {
+    let fail = true;
+    const local = provider("scenario-host-retry", (pending, settlement) => {
+      if (fail) settlement.reject(new Error("synthetic Host transport failure"));
+      else response(pending, "allow_once", settlement);
+    });
+    const state = await mounted(local.provider);
+    const unavailable = state.context.productPermission.authorize(state.product(), request());
+    await expect(unavailable).rejects.toMatchObject({ code: "interaction_unavailable" });
+    await expect(unavailable).rejects.toThrow("no user decision was received");
+    fail = false;
+    await expect(state.context.productPermission.authorize(state.product(), request())).resolves.toBe("allow");
+    expect(local.permissionRequests).toHaveLength(2);
+    expect(state.context.productPermission.pendingCount).toBe(0);
   });
 
   it("keeps a registered permission pending beyond the transport registration deadline", async () => {
@@ -1052,7 +1069,7 @@ describe("product permission policy and local interaction provider", () => {
       const local = provider(`scenario-promise-${contexts.length}`, candidate);
       const state = await mounted(local.provider);
       await expect(state.context.productPermission.authorize(state.product(), request()))
-        .resolves.toBe("deny");
+        .rejects.toMatchObject({ code: "interaction_unavailable" });
       expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({ outcome: "unavailable" });
     }
     expect(thenGetterHits).toBe(0);

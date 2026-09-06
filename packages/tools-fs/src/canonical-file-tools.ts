@@ -609,7 +609,7 @@ export class CanonicalFileTools extends Service {
         }
         const prior = ctx.productTools.readState(product, String(target.targetKey));
         if (prior?.complete !== true) {
-          throw new ProductToolError("read_required", "Edit target requires a complete qualifying Read");
+          throw new ProductToolError("read_required", "Read the entire current file before Edit. A partial Read does not qualify; call Read without offset or limit, then retry Edit.");
         }
         const externalChangesRetained = prior.version !== String(info.version)
           || prior.sha256 !== sha256(beforeBytes);

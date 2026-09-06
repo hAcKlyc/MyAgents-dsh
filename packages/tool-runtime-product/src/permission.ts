@@ -1567,6 +1567,24 @@ export class ProductPermissionService extends Service {
       if (controller.signal.aborted && controller.signal.reason instanceof ProductPermissionError) {
         throw controller.signal.reason;
       }
+      if (outcome === "unavailable" || (outcome === "allowed-once" && pending.response === undefined)) {
+        // DSH contains throwing answerers as "unavailable". Preserve our own
+        // typed failure rather than reporting an infrastructure error as denial.
+        try {
+          await pending.settlement;
+        } catch (error) {
+          if (error instanceof ProductPermissionError) throw error;
+          throw new ProductPermissionError(
+            "interaction_unavailable",
+            "Permission approval could not reach the Host; no user decision was received. Check the Host connection and retry.",
+            { cause: error },
+          );
+        }
+        throw new ProductPermissionError(
+          "interaction_unavailable",
+          "Permission approval is unavailable; no user decision was received. Check the Host connection and retry.",
+        );
+      }
       if (outcome !== "allowed-once" || pending.response === undefined) {
         pending.effect?.apply({ effectivePolicyRevision: (await this.readOperationPolicy(context)).fold.latestRevision });
         return "deny";

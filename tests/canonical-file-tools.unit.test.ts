@@ -476,6 +476,9 @@ describe("canonical filesystem tools", () => {
     const path = join(state.workspace, "guarded.txt");
     await writeFile(path, "one\ntwo\nthree\n");
     await state.execute("Read", { file_path: path, offset: 2, limit: 1 });
+    const partialEdit = await state.execute("Edit", { file_path: path, old_string: "one", new_string: "changed" });
+    expect(partialEdit).toMatchObject({ isError: true, error: { info: { code: "read_required" } } });
+    expect(JSON.stringify(partialEdit)).toContain("call Read without offset or limit");
     await expect(state.execute("Write", { file_path: path, content: "forbidden" }))
       .resolves.toMatchObject({ isError: true, error: { info: { code: "read_required" } } });
     await state.execute("Read", { file_path: path });

@@ -822,7 +822,7 @@ export class ProductSafeHttpClient {
               continue;
             }
             if (response.statusCode < 200 || response.statusCode > 299) {
-              throw new ProductToolError("unsupported_content", "WebFetch response status is unsupported");
+              throw new ProductToolError("unsupported_content", `WebFetch failed: HTTP ${response.statusCode}`);
             }
             const declaredLength = headerValue(response.headers["content-length"]);
             if (declaredLength !== undefined) {

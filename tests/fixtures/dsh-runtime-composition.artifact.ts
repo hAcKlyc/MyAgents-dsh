@@ -1467,7 +1467,7 @@ hostPeer.registerRequestHandler("host/interaction/request", (params, context) =>
     if (schema.tool !== "Agent" || schema.target !== "Verify child model lineage") {
       fileToolEvidence.push(`permission:${String(schema.tool)}:${String(schema.target)}`);
     }
-    decision = schema.tool === "Write" && schema.target !== fixturePlanPath
+    decision = schema.tool === "TaskCreate" || (schema.tool === "Write" && schema.target !== fixturePlanPath)
       ? "always_allow"
       : "allow_once";
   } else {
@@ -4874,9 +4874,9 @@ const permissionDecidedEvents = primaryAgent.session.snapshotEvents().filter(({ 
 const permissionRuleEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule");
 const permissionRuleRevokedEvents = primaryAgent.session.snapshotEvents()
   .filter(({ type }) => type === "myagents/permission/rule/revoked");
-assert.equal(permissionAskedEvents.length, 26);
-assert.equal(permissionDecidedEvents.length, 26);
-assert.equal(permissionRuleEvents.length, 2);
+assert.equal(permissionAskedEvents.length, 25);
+assert.equal(permissionDecidedEvents.length, 25);
+assert.equal(permissionRuleEvents.length, 3);
 assert.equal(permissionRuleRevokedEvents.length, 1);
 assert.equal(hostInteractionResponses.length, hostInteractionCalls.length + 2);
 assert.ok(hostInteractionCalls.length >= permissionAskedEvents.length);

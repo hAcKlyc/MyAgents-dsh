@@ -127,3 +127,5 @@ A tool change must update the handwritten contract source, generated catalog/sch
 ## Trusted service callbacks
 
 Composition-installed callbacks use ordinary Promise/thenable semantics. Promise subclasses, own observation fields and Proxy functions do not establish a security boundary inside trusted Runtime JavaScript. The tool service caches the parsed catalog by its immutable source identity and compares admitted revision/digest during execution. Model arguments, external RPC declarations, path/URL/attachment identity and post-approval policy checks retain their boundary validation.
+
+A governed Edit without a current complete Read instructs the caller to run Read without offset or limit and then retry. This improves recovery guidance without changing ReadState authority or permitting a partial/stale read to authorize a mutation.
