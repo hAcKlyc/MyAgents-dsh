@@ -5021,6 +5021,8 @@ process.stdout.write(`${JSON.stringify({
     events: hostAttachmentEvidence,
     imageAttachmentId: normalizedImageAttachmentId,
     sourceImageAttachmentId: fixtureImageAttachmentId,
+    binaryReadImageReference: binaryReadValue.content.some((block) =>
+      block.type === "image" && String(block.attachment.attachmentId) === normalizedImageAttachmentId),
     imageRequestContainsReference: adapter.requests[2]?.messages.at(-1)?.content.some((block) =>
       block.type === "image" && String(block.attachment.attachmentId) === normalizedImageAttachmentId),
     hostToolImageReference: hostToolResult.data.message.content.some((block) =>

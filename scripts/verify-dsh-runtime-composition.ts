@@ -1492,13 +1492,14 @@ const main = (): void => {
       || !/^sha256:[a-f0-9]{64}$/u.test(hostAttachmentEvidence.sourceImageAttachmentId)
       || hostAttachmentEvidence.sourceImageAttachmentId === hostAttachmentEvidence.imageAttachmentId
       || hostAttachmentEvidence.imageRequestContainsReference !== true
+      || hostAttachmentEvidence.binaryReadImageReference !== true
       || hostAttachmentEvidence.hostToolImageReference !== true
       || JSON.stringify(hostAttachmentEvidence.stagingEntriesAfterUse) !== "[]"
       || JSON.stringify(hostAttachmentEvidence.events) !== JSON.stringify([
         `acquire:${hostAttachmentEvidence.sourceImageAttachmentId}:artifact-runtime-lease-1`,
         `put:${hostAttachmentEvidence.imageAttachmentId}:pixel.png`,
         "release:artifact-runtime-lease-1",
-        `put:${hostAttachmentEvidence.sourceImageAttachmentId}:pixel.png`,
+        `put:${hostAttachmentEvidence.imageAttachmentId}:pixel.png`,
         `acquire:${hostAttachmentEvidence.sourceImageAttachmentId}:artifact-runtime-lease-2`,
         `put:${hostAttachmentEvidence.imageAttachmentId}:host-tool-pixel.png`,
         "release:artifact-runtime-lease-2",
