@@ -1,4 +1,5 @@
 import { Context, type Plugin } from "@deepseek-ai/cordis";
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   createUserMessage,
   LlmAdapter,
@@ -106,11 +107,13 @@ describe("official Host-profiled Provider composition", () => {
 
   it("redacts in-stream Provider failures before DSH can persist them", async () => {
     const root = new Context();
+    const attachments = new AsyncLocalStorage<boolean>();
     try {
       await root.plugin(LlmRuntime);
       root.llm.registerAdapter(["fixture-provider"], new class extends LlmAdapter {
         override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
           await Promise.resolve(options.signal?.aborted);
+          expect(attachments.getStore()).toBe(true);
           yield {
             type: "finish",
             reason: {
@@ -125,7 +128,9 @@ describe("official Host-profiled Provider composition", () => {
       }());
       const scope = Object.freeze({});
       installHostLlmRequestScope(root, {
-        request: () => Object.freeze({ binding: Object.freeze({}), scope }),
+        request: () => Object.freeze({ binding: Object.freeze({}), scope,
+          runWithAttachments: <T>(action: () => T) => attachments.run(true, action),
+        }),
       } as never, {
         runWithProviderRequestScope: (_scope: unknown, action: () => unknown) => action(),
       } as never);
@@ -147,6 +152,7 @@ describe("official Host-profiled Provider composition", () => {
         },
       }]);
       expect(JSON.stringify(chunks)).not.toContain("fixture-secret");
+      expect(attachments.getStore()).toBeUndefined();
     } finally {
       await root.fiber.dispose();
     }
