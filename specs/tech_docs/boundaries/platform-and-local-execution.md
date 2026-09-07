@@ -32,6 +32,13 @@ This guide explains the composition-selected platform adapters and the local fil
 
 Platform implementation and native validation are separate. A support claim comes from the exact Runtime's platform evidence; a previous macOS pass cannot be inherited by new bytes. Windows/Linux remain `implementation-complete_pending-native-validation` until their native campaigns pass.
 
+`LocalWorkspaceFileSystem` extends official `LocalFileSystem`. Official code owns text streaming,
+CRLF-aware literal edits, per-target mutation serialization, private staging and native atomic
+publication (including Windows DACL preservation). Product code owns path capabilities and the
+checkpoint/plan/attachment/retained-output I/O bridges. A pre-publication policy hook rechecks the
+product target; automatic upstream parent creation is disabled because the checkpoint journal owns
+those directories. See [ADR 0012](../../adr/0012-official-file-tool-composition.md).
+
 ## 4. Sealed process environment
 
 The official Runtime resolves and hashes the selected Shell at composition: `bash` from launcher `PATH` on POSIX or official `resolvePwshPath()` on Windows; Node is `process.execPath`, and ripgrep comes from `@vscode/ripgrep`. The Host constructs ordinary child environment values and derives its declaration from that object. During initialize, the trusted process adapter captures only those declared keys once, validates them, and freezes the generation's effective environment. There is no second product-variable allowlist. Missing declared values fail initialization with key names only; they are configuration errors, not permission denials. MyAgents CLI routing variables remain available to the official Shell.

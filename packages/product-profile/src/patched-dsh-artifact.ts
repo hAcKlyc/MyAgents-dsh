@@ -16,6 +16,8 @@ const expectedRuntimePackageNames = Object.freeze([
   "@deepseek-ai/dsh-compaction",
   "@deepseek-ai/dsh-compaction-basic",
   "@deepseek-ai/dsh-compaction-tool-result-pruner",
+  "@deepseek-ai/dsh-fs-local",
+  "@deepseek-ai/dsh-tool-fs",
   "@deepseek-ai/dsh-llm",
   "@deepseek-ai/dsh-llm-deepseek",
   "@deepseek-ai/dsh-llm-pi-ai",
@@ -42,7 +44,7 @@ export interface AcceptedPatchedDshArtifactAuthority {
   readonly manifestSha256: string;
   readonly sha256SumsSha256: string;
   readonly consumerLockSha256: string;
-  readonly packageCount: 72;
+  readonly packageCount: 74;
   readonly runtimePackages: Readonly<Record<AcceptedDshRuntimePackageName, string>>;
   readonly requiredPatchedSeams: readonly [
     "agent.wakePending",
@@ -65,6 +67,10 @@ export interface AcceptedPatchedDshArtifactAuthority {
     "subagents.literalPersona",
     "agentInstructions.firstCandidateSelection",
     "llm-pi-ai.providerContent",
+    "tool-fs.definitionFactories",
+    "fs-local.prepareTextEdit",
+    "fs-local.beforePublish",
+    "fs-local.createParents",
   ];
 }
 
@@ -98,7 +104,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "runtimePackages",
     "requiredPatchedSeams",
   ], "accepted patched DSH artifact authority");
-  if (authority.formatVersion !== 1 || authority.packageCount !== 72
+  if (authority.formatVersion !== 1 || authority.packageCount !== 74
     || typeof authority.artifactVersion !== "string"
     || !/^0\.1\.2-rc\.1\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
     throw new TypeError("accepted patched DSH artifact identity is invalid");
@@ -137,6 +143,10 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "subagents.literalPersona",
     "agentInstructions.firstCandidateSelection",
     "llm-pi-ai.providerContent",
+    "tool-fs.definitionFactories",
+    "fs-local.prepareTextEdit",
+    "fs-local.beforePublish",
+    "fs-local.createParents",
   ];
   if (!Array.isArray(requiredPatchedSeams)
     || JSON.stringify(requiredPatchedSeams) !== JSON.stringify(expectedSeams)) {
@@ -152,7 +162,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     manifestSha256: exactSha256(authority.manifestSha256, "accepted patched DSH manifest"),
     sha256SumsSha256: exactSha256(authority.sha256SumsSha256, "accepted patched DSH SHA256SUMS"),
     consumerLockSha256: exactSha256(authority.consumerLockSha256, "accepted patched DSH consumer lock"),
-    packageCount: 72,
+    packageCount: 74,
     runtimePackages: frozenPackages,
     requiredPatchedSeams: Object.freeze(expectedSeams) as AcceptedPatchedDshArtifactAuthority["requiredPatchedSeams"],
   });

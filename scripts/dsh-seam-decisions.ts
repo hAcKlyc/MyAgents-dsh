@@ -262,6 +262,9 @@ export const DSH_SEAM_SOURCE = Object.freeze({
 });
 
 export const PATCHED_SOURCE_TESTS = Object.freeze([
+  "packages/fs/fs-local/tests/product-composition.spec.ts",
+  "packages/fs/fs-local/tests/fsio.spec.ts",
+  "packages/fs/fs-local/tests/filesystem.spec.ts",
   "packages/core/system-prompt/tests/system-prompt.spec.ts",
   "packages/context/agent-instructions/tests/agent-instructions.spec.ts",
   "packages/llm/llm-deepseek/tests/translate.spec.ts",
@@ -296,6 +299,7 @@ const CAPACITY_SAFE_COMPACTION_PATCH = "specs/dsh/patches/0007-capacity-safe-com
 const LITERAL_PROMPT_CONTRIBUTIONS_PATCH = "specs/dsh/patches/0008-literal-prompt-contributions.patch";
 const AGENT_INSTRUCTION_SELECTION_PATCH = "specs/dsh/patches/0009-agent-instruction-selection.patch";
 const PI_AI_PROVIDER_CONTENT_PATCH = "specs/dsh/patches/0010-pi-ai-provider-content.patch";
+const FILE_TOOL_COMPOSITION_PATCH = "specs/dsh/patches/0011-file-tool-composition.patch";
 export const DSH_SEAM_PATCHES = Object.freeze([
   WAKE_PATCH,
   PRE_ASSISTANT_COMMIT_PATCH,
@@ -307,6 +311,7 @@ export const DSH_SEAM_PATCHES = Object.freeze([
   LITERAL_PROMPT_CONTRIBUTIONS_PATCH,
   AGENT_INSTRUCTION_SELECTION_PATCH,
   PI_AI_PROVIDER_CONTENT_PATCH,
+  FILE_TOOL_COMPOSITION_PATCH,
 ] as const);
 
 export interface DshSeamPatchSnapshot {
@@ -553,6 +558,16 @@ export function buildDshSeamDecisions(): object {
           "canonical local tool calls continue through the unchanged DSH tool execution pipeline",
         ],
         removalCondition: "an installed DSH release preserves generic Provider-owned pi-ai content and exact matching-route replay",
+      },
+      {
+        id: "DSH-SEAM-012", seam: "official-file-tool-composition",
+        status: "required_upstream_patch_accepted",
+        adr: "specs/adr/0012-official-file-tool-composition.md",
+        rejected: "duplicate-file-tool-executors-or-production-use-of-test-only-fsio-internals",
+        selectedPublicApi: "tool-fs createReadTool/createReadImageTool/createWriteTool/createEditTool; fs-local prepareTextEdit and protected beforePublish",
+        patch: patch(FILE_TOOL_COMPOSITION_PATCH),
+        executableEvidence: ["stock tool definitions execute inside the product permission/checkpoint scope", "LF edits preserve stored CRLF bytes and checkpoint hashes", "publication policy runs after staging without taking over atomic I/O"],
+        removalCondition: "installed DSH exposes equivalent factories, stored-edit preparation and publication policy hook",
       },
     ],
     evidenceOwners: {

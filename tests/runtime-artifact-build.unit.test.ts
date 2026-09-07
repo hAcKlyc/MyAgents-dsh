@@ -14,15 +14,15 @@ describe("Runtime artifact public export projection", () => {
       "@deepseek-ai/dsh-llm-pi-ai": "0.1.2-rc.1",
       "@myagents-dsh/protocol": "0.0.0",
     }, "fixture dependencies")).toEqual({
-      "@deepseek-ai/dsh-agent": "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd",
-      "@deepseek-ai/dsh-llm-pi-ai": "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd",
+      "@deepseek-ai/dsh-agent": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417",
+      "@deepseek-ai/dsh-llm-pi-ai": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417",
       "@myagents-dsh/protocol": "0.0.0",
     });
   });
 
   it("requires the exact patched authorization peer for the pi-ai adapter", () => {
     expect(() => assertRuntimeProviderVersions(new Map([
-      ["@deepseek-ai/dsh-llm-pi-ai", new Set(["0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd"])],
+      ["@deepseek-ai/dsh-llm-pi-ai", new Set(["0.1.2-rc.1.myagents.a66e47020478.db06dc323417"])],
       ["@earendil-works/pi-ai", new Set(["0.84.2"])],
     ]))).toThrow("authorization peer authority");
   });

@@ -306,6 +306,11 @@
       "order": 10,
       "path": "specs/dsh/patches/0010-pi-ai-provider-content.patch",
       "sha256": "28ab120eb22b29f5cf40d7e6338feac77871d106222c5b1baf25d7e37169f625"
+    },
+    {
+      "order": 11,
+      "path": "specs/dsh/patches/0011-file-tool-composition.patch",
+      "sha256": "580e674cab1d7310c5a2f8f88008a6e3ba4a5bc93d2fb573fbc6c9f69de3a582"
     }
   ],
   "decisions": [
@@ -541,12 +546,34 @@
         "canonical local tool calls continue through the unchanged DSH tool execution pipeline"
       ],
       "removalCondition": "an installed DSH release preserves generic Provider-owned pi-ai content and exact matching-route replay"
+    },
+    {
+      "id": "DSH-SEAM-012",
+      "seam": "official-file-tool-composition",
+      "status": "required_upstream_patch_accepted",
+      "adr": "specs/adr/0012-official-file-tool-composition.md",
+      "rejected": "duplicate-file-tool-executors-or-production-use-of-test-only-fsio-internals",
+      "selectedPublicApi": "tool-fs createReadTool/createReadImageTool/createWriteTool/createEditTool; fs-local prepareTextEdit and protected beforePublish",
+      "patch": {
+        "order": 11,
+        "path": "specs/dsh/patches/0011-file-tool-composition.patch",
+        "sha256": "580e674cab1d7310c5a2f8f88008a6e3ba4a5bc93d2fb573fbc6c9f69de3a582"
+      },
+      "executableEvidence": [
+        "stock tool definitions execute inside the product permission/checkpoint scope",
+        "LF edits preserve stored CRLF bytes and checkpoint hashes",
+        "publication policy runs after staging without taking over atomic I/O"
+      ],
+      "removalCondition": "installed DSH exposes equivalent factories, stored-edit preparation and publication policy hook"
     }
   ],
   "evidenceOwners": {
     "runtimeSemantics": "tests/dsh-seam-spikes.unit.test.ts",
     "patchedSourceTypecheck": "tsc -b tsconfig.host.json",
     "patchedSourceTests": [
+      "packages/fs/fs-local/tests/product-composition.spec.ts",
+      "packages/fs/fs-local/tests/fsio.spec.ts",
+      "packages/fs/fs-local/tests/filesystem.spec.ts",
       "packages/core/system-prompt/tests/system-prompt.spec.ts",
       "packages/context/agent-instructions/tests/agent-instructions.spec.ts",
       "packages/llm/llm-deepseek/tests/translate.spec.ts",

@@ -1,5 +1,8 @@
 import { Service, type Context } from "@deepseek-ai/cordis";
-import { FsError, type FsInfo, type FsTarget } from "@deepseek-ai/dsh-fs";
+import { FsError, type FsInfo, type FsTarget, type FsWriteIntent } from "@deepseek-ai/dsh-fs";
+import { prepareTextEdit } from "@deepseek-ai/dsh-fs-local";
+import { createReadTool, createReadImageTool, createWriteTool, createEditTool } from "@deepseek-ai/dsh-tool-fs";
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { buildGlobCommand, buildGrepCommand, parseGlobArgs, parseGrepArgs } from "@deepseek-ai/dsh-tool-fs-search";
@@ -20,7 +23,7 @@ import {
 import type {} from "@myagents-dsh/tools-process";
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
-import { isPromise, isProxy } from "node:util/types";
+import { isProxy } from "node:util/types";
 import {
   LocalWorkspaceFileSystem,
   requireLocalWorkspaceFileSystem,
@@ -28,31 +31,17 @@ import {
   type LocalSearchTargetAuthority,
 } from "./local-filesystem.js";
 
-export interface AttachmentPublicationRequest {
-  readonly bytes: Uint8Array;
-  readonly context: ProductToolContext;
-  readonly mimeType: string;
-  readonly name: string;
-}
-
 export interface CanonicalFileToolsConfig {
   readonly attachments: Readonly<{
-    publish(request: AttachmentPublicationRequest): Promise<Readonly<{
-      attachmentId: string;
-      mimeType: string;
-      name: string;
-      sha256: string;
-      sizeBytes: number;
-    }>>;
+    run<T>(context: ProductToolContext, action: () => Promise<T>): Promise<T>;
   }>;
   readonly retainedOutput?: Readonly<{
     resolve(context: ProductToolContext, path: string): Promise<FsTarget | undefined>;
   }>;
 }
 
+type JsonValue = Parameters<ToolDefinition["output"]["render"]>[1];
 type JsonObject = Record<string, unknown>;
-
-type AttachmentReference = Awaited<ReturnType<CanonicalFileToolsConfig["attachments"]["publish"]>>;
 
 const sha256 = (value: Uint8Array | string): string => createHash("sha256").update(value).digest("hex");
 
@@ -68,39 +57,6 @@ const settleCheckpoint = async (
   await checkpoint[branch]();
 };
 
-const exactAttachmentReference = (
-  value: unknown,
-  expected: Readonly<{ bytes: Uint8Array; mimeType: string; name: string }>,
-): AttachmentReference => {
-  if (value === null || typeof value !== "object" || Array.isArray(value) || isProxy(value)
-    || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
-    throw new ProductToolError("attachment_publication_failed", "attachment authority returned an invalid object");
-  }
-  const record = value as JsonObject;
-  const keys = ["attachmentId", "mimeType", "name", "sha256", "sizeBytes"];
-  if (Reflect.ownKeys(record).length !== keys.length || keys.some((key) => {
-    const descriptor = Object.getOwnPropertyDescriptor(record, key);
-    return descriptor === undefined || !descriptor.enumerable || !("value" in descriptor);
-  })) {
-    throw new ProductToolError("attachment_publication_failed", "attachment authority returned an invalid exact shape");
-  }
-  if (typeof record.attachmentId !== "string" || record.attachmentId.length === 0
-    || record.attachmentId.length > 256 || typeof record.mimeType !== "string"
-    || typeof record.name !== "string" || typeof record.sha256 !== "string"
-    || !Number.isSafeInteger(record.sizeBytes) || record.sizeBytes !== expected.bytes.byteLength
-    || record.mimeType !== expected.mimeType || record.name !== expected.name
-    || record.sha256 !== sha256(expected.bytes)) {
-    throw new ProductToolError("attachment_publication_failed", "attachment authority result differs from published bytes");
-  }
-  return Object.freeze({
-    attachmentId: record.attachmentId,
-    mimeType: record.mimeType,
-    name: record.name,
-    sha256: record.sha256,
-    sizeBytes: record.sizeBytes,
-  });
-};
-
 const asObject = (value: unknown, description: string): JsonObject => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new ProductToolError("invalid_tool_input", `${description} must be an object`);
@@ -109,37 +65,6 @@ const asObject = (value: unknown, description: string): JsonObject => {
 };
 
 const textBlocks = (text: string): ContentBlock[] => [{ type: "text", text }];
-
-const renderRead = (_args: unknown, value: unknown): ContentBlock[] => {
-  const output = asObject(value, "Read output");
-  if (typeof output.content === "string") return textBlocks(output.content);
-  return textBlocks(`Published ${String(output.kind)} attachment for ${String(output.path)}.`);
-};
-
-const renderMutation = (_args: unknown, value: unknown): ContentBlock[] => {
-  const output = asObject(value, "file mutation output");
-  return textBlocks(`${String(output.path)} (${String(output.sha256)})`);
-};
-
-const exactOccurrences = (text: string, search: string): number => {
-  let count = 0;
-  let offset = 0;
-  while (offset <= text.length - search.length) {
-    const found = text.indexOf(search, offset);
-    if (found < 0) break;
-    count += 1;
-    offset = found + search.length;
-  }
-  return count;
-};
-
-const truncateUtf8 = (value: string, maxBytes: number): Readonly<{ text: string; truncated: boolean }> => {
-  const bytes = Buffer.from(value, "utf8");
-  if (bytes.length <= maxBytes) return Object.freeze({ text: value, truncated: false });
-  let end = maxBytes;
-  while (end > 0 && (bytes[end] ?? 0) >= 0x80 && (bytes[end] ?? 0) < 0xc0) end -= 1;
-  return Object.freeze({ text: bytes.subarray(0, end).toString("utf8"), truncated: true });
-};
 
 const truncateHeadCompleteLines = (
   value: string,
@@ -163,15 +88,7 @@ const truncateHeadCompleteLines = (
   return Object.freeze({ text: retained.join("\n"), truncated: true });
 };
 
-const mimeFor = (bytes: Uint8Array, extension: string): string | undefined => {
-  const header = Buffer.from(bytes.subarray(0, 16));
-  if (header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
-  if (header[0] === 0xff && header[1] === 0xd8) return "image/jpeg";
-  if (header.subarray(0, 6).toString("ascii") === "GIF87a" || header.subarray(0, 6).toString("ascii") === "GIF89a") return "image/gif";
-  if (header.subarray(0, 4).toString("ascii") === "RIFF" && header.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
-  if (extension === ".pdf" && header.subarray(0, 5).toString("ascii") === "%PDF-") return "application/pdf";
-  return undefined;
-};
+
 
 const renderJson = (_args: unknown, value: unknown): ContentBlock[] =>
   textBlocks(JSON.stringify(value, undefined, 2));
@@ -273,6 +190,7 @@ const searchReportsInvalidPattern = (value: string): boolean =>
 
 export class CanonicalFileTools extends Service {
   static inject = ["fs", "tools", "productProcesses", "productTools"];
+  readonly #intents = new AsyncLocalStorage<Readonly<{ target: FsTarget; intent: FsWriteIntent }>>();
   readonly #attachments: CanonicalFileToolsConfig["attachments"];
   readonly #retainedOutput: CanonicalFileToolsConfig["retainedOutput"];
 
@@ -292,17 +210,27 @@ export class CanonicalFileTools extends Service {
       || isProxy(attachments) || Reflect.ownKeys(attachments).length !== 1) {
       throw new TypeError("CanonicalFileTools requires one attachment publication authority");
     }
-    const publishDescriptor = Object.getOwnPropertyDescriptor(attachments, "publish");
-    const publish: unknown = publishDescriptor !== undefined && "value" in publishDescriptor
-      ? publishDescriptor.value as unknown
-      : undefined;
-    if (typeof publish !== "function") {
-      throw new TypeError("CanonicalFileTools requires one attachment publication authority");
+    const runDescriptor = Object.getOwnPropertyDescriptor(attachments, "run");
+    const run: unknown = runDescriptor !== undefined && "value" in runDescriptor ? runDescriptor.value as unknown : undefined;
+    if (typeof run !== "function" || isProxy(run)) {
+      throw new TypeError("CanonicalFileTools requires one attachment request-scope authority");
     }
-    const owner = attachments;
-    const publishAuthority = publish as CanonicalFileToolsConfig["attachments"]["publish"];
+    const runAuthority = run as CanonicalFileToolsConfig["attachments"]["run"];
     this.#attachments = Object.freeze({
-      publish: (request: AttachmentPublicationRequest) => publishAuthority.call(owner, request),
+      run: <T>(context: ProductToolContext, action: () => Promise<T>) => runAuthority.call(attachments, context, action) as Promise<T>,
+    });
+    const intentFor = (target: FsTarget): FsWriteIntent => {
+      const current = this.#intents.getStore();
+      if (current?.target.targetKey !== target.targetKey) {
+        throw new ProductToolError("tool_operation_denied", "file mutation lacks the authorized product intent");
+      }
+      return current.intent;
+    };
+    ctx.on("fs/write-intent", (target) => Promise.resolve(intentFor(target)));
+    ctx.on("fs/edit-intent", (target) => {
+      const intent = intentFor(target);
+      if (intent.kind !== "replaceIfVersion") throw new ProductToolError("read_required", "Edit requires a current file");
+      return Promise.resolve({ version: intent.version });
     });
     const retainedDescriptor = Object.getOwnPropertyDescriptor(candidate, "retainedOutput");
     const retained: unknown = retainedDescriptor !== undefined && "value" in retainedDescriptor
@@ -363,125 +291,75 @@ export class CanonicalFileTools extends Service {
   }
 
   #readDefinition(ctx: Context): ToolDefinition {
-    return this.#definition("Read", renderRead, async (args, exec) => {
+    const textTool: ToolDefinition = createReadTool(ctx, { limit: 2_000, maxLineLength: 2_000, maxBytes: 240_000, streamMinSize: 1024 * 1024 });
+    const imageTool: ToolDefinition = createReadImageTool(ctx);
+    return this.#definition("Read", (args, value) => {
+      const output = asObject(value, "Read output");
+      return output.kind === "image"
+        ? imageTool.output.render(args, value as JsonValue)
+        : textBlocks(output.content as string);
+    }, async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
       const path = args.file_path as string;
       const { target } = await this.#authorizedTarget(ctx, product, "Read", path, "read");
       await ctx.productTools.authorize(product, {
-        permissionClass: CANONICAL_TOOL_CONTRACTS.Read.permissionClass,
-        target: target.displayPath,
-        tool: "Read",
+        permissionClass: CANONICAL_TOOL_CONTRACTS.Read.permissionClass, target: target.displayPath, tool: "Read",
       });
-      return await runWithProductToolExecutionDeadline(
-        product,
-        CANONICAL_TOOL_CONTRACTS.Read.timeoutMs,
-        async (product) => {
-      const refreshed = await this.#authorizedTarget(ctx, product, "Read", path, "read");
-      if (String(refreshed.target.targetKey) !== String(target.targetKey)) {
-        throw new ProductToolError("path_denied", "Read target changed while awaiting authorization; retry Read on the intended path");
-      }
-      const info = await this.#regularFile(ctx, target, product.signal);
-      const extension = extname(target.displayPath).toLowerCase();
-      const binary = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf"].includes(extension);
-      if (binary) {
-        const bytes = await ctx.fs.readBytes(target, product.signal, 20 * 1_024 * 1_024);
-        const mimeType = mimeFor(bytes, extension);
-        if (mimeType === undefined) throw new ProductToolError("unsupported_format", "Read binary format is unsupported");
-        if (extension === ".pdf" && args.pages !== undefined
-          && !/^(?:[1-9][0-9]?)(?:-(?:[1-9][0-9]?))?(?:,(?:[1-9][0-9]?)(?:-(?:[1-9][0-9]?))?)*$/u.test(args.pages as string)) {
-          throw new ProductToolError("unsupported_format", "Read PDF page selection is invalid");
+      return runWithProductToolExecutionDeadline(product, CANONICAL_TOOL_CONTRACTS.Read.timeoutMs, async (product) => {
+        const refreshed = await this.#authorizedTarget(ctx, product, "Read", path, "read");
+        if (refreshed.target.targetKey !== target.targetKey) {
+          throw new ProductToolError("path_denied", "Read target changed while awaiting authorization; retry Read on the intended path");
         }
-        const publicationBytes = Uint8Array.from(bytes);
-        const publicationName = target.displayPath.split(/[\\/]/u).at(-1) ?? "attachment";
-        const pendingAttachment: unknown = this.#attachments.publish(Object.freeze({
-          bytes: publicationBytes,
-          context: product,
-          mimeType,
-          name: publicationName,
-        }));
-        if (pendingAttachment !== null && typeof pendingAttachment === "object" && isProxy(pendingAttachment)) {
-          throw new ProductToolError("attachment_publication_failed", "attachment authority returned a Proxy thenable");
+        const extension = extname(target.displayPath).toLowerCase();
+        if (extension === ".pdf" || args.pages !== undefined) {
+          throw new ProductToolError("unsupported_format", "Read does not extract PDF pages. Convert the PDF to text/Markdown with MyAgents document processing, then Read the converted file. In MyAgents, use the myagents-anydoc skill or `myagents anydoc convert --file <path> --wait --json`. Publishing a PDF attachment does not expose its contents to the model.");
         }
-        if (!isPromise(pendingAttachment)) {
-          throw new ProductToolError("attachment_publication_failed", "attachment authority did not return a native Promise");
-        }
-        const attachment = exactAttachmentReference(
-          await pendingAttachment,
-          Object.freeze({ bytes: publicationBytes, mimeType, name: publicationName }),
+        let image = [".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(extension);
+        const info = await this.#regularFile(ctx, target, product.signal);
+        const input = { ...args, file_path: target.displayPath };
+        const run = { ...exec, signal: product.signal };
+        let tool = image ? imageTool : textTool;
+        const executePinned = () => requireLocalWorkspaceFileSystem(ctx.fs).runWithAuthorizedTarget(
+          target, () => Promise.resolve(tool.execute(input, run)),
         );
-        ctx.productTools.stageRead(exec, product, {
-          complete: true,
-          sha256: sha256(bytes),
-          targetKey: String(target.targetKey),
-          version: String(info.version),
+        const execute = () => image ? this.#attachments.run(product, executePinned) : executePinned();
+        let value: JsonObject;
+        try {
+          value = asObject(await execute(), "official Read output");
+        } catch (error) {
+          // Normalized attachment paths may have no suffix. Let the stock image
+          // reader sniff them only after the stock text reader rejects binary data.
+          if (image || extension !== "" || !(error instanceof FsError) || error.code !== "FS_NOT_TEXT") throw error;
+          image = true;
+          tool = imageTool;
+          value = asObject(await execute(), "official Read output");
+        }
+        // Receipts are product mutation authority, committed only with the durable
+        // tool result. Large/partial reads remain useful without authorizing overwrite.
+        const bytes = info.size !== undefined && info.size <= (image ? 20 : 8) * 1024 * 1024
+          ? await ctx.fs.readBytes(target, product.signal, 20 * 1024 * 1024) : undefined;
+        const settled = await ctx.fs.stat(target, product.signal);
+        if (settled?.version !== info.version) throw new ProductToolError("stale_read", "File changed during Read; read it again");
+        const lines = image ? [] : value.lines as { number: number; text: string }[];
+        const raw = bytes === undefined ? undefined : new TextDecoder("utf-8").decode(bytes).replace(/\r\n/gu, "\n").replace(/\n$/u, "");
+        const complete = bytes !== undefined && (image || (value.offset === 1 && lines.map((line) => line.text).join("\n") === raw));
+        if (bytes !== undefined) ctx.productTools.stageRead(exec, product, {
+          complete, sha256: sha256(bytes), targetKey: String(target.targetKey), version: String(info.version),
         });
-        return Object.freeze({
-          attachment,
-          kind: extension === ".pdf" ? "pdf" as const : "image" as const,
-          mimeType,
-          path: target.displayPath,
-          truncated: false,
-        });
-      }
-      if (args.pages !== undefined) throw new ProductToolError("unsupported_format", "pages is valid only for PDF Read");
-      const text = await ctx.fs.readText(target, product.signal);
-      if (extension === ".ipynb") {
-        const notebook = this.#notebookText(text);
-        ctx.productTools.stageRead(exec, product, {
-          complete: !notebook.truncated,
-          sha256: sha256(text),
-          targetKey: String(target.targetKey),
-          version: String(info.version),
-        });
-        return Object.freeze({
-          content: notebook.text,
-          kind: "notebook" as const,
-          lineCount: notebook.text.split("\n").length,
-          mimeType: "application/x-ipynb+json",
-          offset: 1,
-          path: target.displayPath,
-          truncated: notebook.truncated,
-        });
-      }
-      const lines = text.split("\n");
-      const offset = (args.offset as number | undefined) ?? 1;
-      if (offset > Math.max(1, lines.length)) {
-        throw new ProductToolError("read_limit_exceeded", "Read offset is beyond the file");
-      }
-      const requestedLimit = args.limit as number | undefined;
-      const limit = Math.min(requestedLimit ?? 2_000, 2_000);
-      let selected = lines.slice(offset - 1, offset - 1 + limit);
-      let projected = selected.map((line, index) => `${offset + index}\t${line}`).join("\n");
-      let bounded = truncateUtf8(projected, 240_000);
-      while (bounded.truncated && selected.length > 1) {
-        selected = selected.slice(0, Math.max(1, Math.floor(selected.length * 0.8)));
-        projected = selected.map((line, index) => `${offset + index}\t${line}`).join("\n");
-        bounded = truncateUtf8(projected, 240_000);
-      }
-      const truncated = bounded.truncated || offset !== 1 || selected.length < lines.length;
-      const contentDigest = sha256(text);
-      ctx.productTools.stageRead(exec, product, {
-        complete: !truncated,
-        sha256: contentDigest,
-        targetKey: String(target.targetKey),
-        version: String(info.version),
+        if (image) return { path: target.displayPath, kind: "image", image: value.image };
+        const content = tool.output.render(input, value as JsonValue).filter((block) => block.type === "text").map((block) => block.text).join("\n");
+        return { path: target.displayPath, kind: "text", mimeType: "text/plain", offset: value.offset,
+          lineCount: lines.length, truncated: !complete, content };
       });
-      return Object.freeze({
-        content: bounded.text,
-        kind: "text" as const,
-        lineCount: selected.length,
-        mimeType: "text/plain",
-        offset,
-        path: target.displayPath,
-        truncated,
-      });
-        },
-      );
     });
   }
 
   #writeDefinition(ctx: Context): ToolDefinition {
-    return this.#definition("Write", renderMutation, async (args, exec) => {
+    const official: ToolDefinition = createWriteTool(ctx);
+    return this.#definition("Write", (args, value) => {
+      const output = asObject(value, "Write output");
+      return official.output.render(args, { path: String(output.path), operation: output.created === true ? "create" : "update" });
+    }, async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
       const path = args.file_path as string;
       const authority = await this.#authorizedTarget(ctx, product, "Write", path, "write");
@@ -545,21 +423,18 @@ export class CanonicalFileTools extends Service {
             throw new ProductToolError("mutation_conflict", "Write target identity changed before publication");
           }
           await checkpoint?.verify?.();
-          const outcome = await ctx.fs.writeText(
-            target,
-            content,
-            current === undefined
-              ? { kind: "createIfAbsent" }
-              : { kind: "replaceIfVersion", version: current.version },
-            product.signal,
-          );
+          const value = await this.#intents.run({ target, intent: current === undefined
+            ? { kind: "createIfAbsent" } : { kind: "replaceIfVersion", version: current.version } },
+            () => requireLocalWorkspaceFileSystem(ctx.fs).runWithAuthorizedTarget(target,
+              () => Promise.resolve(official.execute({ ...args, file_path: target.displayPath }, { ...exec, signal: product.signal }))));
+          const outcome = asObject(value, "official Write output");
           published = true;
           await settleCheckpoint(checkpoint, settlement, "commit");
           ctx.productTools.stageMutation(exec, product, {
             complete: true,
             sha256: afterSha256,
             targetKey: String(target.targetKey),
-            version: String(outcome.version),
+            version: String((await this.#regularFile(ctx, target, product.signal)).version),
           });
           return Object.freeze({
             bytes: Buffer.byteLength(content, "utf8"),
@@ -596,14 +471,12 @@ export class CanonicalFileTools extends Service {
   }
 
   #editDefinition(ctx: Context): ToolDefinition {
-    return this.#definition("Edit", renderMutation, async (args, exec) => {
+    const official: ToolDefinition = createEditTool(ctx);
+    return this.#definition("Edit", (args, value) => official.output.render(args, value as JsonValue), async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
       const path = args.file_path as string;
       const authority = await this.#authorizedTarget(ctx, product, "Edit", path, "write");
       const { target } = authority;
-      if (extname(target.displayPath).toLowerCase() === ".ipynb") {
-        throw new ProductToolError("unsupported_format", "Edit does not mutate notebook structure");
-      }
       let release = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
       try {
         await this.#regularFile(ctx, target, product.signal);
@@ -666,16 +539,16 @@ export class CanonicalFileTools extends Service {
         let published = false;
         const settlement: CheckpointSettlement = {};
         try {
-          const outcome = await ctx.fs.writeText(target, next, {
-            kind: "replaceIfVersion", version: currentInfo.version,
-          }, product.signal);
+          await this.#intents.run({ target, intent: { kind: "replaceIfVersion", version: currentInfo.version } },
+            () => requireLocalWorkspaceFileSystem(ctx.fs).runWithAuthorizedTarget(target,
+              () => Promise.resolve(official.execute({ ...args, file_path: target.displayPath }, { ...exec, signal: product.signal }))));
           published = true;
           await settleCheckpoint(checkpoint, settlement, "commit");
           ctx.productTools.stageMutation(exec, product, {
             complete: true,
             sha256: afterSha256,
             targetKey: String(target.targetKey),
-            version: String(outcome.version),
+            version: String((await this.#regularFile(ctx, target, product.signal)).version),
           });
           return Object.freeze({
             ...(checkpoint === undefined ? {} : { checkpointReceipt: checkpoint.receipt }),
@@ -713,13 +586,15 @@ export class CanonicalFileTools extends Service {
   }
 
   #editContent(before: string, oldString: string, newString: string, replaceAll: boolean): Readonly<{ next: string; replacements: number }> {
-    if (oldString.length === 0) throw new ProductToolError("match_not_found", "old_string must not be empty");
-    const replacements = exactOccurrences(before, oldString);
-    if (replacements === 0) throw new ProductToolError("match_not_found", "old_string was not found exactly; Read the current file and retry Edit with the intended text");
-    if (!replaceAll && replacements !== 1) {
-      throw new ProductToolError("ambiguous_match", "old_string occurs more than once; Read the current file and include enough surrounding text to identify one match");
+    let prepared: ReturnType<typeof prepareTextEdit>;
+    try {
+      prepared = prepareTextEdit(before, { oldString, newString, replaceAll }, "Edit target");
+    } catch (error) {
+      if (error instanceof FsError && error.code === "FS_EDIT_NOT_FOUND") throw new ProductToolError("match_not_found", `${error.message}. Read the current file and retry Edit.`, { cause: error });
+      if (error instanceof FsError && error.code === "FS_AMBIGUOUS_EDIT") throw new ProductToolError("ambiguous_match", `${error.message}. Read the current file and include enough context to select the intended match.`, { cause: error });
+      throw error;
     }
-    const next = replaceAll ? before.split(oldString).join(newString) : before.replace(oldString, () => newString);
+    const { content: next, replacements } = prepared;
     if (Buffer.byteLength(next, "utf8") > 8 * 1_024 * 1_024) {
       throw new ProductToolError("mutation_conflict", "Edit result exceeds the mutation bound");
     }
@@ -1145,41 +1020,4 @@ export class CanonicalFileTools extends Service {
     return info;
   }
 
-  #notebookText(text: string): Readonly<{ text: string; truncated: boolean }> {
-    let value: unknown;
-    try { value = JSON.parse(text); } catch (error) {
-      throw new ProductToolError("unsupported_format", "notebook is not valid JSON", { cause: error });
-    }
-    if (value === null || typeof value !== "object" || Array.isArray(value)) {
-      throw new ProductToolError("unsupported_format", "notebook root is invalid");
-    }
-    const cells = (value as JsonObject).cells;
-    if (!Array.isArray(cells) || cells.length > 1_000) {
-      throw new ProductToolError("unsupported_format", "notebook cells are invalid or over limit");
-    }
-    const lines: string[] = [];
-    for (const [index, cell] of cells.entries()) {
-      if (cell === null || typeof cell !== "object" || Array.isArray(cell)) {
-        throw new ProductToolError("unsupported_format", "notebook cell is invalid");
-      }
-      const record = cell as JsonObject;
-      const cellType = typeof record.cell_type === "string" ? record.cell_type : "unknown";
-      const cellId = typeof record.id === "string" ? record.id : "";
-      lines.push(`## cell ${index + 1} id=${cellId} type=${cellType}`);
-      const source = record.source;
-      if (typeof source === "string") lines.push(source);
-      else if (Array.isArray(source) && source.every((part) => typeof part === "string")) {
-        lines.push(source.join(""));
-      } else if (source !== undefined) {
-        throw new ProductToolError("unsupported_format", "notebook cell source is invalid");
-      }
-      const outputs = record.outputs;
-      if (outputs !== undefined && !Array.isArray(outputs)) {
-        throw new ProductToolError("unsupported_format", "notebook cell outputs are invalid");
-      }
-      lines.push(`outputs=${JSON.stringify(outputs ?? [])}`);
-      lines.push("");
-    }
-    return truncateUtf8(lines.join("\n").trimEnd(), 240_000);
-  }
 }

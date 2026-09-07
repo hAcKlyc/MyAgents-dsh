@@ -1,4 +1,5 @@
-import { FileSystem, FsError, FsTargetKey, FsVersion } from "@deepseek-ai/dsh-fs";
+import { type FileSystem, FsError, FsTargetKey, FsVersion } from "@deepseek-ai/dsh-fs";
+import { LocalFileSystem } from "@deepseek-ai/dsh-fs-local";
 import type {
   FsDirEntry,
   FsEditOutcome,
@@ -14,15 +15,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import {
   access,
-  link,
   lstat,
   mkdir,
   open,
   opendir,
-  readdir,
   realpath,
   rename,
-  rm,
   rmdir,
   stat,
   unlink,
@@ -31,6 +29,7 @@ import type { FileHandle } from "node:fs/promises";
 import { posix, win32, type PlatformPath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isProxy } from "node:util/types";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 import {
   selectPlatformAdapter,
@@ -189,7 +188,10 @@ export interface LocalAttachmentIoAuthority {
   ) => Promise<LocalAttachmentStagingFile>;
 }
 
-export class LocalWorkspaceFileSystem extends FileSystem {
+export class LocalWorkspaceFileSystem extends LocalFileSystem {
+  // Platform selection belongs to composition, not the stock provider's cwd config.
+  static override Config = undefined as never;
+  private readonly fileCalls = new AsyncLocalStorage<Readonly<{ target: FsTarget; beforePublish?: () => Promise<void> }>>();
   private readonly adapterValue;
   private readonly pathValue;
   private readonly retainedOutputVersionsValue = new Map<string, Readonly<{ version: string; maxBytes: number }>>();
@@ -199,7 +201,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   private readonly targetsValue = new Map<string, string>();
 
   constructor(ctx: Context, config: LocalWorkspaceFileSystemConfig) {
-    super(ctx);
+    super(ctx, { cwd: process.cwd(), diffBasisMaxBytes: 8 * 1_024 * 1_024, createParents: false });
     const candidate: unknown = config;
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
       || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
@@ -231,48 +233,26 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   }
 
   override async resolve(value: string, opts: { cwd?: string; signal?: AbortSignal } = {}): Promise<FsTarget> {
-    abortError(opts.signal);
-    if (typeof value !== "string" || value.length === 0 || value.length > 8_192 || value.includes("\0")) {
-      throw new FsError("filesystem path is invalid", "FS_SANDBOX_DENIED");
+    const requested = this.lexicalPath(value, opts.cwd);
+    const local = await super.resolve(requested, opts);
+    const canonical = this.adapterValue.normalizeAbsolutePath(String(local.targetKey));
+    const approved = this.fileCalls.getStore()?.target;
+    if (requested === approved?.displayPath && canonical !== approved.targetKey) {
+      throw new FsError("filesystem target changed after authorization", "FS_STALE_VERSION");
     }
-    const cwd = opts.cwd === undefined ? process.cwd() : this.adapterValue.normalizeAbsolutePath(opts.cwd);
-    const lexical = this.pathValue.isAbsolute(value)
-      ? this.adapterValue.normalizeAbsolutePath(value)
-      : this.adapterValue.normalizeAbsolutePath(this.pathValue.resolve(cwd, value));
-    const existing = await realpath(lexical).catch((error: unknown) => {
-      const code = errorCode(error);
-      if (code === "ENOENT") return undefined;
-      return fsError(error, "filesystem path resolution failed");
-    });
-    let canonical: string;
-    if (existing !== undefined) {
-      canonical = this.adapterValue.normalizeAbsolutePath(existing);
-    } else {
-      let parent = this.pathValue.dirname(lexical);
-      const missing = [this.pathValue.basename(lexical)];
-      let parentCanonical: string | undefined;
-      for (let depth = 0; depth <= 64; depth += 1) {
-        abortError(opts.signal);
-        parentCanonical = await realpath(parent).catch((error: unknown) => {
-          if (errorCode(error) === "ENOENT") return undefined;
-          return fsError(error, "filesystem parent path resolution failed");
-        });
-        if (parentCanonical !== undefined) break;
-        const next = this.pathValue.dirname(parent);
-        if (next === parent || depth === 64) throw new FsError("filesystem missing parent depth exceeds its bound", "FS_SANDBOX_DENIED");
-        missing.unshift(this.pathValue.basename(parent));
-        parent = next;
-      }
-      if (parentCanonical === undefined) throw new FsError("filesystem parent is unavailable", "FS_NOT_FOUND");
-      canonical = this.adapterValue.normalizeAbsolutePath(this.pathValue.join(parentCanonical, ...missing));
-    }
-    abortError(opts.signal);
-    const key = String(FsTargetKey(canonical));
-    this.targetsValue.set(key, canonical);
-    return Object.freeze({ displayPath: canonical, targetKey: FsTargetKey(key) });
+    this.targetsValue.set(canonical, canonical);
+    // Product capability receipts use the canonical path for display as well as identity.
+    return Object.freeze({ displayPath: canonical, targetKey: FsTargetKey(canonical) });
   }
 
   override processPath(target: FsTarget): string { return this.targetPath(target); }
+
+  /** Pin the authorized input while a stock tool resolves it again. Attachment
+   * and checkpoint bridges retain their own independent targets inside the call. */
+  runWithAuthorizedTarget<T>(target: FsTarget, action: () => Promise<T>): Promise<T> {
+    this.targetPath(target);
+    return this.fileCalls.run({ target }, action);
+  }
 
   async modificationTime(target: FsTarget, signal?: AbortSignal): Promise<number> {
     abortError(signal);
@@ -370,57 +350,38 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   }
 
   override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
-    abortError(signal);
-    const info = await stat(this.targetPath(target)).catch((error: unknown) => {
-      const code = errorCode(error);
-      if (code === "ENOENT") return undefined;
-      return fsError(error, "filesystem stat failed");
-    });
-    if (info === undefined) return undefined;
-    abortError(signal);
-    return Object.freeze({
-      ...(info.isFile() ? { size: info.size } : {}),
-      type: info.isFile() ? "file" as const : info.isDirectory() ? "directory" as const : "other" as const,
-      version: versionOf(info),
-    });
+    this.targetPath(target);
+    return super.stat(target, signal);
   }
 
   override async lstat(value: string, opts: { cwd?: string } = {}, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
-    abortError(signal);
-    const path = this.lexicalPath(value, opts.cwd);
-    const info = await lstat(path).catch((error: unknown) => {
-      const code = errorCode(error);
-      if (code === "ENOENT") return undefined;
-      return fsError(error, "filesystem lstat failed");
-    });
-    if (info === undefined) return undefined;
-    abortError(signal);
-    return Object.freeze({
-      ...(info.isFile() ? { size: info.size } : {}),
-      type: info.isSymbolicLink() ? "symlink" as const
-        : info.isFile() ? "file" as const
-          : info.isDirectory() ? "directory" as const : "other" as const,
-      version: versionOf(info),
-    });
+    return super.lstat(this.lexicalPath(value, opts.cwd), opts, signal);
   }
 
   override async readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
-    const bytes = await this.readBytes(target, signal, 8 * 1_024 * 1_024);
-    let text: string;
-    try {
-      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    } catch (error) {
-      throw new FsError("filesystem target is not UTF-8 text", "FS_NOT_TEXT", { cause: error });
-    }
-    if (text.includes("\0")) throw new FsError("filesystem target is not UTF-8 text", "FS_NOT_TEXT");
-    return text;
+    const chunks = await this.streamText(target, signal);
+    let result = "";
+    for await (const chunk of chunks) result += chunk;
+    return result;
   }
 
   override async streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
-    const text = await this.readText(target, signal);
-    return (async function* (): AsyncIterable<string> {
-      await Promise.resolve();
-      yield text;
+    const path = this.targetPath(target);
+    await this.assertPlanTargetIdentity(path, signal);
+    const retained = this.retainedOutputVersionsValue.get(String(target.targetKey));
+    // Retained output is an immutable, bounded product capability. Keep its
+    // descriptor checks; ordinary workspace text uses the upstream streaming reader.
+    const chunks = retained === undefined ? await super.streamText(target, signal) : [
+      new TextDecoder("utf-8", { fatal: true }).decode(await this.readBytes(target, signal, retained.maxBytes)),
+    ];
+    const verify = () => this.assertPlanTargetIdentity(path, signal);
+    return (async function* () {
+      for await (const chunk of chunks) {
+        abortError(signal);
+        if (chunk.includes("\0")) throw new FsError("filesystem target is not UTF-8 text", "FS_NOT_TEXT");
+        yield chunk;
+      }
+      await verify();
     })();
   }
 
@@ -511,28 +472,12 @@ export class LocalWorkspaceFileSystem extends FileSystem {
   }
 
   override async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
-    abortError(signal);
-    const path = this.targetPath(target);
-    const entries = await readdir(path, { withFileTypes: true }).catch((error: unknown) =>
-      fsError(error, "filesystem directory listing failed"));
-    const result: FsDirEntry[] = [];
-    for (const entry of entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
-      abortError(signal);
-      const child = await this.resolve(
-        this.pathValue.join(path, entry.name),
-        signal === undefined ? {} : { signal },
-      );
-      const info = await this.stat(child, signal);
-      if (info === undefined) continue;
-      result.push(Object.freeze({
-        name: entry.name,
-        ...(info.size === undefined ? {} : { size: info.size }),
-        target: child,
-        type: info.type,
-        version: info.version,
-      }));
-    }
-    return result;
+    this.targetPath(target);
+    const entries = await super.listDir(target, signal);
+    return Promise.all(entries.map(async (entry) => ({
+      ...entry,
+      target: await this.resolve(String(entry.target.targetKey), signal === undefined ? {} : { signal }),
+    })));
   }
 
   async listDirectoryEntries(
@@ -586,7 +531,7 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     const lexical = await lstat(path).catch((error: unknown) =>
       fsError(error, "filesystem directory authority stat failed"));
     if (lexical.isSymbolicLink() || !lexical.isDirectory()
-      || String(versionOf(lexical)) !== authority.version) {
+      || String((await this.stat(authority.target, signal))?.version) !== authority.version) {
       throw new FsError("filesystem directory authority changed", "FS_STALE_VERSION");
     }
     const canonical = await realpath(path).catch((error: unknown) =>
@@ -597,90 +542,66 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     }
   }
 
+  /** Keep product path/precondition policy around upstream atomic publication. */
+  private async withPublicationGuard<T>(
+    target: FsTarget,
+    expected: FsWriteIntent | undefined,
+    signal: AbortSignal | undefined,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    const path = this.targetPath(target);
+    const parent = this.pathValue.dirname(path);
+    await this.assertPlanTargetIdentity(path, signal);
+    const parentBefore = await lstat(parent).catch((error: unknown) =>
+      fsError(error, "filesystem mutation parent is unavailable"));
+    const parentPath = await realpath(parent);
+    if (!parentBefore.isDirectory() || parentBefore.isSymbolicLink()
+      || !this.adapterValue.samePath(parent, parentPath)) {
+      throw new FsError("filesystem mutation parent contains symlink indirection", "FS_SANDBOX_DENIED");
+    }
+    const verify = async () => {
+      abortError(signal);
+      await this.assertPlanTargetIdentity(path, signal);
+      const parentAfter = await lstat(parent);
+      if (parentAfter.isSymbolicLink() || directoryIdentityOf(parentAfter) !== directoryIdentityOf(parentBefore)
+        || !this.adapterValue.samePath(await realpath(parent), parentPath)) {
+        throw new FsError("filesystem mutation parent changed before publication", "FS_STALE_VERSION");
+      }
+      const current = await lstat(path).catch((error: unknown) => {
+        if (errorCode(error) === "ENOENT") return undefined;
+        return fsError(error, "filesystem mutation stat failed");
+      });
+      if (current !== undefined && (!current.isFile() || current.isSymbolicLink())) {
+        throw new FsError("filesystem mutation target is not a regular file", "FS_NOT_REGULAR_FILE");
+      }
+      const info = await this.stat(target, signal);
+      if (expected?.kind === "createIfAbsent" && info !== undefined) {
+        throw new FsError("filesystem target was already present", "FS_NOT_OBSERVED");
+      }
+      if (expected?.kind === "replaceIfVersion" && info?.version !== expected.version) {
+        throw new FsError("filesystem target changed before publication", "FS_STALE_VERSION");
+      }
+    };
+    await verify();
+    return this.fileCalls.run({ target, beforePublish: verify }, action);
+  }
+
+  protected override async beforePublish(target: FsTarget, signal?: AbortSignal): Promise<void> {
+    this.targetPath(target);
+    abortError(signal);
+    const verify = this.fileCalls.getStore()?.beforePublish;
+    if (verify === undefined) throw new FsError("filesystem publication lacks product authority", "FS_SANDBOX_DENIED");
+    await verify();
+  }
+
   override async writeText(
     target: FsTarget,
     content: string,
     expected?: FsWriteIntent,
     signal?: AbortSignal,
   ): Promise<FsWriteOutcome> {
-    abortError(signal);
-    const path = this.targetPath(target);
-    await this.assertPlanTargetIdentity(path, signal);
-    const parent = this.pathValue.dirname(path);
-    const parentBefore = await realpath(parent).catch((error: unknown) =>
-      fsError(error, "filesystem mutation parent is unavailable"));
-    if (this.adapterValue.normalizeAbsolutePath(parentBefore) !== this.adapterValue.normalizeAbsolutePath(parent)) {
-      throw new FsError("filesystem mutation parent contains symlink indirection", "FS_SANDBOX_DENIED");
-    }
-    const current = await lstat(path).catch((error: unknown) => {
-      const code = errorCode(error);
-      if (code === "ENOENT") return undefined;
-      return fsError(error, "filesystem mutation stat failed");
-    });
-    if (current?.isSymbolicLink() === true || (current !== undefined && !current.isFile())) {
-      throw new FsError("filesystem mutation target is not a regular file", "FS_NOT_REGULAR_FILE");
-    }
-    if (expected?.kind === "createIfAbsent" && current !== undefined) {
-      throw new FsError("filesystem target was already present", "FS_NOT_OBSERVED");
-    }
-    if (expected?.kind === "replaceIfVersion"
-      && (current === undefined || String(versionOf(current)) !== String(expected.version))) {
-      throw new FsError("filesystem target changed after observation", "FS_STALE_VERSION");
-    }
-    let before: string | null = null;
-    if (current !== undefined) {
-      try {
-        before = await this.readText(target, signal);
-      } catch (error) {
-        if (!(error instanceof FsError)
-          || (error.code !== "FS_NOT_TEXT" && error.code !== "FS_TOO_LARGE")) throw error;
-      }
-    }
-    await this.assertPlanTargetIdentity(path, signal);
-    const temporary = this.pathValue.join(
-      parent,
-      `.${this.pathValue.basename(path)}.${randomBytes(12).toString("hex")}.tmp`,
-    );
-    const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
-      .catch((error: unknown) => fsError(error, "filesystem temporary publication failed"));
-    try {
-      await handle.writeFile(content, "utf8");
-      if (current !== undefined) await handle.chmod(current.mode & 0o777);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    try {
-      abortError(signal);
-      await this.assertPlanTargetIdentity(path, signal);
-      const parentAfter = await realpath(parent);
-      if (!this.adapterValue.samePath(parentAfter, parentBefore)) {
-        throw new FsError("filesystem mutation parent changed before publication", "FS_STALE_VERSION");
-      }
-      const latest = await lstat(path).catch(() => undefined);
-      if (expected?.kind === "createIfAbsent") {
-        if (latest !== undefined) throw new FsError("filesystem target raced creation", "FS_NOT_OBSERVED");
-        await link(temporary, path).catch((error: unknown) => fsError(error, "filesystem create publication failed"));
-        await rm(temporary, { force: true });
-      } else {
-        if (expected?.kind === "replaceIfVersion"
-          && (latest === undefined || String(versionOf(latest)) !== String(expected.version))) {
-          throw new FsError("filesystem target changed before publication", "FS_STALE_VERSION");
-        }
-        await rename(temporary, path).catch((error: unknown) => fsError(error, "filesystem replace publication failed"));
-      }
-    } catch (error) {
-      await rm(temporary, { force: true }).catch(() => undefined);
-      throw error;
-    }
-    await this.assertPlanTargetIdentity(path, signal);
-    const afterInfo = await lstat(path);
-    return Object.freeze({
-      after: content,
-      before,
-      operation: current === undefined ? "create" as const : "update" as const,
-      version: versionOf(afterInfo),
-    });
+    return this.withPublicationGuard(target, expected, signal,
+      () => super.writeText(target, content, expected, signal));
   }
 
   override async editText(
@@ -689,22 +610,9 @@ export class LocalWorkspaceFileSystem extends FileSystem {
     expected?: { version: ReturnType<typeof FsVersion> },
     signal?: AbortSignal,
   ): Promise<FsEditOutcome> {
-    const before = await this.readText(target, signal);
-    const occurrences = before.split(edit.oldString).length - 1;
-    if (occurrences === 0) throw new FsError("literal edit target was not found", "FS_EDIT_NOT_FOUND");
-    if (!edit.replaceAll && occurrences !== 1) {
-      throw new FsError("literal edit target is ambiguous", "FS_AMBIGUOUS_EDIT");
-    }
-    const after = edit.replaceAll
-      ? before.split(edit.oldString).join(edit.newString)
-      : before.replace(edit.oldString, edit.newString);
-    const outcome = await this.writeText(
-      target,
-      after,
-      expected === undefined ? undefined : { kind: "replaceIfVersion", version: expected.version },
-      signal,
-    );
-    return Object.freeze({ after: outcome.after, before, version: outcome.version });
+    return this.withPublicationGuard(target,
+      expected === undefined ? undefined : { kind: "replaceIfVersion", version: expected.version }, signal,
+      () => super.editText(target, edit, expected, signal));
   }
 
   private lexicalPath(value: string, cwd?: string): string {

@@ -21,6 +21,6 @@
     "@vscode/ripgrep": "1.18.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-pwsh-local": "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd || 0.1.2-rc.1"
+    "@deepseek-ai/dsh-pwsh-local": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1"
   }
 }

@@ -1,0 +1,293 @@
+diff --git a/packages/fs/fs-local/src/fsio.ts b/packages/fs/fs-local/src/fsio.ts
+--- a/packages/fs/fs-local/src/fsio.ts
++++ b/packages/fs/fs-local/src/fsio.ts
+@@ -537,10 +537,12 @@
+   signal: AbortSignal | undefined,
+   internals: FsIoInternals = {},
+   createIfAbsent?: { displayPath: string },
++  beforePublish?: () => Promise<void>,
++  createParents = true,
+ ): Promise<void> {
+   throwIfAborted(signal, 'write')
+   const directory = dirname(absolutePath)
+-  await mkdir(directory, { recursive: true })
++  if (createParents) await mkdir(directory, { recursive: true })
+ 
+   throwIfAborted(signal, 'write')
+   const stagingDirName = internals.tempDirName?.(absolutePath) ?? `.${basename(absolutePath)}.${process.pid}.${randomUUID()}.tmpdir`
+@@ -574,6 +576,8 @@
+     await handle.close()
+     handle = undefined
+ 
++    throwIfAborted(signal, 'write')
++    await beforePublish?.()
+     throwIfAborted(signal, 'write')
+     if (createIfAbsent !== undefined) {
+       try {
+@@ -779,3 +783,16 @@
+ }
+ 
+ export { normalizeLineEndings, restoreLineEndings }
++
++/** Prepare the exact stored bytes and match count using the provider's own edit algorithm. */
++export function prepareTextEdit(
++  raw: string,
++  edit: { oldString: string; newString: string; replaceAll: boolean },
++  displayPath: string,
++): { content: string; replacements: number } {
++  if (raw.includes('\0')) throw new FsError(`cannot edit "${displayPath}": binary file`, 'FS_NOT_TEXT')
++  // Match readForEdit decoding, including its UTF-8 BOM handling.
++  const decoded = decodeUtf8(Buffer.from(raw, 'utf8'), 'edit', displayPath)
++  const result = applyLiteralEdit(normalizeLineEndings(decoded), edit.oldString, edit.newString, edit.replaceAll, displayPath)
++  return { content: restoreLineEndings(result.content, detectLineEndings(decoded)), replacements: result.replacements }
++}
+diff --git a/packages/fs/fs-local/src/index.ts b/packages/fs/fs-local/src/index.ts
+--- a/packages/fs/fs-local/src/index.ts
++++ b/packages/fs/fs-local/src/index.ts
+@@ -36,6 +36,7 @@
+   writeFileAtomic,
+ } from './fsio.ts'
+ import type { FsIoInternals } from './fsio.ts'
++export { prepareTextEdit } from './fsio.ts'
+ 
+ /** Configuration for the local filesystem backend. */
+ export interface Config {
+@@ -46,6 +47,8 @@
+    * runtime's safe allocation/decode maximum. Defaults to 10 MiB.
+    */
+   diffBasisMaxBytes?: number
++  /** Whether atomic writes may create missing parents; false when a deployment journals them. */
++  createParents?: boolean
+ }
+ 
+ type ResolvedConfig = Required<Config>
+@@ -65,6 +68,7 @@
+   static Config: z<Config> = z.object({
+     cwd: z.string().default(process.cwd()),
+     diffBasisMaxBytes: z.number().default(DEFAULT_DIFF_BASIS_MAX_BYTES),
++    createParents: z.boolean().default(true),
+   })
+ 
+   /** Validated config (schemastery applied the defaults before construction). */
+@@ -165,6 +169,11 @@
+       ...(entry.version !== undefined ? { version: entry.version } : {}),
+       ...(entry.size !== undefined ? { size: entry.size } : {}),
+     }))
++  }
++
++  /** Deployment policy guard after staging, immediately before atomic publication. */
++  protected beforePublish(_target: FsTarget, _signal?: AbortSignal): Promise<void> {
++    return Promise.resolve()
+   }
+ 
+   override async writeText(
+@@ -208,6 +217,8 @@
+         signal,
+         this.internals,
+         expected?.kind === 'createIfAbsent' ? { displayPath: target.displayPath } : undefined,
++        () => this.beforePublish(target, signal),
++        this.config.createParents,
+       )
+       const after = await probe(target.targetKey)
+       return {
+@@ -245,7 +256,7 @@
+       const original = await readForEdit(target.targetKey, target.displayPath, signal)
+       const edited = applyLiteralEdit(original.content, edit.oldString, edit.newString, edit.replaceAll, target.displayPath)
+       const content = restoreLineEndings(edited.content, original.lineEndings)
+-      await writeFileAtomic(target.targetKey, content, existing.mode, signal, this.internals)
++      await writeFileAtomic(target.targetKey, content, existing.mode, signal, this.internals, undefined, () => this.beforePublish(target, signal), this.config.createParents)
+ 
+       const after = await probe(target.targetKey)
+       return {
+diff --git a/packages/fs/fs-local/tests/product-composition.spec.ts b/packages/fs/fs-local/tests/product-composition.spec.ts
+new file mode 100644
+--- /dev/null
++++ b/packages/fs/fs-local/tests/product-composition.spec.ts
+@@ -0,0 +1,45 @@
++import { Context } from '@deepseek-ai/cordis'
++import { afterEach, expect, it } from 'vitest'
++import { mkdtemp, readFile, rm, writeFile, readdir } from 'node:fs/promises'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { LocalFileSystem, prepareTextEdit } from '../src/index.ts'
++
++const roots: string[] = []
++afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
++
++it.each(['', '\uFEFF'])('previews the exact CRLF bytes and literal replacement count used by editText (%j BOM)', async (bom) => {
++  const root = await mkdtemp(join(tmpdir(), 'dsh-file-composition-'))
++  roots.push(root)
++  const path = join(root, 'file.txt')
++  await writeFile(path, bom + 'alpha\r\nbeta\r\n')
++  const ctx = new Context()
++  try {
++    await ctx.plugin(LocalFileSystem, { cwd: root })
++    const target = await ctx.fs.resolve(path)
++    const edit = { oldString: 'alpha\nbeta', newString: 'ALPHA\nBETA', replaceAll: false }
++    const preview = prepareTextEdit(await readFile(path, 'utf8'), edit, path)
++    expect(preview).toEqual({ content: 'ALPHA\r\nBETA\r\n', replacements: 1 })
++    await ctx.fs.editText(target, edit)
++    expect(await readFile(path, 'utf8')).toBe(preview.content)
++  } finally { await ctx.fiber.dispose() }
++})
++
++it('refuses publication after staging and cleans the private staging directory', async () => {
++  class GuardedFileSystem extends LocalFileSystem {
++    protected override beforePublish(): Promise<void> { return Promise.reject(new Error('publication refused')) }
++  }
++  const root = await mkdtemp(join(tmpdir(), 'dsh-file-composition-'))
++  roots.push(root)
++  const path = join(root, 'file.txt')
++  await writeFile(path, 'original')
++  const ctx = new Context()
++  try {
++    await ctx.plugin(GuardedFileSystem, { cwd: root })
++    const target = await ctx.fs.resolve(path)
++    await expect(ctx.fs.writeText(target, 'changed')).rejects.toThrow('publication refused')
++    await expect(ctx.fs.editText(target, { oldString: 'original', newString: 'changed', replaceAll: false })).rejects.toThrow('publication refused')
++    expect(await readFile(path, 'utf8')).toBe('original')
++    expect(await readdir(root)).toEqual(['file.txt'])
++  } finally { await ctx.fiber.dispose() }
++})
+diff --git a/packages/fs/tool-fs/src/edit.ts b/packages/fs/tool-fs/src/edit.ts
+--- a/packages/fs/tool-fs/src/edit.ts
++++ b/packages/fs/tool-fs/src/edit.ts
+@@ -12,7 +12,7 @@
+ import { computeHunkDiffs, diffsFromMeta } from './diff.ts'
+ import { remediateFsError } from './error.ts'
+ import { sessionResolveOptions } from './session-cwd.ts'
+-import type { FsSandboxController } from './sandbox.ts'
++import { FsSandboxController } from './sandbox.ts'
+ 
+ /** Validated `edit` arguments after defaulting. */
+ interface EditInput {
+@@ -79,7 +79,12 @@
+     text: 'Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. Read the file first (the default fs-observation-policy requires it), unless you just created or edited it in this session.',
+   })
+ 
+-  ctx.tools.register(defineTool({
++  ctx.tools.register(createEditTool(ctx, sandbox))
++}
++
++/** Create the stock definition for a deployment-owned registration/permission bridge. */
++export function createEditTool(ctx: Context, sandbox = new FsSandboxController(ctx)) {
++  return defineTool({
+     name: 'edit',
+     description: 'Edit an existing UTF-8 text file by replacing literal text.',
+     parameters: {
+@@ -162,5 +167,5 @@
+       if (diffs === undefined) return undefined
+       return { card: 'diff', title: `Edit ${args.file_path}`, diffs }
+     },
+-  }))
++  })
+ }
+diff --git a/packages/fs/tool-fs/src/index.ts b/packages/fs/tool-fs/src/index.ts
+--- a/packages/fs/tool-fs/src/index.ts
++++ b/packages/fs/tool-fs/src/index.ts
+@@ -77,3 +77,10 @@
+   applyWriteTool(ctx, sandbox)
+   applyEditTool(ctx, sandbox)
+ }
++
++// Public composition factories preserve the stock schemas, executors and renderers.
++export { createReadTool } from './read.ts'
++export type { ReadToolCaps } from './read.ts'
++export { createReadImageTool } from './read-image.ts'
++export { createWriteTool } from './write.ts'
++export { createEditTool } from './edit.ts'
+diff --git a/packages/fs/tool-fs/src/read-image.ts b/packages/fs/tool-fs/src/read-image.ts
+--- a/packages/fs/tool-fs/src/read-image.ts
++++ b/packages/fs/tool-fs/src/read-image.ts
+@@ -206,7 +206,12 @@
+  *   the optional `attachments`/`llm` services.
+  */
+ export function applyReadImageTool(ctx: Context): void {
+-  ctx.tools.register(defineTool({
++  ctx.tools.register(createReadImageTool(ctx))
++}
++
++/** Create the stock definition for a deployment-owned registration/permission bridge. */
++export function createReadImageTool(ctx: Context) {
++  return defineTool({
+     name: 'read_image',
+     description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
+       + 'A path without a file extension is accepted; the format is detected from the file content, so normalized attachment paths can be passed directly without copying or renaming. '
+@@ -338,5 +343,5 @@
+         locations: [{ path: args.file_path }],
+       }
+     },
+-  }))
+-}
++  })
++}
+diff --git a/packages/fs/tool-fs/src/read.ts b/packages/fs/tool-fs/src/read.ts
+--- a/packages/fs/tool-fs/src/read.ts
++++ b/packages/fs/tool-fs/src/read.ts
+@@ -72,7 +72,12 @@
+     text: 'Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. Use offset and limit to continue reading large files.',
+   })
+ 
+-  ctx.tools.register(defineTool({
++  ctx.tools.register(createReadTool(ctx, caps))
++}
++
++/** Create the stock definition for a deployment-owned registration/permission bridge. */
++export function createReadTool(ctx: Context, caps: ReadToolCaps) {
++  return defineTool({
+     name: 'read',
+     description: 'Read a UTF-8 text file and return line-numbered content.',
+     parameters: {
+@@ -204,5 +209,5 @@
+         locations: [{ path: args.file_path, line: offset ?? 1 }],
+       }
+     },
+-  }))
+-}
++  })
++}
+diff --git a/packages/fs/tool-fs/src/sandbox.ts b/packages/fs/tool-fs/src/sandbox.ts
+--- a/packages/fs/tool-fs/src/sandbox.ts
++++ b/packages/fs/tool-fs/src/sandbox.ts
+@@ -122,7 +122,7 @@
+    * @returns the error to throw — the marker `FsError` for a sandbox denial, else the original.
+    */
+   mapError(error: unknown, policy: SandboxExecutionPolicy | undefined): unknown {
+-    if (!(error instanceof FsError) || error.code !== 'FS_SANDBOX_DENIED') return error
++    if (!(error instanceof FsError) || error.code !== 'FS_SANDBOX_DENIED' || policy === undefined) return error
+     // A FS_SANDBOX_DENIED only arises under a confining backend, whose tool
+     // path always resolves a policy before mutation.
+     const mode = (policy as SandboxExecutionPolicy).mode
+diff --git a/packages/fs/tool-fs/src/write.ts b/packages/fs/tool-fs/src/write.ts
+--- a/packages/fs/tool-fs/src/write.ts
++++ b/packages/fs/tool-fs/src/write.ts
+@@ -13,7 +13,7 @@
+ import { computeHunkDiffs, diffsFromMeta } from './diff.ts'
+ import { remediateFsError } from './error.ts'
+ import { sessionResolveOptions } from './session-cwd.ts'
+-import type { FsSandboxController } from './sandbox.ts'
++import { FsSandboxController } from './sandbox.ts'
+ 
+ /**
+  * Validate value constraints the schema DSL can't express: only a non-blank
+@@ -65,7 +65,12 @@
+     text: 'Use the write tool to create files or completely replace file contents. Existing files are overwritten, so read an existing file first (the default fs-observation-policy requires it) and prefer edit for targeted changes.',
+   })
+ 
+-  ctx.tools.register(defineTool({
++  ctx.tools.register(createWriteTool(ctx, sandbox))
++}
++
++/** Create the stock definition for a deployment-owned registration/permission bridge. */
++export function createWriteTool(ctx: Context, sandbox = new FsSandboxController(ctx)) {
++  return defineTool({
+     name: 'write',
+     description: 'Create or fully replace a UTF-8 text file.',
+     parameters: {
+@@ -144,5 +149,5 @@
+         ?? [{ path: args.file_path, oldText: null, newText: args.content }]
+       return { card: 'diff', title: `Write ${args.file_path}`, diffs }
+     },
+-  }))
++  })
+ }

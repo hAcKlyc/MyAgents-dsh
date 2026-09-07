@@ -1,4 +1,7 @@
+import { prepareImageFile, DEFAULT_MAX_IMAGE_BYTES, DEFAULT_MAX_IMAGE_PIXELS, DEFAULT_MAX_IMAGES_PER_MESSAGE, DEFAULT_MAX_MESSAGE_IMAGE_BYTES } from "@deepseek-ai/dsh-attachment-local";
+import type { SaveImageAttachment } from "@deepseek-ai/dsh-attachment";
 import { SessionSeq } from "@deepseek-ai/dsh-session";
+import { FsError } from "@deepseek-ai/dsh-fs";
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId, createToolResultMessage } from "@deepseek-ai/dsh-llm";
@@ -24,8 +27,6 @@ import {
 import {
   CanonicalFileTools,
   LocalWorkspaceFileSystem,
-  type AttachmentPublicationRequest,
-  type CanonicalFileToolsConfig,
 } from "@myagents-dsh/tools-fs";
 import type {
   ProductProcessWorkspaceAuthority,
@@ -63,7 +64,7 @@ const catalog = Object.freeze({
   digest: effectiveToolCatalogDigest(catalogWithoutDigest),
 });
 
-const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {}) => {
+const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageInput?: boolean }> = {}) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-file-tools-")));
   temporaryRoots.push(root);
   const workspace = join(root, "workspace");
@@ -77,16 +78,18 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
     ...(options.additionalReadRoot === true ? [mkdir(additionalReadRoot)] : []),
   ]);
   const context = new Context();
-  const session = { id: "session-fixture" };
+  const session = { id: "session-fixture", header: { cwd: workspace }, requestHeader: () => ({ config: {} }) };
   const agent = {
     ctx: context,
     id: "session-fixture",
+    options: { provider: "fixture", model: "root" },
     session,
   } as unknown as Agent;
-  const childSession = { id: "child-session-fixture" };
+  const childSession = { id: "child-session-fixture", header: { cwd: workspace }, requestHeader: () => ({ config: {} }) };
   const childAgent = {
     ctx: context,
     id: "child-session-fixture",
+    options: { provider: "fixture", model: "child" },
     session: childSession,
   } as unknown as Agent;
   const environment = Object.freeze({
@@ -158,9 +161,9 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
   let permissionPromise: Promise<"allow" | "deny"> | undefined;
   let childAllowedTools: readonly string[] = Object.freeze(["Read", "Write", "Edit", "Glob", "Grep", "ls"]);
   let checkpointFailure: Error | undefined;
+  let beforeImageRead: (() => Promise<void>) | undefined;
   let checkpointOverride: unknown = noOverride;
   let checkpointPrepareHook: ((request: ProductToolCheckpointRequest) => Promise<void>) | undefined;
-  let attachmentOverride: unknown = noOverride;
   let searchResult: ProductSearchResult = Object.freeze({ durationMs: 1, exitCode: 1, stderr: "", stdout: "" });
   let searchImplementation: ((product: ProductToolContext) => Promise<ProductSearchResult>) | undefined;
   const searchCommands: string[][] = [];
@@ -225,21 +228,21 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
       return searchImplementation?.(_product) ?? Promise.resolve(searchResult);
     },
   } as never);
+  context.provide("llm", {
+    resolveModelInfo: (_provider: string, model: string) => Promise.resolve({ inputModalities: model === "root" && options.imageInput !== false ? ["text", "image"] : ["text"] }),
+  } as never);
+  const imageLimits = {
+    maxImageBytes: DEFAULT_MAX_IMAGE_BYTES, maxImagePixels: DEFAULT_MAX_IMAGE_PIXELS,
+    maxImagesPerMessage: DEFAULT_MAX_IMAGES_PER_MESSAGE, maxMessageImageBytes: DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
+    maxImageDimension: 16_384, mediaTypes: ["image/png", "image/jpeg", "image/gif", "image/webp"] as const,
+  };
+  const saveImage = vi.fn(async (input: SaveImageAttachment) => (await prepareImageFile(input, imageLimits, { maxPixels: 1_000_000, maxDimension: 2_048, maxBytes: 4_000_000 })).ref);
+  context.provide("attachments", { imageLimits, saveImage } as never);
   await context.plugin(CanonicalFileTools, {
-    attachments: Object.freeze({
-      publish: (request: AttachmentPublicationRequest) => {
-        if (attachmentOverride !== noOverride) {
-          return Promise.resolve(attachmentOverride) as ReturnType<CanonicalFileToolsConfig["attachments"]["publish"]>;
-        }
-        return Promise.resolve(Object.freeze({
-          attachmentId: "attachment-v1",
-          mimeType: request.mimeType,
-          name: request.name,
-          sha256: createHash("sha256").update(request.bytes).digest("hex"),
-          sizeBytes: request.bytes.length,
-        }));
-      },
-    }),
+    attachments: Object.freeze({ run: async <T>(_product: ProductToolContext, action: () => Promise<T>) => {
+      await beforeImageRead?.();
+      return action();
+    } }),
   });
   let call = 0;
   let durableSequence = 0;
@@ -331,7 +334,8 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
     searchWorkdirs,
     operation,
     root,
-    setAttachmentOverride: (value: unknown) => { attachmentOverride = value; },
+    saveImage,
+    setBeforeImageRead: (action: () => Promise<void>) => { beforeImageRead = action; },
     setCheckpointOverride: (value: unknown) => { checkpointOverride = value; },
     setCheckpointPrepareHook: (hook: ((request: ProductToolCheckpointRequest) => Promise<void>) | undefined) => {
       checkpointPrepareHook = hook;
@@ -349,15 +353,99 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean }> = {})
 };
 
 describe("canonical filesystem tools", () => {
+  it("rejects a target retargeted during stock Read resolution before publishing image bytes", async () => {
+    const state = await harness();
+    const path = join(state.workspace, "approved.png");
+    const outside = join(state.root, "outside.png");
+    const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    await writeFile(path, image);
+    await writeFile(outside, image);
+    state.setBeforeImageRead(async () => {
+      await rename(path, `${path}.original`);
+      await symlink(outside, path);
+    });
+    const result = await state.execute("Read", { file_path: path });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("changed after authorization");
+    expect(state.saveImage).not.toHaveBeenCalled();
+    await state.context.fiber.dispose();
+  });
+  it("preserves a product provider's path denial without manufacturing sandbox escalation", async () => {
+    const state = await harness();
+    const path = join(state.workspace, "denied.txt");
+    await writeFile(path, "before");
+    await state.execute("Read", { file_path: path });
+    vi.spyOn(state.context.fs, "writeText").mockRejectedValue(new FsError("product path identity denied", "FS_SANDBOX_DENIED"));
+    const result = await state.execute("Write", { file_path: path, content: "after" });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("product path identity denied");
+    expect(await readFile(path, "utf8")).toBe("before");
+    expect(state.checkpoints.at(-1)).toBe("abort");
+    await state.context.fiber.dispose();
+  });
+  it("uses official CRLF editing and checkpoints the exact stored bytes", async () => {
+    const state = await harness();
+    const path = join(state.workspace, "crlf.txt");
+    await writeFile(path, "alpha\r\nbeta\r\n");
+    expect((await state.execute("Read", { file_path: path })).isError).toBe(false);
+    const result = await state.execute("Edit", { file_path: path, old_string: "alpha\nbeta", new_string: "ALPHA\nBETA" });
+    expect(result.isError).toBe(false);
+    const stored = await readFile(path);
+    expect(stored.toString()).toBe("ALPHA\r\nBETA\r\n");
+    expect(Buffer.from(state.checkpointRequests.at(-1)?.afterBytes ?? [])).toEqual(stored);
+    expect(Buffer.from(state.checkpointRequests.at(-1)?.beforeBytes ?? []).toString()).toBe("alpha\r\nbeta\r\n");
+    await state.context.fiber.dispose();
+  });
+
+  it("streams one line from a text file larger than the checkpoint limit", async () => {
+    const state = await harness();
+    const path = join(state.workspace, "large.txt");
+    await writeFile(path, "short line\n".repeat(850_000));
+    const readText = vi.spyOn(state.context.fs, "readText");
+    const readBytes = vi.spyOn(state.context.fs, "readBytes");
+    const result = await state.execute("Read", { file_path: path, limit: 1 });
+    expect(result).toMatchObject({ isError: false, value: { lineCount: 1, truncated: true } });
+    expect(JSON.stringify(result)).toContain("short line");
+    expect(readText).not.toHaveBeenCalled();
+    expect(readBytes).not.toHaveBeenCalled();
+    await state.context.fiber.dispose();
+  });
+
+  it.each(["pixel.png", "normalized-image"])("returns an image block for a vision route and refuses the text-only child route (%s)", async (name) => {
+    const state = await harness();
+    const path = join(state.workspace, name);
+    await writeFile(path, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+    const result = await state.execute("Read", { file_path: path });
+    expect(result.isError).toBe(false);
+    expect(result.content.find((block) => block.type === "image"))
+      .toMatchObject({ type: "image", attachment: { mediaType: "image/webp", width: 1, height: 1 } });
+    state.saveImage.mockClear();
+    const child = await state.executeAsChild("Read", { file_path: path });
+    expect(child.isError).toBe(true);
+    expect(JSON.stringify(child.content)).toContain("does not declare image input");
+    expect(state.saveImage).not.toHaveBeenCalled();
+    expect(child.content.some((block) => block.type === "image")).toBe(false);
+    await state.context.fiber.dispose();
+  });
+
+  it("explains PDF conversion instead of returning a successful opaque attachment", async () => {
+    const state = await harness({ imageInput: false });
+    const path = join(state.workspace, "text.pdf");
+    await writeFile(path, "%PDF-1.7\ntext-based PDF fixture");
+    const result = await state.execute("Read", { file_path: path });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("Convert the PDF to text/Markdown");
+    expect(state.saveImage).not.toHaveBeenCalled();
+    await state.context.fiber.dispose();
+  });
   it("executes child file calls through the common Product tool pipeline and honors its frozen allowlist", async () => {
     const state = await harness();
     const path = join(state.workspace, "child.txt");
     await writeFile(path, "child input");
 
-    await expect(state.executeAsChild("Read", { file_path: path })).resolves.toMatchObject({
-      isError: false,
-      value: { content: "1\tchild input" },
-    });
+    const read = await state.executeAsChild("Read", { file_path: path });
+    expect(read.isError).toBe(false);
+    expect(JSON.stringify(read.content)).toContain("child input");
     await expect(state.executeAsChild("Write", { file_path: path, content: "child output" })).resolves.toMatchObject({
       isError: false,
       value: { path },
@@ -531,7 +619,8 @@ describe("canonical filesystem tools", () => {
     await writeFile(notebook, "{}"); await symlink(notebook, notebookAlias);
     await state.execute("Read", { file_path: notebookAlias });
     await expect(state.execute("Edit", { file_path: notebookAlias, old_string: "{}", new_string: "[]" }))
-      .resolves.toMatchObject({ isError: true, error: { info: { code: "unsupported_format" } } });
+      .resolves.toMatchObject({ isError: false });
+    expect(await readFile(notebook, "utf8")).toBe("[]");
 
     const outside = join(state.root, "outside.txt");
     await writeFile(outside, "outside");
@@ -654,8 +743,7 @@ describe("canonical filesystem tools", () => {
       isError: false,
       value: {
         kind: "image",
-        mimeType: "image/png",
-        attachment: { attachmentId: "attachment-v1" },
+        image: { mediaType: "image/webp", width: 1, height: 1 },
       },
     });
     const binaryTarget = await state.context.fs.resolve(image);
@@ -683,13 +771,10 @@ describe("canonical filesystem tools", () => {
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(largeImageBytes);
     await writeFile(largeImage, largeImageBytes);
     await expect(state.execute("Read", { file_path: largeImage }))
-      .resolves.toMatchObject({ isError: false, value: { kind: "image" } });
+      .resolves.toMatchObject({ isError: true });
     await expect(state.execute("Write", { file_path: largeImage, content: "bounded replacement\n" }))
-      .resolves.toMatchObject({ isError: false });
-    const largePreimage = state.checkpointRequests.at(-1)?.beforeBytes;
-    expect(largePreimage?.byteLength).toBe(largeImageBytes.byteLength);
-    expect(createHash("sha256").update(largePreimage ?? new Uint8Array()).digest("hex"))
-      .toBe(createHash("sha256").update(largeImageBytes).digest("hex"));
+      .resolves.toMatchObject({ isError: true });
+    expect(await readFile(largeImage)).toEqual(largeImageBytes);
     await state.context.fiber.dispose();
   });
 
@@ -811,24 +896,8 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("rejects malformed attachment results and preserves post-publication checkpoint uncertainty", async () => {
+  it("preserves post-publication checkpoint uncertainty", async () => {
     const state = await harness();
-    const image = join(state.workspace, "malformed.png");
-    await writeFile(image, Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-      "base64",
-    ));
-    let attachmentGetterHits = 0;
-    state.setAttachmentOverride({
-      get attachmentId() { attachmentGetterHits += 1; return "forged"; },
-      mimeType: "image/png",
-      name: "malformed.png",
-      sha256: "a".repeat(64),
-      sizeBytes: 1,
-    });
-    await expect(state.execute("Read", { file_path: image })).resolves.toMatchObject({ isError: true });
-    expect(attachmentGetterHits).toBe(0);
-
     const path = join(state.workspace, "uncertain.txt");
     await writeFile(path, "before");
     await state.execute("Read", { file_path: path });

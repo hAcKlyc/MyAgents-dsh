@@ -1,3 +1,5 @@
+import { LocalFileSystem, prepareTextEdit } from "@deepseek-ai/dsh-fs-local";
+import { createReadTool, createReadImageTool, createWriteTool, createEditTool, type ReadToolCaps } from "@deepseek-ai/dsh-tool-fs";
 import * as OfficialBashLocal from "@deepseek-ai/dsh-bash-local";
 import * as OfficialPwshLocal from "@deepseek-ai/dsh-pwsh-local";
 import * as OfficialShellEnv from "@deepseek-ai/dsh-shell-env";
@@ -258,3 +260,6 @@ export interface DshPublicSurfaceTypes {
   web: [WebFetchProvider, WebSearchProvider];
   webHelpers: [WebFetchMeta, WebSearchMeta];
 }
+
+export const officialFileComposition = { LocalFileSystem, prepareTextEdit, createReadTool, createReadImageTool, createWriteTool, createEditTool };
+export type OfficialReadCaps = ReadToolCaps;

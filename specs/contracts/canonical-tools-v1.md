@@ -2,13 +2,13 @@
 
 # Canonical tool contract and DSH reuse projection
 
-Contract SHA-256: `3e9c711becce5d954432a1d077970d7d58e5530d88cf8014dbf3957ad6fa67e2`
+Contract SHA-256: `577bda20bda88496647be39d4e0aa018eb1583924b0380b3b97a416ad86e98d1`
 
 | Tool | Concurrency | Side effect | Permission | Checkpoint | Public DSH reuse | Product owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Read` | `parallel` | `read` | `workspace.read` | `none` | `@deepseek-ai/dsh-fs` (provider)<br>`@deepseek-ai/dsh-attachment` (provider) | `@myagents-dsh/tools-fs` |
-| `Write` | `canonical_path` | `workspace` | `workspace.write` | `root_managed_file` | `@deepseek-ai/dsh-fs` (provider) | `@myagents-dsh/tools-fs` |
-| `Edit` | `canonical_path` | `workspace` | `workspace.write` | `root_managed_file` | `@deepseek-ai/dsh-fs` (provider) | `@myagents-dsh/tools-fs` |
+| `Read` | `parallel` | `read` | `workspace.read` | `none` | `@deepseek-ai/dsh-tool-fs` (helper)<br>`@deepseek-ai/dsh-fs` (provider)<br>`@deepseek-ai/dsh-attachment` (provider) | `@myagents-dsh/tools-fs` |
+| `Write` | `canonical_path` | `workspace` | `workspace.write` | `root_managed_file` | `@deepseek-ai/dsh-tool-fs` (helper)<br>`@deepseek-ai/dsh-fs` (provider) | `@myagents-dsh/tools-fs` |
+| `Edit` | `canonical_path` | `workspace` | `workspace.write` | `root_managed_file` | `@deepseek-ai/dsh-tool-fs` (helper)<br>`@deepseek-ai/dsh-fs-local` (helper)<br>`@deepseek-ai/dsh-fs` (provider) | `@myagents-dsh/tools-fs` |
 | `Glob` | `parallel` | `read` | `workspace.search` | `none` | `@deepseek-ai/dsh-tool-fs-search` (helper)<br>`@deepseek-ai/dsh-subprocess` (provider) | `@myagents-dsh/tools-fs` |
 | `Grep` | `parallel` | `read` | `workspace.search` | `none` | `@deepseek-ai/dsh-tool-fs-search` (helper)<br>`@deepseek-ai/dsh-subprocess` (provider) | `@myagents-dsh/tools-fs` |
 | `bash` | `parallel` | `process` | `process.execute` | `none` | `@deepseek-ai/dsh-tool-bash` (direct) | `@myagents-dsh/tools-process` |

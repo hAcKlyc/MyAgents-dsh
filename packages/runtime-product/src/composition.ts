@@ -142,7 +142,6 @@ import {
   CanonicalFileTools,
   LocalWorkspaceFileSystem,
   requireLocalWorkspaceFileSystem,
-  type AttachmentPublicationRequest,
 } from "@myagents-dsh/tools-fs";
 import {
   ProductPlanService,
@@ -1642,13 +1641,13 @@ export const installCanonicalToolPlane = async (
     }));
     fibers.push(await root.plugin(CanonicalFileTools, {
       attachments: Object.freeze({
-        publish: async (request: AttachmentPublicationRequest) => {
+        run: async <T>(context: ProductToolContext, action: () => Promise<T>): Promise<T> => {
           const session = root.productSession.snapshot();
           if (session.state !== "ready" || session.runtimeSessionId === undefined) {
             throw new ProtocolError("primary_session_not_ready", "attachment publication requires a ready primary Session");
           }
           const assertCurrent = () => {
-            root.productTools.assertCurrent(request.context, "Read");
+            root.productTools.assertCurrent(context, "Read");
             const current = root.productSession.snapshot();
             if (current.state !== "ready" || current.runtimeSessionId !== session.runtimeSessionId) {
               throw new ProtocolError("primary_session_replaced", "attachment publication Session authority is stale");
@@ -1658,22 +1657,11 @@ export const installCanonicalToolPlane = async (
             assertCurrent,
             deadlineMs: 120_000,
             runtimeSessionId: session.runtimeSessionId,
-            signal: request.context.signal,
-            stagingRoot: request.context.environment.attachmentStagingRoot,
+            signal: context.signal,
+            stagingRoot: context.environment.attachmentStagingRoot,
           }));
           assertCurrent();
-          const published = await installedAttachmentController.publish(scope, Object.freeze({
-            bytes: request.bytes,
-            mediaType: request.mimeType as "application/pdf" | "image/gif" | "image/jpeg" | "image/png" | "image/webp",
-            name: request.name,
-          }));
-          return Object.freeze({
-            attachmentId: published.attachmentId,
-            mimeType: published.mediaType,
-            name: published.name,
-            sha256: published.sha256,
-            sizeBytes: published.sizeBytes,
-          });
+          return installedAttachmentController.runWithRequestScope(scope, action);
         },
       }),
       retainedOutput: Object.freeze({

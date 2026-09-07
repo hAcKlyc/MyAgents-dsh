@@ -16,8 +16,8 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-llm": "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd || 0.1.2-rc.1",
-    "@deepseek-ai/dsh-tools": "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd || 0.1.2-rc.1",
-    "@deepseek-ai/dsh-web": "0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd || 0.1.2-rc.1"
+    "@deepseek-ai/dsh-llm": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1",
+    "@deepseek-ai/dsh-web": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1"
   }
 }

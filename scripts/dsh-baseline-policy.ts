@@ -19,6 +19,7 @@ export const expectedDshDependencies = new Map([
   ["@deepseek-ai/dsh-compaction-tool-result-pruner", "0.1.2-rc.1"],
   ["@deepseek-ai/dsh-credentials", "0.1.2-rc.1"],
   ["@deepseek-ai/dsh-fs", "0.1.2-rc.1"],
+  ["@deepseek-ai/dsh-fs-local", "0.1.2-rc.1"],
   ["@deepseek-ai/dsh-invariants", "0.1.2-rc.1"],
   ["@deepseek-ai/dsh-jobs", "0.1.2-rc.1"],
   ["@deepseek-ai/dsh-jobs-local", "0.1.2-rc.1"],
@@ -53,6 +54,7 @@ export const expectedDshDependencies = new Map([
   ["@deepseek-ai/dsh-token-meter", "0.1.2-rc.1"],
   ["@deepseek-ai/dsh-tool-bash", "0.1.2-rc.1"],
   ["@deepseek-ai/dsh-tool-call-timeout-policy", "0.1.2-rc.1"],
+  ["@deepseek-ai/dsh-tool-fs", "0.1.2-rc.1"],
   ["@deepseek-ai/dsh-tool-fs-search", "0.1.2-rc.1"],
   ["@deepseek-ai/dsh-tool-jobs", "0.1.2-rc.1"],
   ["@deepseek-ai/dsh-tool-pwsh", "0.1.2-rc.1"],
@@ -77,6 +79,8 @@ export interface PublicSeamEvidence {
 }
 
 export const publicSeams: PublicSeamEvidence[] = [
+  { id: "local-file-provider", package: "@deepseek-ai/dsh-fs-local", importPath: "@deepseek-ai/dsh-fs-local", classification: "helper", batchUse: ["UPG-W16"], values: ["LocalFileSystem", "prepareTextEdit"], types: [] },
+  { id: "file-tool-factories", package: "@deepseek-ai/dsh-tool-fs", importPath: "@deepseek-ai/dsh-tool-fs", classification: "helper", batchUse: ["UPG-W16"], values: ["createReadTool", "createReadImageTool", "createWriteTool", "createEditTool"], types: ["ReadToolCaps"] },
   {"id": "bash-local", "package": "@deepseek-ai/dsh-bash-local", "importPath": "@deepseek-ai/dsh-bash-local", "classification": "provider", "batchUse": ["UPG-W10"], "values": ["LocalBashExecutor"], "types": [], "compileEvidence": "runtime-package-root"},
   {"id": "pwsh-local", "package": "@deepseek-ai/dsh-pwsh-local", "importPath": "@deepseek-ai/dsh-pwsh-local", "classification": "provider", "batchUse": ["UPG-W10"], "values": ["PwshLocalExecutor", "resolvePwshPath"], "types": [], "compileEvidence": "runtime-package-root"},
   {"id": "shell-env", "package": "@deepseek-ai/dsh-shell-env", "importPath": "@deepseek-ai/dsh-shell-env", "classification": "provider", "batchUse": ["UPG-W10"], "values": ["apply"], "types": [], "compileEvidence": "runtime-package-root"},

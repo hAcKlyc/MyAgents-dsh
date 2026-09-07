@@ -103,6 +103,21 @@ CAS. Missing/ambiguous matches and publication races give explicit Read/retry gu
 retains its complete-current-Read precondition. Search tools accept aliases and retain their existing
 opened-root/file identity revalidation. `ls` explains whether entry count or byte output was truncated.
 
+Read/Write/Edit now invoke the official `tool-fs` executors through public definition factories.
+MyAgents retains names, permission/deadline admission, durable read receipts and checkpoint settlement.
+There is one DSH tool execution and one filesystem provider; no internal second tool dispatch.
+The official reader owns line windows and streaming; image reads use its actual calling-model
+capability gate and return image content blocks through the existing Host attachment request scope.
+PNG/JPEG/WebP/GIF and extension-less normalized images are supported when the route accepts images.
+Text-only routes fail recoverably before publication. PDF reads direct the model to the existing
+`myagents-anydoc` skill/CLI conversion workflow, then Read on Markdown; they never report attachment
+publication as content extraction. Notebook files use normal UTF-8 JSON reads/edits.
+
+The same official edit preparation algorithm supplies permission match counts and exact stored
+checkpoint bytes, including CRLF and UTF-8 BOM decoding. Actual publication remains in official
+`LocalFileSystem`; the product pre-publication guard rechecks identity/version after staging. Its
+`createParents: false` setting leaves all directory creation in the checkpoint journal.
+
 An out-of-root `Read` may resolve an Agent-owned retained output. The optional resolver returns
 `undefined` only for an unregistered path; the file tool then reports its ordinary allowed-root error.
 Registered-output identity/IO errors remain errors from that owner. No second output registry exists.

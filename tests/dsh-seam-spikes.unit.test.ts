@@ -868,8 +868,9 @@ describe("accepted DSH seam decision registry", () => {
       "required_upstream_patch_accepted",
       "required_upstream_patch_accepted",
       "required_upstream_patch_accepted",
+      "required_upstream_patch_accepted",
     ]);
-    expect(evidence.patchSeries).toHaveLength(10);
+    expect(evidence.patchSeries).toHaveLength(11);
     for (const patch of evidence.patchSeries) {
       const digest = createHash("sha256")
         .update(readFileSync(resolve(repositoryRoot, patch.path)))

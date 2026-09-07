@@ -1,9 +1,18 @@
 {
   "artifactFormatVersion": 1,
-  "contractSha256": "3e9c711becce5d954432a1d077970d7d58e5530d88cf8014dbf3957ad6fa67e2",
+  "contractSha256": "577bda20bda88496647be39d4e0aa018eb1583924b0380b3b97a416ad86e98d1",
   "decisions": [
     {
       "dshPublicReuse": [
+        {
+          "classification": "helper",
+          "id": "file-tool-factories",
+          "importPath": "@deepseek-ai/dsh-tool-fs",
+          "symbols": [
+            "createReadTool",
+            "createReadImageTool"
+          ]
+        },
         {
           "classification": "provider",
           "id": "filesystem",
@@ -29,6 +38,14 @@
     {
       "dshPublicReuse": [
         {
+          "classification": "helper",
+          "id": "file-tool-factories",
+          "importPath": "@deepseek-ai/dsh-tool-fs",
+          "symbols": [
+            "createWriteTool"
+          ]
+        },
+        {
           "classification": "provider",
           "id": "filesystem",
           "importPath": "@deepseek-ai/dsh-fs",
@@ -45,6 +62,23 @@
     },
     {
       "dshPublicReuse": [
+        {
+          "classification": "helper",
+          "id": "file-tool-factories",
+          "importPath": "@deepseek-ai/dsh-tool-fs",
+          "symbols": [
+            "createEditTool"
+          ]
+        },
+        {
+          "classification": "helper",
+          "id": "local-file-provider",
+          "importPath": "@deepseek-ai/dsh-fs-local",
+          "symbols": [
+            "LocalFileSystem",
+            "prepareTextEdit"
+          ]
+        },
         {
           "classification": "provider",
           "id": "filesystem",

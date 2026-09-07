@@ -4,7 +4,6 @@ import officialShellTools from "../generated/official-shell-tools-v1.json" with 
 import {
   CANONICAL_JSON_LIMITS,
   TOOL_CONTRACT_LIMITS,
-  attachmentReference,
   boundedIdentifier,
   boundedTaskMetadata,
   boundedPath,
@@ -237,7 +236,7 @@ const citation = strictObject({
 const readOutput = Type.Union([
   strictObject({
     path: boundedPath,
-    kind: Type.Union([Type.Literal("text"), Type.Literal("notebook")]),
+    kind: Type.Literal("text"),
     mimeType: Type.String({ minLength: 1, maxLength: 256 }),
     offset: positiveInteger,
     lineCount: nonNegativeInteger,
@@ -246,10 +245,16 @@ const readOutput = Type.Union([
   }),
   strictObject({
     path: boundedPath,
-    kind: Type.Union([Type.Literal("image"), Type.Literal("pdf")]),
-    mimeType: Type.String({ minLength: 1, maxLength: 256 }),
-    truncated: Type.Boolean(),
-    attachment: attachmentReference,
+    kind: Type.Literal("image"),
+    image: strictObject({
+      attachmentId: boundedIdentifier,
+      mediaType: Type.Union([Type.Literal("image/png"), Type.Literal("image/jpeg"), Type.Literal("image/webp"), Type.Literal("image/gif")]),
+      bytes: positiveInteger,
+      width: positiveInteger,
+      height: positiveInteger,
+      name: Type.Optional(Type.String({ maxLength: 512 })),
+      originalDimensions: Type.Optional(strictObject({ width: positiveInteger, height: positiveInteger })),
+    }),
   }),
 ]);
 
@@ -327,7 +332,7 @@ const agentOutput = Type.Union([
 export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   Read: contract({
     name: "Read",
-    description: "Reads one allowed workspace or Runtime-output file. Supports bounded text ranges, images, notebooks, and visual PDF pages. Use an absolute path and read an existing file completely before overwriting it.",
+    description: "Reads UTF-8 text with bounded line ranges, including notebook JSON, using the official DSH reader. PNG/JPEG/WebP/GIF images return image content only when the calling model supports image input. PDF requires document conversion to text/Markdown first. Read an existing file completely before overwriting it.",
     inputSchema: strictObject({
       file_path: boundedPath,
       offset: Type.Optional(positiveInteger),
@@ -341,8 +346,8 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     outputLimits: outputLimits(262_144, 2_048, { maxAttachmentBytes: 20 * 1_024 * 1_024 }),
     permissionClass: "workspace.read",
     checkpoint: "none",
-    behaviorFixtureIds: ["text_range_and_read_receipt", "image_attachment_projection", "pdf_page_projection", "notebook_normalized_text", "symlink_and_size_rejection"],
-    resultSemantics: "Return bounded text with line metadata or one validated image/PDF attachment projection; notebook content is normalized text.",
+    behaviorFixtureIds: ["text_range_and_read_receipt", "image_attachment_projection", "text_model_image_refusal", "pdf_conversion_guidance", "notebook_json_text", "symlink_and_size_rejection"],
+    resultSemantics: "Return the official bounded UTF-8 text view or validated image content for an image-capable calling model. PDF conversion belongs to document processing.",
     errorCodes: errors(
       ["path_denied", false, "The canonical target is outside an allowed read root or crosses a forbidden symlink."],
       ["file_not_found", false, "The canonical target is absent or not a regular readable file."],
@@ -374,7 +379,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Edit: contract({
     name: "Edit",
-    description: "Performs an exact string replacement in a text file. By default old_string must occur exactly once; replace_all replaces every non-overlapping occurrence. Notebook files are unsupported.",
+    description: "Performs an exact string replacement in a UTF-8 text file using official DSH edit semantics, including CRLF preservation. By default old_string must occur exactly once; replace_all replaces every non-overlapping occurrence.",
     inputSchema: strictObject({
       file_path: boundedPath,
       old_string: boundedText,
@@ -876,13 +881,17 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
 
 export const CANONICAL_TOOL_REUSE_MATRIX = deepFreeze({
   Read: { tool: "Read", modelDefinition: "compat-tool", dshPublicReuse: [
+    { id: "file-tool-factories", importPath: "@deepseek-ai/dsh-tool-fs", classification: "helper", symbols: ["createReadTool", "createReadImageTool"] },
     { id: "filesystem", importPath: "@deepseek-ai/dsh-fs", classification: "provider", symbols: ["FileSystem"] },
     { id: "attachments", importPath: "@deepseek-ai/dsh-attachment", classification: "provider", symbols: ["AttachmentStore"] },
   ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
   Write: { tool: "Write", modelDefinition: "compat-tool", dshPublicReuse: [
+    { id: "file-tool-factories", importPath: "@deepseek-ai/dsh-tool-fs", classification: "helper", symbols: ["createWriteTool"] },
     { id: "filesystem", importPath: "@deepseek-ai/dsh-fs", classification: "provider", symbols: ["FileSystem", "FsWriteIntent"] },
   ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
   Edit: { tool: "Edit", modelDefinition: "compat-tool", dshPublicReuse: [
+    { id: "file-tool-factories", importPath: "@deepseek-ai/dsh-tool-fs", classification: "helper", symbols: ["createEditTool"] },
+    { id: "local-file-provider", importPath: "@deepseek-ai/dsh-fs-local", classification: "helper", symbols: ["LocalFileSystem", "prepareTextEdit"] },
     { id: "filesystem", importPath: "@deepseek-ai/dsh-fs", classification: "provider", symbols: ["FileSystem", "FsEditRequest"] },
   ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
   Glob: { tool: "Glob", modelDefinition: "compat-tool", dshPublicReuse: [

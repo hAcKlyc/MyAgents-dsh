@@ -27,6 +27,7 @@ import {
   type ProductLocalInteractionSettlement,
   type ProductPermissionInteractionRequest,
   type ProductToolRuntimeConfig,
+  type ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
 import {
   CanonicalFileTools,
@@ -227,7 +228,7 @@ const mounted = async (options: MountedOptions = {}) => {
   context.provide("productProcesses", Object.freeze({}) as never);
   await context.plugin(CanonicalFileTools, {
     attachments: Object.freeze({
-      publish: () => Promise.reject(new Error("binary attachments are not used by plan tests")),
+      run: <T>(_product: ProductToolContext, action: () => Promise<T>) => action(),
     }),
   });
 

@@ -59,8 +59,8 @@ describe("canonical tool contract authority", () => {
       const contract = CANONICAL_TOOL_CONTRACTS[name];
       expect(contract.name).toBe(name);
       expect(contract.description.length).toBeGreaterThan(40);
-      expect(contract.behaviorFixtureIds).toHaveLength(name === "Write" ? 6 : 5);
-      expect(new Set(contract.behaviorFixtureIds).size).toBe(name === "Write" ? 6 : 5);
+      expect(contract.behaviorFixtureIds).toHaveLength(name === "Write" || name === "Read" ? 6 : 5);
+      expect(new Set(contract.behaviorFixtureIds).size).toBe(name === "Write" || name === "Read" ? 6 : 5);
       expect(contract.errorCodes.length).toBeGreaterThan(0);
       expect(contract.lifecycle.cancellation).toBe("abort_signal_exactly_one_terminal");
       expect(contract.lifecycle.durableResult).toBe("dsh_tool_result_before_runtime_visibility");
