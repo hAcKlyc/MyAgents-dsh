@@ -2929,17 +2929,14 @@ assert.equal(
 const binaryReadResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-binary-read-call");
 assert.ok(binaryReadResult?.type === "tool/result");
-const binaryReadValue = binaryReadResult.data.message.content[0] as unknown as Readonly<{
-  content: readonly Readonly<{ text: string; type: string }>[];
-  isError: boolean;
-}>;
+const binaryReadValue = binaryReadResult.data.message.content[0];
 assert.equal(binaryReadValue.isError, false);
-assert.deepEqual(binaryReadValue.content, [{
-  type: "text",
-  text: `Published image attachment for ${fixtureImageFile}.`,
-}]);
+assert.equal(binaryReadValue.content.length, 2);
+assert.ok(binaryReadValue.content[0]?.type === "text");
+assert.match(binaryReadValue.content[0].text, /image\/webp image, 1x1 px/u);
+assert.deepEqual(binaryReadValue.content[1], imageInputMessage.content[1]);
 assert.deepEqual(hostAttachmentEvidence.slice(binaryAttachmentEvidenceStart), [
-  `put:${fixtureImageAttachmentId}:pixel.png`,
+  `put:${normalizedImageAttachmentId}:pixel.png`,
 ]);
 assert.deepEqual(await readdir(fixtureAttachmentStaging), []);
 
