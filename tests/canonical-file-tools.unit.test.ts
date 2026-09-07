@@ -774,7 +774,7 @@ describe("canonical filesystem tools", () => {
       .resolves.toMatchObject({ isError: true });
     await expect(state.execute("Write", { file_path: largeImage, content: "bounded replacement\n" }))
       .resolves.toMatchObject({ isError: true });
-    expect(await readFile(largeImage)).toEqual(largeImageBytes);
+    expect((await readFile(largeImage)).equals(largeImageBytes)).toBe(true);
     await state.context.fiber.dispose();
   });
 

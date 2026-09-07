@@ -37,6 +37,7 @@ import type {
   HostCredentialProvider,
   HostProviderCredentialBinding,
   HostProviderRequestScope,
+  HostAttachmentRequestScopeInput,
 } from "@myagents-dsh/host-ports";
 import {
   HOST_CANONICAL_WEB_ADAPTER_ID,
@@ -115,6 +116,9 @@ export interface HostModelPlaneConfig {
 }
 
 export type HostDeepSeekModelPlaneConfig = HostModelPlaneConfig;
+
+type ModelRequestRunner = <T>(action: () => T) => T;
+type ModelAttachmentScopeFactory = (input: Omit<HostAttachmentRequestScopeInput, "stagingRoot">) => ModelRequestRunner;
 
 type NormalizedHostDeepSeekModelPlaneConfig = Readonly<{
   requestDeadlineMs: number;
@@ -668,15 +672,18 @@ export class HostModelAuthority {
     Object.freeze({ providers: Object.freeze({}) });
   #webSearchAdapters: readonly string[] | undefined;
   readonly #auxiliaryRequest = new AsyncLocalStorage<HostAuxiliaryRequest>();
+  readonly #createAttachmentScope: ModelAttachmentScopeFactory;
 
   constructor(
     context: Context,
     credentials: HostCredentialProviderController,
     config: HostModelPlaneConfig,
+    createAttachmentScope: ModelAttachmentScopeFactory = () => (action) => action(),
   ) {
     this.#context = context;
     this.#credentials = credentials;
     this.#config = normalizeConfig(config);
+    this.#createAttachmentScope = createAttachmentScope;
   }
 
   bindHostCapabilities(capabilities: InitializeParams["hostCapabilities"]): void {
@@ -885,6 +892,7 @@ export class HostModelAuthority {
   request(options: GenerateOptions): Readonly<{
     binding: HostProviderCredentialBinding;
     scope: HostProviderRequestScope;
+    runWithAttachments: ModelRequestRunner;
   }> {
     const primaryBinding = this.requireBinding();
     const binding = this.bindingFor(options.provider, options.model);
@@ -926,7 +934,9 @@ export class HostModelAuthority {
         signal,
         turnId: `${auxiliary.kind}-turn-${digest}`,
       });
-      return Object.freeze({ binding, scope });
+      return Object.freeze({ binding, scope, runWithAttachments: this.#createAttachmentScope({
+        assertCurrent, runtimeSessionId: binding.runtimeSessionId, signal, deadlineMs: this.#config.requestDeadlineMs,
+      }) });
     }
     if (options.sessionId === undefined) {
       throw new ProtocolError(
@@ -974,7 +984,9 @@ export class HostModelAuthority {
       signal,
       turnId: operation.turnId,
     });
-    return Object.freeze({ binding, scope });
+    return Object.freeze({ binding, scope, runWithAttachments: this.#createAttachmentScope({
+      assertCurrent, runtimeSessionId: binding.runtimeSessionId, signal, deadlineMs: this.#config.requestDeadlineMs,
+    }) });
   }
 
   resolveUserId(): DeepSeekUserId {
@@ -1185,16 +1197,15 @@ const scopedProviderStream = async function* (
   credentials: HostCredentialProviderController,
   scope: HostProviderRequestScope,
   next: () => AsyncIterable<StreamChunk>,
+  runWithAttachments: ModelRequestRunner,
 ): AsyncGenerator<StreamChunk> {
-  const iterator = credentials.runWithProviderRequestScope(
-    scope,
-    () => next()[Symbol.asyncIterator](),
-  );
+  const run: ModelRequestRunner = (action) => runWithAttachments(() => credentials.runWithProviderRequestScope(scope, action));
+  const iterator = run(() => next()[Symbol.asyncIterator]());
   let exhausted = false;
   let failure: LlmError | undefined;
   try {
     for (;;) {
-      const result = await credentials.runWithProviderRequestScope(scope, () => iterator.next());
+      const result = await run(() => iterator.next());
       if (result.done) {
         exhausted = true;
         return;
@@ -1207,7 +1218,7 @@ const scopedProviderStream = async function* (
   } finally {
     const returnIterator = iterator.return?.bind(iterator);
     if (!exhausted && returnIterator !== undefined) {
-      await credentials.runWithProviderRequestScope(scope, () => returnIterator())
+      await run(() => returnIterator())
         .catch((error: unknown) => Promise.reject(failure === undefined
           ? sanitizeProviderFailure(error)
           : new LlmError("Provider request and cleanup failed", "PROVIDER_FAILURE")));
@@ -1215,7 +1226,7 @@ const scopedProviderStream = async function* (
   }
 };
 
-/** Install the request-scoped Host credential boundary around official pi-ai streams. */
+/** Bind Host credentials and attachment access to each official pi-ai stream. */
 export const installHostLlmRequestScope = (
   context: Context,
   authority: HostModelAuthority,
@@ -1223,8 +1234,8 @@ export const installHostLlmRequestScope = (
 ): void => {
   context.on("llm/stream", (options, next) => {
     if (options.provider === HOST_DEEPSEEK_PROVIDER_ROUTE) return next();
-    const { scope } = authority.request(options);
-    return scopedProviderStream(credentials, scope, next);
+    const { scope, runWithAttachments } = authority.request(options);
+    return scopedProviderStream(credentials, scope, next, runWithAttachments);
   }, { global: true });
 };
 
@@ -1322,19 +1333,14 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
     options: GenerateOptions,
     dispatch: (request: GenerateOptions) => AsyncIterable<StreamChunk>,
   ): AsyncIterable<StreamChunk> {
-    const { scope } = this.#authority.request(options);
-    const iterator = this.#credentialController.runWithProviderRequestScope(
-      scope,
-      () => dispatch(options)[Symbol.asyncIterator](),
-    );
+    const { scope, runWithAttachments } = this.#authority.request(options);
+    const run: ModelRequestRunner = (action) => runWithAttachments(() => this.#credentialController.runWithProviderRequestScope(scope, action));
+    const iterator = run(() => dispatch(options)[Symbol.asyncIterator]());
     let exhausted = false;
     let failure: LlmError | undefined;
     try {
       for (;;) {
-        const result = await this.#credentialController.runWithProviderRequestScope(
-          scope,
-          () => iterator.next(),
-        );
+        const result = await run(() => iterator.next());
         if (result.done) {
           exhausted = true;
           return;
@@ -1347,10 +1353,7 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
     } finally {
       const returnIterator = iterator.return?.bind(iterator);
       if (!exhausted && returnIterator !== undefined) {
-        await this.#credentialController.runWithProviderRequestScope(
-          scope,
-          () => returnIterator(),
-        ).catch((error: unknown) => Promise.reject(failure === undefined
+        await run(() => returnIterator()).catch((error: unknown) => Promise.reject(failure === undefined
           ? sanitizeProviderFailure(error, "DeepSeek provider")
           : new LlmError(
               "DeepSeek provider request and cleanup failed",

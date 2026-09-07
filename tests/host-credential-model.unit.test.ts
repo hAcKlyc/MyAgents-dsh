@@ -1,4 +1,5 @@
 import { Context } from "@deepseek-ai/cordis";
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { CredentialRef } from "@deepseek-ai/dsh-credentials";
 import { freezeMessage, MessageId, type GenerateOptions } from "@deepseek-ai/dsh-llm";
 import { SessionId } from "@deepseek-ai/dsh-session";
@@ -221,14 +222,22 @@ describe("Host credential and model route", () => {
         : { authoritativeCredentialRevision: "credential-v1", kind: "material" as const,
             material: { [credentialValueField]: `synthetic-${params.profileRevision}` } };
     });
+    const attachmentScope = new AsyncLocalStorage<string>();
     const authority = new HostDeepSeekModelAuthority(context, harness.credentialController,
-      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" });
+      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" }, (input) => {
+        expect(input.runtimeSessionId).toBe("runtime-session-1");
+        return (action) => {
+          input.assertCurrent();
+          return attachmentScope.run(input.runtimeSessionId, action);
+        };
+      });
     const request = sessionRequest();
     const collaboration = { ...new AgentCollaborationPolicy(profile).config, modelProfiles: [childProfile] };
     await authority.preflight({ ...request, params: { ...request.params, collaboration } });
     const adapter = new HostDeepSeekLlmAdapter(authority, harness.credentials, harness.credentialController);
     const observed: Array<{ authorization: string | null; model: string; maxTokens: number }> = [];
     globalThis.fetch = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+      expect(attachmentScope.getStore()).toBe("runtime-session-1");
       if (typeof init?.body !== "string") throw new Error("fixture expected a JSON request body");
       const body = JSON.parse(init.body) as { model: string; max_tokens: number };
       observed.push({ authorization: new Headers(init.headers).get("authorization"), model: body.model, maxTokens: body.max_tokens });
@@ -249,6 +258,7 @@ describe("Host credential and model route", () => {
       { authorization: `Bearer synthetic-${childProfile.revision}`, model: childProfile.modelId, maxTokens: 128 },
     ]));
     expect(childAuthority).toHaveBeenCalledWith(child, "config-v1", profile.revision);
+    expect(attachmentScope.getStore()).toBeUndefined();
     const preparedChild = await adapter.prepareCall(profile.providerRouteId, childProfile.modelId);
     await authority.preflight({ ...request, params: { ...request.params, configRevision: "config-v2" } });
     await expect((async () => { for await (const chunk of preparedChild.stream(childOptions)) { void chunk; } })())

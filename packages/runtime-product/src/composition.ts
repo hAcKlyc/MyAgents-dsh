@@ -2140,7 +2140,23 @@ export const installHostModelPlane = async (
       throw new Error("Host settings Provider did not install through the public DSH service seam");
     }
     await root.plugin(await loadPiAiPlugin(), Object.freeze({ providers: Object.freeze({}) }));
-    const modelAuthority = new HostModelAuthority(root, credentialController, config);
+    const modelAuthority = new HostModelAuthority(root, credentialController, config, (input) => {
+      // Model streams resolve durable images after the publishing tool scope has
+      // ended. Reuse the same Store under this model request's current authority.
+      const attachments = authority.hostAttachments;
+      if (attachments === undefined) throw new ProtocolError("attachment_unavailable", "Model attachment Store is not ready");
+      const environment = root.productSession.requireExecutionEnvironment();
+      const assertCurrent = () => {
+        input.assertCurrent();
+        const current = root.productSession.requireExecutionEnvironment();
+        if (authority.hostAttachments !== attachments || current.digest !== environment.digest
+          || current.revision !== environment.revision) {
+          throw new ProtocolError("attachment_unavailable", "Model attachment environment is stale");
+        }
+      };
+      const scope = attachments.createRequestScope({ ...input, assertCurrent, stagingRoot: environment.attachmentStagingRoot });
+      return (action) => attachments.runWithRequestScope(scope, action);
+    });
     authority.installHostModelGuards(modelAuthority);
     installHostLlmRequestScope(root, modelAuthority, credentialController);
     await root.plugin(adapterPlugin(

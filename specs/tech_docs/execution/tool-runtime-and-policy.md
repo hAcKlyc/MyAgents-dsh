@@ -157,3 +157,11 @@ A tool change must update the handwritten contract source, generated catalog/sch
 Composition-installed callbacks use ordinary Promise/thenable semantics. Promise subclasses, own observation fields and Proxy functions do not establish a security boundary inside trusted Runtime JavaScript. The tool service caches the parsed catalog by its immutable source identity and compares admitted revision/digest during execution. Model arguments, external RPC declarations, path/URL/attachment identity and post-approval policy checks retain their boundary validation.
 
 A governed Edit without a current complete Read instructs the caller to run Read without offset or limit and then retry. This improves recovery guidance without changing ReadState authority or permitting a partial/stale read to authorize a mutation.
+
+Image publication and model consumption have different lifetimes. The tool's attachment scope ends
+with the tool execution; the next model stream must acquire durable attachment bytes under its own
+current Provider/Session/execution-environment authority. HostModelAuthority supplies that existing
+HostAttachmentStore scope for iterator creation, every next() and iterator cleanup, alongside the
+credential scope for both official pi-ai and DeepSeek adapters. Reusing a completed tool scope or
+adding image references without model-request attachment authority makes the next Provider call fail.
+The Host native fixture verifies image bytes in the actual next Anthropic wire request.
