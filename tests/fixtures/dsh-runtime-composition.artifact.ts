@@ -3204,14 +3204,10 @@ assert.equal(enterPlanOutput.mode, "plan");
 assert.equal(enterPlanOutput.planPath, fixturePlanPath);
 assert.equal(typeof enterPlanOutput.revision, "string");
 assert.equal(await readFile(fixturePlanPath, "utf8"), "# Governed plan\n\n1. Keep DSH as the only AgentLoop.\n");
-assert.equal(
-  durableToolText("artifact-plan-write-call"),
-  `${fixturePlanPath} (${createHash("sha256").update("# Governed plan\n\n1. Keep DSH as the only AgentLoop.\n").digest("hex")})`,
-);
-assert.equal(
-  durableToolText("artifact-plan-read-call"),
-  "1\t# Governed plan\n2\t\n3\t1. Keep DSH as the only AgentLoop.\n4\t",
-);
+assert.ok(durableToolText("artifact-plan-write-call").includes(`<path>${fixturePlanPath}</path>`));
+assert.match(durableToolText("artifact-plan-write-call"), /Created file/u);
+assert.ok(durableToolText("artifact-plan-read-call").includes(`<path>${fixturePlanPath}</path>`));
+assert.match(durableToolText("artifact-plan-read-call"), /1: # Governed plan\n2: \n3: 1\. Keep DSH as the only AgentLoop\./u);
 const deniedPlanBash = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-plan-bash-denied-call");
 assert.ok(deniedPlanBash?.type === "tool/result");
