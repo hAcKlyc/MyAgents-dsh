@@ -176,7 +176,7 @@ class ProductHostInteractionBridge {
     const review: PermissionReview = {
       operation: request.review ?? { kind: "generic", action: request.tool, target: request.target },
       actor: { agentId: request.agent.id, origin: request.origin },
-      scope: { tool: request.tool, permissionClass: request.permissionClass, target: request.target, lifetimeMs: request.ruleTtlMs, owner: "session_tree" },
+      scope: { tool: request.tool, permissionClass: request.permissionClass, target: request.target, lifetimeMs: null, owner: "session_tree" },
     };
     const prepareReview = this.#config.preparePermissionReview;
     const wireRequest: InteractionRequest = Object.freeze({

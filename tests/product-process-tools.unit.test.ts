@@ -331,7 +331,7 @@ const harness = async (options: Readonly<{
     await context.plugin(ProductPermissionService, {
       autoAllowTools: [], clock: Date.now, durability: { flush: () => Promise.resolve(true) },
       interaction: options.realPermission, interactionRegistrationDeadlineMs: 1_000,
-      maxRules: 8, mode: options.permissionMode ?? "default", ruleTtlMs: 60_000,
+      maxRules: 8, mode: options.permissionMode ?? "default",
       registerController: () => undefined,
     });
     currentOperation = Object.freeze({ ...operation, birth: Object.freeze({ ...operation.birth, permissionRevision: context.productPermission.currentRevision(agent) }) });

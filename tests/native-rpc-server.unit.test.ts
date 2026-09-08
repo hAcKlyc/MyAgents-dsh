@@ -1300,7 +1300,7 @@ describe("native RPC Cordis service", () => {
     try {
       await expect(harness.client.initialize({
         ...initializeParams(),
-        protocol: { minVersion: "4.0.0", maxVersion: "4.0.0" },
+        protocol: { minVersion: "3.1.0", maxVersion: "3.1.0" },
       })).rejects.toMatchObject({ code: "protocol_version_incompatible" });
       expect(harness.server.phase).toBe("await_initialize");
 

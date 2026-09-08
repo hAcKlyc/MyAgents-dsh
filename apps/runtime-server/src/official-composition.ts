@@ -207,7 +207,6 @@ export const composeOfficialRuntimeServices = async (
         interactionRegistrationDeadlineMs: 120_000,
         maxRules: 128,
         mode: "default",
-        ruleTtlMs: 86_400_000,
       }),
       plan: Object.freeze({ revision: OFFICIAL_PLAN_REVISION }),
       platformTarget: target,

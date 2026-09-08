@@ -10,7 +10,7 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "3.1.0" as const;
+export const PROTOCOL_VERSION = "4.0.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.2-rc.1.myagents.a66e47020478.db06dc323417" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
@@ -496,7 +496,7 @@ const permissionRule = strictObject({
   target: Type.String({ minLength: 1, maxLength: 8_192 }),
   origin: Type.Literal("root"),
   createdAt: nonNegativeInteger,
-  expiresAt: nonNegativeInteger,
+  expiresAt: Type.Union([Type.Null(), nonNegativeInteger]),
 });
 const permissionRuleMutationResult = Type.Union([
   strictObject({ state: Type.Literal("applied"), revision, rule: Type.Optional(permissionRule) }),
@@ -752,7 +752,7 @@ export type PermissionOperation = Static<typeof PermissionOperationSchema>;
 export const PermissionReviewSchema = strictObject({
   operation: PermissionOperationSchema,
   actor: strictObject({ agentId: identifier, origin: Type.Union([Type.Literal("root"), Type.Literal("foreground_child"), Type.Literal("background_child")]) }),
-  scope: strictObject({ tool: identifier, permissionClass: identifier, target: Type.String(), lifetimeMs: nonNegativeInteger, owner: Type.Literal("session_tree") }),
+  scope: strictObject({ tool: identifier, permissionClass: identifier, target: Type.String(), lifetimeMs: Type.Union([Type.Null(), nonNegativeInteger]), owner: Type.Literal("session_tree") }),
 });
 export type PermissionReview = Static<typeof PermissionReviewSchema>;
 export const PermissionReviewReferenceSchema = strictObject({ attachmentId: identifier, mimeType: Type.Literal("application/json"), sizeBytes: nonNegativeInteger, sha256 });

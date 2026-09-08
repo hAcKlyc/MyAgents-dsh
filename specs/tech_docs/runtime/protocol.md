@@ -889,3 +889,7 @@ Initialize executable authority now uses `shellRef` and `shellDialect` (`bash` o
 ### Runtime/Host boundary correction (protocol 3.1.0)
 
 The canonical generator now emits a dependency-free `public-contract.generated.ts` alongside schema/client/fixtures. MyAgents imports its method tables, exact request/result types and capability facts; it does not recreate that protocol map. Fixed process/checkpoint/path/credential-channel facts are reported in Runtime capabilities. Their old initialize literals are optional compatibility inputs, while the Host supplies actual choices, references and workspace/environment declarations. Runtime initializes one admitted execution snapshot before tools can run. The contract source remains exact shape authority.
+
+### Session-lifetime permissions (protocol 4.0.0)
+
+The nullable `expiresAt` on permission rules and `lifetimeMs` on interaction review scope express Session-lifetime grants with `null`. Numeric historical projections remain structurally valid, but the official Runtime emits `null` for both new grants and validated surviving legacy grants. This changes reply value domains, so the exact handshake advances to 4.0.0; older generated peers must not be paired with the new Runtime. Attachment expiry and interaction registration/execution deadlines are unchanged. See [Permissions and interactions](../execution/permissions-interactions-and-plan.md#4-durable-exact-rules) for durable recovery and revocation ownership.

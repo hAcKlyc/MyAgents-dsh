@@ -73,7 +73,8 @@ export interface ProductPermissionRuleEvent {
   readonly target: string;
   readonly origin: "root";
   readonly createdAt: number;
-  readonly expiresAt: number;
+  /** null for Session grants; numeric only when validating pre-upgrade history. */
+  readonly expiresAt: number | null;
   readonly inlineGrant?: ProductPermissionInlineGrant;
 }
 
@@ -116,7 +117,6 @@ export interface ProductPermissionInteractionRequest {
   readonly dshTurn: number;
   readonly callId: string;
   readonly rootCallId: string;
-  readonly ruleTtlMs: number;
   readonly tool: string;
   readonly permissionClass: ProductPermissionClass;
   readonly target: string;
@@ -163,7 +163,6 @@ export interface ProductPermissionPlaneConfig {
   /** Bounded deadline for registering an interaction with its Host owner. */
   readonly interactionRegistrationDeadlineMs: number;
   readonly maxRules: number;
-  readonly ruleTtlMs: number;
 }
 
 export interface ProductPermissionServiceConfig extends ProductPermissionPlaneConfig {
@@ -234,7 +233,7 @@ export interface ProductPermissionRule {
   readonly target: string;
   readonly origin: "root";
   readonly createdAt: number;
-  readonly expiresAt: number;
+  readonly expiresAt: null;
 }
 
 export interface ProductPermissionRevisionSnapshot {
@@ -430,7 +429,8 @@ const ruleKey = (rule: Readonly<{
 
 const computeRuleId = (event: Omit<ProductPermissionRuleEvent, "ruleId" | "revision">): string =>
   sha256(JSON.stringify([
-    event.inlineGrant === undefined ? "myagents-permission-rule-v1" : "myagents-permission-rule-v2",
+    event.expiresAt === null ? "myagents-permission-rule-v3"
+      : event.inlineGrant === undefined ? "myagents-permission-rule-v1" : "myagents-permission-rule-v2",
     event.sessionId,
     event.fromRevision,
     event.tool,
@@ -466,8 +466,13 @@ const computeRuleRevocationRevision = (
   event.revokedAt,
 ]));
 
+// Keep the published v1 configuration hash byte-compatible for existing Sessions.
+// This reserved historical slot is not a TTL setting or an execution deadline.
+// Runtime artifact/protocol identity versions the new Session-lifetime semantics.
+const LEGACY_PERMISSION_POLICY_TTL_IDENTITY = 86_400_000;
+
 export const permissionBaseRevision = (
-  config: Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction" | "interactionRegistrationDeadlineMs" | "maxRules" | "ruleTtlMs">,
+  config: Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction" | "interactionRegistrationDeadlineMs" | "maxRules">,
   sessionId: string,
 ): string => sha256(JSON.stringify([
   "myagents-permission-policy-v1",
@@ -477,7 +482,7 @@ export const permissionBaseRevision = (
   config.interaction.revision,
   config.interactionRegistrationDeadlineMs,
   config.maxRules,
-  config.ruleTtlMs,
+  LEGACY_PERMISSION_POLICY_TTL_IDENTITY,
 ]));
 
 const validateToolName = (value: unknown, description: string): CanonicalToolName => {
@@ -535,8 +540,10 @@ const validateRuleEvent = (value: unknown): ProductPermissionRuleEvent => {
   const origin = event.origin;
   if (origin !== "root") throw new TypeError("product permission rule origin must be root");
   const createdAt = safeEpoch(event.createdAt, "permission rule creation time");
-  const expiresAt = safeEpoch(event.expiresAt, "permission rule expiry time");
-  if (expiresAt <= createdAt) throw new TypeError("permission rule expiry must follow creation");
+  const expiresAt = event.expiresAt === null ? null : safeEpoch(event.expiresAt, "legacy permission rule expiry time");
+  if (expiresAt !== null && expiresAt - createdAt !== LEGACY_PERMISSION_POLICY_TTL_IDENTITY) {
+    throw new TypeError("legacy permission rule lifetime differs from the published policy");
+  }
   const tool = boundedIdentifier(event.tool, "permission rule tool");
   return Object.freeze({
     sessionId: boundedIdentifier(event.sessionId, "permission rule Session id"),
@@ -612,12 +619,10 @@ export const foldProductPermissions = (
   sessionId: string,
   baseRevision: string,
   maxRules: number,
-  ruleTtlMs: number,
 ): ProductPermissionFold => {
   const normalizedSessionId = boundedIdentifier(sessionId, "permission Session id");
   const normalizedBase = boundedIdentifier(baseRevision, "permission base revision");
   const normalizedMaxRules = positiveInteger(maxRules, 512, "permission maximum rule count");
-  const normalizedRuleTtlMs = positiveInteger(ruleTtlMs, 86_400_000, "permission rule TTL");
   const eventsSnapshot = snapshotSessionEvents(events);
   const firstConfig = eventsSnapshot.find(({ type }) => type === "myagents/permission/config");
   let policyBase = firstConfig === undefined
@@ -704,9 +709,6 @@ export const foldProductPermissions = (
     if (candidate.sessionId !== normalizedSessionId) {
       throw new ProductPermissionFoldError("product permission rule belongs to another Session");
     }
-    if (candidate.expiresAt - candidate.createdAt !== normalizedRuleTtlMs) {
-      throw new ProductPermissionFoldError("product permission rule TTL differs from the policy authority");
-    }
     const grant = candidate.inlineGrant;
     if (grant !== undefined) {
       const birthIndex = history.findIndex(({ revision }) => revision === grant.birthRevision);
@@ -742,7 +744,9 @@ export const foldProductPermissions = (
       target: candidate.target,
       origin: candidate.origin,
       createdAt: candidate.createdAt,
-      expiresAt: candidate.expiresAt,
+      // Old grants retain their verified hashes and revocations, but now have
+      // the same Session lifetime as new grants. Never rewrite durable events.
+      expiresAt: null,
     }));
     history.push(Object.freeze({
       revision: latestRevision,
@@ -793,7 +797,7 @@ const validateInteractionProvider = (value: unknown): ProductLocalInteractionPro
 
 export const validateProductPermissionPlaneConfig = (value: unknown): ProductPermissionPlaneConfig => {
   const config = exactOwnDataObject(value, [
-    "mode", "autoAllowTools", "interaction", "interactionRegistrationDeadlineMs", "maxRules", "ruleTtlMs",
+    "mode", "autoAllowTools", "interaction", "interactionRegistrationDeadlineMs", "maxRules",
   ], [], "product permission plane config");
   if (typeof config.mode !== "string" || !permissionModes.has(config.mode as ProductPermissionMode)) {
     throw new TypeError("product permission mode is invalid");
@@ -820,13 +824,12 @@ export const validateProductPermissionPlaneConfig = (value: unknown): ProductPer
       "permission interaction registration deadline",
     ),
     maxRules: positiveInteger(config.maxRules, 512, "permission maximum rule count"),
-    ruleTtlMs: positiveInteger(config.ruleTtlMs, 86_400_000, "permission rule TTL"),
   });
 };
 
 const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig => {
   const config = exactOwnDataObject(value, [
-    "mode", "autoAllowTools", "interaction", "interactionRegistrationDeadlineMs", "maxRules", "ruleTtlMs",
+    "mode", "autoAllowTools", "interaction", "interactionRegistrationDeadlineMs", "maxRules",
     "clock", "durability",
   ], ["hook", "registerController", "withInteractionWait"], "product permission service config");
   const plane = validateProductPermissionPlaneConfig({
@@ -835,7 +838,6 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
     interaction: config.interaction,
     interactionRegistrationDeadlineMs: config.interactionRegistrationDeadlineMs,
     maxRules: config.maxRules,
-    ruleTtlMs: config.ruleTtlMs,
   });
   const clock = dataFunction(config, "clock", "permission clock");
   const durability = config.durability as JsonObject;
@@ -1190,12 +1192,11 @@ export class ProductPermissionService extends Service {
   private policySnapshot(agent: Agent): ProductPermissionPolicySnapshot {
     this.assertHealthy();
     const fold = this.foldInternal(agent.session);
-    const now = this.now();
     return Object.freeze({
       mode: this.configValue.mode,
       autoAllowTools: Object.freeze([...this.configValue.autoAllowTools]),
       revision: fold.latestRevision,
-      rules: Object.freeze((fold.history.at(-1)?.rules ?? []).filter((rule) => rule.expiresAt > now)),
+      rules: fold.history.at(-1)?.rules ?? Object.freeze([]),
     });
   }
 
@@ -1206,12 +1207,10 @@ export class ProductPermissionService extends Service {
     this.assertHealthy();
     const request = validateRuleGrantRequest(rawRequest);
     const fold = this.foldInternal(agent.session);
-    const now = this.now();
     const existing = (fold.history.at(-1)?.rules ?? []).find((rule) =>
       rule.tool === request.tool
       && rule.permissionClass === request.permissionClass
-      && rule.target === request.target
-      && rule.expiresAt > now);
+      && rule.target === request.target);
     if (existing !== undefined) {
       return Object.freeze({ state: "already_effective", revision: fold.latestRevision, rule: existing });
     }
@@ -1275,7 +1274,6 @@ export class ProductPermissionService extends Service {
       interaction: next.interaction,
       interactionRegistrationDeadlineMs: this.configValue.interactionRegistrationDeadlineMs,
       maxRules: this.configValue.maxRules,
-      ruleTtlMs: this.configValue.ruleTtlMs,
     });
     const previous = this.foldInternal(agent.session);
     const nextBase = permissionBaseRevision(candidate, String(agent.session.id));
@@ -1321,7 +1319,6 @@ export class ProductPermissionService extends Service {
       interaction: next.interaction,
       interactionRegistrationDeadlineMs: this.configValue.interactionRegistrationDeadlineMs,
       maxRules: this.configValue.maxRules,
-      ruleTtlMs: this.configValue.ruleTtlMs,
     });
     try {
       foldProductPermissions(
@@ -1329,7 +1326,6 @@ export class ProductPermissionService extends Service {
         String(agent.session.id),
         permissionBaseRevision(candidate, String(agent.session.id)),
         candidate.maxRules,
-        candidate.ruleTtlMs,
       );
     } catch (error) {
       this.failureValue ??= error;
@@ -1359,7 +1355,6 @@ export class ProductPermissionService extends Service {
         String(session.id),
         permissionBaseRevision(this.configValue, String(session.id)),
         this.configValue.maxRules,
-        this.configValue.ruleTtlMs,
       );
     } catch (error) {
       this.failureValue ??= error;
@@ -1444,7 +1439,7 @@ export class ProductPermissionService extends Service {
       const { fold } = await this.readOperationPolicy(context);
       // Validated, durable grants have the advertised Session-tree scope even
       // when a child uses them during the operation that created the grant.
-      if (this.isAutomaticallyAllowed(normalized, fold.history.at(-1)?.rules ?? [], this.now())) return "allow";
+      if (this.isAutomaticallyAllowed(normalized, fold.history.at(-1)?.rules ?? [])) return "allow";
       if (this.configValue.mode === "dontAsk") return "deny";
       return await this.requestApproval(context, normalized, fold.latestRevision);
     } finally {
@@ -1486,7 +1481,6 @@ export class ProductPermissionService extends Service {
   private isAutomaticallyAllowed(
     request: ProductPermissionRequest,
     rules: readonly ProductPermissionRule[],
-    now: number,
   ): boolean {
     if (this.configValue.mode === "bypassPermissions"
       || safeAutoAllow.has(request.permissionClass as PermissionClass)
@@ -1496,8 +1490,7 @@ export class ProductPermissionService extends Service {
     }
     return rules.some((rule) => rule.tool === request.tool
       && rule.permissionClass === request.permissionClass
-      && rule.target === request.target
-      && rule.expiresAt > now);
+      && rule.target === request.target);
   }
 
   private async requestApproval(
@@ -1536,7 +1529,6 @@ export class ProductPermissionService extends Service {
       dshTurn: context.dshTurn,
       callId: context.callId,
       rootCallId: context.rootCallId,
-      ruleTtlMs: this.configValue.ruleTtlMs,
       tool: request.tool,
       permissionClass: request.permissionClass,
       target: request.target,
@@ -1734,8 +1726,6 @@ export class ProductPermissionService extends Service {
       throw new ProductPermissionError("permission_rule_limit", "durable permission rule limit reached");
     }
     const createdAt = this.now();
-    const expiresAt = createdAt + this.configValue.ruleTtlMs;
-    safeEpoch(expiresAt, "permission rule expiry time");
     const unsigned = Object.freeze({
       sessionId: String(agent.session.id),
       fromRevision: fold.latestRevision,
@@ -1744,7 +1734,7 @@ export class ProductPermissionService extends Service {
       target: request.target,
       origin: "root" as const,
       createdAt,
-      expiresAt,
+      expiresAt: null,
       ...(inlineGrant === undefined ? {} : { inlineGrant }),
     });
     const ruleId = computeRuleId(unsigned);

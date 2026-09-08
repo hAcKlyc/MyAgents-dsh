@@ -1,0 +1,73 @@
+[
+  {
+    "type": "myagents/permission/rule",
+    "data": {
+      "sessionId": "permission-session",
+      "fromRevision": "3cf13ad5c225eb4dd62f72207d98e2d672b4325df16811e567f2581ea40c7b15",
+      "tool": "bash",
+      "permissionClass": "process.execute",
+      "target": "cleared-by-config",
+      "origin": "root",
+      "createdAt": 1000,
+      "expiresAt": 86401000,
+      "ruleId": "fc0df146e93c14c1a0b2bd0c36deb2340784b85622ec684fe07b4b20daeac023",
+      "revision": "0f345fc47b9722d28fb2eb31dbe3b3d3736513ea581f6049d34f9793ccd8ca4c"
+    }
+  },
+  {
+    "type": "myagents/permission/config",
+    "data": {
+      "sessionId": "permission-session",
+      "previousBaseRevision": "3cf13ad5c225eb4dd62f72207d98e2d672b4325df16811e567f2581ea40c7b15",
+      "fromRevision": "0f345fc47b9722d28fb2eb31dbe3b3d3736513ea581f6049d34f9793ccd8ca4c",
+      "revision": "928e64edbdc39bc2f0462b907b933c2b4a735af327274c205a3f63bebe2c92ee"
+    }
+  },
+  {
+    "type": "myagents/permission/rule",
+    "data": {
+      "sessionId": "permission-session",
+      "fromRevision": "928e64edbdc39bc2f0462b907b933c2b4a735af327274c205a3f63bebe2c92ee",
+      "tool": "bash",
+      "permissionClass": "process.execute",
+      "target": "workspace-command",
+      "origin": "root",
+      "createdAt": 2000,
+      "expiresAt": 86402000,
+      "ruleId": "3bfd9f07b86cf0125e72061c1d90fff98e9d8077452f8383a0b272d38336a7a3",
+      "revision": "5ae25dce5915a6526c3db065bce9cc9f930690a0f20e1674af7c5f072d7f1e82"
+    }
+  },
+  {
+    "type": "myagents/permission/rule",
+    "data": {
+      "sessionId": "permission-session",
+      "fromRevision": "5ae25dce5915a6526c3db065bce9cc9f930690a0f20e1674af7c5f072d7f1e82",
+      "tool": "bash",
+      "permissionClass": "process.execute",
+      "target": "revoked-command",
+      "origin": "root",
+      "createdAt": 3000,
+      "expiresAt": 86403000,
+      "inlineGrant": {
+        "version": 1,
+        "clientOperationId": "legacy-operation",
+        "birthRevision": "5ae25dce5915a6526c3db065bce9cc9f930690a0f20e1674af7c5f072d7f1e82",
+        "agentId": "legacy-child",
+        "origin": "foreground_child"
+      },
+      "ruleId": "5b7a67c1ae533ba8bc9efac3584ba7477bc6ddebb69db704e1fb03ddff200a7c",
+      "revision": "70ddbe2856e46bf401b7a040bdfb5b8240f9eac2ea59ce5052ac3b742b16726c"
+    }
+  },
+  {
+    "type": "myagents/permission/rule/revoked",
+    "data": {
+      "sessionId": "permission-session",
+      "ruleId": "5b7a67c1ae533ba8bc9efac3584ba7477bc6ddebb69db704e1fb03ddff200a7c",
+      "fromRevision": "70ddbe2856e46bf401b7a040bdfb5b8240f9eac2ea59ce5052ac3b742b16726c",
+      "revokedAt": 4000,
+      "revision": "7aebf938a4dc8b9db5d78e41c13127814e90a9e9bcb2e466220745c67c883576"
+    }
+  }
+]

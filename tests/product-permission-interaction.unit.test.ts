@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
-import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
+import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ApprovalService } from "@deepseek-ai/dsh-user-approval";
 import { UserQuestionService, type AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
@@ -94,7 +95,7 @@ const mounted = async (
   interaction: ProductLocalInteractionProvider,
   overrides: Partial<Pick<
     ProductPermissionServiceConfig,
-    "autoAllowTools" | "hook" | "interactionRegistrationDeadlineMs" | "maxRules" | "mode" | "ruleTtlMs"
+    "autoAllowTools" | "hook" | "interactionRegistrationDeadlineMs" | "maxRules" | "mode"
   >> = {},
 ) => {
   const context = new Context();
@@ -124,7 +125,6 @@ const mounted = async (
     maxRules: overrides.maxRules ?? 8,
     mode: overrides.mode ?? "default",
     registerController: (controller) => { permissionController = controller; },
-    ruleTtlMs: overrides.ruleTtlMs ?? 60_000,
   });
   if (permissionController === undefined) throw new Error("permission controller was not registered");
   const session = context.sessions.create(SessionId("permission-session"));
@@ -332,6 +332,7 @@ describe("product permission policy and local interaction provider", () => {
     const state = await mounted(local.provider);
     const original = state.product();
     await state.context.productPermission.authorize(original, request());
+    state.setNow(1000 + 365 * 86_400_000);
     const childSession = state.context.sessions.create(SessionId("proof-child"));
     childSession.append("turn/start", { turn: 1 });
     const child = { ...state.agent, id: "proof-child", session: childSession } as Agent;
@@ -342,6 +343,7 @@ describe("product permission policy and local interaction provider", () => {
     expect(local.permissionRequests).toHaveLength(2);
     const resumedLocal = provider("scenario-resume-proof", (pending, settlement) => response(pending, "deny", settlement));
     const resumed = await mounted(resumedLocal.provider);
+    resumed.setNow(1000 + 730 * 86_400_000);
     for (const event of state.session.snapshotEvents()) {
       if (event.type === "myagents/permission/rule") resumed.session.append(event.type, structuredClone(event.data));
     }
@@ -419,7 +421,6 @@ describe("product permission policy and local interaction provider", () => {
       "permission-session",
       after,
       8,
-      60_000,
     )).toMatchObject({ baseRevision: after, latestRevision: after });
   });
 
@@ -575,7 +576,6 @@ describe("product permission policy and local interaction provider", () => {
       String(state.session.id),
       state.context.productPermission.baseRevision(state.session),
       8,
-      60_000,
     );
     expect(replayed.latestRevision).toBe(revoked.revision);
     expect(replayed.history.at(-1)?.rules).toEqual([]);
@@ -758,7 +758,56 @@ describe("product permission policy and local interaction provider", () => {
       .toThrow(expect.objectContaining({ code: "permission_recovery_required" }));
   });
 
-  it("persists and reloads an exact bounded always-allow rule for a later birth", async () => {
+  it("restores released v1/v2 grants as Session rules without rewriting history or reviving revoked/cleared grants", async () => {
+    // Frozen legacy bytes use the released v1 config and v1/v2 rule hashes.
+    const legacy = JSON.parse(readFileSync(new URL("./fixtures/legacy-permission-rules-v1.json", import.meta.url), "utf8")) as SessionEvent[];
+    const local = provider("scenario-legacy", (pending, settlement) => response(pending, "deny", settlement));
+    const state = await mounted(local.provider, { mode: "dontAsk" });
+    for (const event of legacy) state.session.append(event.type, event.data);
+    const before = JSON.stringify(state.session.snapshotEvents());
+    state.setNow(1_000_000_000_000);
+    const snapshot = state.permissionController.snapshot(state.agent);
+    expect(snapshot.rules).toHaveLength(1);
+    expect(snapshot.rules[0]).toMatchObject({ target: "workspace-command", expiresAt: null });
+    await expect(state.context.productPermission.authorize(state.product(), request())).resolves.toBe("allow");
+    for (const target of ["revoked-command", "cleared-by-config", "different-target"]) {
+      await expect(state.context.productPermission.authorize(state.product(), request("bash", "process.execute", target))).resolves.toBe("deny");
+    }
+    expect(JSON.stringify(state.session.snapshotEvents())).toBe(before);
+    expect(state.flushes).toEqual([]);
+    expect(local.permissionRequests).toEqual([]);
+    const retry = await state.permissionController.grantRule(state.agent, {
+      expectedRevision: snapshot.revision, tool: "bash", permissionClass: "process.execute", target: "workspace-command",
+    });
+    expect(retry.state).toBe("already_effective");
+    const added = await state.permissionController.grantRule(state.agent, {
+      expectedRevision: snapshot.revision, tool: "bash", permissionClass: "process.execute", target: "new-command",
+    });
+    expect(added).toMatchObject({ state: "applied", rule: { expiresAt: null } });
+    await state.permissionController.revokeRule(state.agent, { expectedRevision: added.revision, ruleId: required(snapshot.rules[0]).ruleId });
+    expect(state.permissionController.snapshot(state.agent).rules.map(rule => rule.target)).toEqual(["new-command"]);
+    await expect(state.context.productPermission.authorize(state.product(), request())).resolves.toBe("deny");
+
+    const isolatedSession = state.context.sessions.create(SessionId("independent-session"));
+    isolatedSession.append("turn/start", { turn: 1 });
+    const isolatedAgent = { ...state.agent, id: "independent-session", session: isolatedSession } as Agent;
+    state.context.agents.enter(isolatedAgent, undefined);
+    const isolated = { ...state.product(), agent: isolatedAgent, birth: { ...state.product().birth, permissionRevision: state.context.productPermission.currentRevision(isolatedAgent) } };
+    expect(state.permissionController.snapshot(isolatedAgent).rules).toEqual([]);
+    await expect(state.context.productPermission.authorize(isolated, request("bash", "process.execute", "new-command"))).resolves.toBe("deny");
+  });
+
+  it("does not accept a legacy expiry relabelled as a Session rule without its original identity", async () => {
+    const legacy = JSON.parse(readFileSync(new URL("./fixtures/legacy-permission-rules-v1.json", import.meta.url), "utf8")) as SessionEvent[];
+    const local = provider("scenario-legacy", (pending, settlement) => response(pending, "deny", settlement));
+    const state = await mounted(local.provider, { mode: "dontAsk" });
+    for (const event of legacy) {
+      state.session.append(event.type, event.type === "myagents/permission/rule" ? { ...event.data, expiresAt: null } : event.data);
+    }
+    expect(() => state.permissionController.snapshot(state.agent)).toThrow(expect.objectContaining({ code: "permission_recovery_required" }));
+  });
+
+  it("persists and reloads an exact Session-lifetime always-allow rule for a later birth", async () => {
     let calls = 0;
     const local = provider("scenario-v1", (pending, settlement) => {
       calls += 1;
@@ -777,10 +826,12 @@ describe("product permission policy and local interaction provider", () => {
       String(state.session.id),
       state.context.productPermission.baseRevision(state.session),
       8,
-      60_000,
     );
     expect(reloaded.latestRevision).toBe(latest);
     expect(reloaded.history.at(-1)?.rules).toHaveLength(1);
+    expect(reloaded.history.at(-1)?.rules[0]?.expiresAt).toBeNull();
+    state.setNow(1_000_000_000_000);
+    expect(state.permissionController.snapshot(state.agent).rules).toHaveLength(1);
     const mismatched = structuredClone(state.session.snapshotEvents());
     const rule = mismatched.find(({ type }) => type === "myagents/permission/rule");
     if (rule?.type !== "myagents/permission/rule") throw new Error("permission rule fixture is absent");
@@ -791,8 +842,7 @@ describe("product permission policy and local interaction provider", () => {
         String(state.session.id),
         state.context.productPermission.baseRevision(state.session),
         8,
-        60_000,
-      );
+        );
       throw new Error("mismatched durable permission class was accepted");
     } catch (error) {
       expect(error).toBeInstanceOf(Error);
@@ -1109,7 +1159,6 @@ describe("product permission policy and local interaction provider", () => {
       "another-session",
       baseRevision,
       8,
-      60_000,
     )).toThrow("belongs to another Session");
 
     let traps = 0;
@@ -1119,7 +1168,7 @@ describe("product permission policy and local interaction provider", () => {
       getPrototypeOf: () => { traps += 1; return Reflect.getPrototypeOf([]); },
       ownKeys: () => { traps += 1; return []; },
     });
-    expect(() => foldProductPermissions(eventProxy, String(state.session.id), baseRevision, 8, 60_000))
+    expect(() => foldProductPermissions(eventProxy, String(state.session.id), baseRevision, 8))
       .toThrow("must not be a Proxy");
     expect(traps).toBe(0);
 
@@ -1133,7 +1182,6 @@ describe("product permission policy and local interaction provider", () => {
       String(state.session.id),
       baseRevision,
       8,
-      60_000,
     )).toThrow("type and data must be enumerable own data properties");
     expect(getterHits).toBe(0);
   });
@@ -1169,7 +1217,7 @@ describe("product permission policy and local interaction provider", () => {
       target: "workspace-command",
       origin: "root",
       createdAt: 1_000,
-      expiresAt: 61_000,
+      expiresAt: null,
     });
 
     expect(() => state.context.productPermission.currentRevision(state.agent))

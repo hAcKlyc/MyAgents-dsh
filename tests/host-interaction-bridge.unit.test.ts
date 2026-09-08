@@ -32,7 +32,6 @@ describe("Host interaction bridge", () => {
       dshTurn: 1,
       callId: "call-immediate-response",
       rootCallId: "call-immediate-response",
-      ruleTtlMs: 86_400_000,
       tool: "bash",
       permissionClass: "process.execute",
       target: "workspace-command",
@@ -66,7 +65,7 @@ describe("Host interaction bridge", () => {
       schema: {
         origin: "root", permissionClass: "process.execute", target: "workspace-command", tool: "bash",
       },
-      review: { operation: request.review, actor: { agentId: "agent-review", origin: "root" }, scope: { owner: "session_tree", tool: "bash", permissionClass: "process.execute", target: "workspace-command", lifetimeMs: 86_400_000 } },
+      review: { operation: request.review, actor: { agentId: "agent-review", origin: "root" }, scope: { owner: "session_tree", tool: "bash", permissionClass: "process.execute", target: "workspace-command", lifetimeMs: null } },
     }));
     const response = bridge.controller.respond({
       interactionId: request.interactionId,
@@ -107,7 +106,6 @@ describe("Host interaction bridge", () => {
       dshTurn: 1,
       callId: "call-immediate-response",
       rootCallId: "call-immediate-response",
-      ruleTtlMs: 86_400_000,
       tool: "bash",
       permissionClass: "process.execute",
       target: "workspace-command",
@@ -141,7 +139,7 @@ describe("Host interaction bridge", () => {
       schema: {
         origin: "root", permissionClass: "process.execute", target: "workspace-command", tool: "bash",
       },
-      review: { operation: request.review, actor: { agentId: "agent-review", origin: "root" }, scope: { owner: "session_tree", tool: "bash", permissionClass: "process.execute", target: "workspace-command", lifetimeMs: 86_400_000 } },
+      review: { operation: request.review, actor: { agentId: "agent-review", origin: "root" }, scope: { owner: "session_tree", tool: "bash", permissionClass: "process.execute", target: "workspace-command", lifetimeMs: null } },
     }));
     const response = bridge.controller.respond({
       interactionId: request.interactionId,

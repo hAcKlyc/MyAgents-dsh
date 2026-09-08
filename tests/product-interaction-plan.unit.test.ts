@@ -184,7 +184,6 @@ const mounted = async (options: MountedOptions = {}) => {
     interactionRegistrationDeadlineMs: 1_000,
     maxRules: 8,
     mode: "default",
-    ruleTtlMs: 60_000,
   });
 
   let currentOperation: ProductOperationRecord;

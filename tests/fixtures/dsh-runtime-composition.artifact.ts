@@ -1054,7 +1054,6 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
     interactionRegistrationDeadlineMs: 5_000,
     maxRules: 16,
     mode: "default",
-    ruleTtlMs: 60_000,
   }),
   plan: Object.freeze({ revision: "artifact-plan-v1" }),
   platformTarget: "darwin-arm64",
@@ -2412,6 +2411,7 @@ const grantedPermissionRule = await hostClient.permissionRulesAdd({
 });
 assert.equal(grantedPermissionRule.state, "applied");
 assert.ok(grantedPermissionRule.rule !== undefined);
+assert.equal(grantedPermissionRule.rule.expiresAt, null);
 assert.deepEqual(Reflect.ownKeys(grantedPermissionRule.rule), [
   "ruleId", "revision", "tool", "permissionClass", "target", "origin", "createdAt", "expiresAt",
 ]);

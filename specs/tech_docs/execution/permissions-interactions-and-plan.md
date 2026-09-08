@@ -34,7 +34,7 @@ Composition supplies `withInteractionWait` to the permission service. Child perm
 
 ## 2. Permission modes
 
-The permission mode controls only the fallback after hard guards, Hooks, safe policy, configured auto-allow tools and unexpired exact rules have been evaluated.
+The permission mode controls only the fallback after hard guards, Hooks, safe policy, configured auto-allow tools and active exact rules have been evaluated.
 
 | Mode | Safe read/search | `Write` / `Edit` | Other unapproved tools | Unapproved fallback |
 | --- | --- | --- | --- | --- |
@@ -58,7 +58,7 @@ visible current tool + frozen operation birth
        allow_once -> allow this call
        continue   -> continue
   -> bypassPermissions / safe class / configured autoAllowTools / acceptEdits built-in Action allowance
-  -> unexpired exact rule from the latest operation-validated durable snapshot
+  -> active exact rule from the latest operation-validated durable snapshot
   -> dontAsk denial
   -> exact-tuple single-flight gate and authority re-check
   -> default/acceptEdits blocking Host permission interaction
@@ -74,22 +74,24 @@ Each card records its own expected revision. Out-of-order answers remain valid o
 An exact rule is owned by the primary root DSH Session and matches the tuple:
 
 ```text
-tool + permissionClass + target + expiry
+tool + permissionClass + target
 ```
 
-Its persisted `origin: root` denotes root-Session ownership, not a caller-origin restriction: a child `always_allow` writes the same shared root policy and later eligible root/child calls may match it. It carries a deterministic rule ID, chained policy revision, creation time and bounded expiry. The official composition permits at most 128 grant events and 128 revocation events and uses a 24-hour TTL. Configuration-base changes clear effective exact rules through the durable revision chain.
+Its persisted `origin: root` denotes root-Session ownership, not a caller-origin restriction: a child `always_allow` writes the same shared root policy and later eligible root/child calls may match it. It carries a deterministic rule ID, chained policy revision and creation time. Grants last for the root Session and its children without a wall-clock expiry, including after process restart or reopening that same Session; independent Sessions do not inherit them. The official composition permits at most 128 grant events and 128 revocation events. Configuration-base changes clear effective exact rules through the durable revision chain.
 
-Protocol `3.1.0` preserves the established permission management methods:
+Protocol `4.0.0` preserves the established permission management methods:
 
 | Method | Semantics |
 | --- | --- |
-| `permission/rules/list` | Return current mode, tool-level auto-allow list, policy revision and unexpired exact rules |
+| `permission/rules/list` | Return current mode, tool-level auto-allow list, policy revision and active exact rules |
 | `permission/rules/add` | Pre-authorize one exact tuple at an expected revision; exact retries return `already_effective` |
 | `permission/rules/revoke` | Append an exact durable revocation at an expected revision; exact retries return `already_absent` |
 
 Grants append `myagents/permission/rule`; revocations append `myagents/permission/rule/revoked`. Both flush through the DSH Session durability Provider before success is returned. A corrupt/discontinuous chain fences permission execution as recovery-required.
 
 Inline grants add versioned `inlineGrant` provenance containing the operation ID, birth revision, executing Agent and origin. Its fields enter the v2 rule identity hash, and the durable fold verifies the complete birth-to-grant chain. Resume reconstructs exact receipts from that single root history; no ephemeral receipt cache is authoritative. Legacy rules keep their v1 hashes and remain usable by new operations, but cannot prove an old in-flight operation's additive progress.
+
+New Session grants use v3 rule hashes with `expiresAt: null`. Recovery validates released v1/v2 grant hashes and their original 24-hour fields before projecting surviving grants as Session-lifetime rules; it never rewrites history or restores revoked/config-cleared grants. The v1 configuration hash keeps its historical numeric slot solely for byte-compatible Session restoration. That reserved identity value is not configurable and never participates in matching, listing or granting. Runtime/protocol artifact identity versions the changed lifetime semantics.
 
 The effective configuration base is also durable history. On process resume the Host sends the Session's desired permission mode, auto-allow set and interaction revision in `session/resume`. Before any persisted permission fold, the Runtime validates the history against that requested base and installs it in the replacement generation without appending another `myagents/permission/config` event or flushing storage. Ordinary live `config/apply` remains the only path that appends a configuration transition. This ordering is required: validating a previously configured Session against the composition's bootstrap `default` would falsely classify healthy history as `persisted_product_state_invalid`.
 
@@ -103,7 +105,7 @@ Protocol 3.1 carries typed ephemeral `review` independently of the authorization
 
 The entire review travels inline when it fits the negotiated frame budget, otherwise as an existing JSON attachment reference. MyAgents consumes that reference and uses its existing `/refs` route for large UI payloads, retains full details until settlement/cancellation, and enables approval after successful loading. Failed loading or response delivery stays on the same request with retry; unknown presentation variants use full generic detail. Actual call/rootCall IDs accompany the interaction, while its settlement ID includes the executing Agent to distinguish reused provider call IDs. Concurrent responses share one pending effect, and retries preserve rejected receipts instead of reporting a failed effect as applied.
 
-MyAgents Action/Auto selects Runtime `acceptEdits`. Its explicit product defaults permit file reading/search/writing, both Web tools, Skill, TaskCreate/Update/Get/List, Agent, SendMessage, TaskStop, job_list/output/kill, EnterPlanMode, AskUserQuestion and ExitPlanMode. Shell and namespaced Host/MCP tools still require approval unless an exact rule matches. AskUserQuestion still waits for an answer, and ExitPlanMode still requires review of the actual plan. The Host does not inject a new tool-policy configuration merely to enable this fixed default, so existing Session configuration histories retain their restore identity. Neither becomes a globally safe permission class; explicit Hooks, network policy and visibility constraints still run. Always Allow retains the Runtime's session-tree scope and configured lifetime, displayed as duration after approval.
+MyAgents Action/Auto selects Runtime `acceptEdits`. Its explicit product defaults permit file reading/search/writing, both Web tools, Skill, TaskCreate/Update/Get/List, Agent, SendMessage, TaskStop, job_list/output/kill, EnterPlanMode, AskUserQuestion and ExitPlanMode. Shell and namespaced Host/MCP tools still require approval unless an exact rule matches. AskUserQuestion still waits for an answer, and ExitPlanMode still requires review of the actual plan. The Host does not inject a new tool-policy configuration merely to enable this fixed default, so existing Session configuration histories retain their restore identity. Neither becomes a globally safe permission class; explicit Hooks, network policy and visibility constraints still run. Always Allow retains the Runtime's session-tree scope with no time limit. Protocol `expiresAt: null` and review `lifetimeMs: null` explicitly express this lifetime; numeric values remain readable for older projections.
 
 Permission, AskUserQuestion and plan approval register through `host/interaction/request`. Registration acknowledgment does not settle the interaction. Host registration and response transport are bounded, but an established desktop interaction has no elapsed human-decision timeout. The Runtime blocks the owning AgentLoop path until `interaction/respond`, explicit operation/Session cancellation or teardown settles it exactly once. Duplicate, late, stale-revision and wrong-operation responses fail closed. Runtime cancellation is projected through `host/interaction/cancel`. A DSH `unavailable` outcome is an interaction failure, not a user denial: the permission owner preserves its known typed failure or reports `interaction_unavailable` with a Host/retry instruction. An unavailable attempt does not install an allow rule.
 
