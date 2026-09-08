@@ -1246,7 +1246,7 @@ export class ProductWorkService extends Service {
         if (parent === undefined) throw new Error("continuable child lacks its primary parent authority");
         const cancelPublication = this.config.publication.prepare(child, parent);
         const depth = entry?.created.birth.depth ?? (this.byAgent.get(parent.id)?.created.birth.depth ?? 0) + 1;
-        let disposeIdentity = () => {};
+        let disposeIdentity: (() => void) | undefined;
         try {
           disposeIdentity = childCtx.systemPrompt.context({
             name: "product:child-identity",
@@ -1285,7 +1285,7 @@ export class ProductWorkService extends Service {
             if (permit !== undefined && this.pendingChildAuthorities.get(child.id) === permit) {
               this.pendingChildAuthorities.delete(child.id);
             }
-            disposeIdentity();
+            disposeIdentity?.();
             cancelPublication();
             disposeSend();
             disposeStop();
@@ -1295,7 +1295,7 @@ export class ProductWorkService extends Service {
           if (permit !== undefined && this.pendingChildAuthorities.get(child.id) === permit) {
             this.pendingChildAuthorities.delete(child.id);
           }
-          disposeIdentity();
+          disposeIdentity?.();
           cancelPublication();
           throw error;
         }

@@ -1000,8 +1000,9 @@ describe("canonical Agent Work projection", () => {
     if (child === undefined) throw new Error("missing selected child");
     const assembly = await child.ctx.systemPrompt.assemble({ scope: child });
     const identity = assembly.contexts.find(context => context.name === "product:child-identity");
-    expect(identity?.interpolate).toBe(false);
-    expect(JSON.parse(identity!.text.split(": ").slice(1).join(": "))).toMatchObject({
+    if (identity === undefined) throw new Error("missing child execution identity");
+    expect(identity.interpolate).toBe(false);
+    expect(JSON.parse(identity.text.split(": ").slice(1).join(": "))).toMatchObject({
       model: "selected-model", provider: "selected-provider", role: "general",
       agentId: child.id, parentAgentId: state.agent.id, depth: 1, remainingDepth: 0, canDelegate: false,
     });
@@ -1015,8 +1016,7 @@ describe("canonical Agent Work projection", () => {
     await state.subagents.drainContinuableChildren(state.agent, [child.id]);
     state.context.sessions.enter(child.session);
     const cold = await state.subagents.withContinuableAncestors(state.agent, [child.id],
-      { signal: new AbortController().signal }, async restored => restored);
-    if (cold === undefined) throw new Error("missing cold child");
+      { signal: new AbortController().signal }, restored => Promise.resolve(restored));
     const recoveredIdentity = (await cold.ctx.systemPrompt.assemble({ scope: cold })).contexts
       .find(context => context.name === "product:child-identity");
     expect(recoveredIdentity).toEqual(identity);
