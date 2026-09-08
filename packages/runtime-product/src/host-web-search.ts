@@ -141,8 +141,8 @@ export const parseHostDeepSeekWebSearchResponse = (
         ? item.title.slice(0, 512)
         : fallbackTitle;
       results.push(Object.freeze({
-        snippet: typeof item.snippet === "string" ? item.snippet.slice(0, 8_192)
-          : typeof item.content === "string" ? item.content.slice(0, 8_192) : snippets.get(url) ?? "",
+        snippet: typeof item.snippet === "string" && item.snippet.trim() ? item.snippet.slice(0, 8_192)
+          : typeof item.content === "string" && item.content.trim() ? item.content.slice(0, 8_192) : snippets.get(url) ?? "",
         title,
         url,
       }));

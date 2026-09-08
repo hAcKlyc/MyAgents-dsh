@@ -167,3 +167,5 @@ justify a Provider-specific cache seam. A future seam requires new evidence of a
 - Skill context: `packages/tools-agent/src/skill-runtime.ts`;
 - child literal persona: `packages/tools-agent/src/work-runtime.ts`;
 - DSH seams: `specs/dsh/patches/0008-*`, `0009-*`.
+
+Product-managed child scopes contribute `product:child-identity` through the public SystemPrompt context registry. Frozen birth facts own model, Provider, role and tree position; current effective execution limits own remaining delegation depth. Literal interpolation prevents model IDs from becoming template variables. See [child work](./child-agents-and-background-work.md) for recovery and completion delivery.

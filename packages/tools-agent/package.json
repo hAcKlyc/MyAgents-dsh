@@ -30,6 +30,7 @@
     "@deepseek-ai/dsh-subagent": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1",
     "@deepseek-ai/dsh-tools": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1",
     "@deepseek-ai/dsh-session-query": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1",
-    "@deepseek-ai/dsh-token-meter": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1"
+    "@deepseek-ai/dsh-token-meter": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1"
   }
 }

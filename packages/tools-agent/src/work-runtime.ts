@@ -18,6 +18,7 @@ import {
   type SubagentRunInfo,
   type SubagentStopReason,
 } from "@deepseek-ai/dsh-subagent";
+import type {} from "@deepseek-ai/dsh-system-prompt";
 import type { FsTarget } from "@deepseek-ai/dsh-fs";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { Type, type Static } from "typebox";
@@ -1115,7 +1116,7 @@ export class ProductWorkService extends Service {
   // home during initialize. ProductWork must register its controller before that
   // boundary, while every persistence-dependent operation resolves the then-live
   // public service explicitly below.
-  static inject = ["agents", "jobs", "productTools", "sessions", "subagents", "tools"];
+  static inject = ["agents", "jobs", "productTools", "sessions", "subagents", "systemPrompt", "tools"];
   private readonly config: ProductWorkServiceConfig;
   private readonly factIndexes = new WeakMap<Session, { through: number; activity: Map<string, SessionEvent>; handles: Map<string, number> }>();
   private readonly byAgent = new Map<string, WorkEntry>();
@@ -1244,7 +1245,25 @@ export class ProductWorkService extends Service {
         const parent = entry === undefined ? permit?.parent : this.ctx.agents.get(SessionId(entry.created.birth.parentSessionId));
         if (parent === undefined) throw new Error("continuable child lacks its primary parent authority");
         const cancelPublication = this.config.publication.prepare(child, parent);
+        const depth = entry?.created.birth.depth ?? (this.byAgent.get(parent.id)?.created.birth.depth ?? 0) + 1;
+        let disposeIdentity = () => {};
         try {
+          disposeIdentity = childCtx.systemPrompt.context({
+            name: "product:child-identity",
+            order: childCtx.systemPrompt.getContextOrder("SUBAGENT_DELEGATION") + 1,
+            interpolate: false,
+            text: () => {
+              const maxDepth = this.executionLimits().maxDepth;
+              const remainingDepth = Math.max(0, maxDepth - depth);
+              return `Your execution identity (Runtime authority): ${JSON.stringify({
+                agentId: child.id, parentAgentId: parent.id,
+                model: expectedModel, provider: expectedAgentProvider,
+                role: entry?.created.birth.type ?? permit?.template.type,
+                depth, maxDepth, remainingDepth,
+                canDelegate: remainingDepth > 0 && expectedTools.includes("Agent"),
+              })}`;
+            },
+          });
           const stopUsage = this.ctx.on("session/event", (session, event) => {
             if (session !== child.session || event.type !== "assistant/message") return;
             void this.trackExecution(async () => {
@@ -1266,6 +1285,7 @@ export class ProductWorkService extends Service {
             if (permit !== undefined && this.pendingChildAuthorities.get(child.id) === permit) {
               this.pendingChildAuthorities.delete(child.id);
             }
+            disposeIdentity();
             cancelPublication();
             disposeSend();
             disposeStop();
@@ -1275,6 +1295,7 @@ export class ProductWorkService extends Service {
           if (permit !== undefined && this.pendingChildAuthorities.get(child.id) === permit) {
             this.pendingChildAuthorities.delete(child.id);
           }
+          disposeIdentity();
           cancelPublication();
           throw error;
         }
@@ -3093,6 +3114,11 @@ export class ProductWorkService extends Service {
     await this.withLock(`messages:${root.id}`, async () => {
       const recipient = entry.created.birth.parentSessionId;
       const messageId = `completion-${epoch.epochId}`;
+      // The first successful foreground activation is delivered by the Agent tool result.
+      // Keep its durable epoch, and honor any already persisted legacy report
+      // intent during recovery; later activations still need an Inbox report.
+      if (entry.mode === "foreground" && epoch.ordinal === 1
+        && terminalForStopReason(epoch.stopReason) === "succeeded" && !this.messages.has(messageId)) return;
       const output = epoch.result ?? epochOutput(events, epoch);
       let excerpt = appendBoundedUtf8("", output, 1_536);
       const summary = `Child activation ${String(epoch.ordinal)} ${epoch.stopReason}`;

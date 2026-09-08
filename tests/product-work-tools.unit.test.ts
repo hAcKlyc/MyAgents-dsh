@@ -88,7 +88,7 @@ const fakeAgent = (
 };
 
 class FakeContinuableSubagents extends Service {
-  static inject = ["agents", "sessions", "tools"];
+  static inject = ["agents", "sessions", "systemPrompt", "tools"];
   private readonly children = new Map<string, Readonly<{
     agent: Agent;
     detachAgent: () => void;
@@ -996,9 +996,30 @@ describe("canonical Agent Work projection", () => {
     const args = { description: "Inspect authorized model", prompt: "Analyze the synthetic fixture.", model: "selected-profile-v1" };
     const first = await state.execute("Agent", args, "selected-model-call");
     expect(first).toMatchObject({ isError: false, value: { model: "selected-model" } });
+    const child = state.subagents.childAgent((first as { value: { agentId: string } }).value.agentId);
+    if (child === undefined) throw new Error("missing selected child");
+    const assembly = await child.ctx.systemPrompt.assemble({ scope: child });
+    const identity = assembly.contexts.find(context => context.name === "product:child-identity");
+    expect(identity?.interpolate).toBe(false);
+    expect(JSON.parse(identity!.text.split(": ").slice(1).join(": "))).toMatchObject({
+      model: "selected-model", provider: "selected-provider", role: "general",
+      agentId: child.id, parentAgentId: state.agent.id, depth: 1, remainingDepth: 0, canDelegate: false,
+    });
+    expect((await state.context.systemPrompt.assemble({ scope: state.agent })).contexts
+      .some(context => context.name === "product:child-identity")).toBe(false);
     await expect(state.execute("Agent", args, "selected-model-call")).resolves.toEqual(first);
     expect(selectModel).toHaveBeenCalledOnce();
     expect(startSpy).toHaveBeenCalledOnce();
+    state.subagents.emitEnd(child.id, "Selected child completed.");
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]?.activation.state).toBe("completed"));
+    await state.subagents.drainContinuableChildren(state.agent, [child.id]);
+    state.context.sessions.enter(child.session);
+    const cold = await state.subagents.withContinuableAncestors(state.agent, [child.id],
+      { signal: new AbortController().signal }, async restored => restored);
+    if (cold === undefined) throw new Error("missing cold child");
+    const recoveredIdentity = (await cold.ctx.systemPrompt.assemble({ scope: cold })).contexts
+      .find(context => context.name === "product:child-identity");
+    expect(recoveredIdentity).toEqual(identity);
     expect(state.agent.session.snapshotEvents().filter((event) => event.type === "myagents/work/started")).toHaveLength(1);
   });
 
@@ -1999,12 +2020,17 @@ describe("canonical Agent Work projection", () => {
       const first = state.context.productWork.snapshot()[0];
       const reports = () => state.agent.session.snapshotEvents().filter((event) =>
         event.type === "myagents/work/message-intent" && event.data.completionEpochId !== undefined);
-      await vi.waitFor(() => expect(reports()).toHaveLength(1));
+      await vi.waitFor(() => expect(reports()).toHaveLength(background ? 1 : 0));
       const messages = state.agent.session.snapshotEvents().flatMap((event) => event.type === "agent/inbox/spliced"
         ? event.data.inserted : []);
       const report = messages.find((message) => message.source.kind === "subagent-report");
-      expect(report).toBeDefined();
-      expect(ownsProductWorkRootContextMessage(state.agent.session, report?.source, String(report?.id))).toBe(true);
+      if (background) {
+        expect(report).toBeDefined();
+        expect(ownsProductWorkRootContextMessage(state.agent.session, report?.source, String(report?.id))).toBe(true);
+      } else {
+        expect(report).toBeUndefined();
+        expect(state.agent.session.snapshotEvents().some(event => event.type === "myagents/work/epoch")).toBe(true);
+      }
       await expect(state.execute("SendMessage", {
         to: agentId, summary: "Continue", message: "Inspect the next fixture in the same context.",
       })).resolves.toMatchObject({ isError: false, value: { state: "delivered" } });
@@ -2013,7 +2039,7 @@ describe("canonical Agent Work projection", () => {
       }));
       expect(state.context.productWork.snapshot()[0]?.activation.id).not.toBe(first?.activation.id);
       state.subagents.emitEnd(agentId, "second activation result");
-      await vi.waitFor(() => expect(reports()).toHaveLength(2));
+      await vi.waitFor(() => expect(reports()).toHaveLength(background ? 2 : 1));
       expect(state.context.productWork.snapshot()[0]).toMatchObject({
         result: "second activation result", handleState: "open", activation: { ordinal: 2, state: "completed" },
       });
@@ -2024,7 +2050,7 @@ describe("canonical Agent Work projection", () => {
       await expect(state.execute("SendMessage", {
         to: agentId, summary: "Unrequested restart", message: "Try to restart the closed handle.",
       })).resolves.toMatchObject({ isError: true });
-      expect(reports()).toHaveLength(2);
+      expect(reports()).toHaveLength(background ? 2 : 1);
     },
   );
 

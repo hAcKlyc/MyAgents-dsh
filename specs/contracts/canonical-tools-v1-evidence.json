@@ -6,7 +6,7 @@
     "packages/protocol/generated/protocol-meta.json",
     "packages/product-profile/manifests/batch-1-candidate-profile-v1.json"
   ],
-  "contractSha256": "577bda20bda88496647be39d4e0aa018eb1583924b0380b3b97a416ad86e98d1",
+  "contractSha256": "3b8eae749e9909e9d84cacf49dc6fd8c94c70a00548405adb43ae1540bc6218b",
   "generator": "scripts/generate-tool-contracts.ts",
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
@@ -20,13 +20,13 @@
     "stockModelDefinitionCount": 0
   },
   "outputs": {
-    "canonical-tool-contracts-v1.json": "577bda20bda88496647be39d4e0aa018eb1583924b0380b3b97a416ad86e98d1",
-    "canonical-tools-v1.md": "a5349c9e1c8e5716c08a75de7aa5539bb2a0de9484daa27cc8f88b4752ac5f2c",
-    "canonical-tools.generated.ts": "ff68d8a5252b832d3dc8b2ed5a5870897f997dc4b1e597f2a5b0a912fdf706a9",
-    "catalog-fixtures-v1.json": "00895c9deb405a8a64e6be1b8ac2585de62462cc79f435fe7686e74f75206c82",
-    "dsh-reuse-matrix-v1.json": "d55d3efeb240fb897f5082c3b36d1ecf1b430e9b4317754fe425fead4a14683b",
-    "tool-catalog.schema.json": "1773286bbca24c086a4e901191b8baadd20e6e0b64bf3848127bc3b725a030f2",
-    "tool-contract-meta.json": "c77b6bdb153cb7a475d1d1a89f2ea30def542499081f6bb4d9c4118f6a954d36"
+    "canonical-tool-contracts-v1.json": "3b8eae749e9909e9d84cacf49dc6fd8c94c70a00548405adb43ae1540bc6218b",
+    "canonical-tools-v1.md": "4f98e90160fe5e2d454740a87c77b116bca7f98b287425c80f64611e3deab8ed",
+    "canonical-tools.generated.ts": "dbbd7e0f9a1df4c6eb2c7f0bae2a7d1e04934d608fdd3d47feee1eab54ff9dcf",
+    "catalog-fixtures-v1.json": "a02d4e9e60f5f81f41aef83edfd0e9d84ab659e033a061d7be92f10b3eaf1078",
+    "dsh-reuse-matrix-v1.json": "d2b3b0b26d7b57fcbd94dbc1906c391ecb34d4910845e775849d03b76f5bd0de",
+    "tool-catalog.schema.json": "410eb5225c3d53225812721726cb499cd43374f1adbf922bbff1b82134c28f99",
+    "tool-contract-meta.json": "2d1dd7cfc87d65abc930927e4401fac195e115b7b890418111e5812107aa57ec"
   },
   "profile": "canonical-agent-experience-v1",
   "source": {
@@ -45,7 +45,7 @@
     "sourceTreeSnapshotSha256": "405aeeba942c46029c6cbac568e909bd149774d0b9f1547ebc9e7a3d6239bebc"
   },
   "toolDigests": {
-    "Agent": "fe6d6bdc7f9577a8d2ac4d143c1efdc1d405e90616cc3d33da3fd4fbb28ddaf7",
+    "Agent": "e96aabde17104c59aa9a113951bbbd78be5e0744cf50d45b57930d4a16e20f89",
     "AskUserQuestion": "636c602d528e80a423e2eeae53dbf3fc60c881bedde405fb922f61ad30a25d1d",
     "Edit": "d24aed86dfd43f75dc36f780197721c03ad9d8fa5dcdc7a41e404675f3ff6844",
     "EnterPlanMode": "c7e2086759b14b3c6db40a7dfd95934ab152bf547ca2824bc8071f7093a6d60e",

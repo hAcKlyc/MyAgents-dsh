@@ -2,6 +2,15 @@ import { parseHostDeepSeekWebSearchResponse } from "@myagents-dsh/runtime-produc
 import { describe, expect, it } from "vitest";
 
 describe("Host-backed DeepSeek native WebSearch", () => {
+  it.each(["", "  \n "])("falls back from blank snippets to provider content and then citations (%#)", (snippet) => {
+    const response = (content?: string) => ({ content: [
+      { type: "web_search_tool_result", content: [{ url: "https://example.com", snippet, content }] },
+      { type: "text", text: "answer", citations: [{ url: "https://example.com", cited_text: "Citation excerpt" }] },
+    ], usage: { input_tokens: 1, output_tokens: 1 } });
+    expect(parseHostDeepSeekWebSearchResponse(response("Source content"), 1).results[0]?.snippet).toBe("Source content");
+    expect(parseHostDeepSeekWebSearchResponse(response("  "), 1).results[0]?.snippet).toBe("Citation excerpt");
+  });
+
   it("maps native search blocks, citations, request usage, and disjoint token usage", () => {
     const result = parseHostDeepSeekWebSearchResponse({
       content: [
