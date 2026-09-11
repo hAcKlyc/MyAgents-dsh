@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "workstream": "B3-XR-UPG15",
+  "samples": 9,
+  "warmups": 1,
+  "platform": "darwin-arm64",
+  "node": "24.20.0",
+  "coldDefinition": "Fresh process and copied, closed SQLite database per sample; OS page cache is not flushed.",
+  "scope": "Product SQLite and paged Session read, real DSH AgentLoop/SystemPrompt/TokenMeter/tools; synthetic model transport without request cloning. Image references traverse history; image decoding/upload and MyAgents UI require separate campaigns. Child cases measure native parent-child Session history, not full ProductWork orchestration.",
+  "noiseRule": "Before candidate implementation, freeze each workload/metric ceiling at baseline p95 + max(3 * (p95 - median), metric floor). Duration floor 10 ms; peak RSS floor 16384 KiB. Evaluate candidate median and p95 against the frozen ceiling; never relax after observing candidate results.",
+  "workloads": [
+    { "name": "short", "turns": 8, "textBytes": 256, "toolsPerTurn": 0, "imagesPerTurn": 0, "children": 0 },
+    { "name": "long", "turns": 500, "textBytes": 1024, "toolsPerTurn": 0, "imagesPerTurn": 0, "children": 0 },
+    { "name": "tools", "turns": 80, "textBytes": 512, "toolsPerTurn": 4, "imagesPerTurn": 0, "children": 0 },
+    { "name": "images", "turns": 80, "textBytes": 512, "toolsPerTurn": 0, "imagesPerTurn": 2, "children": 0 },
+    { "name": "children", "turns": 40, "textBytes": 512, "toolsPerTurn": 0, "imagesPerTurn": 0, "children": 4 }
+  ]
+}

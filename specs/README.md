@@ -26,9 +26,11 @@ This file is the canonical documentation-governance guide referenced by `AGENTS.
 | Canonical generated/acceptance contracts | [contracts/](./contracts/) |
 | Pinned DSH source, public seams and patch series | [dsh/](./dsh/) |
 | Accepted DSH 0.1.2 upgrade scope and Host/Runtime capability decisions | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_2_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_2_upgrade.md); product scope and source-status ledger, not installed-version or artifact evidence |
-| Proposed DSH 0.1.5 upgrade, core benefits and development-data reset | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_5_upgrade.md); scope/reset/proxy boundaries clarified and planning reviewed with corrections, implementation not started; [source research](./research/dsh-0.1.5-rc.2-upgrade-audit.md) is non-normative and does not change installed-version or acceptance facts |
+| Accepted DSH 0.1.5 upgrade, core benefits and development-data reset | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_5_upgrade.md); accepted scope/reset/proxy boundaries; implementation in progress on dev; [source research](./research/dsh-0.1.5-rc.2-upgrade-audit.md) is non-normative and does not change installed-version or acceptance facts |
 | Source migration provenance | [migration/](./migration/) |
 | Non-normative comparative research | [research/](./research/) |
+
+本轮升级的 [coverage 映射](./dsh/upg15-coverage-v1.json)、[性能配置](./dsh/upg15-performance-v1.json) 和 [升级前性能记录](./dsh/upg15-performance-baseline-v1.json) 位于既有 DSH 维护目录。它们分别记录候选测试意图、冻结负载/阈值规则和旧字节测量，不能替代 PRD 验收或新制品证据。
 
 ## Document lifecycle
 
