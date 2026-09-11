@@ -25,7 +25,8 @@ This file is the canonical documentation-governance guide referenced by `AGENTS.
 | Durable architectural decisions | [adr/](./adr/) |
 | Canonical generated/acceptance contracts | [contracts/](./contracts/) |
 | Pinned DSH source, public seams and patch series | [dsh/](./dsh/) |
-| Accepted DSH 0.1.2 upgrade scope and Host/Runtime capability decisions | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_2_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_2_upgrade.md); planned behavior, not installed-version or artifact evidence |
+| Accepted DSH 0.1.2 upgrade scope and Host/Runtime capability decisions | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_2_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_2_upgrade.md); product scope and source-status ledger, not installed-version or artifact evidence |
+| Proposed DSH 0.1.5 upgrade, core benefits and development-data reset | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_5_upgrade.md); scope/reset/proxy boundaries clarified and planning reviewed with corrections, implementation not started; [source research](./research/dsh-0.1.5-rc.2-upgrade-audit.md) is non-normative and does not change installed-version or acceptance facts |
 | Source migration provenance | [migration/](./migration/) |
 | Non-normative comparative research | [research/](./research/) |
 
