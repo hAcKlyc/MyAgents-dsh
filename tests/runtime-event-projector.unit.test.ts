@@ -1,12 +1,15 @@
+import { FixtureInbox as Inbox } from "./fixtures/inbox-events.js";
 import { Context } from "@deepseek-ai/cordis";
-import { Inbox } from "@deepseek-ai/dsh-agent";
+import type { Agent, AssistantStreamFrame } from "@deepseek-ai/dsh-agent";
 import {
+  AssistantStreamAccumulator,
+  LlmAttemptId,
   ToolCallId,
   createToolResultMessage,
   freezeMessage,
   MessageId,
 } from "@deepseek-ai/dsh-llm";
-import { Session, SessionId } from "@deepseek-ai/dsh-session";
+import { Session, SessionId, SessionSeq } from "@deepseek-ai/dsh-session";
 import SessionStore from "@deepseek-ai/dsh-session";
 import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 import type { OperationBirthSnapshot } from "@myagents-dsh/operation-runtime";
@@ -106,12 +109,7 @@ const appendCompletedTurn = (fixture: OperationFixture): void => {
     model: "fixture-model",
     contextWindow: 8_192,
   });
-  session.append("assistant/chunk", {
-    turn: 1,
-    step: 1,
-    chunk: { type: "text-delta", index: 0, text: "durable " },
-  });
-  const assistant = session.append("assistant/message", {
+  const assistant = session.append("assistant/message", { stream: [{ type: "text-chunks", index: 0, time0: 1, dt: [], texts: ["durable answer"] }],
     turn: 1,
     step: 1,
     message: freezeMessage({
@@ -121,7 +119,7 @@ const appendCompletedTurn = (fixture: OperationFixture): void => {
       content: [{ type: "text", text: "durable answer" }],
     }),
     usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 1 },
-  }, { surfaceOp: "append", sourceEventSeqs: [] });
+  }, { surfaceOp: "append" });
   session.append("myagents/operation/request-context", {
     clientOperationId: "operation-1",
     dshTurn: 1,
@@ -157,6 +155,91 @@ const appendCompletedTurn = (fixture: OperationFixture): void => {
     },
   });
 };
+
+describe("native assistant stream projection", () => {
+  const mountedStream = async () => {
+    const context = new Context();
+    mounted.push(context);
+    await context.plugin(SessionStore);
+    await mountSessionProjections(context);
+    let flushes = 0;
+    context.on("session/flush", () => { flushes += 1; });
+    const session = context.sessions.create(SessionId("live-stream-root"));
+    const agent = { id: session.id, session } as unknown as Agent;
+    const delivered: RuntimeEventEnvelope[] = [];
+    const failures: ProtocolError[] = [];
+    const projector = new RuntimeEventProjector({ context,
+      peer: { notify: (_method: string, envelope: RuntimeEventEnvelope) => { delivered.push(envelope); return Promise.resolve(); } } as unknown as JsonRpcPeer,
+      productSession: { snapshot: () => ({ state: "ready", runtimeSessionId: session.id }), requireAgent: () => agent } as unknown as ProductSessionService,
+      runtimeGeneration: "live-generation", productSessionId: () => "product-live", onFailure: (error) => failures.push(error),
+    });
+    const fixture = appendAcceptedOperation(session);
+    session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    session.append("step/start", { turn: 1, step: 1 });
+    const emit = (frame: AssistantStreamFrame): void => { context.emit("agent/assistant-stream", { agent, frame }); };
+    return { session, projector, delivered, failures, emit, flushes: () => flushes };
+  };
+
+  it("shows deltas before commit, then links exactly one durable message without replaying its text", async () => {
+    const state = await mountedStream();
+    const attemptId = LlmAttemptId("live-stream-root:1");
+    state.emit({ type: "start", attemptId, revision: 1, turn: 1, step: 1 });
+    const accumulator = new AssistantStreamAccumulator();
+    for (const [index, text] of ["visible ", "answer"].entries()) {
+      const timed = accumulator.push({ time: 100 + index, chunk: { type: "text-delta", index: 0, text } });
+      state.emit({ type: "chunk", attemptId, revision: index + 2, index, ...timed });
+    }
+    await state.projector.whenIdle();
+    const deltas = state.delivered.filter(({ event }) => event.kind === "assistant_delta");
+    expect(deltas.map(({ event }) => event.kind === "assistant_delta" ? event.delta : "")).toEqual(["visible ", "answer"]);
+    expect(state.session.snapshotEvents().some(({ type }) => type === "assistant/message")).toBe(false);
+    const beforeCommit = state.flushes();
+    const message = state.session.append("assistant/message", { turn: 1, step: 1, stream: [...accumulator.snapshot()],
+      message: freezeMessage({ id: MessageId("committed-live-answer"), role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture-model" }, content: [{ type: "text", text: "visible answer" }] }),
+    }, { surfaceOp: "append" });
+    state.emit({ type: "end", attemptId, revision: 4, index: 2, outcome: { kind: "committed", eventType: message.type, seq: message.seq } });
+    await state.projector.whenIdle();
+    expect(state.failures).toEqual([]);
+    expect(state.flushes()).toBeGreaterThan(beforeCommit);
+    expect(state.delivered.filter(({ event }) => event.kind === "assistant_delta")).toEqual(deltas);
+    const start = state.delivered.find(({ event }) => event.kind === "assistant_stream" && event.phase === "start");
+    expect(state.delivered.at(-1)?.event).toMatchObject({ kind: "assistant_stream", phase: "end", chunkCount: 2,
+      streamId: start?.event.kind === "assistant_stream" ? start.event.streamId : undefined,
+      outcome: { kind: "committed", eventId: durableSessionEventId(state.session.id, message.seq), messageId: "committed-live-answer" },
+    });
+    expect(state.delivered.map(({ sequence }) => sequence)).toEqual(state.delivered.map((_, index) => index + 1));
+    await state.projector.close();
+  });
+
+  it("ends an abandoned preview without manufacturing a committed message", async () => {
+    const state = await mountedStream();
+    const attemptId = LlmAttemptId("live-stream-root:1");
+    state.emit({ type: "start", attemptId, revision: 1, turn: 1, step: 1 });
+    state.emit({ type: "chunk", attemptId, revision: 2, index: 0, time: 1, chunk: { type: "reasoning-delta", index: 0, text: "partial" } });
+    state.emit({ type: "end", attemptId, revision: 3, index: 1, outcome: { kind: "abandoned" } });
+    await state.projector.whenIdle();
+    expect(state.delivered.at(-1)?.event).toMatchObject({ kind: "assistant_stream", phase: "end", outcome: { kind: "abandoned" } });
+    expect(state.delivered.some(({ event }) => event.kind === "message_event" || event.kind === "turn_terminal")).toBe(false);
+    expect(state.session.snapshotEvents().some(({ type }) => type === "assistant/message" || type === "assistant/attempt")).toBe(false);
+    await state.projector.close();
+  });
+
+  it.each(["revision", "position", "commit"] as const)("fails closed on a contradictory %s", async (fault) => {
+    const state = await mountedStream();
+    const attemptId = LlmAttemptId("live-stream-root:1");
+    state.emit({ type: "start", attemptId, revision: 1, turn: 1, step: 1 });
+    if (fault === "commit") state.emit({ type: "end", attemptId, revision: 2, index: 0,
+      outcome: { kind: "committed", eventType: "assistant/message", seq: SessionSeq(0) } });
+    else state.emit({ type: "chunk", attemptId, revision: fault === "revision" ? 3 : 2, index: fault === "position" ? 1 : 0,
+      time: 1, chunk: { type: "text-delta", index: 0, text: "invalid" } });
+    await expect(state.projector.whenIdle()).rejects.toBeInstanceOf(ProtocolError);
+    expect(state.failures).toHaveLength(1);
+    expect(state.delivered.some(({ event }) => event.kind === "assistant_delta")).toBe(false);
+    await expect(state.projector.close()).rejects.toBeInstanceOf(ProtocolError);
+  });
+});
 
 describe("atomic Inbox receipt projection", () => {
   it.each(["claim", "cancel"] as const)("projects all three child reports after one batch %s", (action) => {
@@ -228,13 +311,12 @@ describe("Runtime event projection", () => {
 
     const accepted = session.snapshotEvents().find((event) => event.type === "myagents/operation/accepted");
     const claimed = session.snapshotEvents().find((event) => event.type === "myagents/operation/claimed");
-    const chunk = session.snapshotEvents().find((event) => event.type === "assistant/chunk");
     const assistant = session.snapshotEvents().find((event) => event.type === "assistant/message");
     const requestContext = session.snapshotEvents().find(
       (event) => event.type === "myagents/operation/request-context",
     );
     const terminal = session.snapshotEvents().find((event) => event.type === "myagents/operation/terminal");
-    if (accepted === undefined || claimed === undefined || chunk === undefined
+    if (accepted === undefined || claimed === undefined
       || assistant === undefined || requestContext === undefined || terminal === undefined) {
       throw new Error("projection fixture is incomplete");
     }
@@ -251,9 +333,6 @@ describe("Runtime event projection", () => {
     expect(projectSessionEvent(session, claimed)).toMatchObject([
       { turnId: fixture.productTurnId, event: { kind: "turn_started" } },
       { turnId: fixture.productTurnId, event: { kind: "queued_message", state: "delivered" } },
-    ]);
-    expect(projectSessionEvent(session, chunk)).toMatchObject([
-      { turnId: fixture.productTurnId, event: { kind: "assistant_delta", delta: "durable " } },
     ]);
     expect(projectSessionEvent(session, assistant)).toMatchObject([
       { event: { kind: "message_event", role: "assistant" } },
@@ -306,10 +385,10 @@ describe("Runtime event projection", () => {
       model: "fixture-model",
       contextWindow: 8_192,
     });
-    const call = session.append("assistant/chunk", {
+    const call = session.append("assistant/attempt", {
       turn: 1,
       step: 1,
-      chunk: {
+      stream: [{ type: "chunk", time: 1, chunk: {
         type: "block-end",
         index: 0,
         block: {
@@ -325,12 +404,12 @@ describe("Runtime event projection", () => {
             input: { query: "public reference" },
           },
         },
-      } as never,
+      } as never }],
     });
-    const result = session.append("assistant/chunk", {
+    const result = session.append("assistant/attempt", {
       turn: 1,
       step: 1,
-      chunk: {
+      stream: [{ type: "chunk", time: 1, chunk: {
         type: "block-end",
         index: 1,
         block: {
@@ -344,7 +423,7 @@ describe("Runtime event projection", () => {
             content,
           },
         },
-      } as never,
+      } as never }],
     });
 
     expect(projectSessionEvent(session, call)).toMatchObject([{
@@ -389,10 +468,10 @@ describe("Runtime event projection", () => {
       model: "fixture-model",
       contextWindow: 8_192,
     });
-    session.append("assistant/chunk", {
+    session.append("assistant/attempt", {
       turn: 1,
       step: 1,
-      chunk: {
+      stream: [{ type: "chunk", time: 1, chunk: {
         type: "block-end",
         index: 0,
         block: {
@@ -403,17 +482,17 @@ describe("Runtime event projection", () => {
           providerType: "server_tool_use",
           raw: {},
         },
-      } as never,
+      } as never }],
     });
     session.append("request/context", {
       provider: "provider-b",
       model: "fixture-model",
       contextWindow: 8_192,
     });
-    const result = session.append("assistant/chunk", {
+    const result = session.append("assistant/attempt", {
       turn: 1,
       step: 1,
-      chunk: {
+      stream: [{ type: "chunk", time: 1, chunk: {
         type: "block-end",
         index: 1,
         block: {
@@ -423,7 +502,7 @@ describe("Runtime event projection", () => {
           content: [],
           raw: {},
         },
-      } as never,
+      } as never }],
     });
 
     expect(() => projectSessionEvent(session, result))
@@ -530,7 +609,7 @@ describe("Runtime event projection", () => {
     expect(Buffer.byteLength(JSON.stringify(content))).toBeLessThanOrEqual(524_288);
   });
 
-  it("projects context pressure from a usage chunk even when the request has no assistant message", async () => {
+  it("projects context pressure from a committed failed attempt with no assistant message", async () => {
     const context = new Context();
     mounted.push(context);
     await context.plugin(SessionStore);
@@ -569,13 +648,13 @@ describe("Runtime event projection", () => {
       model: "fixture-model",
       contextWindow: 8_192,
     });
-    session.append("assistant/chunk", {
+    session.append("assistant/attempt", {
       turn: 1,
       step: 1,
-      chunk: {
+      stream: [{ type: "chunk", time: 1, chunk: {
         type: "usage",
         usage: { inputTokens: 10, outputTokens: 0, cacheReadTokens: 3, cacheWriteTokens: 0 },
-      },
+      } }],
     });
     await projector.whenIdle();
 
@@ -627,7 +706,7 @@ describe("Runtime event projection", () => {
       model: "fixture-model",
       contextWindow: 8_192,
     });
-    const assistant = session.append("assistant/message", {
+    const assistant = session.append("assistant/message", { stream: [],
       turn: 1,
       step: 1,
       message: freezeMessage({
@@ -637,7 +716,7 @@ describe("Runtime event projection", () => {
         content: [{ type: "text", text: "barrier answer" }],
       }),
       usage: { inputTokens: 4, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     await projector.whenIdle();
     expect(delivered.some(({ event }) => event.kind === "message_event")).toBe(true);
     expect(delivered.some(({ event }) => event.kind === "usage")).toBe(false);
@@ -764,25 +843,28 @@ describe("Runtime event projection", () => {
       session.append("turn/start", { turn: 1 });
       fixture.inbox.claim("next-turn", 1);
       session.append("step/start", { turn: 1, step: 1 });
-      const event = session.append("assistant/chunk", {
-        turn: 1,
-        step: 1,
-        chunk: { type: "text-delta", index: 0, text },
-      });
-      context.emit("session/event", session, event);
+      session.append("assistant/message", { stream: [], turn: 1, step: 1,
+        message: freezeMessage({ id: MessageId(text), role: "assistant", content: [{ type: "text", text }],
+          source: { kind: "model", provider: "fixture", model: "fixture-model" } }),
+      }, { surfaceOp: "append" });
     };
 
+    const leaveFirst = context.sessions.enter(first);
     appendAndObserve(first, "generation one");
     await projector.whenIdle();
+    leaveFirst();
+    const leaveSecond = context.sessions.enter(second);
     appendAndObserve(second, "generation two");
     await projector.whenIdle();
 
     expect(failures).toEqual([]);
-    expect(delivered).toMatchObject([
-      { sequence: 1, event: { kind: "assistant_delta", delta: "generation one" } },
-      { sequence: 2, event: { kind: "assistant_delta", delta: "generation two" } },
+    expect(delivered.filter(({ event }) => event.kind === "message_event").map(({ event }) => event)).toMatchObject([
+      { kind: "message_event", messageId: "generation one" },
+      { kind: "message_event", messageId: "generation two" },
     ]);
+    expect(delivered.map(({ sequence }) => sequence)).toEqual(delivered.map((_, index) => index + 1));
     await projector.close();
+    leaveSecond();
   });
 
   it("stops new observations but drains an accepted projection before close completes", async () => {

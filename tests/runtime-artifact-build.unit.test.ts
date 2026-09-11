@@ -10,26 +10,26 @@ import {
 describe("Runtime artifact public export projection", () => {
   it("keeps the pi-ai adapter inside the single patched DSH version projection", () => {
     expect(projectRuntimeDependencySection({
-      "@deepseek-ai/dsh-agent": "0.1.2-rc.1",
-      "@deepseek-ai/dsh-llm-pi-ai": "0.1.2-rc.1",
+      "@deepseek-ai/dsh-agent": "0.1.5-rc.2",
+      "@deepseek-ai/dsh-llm-pi-ai": "0.1.5-rc.2",
       "@myagents-dsh/protocol": "0.0.0",
     }, "fixture dependencies")).toEqual({
-      "@deepseek-ai/dsh-agent": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417",
-      "@deepseek-ai/dsh-llm-pi-ai": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417",
+      "@deepseek-ai/dsh-agent": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68",
+      "@deepseek-ai/dsh-llm-pi-ai": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68",
       "@myagents-dsh/protocol": "0.0.0",
     });
   });
 
   it("requires the exact patched authorization peer for the pi-ai adapter", () => {
     expect(() => assertRuntimeProviderVersions(new Map([
-      ["@deepseek-ai/dsh-llm-pi-ai", new Set(["0.1.2-rc.1.myagents.a66e47020478.db06dc323417"])],
-      ["@earendil-works/pi-ai", new Set(["0.84.2"])],
+      ["@deepseek-ai/dsh-llm-pi-ai", new Set(["0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68"])],
+      ["@earendil-works/pi-ai", new Set(["0.85.1"])],
     ]))).toThrow("authorization peer authority");
   });
 
   it("projects the shared typebox graph without floating Node types", () => {
     expect(projectRuntimeConsumerOverrides({
-      "@earendil-works/pi-ai": "0.84.2",
+      "@earendil-works/pi-ai": "0.85.1",
       typebox: "1.3.7",
       zod: "4.4.3",
     })).toEqual({

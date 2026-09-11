@@ -154,35 +154,23 @@ const maxChunkBytes = (
   maxResultBytes: number,
   mutationAuthority?: Awaited<ReturnType<ProductSessionReadSource["mutationBoundaries"]>>,
 ): number => {
-  let low = 0;
-  let high = Math.floor(maxResultBytes * 3 / 4);
-  const worstEventType = "\"".repeat(256);
-  while (low < high) {
-    const candidate = Math.ceil((low + high) / 2);
-    const record: ReadRecord = {
-      kind: "event_chunk",
-      sequence: MAX_SAFE,
-      eventType: worstEventType,
-      eventSha256: "f".repeat(64),
-      chunkIndex: MAX_SAFE,
-      chunkCount: MAX_SAFE,
-      offsetBytes: MAX_SAFE,
-      totalBytes: MAX_SAFE,
-      dataBase64: Buffer.alloc(candidate).toString("base64"),
-    };
-    if (resultByteLength(
-      runtimeSessionId,
-      durableSequence,
-      stableBoundaryId,
-      [record],
-      true,
-      mutationAuthority,
-    ) <= maxResultBytes) {
-      low = candidate;
-    } else {
-      high = candidate - 1;
-    }
-  }
+  const record: ReadRecord = {
+    kind: "event_chunk",
+    sequence: MAX_SAFE,
+    eventType: "\"".repeat(256),
+    eventSha256: "f".repeat(64),
+    chunkIndex: MAX_SAFE,
+    chunkCount: MAX_SAFE,
+    offsetBytes: MAX_SAFE,
+    totalBytes: MAX_SAFE,
+    dataBase64: "",
+  };
+  const overhead = resultByteLength(
+    runtimeSessionId, durableSequence, stableBoundaryId, [record], true, mutationAuthority,
+  );
+  // Base64 is unescaped ASCII: 4 * ceil(bytes / 3). Measure the fixed
+  // envelope once instead of allocating megabyte buffers during binary search.
+  const low = Math.floor((maxResultBytes - overhead) / 4) * 3;
   if (low < 1) {
     throw new ProtocolError(
       "session_read_frame_too_small",
@@ -352,6 +340,15 @@ export class ProductSessionReadProjector {
     let nextSequence = cursor.nextSequence;
     let chunkOffset = cursor.chunkOffset;
     const records: ReadRecord[] = [];
+    // The envelope is stable across the page. Account for each record once;
+    // serializing every growing prefix produces quadratic transient allocation.
+    const emptyBytes = (includeCursor: boolean): number => resultByteLength(
+      request.runtimeSessionId, durableSequence, stable.snapshot.stableBoundaryId,
+      [], includeCursor, stable.mutationAuthority,
+    );
+    const completeEnvelopeBytes = emptyBytes(false);
+    const continuingEnvelopeBytes = emptyBytes(true);
+    let recordBytes = 0;
     for (const event of stable.events) {
       request.signal?.throwIfAborted();
       if (event.seq !== nextSequence) {
@@ -373,15 +370,12 @@ export class ProductSessionReadProjector {
         data: canonical.value,
       });
       const wholeCompletesRead = nextSequence + 1 === durableSequence;
+      const wholeBytes = Buffer.byteLength(JSON.stringify(whole), "utf8");
+      const envelopeBytes = wholeCompletesRead ? completeEnvelopeBytes : continuingEnvelopeBytes;
+      // Empty-array brackets are already counted; N existing records add N commas.
       if (chunkOffset === 0
-        && resultByteLength(
-          request.runtimeSessionId,
-          durableSequence,
-          stable.snapshot.stableBoundaryId,
-          [...records, whole],
-          !wholeCompletesRead,
-          stable.mutationAuthority,
-        ) <= request.maxResultBytes) {
+        && envelopeBytes + recordBytes + wholeBytes + records.length <= request.maxResultBytes) {
+        recordBytes += wholeBytes;
         records.push(whole);
         nextSequence += 1;
         if (records.length >= MAX_PAGE_RECORDS) break;

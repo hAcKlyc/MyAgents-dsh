@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: current
-updated: 2026-09-06
+updated: 2026-09-12
 project: MyAgents-dsh
 ---
 
@@ -21,14 +21,14 @@ This table records the current source boundaries. The active PRDs own acceptance
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
-| DSH source distribution | Fixed official source plus required isolated patches | DSH `0.1.2-rc.1` at `a66e4702047846cdaa10c66c9d3df3951f5ea70d`, ten unchanged core patches, 72-package artifact; exact digests live in the accepted patched-artifact manifest. The separate pi-ai dependency remains `0.84.2`. |
-| Standalone Runtime and native RPC | Protocol `3.0.0` source | 44 Host methods, seven reverse methods and four notifications. Shell execution references and dialect replace the prior Bash-specific fields. |
-| Batch 3 integration handoff | Updated through the official immutable builder | The current [MyAgents lock](../../MyAgents-integration-myagents-dsh/src/shared/integrated-runtimes/dsh-lock.json) selects the accepted Runtime, contracts and platform evidence. The active UPG ledger owns Shell delivery acceptance. |
+| DSH source distribution | Fixed official source plus required isolated patches | DSH `0.1.5-rc.2` at `fb2c4b9e698e30edb738bca4cf0618587db7d203`, nine candidate core patches and 77 packages; the separately patched pi-ai is `0.85.1`. W02 package evidence is accepted; final Product seam and Runtime acceptance remain in UPG15. |
+| Standalone Runtime and native RPC | Protocol `5.0.0` source candidate | Native V3 durable Session events, explicit live assistant-stream boundaries and per-model system-prompt-update capability. Exact vocabulary and shapes come from the generated contract. |
+| Batch 3 integration handoff | Updated through the official immutable builder | The current [MyAgents lock](../../MyAgents-integration-myagents-dsh/src/shared/integrated-runtimes/dsh-lock.json) selects the accepted Runtime, contracts and platform evidence. The Host still consumes the prior protocol 4.0.0 delivery until UPG15 rebuilds and ingests an exact new handoff. |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Its older frozen web artifact does not prove the current Runtime source. |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet. |
 | Platforms | All three implementations complete; native claims are artifact-specific | macOS arm64, Windows x64 and Linux x64 implementations share official DSH subprocess semantics. New bytes require new native evidence; Windows/Linux remain pending until their native campaigns pass. |
 
-Earlier Runtime/handoff pairs remain historical evidence for their original bytes. No profile, protocol or platform evidence is relabeled for this Shell change. The official candidate profile remains `workstream-evidence-only`; source completion does not promote a public product release.
+Earlier Runtime/handoff pairs remain historical evidence for their original bytes. No profile, protocol or platform evidence is relabeled for the UPG15 upgrade. The official candidate profile remains `workstream-evidence-only`; source completion does not promote a public product release.
 
 ## 2. Product boundaries
 
@@ -332,12 +332,15 @@ Operation birth freezes the effective model profile, optional Host-authoritative
 
 ## 9. Session and persistence model
 
-DSH append-only Session events are the single durable model-conversation source. MyAgents product events declaration-merge into the same Session event vocabulary; they do not create another transcript database. The persistence profile must also register the frozen product event vocabulary as known required events. The pinned stock coordinator's build-generated event set does not include downstream declaration merges, so the official profile requires a minimal known-event predicate seam or an equivalent public-contract coordinator; recovery-critical events are never marked ignorable to bypass validation.
-
-The DSH 0.1.2 source candidate migrates storage metadata to SQLite schema 8 and composes
-the official process-local SessionQuery index over that same authority. Legacy header/event
-bytes remain intact. See [Sessions, persistence and recovery](./tech_docs/state/sessions-persistence-and-recovery.md)
-for inherited-prefix migration and query ownership; new artifact acceptance remains in UPG.
+DSH append-only Session events remain the only durable model conversation. The rc.2 dev
+Provider implements the public SessionHandle contract over the same ProductSqliteStore; native
+vocabulary validation composes with exact Product payload validators, without changing the global
+native known-event set. Kernel writer ownership precedes per-Session serialization and short
+SQLite transactions. The Product mutation companion uses the same ownership for generation
+replacement and deletion. SQLite schema 10 accepts native V3 only; old unreleased data uses the
+separately governed reset workflow. See [Sessions, persistence and recovery](./tech_docs/state/sessions-persistence-and-recovery.md)
+for handle lifetime, event ownership and schema boundaries. The [UPG15 ledger](./prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md)
+retains pending integration/native/release acceptance; the source change does not replace an accepted handoff.
 
 The native RPC `session/read` projection exposes versioned, engine-neutral durable events or bounded chunks. Protocol `2.1.0` additionally exposes one opaque, postcondition-bound genesis prefix before the first product operation, so an admitted first turn can use the same transactional rewind owner as later turns. It does not expose Pi native entry types or pretend that a DSH session has a Pi leaf identity.
 
@@ -348,13 +351,13 @@ opens ordinary FIFO drain. Watchdog process termination never guesses that termi
 
 The initial persistence provider must support:
 
-- create, append/flush, inspect, resume, and list;
+- create/open handles, ordered append, durability barriers, read/stat/list, and native resume;
 - crash repair for incomplete DSH turns without deleting valid effects;
 - stable-boundary fork inputs and completed-turn/genesis rewind targets;
 - revisions sufficient for fail-closed mutation coordination;
 - product-owned deletion and retention extensions required by the native protocol.
 
-The current public DSH persistence seam is append-only and has no delete, replace, retention, or transaction method. The project therefore provides a MyAgents SQLite provider implementing both the DSH service and a separate product mutation service over the same owned backend. It composes public coordinator contracts after the event-registry seam is proven and must not reach through package-private DSH storage internals.
+The current public DSH persistence seam is append-only and has no delete, replace, retention, or transaction method. The project therefore provides a MyAgents SQLite provider implementing both the DSH service and a separate product mutation service over the same owned backend. It composes the public handle contract and native validation, and must not reach through package-private DSH storage internals.
 
 ## 10. Tool and policy architecture
 

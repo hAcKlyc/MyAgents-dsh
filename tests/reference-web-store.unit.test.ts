@@ -306,7 +306,7 @@ describe("Reference Web React store", () => {
           runtimeSessionId: "runtime-session-1",
           sequence: 1,
           emittedAt: now,
-          event: { kind: "assistant_delta", delta: "Hello" },
+          event: { streamId: "fixture-stream", frameIndex: 0, kind: "assistant_delta", delta: "Hello" },
         },
       },
     });
@@ -538,7 +538,7 @@ describe("Reference Web React store", () => {
             sequence,
             emittedAt: now,
             turnId: "turn-1",
-            event: { kind: "thinking_delta", delta: "x" },
+            event: { streamId: "fixture-stream", frameIndex: 0, kind: "thinking_delta", delta: "x" },
           },
         },
       });
@@ -548,7 +548,7 @@ describe("Reference Web React store", () => {
 
     const state = store.getSnapshot();
     expect(state.snapshot.projection?.events).toHaveLength(1);
-    expect(state.snapshot.projection?.events[0]?.event).toEqual({ kind: "thinking_delta", delta: "x".repeat(500) });
+    expect(state.snapshot.projection?.events[0]?.event).toEqual({ streamId: "fixture-stream", frameIndex: 0, kind: "thinking_delta", delta: "x".repeat(500) });
     expect(state.trace.at(-1)).toMatchObject({ kind: "runtime.event:thinking_delta", count: 500 });
     expect(listener.mock.calls.length).toBeLessThan(20);
     unsubscribe();
@@ -581,7 +581,7 @@ describe("Reference Web React store", () => {
             sequence,
             emittedAt: now,
             turnId: `turn-${String(sequence)}`,
-            event: { kind: "thinking_delta", delta: "x" },
+            event: { streamId: "fixture-stream", frameIndex: 0, kind: "thinking_delta", delta: "x" },
           },
         },
       });

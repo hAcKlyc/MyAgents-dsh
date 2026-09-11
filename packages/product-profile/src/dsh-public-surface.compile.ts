@@ -77,8 +77,8 @@ import { Session, SessionId, SessionStore } from "@deepseek-ai/dsh-session";
 import type { SessionEvent, SessionHeader } from "@deepseek-ai/dsh-session";
 import { createScope, scopeOf } from "@deepseek-ai/dsh-scope";
 import type { Scope, ScopeKey, Scoped } from "@deepseek-ai/dsh-scope";
-import { PersistenceCoordinator, SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
-import type { PersistenceBackend, SessionInspection, SessionPersistenceSnapshot } from "@deepseek-ai/dsh-session-persistence";
+import { validateStoredEvents, SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
+import type { SessionHandle, SessionInspection, SessionPersistenceSnapshot } from "@deepseek-ai/dsh-session-persistence";
 import { ShellExecutor, parseExitStatus } from "@deepseek-ai/dsh-shell";
 import type { ShellExecRequest, ShellRunResult } from "@deepseek-ai/dsh-shell";
 import { isModelInvocable, isSkillName, renderSkillContent, SkillRegistry } from "@deepseek-ai/dsh-skill";
@@ -157,7 +157,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   DeepSeekAdapter,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   PUBLIC_BASE_URL,
-  PersistenceCoordinator,
+  validateStoredEvents,
   PlanModeController,
   Service,
   Session,
@@ -233,7 +233,7 @@ export interface DshPublicSurfaceTypes {
   llmDeepSeek: [DeepSeekConnectionOptions, RequestDefaults];
   settings: [SettingsNamespace, SettingsScope<unknown>];
   mcp: [McpConfig, McpResult];
-  persistence: [PersistenceBackend, SessionInspection, SessionPersistenceSnapshot];
+  persistence: [SessionHandle, SessionInspection, SessionPersistenceSnapshot];
   planMode: [PlanProjection];
   session: [SessionEvent, SessionHeader];
   scope: [Scope, ScopeKey, Scoped<object>];

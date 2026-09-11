@@ -3,13 +3,13 @@ import { createHash } from "node:crypto";
 import { isPromise, isProxy } from "node:util/types";
 
 import { Service, type Context } from "@deepseek-ai/cordis";
-import { Inbox, foldConsumedWork, type Agent } from "@deepseek-ai/dsh-agent";
-import { MessageId, ToolCallId, freezeMessage, type ContentBlock, type MessageSource, type UserMessage } from "@deepseek-ai/dsh-llm";
-import { Session, SessionId, SessionLogOffset, type SessionEvent, type SessionHeader } from "@deepseek-ai/dsh-session";
+import { foldConsumedWork, type Agent } from "@deepseek-ai/dsh-agent";
+import { MessageId, ToolCallId, freezeMessage, lastAssistantStreamChunk, type ContentBlock, type MessageSource, type UserMessage } from "@deepseek-ai/dsh-llm";
+import { SessionId, SessionLogOffset, type Session, type SessionEvent, type SessionHeader } from "@deepseek-ai/dsh-session";
 import type { SessionObservation } from "@deepseek-ai/dsh-session-query";
 import type {} from "@deepseek-ai/dsh-token-meter";
 import type { ContextPressureProjection, TokenUsageProjection } from "@deepseek-ai/dsh-token-meter/client";
-import type { SessionInspection } from "@deepseek-ai/dsh-session-persistence";
+import type { SessionInspection, SessionPersistence, SessionPersistenceSnapshot } from "@deepseek-ai/dsh-session-persistence";
 import {
   foldSubagentDescriptor,
   type ContinuableSubagentDescriptorData,
@@ -301,42 +301,6 @@ declare module "@deepseek-ai/dsh-llm" {
   }
 }
 
-declare module "@deepseek-ai/dsh-subagent" {
-  interface SubagentStartRequest {
-    readonly personaInterpolate?: boolean;
-  }
-
-  interface ContinuableSubagentDescriptorData {
-    readonly personaInterpolate?: boolean;
-    readonly settlementDelivery?: "external" | "parent";
-  }
-
-  interface ContinuableSubagentDescriptorInput {
-    readonly settlementDelivery?: "external" | "parent";
-  }
-
-  interface ContinuableStartSpec {
-    readonly settlementDelivery?: "external" | "parent";
-  }
-
-  interface SubagentRunEndInfo {
-    readonly infrastructureFailure?: true;
-  }
-
-  interface SubagentRuntime {
-    withContinuableAncestors<T>(root: Agent, ancestors: readonly SessionId[], options: Readonly<{ signal: AbortSignal }>, operation: (parent: Agent) => Promise<T>): Promise<T>;
-    registerContinuableSetup(contribution: (childCtx: Context) => () => void): () => void;
-    deliverContinuable(parent: Agent, childId: SessionId, content: ContentBlock[], options: Readonly<{
-      delivery: "steer" | "queue"; source: MessageSource; signal: AbortSignal;
-    }>): Promise<MessageId>;
-    resumeContinuable(
-      parent: Agent,
-      childId: SessionId,
-      messageId: MessageId,
-      options: Readonly<{ signal: AbortSignal }>,
-    ): Promise<boolean>;
-  }
-}
 
 declare module "@deepseek-ai/dsh-session/types" {
   interface SessionEventMap {
@@ -909,18 +873,28 @@ type PendingInboxMessage = Readonly<{
   source: JsonObject;
 }>;
 
+/** Read through the native handle seam and always release the read handle. */
+const inspectPersistedSession = async (persistence: SessionPersistence, id: SessionId): Promise<SessionInspection> => {
+  const handle = await persistence.open(id, "read");
+  try {
+    const result = await handle.read();
+    return { meta: handle.header, inheritedEventCount: handle.inheritedEventCount, events: result.events };
+  } finally {
+    await handle.close();
+  }
+};
+
 const pendingInboxMessages = (
   events: readonly SessionEvent[],
   meta: SessionHeader,
+  ctx: Context,
 ): readonly PendingInboxMessage[] => {
   if (meta.isSeeded) throw new Error("ProductWork spawn history cannot contain a fork-inherited prefix");
-  const replay = Session.fromRestore(SessionId(meta.id), events, meta, SessionLogOffset(0));
-  const inbox = new Inbox(replay, {
-    claimed: () => undefined,
-    discarded: () => undefined,
-    inserted: () => undefined,
-  });
-  return Object.freeze([...inbox.nextStep, ...inbox.nextTurn].map((candidate) => {
+  const registry = ctx.get("sessionProjections");
+  if (registry === undefined) throw new Error("ProductWork pending input requires native Session projections");
+  const inbox = registry.restore({}, events, SessionLogOffset(0), meta, SessionLogOffset(0)).snapshot.values.inbox;
+  if (inbox === undefined) throw new Error("ProductWork pending input requires the AgentLoop Inbox projection");
+  return Object.freeze([...inbox["next-step"], ...inbox["next-turn"]].map((candidate) => {
     const message = normalizeCanonicalJson(candidate, "ProductWork pending Inbox message") as JsonObject;
     const source = message.source;
     if (typeof message.id !== "string" || message.id.length === 0 || message.role !== "user"
@@ -1201,9 +1175,7 @@ export class ProductWorkService extends Service {
           this.fence(error);
         }
       });
-      const childSetup = ctx.subagents.registerContinuableSetup((childCtx) => {
-        const child = childCtx.agent;
-        if (child === undefined) throw new Error("continuable setup lacks one child Agent");
+      const childSetup = ctx.subagents.registerContinuableSetup((childCtx, child) => {
         const descriptor = foldSubagentDescriptor(child.session.snapshotEvents());
         if (descriptor?.mode !== "continuable" || descriptor.provider !== this.config.provider) {
           throw new Error("continuable child lacks the exact ProductWork descriptor authority");
@@ -1218,7 +1190,7 @@ export class ProductWorkService extends Service {
           || expectedPersona === undefined || expectedTools === undefined
           || descriptor.agentModel !== expectedModel || descriptor.agentProvider !== expectedAgentProvider
           || descriptor.persona !== expectedPersona
-          || (descriptor.version >= 4 && descriptor.personaInterpolate !== false)
+          || descriptor.personaInterpolate !== false
           || (descriptor.settlementDelivery !== undefined && descriptor.settlementDelivery !== "external")
           || (entry !== undefined && descriptor.settlementDelivery !== "external")
           || stableJson(descriptor.toolFilter) !== stableJson({ allow: expectedTools })) {
@@ -1901,7 +1873,7 @@ export class ProductWorkService extends Service {
     const persistence = this.ctx.get("sessionPersistence");
     const persistedHeaders: readonly SessionHeader[] = persistence === undefined
       ? []
-      : await exactNativePromise<SessionHeader[]>(persistence.list(), "product work child catalog listing");
+      : (await exactNativePromise<readonly SessionPersistenceSnapshot[]>(persistence.list(), "product work child catalog listing")).map(({ header }) => header);
     const candidates = new Map<string, Readonly<{ events: readonly SessionEvent[]; meta: SessionHeader }>>();
     for (const session of liveChildren.values()) {
       candidates.set(session.id, Object.freeze({ events: session.snapshotEvents(), meta: session.header }));
@@ -1910,7 +1882,7 @@ export class ProductWorkService extends Service {
       for (const header of persistedHeaders) {
         if (header.origin !== "subagent" || (header.parentSession !== root.id && !this.byAgent.has(header.id)) || candidates.has(header.id)) continue;
         const inspection = await exactNativePromise<SessionInspection>(
-          persistence.inspect(header.id),
+          inspectPersistedSession(persistence, header.id),
           "product work child inspection",
         );
         if (inspection.meta.id !== header.id || inspection.meta.parentSession !== header.parentSession
@@ -2019,7 +1991,7 @@ export class ProductWorkService extends Service {
           || descriptor.agentProvider !== entry.created.birth.provider
           || descriptor.persona !== entry.created.birth.persona
           || stableJson(descriptor.toolFilter) !== stableJson({ allow: entry.created.birth.allowedTools })
-          || (descriptor.version >= 4 && descriptor.personaInterpolate !== false)
+          || descriptor.personaInterpolate !== false
           || (descriptor.version >= 3
             ? descriptor.settlementDelivery !== "external"
             : descriptor.settlementDelivery !== undefined)) {
@@ -2081,7 +2053,7 @@ export class ProductWorkService extends Service {
       if (hasNewDelivery) {
         const live = this.ctx.sessions.get(SessionId(entry.agentId));
         if (live !== undefined) candidate = { events: live.snapshotEvents(), meta: live.header };
-        else if (persistence !== undefined) candidate = await exactNativePromise(persistence.inspect(SessionId(entry.agentId)), "post-report child recovery inspection");
+        else if (persistence !== undefined) candidate = await exactNativePromise(inspectPersistedSession(persistence, SessionId(entry.agentId)), "post-report child recovery inspection");
         else throw new Error("new recovery report lacks its recipient Session");
       }
       this.resumePendingEntry(entry, candidate);
@@ -2412,7 +2384,7 @@ export class ProductWorkService extends Service {
     entry: WorkEntry,
     candidate: Readonly<{ events: readonly SessionEvent[]; meta: SessionHeader }>,
   ): void {
-    const pending = pendingInboxMessages(candidate.events, candidate.meta);
+    const pending = pendingInboxMessages(candidate.events, candidate.meta, this.ctx);
     if (pending.length === 0) return;
     const owned = new Map<string, Readonly<{
       contentSha256: string;
@@ -2860,8 +2832,12 @@ export class ProductWorkService extends Service {
         const route = observation.events.findLast((event) => event.type === "request/context");
         const firstOwned = entry.created.initialChildEventSeq ?? observation.inheritedEventCount;
         const ownEvents = observation.events.slice(firstOwned);
-        const reports = ownEvents.flatMap((event) => event.type === "assistant/message" && event.data.usage !== undefined
-          ? [event.data.usage] : event.type === "assistant/chunk" && event.data.chunk.type === "usage" ? [event.data.chunk.usage] : []);
+        const reports = ownEvents.flatMap((event) => {
+          if (event.type !== "assistant/message" && event.type !== "assistant/attempt") return [];
+          const sample = (event.type === "assistant/message" ? event.data.usage : undefined)
+            ?? lastAssistantStreamChunk(event.data.stream, "usage")?.usage;
+          return sample === undefined ? [] : [sample];
+        });
         const registry = this.ctx.get("sessionProjections");
         const inherited = firstOwned === 0 ? undefined : registry?.restore({}, observation.events.slice(0, firstOwned),
           SessionLogOffset(0), observation.header, observation.inheritedEventCount).snapshot.values.tokenUsage;
@@ -3946,7 +3922,7 @@ export class ProductWorkService extends Service {
     const persistence = this.ctx.get("sessionPersistence");
     if (persistence === undefined) return undefined;
     const inspection = await exactNativePromise<SessionInspection>(
-      persistence.inspect(SessionId(entry.agentId)),
+      inspectPersistedSession(persistence, SessionId(entry.agentId)),
       "continuable subagent usage inspection",
     );
     if (inspection.meta.id !== entry.agentId || inspection.meta.parentSession !== entry.created.birth.parentSessionId) {
@@ -4180,7 +4156,7 @@ export class ProductWorkService extends Service {
         const persistence = this.ctx.get("sessionPersistence");
         if (persistence === undefined) return false;
         const inspection = await exactNativePromise<SessionInspection>(
-          persistence.inspect(SessionId(known.intent.recipient)),
+          inspectPersistedSession(persistence, SessionId(known.intent.recipient)),
           "SendMessage recovery inspection",
         );
         if (inspection.meta.id !== known.intent.recipient

@@ -33,7 +33,7 @@ Read these complete authorities in order:
 3. `specs/ARCHITECTURE.md`, especially DSH foundation and extension policy;
 4. `specs/dsh/README.md` and `specs/dsh/seam-decisions-v1.json`;
 5. all ADRs referenced by the seam registry;
-6. any module guide affected by upstream changes, including `specs/tech_docs/compaction-architecture.md`;
+6. any module guide affected by upstream changes, including `specs/tech_docs/execution/compaction.md`;
 7. [references/patch-inventory.md](references/patch-inventory.md).
 
 Treat code, tests, package manifests, the lockfile, generated registries, and artifact manifests as the exact-byte authority.

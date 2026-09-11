@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: child-agents-and-background-work
-updated: 2026-09-05
+updated: 2026-09-12
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_architecture.md
 patch_authority: ../../dsh/seam-decisions-v1.json
@@ -13,6 +13,13 @@ patch_authority: ../../dsh/seam-decisions-v1.json
 ## 1. Purpose and authority
 
 This guide explains how the canonical `Agent`, `SendMessage` and `TaskStop` tools project DSH subagents and local Jobs into durable Product work. DSH `SubagentRuntime`, in-process spawn and Jobs own native child/process primitives; `packages/tools-agent/src/work-runtime.ts` owns Product identity, role catalogs, foreground/background behavior, messaging, retained output and restart recovery.
+
+The rc.2 dev adaptation receives the unpublished child explicitly in the continuable setup
+callback. Cold inspection uses public read handles with guaranteed close; pending Inbox
+reconciliation restores the official AgentLoop-owned Session projection. Product does not
+instantiate a replacement Inbox. Descriptor version 5 and embedded attempt-stream accounting
+are the current candidate; the [UPG15 ledger](../../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md)
+keeps full child lifecycle/restart acceptance open.
 
 ## 2. Relationships
 

@@ -1,10 +1,13 @@
+import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
+import { LlmRuntime } from "@deepseek-ai/dsh-llm";
+import { FixtureInbox as Inbox } from "./fixtures/inbox-events.js";
 import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
 import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 type ContinuableSetupContribution = Parameters<Context["subagents"]["registerContinuableSetup"]>[0];
 import { createHash } from "node:crypto";
 
 import { Context, Service } from "@deepseek-ai/cordis";
-import { AgentRegistry, Inbox, type Agent } from "@deepseek-ai/dsh-agent";
+import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import {
   ToolCallId,
@@ -15,12 +18,11 @@ import {
   type MessageSource,
   type UserMessage,
 } from "@deepseek-ai/dsh-llm";
-import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { SessionSeq, SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { createScope, scopeTarget } from "@deepseek-ai/dsh-scope";
 import {
   SUBAGENT_DESCRIPTOR_VERSION,
   foldSubagentDescriptor,
-  seedDescriptorTurn,
   snapshotSubagentDescriptor,
   type ContinuableStart,
   type ContinuableStartSpec,
@@ -42,6 +44,11 @@ import type {
   ProductToolContext,
 } from "@myagents-dsh/tool-runtime-product";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Descriptor-only synthetic history; native composition tests exercise actual creation.
+const seedDescriptorTurn = (_id: SessionId, _seed: undefined, descriptor: ReturnType<typeof snapshotSubagentDescriptor>): readonly SessionEvent[] => [
+  { type: "subagent/descriptor", seq: SessionSeq(0), time: 1, data: descriptor },
+];
 
 const contexts: Context[] = [];
 
@@ -152,7 +159,7 @@ class FakeContinuableSubagents extends Service {
     const setupDisposers: (() => void)[] = [];
     try {
       for (const setup of this.setups) {
-        const contribution = setup(childContext);
+        const contribution = setup(childContext, child);
         if (typeof contribution === "function") setupDisposers.push(contribution);
       }
       const detachAgent = this.ctx.agents.register(child);
@@ -242,7 +249,7 @@ class FakeContinuableSubagents extends Service {
     Object.defineProperty(agent, "options", { value: Object.freeze({ ...agent.options, model: descriptor.agentModel, provider: descriptor.agentProvider }) });
     const disposers: (() => void)[] = [];
     for (const setup of this.setups) {
-      const dispose = setup(agent.ctx);
+      const dispose = setup(agent.ctx, agent);
       if (typeof dispose === "function") disposers.push(dispose);
     }
     this.children.set(childId, Object.freeze({
@@ -286,7 +293,7 @@ class FakeContinuableSubagents extends Service {
         const prepared = fakeAgent(this.ctx, childId, session);
         const setupDisposers: (() => void)[] = [];
         for (const setup of this.setups) {
-          const contribution = setup(prepared.agent.ctx);
+          const contribution = setup(prepared.agent.ctx, prepared.agent);
           if (typeof contribution === "function") setupDisposers.push(contribution);
         }
         const detachAgent = this.ctx.agents.register(prepared.agent);
@@ -446,7 +453,7 @@ class FakeContinuableSubagents extends Service {
     inbox.claim("next-turn", run.turn);
     inbox.claim("next-step", run.turn);
     child.agent.session.append("step/start", { turn: run.turn, step: 1 });
-    child.agent.session.append("assistant/message", {
+    child.agent.session.append("assistant/message", { stream: [],
       turn: run.turn,
       step: 1,
       message: freezeMessage({
@@ -455,7 +462,7 @@ class FakeContinuableSubagents extends Service {
         source: { kind: "model", provider: "fixture-provider", model: "fixture-model" },
         content: [Object.freeze({ type: "text", text })],
       }),
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     child.agent.session.append("step/end", { turn: run.turn, step: 1 });
     child.agent.session.append("turn/end", { turn: run.turn, reason: { kind: "completed" } });
   }
@@ -519,6 +526,12 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
   await context.plugin(AgentRegistry);
   await context.plugin(SystemPrompt);
   await context.plugin(ToolRuntime, { mode: "native" });
+  await context.plugin(LlmRuntime);
+  await context.plugin(SessionProjectionRegistry);
+  await context.plugin(AgentLoop, { agents: [] });
+  // Keep one native Agent scope to register the official Inbox projection used
+  // for cold-query folds; the synthetic Work actors never drive model requests.
+  await context.agents.create({ sessionId: SessionId("fixture-projection-owner") });
   await context.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 4 });
   context.provide("sessionPersistence", Object.freeze({
     list: () => Promise.resolve([]),
@@ -1087,7 +1100,6 @@ describe("canonical Agent Work projection", () => {
     let releaseReads: (() => void) | undefined;
     const barrier = new Promise<void>(resolve => { releaseReads = resolve; });
     const state = await harness({ beforeProductWork: async (_session, context) => {
-      await context.plugin(SessionProjectionRegistry);
       await context.plugin(TokenMeter);
       context.provide("sessionQuery", { observeSession: async (id: string) => {
         activeReads++; maximumReads = Math.max(maximumReads, activeReads);
@@ -1104,8 +1116,12 @@ describe("canonical Agent Work projection", () => {
     for (let index = 0; index < 6; index++) await state.execute("Agent", { description: "Read-only tree", prompt: "Retain this Agent." });
     const first = state.subagents.childAgent(state.context.productWork.snapshot()[0]?.agentId ?? "");
     if (first === undefined) throw new Error("missing query child");
+    first.session.append("turn/start", { turn: 1 });
+    first.session.append("step/start", { turn: 1, step: 1 });
     first.session.append("request/context", { provider: "fixture-provider", model: "fixture-model", contextWindow: 100_000 });
-    first.session.append("assistant/chunk", { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 4, cacheWriteTokens: 0 } } });
+    first.session.append("assistant/attempt", { turn: 1, step: 1, stream: [{ type: "chunk", time: 1, chunk: { type: "usage", usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 4, cacheWriteTokens: 0 } } }] });
+    first.session.append("step/end", { turn: 1, step: 1 });
+    first.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
     const rootBefore = state.agent.session.snapshotEvents();
     const childIds = state.subagents.childIds();
     const listing = state.context.productWork.readSnapshots(new AbortController().signal);
@@ -1510,7 +1526,7 @@ describe("canonical Agent Work projection", () => {
         child.append("turn/start", { turn: 1 });
         inbox.claim("next-turn", 1);
         child.append("step/start", { turn: 1, step: 1 });
-        child.append("assistant/message", {
+        child.append("assistant/message", { stream: [],
           turn: 1,
           step: 1,
           message: freezeMessage({
@@ -1519,7 +1535,7 @@ describe("canonical Agent Work projection", () => {
             source: { kind: "model", provider: "fixture-provider", model: "fixture-model" },
             content: [Object.freeze({ type: "text", text: "recovered first reply" })],
           }),
-        }, { surfaceOp: "append", sourceEventSeqs: [] });
+        }, { surfaceOp: "append" });
         child.append("step/end", { turn: 1, step: 1 });
         child.append("turn/end", { turn: 1, reason: { kind: "completed" } });
         inbox.append("next-turn", freezeMessage({

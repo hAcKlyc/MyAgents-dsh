@@ -1,7 +1,579 @@
+diff --git a/docs/config-catalog.i18n.yaml b/docs/config-catalog.i18n.yaml
+index d3235e120348843f2d23e0139e44be4e8e69a48b..66d686bc4e591ee275e642869d7635bcce259ba4 100644
+--- a/docs/config-catalog.i18n.yaml
++++ b/docs/config-catalog.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write docs/config-catalog.md
+-config-catalog.md: 79878fc8daaa5ba3e64d4ffb27d279ff172b6749
+-config-catalog.zh.md: f254241618d280acaf738cc011ba1f7c5a2b6b21
++config-catalog.md: cbfca81167cf43ef929aa874340b1e3bc018e058
++config-catalog.zh.md: 4a778868b56e6cfc465ec9b6e9f1730a9b73ecc5
+diff --git a/docs/config-catalog.md b/docs/config-catalog.md
+index 79878fc8daaa5ba3e64d4ffb27d279ff172b6749..cbfca81167cf43ef929aa874340b1e3bc018e058 100644
+--- a/docs/config-catalog.md
++++ b/docs/config-catalog.md
+@@ -76,10 +76,14 @@ export interface Config {
+    * under the same per-directory trimmed-content dedup; empty disables the overlay.
+    */
+   localInstructionFileCandidates?: string[]
++  /** Candidate loading mode; `all` preserves the original multi-file behavior. */
++  candidateSelection?: 'all' | 'first'
++  /** Successful tool names whose `file_path` argument triggers nested reconciliation. */
++  fileTouchToolNames?: string[]
+ }
+ ```
+ 
+-Source: [`packages/context/agent-instructions/src/config.ts:18`](../packages/context/agent-instructions/src/config.ts)
++Source: [`packages/context/agent-instructions/src/config.ts:19`](../packages/context/agent-instructions/src/config.ts)
+ 
+ <a id="deepseek-aidsh-agent-loop"></a>
+ 
+@@ -482,7 +486,7 @@ export interface ModelCompactPolicyConfig extends CompactionPolicyConfig {
+ }
+ ```
+ 
+-Source: [`packages/compaction/compaction-basic/src/types.ts:38`](../packages/compaction/compaction-basic/src/types.ts)
++Source: [`packages/compaction/compaction-basic/src/types.ts:78`](../packages/compaction/compaction-basic/src/types.ts)
+ 
+ <a id="deepseek-aidsh-compaction-tool-result-pruner"></a>
+ 
+@@ -769,10 +773,12 @@ export interface Config {
+    * runtime's safe allocation/decode maximum. Defaults to 10 MiB.
+    */
+   diffBasisMaxBytes?: number
++  /** Whether atomic writes may create missing parents; false when a deployment journals them. */
++  createParents?: boolean
+ }
+ ```
+ 
+-Source: [`packages/fs/fs-local/src/index.ts:42`](../packages/fs/fs-local/src/index.ts)
++Source: [`packages/fs/fs-local/src/index.ts:43`](../packages/fs/fs-local/src/index.ts)
+ 
+ <a id="deepseek-aidsh-fs-sandbox"></a>
+ 
+@@ -2607,7 +2613,7 @@ export interface Config {
+ }
+ ```
+ 
+-Source: [`packages/core/system-prompt/src/index.ts:242`](../packages/core/system-prompt/src/index.ts)
++Source: [`packages/core/system-prompt/src/index.ts:250`](../packages/core/system-prompt/src/index.ts)
+ 
+ <a id="deepseek-aidsh-terminal-bash"></a>
+ 
+diff --git a/docs/config-catalog.zh.md b/docs/config-catalog.zh.md
+index f254241618d280acaf738cc011ba1f7c5a2b6b21..4a778868b56e6cfc465ec9b6e9f1730a9b73ecc5 100644
+--- a/docs/config-catalog.zh.md
++++ b/docs/config-catalog.zh.md
+@@ -78,10 +78,14 @@ export interface Config {
+    * under the same per-directory trimmed-content dedup; empty disables the overlay.
+    */
+   localInstructionFileCandidates?: string[]
++  /** Candidate loading mode; `all` preserves the original multi-file behavior. */
++  candidateSelection?: 'all' | 'first'
++  /** Successful tool names whose `file_path` argument triggers nested reconciliation. */
++  fileTouchToolNames?: string[]
+ }
+ ```
+ 
+-来源：[`packages/context/agent-instructions/src/config.ts:18`](../packages/context/agent-instructions/src/config.ts)
++来源：[`packages/context/agent-instructions/src/config.ts:19`](../packages/context/agent-instructions/src/config.ts)
+ 
+ <a id="deepseek-aidsh-agent-loop"></a>
+ 
+@@ -484,7 +488,7 @@ export interface ModelCompactPolicyConfig extends CompactionPolicyConfig {
+ }
+ ```
+ 
+-来源：[`packages/compaction/compaction-basic/src/types.ts:38`](../packages/compaction/compaction-basic/src/types.ts)
++来源：[`packages/compaction/compaction-basic/src/types.ts:78`](../packages/compaction/compaction-basic/src/types.ts)
+ 
+ <a id="deepseek-aidsh-compaction-tool-result-pruner"></a>
+ 
+@@ -771,10 +775,12 @@ export interface Config {
+    * runtime's safe allocation/decode maximum. Defaults to 10 MiB.
+    */
+   diffBasisMaxBytes?: number
++  /** Whether atomic writes may create missing parents; false when a deployment journals them. */
++  createParents?: boolean
+ }
+ ```
+ 
+-来源：[`packages/fs/fs-local/src/index.ts:42`](../packages/fs/fs-local/src/index.ts)
++来源：[`packages/fs/fs-local/src/index.ts:43`](../packages/fs/fs-local/src/index.ts)
+ 
+ <a id="deepseek-aidsh-fs-sandbox"></a>
+ 
+@@ -2609,7 +2615,7 @@ export interface Config {
+ }
+ ```
+ 
+-来源：[`packages/core/system-prompt/src/index.ts:242`](../packages/core/system-prompt/src/index.ts)
++来源：[`packages/core/system-prompt/src/index.ts:250`](../packages/core/system-prompt/src/index.ts)
+ 
+ <a id="deepseek-aidsh-terminal-bash"></a>
+ 
+diff --git a/docs/event-producer-consumer.i18n.yaml b/docs/event-producer-consumer.i18n.yaml
+index 7f7e38eff1e3e192195b50bebccd33d9882384aa..34afb491fa498b58843ece827f52b6b8d4fb8446 100644
+--- a/docs/event-producer-consumer.i18n.yaml
++++ b/docs/event-producer-consumer.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write docs/event-producer-consumer.md
+-event-producer-consumer.md: 323e9f3eea8703c46f3be082db6ab67e9339084b
+-event-producer-consumer.zh.md: 1f34a6f3d53bfd6ddf6c19adb0a3c7cb7043c6ab
++event-producer-consumer.md: 3fcac342c1a8a246a82165ae78b8da5429e8b58e
++event-producer-consumer.zh.md: abd79b053385212ce00d006e0aff4ebd195cb8aa
+diff --git a/docs/event-producer-consumer.md b/docs/event-producer-consumer.md
+index 323e9f3eea8703c46f3be082db6ab67e9339084b..3fcac342c1a8a246a82165ae78b8da5429e8b58e 100644
+--- a/docs/event-producer-consumer.md
++++ b/docs/event-producer-consumer.md
+@@ -9,19 +9,20 @@ This matrix shows which packages dispatch each harness-owned event and which pac
+ | --- | --- | --- | --- | --- |
+ | `agent-loop/config-start-failed` | `emit` | [`packages/core/agent-loop/src/index.ts:246`](../packages/core/agent-loop/src/index.ts) | [`agent-loop`](../packages/core/agent-loop) (`events.dispatch`) | - |
+ | `agent-preset/selected` | `emit` | [`packages/preset/agent-presets/src/types.ts:80`](../packages/preset/agent-presets/src/types.ts) | [`agent-presets`](../packages/preset/agent-presets) (`emit`) | `remotes` |
+-| `agent/assistant-stream` | `emit` | [`packages/core/agent/src/runtime-types.ts:373`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`headless`](../packages/bundle/headless), `session-controller` |
+-| `agent/created` | `emit` | [`packages/core/agent/src/runtime-types.ts:258`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-presets`](../packages/preset/agent-presets), [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), [`loader-smoke`](../packages/test-support/loader-smoke), [`schedule`](../packages/schedule/schedule), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `agent/disposed` | `emit` | [`packages/core/agent/src/runtime-types.ts:267`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-loop`](../packages/core/agent-loop), [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`subagent`](../packages/subagent/subagent), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `agent/error` | `emit` | [`packages/core/agent/src/runtime-types.ts:403`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`session-telemetry`](../packages/session/session-telemetry) |
+-| `agent/inbox/claimed` | `emit` | [`packages/core/agent/src/runtime-types.ts:296`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent), [`tool-jobs`](../packages/jobs/tool-jobs) |
+-| `agent/inbox/discarded` | `emit` | [`packages/core/agent/src/runtime-types.ts:304`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent) |
+-| `agent/inbox/inserted` | `emit` | [`packages/core/agent/src/runtime-types.ts:285`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver) |
+-| `agent/pre-step` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:330`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`agent`](../packages/core/agent), [`agent-instructions`](../packages/context/agent-instructions), [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex), [`plan-mode`](../packages/plan/plan-mode), [`repeat-tool-reminder`](../packages/guard/repeat-tool-reminder), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-reference`](../packages/context/session-reference), [`subagent-in-process-driver`](../packages/subagent/subagent-in-process-driver), [`time-context`](../packages/context/time-context), [`tmux-context`](../packages/context/tmux-context), [`tool-cordis`](../packages/extensions/tool-cordis), [`tool-skill`](../packages/skill/tool-skill), [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `agent/request` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:347`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`agent`](../packages/core/agent), [`webhook`](../packages/webhook/webhook) |
+-| `agent/request-error` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:363`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`compaction-basic`](../packages/compaction/compaction-basic), [`llm-retry`](../packages/llm/llm-retry) |
+-| `agent/session-start` | `emit` | [`packages/core/agent/src/runtime-types.ts:316`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emitAgentEvent`) | `agent-team`, [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) |
+-| `agent/status` | `emit` | [`packages/core/agent/src/runtime-types.ts:277`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`agent`](../packages/core/agent), `agent-team`, [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), [`schedule`](../packages/schedule/schedule), `server`, `session-controller` |
+-| `agent/turn-stopping` | `serial` | [`packages/core/agent/src/runtime-types.ts:391`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`serial`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) |
++| `agent/assistant-stream` | `emit` | [`packages/core/agent/src/runtime-types.ts:409`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`headless`](../packages/bundle/headless), `session-controller` |
++| `agent/created` | `emit` | [`packages/core/agent/src/runtime-types.ts:284`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-presets`](../packages/preset/agent-presets), [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), [`loader-smoke`](../packages/test-support/loader-smoke), [`schedule`](../packages/schedule/schedule), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `agent/disposed` | `emit` | [`packages/core/agent/src/runtime-types.ts:293`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-loop`](../packages/core/agent-loop), [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`subagent`](../packages/subagent/subagent), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `agent/error` | `emit` | [`packages/core/agent/src/runtime-types.ts:439`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`session-telemetry`](../packages/session/session-telemetry) |
++| `agent/inbox/claimed` | `emit` | [`packages/core/agent/src/runtime-types.ts:322`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent), [`tool-jobs`](../packages/jobs/tool-jobs) |
++| `agent/inbox/discarded` | `emit` | [`packages/core/agent/src/runtime-types.ts:330`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent) |
++| `agent/inbox/inserted` | `emit` | [`packages/core/agent/src/runtime-types.ts:311`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver) |
++| `agent/pre-assistant-commit` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:383`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | - |
++| `agent/pre-step` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:356`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`agent`](../packages/core/agent), [`agent-instructions`](../packages/context/agent-instructions), [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex), [`plan-mode`](../packages/plan/plan-mode), [`repeat-tool-reminder`](../packages/guard/repeat-tool-reminder), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-reference`](../packages/context/session-reference), [`subagent-in-process-driver`](../packages/subagent/subagent-in-process-driver), [`time-context`](../packages/context/time-context), [`tmux-context`](../packages/context/tmux-context), [`tool-cordis`](../packages/extensions/tool-cordis), [`tool-skill`](../packages/skill/tool-skill), [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `agent/request` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:373`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`agent`](../packages/core/agent), [`webhook`](../packages/webhook/webhook) |
++| `agent/request-error` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:399`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`compaction-basic`](../packages/compaction/compaction-basic), [`llm-retry`](../packages/llm/llm-retry) |
++| `agent/session-start` | `emit` | [`packages/core/agent/src/runtime-types.ts:342`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emitAgentEvent`) | `agent-team`, [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) |
++| `agent/status` | `emit` | [`packages/core/agent/src/runtime-types.ts:303`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`agent`](../packages/core/agent), `agent-team`, [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), [`schedule`](../packages/schedule/schedule), `server`, `session-controller` |
++| `agent/turn-stopping` | `serial` | [`packages/core/agent/src/runtime-types.ts:427`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`serial`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) |
+ | `api-session/activity` | `emit` | [`packages/api/session-controller/src/types.ts:599`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
+ | `api-session/added` | `emit` | [`packages/api/session-controller/src/types.ts:579`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
+ | `api-session/error` | `emit` | [`packages/api/session-controller/src/types.ts:606`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
+@@ -30,6 +31,7 @@ This matrix shows which packages dispatch each harness-owned event and which pac
+ | `approval/request` | `waterfall` | [`packages/interaction/user-approval/src/types.ts:85`](../packages/interaction/user-approval/src/types.ts) | [`user-approval`](../packages/interaction/user-approval) (`waterfall`) | [`acp`](../packages/acp/acp), `remotes` |
+ | `authorization/settled` | `emit` | [`packages/credentials/authorization/src/index.ts:57`](../packages/credentials/authorization/src/index.ts) | [`authorization`](../packages/credentials/authorization) (`events.dispatch`) | [`authorization`](../packages/credentials/authorization) |
+ | `commands/change` | `emit` | [`packages/interaction/commands/src/types.ts:87`](../packages/interaction/commands/src/types.ts) | [`commands`](../packages/interaction/commands) (`events.dispatch`) | `remotes` |
++| `compaction/telemetry` | `emit` | [`packages/compaction/compaction-basic/src/types.ts:45`](../packages/compaction/compaction-basic/src/types.ts) | [`compaction-basic`](../packages/compaction/compaction-basic) (`emit`) | - |
+ | `cordis/dynamic-package` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:380`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `remotes` |
+ | `cordis/dynamic-retract` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:386`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `remotes` |
+ | `cordis/inspect-query` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:392`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `remotes` |
+@@ -55,10 +57,10 @@ This matrix shows which packages dispatch each harness-owned event and which pac
+ | `settings/document-updated` | `emit` | [`packages/settings/settings/src/types.ts:105`](../packages/settings/settings/src/types.ts) | [`settings`](../packages/settings/settings) (`events.dispatch`) | `remotes` |
+ | `settings/updated` | `emit` | [`packages/settings/settings/src/types.ts:92`](../packages/settings/settings/src/types.ts) | [`settings`](../packages/settings/settings) (`events.dispatch`) | [`settings`](../packages/settings/settings) |
+ | `skills/change` | `emit` | [`packages/skill/skill/src/index.ts:298`](../packages/skill/skill/src/index.ts) | [`skill`](../packages/skill/skill) (`events.dispatch`) | - |
+-| `subagent/end` | `emit` | [`packages/subagent/subagent/src/index.ts:170`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), `server`, [`subagent`](../packages/subagent/subagent) |
+-| `subagent/provider-added` | `emit` | [`packages/subagent/subagent/src/index.ts:144`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`emit`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `subagent/provider-removed` | `emit` | [`packages/subagent/subagent/src/index.ts:150`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `subagent/start` | `emit` | [`packages/subagent/subagent/src/index.ts:161`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`subagent`](../packages/subagent/subagent) |
++| `subagent/end` | `emit` | [`packages/subagent/subagent/src/index.ts:177`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), `server`, [`subagent`](../packages/subagent/subagent) |
++| `subagent/provider-added` | `emit` | [`packages/subagent/subagent/src/index.ts:151`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`emit`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `subagent/provider-removed` | `emit` | [`packages/subagent/subagent/src/index.ts:157`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `subagent/start` | `emit` | [`packages/subagent/subagent/src/index.ts:168`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`subagent`](../packages/subagent/subagent) |
+ | `system-prompt/assemble` | `waterfall` | [`packages/core/system-prompt/src/index.ts:31`](../packages/core/system-prompt/src/index.ts) | [`system-prompt`](../packages/core/system-prompt) (`waterfall`) | [`agent`](../packages/core/agent), [`agent-presets`](../packages/preset/agent-presets), [`session-reference`](../packages/context/session-reference), [`system-prompt`](../packages/core/system-prompt) |
+ | `system-prompt/change` | `emit` | [`packages/core/system-prompt/src/index.ts:37`](../packages/core/system-prompt/src/index.ts) | [`system-prompt`](../packages/core/system-prompt) (`emit`) | - |
+ | `tools/change` | `emit` | [`packages/core/tools/src/index.ts:199`](../packages/core/tools/src/index.ts) | [`agent-presets`](../packages/preset/agent-presets) (`emit`), [`tools`](../packages/core/tools) (`emit`) | [`tool-subagent`](../packages/subagent/tool-subagent) |
+diff --git a/docs/event-producer-consumer.zh.md b/docs/event-producer-consumer.zh.md
+index 1f34a6f3d53bfd6ddf6c19adb0a3c7cb7043c6ab..abd79b053385212ce00d006e0aff4ebd195cb8aa 100644
+--- a/docs/event-producer-consumer.zh.md
++++ b/docs/event-producer-consumer.zh.md
+@@ -11,19 +11,20 @@
+ | --- | --- | --- | --- | --- |
+ | `agent-loop/config-start-failed` | `emit` | [`packages/core/agent-loop/src/index.ts:246`](../packages/core/agent-loop/src/index.ts) | [`agent-loop`](../packages/core/agent-loop) (`events.dispatch`) | - |
+ | `agent-preset/selected` | `emit` | [`packages/preset/agent-presets/src/types.ts:80`](../packages/preset/agent-presets/src/types.ts) | [`agent-presets`](../packages/preset/agent-presets) (`emit`) | `remotes` |
+-| `agent/assistant-stream` | `emit` | [`packages/core/agent/src/runtime-types.ts:373`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`headless`](../packages/bundle/headless), `session-controller` |
+-| `agent/created` | `emit` | [`packages/core/agent/src/runtime-types.ts:258`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-presets`](../packages/preset/agent-presets), [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), [`loader-smoke`](../packages/test-support/loader-smoke), [`schedule`](../packages/schedule/schedule), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `agent/disposed` | `emit` | [`packages/core/agent/src/runtime-types.ts:267`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-loop`](../packages/core/agent-loop), [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`subagent`](../packages/subagent/subagent), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `agent/error` | `emit` | [`packages/core/agent/src/runtime-types.ts:403`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`session-telemetry`](../packages/session/session-telemetry) |
+-| `agent/inbox/claimed` | `emit` | [`packages/core/agent/src/runtime-types.ts:296`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent), [`tool-jobs`](../packages/jobs/tool-jobs) |
+-| `agent/inbox/discarded` | `emit` | [`packages/core/agent/src/runtime-types.ts:304`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent) |
+-| `agent/inbox/inserted` | `emit` | [`packages/core/agent/src/runtime-types.ts:285`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver) |
+-| `agent/pre-step` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:330`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`agent`](../packages/core/agent), [`agent-instructions`](../packages/context/agent-instructions), [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex), [`plan-mode`](../packages/plan/plan-mode), [`repeat-tool-reminder`](../packages/guard/repeat-tool-reminder), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-reference`](../packages/context/session-reference), [`subagent-in-process-driver`](../packages/subagent/subagent-in-process-driver), [`time-context`](../packages/context/time-context), [`tmux-context`](../packages/context/tmux-context), [`tool-cordis`](../packages/extensions/tool-cordis), [`tool-skill`](../packages/skill/tool-skill), [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `agent/request` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:347`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`agent`](../packages/core/agent), [`webhook`](../packages/webhook/webhook) |
+-| `agent/request-error` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:363`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`compaction-basic`](../packages/compaction/compaction-basic), [`llm-retry`](../packages/llm/llm-retry) |
+-| `agent/session-start` | `emit` | [`packages/core/agent/src/runtime-types.ts:316`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emitAgentEvent`) | `agent-team`, [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) |
+-| `agent/status` | `emit` | [`packages/core/agent/src/runtime-types.ts:277`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`agent`](../packages/core/agent), `agent-team`, [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), [`schedule`](../packages/schedule/schedule), `server`, `session-controller` |
+-| `agent/turn-stopping` | `serial` | [`packages/core/agent/src/runtime-types.ts:391`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`serial`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) |
++| `agent/assistant-stream` | `emit` | [`packages/core/agent/src/runtime-types.ts:409`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`headless`](../packages/bundle/headless), `session-controller` |
++| `agent/created` | `emit` | [`packages/core/agent/src/runtime-types.ts:284`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-presets`](../packages/preset/agent-presets), [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), [`loader-smoke`](../packages/test-support/loader-smoke), [`schedule`](../packages/schedule/schedule), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `agent/disposed` | `emit` | [`packages/core/agent/src/runtime-types.ts:293`](../packages/core/agent/src/runtime-types.ts) | [`agent`](../packages/core/agent) (`events.dispatch`) | [`agent-loop`](../packages/core/agent-loop), [`file-reference-local`](../packages/context/file-reference-local), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`subagent`](../packages/subagent/subagent), `tool-agent-team`, [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `agent/error` | `emit` | [`packages/core/agent/src/runtime-types.ts:439`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`goal-round-driver`](../packages/goal/goal-round-driver), `session-controller`, [`session-telemetry`](../packages/session/session-telemetry) |
++| `agent/inbox/claimed` | `emit` | [`packages/core/agent/src/runtime-types.ts:322`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`acp`](../packages/acp/acp), [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent), [`tool-jobs`](../packages/jobs/tool-jobs) |
++| `agent/inbox/discarded` | `emit` | [`packages/core/agent/src/runtime-types.ts:330`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver), [`subagent`](../packages/subagent/subagent) |
++| `agent/inbox/inserted` | `emit` | [`packages/core/agent/src/runtime-types.ts:311`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`goal-round-driver`](../packages/goal/goal-round-driver) |
++| `agent/pre-assistant-commit` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:383`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | - |
++| `agent/pre-step` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:356`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`agent`](../packages/core/agent), [`agent-instructions`](../packages/context/agent-instructions), [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex), [`plan-mode`](../packages/plan/plan-mode), [`repeat-tool-reminder`](../packages/guard/repeat-tool-reminder), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-reference`](../packages/context/session-reference), [`subagent-in-process-driver`](../packages/subagent/subagent-in-process-driver), [`time-context`](../packages/context/time-context), [`tmux-context`](../packages/context/tmux-context), [`tool-cordis`](../packages/extensions/tool-cordis), [`tool-skill`](../packages/skill/tool-skill), [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `agent/request` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:373`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`agent`](../packages/core/agent), [`webhook`](../packages/webhook/webhook) |
++| `agent/request-error` | `waterfall` | [`packages/core/agent/src/runtime-types.ts:399`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`waterfall`) | [`compaction-basic`](../packages/compaction/compaction-basic), [`llm-retry`](../packages/llm/llm-retry) |
++| `agent/session-start` | `emit` | [`packages/core/agent/src/runtime-types.ts:342`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emitAgentEvent`) | `agent-team`, [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) |
++| `agent/status` | `emit` | [`packages/core/agent/src/runtime-types.ts:303`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`agent`](../packages/core/agent), `agent-team`, [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), [`schedule`](../packages/schedule/schedule), `server`, `session-controller` |
++| `agent/turn-stopping` | `serial` | [`packages/core/agent/src/runtime-types.ts:427`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`serial`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) |
+ | `api-session/activity` | `emit` | [`packages/api/session-controller/src/types.ts:599`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
+ | `api-session/added` | `emit` | [`packages/api/session-controller/src/types.ts:579`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
+ | `api-session/error` | `emit` | [`packages/api/session-controller/src/types.ts:606`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
+@@ -32,6 +33,7 @@
+ | `approval/request` | `waterfall` | [`packages/interaction/user-approval/src/types.ts:85`](../packages/interaction/user-approval/src/types.ts) | [`user-approval`](../packages/interaction/user-approval) (`waterfall`) | [`acp`](../packages/acp/acp), `remotes` |
+ | `authorization/settled` | `emit` | [`packages/credentials/authorization/src/index.ts:57`](../packages/credentials/authorization/src/index.ts) | [`authorization`](../packages/credentials/authorization) (`events.dispatch`) | [`authorization`](../packages/credentials/authorization) |
+ | `commands/change` | `emit` | [`packages/interaction/commands/src/types.ts:87`](../packages/interaction/commands/src/types.ts) | [`commands`](../packages/interaction/commands) (`events.dispatch`) | `remotes` |
++| `compaction/telemetry` | `emit` | [`packages/compaction/compaction-basic/src/types.ts:45`](../packages/compaction/compaction-basic/src/types.ts) | [`compaction-basic`](../packages/compaction/compaction-basic) (`emit`) | - |
+ | `cordis/dynamic-package` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:380`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `remotes` |
+ | `cordis/dynamic-retract` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:386`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `remotes` |
+ | `cordis/inspect-query` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:392`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `remotes` |
+@@ -57,10 +59,10 @@
+ | `settings/document-updated` | `emit` | [`packages/settings/settings/src/types.ts:105`](../packages/settings/settings/src/types.ts) | [`settings`](../packages/settings/settings) (`events.dispatch`) | `remotes` |
+ | `settings/updated` | `emit` | [`packages/settings/settings/src/types.ts:92`](../packages/settings/settings/src/types.ts) | [`settings`](../packages/settings/settings) (`events.dispatch`) | [`settings`](../packages/settings/settings) |
+ | `skills/change` | `emit` | [`packages/skill/skill/src/index.ts:298`](../packages/skill/skill/src/index.ts) | [`skill`](../packages/skill/skill) (`events.dispatch`) | - |
+-| `subagent/end` | `emit` | [`packages/subagent/subagent/src/index.ts:168`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), `server`, [`subagent`](../packages/subagent/subagent) |
+-| `subagent/provider-added` | `emit` | [`packages/subagent/subagent/src/index.ts:142`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`emit`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `subagent/provider-removed` | `emit` | [`packages/subagent/subagent/src/index.ts:148`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
+-| `subagent/start` | `emit` | [`packages/subagent/subagent/src/index.ts:159`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`subagent`](../packages/subagent/subagent) |
++| `subagent/end` | `emit` | [`packages/subagent/subagent/src/index.ts:177`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), `server`, [`subagent`](../packages/subagent/subagent) |
++| `subagent/provider-added` | `emit` | [`packages/subagent/subagent/src/index.ts:151`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`emit`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `subagent/provider-removed` | `emit` | [`packages/subagent/subagent/src/index.ts:157`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
++| `subagent/start` | `emit` | [`packages/subagent/subagent/src/index.ts:168`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`subagent`](../packages/subagent/subagent) |
+ | `system-prompt/assemble` | `waterfall` | [`packages/core/system-prompt/src/index.ts:31`](../packages/core/system-prompt/src/index.ts) | [`system-prompt`](../packages/core/system-prompt) (`waterfall`) | [`agent`](../packages/core/agent), [`agent-presets`](../packages/preset/agent-presets), [`session-reference`](../packages/context/session-reference), [`system-prompt`](../packages/core/system-prompt) |
+ | `system-prompt/change` | `emit` | [`packages/core/system-prompt/src/index.ts:37`](../packages/core/system-prompt/src/index.ts) | [`system-prompt`](../packages/core/system-prompt) (`emit`) | - |
+ | `tools/change` | `emit` | [`packages/core/tools/src/index.ts:199`](../packages/core/tools/src/index.ts) | [`agent-presets`](../packages/preset/agent-presets) (`emit`), [`tools`](../packages/core/tools) (`emit`) | [`tool-subagent`](../packages/subagent/tool-subagent) |
+diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
+index 1fb4643b80f0174cdc736f762f9e316e62353181..c395e00d78f0645a143a06efad0ef6e7fa19e53a 100644
+--- a/packages/extensions/tool-cordis/src/api-catalog.ts
++++ b/packages/extensions/tool-cordis/src/api-catalog.ts
+@@ -288,6 +288,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+         parameters: [{ name: 'factory', description: 'the loop-owned factory {@link create}/{@link resume} delegate to.' }],
+         returns: 'the disposer that clears the factory slot. The exact Cordis effect disposer (single-shot): composite (generator) effects may yield it directly — exact identity nests the teardown in order.',
+       },
++      {
++        signature: 'setPublicationGuard(guard: AgentPublicationGuard): () => void',
++        description: 'Install the one process-wide Agent publication guard. The guard runs at the authoritative enter boundary after identity/collision checks and before the registry mutates. A synchronous throw rejects publication without exposing the candidate. Registration is effect-scoped and exclusive; the returned disposer restores stock behavior.',
++        parameters: [{ name: 'guard', description: 'deployment-owned synchronous publication policy.' }],
++        returns: 'the exact Cordis effect disposer.',
++      },
+       {
+         signature: 'async create(options: CreateAgentOptions): Promise<AgentHandle>',
+         description: 'Create and publish a new agent through the registered factory. Distinct from register (which records an already-constructed agent): this constructs the agent and its session. Rejects if no factory is registered or creation/setup fails. The resolved AgentHandle lets the owner tear down exactly this agent.',
+@@ -1869,6 +1875,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+     summary: 'In-memory session store (`ctx.sessions`).',
+     description: 'In-memory session store (`ctx.sessions`).\n\nPersistence is intentionally not implemented here — the agent lifecycle attaches a session-log writer to each published session\'s write handle; a session published outside that lifecycle persists nothing.',
+     methods: [
++      {
++        signature: 'setPublicationGuard(guard: SessionPublicationGuard): () => void',
++        description: 'Install the one process-wide Session publication guard. The guard runs at the authoritative enter boundary after collision/attachment checks and before store or attachment state mutates. A synchronous throw rejects publication without exposing the candidate. Registration is effect-scoped and exclusive; the returned disposer restores stock behavior.',
++        parameters: [{ name: 'guard', description: 'deployment-owned synchronous publication policy.' }],
++        returns: 'the exact Cordis effect disposer.',
++      },
+       {
+         signature: 'create(id?: SessionId, options?: CreateSessionOptions): Session',
+         description: 'Create a session owned by the calling fiber: disposing that fiber stops event notification and removes the session from the store. `options.seed` populates the session with a copy of those events (replay/fork); `options.meta` attaches creation metadata (validated absolute `cwd`, seed and parent lineage, and delegation depth) as the immutable SessionHeader (the store fills `version`/`id`/`createdAt`).\n\nFor an agent whose session must be torn down IN ORDER with its loop (so the loop\'s final events are published before the store attachment ends), do NOT use this — fold the session lifecycle into the agent\'s own effect via prepare + enter + announce (see `dsh-agent-loop`\'s creation transaction).',
+@@ -2281,6 +2293,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+     summary: 'Named provider registry with one-shot runs, durable discovery, and continuable-child operations.',
+     description: 'Named provider registry with one-shot runs, durable discovery, and continuable-child operations.',
+     methods: [
++      {
++        signature: 'registerContinuableSetup(contribution: ContinuableSetupContribution): () => void',
++        description: 'Install a trusted capability at unpublished fresh/cold child setup, revoked with its scope.',
++        parameters: [{ name: 'contribution', description: 'trusted child-scope setup invoked with its explicit unpublished Agent.' }],
++        returns: 'the effect-scoped contribution disposer.',
++      },
+       {
+         signature: 'async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>',
+         description: 'Establish one durable continuable child and deliver its initial prompt. Resolves when the child\'s inbox accepts that prompt, without waiting for the turn to start or for the message to reach the Session log; any earlier failure rejects with no ids and rolls back the child entirely.',
+@@ -2288,6 +2306,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+         returns: 'the durable child id and the accepted prompt\'s message id.',
+         throws: ['when continuation services are unavailable or materialization fails.'],
+       },
++      {
++        signature: 'async resumeContinuable(parent: Agent, childId: SessionId, messageId: MessageId, options: SubagentResumeOptions): Promise<boolean>',
++        description: 'Wake one exact durable child Inbox identity without reinserting it.',
++        parameters: [{ name: 'parent', description: 'exact live direct-parent Agent authorizing the operation.' }, { name: 'childId', description: 'durable direct-child session identity.' }, { name: 'messageId', description: 'already-durable pending identity; never removed or reinserted.' }, { name: 'options', description: 'caller cancellation before admission.' }],
++        returns: 'whether the existing identity was scheduled.',
++      },
++      {
++        signature: 'async deliverContinuable( parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentDeliveryOptions, ): Promise<MessageId>',
++        description: 'Deliver trusted composition input with its original provenance and explicit scheduling.',
++        parameters: [{ name: 'parent', description: 'exact live direct-parent Agent authorizing the operation.' }, { name: 'childId', description: 'durable direct-child session identity.' }, { name: 'content', description: 'trusted input blocks admitted through the native inbox.' }, { name: 'options', description: 'delivery provenance, explicit scheduling and caller cancellation.' }],
++        returns: 'the identity accepted by the native child inbox.',
++      },
++      {
++        signature: 'async withContinuableAncestors<T>( root: Agent, ancestors: readonly SessionId[], options: SubagentResumeOptions, operation: (parent: Agent) => Promise<T>, ): Promise<T>',
++        description: 'Retain exact direct-parent residency without injecting synthetic ancestor work.',
++        parameters: [{ name: 'root', description: 'exact live root authorizing the ancestry path.' }, { name: 'ancestors', description: 'bounded acyclic direct-child path, ordered from root to immediate parent.' }, { name: 'options', description: 'caller cancellation before admission.' }, { name: 'operation', description: 'work using the resident immediate parent before holds release.' }],
++        returns: 'the operation result after all residency holds release.',
++      },
+       {
+         signature: 'async sendMessage( sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions, ): Promise<MessageId>',
+         description: 'Steer one model-authored message to the sender\'s direct parent or direct continuable child. A running target admits it at the nearest step boundary; an idle target starts a turn, and an absent direct child cold-resumes from persistence. The service derives durable sender attribution from the exact live sender. Caller cancellation stops only pre-acceptance work.',
+@@ -2572,6 +2608,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+         parameters: [{ name: 'message', description: 'message to price without mutation.' }],
+         returns: 'content and role-framing tokens under the fixed service heuristic.',
+       },
++      {
++        signature: 'estimateRequest(input: TokenRequestEstimateInput): number',
++        description: 'Heuristically price one exact model-visible request with the same fixed estimator used by durable pressure measurement.',
++        parameters: [{ name: 'input', description: 'exact system, tool, and ordered message envelope.' }],
++        returns: 'total estimated request input tokens.',
++      },
+     ],
+   },
+   {
+@@ -3090,6 +3132,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
+     description: 'One message entered the live inbox.',
+     parameters: [{ name: 'payload', description: '.message - the inserted message. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+   },
++  {
++    name: 'agent/pre-assistant-commit',
++    mode: 'waterfall',
++    signature: '\'agent/pre-assistant-commit\'(this: Scoped<Agent>, payload: { agent: Agent; commit: Readonly<PreparedAssistantCommit>; turn: number; step: number; signal: AbortSignal }, next: () => Promise<PreparedAssistantCommit>): Promise<PreparedAssistantCommit>',
++    summary: 'Transform a complete assembled assistant response before any `assistant/message` or `tool/call` event is appended.',
++    description: 'Transform a complete assembled assistant response before any `assistant/message` or `tool/call` event is appended. The AgentLoop validates that only existing tool-call arguments changed and rebuilds scheduler inputs from the returned message.',
++    parameters: [{ name: 'payload', description: 'complete assistant commit with immutable identities and transformable tool arguments. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): listeners receive only the payload Agent scope.' }],
++  },
+   {
+     name: 'agent/pre-step',
+     mode: 'waterfall',
+@@ -3202,6 +3252,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
+     description: 'A command was registered or unregistered. This is an unfiltered registry notification because a global or scoped change may affect any UI view. Observer failures are contained and cannot veto the registry mutation.',
+     parameters: [],
+   },
++  {
++    name: 'compaction/telemetry',
++    mode: 'emit',
++    signature: '\'compaction/telemetry\'(event: Readonly<CompactionTelemetry>): void',
++    summary: 'Bounded process-local diagnostics; never includes model-visible content.',
++    description: 'Bounded process-local diagnostics; never includes model-visible content.',
++    parameters: [{ name: 'event', description: 'content-free compaction measurements and stable outcome classification.' }],
++  },
+   {
+     name: 'cordis/dynamic-package',
+     mode: 'emit',
+@@ -3622,6 +3680,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'AgentPresetRow',
+     declaration: 'export interface AgentPresetRow {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}',
+   },
++  {
++    name: 'AgentPublicationGuard',
++    declaration: 'export type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void;',
++  },
+   {
+     name: 'AgentResolver',
+     declaration: 'export type AgentResolver = (sessionId: SessionId) => Promise<Agent>;',
+@@ -3700,11 +3762,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'AssembledContext',
+-    declaration: 'export interface AssembledContext {\n    name: string;\n    text: string;\n}',
++    declaration: 'export interface AssembledContext {\n    name: string;\n    text: string;\n    interpolate?: boolean;\n}',
+   },
+   {
+     name: 'AssembledSection',
+-    declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n}',
++    declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n    interpolate?: boolean;\n}',
+   },
+   {
+     name: 'AssistantMessage',
+@@ -3894,6 +3956,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'CompactionResult',
+     declaration: 'export interface CompactionResult {\n    compactionId: CompactionId;\n    sourceCommandId?: CommandId;\n    startSeq: SessionSeq;\n    summarySeq: SessionSeq;\n    endSeq: SessionSeq;\n    summary: ContentBlock[];\n    shadowedRange: {\n        start: SessionSeq;\n        end: SessionSeq;\n    };\n    shadowedSeqs: SessionSeq[];\n    shadowedTokenCount: number;\n}',
+   },
++  {
++    name: 'CompactionTelemetry',
++    declaration: 'export interface CompactionTelemetry {\n    readonly kind: \'prune\' | \'range\' | \'summary\' | \'convergence\';\n    readonly status: \'succeeded\' | \'failed\' | \'skipped\';\n    readonly sessionId: string;\n    readonly trigger?: \'explicit\' | \'pressure\' | \'context-overflow\';\n    readonly provider?: string;\n    readonly model?: string;\n    readonly contextWindow?: number;\n    readonly configuredMaxTokens?: number;\n    readonly effectiveMaxTokens?: number;\n    readonly safetyMarginTokens?: number;\n    readonly inputTokens?: number;\n    readonly outputTokens?: number;\n    readonly beforeTokens?: number;\n    readonly afterTokens?: number;\n    readonly thresholdTokens?: number;\n    readonly retainTokens?: number;\n    readonly prunedResults?: number;\n    readonly prunedChars?: number;\n    readonly rangeStart?: number;\n    readonly rangeEnd?: number;\n    readonly rangeNodes?: number;\n    readonly streamCalls?: number;\n    readonly repairAttempts?: number;\n    readonly durationMs?: number;\n    readonly errorCode?: string;\n}',
++  },
+   {
+     name: 'CompactionTrigger',
+     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
+@@ -3934,17 +4000,21 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'ContinuableCreateSpec',
+     declaration: 'export interface ContinuableCreateSpec {\n    readonly seed?: readonly SessionEvent[];\n}',
+   },
++  {
++    name: 'ContinuableSetupContribution',
++    declaration: 'export type ContinuableSetupContribution = (childCtx: Context, child: Agent) => () => void;',
++  },
+   {
+     name: 'ContinuableStart',
+     declaration: 'export interface ContinuableStart {\n    readonly childId: SessionId;\n    readonly messageId: MessageId;\n}',
+   },
+   {
+     name: 'ContinuableStartSpec',
+-    declaration: 'export interface ContinuableStartSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly childId?: SessionId;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\' | \'outputSchema\'>;\n    readonly signal: AbortSignal;\n}',
++    declaration: 'export interface ContinuableStartSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly childId?: SessionId;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\' | \'outputSchema\'>;\n    readonly settlementDelivery?: \'parent\' | \'external\';\n    readonly signal: AbortSignal;\n}',
+   },
+   {
+     name: 'ContinuableSubagentDescriptorData',
+-    declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly agentReasoningEffort?: ReasoningEffortId;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
++    declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly agentReasoningEffort?: ReasoningEffortId;\n    readonly persona?: string;\n    readonly personaInterpolate?: boolean;\n    readonly toolFilter?: ToolRestriction;\n    readonly settlementDelivery?: \'parent\' | \'external\';\n}',
+   },
+   {
+     name: 'CordisDynamicPackageId',
+@@ -4758,6 +4828,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'PreparedAdapterCall',
+     declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+   },
++  {
++    name: 'PreparedAssistantCommit',
++    declaration: 'export interface PreparedAssistantCommit {\n    readonly message: AssistantMessage;\n    readonly toolCalls: readonly PreparedAssistantToolCall[];\n}',
++  },
++  {
++    name: 'PreparedAssistantToolCall',
++    declaration: 'export interface PreparedAssistantToolCall {\n    readonly callId: ToolCallId;\n    readonly name: string;\n    readonly rawArguments: string;\n    readonly parsedArguments: JsonValue;\n}',
++  },
+   {
+     name: 'PreparedDeepSeekLlmApiExtension',
+     declaration: 'export interface PreparedDeepSeekLlmApiExtension<T extends DeepSeekLlmApiJson> {\n    readonly value: T;\n    accept?(): void | Promise<void>;\n}',
+@@ -4824,7 +4902,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'PromptContext',
+-    declaration: 'export interface PromptContext {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n}',
++    declaration: 'export interface PromptContext {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n    readonly interpolate?: boolean;\n}',
+   },
+   {
+     name: 'PromptContextOrderName',
+@@ -4836,7 +4914,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'PromptSection',
+-    declaration: 'export interface PromptSection {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n    readonly complete?: boolean;\n}',
++    declaration: 'export interface PromptSection {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n    readonly interpolate?: boolean;\n    readonly complete?: boolean;\n}',
+   },
+   {
+     name: 'PromptSectionOrderName',
+@@ -5346,6 +5424,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'SessionPromptValue',
+     declaration: 'export interface SessionPromptValue {\n    readonly accepted: true;\n}',
+   },
++  {
++    name: 'SessionPublicationGuard',
++    declaration: 'export type SessionPublicationGuard = (session: Session) => void;',
++  },
+   {
+     name: 'SessionQueuedItem',
+     declaration: 'export interface SessionQueuedItem {\n    readonly id: MessageId;\n    readonly placement: \'queued\' | \'steering\' | \'context\';\n    readonly rpcId?: SessionRequestId;\n    readonly message: {\n        readonly id: MessageId;\n        readonly content: readonly JsonValue[];\n    };\n}',
+@@ -5714,6 +5796,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'SubagentCatalog',
+     declaration: 'export interface SubagentCatalog {\n    readonly entries: readonly SubagentListEntry[];\n    readonly parentAvailable: boolean;\n}',
+   },
++  {
++    name: 'SubagentDeliveryOptions',
++    declaration: 'export interface SubagentDeliveryOptions {\n    readonly delivery: \'steer\' | \'queue\';\n    readonly source: MessageSource;\n    readonly signal: AbortSignal;\n}',
++  },
+   {
+     name: 'SubagentDescendantListEntry',
+     declaration: 'export type SubagentDescendantListEntry = SubagentListEntry & {\n    readonly parentId: SessionId;\n    readonly depth: number;\n};',
+@@ -5754,13 +5840,17 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'SubagentResult',
+     declaration: 'export interface SubagentResult {\n    readonly output: ContentBlock[];\n    readonly structured?: unknown;\n    readonly diagnostic?: string;\n    readonly stopReason: SubagentStopReason;\n}',
+   },
++  {
++    name: 'SubagentResumeOptions',
++    declaration: 'export interface SubagentResumeOptions {\n    readonly signal: AbortSignal;\n}',
++  },
+   {
+     name: 'SubagentRun',
+     declaration: 'export interface SubagentRun {\n    readonly id: SessionId;\n    readonly localAgent: Agent | undefined;\n    readonly result: Promise<SubagentResult>;\n    dispose(): Promise<void>;\n}',
+   },
+   {
+     name: 'SubagentRunEndInfo',
+-    declaration: 'export interface SubagentRunEndInfo {\n    readonly runId: SubagentRunId;\n    readonly provider: string;\n    readonly id: SessionId;\n    readonly local: boolean;\n    readonly stopReason: SubagentResult[\'stopReason\'];\n    readonly lastAssistantMessage?: ContentBlock[];\n}',
++    declaration: 'export interface SubagentRunEndInfo {\n    readonly runId: SubagentRunId;\n    readonly provider: string;\n    readonly id: SessionId;\n    readonly local: boolean;\n    readonly stopReason: SubagentResult[\'stopReason\'];\n    readonly infrastructureFailure?: true;\n    readonly lastAssistantMessage?: ContentBlock[];\n}',
+   },
+   {
+     name: 'SubagentRunId',
+@@ -5772,7 +5862,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'SubagentRuntime',
+-    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    @Remote(\'list\')\n    async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>;\n    @Remote(\'prompt\')\n    async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>;\n    @Remote(\'interruptByParent\')\n    interruptByParent(childSessionId: SessionId, parentSessionId: SessionId, mode: \'continuable\'): SubagentInterruptReceipt;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
++    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerContinuableSetup(contribution: ContinuableSetupContribution): () => void;\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async resumeContinuable(parent: Agent, childId: SessionId, messageId: MessageId, options: SubagentResumeOptions): Promise<boolean>;\n    async deliverContinuable(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentDeliveryOptions): Promise<MessageId>;\n    async withContinuableAncestors<T>(root: Agent, ancestors: readonly SessionId[], options: SubagentResumeOptions, operation: (parent: Agent) => Promise<T>): Promise<T>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    @Remote(\'list\')\n    async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>;\n    @Remote(\'prompt\')\n    async prompt(request: Suba /* …truncated — full shape in source */',
+   },
+   {
+     name: 'SubagentSendMessageOptions',
+@@ -5780,7 +5870,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'SubagentStartRequest',
+-    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n}',
++    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n    readonly personaInterpolate?: boolean;\n}',
+   },
+   {
+     name: 'SubagentStopReason',
+@@ -6014,6 +6104,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'TokenMeasurementBaseline',
+     declaration: 'export type TokenMeasurementBaseline = {\n    readonly kind: \'none\';\n    readonly tokens: 0;\n} | {\n    readonly kind: \'estimated\';\n    readonly tokens: number;\n} | {\n    readonly kind: \'usage\';\n    readonly tokens: number;\n    readonly usage: Readonly<TokenUsage>;\n};',
+   },
++  {
++    name: 'TokenRequestEstimateInput',
++    declaration: 'export interface TokenRequestEstimateInput {\n    readonly tools?: readonly ToolSchema[];\n    readonly messages: readonly Message[];\n    readonly route?: {\n        readonly provider: string;\n        readonly model: string;\n    };\n}',
++  },
+   {
+     name: 'TokenSurfaceNode',
+     declaration: 'export interface TokenSurfaceNode {\n    readonly seq: SessionSeq;\n    readonly tokens: number;\n    readonly heuristicTokens: number;\n}',
+diff --git a/packages/fs/fs-local/README.i18n.yaml b/packages/fs/fs-local/README.i18n.yaml
+index 421f62d77686032e5e55e39f78b26be632f8ee94..d9f2ccab9613e9d6531da00ea3fb96284fa0d7cd 100644
+--- a/packages/fs/fs-local/README.i18n.yaml
++++ b/packages/fs/fs-local/README.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write packages/fs/fs-local/README.md
+-README.md: 427cf02631f9d56246851f7fc67c92dd662c2a62
+-README.zh.md: 7009d9dd853b5443780978036792f10ebc9706b5
++README.md: 52662ff18f4ad7504197b62b9b3f708edcc75135
++README.zh.md: d94e986907d8116ca50eaed7bd751d1e28144654
+diff --git a/packages/fs/fs-local/README.md b/packages/fs/fs-local/README.md
+index 427cf02631f9d56246851f7fc67c92dd662c2a62..52662ff18f4ad7504197b62b9b3f708edcc75135 100644
+--- a/packages/fs/fs-local/README.md
++++ b/packages/fs/fs-local/README.md
+@@ -92,6 +92,8 @@ Each edit probes, verifies the version guard before literal matching (so stale e
+ 
+ Raw I/O is Cordis-free and independently unit-tested in `src/fsio.ts`; `src/index.ts` stays thin wiring. `config.cwd` is a resolution default only — containment is the job of `fs-sandbox` or a `tools/execute` permission plugin. Cancellation is a best-effort `AbortSignal` checked before and after each asynchronous probe.
+ 
++The protected `beforePublish()` hook runs after private staging and before atomic publication under the target mutation lock. Rejection preserves the original file and cleans staging. `createParents: false` lets a deployment own and journal directory creation. `prepareTextEdit()` returns the same stored text and replacement count as the provider edit algorithm, including BOM decoding and restored line endings.
++
+ </details>
+ 
+ -----
+diff --git a/packages/fs/fs-local/README.zh.md b/packages/fs/fs-local/README.zh.md
+index 7009d9dd853b5443780978036792f10ebc9706b5..d94e986907d8116ca50eaed7bd751d1e28144654 100644
+--- a/packages/fs/fs-local/README.zh.md
++++ b/packages/fs/fs-local/README.zh.md
+@@ -92,6 +92,8 @@ kind: "package-reference"
+ 
+ 原始 I/O 不依赖 Cordis，在 `src/fsio.ts` 中独立单元测试；`src/index.ts` 保持为轻量接线。`config.cwd` 只是解析默认值——约束是 `fs-sandbox` 或 `tools/execute` 权限插件的工作。取消是尽力而为的 `AbortSignal`，在每次异步探测前后检查。
+ 
++受保护的 `beforePublish()` 钩子在目标修改锁内、私有暂存完成之后、原子发布之前运行。拒绝时保留原文件并清理暂存。`createParents: false` 让部署侧拥有并记录目录创建。`prepareTextEdit()` 返回与提供方编辑算法相同的存储文本和替换次数，包括 BOM 解码与换行符恢复。
++
+ </details>
+ 
+ -----
 diff --git a/packages/fs/fs-local/src/fsio.ts b/packages/fs/fs-local/src/fsio.ts
+index e07567e0e3c2b3939896ccbfaf253701475bfa91..6d03333710344ea02386ecdca5197dc96f4a9a98 100644
 --- a/packages/fs/fs-local/src/fsio.ts
 +++ b/packages/fs/fs-local/src/fsio.ts
-@@ -537,10 +537,12 @@
+@@ -567,6 +567,8 @@ async function throwGuardedCreateFailure(
+  * @param createIfAbsent - when provided, publish with a hard-link no-replace
+  * primitive; a concurrent creator's file is preserved and this write is
+  * rejected with `FS_NOT_OBSERVED` using the supplied display path.
++ * @param beforePublish - async deployment guard after staging; rejection preserves the target.
++ * @param createParents - permit recursive parent creation; false delegates ownership to the caller.
+  */
+ export async function writeFileAtomic(
+   absolutePath: string,
+@@ -575,10 +577,12 @@ export async function writeFileAtomic(
    signal: AbortSignal | undefined,
    internals: FsIoInternals = {},
    createIfAbsent?: { displayPath: string },
@@ -15,7 +587,7 @@ diff --git a/packages/fs/fs-local/src/fsio.ts b/packages/fs/fs-local/src/fsio.ts
  
    throwIfAborted(signal, 'write')
    const stagingDirName = internals.tempDirName?.(absolutePath) ?? `.${basename(absolutePath)}.${process.pid}.${randomUUID()}.tmpdir`
-@@ -574,6 +576,8 @@
+@@ -612,6 +616,8 @@ export async function writeFileAtomic(
      await handle.close()
      handle = undefined
  
@@ -24,12 +596,18 @@ diff --git a/packages/fs/fs-local/src/fsio.ts b/packages/fs/fs-local/src/fsio.ts
      throwIfAborted(signal, 'write')
      if (createIfAbsent !== undefined) {
        try {
-@@ -779,3 +783,16 @@
+@@ -817,3 +823,22 @@ export function applyLiteralEdit(
  }
  
  export { normalizeLineEndings, restoreLineEndings }
 +
-+/** Prepare the exact stored bytes and match count using the provider's own edit algorithm. */
++/**
++ * Prepare the exact stored bytes and match count using the provider's own edit algorithm.
++ * @param raw - original UTF-8 text, including any BOM and stored line endings.
++ * @param edit - literal replacement and multiplicity policy.
++ * @param displayPath - caller-facing path used in edit errors.
++ * @returns exact stored text and replacement count; binary or invalid matches throw.
++ */
 +export function prepareTextEdit(
 +  raw: string,
 +  edit: { oldString: string; newString: string; replaceAll: boolean },
@@ -42,9 +620,10 @@ diff --git a/packages/fs/fs-local/src/fsio.ts b/packages/fs/fs-local/src/fsio.ts
 +  return { content: restoreLineEndings(result.content, detectLineEndings(decoded)), replacements: result.replacements }
 +}
 diff --git a/packages/fs/fs-local/src/index.ts b/packages/fs/fs-local/src/index.ts
+index 22fc6310fb22d07273e3f6ef50bdcf7c78b1e382..18c55741d9d669fae76a03938afb57f97ef81cae 100644
 --- a/packages/fs/fs-local/src/index.ts
 +++ b/packages/fs/fs-local/src/index.ts
-@@ -36,6 +36,7 @@
+@@ -37,6 +37,7 @@ import {
    writeFileAtomic,
  } from './fsio.ts'
  import type { FsIoInternals } from './fsio.ts'
@@ -52,7 +631,7 @@ diff --git a/packages/fs/fs-local/src/index.ts b/packages/fs/fs-local/src/index.
  
  /** Configuration for the local filesystem backend. */
  export interface Config {
-@@ -46,6 +47,8 @@
+@@ -47,6 +48,8 @@ export interface Config {
     * runtime's safe allocation/decode maximum. Defaults to 10 MiB.
     */
    diffBasisMaxBytes?: number
@@ -61,7 +640,7 @@ diff --git a/packages/fs/fs-local/src/index.ts b/packages/fs/fs-local/src/index.
  }
  
  type ResolvedConfig = Required<Config>
-@@ -65,6 +68,7 @@
+@@ -66,6 +69,7 @@ export class LocalFileSystem extends FileSystem {
    static Config: z<Config> = z.object({
      cwd: z.string().default(process.cwd()),
      diffBasisMaxBytes: z.number().default(DEFAULT_DIFF_BASIS_MAX_BYTES),
@@ -69,19 +648,19 @@ diff --git a/packages/fs/fs-local/src/index.ts b/packages/fs/fs-local/src/index.
    })
  
    /** Validated config (schemastery applied the defaults before construction). */
-@@ -165,6 +169,11 @@
-       ...(entry.version !== undefined ? { version: entry.version } : {}),
-       ...(entry.size !== undefined ? { size: entry.size } : {}),
+@@ -172,6 +176,11 @@ export class LocalFileSystem extends FileSystem {
      }))
-+  }
-+
+   }
+ 
 +  /** Deployment policy guard after staging, immediately before atomic publication. */
 +  protected beforePublish(_target: FsTarget, _signal?: AbortSignal): Promise<void> {
 +    return Promise.resolve()
-   }
- 
++  }
++
    override async writeText(
-@@ -208,6 +217,8 @@
+     target: FsTarget,
+     content: string,
+@@ -213,6 +222,8 @@ export class LocalFileSystem extends FileSystem {
          signal,
          this.internals,
          expected?.kind === 'createIfAbsent' ? { displayPath: target.displayPath } : undefined,
@@ -90,17 +669,21 @@ diff --git a/packages/fs/fs-local/src/index.ts b/packages/fs/fs-local/src/index.
        )
        const after = await probe(target.targetKey)
        return {
-@@ -245,7 +256,7 @@
+@@ -250,7 +261,10 @@ export class LocalFileSystem extends FileSystem {
        const original = await readForEdit(target.targetKey, target.displayPath, signal)
        const edited = applyLiteralEdit(original.content, edit.oldString, edit.newString, edit.replaceAll, target.displayPath)
        const content = restoreLineEndings(edited.content, original.lineEndings)
 -      await writeFileAtomic(target.targetKey, content, existing.mode, signal, this.internals)
-+      await writeFileAtomic(target.targetKey, content, existing.mode, signal, this.internals, undefined, () => this.beforePublish(target, signal), this.config.createParents)
++      await writeFileAtomic(
++        target.targetKey, content, existing.mode, signal, this.internals, undefined,
++        () => this.beforePublish(target, signal), this.config.createParents,
++      )
  
        const after = await probe(target.targetKey)
        return {
 diff --git a/packages/fs/fs-local/tests/product-composition.spec.ts b/packages/fs/fs-local/tests/product-composition.spec.ts
 new file mode 100644
+index 0000000000000000000000000000000000000000..ca6df2ba883041eea98265edb0d1f7ec9b486ca9
 --- /dev/null
 +++ b/packages/fs/fs-local/tests/product-composition.spec.ts
 @@ -0,0 +1,45 @@
@@ -149,10 +732,55 @@ new file mode 100644
 +    expect(await readdir(root)).toEqual(['file.txt'])
 +  } finally { await ctx.fiber.dispose() }
 +})
+diff --git a/packages/fs/tool-fs/README.i18n.yaml b/packages/fs/tool-fs/README.i18n.yaml
+index 7b8246dbbeeedcc842e5ec0374264be3f44488ee..0894191bb580bffcb707ae0858e1df7a7529e06d 100644
+--- a/packages/fs/tool-fs/README.i18n.yaml
++++ b/packages/fs/tool-fs/README.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write packages/fs/tool-fs/README.md
+-README.md: 9d338a6227b7f02ef43fcbe97900b166cb722817
+-README.zh.md: 0c34f840ad449847a649df8abdadec01f772f37b
++README.md: d2117fce8b20e4a51bb99daa9cd272ebfefb18ac
++README.zh.md: 10a63d2d337c3c4542a4d6d8eb22ae4f43d6828e
+diff --git a/packages/fs/tool-fs/README.md b/packages/fs/tool-fs/README.md
+index 9d338a6227b7f02ef43fcbe97900b166cb722817..d2117fce8b20e4a51bb99daa9cd272ebfefb18ac 100644
+--- a/packages/fs/tool-fs/README.md
++++ b/packages/fs/tool-fs/README.md
+@@ -108,6 +108,8 @@ All four tools share one flow shape: resolve the path with the calling session's
+ 
+ `fs/observed` fires after the operation succeeded via a plain `ctx.emit`; a listener is contractually a synchronous, side-effect-only recorder, so async or fallible observation does not belong on this event. `read` opts into concurrent scheduling because its only mutation is the synchronous version recorder; recorder races fail closed when a later `write` or `edit` re-checks the version under its target lock, and both mutation tools remain exclusive.
+ 
++The public file-tool factories return stock definitions without registering them. A deployment can register those definitions inside its permission scope through `ctx.tools`, preserving stock parsing, output and presentation. Factory use does not install prompt guidance; the composing plugin owns that contribution.
++
+ </details>
+ 
+ -----
+diff --git a/packages/fs/tool-fs/README.zh.md b/packages/fs/tool-fs/README.zh.md
+index 0c34f840ad449847a649df8abdadec01f772f37b..10a63d2d337c3c4542a4d6d8eb22ae4f43d6828e 100644
+--- a/packages/fs/tool-fs/README.zh.md
++++ b/packages/fs/tool-fs/README.zh.md
+@@ -108,6 +108,8 @@ kind: "package-reference"
+ 
+ `fs/observed` 在操作成功之后通过普通 `ctx.emit` 发出；监听器的约定是同步且只有副作用的记录器，因此异步或可能失败的观察不属于该事件。`read` 允许并发调度，因为它唯一改变状态的操作是同步记录版本；稍后的 `write` 或 `edit` 会在目标锁内重新检查版本，因此记录器竞态会安全地失败，两个变更工具仍保持互斥。
+ 
++公开文件工具工厂返回原生定义，不执行注册。部署侧可以在权限作用域内通过 `ctx.tools` 注册这些定义，保留原生解析、输出和展示。使用工厂不会安装提示词说明；该贡献项由组合插件拥有。
++
+ </details>
+ 
+ -----
 diff --git a/packages/fs/tool-fs/src/edit.ts b/packages/fs/tool-fs/src/edit.ts
+index 34114283931dc2a3f4218246909579967134491d..60f7b585d73a41273cd219912fdbad0fbc159364 100644
 --- a/packages/fs/tool-fs/src/edit.ts
 +++ b/packages/fs/tool-fs/src/edit.ts
-@@ -12,7 +12,7 @@
+@@ -7,12 +7,13 @@
+ 
+ import type { Context } from '@deepseek-ai/cordis'
+ import { defineTool } from '@deepseek-ai/dsh-tools'
++import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+ import type { DiffCallView, DiffResultView, ToolResult } from '@deepseek-ai/dsh-tools'
+ import type {} from '@deepseek-ai/dsh-fs'
  import { computeHunkDiffs, diffsFromMeta } from './diff.ts'
  import { remediateFsError } from './error.ts'
  import { sessionResolveOptions } from './session-cwd.ts'
@@ -161,21 +789,26 @@ diff --git a/packages/fs/tool-fs/src/edit.ts b/packages/fs/tool-fs/src/edit.ts
  
  /** Validated `edit` arguments after defaulting. */
  interface EditInput {
-@@ -79,7 +79,12 @@
-     text: 'Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. Read the file first (the default fs-observation-policy requires it), unless you just created or edited it in this session.',
+@@ -81,7 +82,17 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void
+       : 'Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. Read the file first (the default fs-observation-policy requires it), unless you just created or edited it in this session.',
    })
  
 -  ctx.tools.register(defineTool({
 +  ctx.tools.register(createEditTool(ctx, sandbox))
 +}
 +
-+/** Create the stock definition for a deployment-owned registration/permission bridge. */
-+export function createEditTool(ctx: Context, sandbox = new FsSandboxController(ctx)) {
++/**
++ * Create the stock definition for a deployment-owned registration/permission bridge.
++ * @param ctx - execution context owning the filesystem and tool services.
++ * @param sandbox - policy resolver shared by the composing registration.
++ * @returns stock definition for registration through the single tool pipeline.
++ */
++export function createEditTool(ctx: Context, sandbox = new FsSandboxController(ctx)): ToolDefinition {
 +  return defineTool({
      name: 'edit',
      description: 'Edit an existing UTF-8 text file by replacing literal text.',
      parameters: {
-@@ -162,5 +167,5 @@
+@@ -164,5 +175,5 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void
        if (diffs === undefined) return undefined
        return { card: 'diff', title: `Edit ${args.file_path}`, diffs }
      },
@@ -183,9 +816,10 @@ diff --git a/packages/fs/tool-fs/src/edit.ts b/packages/fs/tool-fs/src/edit.ts
 +  })
  }
 diff --git a/packages/fs/tool-fs/src/index.ts b/packages/fs/tool-fs/src/index.ts
+index cfbec13cda610efd9ebb1cb6ea8a7ea2c5821d63..ff5ed82517584d5358600a28062c6f2cb38d6858 100644
 --- a/packages/fs/tool-fs/src/index.ts
 +++ b/packages/fs/tool-fs/src/index.ts
-@@ -77,3 +77,10 @@
+@@ -77,3 +77,10 @@ export function apply(ctx: Context, config: Config): void {
    applyWriteTool(ctx, sandbox)
    applyEditTool(ctx, sandbox)
  }
@@ -197,9 +831,18 @@ diff --git a/packages/fs/tool-fs/src/index.ts b/packages/fs/tool-fs/src/index.ts
 +export { createWriteTool } from './write.ts'
 +export { createEditTool } from './edit.ts'
 diff --git a/packages/fs/tool-fs/src/read-image.ts b/packages/fs/tool-fs/src/read-image.ts
+index 3115473515e3ad7320b0d11be3f7bb0a4ca75ea6..a40f932b2565a76da7b39252e5a5a78bcbe0a067 100644
 --- a/packages/fs/tool-fs/src/read-image.ts
 +++ b/packages/fs/tool-fs/src/read-image.ts
-@@ -206,7 +206,12 @@
+@@ -17,6 +17,7 @@ import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
+ import type { AttachmentStore, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
+ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+ import { defineTool } from '@deepseek-ai/dsh-tools'
++import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+ import type { GenericCallView, ToolExecution } from '@deepseek-ai/dsh-tools'
+ import type {} from '@deepseek-ai/dsh-fs'
+ import { resolveRegularReadTarget } from './read-target.ts'
+@@ -206,7 +207,16 @@ function imageReadContent(value: ImageReadValue): ContentBlock[] {
   *   the optional `attachments`/`llm` services.
   */
  export function applyReadImageTool(ctx: Context): void {
@@ -207,49 +850,66 @@ diff --git a/packages/fs/tool-fs/src/read-image.ts b/packages/fs/tool-fs/src/rea
 +  ctx.tools.register(createReadImageTool(ctx))
 +}
 +
-+/** Create the stock definition for a deployment-owned registration/permission bridge. */
-+export function createReadImageTool(ctx: Context) {
++/**
++ * Create the stock definition for a deployment-owned registration/permission bridge.
++ * @param ctx - execution context owning the filesystem and tool services.
++ * @returns stock definition for registration through the single tool pipeline.
++ */
++export function createReadImageTool(ctx: Context): ToolDefinition {
 +  return defineTool({
      name: 'read_image',
      description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
        + 'A path without a file extension is accepted; the format is detected from the file content, so normalized attachment paths can be passed directly without copying or renaming. '
-@@ -338,5 +343,5 @@
+@@ -347,5 +357,5 @@ export function applyReadImageTool(ctx: Context): void {
          locations: [{ path: args.file_path }],
        }
      },
 -  }))
--}
 +  })
-+}
+ }
 diff --git a/packages/fs/tool-fs/src/read.ts b/packages/fs/tool-fs/src/read.ts
+index 96a38300a9e02e16778f3a54719dacc899b27d4e..1ab17c32705b2c55093efecc37d3c80d312839a3 100644
 --- a/packages/fs/tool-fs/src/read.ts
 +++ b/packages/fs/tool-fs/src/read.ts
-@@ -72,7 +72,12 @@
-     text: 'Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. Use offset and limit to continue reading large files.',
+@@ -6,6 +6,7 @@
+ 
+ import type { Context } from '@deepseek-ai/cordis'
+ import { defineTool } from '@deepseek-ai/dsh-tools'
++import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+ import type { GenericCallView, ReadResultView, ToolResult } from '@deepseek-ai/dsh-tools'
+ import type {} from '@deepseek-ai/dsh-fs'
+ import { buildWindow, formatReadOutput, langFromPath, readMetaFromMeta } from './read-render.ts'
+@@ -74,7 +75,17 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
+       : 'Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. Use offset and limit to continue reading large files.',
    })
  
 -  ctx.tools.register(defineTool({
 +  ctx.tools.register(createReadTool(ctx, caps))
 +}
 +
-+/** Create the stock definition for a deployment-owned registration/permission bridge. */
-+export function createReadTool(ctx: Context, caps: ReadToolCaps) {
++/**
++ * Create the stock definition for a deployment-owned registration/permission bridge.
++ * @param ctx - execution context owning the filesystem and tool services.
++ * @param caps - resolved line, byte and streaming limits.
++ * @returns stock definition for registration through the single tool pipeline.
++ */
++export function createReadTool(ctx: Context, caps: ReadToolCaps): ToolDefinition {
 +  return defineTool({
      name: 'read',
      description: 'Read a UTF-8 text file and return line-numbered content.',
      parameters: {
-@@ -204,5 +209,5 @@
+@@ -206,5 +217,5 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
          locations: [{ path: args.file_path, line: offset ?? 1 }],
        }
      },
 -  }))
--}
 +  })
-+}
+ }
 diff --git a/packages/fs/tool-fs/src/sandbox.ts b/packages/fs/tool-fs/src/sandbox.ts
+index 695a9fdfc98aefedc63cd1bdc044b223a1765094..56ec164474161121447a629fb0cc427945593a40 100644
 --- a/packages/fs/tool-fs/src/sandbox.ts
 +++ b/packages/fs/tool-fs/src/sandbox.ts
-@@ -122,7 +122,7 @@
+@@ -122,10 +122,10 @@ export class FsSandboxController {
     * @returns the error to throw — the marker `FsError` for a sandbox denial, else the original.
     */
    mapError(error: unknown, policy: SandboxExecutionPolicy | undefined): unknown {
@@ -257,11 +917,23 @@ diff --git a/packages/fs/tool-fs/src/sandbox.ts b/packages/fs/tool-fs/src/sandbo
 +    if (!(error instanceof FsError) || error.code !== 'FS_SANDBOX_DENIED' || policy === undefined) return error
      // A FS_SANDBOX_DENIED only arises under a confining backend, whose tool
      // path always resolves a policy before mutation.
-     const mode = (policy as SandboxExecutionPolicy).mode
+-    const mode = (policy as SandboxExecutionPolicy).mode
++    const mode = (policy).mode
+     return new FsError(`${sandboxDenialMarker(mode)}\n${escalationHintMarker('operation')}`, 'FS_SANDBOX_DENIED', { cause: error })
+   }
+ }
 diff --git a/packages/fs/tool-fs/src/write.ts b/packages/fs/tool-fs/src/write.ts
+index 80119d50378f8e0b4ce186abdbb595b12a57b93d..66adb1b353d4429e6a4882729fbf1d3efc6f192f 100644
 --- a/packages/fs/tool-fs/src/write.ts
 +++ b/packages/fs/tool-fs/src/write.ts
-@@ -13,7 +13,7 @@
+@@ -7,13 +7,14 @@
+ 
+ import type { Context } from '@deepseek-ai/cordis'
+ import { defineTool } from '@deepseek-ai/dsh-tools'
++import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+ import type { DiffCallView, DiffResultView, ToolResult } from '@deepseek-ai/dsh-tools'
+ import type { FsWriteOutcome } from '@deepseek-ai/dsh-fs'
+ import type {} from '@deepseek-ai/dsh-fs'
  import { computeHunkDiffs, diffsFromMeta } from './diff.ts'
  import { remediateFsError } from './error.ts'
  import { sessionResolveOptions } from './session-cwd.ts'
@@ -270,24 +942,113 @@ diff --git a/packages/fs/tool-fs/src/write.ts b/packages/fs/tool-fs/src/write.ts
  
  /**
   * Validate value constraints the schema DSL can't express: only a non-blank
-@@ -65,7 +65,12 @@
-     text: 'Use the write tool to create files or completely replace file contents. Existing files are overwritten, so read an existing file first (the default fs-observation-policy requires it) and prefer edit for targeted changes.',
+@@ -69,7 +70,17 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
+         + '.',
    })
  
 -  ctx.tools.register(defineTool({
 +  ctx.tools.register(createWriteTool(ctx, sandbox))
 +}
 +
-+/** Create the stock definition for a deployment-owned registration/permission bridge. */
-+export function createWriteTool(ctx: Context, sandbox = new FsSandboxController(ctx)) {
++/**
++ * Create the stock definition for a deployment-owned registration/permission bridge.
++ * @param ctx - execution context owning the filesystem and tool services.
++ * @param sandbox - policy resolver shared by the composing registration.
++ * @returns stock definition for registration through the single tool pipeline.
++ */
++export function createWriteTool(ctx: Context, sandbox = new FsSandboxController(ctx)): ToolDefinition {
 +  return defineTool({
      name: 'write',
      description: 'Create or fully replace a UTF-8 text file.',
      parameters: {
-@@ -144,5 +149,5 @@
+@@ -148,5 +159,5 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
          ?? [{ path: args.file_path, oldText: null, newText: args.content }]
        return { card: 'diff', title: `Write ${args.file_path}`, diffs }
      },
 -  }))
 +  })
+ }
+diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
+index ed81fccc1fa23277bf13e09622cd3ebac792941e..7fd6893858d128cc943964e5a2ac43e6b6590cfc 100644
+--- a/scripts/gen-cordis-catalog.ts
++++ b/scripts/gen-cordis-catalog.ts
+@@ -196,6 +196,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
+   'api-session': 'session.md',
+   'approval': 'approval.md',
+   'commands': 'commands.md',
++  'compaction': 'compaction.md',
+   'cordis': 'extensions.md',
+   'authorization': 'credentials.md',
+   'credentials': 'credentials.md',
+@@ -307,6 +308,15 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
+   MessageFeedbackVersionConflict: 'feedback.md',
+   UserMessage: 'session.md',
+   ApiSessionAgentResult: 'session.md',
++  PreparedAssistantToolCall: 'core.md',
++  PreparedAssistantCommit: 'core.md',
++  CompactionTelemetry: 'compaction.md',
++  ContinuableSetupContribution: 'subagent.md',
++  SubagentResumeOptions: 'subagent.md',
++  SubagentDeliveryOptions: 'subagent.md',
++  TokenRequestEstimateInput: 'token-meter.md',
++  AgentPublicationGuard: 'core.md',
++  SessionPublicationGuard: 'session.md',
+   PreStepDecision: 'core.md',
+   PreStepContext: 'core.md',
+   RequestErrorAction: 'core.md',
+diff --git a/scripts/type-equiv.manifest.json b/scripts/type-equiv.manifest.json
+index e7436d98be33b861ff4ab29f6857266bc03715e3..6ff1a3e18b900d5e88d8a35c13a86d8b1400cc82 100644
+--- a/scripts/type-equiv.manifest.json
++++ b/scripts/type-equiv.manifest.json
+@@ -2105,6 +2105,51 @@
+       "doc": "packages/client/ui-conversation/README.md",
+       "symbol": "ComposerChainProps",
+       "source": "packages/client/ui-conversation/src/client/contract/slots.ts"
++    },
++    {
++      "doc": "docs/subsystems/core.md",
++      "symbol": "PreparedAssistantToolCall",
++      "source": "packages/core/agent/src/runtime-types.ts"
++    },
++    {
++      "doc": "docs/subsystems/core.md",
++      "symbol": "PreparedAssistantCommit",
++      "source": "packages/core/agent/src/runtime-types.ts"
++    },
++    {
++      "doc": "docs/subsystems/compaction.md",
++      "symbol": "CompactionTelemetry",
++      "source": "packages/compaction/compaction-basic/src/types.ts"
++    },
++    {
++      "doc": "docs/subsystems/subagent.md",
++      "symbol": "ContinuableSetupContribution",
++      "source": "packages/subagent/subagent/src/activation-setup-registry.ts"
++    },
++    {
++      "doc": "docs/subsystems/subagent.md",
++      "symbol": "SubagentResumeOptions",
++      "source": "packages/subagent/subagent/src/types.ts"
++    },
++    {
++      "doc": "docs/subsystems/subagent.md",
++      "symbol": "SubagentDeliveryOptions",
++      "source": "packages/subagent/subagent/src/types.ts"
++    },
++    {
++      "doc": "docs/subsystems/token-meter.md",
++      "symbol": "TokenRequestEstimateInput",
++      "source": "packages/llm/token-meter/src/types.ts"
++    },
++    {
++      "doc": "docs/subsystems/core.md",
++      "symbol": "AgentPublicationGuard",
++      "source": "packages/core/agent/src/index.ts"
++    },
++    {
++      "doc": "docs/subsystems/session.md",
++      "symbol": "SessionPublicationGuard",
++      "source": "packages/core/session/src/index.ts"
+     }
+   ]
  }

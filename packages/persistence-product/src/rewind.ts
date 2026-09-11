@@ -17,6 +17,13 @@ export interface ProductRewindReceiptEventData {
   readonly token: string;
 }
 
+declare module "@deepseek-ai/dsh-session/types" {
+  interface SessionEventMap {
+    "myagents/session/rewind": ProductRewindReceiptEventData;
+  }
+}
+
+
 export type ProductRewindPhase =
   | "prepared"
   | "committing"
@@ -73,15 +80,17 @@ export const productTranscriptPostcondition = (events: readonly SessionEvent[]):
   return digest.digest("hex");
 };
 
-export const createProductRewindReceiptEvent = (
-  sequence: number,
-  time: number,
-  data: ProductRewindReceiptEventData,
-): SessionEvent => {
-  if (!Number.isSafeInteger(sequence) || sequence < 0
-    || !Number.isSafeInteger(time) || time < 0) {
-    throw new TypeError("rewind receipt event coordinates are invalid");
+export const validateProductRewindReceipt = (value: unknown): ProductRewindReceiptEventData => {
+  const keys = ["boundaryId", "clientMutationId", "sourceGenerationId", "targetGenerationId", "token",
+    "sourceTranscriptPostcondition", "targetTranscriptPostcondition"];
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || Reflect.ownKeys(value).length !== keys.length) throw new TypeError("rewind receipt shape is invalid");
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)
+      || typeof descriptor.value !== "string") throw new TypeError("rewind receipt shape is invalid");
   }
+  const data = value as ProductRewindReceiptEventData;
   const values = [
     data.boundaryId,
     data.clientMutationId,
@@ -98,8 +107,20 @@ export const createProductRewindReceiptEvent = (
       .every((value) => /^[a-f0-9]{64}$/u.test(value))) {
     throw new TypeError("rewind receipt event identity is invalid");
   }
+  return Object.freeze({ ...data });
+};
+
+export const createProductRewindReceiptEvent = (
+  sequence: number,
+  time: number,
+  data: ProductRewindReceiptEventData,
+): SessionEvent => {
+  if (!Number.isSafeInteger(sequence) || sequence < 0
+    || !Number.isSafeInteger(time) || time < 0) {
+    throw new TypeError("rewind receipt event coordinates are invalid");
+  }
   return Object.freeze({
-    data: Object.freeze({ ...data }),
+    data: validateProductRewindReceipt(data),
     seq: sequence,
     time,
     type: PRODUCT_REWIND_EVENT_TYPES[0],

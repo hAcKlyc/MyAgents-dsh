@@ -43,6 +43,8 @@ const faultMatrixFiles = Object.freeze([
   "tests/product-host-tools.unit.test.ts",
   "tests/product-host-hooks.unit.test.ts",
   "tests/product-persistence.unit.test.ts",
+  "tests/product-session-handle.unit.test.ts",
+  "tests/product-session-ownership.unit.test.ts",
   "tests/product-checkpoint.unit.test.ts",
   "tests/product-process-tools.unit.test.ts",
   "tests/product-work-tools.unit.test.ts",
@@ -56,6 +58,8 @@ const soakFiles = Object.freeze([
   "tests/host-ports.unit.test.ts",
   "tests/product-component-runtime.unit.test.ts",
   "tests/product-persistence.unit.test.ts",
+  "tests/product-session-handle.unit.test.ts",
+  "tests/product-session-ownership.unit.test.ts",
   "tests/product-checkpoint.unit.test.ts",
   "tests/runtime-process-lifecycle.unit.test.ts",
   "tests/dynamic-e2e.unit.test.ts",
@@ -178,6 +182,7 @@ export const createGatePlan = (outputRoot: string, dshSource?: string): readonly
       : ["exec", "--", "tsx", "scripts/snapshot-dsh-baseline.ts", "--check", "--check-source", dshSource], 180_000),
     npm("dsh-seams-source", dshSource === undefined ? ["run", "check:dsh-seams-source"]
       : ["exec", "--", "tsx", "scripts/verify-dsh-seams.ts", "--check-source", dshSource, "--compile-test"], 300_000),
+    npm("session-ownership-native", ["run", "test:session-ownership-native"], 120_000),
     vitest("fault-matrix", faultMatrixFiles, 300_000),
   ];
   for (let iteration = 1; iteration <= BATCH_1_SOAK_ITERATIONS; iteration += 1) {

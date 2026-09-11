@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { Context } from "@deepseek-ai/cordis";
-import type { ContentBlock } from "@deepseek-ai/dsh-llm";
+import { assistantStreamChunks, lastAssistantStreamChunk, type ContentBlock, type StreamChunk } from "@deepseek-ai/dsh-llm";
+import type { Agent, AssistantStreamFrame } from "@deepseek-ai/dsh-agent";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import {
   durableSessionEventId,
@@ -124,10 +125,10 @@ type ProviderToolResultBlock = Readonly<{
 }>;
 
 const providerToolBlock = (
-  source: Extract<SessionEvent, { type: "assistant/chunk" }>,
+  chunk: StreamChunk,
 ): ProviderToolCallBlock | ProviderToolResultBlock | undefined => {
-  if (source.data.chunk.type !== "block-end") return undefined;
-  const block = source.data.chunk.block as unknown;
+  if (chunk.type !== "block-end") return undefined;
+  const block = chunk.block as unknown;
   if (block === null || typeof block !== "object" || Array.isArray(block)) return undefined;
   const record = block as Readonly<Record<string, unknown>>;
   if (record.type === "provider-tool-call"
@@ -150,7 +151,7 @@ const providerToolBlock = (
 
 const providerRouteForChunk = (
   events: readonly SessionEvent[],
-  source: Extract<SessionEvent, { type: "assistant/chunk" }>,
+  source: Extract<SessionEvent, { type: "assistant/message" | "assistant/attempt" }>,
 ): string => {
   for (let sequence = source.seq - 1; sequence >= 0; sequence -= 1) {
     const event = events[sequence];
@@ -164,19 +165,21 @@ const providerRouteForChunk = (
 
 const providerToolCallForResult = (
   events: readonly SessionEvent[],
-  source: Extract<SessionEvent, { type: "assistant/chunk" }>,
+  source: Extract<SessionEvent, { type: "assistant/message" | "assistant/attempt" }>,
+  chunkIndex: number,
   toolCallId: string,
 ): Readonly<{ name: string; providerRouteId: string }> => {
-  for (let sequence = source.seq - 1; sequence >= 0; sequence -= 1) {
+  for (let sequence: number = source.seq; sequence >= 0; sequence -= 1) {
     const event = events[sequence];
     if (event?.type === "turn/start" && event.data.turn === source.data.turn) break;
-    if (event?.type !== "assistant/chunk" || event.data.turn !== source.data.turn) continue;
-    const block = providerToolBlock(event);
-    if (block?.type === "provider-tool-call" && block.id === toolCallId) {
-      return Object.freeze({
-        name: protocolToolName(block.name),
-        providerRouteId: providerRouteForChunk(events, event),
-      });
+    if ((event?.type !== "assistant/message" && event?.type !== "assistant/attempt") || event.data.turn !== source.data.turn) continue;
+    const chunks = assistantStreamChunks(event.data.stream, "block-end");
+    for (let index = (sequence === source.seq ? chunkIndex : chunks.length) - 1; index >= 0; index -= 1) {
+      const timed = chunks[index];
+      const block = timed === undefined ? undefined : providerToolBlock(timed);
+      if (block?.type === "provider-tool-call" && block.id === toolCallId) {
+        return Object.freeze({ name: protocolToolName(block.name), providerRouteId: providerRouteForChunk(events, event) });
+      }
     }
   }
   throw new TypeError("Provider tool result lacks its correlated call");
@@ -462,10 +465,10 @@ const contextProjection = (
     || !isNonNegativeSafeInteger(contextWindow) || contextWindow === 0) return undefined;
   for (let sequence = Math.min(throughSequence, session.snapshotEvents().length - 1); sequence >= 0; sequence -= 1) {
     const sample = session.snapshotEvents()[sequence];
-    const hasUsage = sample?.type === "assistant/message"
-      ? sample.data.usage !== undefined
-      : sample?.type === "assistant/chunk" && sample.data.chunk.type === "usage";
-    if (!hasUsage || (sample?.type !== "assistant/message" && sample?.type !== "assistant/chunk")) continue;
+    if (sample?.type !== "assistant/message" && sample?.type !== "assistant/attempt") continue;
+    const hasUsage = (sample.type === "assistant/message" && sample.data.usage !== undefined)
+      || lastAssistantStreamChunk(sample.data.stream, "usage") !== undefined;
+    if (!hasUsage) continue;
     const operation = operationForTurn(
       session,
       sample.data.turn,
@@ -575,6 +578,64 @@ const receiptBoundaryEvents = (events: readonly SessionEvent[], source: SessionE
   return events.slice(0, end);
 };
 
+const projectProviderChunk = (
+  events: readonly SessionEvent[],
+  source: Extract<SessionEvent, { type: "assistant/message" | "assistant/attempt" }>,
+  operation: ProductOperationRecord,
+  chunk: StreamChunk,
+  chunkIndex: number,
+  itemId: string,
+): readonly RuntimeEventProjection[] => {
+      const providerBlock = providerToolBlock(chunk);
+      if (providerBlock?.type === "provider-tool-call") {
+        const providerToolCallId = protocolProviderIdentity(providerBlock.id, "provider-call");
+        return Object.freeze([Object.freeze({
+          turnId: operation.productTurnId,
+          itemId,
+          toolCallId: providerToolCallId,
+          event: Object.freeze({
+            kind: "provider_tool",
+            phase: "start",
+            providerRouteId: providerRouteForChunk(events, source),
+            providerToolCallId,
+            providerBlockType: protocolProviderIdentity(providerBlock.providerType, "provider-block"),
+            name: protocolToolName(providerBlock.name),
+            input: boundedProviderInput(providerBlock.input),
+          }),
+        })]);
+      }
+      if (providerBlock?.type === "provider-tool-result") {
+        const providerToolCallId = protocolProviderIdentity(providerBlock.toolCallId, "provider-call");
+        const providerRouteId = providerRouteForChunk(events, source);
+        const correlatedCall = providerToolCallForResult(events, source, chunkIndex, providerBlock.toolCallId);
+        if (correlatedCall.providerRouteId !== providerRouteId) {
+          throw new TypeError("Provider tool result route does not match its correlated call");
+        }
+        const failed = providerResultFailed(providerBlock);
+        const text = boundedTextBlock(providerResultText(providerBlock.content), MAX_TOOL_RESULT_CONTENT_BYTES)
+          ?? Object.freeze({ type: "text" as const, text: TOOL_RESULT_TRUNCATION });
+        return Object.freeze([Object.freeze({
+          turnId: operation.productTurnId,
+          itemId,
+          toolCallId: providerToolCallId,
+          event: Object.freeze({
+            kind: "provider_tool",
+            phase: "end",
+            providerRouteId,
+            providerToolCallId,
+            providerBlockType: protocolProviderIdentity(providerBlock.providerType, "provider-block"),
+            name: correlatedCall.name,
+            result: Object.freeze({
+              state: failed ? "failed" as const : "succeeded" as const,
+              isError: failed,
+              content: [text],
+            }),
+          }),
+        })]);
+      }
+  return Object.freeze([]);
+};
+
 export const projectSessionEvent = (
   session: Session,
   source: SessionEvent,
@@ -646,107 +707,21 @@ export const projectSessionEvent = (
         }),
       ]);
     }
-    case "assistant/chunk": {
-      const operation = operationForTurn(
-        session,
-        source.data.turn,
-        source.seq,
-        ownsRootContextMessage,
-      );
-      if (operation === undefined) return Object.freeze([]);
-      const boundary = operationTurnBoundary(events, operation, source.data.turn);
-      if (source.seq <= boundary.start.seq
-        || (boundary.end !== undefined && source.seq >= boundary.end.seq)) {
-        throw new TypeError("assistant chunk is outside its owned DSH turn boundary");
-      }
-      const itemId = durableSessionEventId(session.id, source.seq);
-      const providerBlock = providerToolBlock(source);
-      if (providerBlock?.type === "provider-tool-call") {
-        const providerToolCallId = protocolProviderIdentity(providerBlock.id, "provider-call");
-        return Object.freeze([Object.freeze({
-          turnId: operation.productTurnId,
-          itemId,
-          toolCallId: providerToolCallId,
-          event: Object.freeze({
-            kind: "provider_tool",
-            phase: "start",
-            providerRouteId: providerRouteForChunk(events, source),
-            providerToolCallId,
-            providerBlockType: protocolProviderIdentity(providerBlock.providerType, "provider-block"),
-            name: protocolToolName(providerBlock.name),
-            input: boundedProviderInput(providerBlock.input),
-          }),
-        })]);
-      }
-      if (providerBlock?.type === "provider-tool-result") {
-        const providerToolCallId = protocolProviderIdentity(providerBlock.toolCallId, "provider-call");
-        const providerRouteId = providerRouteForChunk(events, source);
-        const correlatedCall = providerToolCallForResult(events, source, providerBlock.toolCallId);
-        if (correlatedCall.providerRouteId !== providerRouteId) {
-          throw new TypeError("Provider tool result route does not match its correlated call");
-        }
-        const failed = providerResultFailed(providerBlock);
-        const text = boundedTextBlock(providerResultText(providerBlock.content), MAX_TOOL_RESULT_CONTENT_BYTES)
-          ?? Object.freeze({ type: "text" as const, text: TOOL_RESULT_TRUNCATION });
-        return Object.freeze([Object.freeze({
-          turnId: operation.productTurnId,
-          itemId,
-          toolCallId: providerToolCallId,
-          event: Object.freeze({
-            kind: "provider_tool",
-            phase: "end",
-            providerRouteId,
-            providerToolCallId,
-            providerBlockType: protocolProviderIdentity(providerBlock.providerType, "provider-block"),
-            name: correlatedCall.name,
-            result: Object.freeze({
-              state: failed ? "failed" as const : "succeeded" as const,
-              isError: failed,
-              content: [text],
-            }),
-          }),
-        })]);
-      }
-      if (source.data.chunk.type === "text-delta") {
-        return Object.freeze([Object.freeze({
-          turnId: operation.productTurnId,
-          itemId,
-          event: Object.freeze({ kind: "assistant_delta", delta: source.data.chunk.text }),
-        })]);
-      }
-      if (source.data.chunk.type === "reasoning-delta") {
-        return Object.freeze([Object.freeze({
-          turnId: operation.productTurnId,
-          itemId,
-          event: Object.freeze({ kind: "thinking_delta", delta: source.data.chunk.text }),
-        })]);
-      }
-      return Object.freeze([]);
-    }
+    case "assistant/attempt":
     case "assistant/message": {
-      const operation = operationForTurn(
-        session,
-        source.data.turn,
-        source.seq,
-        ownsRootContextMessage,
-      );
+      const operation = operationForTurn(session, source.data.turn, source.seq, ownsRootContextMessage);
       if (operation === undefined) return Object.freeze([]);
       const boundary = operationTurnBoundary(events, operation, source.data.turn);
-      if (source.seq <= boundary.start.seq
-        || (boundary.end !== undefined && source.seq >= boundary.end.seq)) {
-        throw new TypeError("assistant message is outside its owned DSH turn boundary");
+      if (source.seq <= boundary.start.seq || (boundary.end !== undefined && source.seq >= boundary.end.seq)) {
+        throw new TypeError("assistant settlement is outside its owned DSH turn boundary");
       }
       const eventId = durableSessionEventId(session.id, source.seq);
-      const projected: RuntimeEventProjection[] = [Object.freeze({
-        turnId: operation.productTurnId,
-        itemId: eventId,
-        event: Object.freeze({
-          kind: "message_event",
-          role: "assistant",
-          eventId,
-          messageId: source.data.message.id,
-        }),
-      })];
+      const projected = assistantStreamChunks(source.data.stream, "block-end").flatMap((chunk, index) =>
+        projectProviderChunk(events, source, operation, chunk, index, `${eventId}:block:${index}`));
+      if (source.type === "assistant/message") projected.push(Object.freeze({
+        turnId: operation.productTurnId, itemId: eventId,
+        event: Object.freeze({ kind: "message_event", role: "assistant", eventId, messageId: source.data.message.id }),
+      }));
       return Object.freeze(projected);
     }
     case "tool/call": {
@@ -895,8 +870,25 @@ export const projectSessionEvent = (
   }
 };
 
-const requiresDurabilityBarrier = (event: SessionEvent): boolean =>
-  event.type !== "assistant/chunk";
+interface LiveAttempt {
+  readonly attemptId: string;
+  readonly streamId: string;
+  readonly turn: number;
+  readonly step: number;
+  readonly productTurnId: string;
+  nextIndex: number;
+}
+
+interface PendingLiveProjection {
+  readonly afterSequence: number;
+  readonly projection: RuntimeEventProjection;
+  readonly emittedAt: string;
+  readonly committed: boolean;
+  readonly bytes: number;
+}
+
+const MAX_PENDING_LIVE_BYTES = 8 * 1_048_576;
+const MAX_PENDING_LIVE_FRAMES = 4_096;
 
 export class RuntimeEventProjector {
   readonly #config: RuntimeEventProjectorConfig;
@@ -904,6 +896,12 @@ export class RuntimeEventProjector {
   readonly #terminalReservations = new Map<string, TerminalNotificationReservation>();
   readonly #stopProjectionChanged: () => void;
   readonly #stopSessionEvent: () => void;
+  readonly #stopAssistantStream: () => void;
+  readonly #pendingLive: PendingLiveProjection[] = [];
+  #pendingLiveBytes = 0;
+  #liveAgent: Agent | undefined;
+  #liveRevision = 0;
+  #liveAttempt: LiveAttempt | undefined;
   #closed = false;
   #drainPromise: Promise<void> | undefined;
   #failure: ProtocolError | undefined;
@@ -937,6 +935,11 @@ export class RuntimeEventProjector {
       } catch (error) {
         this.#fail(error);
       }
+    });
+    this.#stopAssistantStream = config.context.on("agent/assistant-stream", ({ agent, frame }) => {
+      if (!this.#ownsSession(agent.session) || this.#config.productSession.snapshot().state !== "ready") return;
+      try { this.#observeAssistantStream(agent, frame); }
+      catch (error) { this.#fail(error); }
     });
     this.#stopSessionEvent = config.context.on("session/event", (session, event) => {
       if (!this.#ownsSession(session)) return;
@@ -1130,6 +1133,7 @@ export class RuntimeEventProjector {
     this.#stopped = true;
     this.#stopProjectionChanged();
     this.#stopSessionEvent();
+    this.#stopAssistantStream();
   }
 
   async close(): Promise<void> {
@@ -1153,6 +1157,87 @@ export class RuntimeEventProjector {
   #ownsSession(session: Session): boolean {
     const runtimeSessionId = this.#config.productSession.snapshot().runtimeSessionId;
     return runtimeSessionId !== undefined && runtimeSessionId === session.id;
+  }
+
+  #observeAssistantStream(agent: Agent, frame: AssistantStreamFrame): void {
+    if (this.#stopped || this.#closed || this.#failure !== undefined) return;
+    if (this.#config.productSession.requireAgent() !== agent || this.#sourceSession !== agent.session
+      || this.#nextSourceSequence === undefined) {
+      throw new TypeError("assistant stream does not belong to the attached primary Agent");
+    }
+    if (this.#liveAgent !== agent) {
+      if (this.#liveAttempt !== undefined || this.#pendingLive.length !== 0) {
+        throw new TypeError("assistant stream changed Agent lifecycle before settlement");
+      }
+      this.#liveAgent = agent;
+      this.#liveRevision = 0;
+    }
+    if (!Number.isSafeInteger(frame.revision) || frame.revision !== this.#liveRevision + 1) {
+      throw new TypeError("assistant stream frame revision is not contiguous");
+    }
+    this.#liveRevision = frame.revision;
+    const session = agent.session;
+    let event: RuntimeEvent | undefined;
+    let itemId: string;
+    let productTurnId: string;
+    let committed = false;
+    let time = Date.now();
+    if (frame.type === "start") {
+      if (this.#liveAttempt !== undefined) throw new TypeError("assistant attempts overlap");
+      const operation = operationForTurn(session, frame.turn, session.seq - 1,
+        (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId));
+      if (operation === undefined) throw new TypeError("assistant attempt lacks its Product operation owner");
+      const boundary = operationTurnBoundary(session.snapshotEvents(), operation, frame.turn);
+      if (boundary.end !== undefined) throw new TypeError("assistant attempt began after its turn ended");
+      const streamId = `stream-${randomUUID()}`;
+      this.#liveAttempt = { attemptId: frame.attemptId, streamId, turn: frame.turn, step: frame.step,
+        productTurnId: operation.productTurnId, nextIndex: 0 };
+      productTurnId = operation.productTurnId;
+      itemId = streamId;
+      event = Object.freeze({ kind: "assistant_stream", phase: "start", streamId });
+    } else {
+      const attempt = this.#liveAttempt;
+      if (attempt?.attemptId !== frame.attemptId
+        || !Number.isSafeInteger(frame.index) || frame.index !== attempt.nextIndex) {
+        throw new TypeError("assistant stream frame differs from its active attempt or chunk position");
+      }
+      const { streamId } = attempt;
+      productTurnId = attempt.productTurnId;
+      itemId = `${streamId}:${frame.index}`;
+      if (frame.type === "chunk") {
+        attempt.nextIndex += 1;
+        time = frame.time;
+        if (frame.chunk.type === "text-delta" || frame.chunk.type === "reasoning-delta") {
+          event = Object.freeze({ kind: frame.chunk.type === "text-delta" ? "assistant_delta" : "thinking_delta",
+            delta: frame.chunk.text, streamId, frameIndex: frame.index });
+        }
+      } else {
+        let outcome: Extract<RuntimeEvent, { kind: "assistant_stream"; phase: "end" }>["outcome"];
+        if (frame.outcome.kind === "abandoned") outcome = Object.freeze({ kind: "abandoned" });
+        else {
+          const source = session.snapshotEvents()[frame.outcome.seq];
+          if ((source?.type !== "assistant/message" && source?.type !== "assistant/attempt")
+            || source.type !== frame.outcome.eventType || source.data.turn !== attempt.turn || source.data.step !== attempt.step
+            || source.data.stream.reduce((count, record) => count + (record.type === "chunk" ? 1 : record.dt.length + 1), 0) !== frame.index) {
+            throw new TypeError("assistant stream settlement differs from its committed Session event");
+          }
+          committed = true;
+          outcome = Object.freeze({ kind: "committed", eventId: durableSessionEventId(session.id, source.seq),
+            eventType: source.type, ...(source.type === "assistant/message" ? { messageId: source.data.message.id } : {}) });
+        }
+        event = Object.freeze({ kind: "assistant_stream", phase: "end", streamId, chunkCount: frame.index, outcome });
+        this.#liveAttempt = undefined;
+      }
+    }
+    if (event === undefined) return;
+    const projection = Object.freeze({ turnId: productTurnId, itemId, event });
+    const bytes = Buffer.byteLength(JSON.stringify(projection));
+    if (this.#pendingLive.length >= MAX_PENDING_LIVE_FRAMES || this.#pendingLiveBytes > MAX_PENDING_LIVE_BYTES - bytes) {
+      throw new ProtocolError("runtime_event_projection_capacity", "Runtime live stream projection exceeded its bounded delivery queue");
+    }
+    this.#pendingLive.push({ afterSequence: session.seq - 1, projection, emittedAt: new Date(time).toISOString(), committed, bytes });
+    this.#pendingLiveBytes += bytes;
+    this.#scheduleDrain();
   }
 
   #observe(session: Session, source: SessionEvent): void {
@@ -1217,9 +1302,9 @@ export class RuntimeEventProjector {
     this.#drainPromise = task;
     void task.then(() => {
       if (this.#drainPromise === task) this.#drainPromise = undefined;
-      if (this.#failure === undefined && this.#nextSourceSequence !== undefined
-        && this.#observedSourceSequence !== undefined
-        && this.#nextSourceSequence <= this.#observedSourceSequence) {
+      if (this.#failure === undefined && (this.#pendingLive.length !== 0
+        || (this.#nextSourceSequence !== undefined && this.#observedSourceSequence !== undefined
+          && this.#nextSourceSequence <= this.#observedSourceSequence))) {
         this.#scheduleDrain();
       }
     });
@@ -1228,9 +1313,19 @@ export class RuntimeEventProjector {
   async #drain(): Promise<void> {
     const session = this.#sourceSession;
     if (session === undefined) return;
-    while (this.#nextSourceSequence !== undefined
-      && this.#observedSourceSequence !== undefined
-      && this.#nextSourceSequence <= this.#observedSourceSequence) {
+    while (this.#pendingLive.length !== 0 || (this.#nextSourceSequence !== undefined
+      && this.#observedSourceSequence !== undefined && this.#nextSourceSequence <= this.#observedSourceSequence)) {
+      const live = this.#pendingLive[0];
+      if (live !== undefined && this.#nextSourceSequence !== undefined && live.afterSequence < this.#nextSourceSequence) {
+        this.#pendingLive.shift();
+        this.#pendingLiveBytes -= live.bytes;
+        if (live.committed && !await this.#config.context.sessions.flush(session)) {
+          throw new ProtocolError("runtime_event_durability_unavailable", "No Session Provider committed the assistant stream settlement");
+        }
+        await this.#deliverProjection(session, live.projection, live.emittedAt);
+        continue;
+      }
+      if (this.#nextSourceSequence === undefined) throw new TypeError("live projection lacks its preceding Session cut");
       const source = session.snapshotEvents()[this.#nextSourceSequence];
       if (source?.seq !== this.#nextSourceSequence) {
         throw new ProtocolError(
@@ -1258,7 +1353,7 @@ export class RuntimeEventProjector {
     ]);
     this.#capturedProjections.delete(source.seq);
     if (projections.length === 0) return;
-    if (requiresDurabilityBarrier(source) && !await this.#config.context.sessions.flush(session)) {
+    if (!await this.#config.context.sessions.flush(session)) {
       throw new ProtocolError(
         "runtime_event_durability_unavailable",
         "No Session durability Provider committed a projected Runtime event",
@@ -1313,6 +1408,8 @@ export class RuntimeEventProjector {
   #fail(error: unknown): void {
     if (this.#closed || this.#failure !== undefined) return;
     this.#failure = toProtocolError(error);
+    this.#pendingLive.length = 0;
+    this.#pendingLiveBytes = 0;
     this.stopAccepting();
     this.#config.onFailure(this.#failure);
   }

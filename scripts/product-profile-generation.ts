@@ -148,7 +148,8 @@ export const buildProductProfileArtifacts = async (
     foundationPackages[requiredString(manifest.name, `${relativePath} package name`)] =
       requiredString(manifest.version, `${relativePath} package version`);
   }
-  const dshPackages = stringRecord(rootPackage.dependencies, "root dependencies");
+  const dshPackages = Object.fromEntries(Object.entries(stringRecord(rootPackage.dependencies, "root dependencies"))
+    .filter(([name]) => name.startsWith("@deepseek-ai/")));
   const dshRelease = requiredString(dshPackages["@deepseek-ai/dsh-agent-loop"], "DSH AgentLoop version");
   const profile = buildOfficialProductProfile({
     protocolVersion: requiredString(protocolMeta.protocolVersion, "protocol version"),

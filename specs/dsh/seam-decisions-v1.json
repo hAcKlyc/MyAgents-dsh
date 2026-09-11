@@ -1,13 +1,198 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-05",
+  "recordedAt": "2026-09-12",
   "authority": {
     "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
-    "commit": "a66e4702047846cdaa10c66c9d3df3951f5ea70d",
-    "tree": "27ab636bb3d77e698f5637e518db44ae1f61e262",
-    "declaredRelease": "0.1.2-rc.1",
+    "commit": "fb2c4b9e698e30edb738bca4cf0618587db7d203",
+    "tree": "bd7dd6d90010a35d3d6ff9f12c1f6207d5b6fe38",
+    "declaredRelease": "0.1.5-rc.2",
     "executablePackageAssociation": "unproven",
     "files": [
+      {
+        "path": ".agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml",
+        "blob": "4fac92ed8cde9c4a37d5e4e6bfca973659a108f1",
+        "sha256": "841f773b011dc8dca9cca6c570f3f0d49b54e94c1a9671676180bd5f701450b6"
+      },
+      {
+        "path": ".agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md",
+        "blob": "f52b8ec116c312a27306fe73dc0bd5b99fcd9039",
+        "sha256": "661b115db5cf3e9c96ef821458798e06cebd95063c98e9a212c2495ce87f5be2"
+      },
+      {
+        "path": ".agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.zh.md",
+        "blob": "6b6fd2f2ea1f1645069264f09fd53c3f71e1d02f",
+        "sha256": "5bd57b8a91cdd46d3b6ac916f4b1b68b82166ce7c1299ada3b95bdb9c462f771"
+      },
+      {
+        "path": "docs/architecture.i18n.yaml",
+        "blob": "d591a9fa3648e067852339bc9c16f2be5548356a",
+        "sha256": "1649b6be93f4d428251ab3592708e79a00ca4610a49fe180e46ff9b256474984"
+      },
+      {
+        "path": "docs/architecture.md",
+        "blob": "688341582044e72e8548c8e6b1535450793ddce4",
+        "sha256": "a7e7005c7de778ac60c63b1b847f581eea1501e0d6b03ecc4569f25909c72b09"
+      },
+      {
+        "path": "docs/architecture.zh.md",
+        "blob": "6817986015a2aa90d6fcb094da3e972ccfe08483",
+        "sha256": "c3384e0e2ddd5ad049485fb60d05bb11efe69714333b04c903077f0767de5d27"
+      },
+      {
+        "path": "docs/config-catalog.i18n.yaml",
+        "blob": "d3235e120348843f2d23e0139e44be4e8e69a48b",
+        "sha256": "637360f83604589fe80265010730fe9f0e02004a7cb51c60a5a9919477ddcaa3"
+      },
+      {
+        "path": "docs/config-catalog.md",
+        "blob": "79878fc8daaa5ba3e64d4ffb27d279ff172b6749",
+        "sha256": "7bbcc000894042a1a5ec1ada480f7f9f56edcabb6c4f41eb99f463f5c6ba63f2"
+      },
+      {
+        "path": "docs/config-catalog.zh.md",
+        "blob": "f254241618d280acaf738cc011ba1f7c5a2b6b21",
+        "sha256": "10654b71838e18742b5a06fce2705443b8f5e0602ac581f802c2a7e887c72658"
+      },
+      {
+        "path": "docs/event-producer-consumer.i18n.yaml",
+        "blob": "7f7e38eff1e3e192195b50bebccd33d9882384aa",
+        "sha256": "5b0603aa4a23f1218eda27734f81e12944a1f4add9598b447fa88ba1311f86c0"
+      },
+      {
+        "path": "docs/event-producer-consumer.md",
+        "blob": "323e9f3eea8703c46f3be082db6ab67e9339084b",
+        "sha256": "28d1d8c6197ef40aecdcf68b83b655902549dd67878c6b9db1b5f2234bbde892"
+      },
+      {
+        "path": "docs/event-producer-consumer.zh.md",
+        "blob": "1f34a6f3d53bfd6ddf6c19adb0a3c7cb7043c6ab",
+        "sha256": "306ad94e0a227a11be84d8e74af30087d7de75b16c6ae6dc93bd8f243a6ade7a"
+      },
+      {
+        "path": "docs/persistence-catalog.i18n.yaml",
+        "blob": "389c95a40b9d149de09fd7a8f259cc5a49934084",
+        "sha256": "d3993ececc5f48060c09394304f2f0420101b86981a9ccc78c0975908f7dc648"
+      },
+      {
+        "path": "docs/persistence-catalog.md",
+        "blob": "46e91f23a7aad053791df190f769ad911f334b68",
+        "sha256": "ca97a3696b405a71bc9b89ee1c10adf677d65cfc891fa1610003d904b8859a19"
+      },
+      {
+        "path": "docs/persistence-catalog.zh.md",
+        "blob": "087915b83d4dfd5c45a1583658d6ebe091904a3f",
+        "sha256": "4941fe38f3c692aa27d1da4c521d57c5fb0b6126078bce376db8241a88aa4840"
+      },
+      {
+        "path": "docs/subsystems/compaction.i18n.yaml",
+        "blob": "c6b7cd2682e3992ebd36a3b823d5bcc57678b035",
+        "sha256": "b72c1ddb6786b574683b068154bfa62a50541001d54819ccac29198751df7af7"
+      },
+      {
+        "path": "docs/subsystems/compaction.md",
+        "blob": "6a8743feac0481626f171e3926c7f924508db54a",
+        "sha256": "4f430d1525c055f441bdb7948f11158a95e9c3aa998994fe61d5fb527d5915dc"
+      },
+      {
+        "path": "docs/subsystems/compaction.zh.md",
+        "blob": "1b8d2a2d1e47067583593ca3fae039bc78ed06f9",
+        "sha256": "83135037514ff2292eff5040a07e06b2177c7474746ab6b1239804d7861f8429"
+      },
+      {
+        "path": "docs/subsystems/core.i18n.yaml",
+        "blob": "07faf5ab836f5df5303d112196a860b3eacadc0c",
+        "sha256": "8a4223b1aaf19aa9f2973dc65d4b087fff8df46f387ed6af209eb3368619a0b2"
+      },
+      {
+        "path": "docs/subsystems/core.md",
+        "blob": "27ff30a9e63c86ffb54ccf57dea18ebf3fe39846",
+        "sha256": "faf35ff5ecdac1a161e6012c13d42dd1d9cbc42ccc19a1df0bd8ba47d2c083a8"
+      },
+      {
+        "path": "docs/subsystems/core.zh.md",
+        "blob": "cedd113de5d5d551b8b558f9f33c7cacf6aa4953",
+        "sha256": "f34df7da492abef0be30f3a251bdf8840326402a0eafdbda582052c200d6b16b"
+      },
+      {
+        "path": "docs/subsystems/session.i18n.yaml",
+        "blob": "c7296b9ca5f57d65ec44137c2f955d403b74a443",
+        "sha256": "e144d7ef87093006c811bbe01c7c997628c66fcdb8a8688a18d96cbff6eaef65"
+      },
+      {
+        "path": "docs/subsystems/session.md",
+        "blob": "2b99ca8267d35978f245e6bdbf020226c976e363",
+        "sha256": "6f96b6aafe6e621b79ad92d98ee24fd602e365d854dda372446139ca055c5173"
+      },
+      {
+        "path": "docs/subsystems/session.zh.md",
+        "blob": "e6cff2d239caf7cd99be13463b412479a6f6e79b",
+        "sha256": "24731f2491d71a2de047b68ad92309d4d57e8aa34858b5f789c43f2afd424bee"
+      },
+      {
+        "path": "docs/subsystems/subagent.i18n.yaml",
+        "blob": "4750a413d5147a1f42030affb1197aa84c9d22ad",
+        "sha256": "9a9fadfd66c0cfb4af9bdc96e9e6e0700c27b6b6952dd7fac7c354b6201a3e21"
+      },
+      {
+        "path": "docs/subsystems/subagent.md",
+        "blob": "5f927f4c0bef57c0fda0bcb39280a5ac2012343e",
+        "sha256": "91b88872ae87347edd3b9905a8df70419e169ddc0d528ce036b1255da3b7fa86"
+      },
+      {
+        "path": "docs/subsystems/subagent.zh.md",
+        "blob": "ce827f154989404825e322682c4af6ba83182253",
+        "sha256": "7e87bc575b03d9d6d9e29b47b3d5b14413db5cb207215c97936a984de228ac91"
+      },
+      {
+        "path": "docs/subsystems/system-prompt.i18n.yaml",
+        "blob": "96577399bd5f5ad4d3bf3fa4b0d72e3ab3201987",
+        "sha256": "08e0ae90019112baf6022ce96b528722810ff1ff10c13d01e0b52a60efd23b5b"
+      },
+      {
+        "path": "docs/subsystems/system-prompt.md",
+        "blob": "516e3347c06882bfd3ff42638d77a2acb3aca753",
+        "sha256": "d362825e44cd6140594e54d6ad373bafe8d7eae07290e4eb6165852a0ca34cf8"
+      },
+      {
+        "path": "docs/subsystems/system-prompt.zh.md",
+        "blob": "611ea0e9bdd81585efd7106012edd3d17e7bdd8e",
+        "sha256": "d5726ed7bcbecb5de1a93b0b2140091d4f140285705334eaf8856e4e97908eba"
+      },
+      {
+        "path": "docs/subsystems/token-meter.i18n.yaml",
+        "blob": "9c36d99ef58dfb798d7101641a4d88a85cf82fb5",
+        "sha256": "997a102e9adb17db554d1a85d873c9fec61bd762ea8a0f7d6ff41e9c49af2fea"
+      },
+      {
+        "path": "docs/subsystems/token-meter.md",
+        "blob": "8accb9cf9f0b97ee7684e327da336a31943ff49e",
+        "sha256": "41b6d575ba2031b0d284ff553fa6c1eb0cd521f415a3550f85960d21bff57fa2"
+      },
+      {
+        "path": "docs/subsystems/token-meter.zh.md",
+        "blob": "6c149ec3f225a7012ca8d8d2312835663917b5d2",
+        "sha256": "320378b4c78881a7f3ae2a877a90dfd11479fc6a335391aec2ff5f50ba5323d4"
+      },
+      {
+        "path": "package.json",
+        "blob": "a9b7c19269e9560bf63bd6fae69c942b4e994589",
+        "sha256": "cc9dbff36d169b085d78b88b4663cbbc64529cdfaa14219796dd8ab741adbf33"
+      },
+      {
+        "path": "packages/compaction/compaction-basic/README.i18n.yaml",
+        "blob": "628c41342a29ea74635ebab627654acb861f5086",
+        "sha256": "4a2136ad1004c348c673befb4d2df9742fbc6117dc439b5627604214be96fce2"
+      },
+      {
+        "path": "packages/compaction/compaction-basic/README.md",
+        "blob": "f4045f99f55ba77a1f3741717141baa52d94d742",
+        "sha256": "cc86d70fe3724193683c482f20aadc5a798a05172990ed051f30df38d2576f1d"
+      },
+      {
+        "path": "packages/compaction/compaction-basic/README.zh.md",
+        "blob": "f8d7f62165ab63215f225550dbc5916bfe7942d6",
+        "sha256": "809c8421e36b3878931697ab5667bbb3c7f813d6bfc8c8386f0db90a644c8562"
+      },
       {
         "path": "packages/compaction/compaction-basic/src/index.ts",
         "blob": "7a6ce3dabae76f9545ce9ad53815613084c553c7",
@@ -15,13 +200,13 @@
       },
       {
         "path": "packages/compaction/compaction-basic/src/region.ts",
-        "blob": "c639814ce79987193003f1c44d4b3f2acf69221d",
-        "sha256": "79debc14a677e42a952407e58a0134ee003bbef3a85809d17ae399b003a44573"
+        "blob": "8bdecee0cf44ccce769b8702e597b3f50499c3fe",
+        "sha256": "df672f3c4467e024fd710adec52a69491ce383b083e95d5733ae16a959cf930f"
       },
       {
         "path": "packages/compaction/compaction-basic/src/summarizer.ts",
-        "blob": "e77d9ec0a04127203f59a73da3562a561607926d",
-        "sha256": "3589f95a1b63d882d3907752d369c641a1f473b49e538a071f8a3604dda9789c"
+        "blob": "5fe259a756d57e604d1bacd6d6957ca8e7ff6c29",
+        "sha256": "fcf7fd42d1ea9b90fe259438431590abfb85a8a352f1fbc10b92d4dfcaf797bc"
       },
       {
         "path": "packages/compaction/compaction-basic/src/types.ts",
@@ -30,13 +215,28 @@
       },
       {
         "path": "packages/compaction/compaction-basic/tests/compaction-basic.spec.ts",
-        "blob": "e6ed88274bf7b581fcb031ff0bdca78140f062b9",
-        "sha256": "a69dec7dfff641d4b831d437ade255243957ef10daf0c83733604dd0076a5285"
+        "blob": "bd6a48af66bef11cb2313e6a2f475886619e1563",
+        "sha256": "d1c491d22e25933e46c6691f16b989a4c296444d9b8c88fe53cd1b78df90fb54"
       },
       {
         "path": "packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts",
-        "blob": "f7b44e19405910d10cc1338268d44e3891aa0f12",
-        "sha256": "917c4718ce54909e3fbe51f0b61c8a3d9bc5cc2a611ad621ee2ca8ad72ef8f39"
+        "blob": "a527226c03ff26c7a4386de531bd12faf0431e4d",
+        "sha256": "46d0e0674b893dbcebc8ed06c03c6e9f144e76cd6c4f5bb13a3ca0ae1812cf55"
+      },
+      {
+        "path": "packages/compaction/compaction/README.i18n.yaml",
+        "blob": "b2d0ceea836097dd344a3b78be465cbaeb400394",
+        "sha256": "53e62e4994669065f226aedc2ceb8a08e7f2857fce82e7252e796c2cec6e792d"
+      },
+      {
+        "path": "packages/compaction/compaction/README.md",
+        "blob": "829ed373be0cf04a10b19eff3abdc431ad5b6d2b",
+        "sha256": "3d1875a27bb62601ed9078d0c06c994b74201710fb2751f252cfd4cd647b64e4"
+      },
+      {
+        "path": "packages/compaction/compaction/README.zh.md",
+        "blob": "cf09468dcf8b5bdf58db4b83a7bed1d70b71b2e7",
+        "sha256": "4daddc34fb31dab59adab2a31960b86b5c857353eab906a8074c5a1034718e53"
       },
       {
         "path": "packages/compaction/compaction/src/invariant.ts",
@@ -49,14 +249,29 @@
         "sha256": "72859150e72a6f75bd97a637f12c2488132f039eefa1ebd4294561b21ac918ef"
       },
       {
+        "path": "packages/context/agent-instructions/README.i18n.yaml",
+        "blob": "b371f2c966340675546634fd95017a84e5ab594d",
+        "sha256": "77440d9b048ea47a98cf985e9ea59803e1d24a660b9625f8f39e7f6bb2bee2f4"
+      },
+      {
+        "path": "packages/context/agent-instructions/README.md",
+        "blob": "a6d19d97e87273e0f051d7b67cbc1a805125b43d",
+        "sha256": "4454e588a47f1cfb2823116b65f402e347bf88cae37c60f6d8addebb2f33ace3"
+      },
+      {
+        "path": "packages/context/agent-instructions/README.zh.md",
+        "blob": "63a6de3d0cc8438e3450d9879a125b206dfc746e",
+        "sha256": "c6146dc9783a341dadb52200e1ba270c75980afac55cf136645f2fc381073258"
+      },
+      {
         "path": "packages/context/agent-instructions/src/config.ts",
         "blob": "f9edc9d4b8d88f1141c8aebc9dfdf0494a87ee74",
         "sha256": "721ffeb6743d9314f62f2636c4bd24fc9e871fafdd3a6a88f00f41fb1c1d9a40"
       },
       {
         "path": "packages/context/agent-instructions/src/files.ts",
-        "blob": "01492e3e91245cedb2a0200d24d8fbafd329a757",
-        "sha256": "eb6d69528e3f2390b84ee1f7a47732ab02d17c37a5fde4e3315ad75dac37a7af"
+        "blob": "b91cab12a1cd4a49cbddac486060e41717194437",
+        "sha256": "8b21406c6410af6d958e5e3cb3c95368e1912c0106ff91102d8f86a82812e50b"
       },
       {
         "path": "packages/context/agent-instructions/src/index.ts",
@@ -70,98 +285,283 @@
       },
       {
         "path": "packages/context/agent-instructions/tests/agent-instructions.spec.ts",
-        "blob": "af270437b1270c0e54db2ec33093ee2ebd08bdd4",
-        "sha256": "3da59267f644c9612f2e2414265eb5fc63a12eeace8349aed0d0e63859f92362"
+        "blob": "d477cf666e74df187d3d580b0ff521ec6ad8043e",
+        "sha256": "47d6b8c7f6740144a16d5dbf86cfba81a20b44ff207090c9e019c906dacc2844"
+      },
+      {
+        "path": "packages/core/agent-loop/README.i18n.yaml",
+        "blob": "e724b8ae17807c487ab317de4580dd3068a9177a",
+        "sha256": "d43e078ed0b2278019ff770a3e10fa1c7c0796430f54e136b8012a34f75e35e5"
+      },
+      {
+        "path": "packages/core/agent-loop/README.md",
+        "blob": "31316e4b9259362951824fc13375a820035ba849",
+        "sha256": "e7f63f749ff1dc1f9a9b0a2bae17af3ea852562b4e3bd50b429c8ad32ca9e8f5"
+      },
+      {
+        "path": "packages/core/agent-loop/README.zh.md",
+        "blob": "06ad80f32fd20d76aa367b8203700235e39072fb",
+        "sha256": "68ffb936c14bec5ca92eb741149c6752feebe1216cbbd00d0e539530a75fb1ca"
       },
       {
         "path": "packages/core/agent-loop/src/agent.ts",
-        "blob": "1b8448e6930eb6d579594d429882038d44e3e269",
-        "sha256": "cc14a38d5cf32003699a9342286b597eccf35cec79740c28552e229ead43b4f8"
+        "blob": "06e1f51b57277ba296698b6c8b810f0e455e3695",
+        "sha256": "bbc3c4f34076e81596af855eddb1bf66f6362278730f7c4db24ea96a990e3cb3"
       },
       {
         "path": "packages/core/agent-loop/tests/cancel.spec.ts",
-        "blob": "4c148d663d7645a34fb260a6640e77d65221cc5a",
-        "sha256": "387651c95aee1a483a9f61598af100d0f0a45913c9108f0a5d9d44cf62f159a9"
+        "blob": "2b1781083c5f9ba1875753caf713d726e0016109",
+        "sha256": "bae44bf95640f4f8af133af613c73fb6dd51e9c6c21c8de3cc66a935bc9813ea"
+      },
+      {
+        "path": "packages/core/agent/README.i18n.yaml",
+        "blob": "6b72fc7c6a4c7ababb4bb012b99be976993549ad",
+        "sha256": "f1c216fd6e5bc04aa0bc2dfdc7da8c6bd3c6ea159ba73fd8ad6b6a49c7fbb5b2"
+      },
+      {
+        "path": "packages/core/agent/README.md",
+        "blob": "82460df7492d470a55c37c4691af2a7d349144fe",
+        "sha256": "9a26cf5d9b843cfa107376c5516ea584e7fde9a6770cacd7b464bed70da95d7a"
+      },
+      {
+        "path": "packages/core/agent/README.zh.md",
+        "blob": "ed5f236bea9f972199d2528c5a2a32cb7e044df1",
+        "sha256": "3f765b6b9cd3de1a8c8a86bdda021fa96e6dd8f8e6f58ed6b23fc3e77f3cbbeb"
       },
       {
         "path": "packages/core/agent/package.json",
-        "blob": "60ffb53923306bd7465d3e1f51355d8db6d92f61",
-        "sha256": "2ae55b213db975a652176f7b2816f655edd870e9f37a70c1df9cc0294af9c72d"
+        "blob": "b34895cb880164d673c590c8d1b022bd9cd7b9eb",
+        "sha256": "20c45f04db710d7e965bd65a5d5ae44dc2cccd5d82de74c29be8b01fc446863e"
       },
       {
         "path": "packages/core/agent/src/index.ts",
-        "blob": "6e3db1edb01ab5e5b01f4f6e29a41a8191b6b4d6",
-        "sha256": "4cc94c44f38356e0574a3b82142687351a87f6cf1c511d8c49f81f336d147419"
+        "blob": "21c95b5c600d393d3cfd2bf37f76f40fea22cb58",
+        "sha256": "50f0bb7642b47a0f43322c26ca9c91613cf7c148084342727e372b36d1b0dcc2"
       },
       {
         "path": "packages/core/agent/src/runtime-types.ts",
-        "blob": "c8bc08ecbbde72b6608cc4ecb292b579d6e4493d",
-        "sha256": "427050148a2bb47f9e0d8f276a45bdcd88ce2c0671ae50d3ac5cc7ac75a58cb8"
+        "blob": "31338e8d8da6ccb2e99fd459abbe2238bf5c1736",
+        "sha256": "6680865f221cfda70bcc715910f6a4ca27a97945e5baaace0b249213c8c4bbb5"
+      },
+      {
+        "path": "packages/core/scope/README.i18n.yaml",
+        "blob": "73a271b3a31be2b047a09d132de1f7e289b65b3d",
+        "sha256": "d90b55c594f133de72f4455a4657e3dd11de07df55b1a2e30411e07ca8ba7ad3"
+      },
+      {
+        "path": "packages/core/scope/README.md",
+        "blob": "72c41e4c1a3b8f8a79940838ead7447f64781cc4",
+        "sha256": "23689d3f56b588dd5848c5d03d70e70326d777dc0ae7705327f6e380d432c4c5"
+      },
+      {
+        "path": "packages/core/scope/README.zh.md",
+        "blob": "066a5bef3ba4b396f3e5bc60324443e36df61352",
+        "sha256": "5b226bfe21c0834a08e6cebc7235e801a979f1ea756f261e9e8ea278af32924e"
       },
       {
         "path": "packages/core/scope/src/scoped-events.generated.ts",
-        "blob": "e7f24ca4cb49f759123f0f8689ddb304bd33ce8e",
-        "sha256": "cffbbe867424b4f208420bf2ea8511d1c44e14dceba32f611832555c952c1ac1"
+        "blob": "8a35f59873b63cfb7a2ce3bb652dbf635fc9bde1",
+        "sha256": "0d2c8581f4ab7cb35383522db7f0d94f1cbf786950067986b82db105bb88766c"
       },
       {
         "path": "packages/core/scope/tests/invariant.spec.ts",
-        "blob": "2adc3d787b5da843260d6e822548fbe7152e7701",
-        "sha256": "4e5041774bc7605213bf688dfc24db1dc35f1163220396a05a094b038f9ad4f1"
+        "blob": "57a4a6d091a9d412f392ec13d82f5754567fe2a6",
+        "sha256": "c1fe94b903f4a875c48719c0ae70b9354c7295bc31dc5a212d6b72cc256ffe83"
+      },
+      {
+        "path": "packages/core/session/README.i18n.yaml",
+        "blob": "6b68ca2d743e3add673f7dd6ed4b2ec553c97329",
+        "sha256": "3a8b6edd2b2202a7b1061d6940fe521ce1cf90ef1dfd02bc4e479cdd201dc71e"
+      },
+      {
+        "path": "packages/core/session/README.md",
+        "blob": "cdcab8ec4d2f6960bb651aff46745b20f91632e2",
+        "sha256": "f2acb21e10afe03ea04ddc07db57617b3823d4dcbded74d6694a803df93dcd48"
+      },
+      {
+        "path": "packages/core/session/README.zh.md",
+        "blob": "745615f67084430475e0739b22afa35556b71ee6",
+        "sha256": "1b3c9badaa929b10a00649eb8e0706e87aea4d363164cfea00b868eed9d2baf9"
       },
       {
         "path": "packages/core/session/src/index.ts",
-        "blob": "c55cc5fb6af84668388905b7cbc7e6b7565a2eb9",
-        "sha256": "eb568db264cd2d6092240b8cdb9dfd60172a02d581960fbb09bfb7768bdc67f1"
+        "blob": "9db83274097372c2ad2e79e10b3add1ee63a3980",
+        "sha256": "607bbb8d50c1ed4fd5e470f921be737d5cd8589a2bc52c8560aa2cbb4822ec99"
+      },
+      {
+        "path": "packages/core/session/src/known-event-types.ts",
+        "blob": "dd6411240b0527ec98d5ff51bcfb3e8b5f47e715",
+        "sha256": "8d60e002f68a641745ec2416c7c594e7b8f95f08fab1200aaa6a637e365500ca"
+      },
+      {
+        "path": "packages/core/system-prompt/README.i18n.yaml",
+        "blob": "4ea091a963ced434df769aafed00645254dd7876",
+        "sha256": "dd092c31372e3f87fb2f3b33792ed91f8f1b2fb11fc033365e9cc5ef504de223"
+      },
+      {
+        "path": "packages/core/system-prompt/README.md",
+        "blob": "7e4826c4fb51873db02fd80eca632c3d1dd8d550",
+        "sha256": "7ccec667b230952d8066d2d6e734f18d105b4c20ca48672fb124ac14daf7d1ad"
+      },
+      {
+        "path": "packages/core/system-prompt/README.zh.md",
+        "blob": "55730f11fffdc6ca92ce83613c9af3b1331351b1",
+        "sha256": "919df91de06becde94bd2222c930a0f467f582b1c19dfb8041dc2f4023c58f0a"
       },
       {
         "path": "packages/core/system-prompt/src/index.ts",
-        "blob": "fba1b51f50bc3f98d1d40b9424bb690a68489518",
-        "sha256": "be62470215076483070d4c785eceed489cbbed4792bd6c30a299a7459954d73c"
+        "blob": "d83cc4d2160450d4fcf0e9b17a9682aaba7b100d",
+        "sha256": "2cd5cc40c006e70b8fb5f50ad459213623f9f7f86e12ad3fc402cefca0ece577"
       },
       {
         "path": "packages/core/system-prompt/tests/system-prompt.spec.ts",
-        "blob": "9818c50f94db1f01fc1e05dd482441a69112b3bd",
-        "sha256": "5485507ebf4af905499b94cc910b6e01b4b75ddc73874c6305ecdc1bd43378ce"
+        "blob": "8e60ea2bec264bd8a7c73dadab13fc6071d66019",
+        "sha256": "7f303c8c8ef2e444f102773f1e559a8b7dab5e61e839d390057fcf987cc3a901"
+      },
+      {
+        "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
+        "blob": "1fb4643b80f0174cdc736f762f9e316e62353181",
+        "sha256": "eb8bf45bf60a4cac3628c84683d8e20d43a808806f72fd65f98954a477ea3328"
+      },
+      {
+        "path": "packages/fs/fs-local/README.i18n.yaml",
+        "blob": "421f62d77686032e5e55e39f78b26be632f8ee94",
+        "sha256": "16c33091c48733598d2d574520a77a762892fef350ad85e59fb1ea811887e6ce"
+      },
+      {
+        "path": "packages/fs/fs-local/README.md",
+        "blob": "427cf02631f9d56246851f7fc67c92dd662c2a62",
+        "sha256": "32b71dee78991fb13d117d4f7befcb7e58e2d2d9582cea1624f0f5bf11f8f3d5"
+      },
+      {
+        "path": "packages/fs/fs-local/README.zh.md",
+        "blob": "7009d9dd853b5443780978036792f10ebc9706b5",
+        "sha256": "ac3685b070d82491e93570547c329fcff8e7c127bb5a18662758510ae58ddbb0"
+      },
+      {
+        "path": "packages/fs/fs-local/src/fsio.ts",
+        "blob": "e07567e0e3c2b3939896ccbfaf253701475bfa91",
+        "sha256": "3db24853dd8eee5e3d33794bd8b7df88e0eee415c92c9e5d7b1b414058064ab4"
+      },
+      {
+        "path": "packages/fs/fs-local/src/index.ts",
+        "blob": "22fc6310fb22d07273e3f6ef50bdcf7c78b1e382",
+        "sha256": "853908ab6069faac328b7e1878649f9f186e7dab339f6dd081a095037bf13a57"
+      },
+      {
+        "path": "packages/fs/tool-fs/README.i18n.yaml",
+        "blob": "7b8246dbbeeedcc842e5ec0374264be3f44488ee",
+        "sha256": "a32585007526bcef895ae8bcfb51d3d171009bd0f536817c151e01510fc141a2"
+      },
+      {
+        "path": "packages/fs/tool-fs/README.md",
+        "blob": "9d338a6227b7f02ef43fcbe97900b166cb722817",
+        "sha256": "6229b33ea2e35d56d00d73153e3289256b9c825623829fa134bfb60870dee28a"
+      },
+      {
+        "path": "packages/fs/tool-fs/README.zh.md",
+        "blob": "0c34f840ad449847a649df8abdadec01f772f37b",
+        "sha256": "4978294cc1ff838c9bcab336deaeae41e22d17331390849bb3109fe355fcb6f1"
+      },
+      {
+        "path": "packages/fs/tool-fs/src/edit.ts",
+        "blob": "34114283931dc2a3f4218246909579967134491d",
+        "sha256": "a4f5581034f072a720b42cfeb0d9f7d0539109133965ac58d26d88ba4670f66e"
+      },
+      {
+        "path": "packages/fs/tool-fs/src/index.ts",
+        "blob": "cfbec13cda610efd9ebb1cb6ea8a7ea2c5821d63",
+        "sha256": "fde2a282c79d76fd83c0704ad2e89cd79fcabfe81aeb078859b5934b577a3585"
+      },
+      {
+        "path": "packages/fs/tool-fs/src/read-image.ts",
+        "blob": "3115473515e3ad7320b0d11be3f7bb0a4ca75ea6",
+        "sha256": "ded9ecd47b0af8ad8cae3197c2ce6338bb0aa9b2600d27802604f64cddfc2bd5"
+      },
+      {
+        "path": "packages/fs/tool-fs/src/read.ts",
+        "blob": "96a38300a9e02e16778f3a54719dacc899b27d4e",
+        "sha256": "6c5e290d3aa2a985fc7448558ada8d3d02332e7d624e7456b06e734a97fe3da4"
+      },
+      {
+        "path": "packages/fs/tool-fs/src/sandbox.ts",
+        "blob": "695a9fdfc98aefedc63cd1bdc044b223a1765094",
+        "sha256": "36cd2739844b2f2c58054e3fd3cb7d30e2b7d860af976ca5638602b7f18b08c7"
+      },
+      {
+        "path": "packages/fs/tool-fs/src/write.ts",
+        "blob": "80119d50378f8e0b4ce186abdbb595b12a57b93d",
+        "sha256": "fa24e0e72c729a296a69b2e7cf67eee63cafaa7f5938e6cc16c23b528da0cbe5"
       },
       {
         "path": "packages/llm/llm-deepseek/src/translate.ts",
-        "blob": "0a3529f961d48fa5adff021e646988b5d3d4cd16",
-        "sha256": "cdaa9490a3bf2d69b364ddcae4f8d534cf437d1db51680b5b625c91f2db5c12d"
+        "blob": "8dd939e547cddbe11f2a559e3ca261a9c223e6fc",
+        "sha256": "66e8b1f96a90404d4e5ca67fc85b9e37a96bbee78ed52521e7b8fdc3f336ba32"
       },
       {
         "path": "packages/llm/llm-deepseek/tests/translate.spec.ts",
-        "blob": "ccdf58bdf6404f7be07e72ae744c98e54d0aba9f",
-        "sha256": "c951f2f35e58482ed1b3b9350b820f3dc972f60a19317178c7199204f2ce160c"
+        "blob": "43ff59822f978c89c459fd2e777c36a98c7810ff",
+        "sha256": "cd7e09778d1f5215b781f4e54cb01e71a826299aa2562f5dc767d6733ca907a4"
+      },
+      {
+        "path": "packages/llm/llm-pi-ai/README.i18n.yaml",
+        "blob": "12266ad5e062aa95fe1742c567899fa98f640650",
+        "sha256": "f394cb1c97dd5ecdecb56d0f93457140262145ee166dca8c1c8ac6ed2c95a193"
+      },
+      {
+        "path": "packages/llm/llm-pi-ai/README.md",
+        "blob": "7f52d3f04634c805fc69b4c00365b9843d308252",
+        "sha256": "1bd87a72987985f810b76fba63fb484045a49603461990c3ce4cfe9e4eb93a88"
+      },
+      {
+        "path": "packages/llm/llm-pi-ai/README.zh.md",
+        "blob": "7916d2e6e03c163f9f8031344ff8aa36cfff379e",
+        "sha256": "08770a0898295a94af6e20bc3ed087470aabce8ea643b1a16be95c6cbe10d4a0"
       },
       {
         "path": "packages/llm/llm-pi-ai/src/replay.ts",
-        "blob": "bae4cfc40da591ec85718393b13b24f1fcd86397",
-        "sha256": "f498060e4d798ece0780788600f70d1b93bc451886982bd177809cff0fc86548"
+        "blob": "3e71c11f840fede22ef0145d7600f8fdc8c1c9dd",
+        "sha256": "6ad0071e7d513185bd9b5975b3aa30530ef3a637f62787efa8eab16f549aab83"
       },
       {
         "path": "packages/llm/llm-pi-ai/src/stream.ts",
-        "blob": "203e63905244d6b8f4494efd53db1fc851931da3",
-        "sha256": "24dcdd27a58b7b864973ba50dfeed57b7c25c86f040d66010fa6e69ee184362b"
+        "blob": "9bc2f98c4c16839417d74196bf474e288443d4e6",
+        "sha256": "2c21104091fc0a1d15e712a0dfce7b7e569c017aeae828eda30aa18394273dd4"
       },
       {
         "path": "packages/llm/llm-pi-ai/tests/convert.spec.ts",
-        "blob": "c80df43df13c314636413b16251886363d2c6619",
-        "sha256": "d687e7ec66f6752ab8b083ec833198bf956fe0a6174fd73c265ae140d0b173bf"
+        "blob": "74ecb3d71d03e3a089f8631485422f9188844872",
+        "sha256": "3959c32dc94c8417613b4a370eea3a7716f32de1b84654cb7113f16f8003629c"
+      },
+      {
+        "path": "packages/llm/token-meter/README.i18n.yaml",
+        "blob": "b483cfd3ecb291de4011e89840fa3a98dc2d8323",
+        "sha256": "b0b44b88867f0b46eff5aa5177324441a69864148938d5bbb7cb3cb36d7f1ac7"
+      },
+      {
+        "path": "packages/llm/token-meter/README.md",
+        "blob": "4a2173a9f23e2aa0695c4368d4f9741b60bd2d25",
+        "sha256": "3b28586dec07681cdb394b3219c6847bad7155dcc8f60b08f7bcff1db4a62f6f"
+      },
+      {
+        "path": "packages/llm/token-meter/README.zh.md",
+        "blob": "23b12324fa5169d365546ef91133758692998711",
+        "sha256": "84756b279d013eb4c810aae5982e992383af3b22ea71e7924be3d2bcdf76157f"
       },
       {
         "path": "packages/llm/token-meter/src/estimate.ts",
-        "blob": "4c633c1a060e7123b3b9d4bfdca06255ba9478d5",
-        "sha256": "002d8cf11416228ba2be76ac2ac81f57c204a2f200c75aaae57cbff1c6e87272"
+        "blob": "c82d621242f78765750356cb806212dad27a0ea4",
+        "sha256": "725ee82912c09fd1cfa435b4575de8b50fcace8dbd88763bb82c537039702d74"
       },
       {
         "path": "packages/llm/token-meter/src/index.ts",
-        "blob": "5e045223e305186db44cd6aee2c326ec95ceb9e5",
-        "sha256": "08fdbf1c86cd826f9ba52f4458e52968635c36c7c92a50a3cd95f489a3fde371"
+        "blob": "348213ef4d9362c32935dae5e95cde2514174cd7",
+        "sha256": "2aec01cac3f2d9f8e95ce861be133de49b80f5c686109853a973b1c53753b757"
       },
       {
         "path": "packages/llm/token-meter/src/surface-fold.ts",
-        "blob": "ae293a7f57e3c03db2711a41db68298deb252df1",
-        "sha256": "dc49cff53a7a0565108037da615589239dd071248814cc40ad2c5104da58fce9"
+        "blob": "d0cccea9476db50a84fcea8a85d7d7a068d019de",
+        "sha256": "72b0fad7e9c18dcd868c0b1d4f9afbc78cca5d981ead27fc858368edeafe2d3d"
       },
       {
         "path": "packages/llm/token-meter/src/types.ts",
@@ -169,14 +569,39 @@
         "sha256": "d0c153b4ff135839c072b1c57056366003028fb2f5ba7ea745845580c5fcb08f"
       },
       {
-        "path": "packages/session/session-persistence/src/coordinator.ts",
-        "blob": "c16fae6d40f30e2d9a868d02690d148f5e50136c",
-        "sha256": "d09807368869addfe29e4e9dea4f6ddbf55974699c8c589c29f0df8a3ddced1c"
+        "path": "packages/llm/token-meter/tests/route-pricing.spec.ts",
+        "blob": "6488552253355fbe2bf29713e7ead3bed7103ff2",
+        "sha256": "5871e8454b7a4f90592058cee373181f0c70831d6e3c5df8c2fc04149f2c2142"
       },
       {
-        "path": "packages/session/session-persistence/tests/persistence.spec.ts",
-        "blob": "dd002882f73bc424ff23a2b8ed9e89c5718a28e2",
-        "sha256": "97f30f018dfeb04faa86a5f06c38e58090775b474b6887efaf76ec2da52c0dd7"
+        "path": "packages/session/session-persistence-jsonl/tests/lease.spec.ts",
+        "blob": "00012ab1e2f0b564f2fc7bffb92b4185507640a4",
+        "sha256": "78a28795bb8a10501b1d328f18813ee98f581935dbd49080a3b6ad13d5041ac8"
+      },
+      {
+        "path": "packages/session/session-persistence-jsonl/tests/v3-event-admission.spec.ts",
+        "blob": "02e9d8aef7cfc59e2368cf0540d55caa61e60c3c",
+        "sha256": "7cac0c0d73c87ce5e92ff4b12485901b9232857b6dbf436951683b2a1ed9ddcd"
+      },
+      {
+        "path": "packages/session/session-persistence/src/handle.ts",
+        "blob": "b6a194c87d14b787df55452e50f0008b3f56337a",
+        "sha256": "2fd8b5c5188ffdf5adee78a260b3dd0a9be97e5eb9fcdb5aafae5a8ed5471a31"
+      },
+      {
+        "path": "packages/session/session-persistence/src/index.ts",
+        "blob": "f17ec2e7774062964237bea117160509db312f38",
+        "sha256": "88d96d49e38c32e86597fbf1e10d3399b2f9a4ead28a5e0bfde9c883e0507cd2"
+      },
+      {
+        "path": "packages/session/session-persistence/src/storage-contract.ts",
+        "blob": "172a59a25829235d117ef767296a8e244f721ce3",
+        "sha256": "062911ece08832418f2fd0dc8fabdd8848897de6b2d97bc7fca54a634e0c99bd"
+      },
+      {
+        "path": "packages/session/session-persistence/tests/storage-contract.spec.ts",
+        "blob": "2f34cd384f60217e4b4c5be44a03bc882445a0bb",
+        "sha256": "09726bddef0e2b31fe104a719e44c88a9dc8584147ce81de8647f4a1c20a1f55"
       },
       {
         "path": "packages/subagent/subagent-fork-in-process/src/index.ts",
@@ -185,18 +610,48 @@
       },
       {
         "path": "packages/subagent/subagent-fork-in-process/tests/subagent-fork-in-process.spec.ts",
-        "blob": "021982449723ca9bb7fb3869b62c268ced8a6827",
-        "sha256": "41d16a5d370b5a66e3113ca7ad363c07ca1b3085d8d4ed8da5237a2d45ddd604"
+        "blob": "6f7080cd31cb1c1c3f4654f88b4d654d8511c2bd",
+        "sha256": "4adee7307c898cd746f2576e3c1908d0fcc5b615baf599ecf994f564897ad41d"
+      },
+      {
+        "path": "packages/subagent/subagent-in-process-driver/README.i18n.yaml",
+        "blob": "4583465661af91eb77644ebff785e3e06b814ed2",
+        "sha256": "1ee509f7bd099f821718057f65f6c858f5fe3aa3d0944d6c7b63d0749cdd98f1"
+      },
+      {
+        "path": "packages/subagent/subagent-in-process-driver/README.md",
+        "blob": "03b72c2f9f02dc7ef2db29f57d4fdd1b5ce83027",
+        "sha256": "6872e6f76e5597a7c12d440e43c58638a16606c2d8eb3e812006def850b9ef3c"
+      },
+      {
+        "path": "packages/subagent/subagent-in-process-driver/README.zh.md",
+        "blob": "a75347002a3d2d66e37461dd5e14d140c8f8fc45",
+        "sha256": "f10756699f82901a687df16ab8f427213e2b0d8a8bef99895b7d2f2d13289084"
       },
       {
         "path": "packages/subagent/subagent-in-process-driver/src/index.ts",
-        "blob": "4ca07b84365bdd303d6983724cb7a196fde03a35",
-        "sha256": "21e54c4932132253b8098770212b847cfedde53432159701b09af0000d87e3e1"
+        "blob": "c0886dc104e45b55022b4eb42e0837746d6137eb",
+        "sha256": "bc5ad502dbeabb9ae2ee22a8f5b59e3df9d22eaec9f4ce73da0ac8372b5dd04b"
       },
       {
         "path": "packages/subagent/subagent-in-process-driver/tests/subagent-in-process-driver.spec.ts",
-        "blob": "df0250cf3fbdc593d0aa08e8ab1ff4fdb701c67a",
-        "sha256": "23f25f2a59b7d5f6f84cfde1db2c71499bf58c74ad4f3bad3d8e2df66ee668bf"
+        "blob": "d11fa73b05f9e968de457ab0418d71ccee92691c",
+        "sha256": "1a5c4d5fa30c7d960787b56ce297d8679c6f29bb76a97dea6b301fff8aa31a71"
+      },
+      {
+        "path": "packages/subagent/subagent-spawn-in-process/README.i18n.yaml",
+        "blob": "836e74aa993cb166e045dcced4ff5df5fd840147",
+        "sha256": "08bb6fb247bde99f6d7bbb1dcf24a6014a4edb909ebf468073a04586ff69ecdc"
+      },
+      {
+        "path": "packages/subagent/subagent-spawn-in-process/README.md",
+        "blob": "ce3909934efa1b2f5cc57ff046b892e3ec129444",
+        "sha256": "12dd5766275d8a8b7a571140c9fea8de37b5eab0c8402374b2f005d364612e15"
+      },
+      {
+        "path": "packages/subagent/subagent-spawn-in-process/README.zh.md",
+        "blob": "c50ab11cca89399ff40d16c6aa23aae456bed1d6",
+        "sha256": "31d6989e6dc0249699f934656f5bb2d06b44ed1d8767ee3bacf990e1641333a1"
       },
       {
         "path": "packages/subagent/subagent-spawn-in-process/src/index.ts",
@@ -205,18 +660,38 @@
       },
       {
         "path": "packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts",
-        "blob": "c46f99514fee5dbb0e9507dc98315967767cedc5",
-        "sha256": "f5fdcf79ad698b6b58bcd801d2a75ea5715356199d392736cd93e9128d92abcb"
+        "blob": "b678f5c26324167238090aacc9ab0c8194e5f6b8",
+        "sha256": "cf0d7ea86a1dd1bc4b2256141b4afeaae2d390b3f5bda9abb1e1c4ebb22815eb"
+      },
+      {
+        "path": "packages/subagent/subagent/README.i18n.yaml",
+        "blob": "9a6bff0b24ee03259f266ecda470da9d23fa1f76",
+        "sha256": "ef82e967611bab7af01c34e01658b6b3dff87d7e6a3ca76f42cd1ffb72e9d6fb"
+      },
+      {
+        "path": "packages/subagent/subagent/README.md",
+        "blob": "5f9668fd7a14cdfca33ab72a217c07372a24502f",
+        "sha256": "810129eb1e43efe701d29a84581defd308c43a930fc9f3a9edcbd76486ed18e3"
+      },
+      {
+        "path": "packages/subagent/subagent/README.zh.md",
+        "blob": "563ed06237088c4bc250ca3c4f5a863b6ffe8239",
+        "sha256": "47a956034cac16a0a4335e8a50211f15054bcbc29c730ace221ac33bbab14e77"
       },
       {
         "path": "packages/subagent/subagent/src/child-agent.ts",
-        "blob": "228b9de2f226f51602bae4bce500aa4d1dbd01b1",
-        "sha256": "4a5fc00efebdccf99016868327e029825a5f1e3dbe440ec8b0b90fd69c4becb1"
+        "blob": "c00aa212ab7bb2e0d4104cf18faa7b5477986f76",
+        "sha256": "89c157c123a58039fdfeeb4113d71430c72302e07491347c6ab61e48554dac86"
+      },
+      {
+        "path": "packages/subagent/subagent/src/continuation-activation.ts",
+        "blob": "df2b6da439776918aaf5d6f4cbad07e9c7ef6dab",
+        "sha256": "f6ff8a3f8066d4f7e31b666dbb12d3d794ee0c69a7cbacbd3da9615a4509651c"
       },
       {
         "path": "packages/subagent/subagent/src/continuation.ts",
-        "blob": "2103ce2270fe3f39769723f43390ad2fc73d603e",
-        "sha256": "746dd3ddd623d2f476a44c31ff11a35b33b9271f0a85b06c85f5d5c14835a5bd"
+        "blob": "b86d5cd836527d0f6d746297b32b0f584cd00db4",
+        "sha256": "0324599499683693377681c381af7f13465235be5ba273093ceee06202ad7e4d"
       },
       {
         "path": "packages/subagent/subagent/src/descriptor.ts",
@@ -225,8 +700,8 @@
       },
       {
         "path": "packages/subagent/subagent/src/index.ts",
-        "blob": "28e50930cd85a821bcf10c78c6400708b68d11cd",
-        "sha256": "173e3e150ad24758c52156a9a3b27ec6632f780a999feeeee6f584601c5bd653"
+        "blob": "8a91e06e56c63006d473d421113936ed2d0331ad",
+        "sha256": "7597543b5f29b802545ecb559513efeb9fd1f8af66e90e8abc49d914943b1e36"
       },
       {
         "path": "packages/subagent/subagent/src/lifecycle.ts",
@@ -235,96 +710,98 @@
       },
       {
         "path": "packages/subagent/subagent/src/types.ts",
-        "blob": "9ee1e09aef880de637fa2754d6a25e3efd69d89a",
-        "sha256": "268a9b1e38e268aa16af1bade378fecb62afd9cbcfa8b2870295e1d6ef2f9af0"
+        "blob": "1b9ce56c3f46f2a2e1bb53a1d8b3f03dd8581c13",
+        "sha256": "9a1f755aece7d541bd84772a0d2894cba003614a442f8dcc1896f8384fb91bee"
       },
       {
         "path": "packages/subagent/subagent/tests/continuation.spec.ts",
-        "blob": "851720f2285cb25d376ad4c7f1a9c59388d8bbfb",
-        "sha256": "6952892c363a67d000dc4d9403cd8facb8942fcc994ba9f3c148c55f5218338b"
+        "blob": "f2bbd16ef5974f74b5affa6470c84547fec48821",
+        "sha256": "0e94c13a788ef0b878d5ad810f029c1564c348d3a2871fbe25c1dc4fd67951ab"
       },
       {
         "path": "packages/subagent/subagent/tests/service.spec.ts",
-        "blob": "e74c6844053a46bfa115d160c46785130c59bf7d",
-        "sha256": "04a5aee574a326f0954ac55ee184ec4d81ce172d0360bedd9cc7e0a7d2d54182"
+        "blob": "f40fc11dff935e4b7b16e621e59cbfd680ab8c31",
+        "sha256": "4bd4769fa00458659475097e081acf8ab827a1ff8ad3e5749b26d449549bd573"
       },
       {
         "path": "pnpm-lock.yaml",
-        "blob": "4521b1bbf42de10ad2c19e85523b56661d19d8f7",
-        "sha256": "e12083149a77f790d39b64d018b6b8745c6a7aa95777ecb73e0a2f5ed5fdd0d9"
+        "blob": "be1647c24bbdb3d70d022e0c296e173e0025ddd8",
+        "sha256": "a6515566578a26c29b5faddaf94abb5ec452ce6e533f8957e813328ebd4b3c27"
+      },
+      {
+        "path": "scripts/gen-cordis-catalog.ts",
+        "blob": "ed81fccc1fa23277bf13e09622cd3ebac792941e",
+        "sha256": "167fedecb7d06faf608c651c90aefdd3ceaf136436043d1230cf8ab35d0b9538"
+      },
+      {
+        "path": "scripts/type-equiv.manifest.json",
+        "blob": "e7436d98be33b861ff4ab29f6857266bc03715e3",
+        "sha256": "7cdf9367799e325fc6a588d4ea415421d61e822b04a927d2a04b35963336a312"
       }
     ]
   },
   "productProfileActivation": "forbidden-until-patched-DSH-artifact-and-batch-1-gate",
+  "candidateIntegration": "U15-W02; final product disposition remains gated by U15-W03 through U15-W07",
   "patchSeries": [
     {
       "order": 1,
       "path": "specs/dsh/patches/0001-agent-wake-pending.patch",
-      "sha256": "c44592b38cd23ad3482aa8cab1720bbabbcceec4652cf390a11ee86309e1d731"
+      "sha256": "ba222731ce26a5025c114ff084c70a3dc86795aa663bcee14ac228e4b638a05b"
     },
     {
       "order": 2,
       "path": "specs/dsh/patches/0002-pre-assistant-commit.patch",
-      "sha256": "b108785086867f3ce89602cea20678ab37edee6217fe3a524b13951e4d66be1a"
+      "sha256": "3a72a0f4373d18b606f7425b12d14eaa0845fa1802886a962772645fa2a403e8"
     },
     {
       "order": 3,
-      "path": "specs/dsh/patches/0003-persistence-known-event-predicate.patch",
-      "sha256": "4b44f0c3c5654db13f5454d2b570bc71fd0f3cb015afd1bb147920a8b48f558c"
+      "path": "specs/dsh/patches/0004-publication-guards.patch",
+      "sha256": "ab61e59f48a8527bff396c6061b0b9e5ed69f2f5aec549b6725e9997dd6192fc"
     },
     {
       "order": 4,
-      "path": "specs/dsh/patches/0004-publication-guards.patch",
-      "sha256": "b653777cbdecac746742c364ec4b6de0e22b6b5457b9a892a8fc8100a097df24"
+      "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
+      "sha256": "a963ffdcf2eb0562e272d30bef113dfe6a1d273107665c76dc3f665a6cc4ab48"
     },
     {
       "order": 5,
-      "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
-      "sha256": "e3ccc6bba56f4f99b41ced22f32d8a71f1eb49a867f93dbe35e5c578470e37f4"
+      "path": "specs/dsh/patches/0007-capacity-safe-compaction.patch",
+      "sha256": "9cea5d78f8e4d8d2aa825d38a7dbdefa919a2757bba3e175ee1ef2d785694efe"
     },
     {
       "order": 6,
-      "path": "specs/dsh/patches/0006-deepseek-stream-tool-identity.patch",
-      "sha256": "56ec4a9543224b7519e6cafc0bdb4852ed77ee44948dc62edeb75aeee80104b8"
+      "path": "specs/dsh/patches/0008-literal-prompt-contributions.patch",
+      "sha256": "f30535aab7c041f4d25e032b60e70e1f3f52f96804e050275b59967f15d5e88e"
     },
     {
       "order": 7,
-      "path": "specs/dsh/patches/0007-capacity-safe-compaction.patch",
-      "sha256": "f54be3c28ac0ffec6f69b463c861cff05bc7c55065240925d4fc5b0d3071ca77"
+      "path": "specs/dsh/patches/0009-agent-instruction-selection.patch",
+      "sha256": "8c2206f3fdb21b9ef123c62b08446516b7e131e9a36ac4f38ecc5dfd137e1436"
     },
     {
       "order": 8,
-      "path": "specs/dsh/patches/0008-literal-prompt-contributions.patch",
-      "sha256": "85245d66b345315b4c7a5cb84f5321f922ea20990bef3bc740d6d64292c32541"
+      "path": "specs/dsh/patches/0010-pi-ai-provider-content.patch",
+      "sha256": "b638b4d86da4cb2923c77f56fbe7f015c2964ce14a071f92baa60162ce874c89"
     },
     {
       "order": 9,
-      "path": "specs/dsh/patches/0009-agent-instruction-selection.patch",
-      "sha256": "132e41beadedb0ac2d728c16077349ef279dbf09b6744dd59d68e91784936fa3"
-    },
-    {
-      "order": 10,
-      "path": "specs/dsh/patches/0010-pi-ai-provider-content.patch",
-      "sha256": "28ab120eb22b29f5cf40d7e6338feac77871d106222c5b1baf25d7e37169f625"
-    },
-    {
-      "order": 11,
       "path": "specs/dsh/patches/0011-file-tool-composition.patch",
-      "sha256": "580e674cab1d7310c5a2f8f88008a6e3ba4a5bc93d2fb573fbc6c9f69de3a582"
+      "sha256": "7f20e5050625f88bb1086b8388fec7991d599ec60fba42919c4da92d3afbe71a"
     }
   ],
   "decisions": [
     {
       "id": "DSH-SEAM-001",
+      "upgradeDisposition": "rebase",
       "seam": "restart-wake-existing-inbox-message",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0001-wake-existing-inbox-message.md",
       "rejected": "remove-and-reinsert-with-public-Inbox-and-Agent-followup",
       "selectedPublicApi": "Agent.wakePending?(messageId: MessageId): boolean; required by official composition",
       "patch": {
         "order": 1,
         "path": "specs/dsh/patches/0001-agent-wake-pending.patch",
-        "sha256": "c44592b38cd23ad3482aa8cab1720bbabbcceec4652cf390a11ee86309e1d731"
+        "sha256": "ba222731ce26a5025c114ff084c70a3dc86795aa663bcee14ac228e4b638a05b"
       },
       "executableEvidence": [
         "actual Inbox FIFO reorder under remove/reinsert",
@@ -337,15 +814,16 @@
     },
     {
       "id": "DSH-SEAM-002",
+      "upgradeDisposition": "reduce",
       "seam": "authoritative-pre-assistant-tool-input-transform",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0002-pre-assistant-commit-waterfall.md",
       "rejected": "rewrite-only-execution-input-or-proxy-tool-runtime",
       "selectedPublicApi": "agent/pre-assistant-commit waterfall over PreparedAssistantCommit",
       "patch": {
         "order": 2,
         "path": "specs/dsh/patches/0002-pre-assistant-commit.patch",
-        "sha256": "b108785086867f3ce89602cea20678ab37edee6217fe3a524b13951e4d66be1a"
+        "sha256": "3a72a0f4373d18b606f7425b12d14eaa0845fa1802886a962772645fa2a403e8"
       },
       "executableEvidence": [
         "model-order multi-call transformation",
@@ -358,51 +836,49 @@
     },
     {
       "id": "DSH-SEAM-003",
+      "upgradeDisposition": "retire",
       "seam": "product-required-session-event-recognition",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_retirement_pending_product_validation",
       "adr": "specs/adr/0003-product-session-event-predicate.md",
       "rejected": "mark-required-events-ignorable-or-import-private-known-event-state",
-      "selectedPublicApi": "PersistenceCoordinatorOptions.isKnownEventType",
-      "patch": {
-        "order": 3,
-        "path": "specs/dsh/patches/0003-persistence-known-event-predicate.patch",
-        "sha256": "4b44f0c3c5654db13f5454d2b570bc71fd0f3cb015afd1bb147920a8b48f558c"
-      },
+      "selectedPublicApi": "public SessionPersistence Provider, SessionHandle, KNOWN_SESSION_EVENT_TYPES and native event admission",
       "executableEvidence": [
-        "real coordinator append/inspect/prepare/load/replacement accepts the exact product predicate",
-        "unregistered required event remains refused through the real coordinator",
-        "omitted option preserves stock read-side refusal behavior"
+        "candidate public Provider must accept registered required product events across append/read/cold restore",
+        "unknown required events must remain refused through the product Provider",
+        "stock validateStoredEvents retains native refusal behavior; product extension never mutates the stock registry"
       ],
       "removalCondition": "an installed DSH release exposes an equivalent tested required-event registry"
     },
     {
       "id": "DSH-SEAM-004",
+      "upgradeDisposition": "keep_public_composition",
       "seam": "persistence-mutation-and-rewind-composition",
-      "status": "public_provider_composition_accepted",
+      "status": "candidate_public_composition_pending_product_validation",
       "adr": "specs/adr/0004-shared-backend-lock-and-immutable-rewind-generation.md",
       "rejected": "surface-shadow-rewind-or-private-storage-import",
-      "selectedPublicApi": "product PersistenceBackend plus mutation companion sharing one per-Session lock",
+      "selectedPublicApi": "product SessionPersistence/SessionHandle Provider plus mutation companion sharing one per-Session lock",
       "executableEvidence": [
         "backend append and mutation commit serialize",
         "retirement and exact revision are commit preconditions",
         "stale revision fails closed after an in-flight append",
         "retirement drains, aborted mutation commits nothing, and preparation cache invalidates",
         "cold rewind generation preserves immutable stable prefix, product fold, and derived history",
-        "public PersistenceBackend plus exact-revision recoverable tombstone delete survives response loss"
+        "public SessionHandle Provider plus exact-revision recoverable tombstone delete must survive response loss"
       ],
       "removalCondition": "superseding ADR after production SQLite fault evidence proves a narrower composition"
     },
     {
       "id": "DSH-SEAM-005",
+      "upgradeDisposition": "rebase",
       "seam": "root-agent-and-session-publication-guards",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0005-root-publication-guards.md",
       "rejected": "post-publication-agent-created-veto-and-registry-snapshot-detection",
       "selectedPublicApi": "AgentRegistry.setPublicationGuard and SessionStore.setPublicationGuard",
       "patch": {
-        "order": 4,
+        "order": 3,
         "path": "specs/dsh/patches/0004-publication-guards.patch",
-        "sha256": "b653777cbdecac746742c364ec4b6de0e22b6b5457b9a892a8fc8100a097df24"
+        "sha256": "ab61e59f48a8527bff396c6061b0b9e5ed69f2f5aec549b6725e9997dd6192fc"
       },
       "executableEvidence": [
         "Session guard rejects before store or attachment mutation",
@@ -415,15 +891,16 @@
     },
     {
       "id": "DSH-SEAM-006",
+      "upgradeDisposition": "rebase",
       "seam": "product-owned-continuable-subagent-lifecycle",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0006-product-owned-continuable-lifecycle.md",
       "rejected": "allow-stock-parent-notice-or-interrupt-only-teardown-to-escape-product-work-ownership",
       "selectedPublicApi": "stock SubagentRuntime.drainContinuableChildren plus patched registerContinuableSetup, deliverContinuable, withContinuableAncestors, ContinuableStartSpec.settlementDelivery, SubagentRunEndInfo.infrastructureFailure, and resumeContinuable",
       "patch": {
-        "order": 5,
+        "order": 4,
         "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
-        "sha256": "e3ccc6bba56f4f99b41ced22f32d8a71f1eb49a867f93dbe35e5c578470e37f4"
+        "sha256": "a963ffdcf2eb0562e272d30bef113dfe6a1d273107665c76dc3f665a6cc4ab48"
       },
       "executableEvidence": [
         "stock callers retain parent settlement delivery by default",
@@ -444,16 +921,12 @@
     },
     {
       "id": "DSH-SEAM-007",
+      "upgradeDisposition": "retire",
       "seam": "deepseek-stream-tool-identity",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_retirement_pending_product_validation",
       "adr": "specs/adr/0007-deepseek-stream-tool-identity.md",
       "rejected": "replace-the-official-provider-adapter-or-repair-empty-tool-identities-after-DSH-emission",
       "selectedPublicApi": "stock @deepseek-ai/dsh-llm-deepseek adapter with guarded streamed call-id and tool-name updates",
-      "patch": {
-        "order": 6,
-        "path": "specs/dsh/patches/0006-deepseek-stream-tool-identity.patch",
-        "sha256": "56ec4a9543224b7519e6cafc0bdb4852ed77ee44948dc62edeb75aeee80104b8"
-      },
       "executableEvidence": [
         "an established V4-Flash tool id and name survive empty continuation fields",
         "every subsequent tool-call delta retains the established identity",
@@ -464,15 +937,16 @@
     },
     {
       "id": "DSH-SEAM-008",
+      "upgradeDisposition": "rebase",
       "seam": "capacity-safe-structured-compaction",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0008-capacity-safe-compaction.md",
       "rejected": "duplicate-private-DSH-range-and-transaction-logic-in-product-code",
       "selectedPublicApi": "TokenMeter.estimateRequest plus stock BasicCompactionEngine capacity fitting, structured validation/repair, safe telemetry, and direct-call count provenance",
       "patch": {
-        "order": 7,
+        "order": 5,
         "path": "specs/dsh/patches/0007-capacity-safe-compaction.patch",
-        "sha256": "f54be3c28ac0ffec6f69b463c861cff05bc7c55065240925d4fc5b0d3071ca77"
+        "sha256": "9cea5d78f8e4d8d2aa825d38a7dbdefa919a2757bba3e175ee1ef2d785694efe"
       },
       "executableEvidence": [
         "one singleton estimator prices durable pressure and exact summary requests",
@@ -488,35 +962,37 @@
     },
     {
       "id": "DSH-SEAM-009",
+      "upgradeDisposition": "rebase",
       "seam": "literal-prompt-contributions",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0009-literal-prompt-contributions.md",
       "rejected": "reject-or-escape-external-markdown-and-reimplement-prompt-rendering-in-product-code",
       "selectedPublicApi": "PromptSection/PromptContext.interpolate plus SubagentStartRequest.personaInterpolate, persisted for continuable cold resume",
       "patch": {
-        "order": 8,
+        "order": 6,
         "path": "specs/dsh/patches/0008-literal-prompt-contributions.patch",
-        "sha256": "85245d66b345315b4c7a5cb84f5321f922ea20990bef3bc740d6d64292c32541"
+        "sha256": "f30535aab7c041f4d25e032b60e70e1f3f52f96804e050275b59967f15d5e88e"
       },
       "executableEvidence": [
         "sections and contexts preserve literal brace examples while omitted flags retain strict interpolation",
         "one-shot in-process child personas preserve literal external text",
         "continuable child persona interpolation choice survives descriptor persistence and cold resume",
-        "legacy descriptor version 3 remains readable with the original interpolated default"
+        "only descriptor version 5 is admitted; versions 3 and 4 fail closed after the approved development reset"
       ],
       "removalCondition": "an installed DSH release exposes equivalent literal section, context, and durable child-persona semantics"
     },
     {
       "id": "DSH-SEAM-010",
+      "upgradeDisposition": "rebase",
       "seam": "mutually-exclusive-agent-instruction-candidates",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0010-agent-instruction-selection.md",
       "rejected": "a-second-host-crawler-or-watcher-for-primary-workspace-instructions",
       "selectedPublicApi": "agent-instructions Config.candidateSelection and Config.fileTouchToolNames",
       "patch": {
-        "order": 9,
+        "order": 7,
         "path": "specs/dsh/patches/0009-agent-instruction-selection.patch",
-        "sha256": "132e41beadedb0ac2d728c16077349ef279dbf09b6744dd59d68e91784936fa3"
+        "sha256": "8c2206f3fdb21b9ef123c62b08446516b7e131e9a36ac4f38ecc5dfd137e1436"
       },
       "executableEvidence": [
         "first selection loads one non-empty candidate per directory and falls through confirmed empty files",
@@ -529,15 +1005,16 @@
     },
     {
       "id": "DSH-SEAM-011",
+      "upgradeDisposition": "rebase",
       "seam": "pi-ai-provider-owned-content-preservation",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0011-provider-owned-content-preservation.md",
       "rejected": "flatten-provider-blocks-to-markdown-or-manufacture-local-tool-calls",
       "selectedPublicApi": "@deepseek-ai/dsh-llm ContentBlockMap augmentation plus stock llm-pi-ai stream/replay adapters",
       "patch": {
-        "order": 10,
+        "order": 8,
         "path": "specs/dsh/patches/0010-pi-ai-provider-content.patch",
-        "sha256": "28ab120eb22b29f5cf40d7e6338feac77871d106222c5b1baf25d7e37169f625"
+        "sha256": "b638b4d86da4cb2923c77f56fbe7f015c2964ce14a071f92baa60162ce874c89"
       },
       "executableEvidence": [
         "Provider call and result blocks remain ordered structured non-executable content",
@@ -549,15 +1026,16 @@
     },
     {
       "id": "DSH-SEAM-012",
+      "upgradeDisposition": "rebase",
       "seam": "official-file-tool-composition",
-      "status": "required_upstream_patch_accepted",
+      "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0012-official-file-tool-composition.md",
       "rejected": "duplicate-file-tool-executors-or-production-use-of-test-only-fsio-internals",
       "selectedPublicApi": "tool-fs createReadTool/createReadImageTool/createWriteTool/createEditTool; fs-local prepareTextEdit and protected beforePublish",
       "patch": {
-        "order": 11,
+        "order": 9,
         "path": "specs/dsh/patches/0011-file-tool-composition.patch",
-        "sha256": "580e674cab1d7310c5a2f8f88008a6e3ba4a5bc93d2fb573fbc6c9f69de3a582"
+        "sha256": "7f20e5050625f88bb1086b8388fec7991d599ec60fba42919c4da92d3afbe71a"
       },
       "executableEvidence": [
         "stock tool definitions execute inside the product permission/checkpoint scope",
@@ -582,7 +1060,9 @@
       "packages/core/agent-loop/tests/cancel.spec.ts",
       "packages/core/agent-loop/tests/pre-assistant-commit.spec.ts",
       "packages/core/scope/tests/invariant.spec.ts",
-      "packages/session/session-persistence/tests/persistence.spec.ts",
+      "packages/session/session-persistence/tests/storage-contract.spec.ts",
+      "packages/session/session-persistence-jsonl/tests/v3-event-admission.spec.ts",
+      "packages/session/session-persistence-jsonl/tests/lease.spec.ts",
       "packages/subagent/subagent/tests/continuation.spec.ts",
       "packages/subagent/subagent/tests/service.spec.ts",
       "packages/subagent/subagent/tests/activation-setup-registry.spec.ts",

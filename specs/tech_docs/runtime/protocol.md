@@ -2,8 +2,8 @@
 type: protocol-specification
 status: source-candidate
 module: runtime-protocol
-version: 2.7.0
-updated: 2026-09-05
+version: 5.0.0
+updated: 2026-09-12
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
@@ -17,34 +17,31 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Protocol `2.7.0` is the DSH 0.1.2 upgrade source candidate. It adds Host Work listing and message/stop/resume control, bounded collaboration model/limit policy and typed tree/usage snapshots. It incorporates the `2.6.0` self-test correction. It advances the schema-bound canonical
-Tool digest to preserve bounded WebSearch service text and explicit uncertainty. The owning
-[self-test PRD](../../prd/prd_0.3_myagents_dsh_selftest_reliability.md) tracks implementation and acceptance;
-no existing Runtime/handoff establishes acceptance for these bytes.
+Protocol `5.0.0` is the DSH 0.1.5-rc.2 upgrade source candidate. It transports native V3
+Session history and separates live assistant observations from durable assistant messages.
+An `assistant_stream` start opens a generation/primary-Agent-scoped stream; text/reasoning deltas
+carry that stream identity and native frame position. The end names either an abandoned attempt
+or the exact committed `assistant/message` or `assistant/attempt` event. Non-text native chunks
+can leave gaps in visible delta positions. No end observation manufactures Product success.
 
-The source also separates ProductWork activation identity/ordinal/state from handle state. Epoch
-completion and handle closure remain distinct facts; foreground completion does not close a
-continuable child. These required snapshot fields are owned by the TypeBox contract source.
+The Runtime derives live observations from DSH's public `agent/assistant-stream` event, queues
+bounded metadata/deltas in source order and flushes the durable event before publishing a committed
+end. It does not replay compact streams as live deltas on cold recovery. Host final content and
+successful turns still reconcile from `session/read` plus independent `turn/get` facts. Provider
+blocks remain observations, separate from canonical tool execution.
 
-Predecessor `2.5.0` retains the complete `2.4.1` method and
-notification vocabulary and adds one distinct `provider_tool` observation for structured
-Provider-owned activity preserved by an Anthropic-compatible model route. It does not reinterpret
-that activity as canonical `tool` execution. `2.4.1` advanced the canonical Tool digest after
-`2.4.0` introduced typed Tool/status snapshots and the ready baseline; `2.1.0` through `2.4.1`
-remain historical predecessors. The TypeBox source, generated digests and tests are authoritative
-for exact shapes. No older Runtime artifact/handoff is evidence for `2.5.0`; the current isolated
-Runtime composition gate passes, while commit-bound Runtime/platform/handoff evidence remains.
+The model profile can explicitly declare native `in-history` system-prompt updates. Omission does
+not infer the capability from a Provider brand. Session grants retain protocol 4.0.0's Session-lifetime
+semantics. The [UPG15 PRD](../../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md) owns acceptance;
+old Runtime/handoff bytes do not establish acceptance for this source.
 
 ### 1.1 Compatibility versioning
 
-The active source implements exactly `2.7.0`. Initialization accepts a Host range only when it
-contains `2.7.0`; it neither negotiates down nor emulates earlier behavior. Current version strings
-are exact wire-mode selectors, not a promise that a `2.x` Host accepts every later `2.x` payload.
-That distinction matters because `2.4.0` removes old event `detail` shapes and adds required typed
-fields, `2.4.1` and `2.6.0` change the schema-bound canonical Tool digest, and `2.5.0` adds a required tagged
-union member; an older exact Host schema will reject any mismatch. A Runtime may advertise a wider range only after it implements and
-proves each mode. A larger number, generated schema or source test is not artifact acceptance, and
-historical draft/release evidence cannot be relabeled.
+The active source implements exactly `5.0.0`. Initialization accepts a Host range only when it
+contains this version; it does not emulate a predecessor. The changed native history and required
+stream identity fields require matching generated Host contracts. The TypeBox source, generated
+digests and executable tests own exact wire shapes; a version increment is not artifact acceptance.
+Historical 2.x, 3.x and 4.0.0 records retain their original byte identities.
 
 This wire is independent of `@deepseek-ai/dsh-sdk-protocol`. The DSH SDK protocol's three request methods and four notifications are not a base version of this contract, and its JSON-RPC server is not loaded in the official profile. Both protocols may use NDJSON JSON-RPC and DSH event values without sharing method or lifecycle authority.
 
@@ -74,7 +71,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are normative.
 - Each line contains exactly one UTF-8 JSON object and one trailing newline.
 - UTF-8 decoding is strict.
 - Stdout contains protocol frames only. Diagnostics use stderr as bounded JSON lines.
-- No TCP, HTTP, websocket, or daemon transport is part of v2.
+- No TCP, HTTP, websocket, or daemon transport is part of the native contract.
 
 ### 3.2 Frame types
 

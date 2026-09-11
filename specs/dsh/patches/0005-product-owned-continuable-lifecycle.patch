@@ -1,9 +1,47 @@
+diff --git a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml
+index 4fac92ed8cde9c4a37d5e4e6bfca973659a108f1..87633d0737f3c0aa7188dcaaefbe02399c2c76be 100644
+--- a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml
++++ b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md
+-2026-08-31-explicit-agent-runtime-identity.md: f52b8ec116c312a27306fe73dc0bd5b99fcd9039
+-2026-08-31-explicit-agent-runtime-identity.zh.md: 6b6fd2f2ea1f1645069264f09fd53c3f71e1d02f
++2026-08-31-explicit-agent-runtime-identity.md: 7e880603ac061097867e25f6bc2a3b522a70e27d
++2026-08-31-explicit-agent-runtime-identity.zh.md: ad0a4ec030a1e49c310fbbea563b27fd0ac54245
+diff --git a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md
+index f52b8ec116c312a27306fe73dc0bd5b99fcd9039..7e880603ac061097867e25f6bc2a3b522a70e27d 100644
+--- a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md
++++ b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md
+@@ -22,6 +22,8 @@ Scope-aware registries continue to use the opaque scope key only for registratio
+ 
+ The [Agent registration-scope decision](2026-07-08-agent-scope-contexts.md), its [runtime design](2026-07-12-agent-scope-runtime-design.md), and the [initiator-scope decision](2026-07-15-agent-initiator-scope.md) retain their independent registration, lifecycle, and private-chain rationale. This decision supersedes only the reverse Context association and implicit runtime-owner derivation described there.
+ 
++Trusted continuable setup also receives the explicit unpublished Agent on fresh creation and cold resume. Publication guards decide against the supplied Agent and runtime parent before registry visibility. A scoped ancestry operation retains the actual direct-parent chain and validates each live Agent; durable ancestry alone never authorizes an operation.
++
+ ## Verification
+ 
+ Agent creation tests pin explicit root and child ownership. Continuation integration tests keep a real child live long enough to assert both `roots()` exclusion and `isOwnedBy()` membership. Existing Schedule tests verify that root-only registrations stay absent from an explicitly owned child.
+diff --git a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.zh.md b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.zh.md
+index 6b6fd2f2ea1f1645069264f09fd53c3f71e1d02f..ad0a4ec030a1e49c310fbbea563b27fd0ac54245 100644
+--- a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.zh.md
++++ b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.zh.md
+@@ -22,6 +22,8 @@ Agent 的 Cordis Context 拥有注册及其清理。Agent 身份则为某项操
+ 
+ [Agent 注册作用域决策](2026-07-08-agent-scope-contexts.zh.md)、其[运行时设计](2026-07-12-agent-scope-runtime-design.zh.md)和[发起方作用域决策](2026-07-15-agent-initiator-scope.zh.md)继续拥有各自独立的注册、生命周期及私有调用链理由。本决策只取代其中描述的反向 Context 关联和隐式运行时所属方推导。
+ 
++可信的可续跑 setup 在全新创建和冷恢复时也接收显式的未发布 Agent。发布检查在注册表可见之前依据传入的 Agent 及运行时父级作出判断。作用域祖先操作持有实际的直接父级链并验证每个存活 Agent；仅有持久化祖先关系绝不构成操作授权。
++
+ ## 验证
+ 
+ Agent 创建测试锁定显式的根级与子级归属。continuation 集成测试让一个真实子级保持存活，直到断言其既不属于 `roots()`、又满足 `isOwnedBy()`。现有 Schedule 测试验证仅限根级的注册项不会出现在显式归属的子级中。
 diff --git a/packages/subagent/subagent/src/activation-setup-registry.ts b/packages/subagent/subagent/src/activation-setup-registry.ts
 new file mode 100644
-index 0000000000..9317d5a2ac
+index 0000000000000000000000000000000000000000..a1c0200fcc85b2af7feb601e65555128bd57d41f
 --- /dev/null
 +++ b/packages/subagent/subagent/src/activation-setup-registry.ts
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,187 @@
 +/**
 + * Internal registry of deployment capabilities composed into every continuable
 + * child's unpublished creation context.
@@ -18,7 +56,7 @@ index 0000000000..9317d5a2ac
 + */
 +
 +import type { Context } from '@deepseek-ai/cordis'
-+import type { AgentSetupCommit } from '@deepseek-ai/dsh-agent'
++import type { Agent, AgentSetupCommit } from '@deepseek-ai/dsh-agent'
 +import { errorChain } from '@deepseek-ai/dsh-llm'
 +import { SubagentError } from './error.ts'
 +
@@ -27,9 +65,10 @@ index 0000000000..9317d5a2ac
 + * creation context. It composes synchronously before publication and returns
 + * the disposer for exactly that installation.
 + * @param childCtx - the child's unpublished scoped context.
++ * @param child - the exact unpublished Agent receiving the capability.
 + * @returns the disposer revoking this installation.
 + */
-+export type ContinuableSetupContribution = (childCtx: Context) => () => void
++export type ContinuableSetupContribution = (childCtx: Context, child: Agent) => () => void
 +
 +/** One contribution's live registration. */
 +interface Registration {
@@ -91,9 +130,10 @@ index 0000000000..9317d5a2ac
 +  /**
 +   * Install every live contribution into one unpublished child context.
 +   * @param childCtx - the child's unpublished scoped context.
++   * @param child - the exact unpublished Agent receiving the capability.
 +   * @returns the provisioning commit consumed at Agent publication.
 +   */
-+  apply(childCtx: Context): AgentSetupCommit {
++  apply(childCtx: Context, child: Agent): AgentSetupCommit {
 +    const state: TransactionState = { installations: [], invalidated: false }
 +    try {
 +      for (const registration of [...this.registrations]) {
@@ -103,7 +143,7 @@ index 0000000000..9317d5a2ac
 +        const installation: Installation = {
 +          registration,
 +          childCtx,
-+          dispose: registration.contribution(childCtx),
++          dispose: registration.contribution(childCtx, child),
 +          released: false,
 +          transaction: state,
 +        }
@@ -189,11 +229,11 @@ index 0000000000..9317d5a2ac
 +}
 +
 +export default SubagentActivationSetupRegistry
-diff --git a/packages/subagent/subagent/src/continuation.ts b/packages/subagent/subagent/src/continuation.ts
-index 2103ce2270..24928446ea 100644
---- a/packages/subagent/subagent/src/continuation.ts
-+++ b/packages/subagent/subagent/src/continuation.ts
-@@ -27,6 +27,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
+diff --git a/packages/subagent/subagent/src/continuation-activation.ts b/packages/subagent/subagent/src/continuation-activation.ts
+index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f69930b47 100644
+--- a/packages/subagent/subagent/src/continuation-activation.ts
++++ b/packages/subagent/subagent/src/continuation-activation.ts
+@@ -13,6 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
  import type {
    Agent,
    AgentHandle,
@@ -201,196 +241,116 @@ index 2103ce2270..24928446ea 100644
    AgentOptions,
    CreateAgentOptions,
  } from '@deepseek-ai/dsh-agent'
-@@ -105,6 +106,8 @@ export interface ContinuableStartSpec {
-    * the durable descriptor, and composes the child itself.
-    */
-   readonly request: Omit<SubagentStartRequest, 'label' | 'signal' | 'outputSchema'>
-+  /** Settlement delivery owner. Defaults to the direct parent for stock behavior. */
-+  readonly settlementDelivery?: 'parent' | 'external'
-   /** Caller cancellation, owning the operation only until inbox acceptance. */
-   readonly signal: AbortSignal
- }
-@@ -135,7 +138,19 @@ export interface SubagentSendMessageOptions {
- /** Inputs shared by model steering and the human Queue adapter. */
- type ChildDeliveryOptions =
-   | { readonly delivery: 'steer'; readonly signal: AbortSignal }
--  | { readonly delivery: 'queue'; readonly source: MessageSource; readonly signal: AbortSignal }
-+  | { readonly delivery: 'queue' | 'relay'; readonly source: MessageSource; readonly signal: AbortSignal }
-+
-+/** Options for waking an already-persisted child Inbox identity. */
-+export interface SubagentResumeOptions {
-+  readonly signal: AbortSignal
-+}
-+
-+/** Trusted composition delivery with explicit scheduling and durable provenance. */
-+export interface SubagentDeliveryOptions {
-+  readonly delivery: 'steer' | 'queue'
-+  readonly source: MessageSource
-+  readonly signal: AbortSignal
-+}
- 
- /**
-  * The residency state of one continuable child, derived from Agent quiescence
-@@ -154,6 +169,8 @@ type ActivationState = 'running' | 'waiting' | 'settled'
-  * consumer outside this package supplies a host.
-  */
- interface ContinuationHost {
-+  /** Compose trusted capabilities while the child remains unpublished. */
-+  applySetup(childCtx: Context): AgentSetupCommit
-   /**
-    * Resolve one provider's continuable-creation contribution, or reject when
-    * the provider is unknown or lacks the capability.
-@@ -189,6 +206,8 @@ interface Activation {
+@@ -54,6 +55,8 @@ export interface Activation {
    readonly parentSession: SessionId
    /** The provider name recorded in the durable descriptor. */
    readonly provider: string
-+  /** Durable owner of this child's automatic settlement projection. */
++  /** Owner of automatic settlement delivery. */
 +  readonly settlementDelivery: 'parent' | 'external'
    /** The retained live Agent handle, disposed exactly once at settlement. */
    readonly handle: AgentHandle
-   /**
-@@ -197,6 +216,8 @@ interface Activation {
+   /** The Activation-local admission and close wrapper around the handle's Agent inbox. */
+@@ -64,6 +67,8 @@ export interface Activation {
     * ancestor leaving the registry without retaining that ancestor's runtime.
     */
    readonly ancestry: WeakSet<Agent>
-+  /** Durable lineage survives non-executing ancestor eviction and re-materialization. */
++  /** Durable lineage retained across quiet ancestor re-materialization. */
 +  readonly ancestorSessionIds: ReadonlySet<SessionId>
    /**
     * Session ids of the child Activations this one owns. Because one Session has
     * at most one live Activation, the id identifies the live child without
-@@ -205,6 +226,10 @@ interface Activation {
+@@ -72,6 +77,8 @@ export interface Activation {
    readonly ownedChildren: Set<SessionId>
    /** The lifecycle observer that emits this epoch's start and terminal edges. */
    readonly observer: ActivationObserver
-+  /** Non-executing ancestry residency does not publish an activation edge. */
 +  observerStarted: boolean
-+  /** Scoped callers temporarily retaining the exact direct-parent Agent. */
 +  retainers: number
    /**
-    * The memoized disposal transaction. Presence IS the admission cutoff: it is
-    * assigned synchronously when disposal begins, so no delivery can join a
-@@ -232,6 +257,7 @@ interface Activation {
- interface MaterializeInputs {
+    * Whether any delivery to this child was ever accepted. A materialization
+    * rolled back before its first acceptance is a child the caller was told does
+@@ -86,6 +93,7 @@ export interface Activation {
+ export interface MaterializeInputs {
    childId: SessionId
    provider: string
 +  settlementDelivery: 'parent' | 'external'
    parent: Agent
    /**
     * Creation inputs; absent for a cold resume, which loads the persisted
-@@ -249,6 +275,7 @@ interface MaterializeInputs {
+@@ -105,6 +113,13 @@ export interface MaterializeInputs {
    agentOptions: AgentOptions
    composition: { persona?: string | undefined; toolFilter?: ToolRestriction | undefined }
    signal: AbortSignal
 +  residencyOnly?: boolean
++}
++
++interface ReleaseOptions {
++  finalStateFlushed?: boolean
++  preserveChildren?: boolean
++  failure?: unknown
  }
  
  /**
-@@ -429,6 +456,10 @@ export class SubagentContinuationManager {
-   async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart> {
-     const request = spec.request
-     const parent = request.parent
-+    const settlementDelivery = spec.settlementDelivery ?? 'parent'
-+    if (settlementDelivery !== 'parent' && settlementDelivery !== 'external') {
-+      throw new TypeError('settlementDelivery must be "parent" or "external"')
-+    }
-     this.assertAdmitting(parent)
-     const persistence = this.requirePersistence()
-     assertSubagentMaxDepth(request.maxDepth)
-@@ -450,6 +481,7 @@ export class SubagentContinuationManager {
-       ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
-       ...request.persona !== undefined ? { persona: request.persona } : {},
-       ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
-+      settlementDelivery,
-     })
-     // Capture before the first await: a later parent switch belongs to the
-     // parent's future, not to this child.
-@@ -481,6 +513,7 @@ export class SubagentContinuationManager {
-       const activation = await this.materialize({
-         childId,
-         provider: spec.provider,
-+        settlementDelivery,
-         parent,
-         create: {
-           seed,
-@@ -575,6 +608,11 @@ export class SubagentContinuationManager {
-     return this.deliverToChild(parent, childId, content, { source, signal, delivery: 'queue' })
-   }
- 
-+  /** Admit explicitly attributed composition input through the ordinary child lifecycle. */
-+  async deliverOwned(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentDeliveryOptions): Promise<MessageId> {
-+    return this.deliverToChild(parent, childId, content, { ...options, delivery: options.delivery === 'steer' ? 'relay' : 'queue' })
-+  }
-+
-   /** Route one parent-originated delivery through residency and cold resume. */
-   private async deliverToChild(
-     parent: Agent,
-@@ -620,6 +658,54 @@ export class SubagentContinuationManager {
+@@ -180,6 +195,7 @@ export class ContinuableActivationRegistry {
+       childId: SessionId,
+       parent: Agent,
+     ) => ActivationObserver,
++    private readonly applySetup: (childCtx: Context, child: Agent) => AgentSetupCommit,
+   ) {
+     // Ordinary Cordis owner effects unwind in reverse registration order, which
+     // cannot express the dynamic child graph. Register the private scope's
+@@ -220,12 +236,11 @@ export class ContinuableActivationRegistry {
+   /**
+    * Pre-register `childId` in a continuation-managed parent's owned set so the
+    * parent cannot settle while a caller is still establishing or resuming that
+-   * child. Returns a releaser for the failure path; it removes only a hold
+-   * this call added, and leaves ownership in place once a live Activation for
+-   * the child exists.
++   * child. The caller releases its admission hold in `finally`; established
++   * child ownership remains until that Activation closes.
+    * @param parent - the live direct parent the operation is admitted under.
+    * @param childId - the durable child the operation addresses.
+-   * @returns the failure-path releaser; a no-op when nothing was added.
++   * @returns an idempotent admission releaser.
+    */
+   holdOwnership(parent: Agent, childId: SessionId): () => void {
+     const parentActivation = this.resident.get(parent.id)
+@@ -236,16 +251,22 @@ export class ContinuableActivationRegistry {
+         'ACTIVATION_CLOSING',
+       )
+     }
+-    if (parentActivation.ownedChildren.has(childId)) return () => {}
++    const added = !parentActivation.ownedChildren.has(childId)
+     parentActivation.ownedChildren.add(childId)
++    parentActivation.retainers += 1
++    let released = false
+     return () => {
++      if (released) return
++      released = true
++      parentActivation.retainers -= 1
++      this.wake(parentActivation)
+       const live = this.resident.get(childId)
+       /* v8 ignore next 4 -- reaching this arm needs another delivery to establish the child
+        * between this operation's failure and its releaser running, which no test can schedule
+        * deterministically: the ownership edge then belongs to that live Activation, so the
+        * conservative keep leaves it for finishDisposal's releaseOwnership. */
+       if (live !== undefined && live.inbox.closing === undefined) return
+-      if (parentActivation.ownedChildren.delete(childId)) this.wake(parentActivation)
++      if (added && parentActivation.ownedChildren.delete(childId)) this.wake(parentActivation)
      }
    }
  
-+  /**
-+   * Resume one exact message that is already durable in a continuable child's
-+   * Inbox. This is the crash-recovery counterpart to {@link sendMessage}: it may
-+   * cold-materialize the child, but never inserts or replaces Inbox work.
-+   * Repeated calls return `false` after the identity has been claimed or
-+   * discarded, so callers can reconcile a durable delivery without duplicating
-+   * its user message.
-+   */
-+  async resumePending(
-+    parent: Agent,
-+    childId: SessionId,
-+    messageId: MessageId,
-+    options: SubagentResumeOptions,
-+  ): Promise<boolean> {
-+    this.assertAdmitting(parent)
-+    while (true) {
-+      const outcome = await this.locks.run(childId, async () => {
-+        let activation = this.activations.get(childId)
-+        if (activation?.disposal !== undefined) {
-+          await activation.disposal.catch(() => undefined)
-+          return { retry: true as const, resumed: false }
-+        }
-+        const materialized = activation === undefined
-+        if (activation === undefined) {
-+          activation = await this.materializePersisted(parent, childId, options.signal)
-+        }
-+        try {
-+          const resumed = this.wakePendingAdmitted(
-+            activation,
-+            messageId,
-+            parent,
-+            options.signal,
-+          )
-+          if (!resumed && materialized) await this.dispose(activation)
-+          return { retry: false as const, resumed }
-+        } catch (error: unknown) {
-+          if (materialized) {
-+            await this.dispose(activation).catch(() => undefined)
-+          }
-+          throw error
-+        }
-+      })
-+      if (!outcome.retry) return outcome.resumed
-+      this.assertAdmitting(parent)
-+      options.signal.throwIfAborted()
-+    }
-+  }
-+
-   /**
-    * Interrupt one live continuable child's current turn. Admission is
-    * synchronous and the effect is asynchronous: this authorizes the caller,
-@@ -798,7 +884,7 @@ export class SubagentContinuationManager {
-       // Strict descendants only: a continuable Agent may itself be a
-       // host-owned root, and its host remains responsible for that root handle.
+@@ -351,7 +372,7 @@ export class ContinuableActivationRegistry {
+     for (const activation of this.resident.values()) {
+       const lineage = this.liveLineage(activation.handle.agent)
        const owners = [...roots].filter(root => activation.handle.agent !== root
 -        && activation.ancestry.has(root))
 +        && (activation.ancestry.has(root) || activation.ancestorSessionIds.has(root.id)))
        if (owners.length === 0) continue
        targets.push(activation)
        for (const owner of owners) {
-@@ -940,7 +1026,12 @@ export class SubagentContinuationManager {
-   /** Reject new admission once the manager or this exact parent tree began draining. */
-   private assertAdmitting(agent: Agent): void {
+@@ -419,7 +440,12 @@ export class ContinuableActivationRegistry {
+    */
+   assertAdmitting(agent: Agent): void {
      const closing = this.closingTeardownFor(agent)
 -    if (closing === undefined) return
 +    if (closing === undefined) {
@@ -402,19 +362,378 @@ index 2103ce2270..24928446ea 100644
      throw new SubagentError(
        closing === 'manager'
          ? 'continuable subagents are draining; the operation was not admitted'
-@@ -959,8 +1050,10 @@ export class SubagentContinuationManager {
-    * holds the ids this manager admitted but has not yet seen drained.
+@@ -494,6 +520,7 @@ export class ContinuableActivationRegistry {
+       activation.handle.agent.session.header.parentSession,
+     )
+     this.acquireOwnership(parent, activation.childId)
++    this.startObserver(activation)
+     try {
+       activation.inbox.deliver(message, delivery)
+     } finally {
+@@ -505,11 +532,46 @@ export class ContinuableActivationRegistry {
+   /**
+    * Stop and release one Activation through its memoized close transaction.
+    * @param activation - exact residency epoch to close.
+-   * @param finalStateFlushed - whether natural settlement already flushed final state.
++   * @param options - completed flush, descendant preservation, and an earlier durability failure.
+    * @returns the shared close transaction.
     */
-   private stateOf(activation: Activation): ActivationState {
-+    if (activation.retainers > 0) return 'running'
-+    if (!activation.announced) return 'running'
-     if (activation.handle.agent.status === 'running' || activation.accepted.size > 0) return 'running'
--    if (activation.ownedChildren.size > 0) return 'waiting'
-+    if (activation.ownedChildren.size > 0 && activation.settlementDelivery === 'parent') return 'waiting'
-     return 'settled'
+-  dispose(activation: Activation, finalStateFlushed = false): Promise<void> {
+-    return activation.inbox.close(() => this.finishDisposal(activation, finalStateFlushed))
++  dispose(activation: Activation, options: ReleaseOptions = {}): Promise<void> {
++    return activation.inbox.close(() => this.finishDisposal(activation, options))
++  }
++
++  /** Wake one already-durable identity under the same child admission lock. */
++  wakePending(activation: Activation, messageId: MessageId, parent: Agent, signal: AbortSignal): boolean {
++    signal.throwIfAborted()
++    this.assertAdmitting(parent)
++    this.authorizeLineage(parent, activation.childId, activation.parentSession)
++    if (activation.inbox.closing !== undefined) throw new SubagentError('child is closing', 'ACTIVATION_CLOSING')
++    const wake = activation.handle.agent.wakePending
++    if (wake === undefined) throw new SubagentError('child cannot wake durable pending work', 'NOT_RESUMABLE')
++    this.startObserver(activation)
++    const resumed = wake.call(activation.handle.agent, messageId)
++    if (resumed) {
++      this.acquireOwnership(parent, activation.childId)
++      activation.announced = true
++    }
++    this.wake(activation)
++    return resumed
++  }
++
++  /** Retain quiet ancestry without scheduling a turn or activation edge. */
++  retain(activation: Activation): void { activation.retainers += 1 }
++
++  /** Release a caller's ancestry hold; keep genuinely pending input parked. */
++  releaseRetained(activation: Activation): Promise<void> | undefined {
++    activation.retainers -= 1
++    this.wake(activation)
++    return activation.inbox.closing ?? (activation.retainers === 0 && !activation.observerStarted
++      && !activation.inbox.hasPending ? this.dispose(activation, { preserveChildren: true }) : undefined)
++  }
++
++  private startObserver(activation: Activation): void {
++    if (activation.observerStarted) return
++    activation.observerStarted = true
++    activation.observer.start(activation.handle.agent)
    }
  
-@@ -977,14 +1070,20 @@ export class SubagentContinuationManager {
+   /** Dispose independent roots and report every branch failure after all settle. */
+@@ -576,7 +638,7 @@ export class ContinuableActivationRegistry {
+   ): Promise<Activation> {
+     const { childId, provider, parent, create } = inputs
+     inputs.signal.throwIfAborted()
+-    const setup = (childCtx: Context, child: Agent): void => {
++    const setup = (childCtx: Context, child: Agent): AgentSetupCommit => {
+       // Only fresh creation appends the descriptor and delegated policy after
+       // the inherited marker; a cold resume replays those persisted events.
+       if (create !== undefined) {
+@@ -584,6 +646,7 @@ export class ContinuableActivationRegistry {
+         appendDelegatedPolicyOverrides(child.session, create.delegatedPolicies)
+       }
+       applyChildComposition(childCtx, parent, inputs.composition)
++      return this.applySetup(childCtx, child)
+     }
+     const observer = this.observeActivation(provider, childId, parent)
+     const handle: AgentHandle = create === undefined
+@@ -609,11 +672,18 @@ export class ContinuableActivationRegistry {
+       childId,
+       parentSession: parent.id,
+       provider,
++      settlementDelivery: inputs.settlementDelivery,
+       handle,
+       inbox: new SubagentInbox(handle.agent),
+       ancestry: new WeakSet([handle.agent, ...parentLineage]),
++      ancestorSessionIds: new Set([
++        ...parentLineage.map(ancestor => ancestor.id),
++        ...this.resident.get(parent.id)?.ancestorSessionIds ?? [],
++      ]),
+       ownedChildren: new Set(),
+       observer,
++      observerStarted: false,
++      retainers: 0,
+       announced: false,
+       poke: Promise.withResolvers<void>(),
+     }
+@@ -625,7 +695,7 @@ export class ContinuableActivationRegistry {
+       const wakeOnInboxRemoval = (): void => { this.wake(activation) }
+       handle.agent.ctx.on('agent/inbox/claimed', wakeOnInboxRemoval)
+       handle.agent.ctx.on('agent/inbox/discarded', wakeOnInboxRemoval)
+-      observer.start(handle.agent)
++      if (inputs.residencyOnly !== true) this.startObserver(activation)
+     } catch (error: unknown) {
+       /* v8 ignore next -- rollback failure must not mask the admission failure
+        * that prevented this operation from returning an accepted message id. */
+@@ -692,7 +762,16 @@ export class ContinuableActivationRegistry {
+         }
+ 
+         const finalSeq = activation.handle.agent.session.seq
+-        await this.flushFinalState(activation)
++        try {
++          await this.flushFinalState(activation)
++        } catch (failure: unknown) {
++          try {
++            await this.dispose(activation, { failure, preserveChildren: activation.settlementDelivery === 'external' })
++          } catch (error: unknown) {
++            this.ctx.logger.warn(`subagent "${activation.childId}" settlement failed: ${errorChain(error)}`)
++          }
++          return
++        }
+         const attempt = await this.locks.run<SettlementAttempt>(activation.childId, () => {
+           const state = this.settlementState(activation, idleObservation)
+           if (state !== 'ready') return Promise.resolve(state)
+@@ -703,7 +782,7 @@ export class ContinuableActivationRegistry {
+           let done!: Promise<void>
+           try {
+             void activation.handle.agent.runMaintenance(() => {
+-              done = this.dispose(activation, true)
++              done = this.dispose(activation, { finalStateFlushed: true })
+               return Promise.resolve()
+             })
+           } catch {
+@@ -738,18 +817,20 @@ export class ContinuableActivationRegistry {
+   ): SettlementState {
+     if (activation.inbox.closing !== undefined) return 'closed'
+     if (activation.poke !== observation) return 'retry'
+-    if (activation.inbox.hasPending || activation.ownedChildren.size > 0) return 'wait'
++    if (!activation.announced || activation.retainers > 0 || activation.inbox.hasPending
++      || (activation.ownedChildren.size > 0 && activation.settlementDelivery === 'parent')) return 'wait'
+     return 'ready'
+   }
+ 
+   /** Propagate stop synchronously, then finish the child-first release. */
+-  private async finishDisposal(activation: Activation, finalStateFlushed: boolean): Promise<void> {
++  private async finishDisposal(activation: Activation, options: ReleaseOptions): Promise<void> {
+     this.wake(activation)
+     const { childId } = activation
+     const failures: SubagentError[] = []
+-    if (finalStateFlushed) {
++    if (options.failure !== undefined) failures.push(new SubagentError('external settlement durability failed', 'PERSISTENCE_FLUSH_FAILED', { cause: options.failure }))
++    if (options.finalStateFlushed) {
+       try {
+-        activation.observer.capture(activation.handle.agent)
++        if (activation.observerStarted) activation.observer.capture(activation.handle.agent)
+       } catch (error: unknown) {
+         failures.push(new SubagentError(
+           `subagent "${childId}" activation teardown failed: ${errorChain(error)}`,
+@@ -760,7 +841,7 @@ export class ContinuableActivationRegistry {
+     } else {
+       activation.handle.agent.cancel({ kind: 'parent' })
+       const idle = activation.handle.agent.whenIdle()
+-      const children = [...activation.ownedChildren]
++      const children = (options.preserveChildren ? [] : [...activation.ownedChildren])
+         .map(child => this.resident.get(child))
+         .filter((child): child is Activation => child !== undefined)
+       const childDisposals = children.map(child => this.dispose(child))
+@@ -782,7 +863,7 @@ export class ContinuableActivationRegistry {
+         }
+         await idle
+         await this.flushFinalState(activation)
+-        activation.observer.capture(activation.handle.agent)
++        if (activation.observerStarted) activation.observer.capture(activation.handle.agent)
+       } catch (error: unknown) {
+         failures.push(new SubagentError(
+           `subagent "${childId}" activation teardown failed: ${errorChain(error)}`,
+@@ -813,15 +894,15 @@ export class ContinuableActivationRegistry {
+       )
+     }
+     this.resident.delete(childId)
+-    this.notifySettlement(activation, activation.observer.terminal(failure))
++    if (activation.observerStarted) this.notifySettlement(activation, activation.observer.terminal(failure))
+     this.releaseOwnership(childId)
+-    activation.observer.settle(failure)
++    if (activation.observerStarted) activation.observer.settle(failure)
+     if (failure !== undefined) throw failure
+   }
+ 
+   /** Tell the durable direct parent how this Activation ended. */
+   private notifySettlement(activation: Activation, terminal: ActivationTerminal): void {
+-    if (!activation.announced) return
++    if (!activation.announced || activation.settlementDelivery === 'external') return
+     try {
+       const parent = this.ctx.agents.get(activation.parentSession)
+       if (parent === undefined) return
+@@ -843,8 +924,12 @@ export class ContinuableActivationRegistry {
+   private async flushFinalState(activation: Activation): Promise<void> {
+     const child = activation.handle.agent
+     try {
+-      await child.ctx.sessions.flush(child.session)
++      const flushed = await child.ctx.sessions.flush(child.session)
++      if (!flushed && activation.settlementDelivery === 'external') throw new Error('child has no durable writer')
+     } catch (error: unknown) {
++      if (activation.settlementDelivery === 'external') {
++        throw new SubagentError('external settlement requires durable child flush', 'PERSISTENCE_FLUSH_FAILED', { cause: error })
++      }
+       this.ctx.logger.warn(
+         `subagent "${activation.childId}" best-effort final session flush failed; `
+         + `the persisted state may be unavailable or stale on resume: ${errorChain(error)}`,
+diff --git a/packages/subagent/subagent/src/continuation.ts b/packages/subagent/subagent/src/continuation.ts
+index b86d5cd836527d0f6d746297b32b0f584cd00db4..c411d60178efff66f07e856fc38633ad671fbfca 100644
+--- a/packages/subagent/subagent/src/continuation.ts
++++ b/packages/subagent/subagent/src/continuation.ts
+@@ -15,7 +15,7 @@
+ 
+ import { randomUUID } from 'node:crypto'
+ import type { Context } from '@deepseek-ai/cordis'
+-import type { Agent } from '@deepseek-ai/dsh-agent'
++import type { Agent, AgentSetupCommit } from '@deepseek-ai/dsh-agent'
+ import { brandString } from '@deepseek-ai/dsh-brand'
+ import { ReasoningEffortId, contentHasImage, createUserMessage } from '@deepseek-ai/dsh-llm'
+ import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+@@ -50,6 +50,8 @@ import type {
+   ContinuableStartSpec,
+   SubagentInterruptAuthority,
+   SubagentSendMessageOptions,
++  SubagentResumeOptions,
++  SubagentDeliveryOptions,
+ } from './types.ts'
+ 
+ /** Inputs shared by model steering and human prompt delivery. */
+@@ -67,6 +69,7 @@ type ChildDeliveryOptions =
+ 
+ /** Package-private hooks supplied by the owning service. */
+ interface ContinuationHost {
++  applySetup(childCtx: Context, child: Agent): AgentSetupCommit
+   /** Resolve one provider's detached continuable-creation contribution. */
+   prepareContinuable(name: string, request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>
+   /** Build the lifecycle observer for one Activation residency epoch. */
+@@ -89,6 +92,7 @@ export class SubagentContinuationManager {
+     this.activations = new ContinuableActivationRegistry(
+       ctx,
+       (provider, childId, parent) => host.observeActivation(provider, childId, parent),
++      (childCtx, child) => host.applySetup(childCtx, child),
+     )
+   }
+ 
+@@ -102,6 +106,10 @@ export class SubagentContinuationManager {
+   async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart> {
+     const request = spec.request
+     const parent = request.parent
++    const settlementDelivery = spec.settlementDelivery ?? 'parent'
++    if (settlementDelivery !== 'parent' && settlementDelivery !== 'external') {
++      throw new TypeError('settlementDelivery must be "parent" or "external"')
++    }
+     this.activations.assertAdmitting(parent)
+     const persistence = this.requirePersistence()
+     assertSubagentMaxDepth(request.maxDepth)
+@@ -118,6 +126,7 @@ export class SubagentContinuationManager {
+       mode: 'continuable',
+       provider: spec.provider,
+       label: spec.label,
++      settlementDelivery,
+       ...agentProvider !== undefined ? { agentProvider } : {},
+       ...agentModel !== undefined ? { agentModel } : {},
+       ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
+@@ -159,6 +168,7 @@ export class SubagentContinuationManager {
+         const activation = await this.activations.materialize({
+           childId,
+           provider: spec.provider,
++          settlementDelivery,
+           parent,
+           create: {
+             seed,
+@@ -183,9 +193,8 @@ export class SubagentContinuationManager {
+         )
+       })
+       return { childId, messageId }
+-    } catch (error: unknown) {
++    } finally {
+       releaseHold()
+-      throw error
+     }
+   }
+ 
+@@ -280,9 +289,86 @@ export class SubagentContinuationManager {
+     const releaseHold = this.activations.holdOwnership(parent, childId)
+     try {
+       return await this.deliverFollowup(parent, childId, content, options)
+-    } catch (error: unknown) {
++    } finally {
+       releaseHold()
+-      throw error
++    }
++  }
++
++  /** Preserve trusted provenance using the existing queue/steer delivery path. */
++  deliverOwned(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentDeliveryOptions): Promise<MessageId> {
++    return this.deliverToChild(parent, childId, content, options)
++  }
++
++  /** Resume the same durable pending identity without inserting another input. */
++  async resumePending(parent: Agent, childId: SessionId, messageId: MessageId, options: SubagentResumeOptions): Promise<boolean> {
++    this.activations.assertAdmitting(parent)
++    const releaseHold = this.activations.holdOwnership(parent, childId)
++    try {
++      while (true) {
++        options.signal.throwIfAborted()
++        const result = await this.activations.locks.run(childId, async () => {
++          const existing = this.activations.get(childId)
++          if (existing?.inbox.closing !== undefined) return { disposal: existing.inbox.closing } as const
++          const activation = existing ?? await this.materializePersisted(parent, childId, options.signal)
++          try {
++            const resumed = this.activations.wakePending(activation, messageId, parent, options.signal)
++            if (!resumed && existing === undefined) await this.activations.dispose(activation)
++            return { resumed } as const
++          } catch (error: unknown) {
++            if (existing === undefined) await this.activations.dispose(activation).catch(() => undefined)
++            throw error
++          }
++        })
++        if ('resumed' in result) return result.resumed
++        await Promise.allSettled([result.disposal])
++        this.activations.assertAdmitting(parent)
++      }
++    } finally { releaseHold() }
++  }
++
++  /** Keep the actual direct parents resident while a trusted operation addresses a descendant. */
++  async withAncestors<T>(root: Agent, ancestors: readonly SessionId[], signal: AbortSignal, operation: (parent: Agent) => Promise<T>): Promise<T> {
++    if (ancestors.length > 8 || new Set([root.id, ...ancestors]).size !== ancestors.length + 1) {
++      throw new SubagentError('continuable ancestry must be a bounded acyclic path', 'UNAUTHORIZED')
++    }
++    this.activations.assertAdmitting(root)
++    const retained: Activation[] = []
++    let parent = root
++    try {
++      for (const childId of ancestors) {
++        for (;;) {
++          signal.throwIfAborted()
++          const directParent = parent
++          const result = await this.activations.locks.run(childId, async () => {
++            signal.throwIfAborted()
++            this.activations.assertAdmitting(directParent)
++            const existing = this.activations.get(childId)
++            if (existing?.inbox.closing !== undefined) return { disposal: existing.inbox.closing } as const
++            const activation = existing ?? await this.materializePersisted(directParent, childId, signal, true)
++            this.activations.authorizeLineage(directParent, childId, activation.parentSession)
++            this.activations.retain(activation)
++            return { activation } as const
++          })
++          if ('disposal' in result) { await result.disposal; continue }
++          retained.push(result.activation)
++          parent = result.activation.handle.agent
++          break
++        }
++      }
++      signal.throwIfAborted()
++      this.activations.assertAdmitting(parent)
++      return await operation(parent)
++    } finally {
++      const failures: unknown[] = []
++      for (const activation of retained.reverse()) {
++        try {
++          const { done } = await this.activations.locks.run(activation.childId, () => Promise.resolve({
++            done: this.activations.releaseRetained(activation),
++          }))
++          await done
++        } catch (error: unknown) { failures.push(error) }
++      }
++      if (failures.length > 0) throw new AggregateError(failures, 'continuable ancestor residency release failed')
+     }
+   }
+ 
+@@ -407,14 +493,19 @@ export class SubagentContinuationManager {
      content: ContentBlock[],
      options: ChildDeliveryOptions,
    ): Promise<MessageId> {
@@ -422,14 +741,13 @@ index 2103ce2270..24928446ea 100644
 +    return await this.submitMaterialized(activation, content, options, parent)
 +  }
 +
-+  /** Retain and authorize the exact persisted child before materialization. */
 +  private async materializePersisted(parent: Agent, childId: SessionId, signal: AbortSignal, residencyOnly = false): Promise<Activation> {
      const query = this.requireSessionQuery()
      let observation: SessionObservation
      try {
        observation = await query.observeSession(childId, {
 -        signal: options.signal,
-+        signal: signal,
++        signal,
        })
      } catch (error: unknown) {
 -      options.signal.throwIfAborted()
@@ -437,8 +755,8 @@ index 2103ce2270..24928446ea 100644
        throw new SubagentError(`subagent "${childId}" is unavailable`, 'NOT_RESUMABLE', { cause: error })
      }
      using source = observation
-@@ -1007,6 +1106,8 @@ export class SubagentContinuationManager {
-       activation = await this.materialize({
+@@ -434,6 +525,8 @@ export class SubagentContinuationManager {
+       activation = await this.activations.materialize({
          childId,
          provider: descriptor.provider,
 +        settlementDelivery: descriptor.settlementDelivery ?? 'parent',
@@ -446,12 +764,12 @@ index 2103ce2270..24928446ea 100644
          parent,
          agentOptions: {
            ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
-@@ -1016,14 +1117,14 @@ export class SubagentContinuationManager {
+@@ -443,14 +536,14 @@ export class SubagentContinuationManager {
              : {},
          },
          composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter },
 -        signal: options.signal,
-+        signal: signal,
++        signal,
        })
      } catch (error: unknown) {
 -      options.signal.throwIfAborted()
@@ -463,308 +781,9 @@ index 2103ce2270..24928446ea 100644
 +    return activation
    }
  
-   /**
-@@ -1120,13 +1221,13 @@ export class SubagentContinuationManager {
-     inputs: MaterializeInputs,
-     parentLineage: readonly Agent[],
-   ): Promise<Activation> {
--    const { childId, provider, parent, create } = inputs
-+    const { childId, provider, parent, create, settlementDelivery } = inputs
-     // No id pre-check here: the child lock serializes each durable child, both
-     // callers reach this only after confirming no Activation exists, and
-     // `AgentRegistry.enter()` is the authoritative collision boundary for an id
-     // some other owner holds — a duplicate would reject there with rollback.
-     inputs.signal.throwIfAborted()
--    const setup = (childCtx: Context): void => {
-+    const setup = (childCtx: Context): AgentSetupCommit => {
-       // Only fresh creation seeds the delegation policy onto the child's own
-       // log (after any fork seed, so fresh policy wins stale seed state); a
-       // cold resume replays those persisted events instead.
-@@ -1134,6 +1235,7 @@ export class SubagentContinuationManager {
-         appendDelegatedPolicyOverrides((childCtx.agent as Agent).session, create.delegatedPolicies)
-       }
-       applyChildComposition(childCtx, parent, inputs.composition)
-+      return this.host.applySetup(childCtx)
-     }
-     const observer = this.host.observeActivation(provider, childId, parent)
-     // Agent creation owns rollback before handle transfer. A rejection leaves
-@@ -1162,12 +1264,26 @@ export class SubagentContinuationManager {
-       // the persisted header before materializing.
-       parentSession: parent.id,
-       provider,
-+      settlementDelivery,
-       handle,
-       ancestry: new WeakSet([handle.agent, ...parentLineage]),
-+      ancestorSessionIds: new Set([
-+        ...parentLineage.map(ancestor => ancestor.id),
-+        ...this.activations.get(parent.id)?.ancestorSessionIds ?? [],
-+      ]),
-       ownedChildren: new Set(),
-       observer,
-+      observerStarted: false,
-+      retainers: 0,
-       disposal: undefined,
--      accepted: new Set(),
-+      // A cold materialization must retain every durable pending identity, not
-+      // only a new message admitted in this process. Otherwise the settlement
-+      // watcher can dispose an idle Agent between reconstruction and the wake
-+      // that owns its already-persisted Inbox work.
-+      accepted: new Set([
-+        ...handle.agent.inbox.nextStep,
-+        ...handle.agent.inbox.nextTurn,
-+      ].map(message => message.id)),
-       announced: false,
-       poke: Promise.withResolvers<void>(),
-     }
-@@ -1195,7 +1311,7 @@ export class SubagentContinuationManager {
-       // revocations from here on are immediate live revocation.
-       // Publish the start edge before any turn can run, so observers see this
-       // epoch before its first request.
--      observer.start(handle.agent)
-+      if (inputs.residencyOnly !== true) this.startObserver(activation)
-     } catch (error: unknown) {
-       // Listener exceptions are contained by the lifecycle emitter; a start
-       // publication throw therefore leaves no residency edge to pair.
-@@ -1269,11 +1385,12 @@ export class SubagentContinuationManager {
-     // Parent-originated delivery keeps the parent live through ownership, so
-     // establish it before the message can enter the child's inbox.
-     this.acquireOwnership(parent, activation.childId)
-+    this.startObserver(activation)
-     const message = options.delivery === 'steer'
-       ? agentMessage(parent, content)
-       : createUserMessage({ content, source: options.source })
-     const accepted = this.admitWaking(activation, message.id, () => {
--      if (options.delivery === 'steer') activation.handle.agent.steer(message)
-+      if (options.delivery !== 'queue') activation.handle.agent.steer(message)
-       else activation.handle.agent.followup(message)
-     })
-     // Past this point the caller has an id for this child, so its eventual
-@@ -1338,6 +1455,46 @@ export class SubagentContinuationManager {
-     return this.submit(activation, content, options, parent)
-   }
- 
-+  /** Wake one exact durable pending identity without mutating the Inbox. */
-+  private wakePendingAdmitted(
-+    activation: Activation,
-+    messageId: MessageId,
-+    parent: Agent,
-+    signal: AbortSignal,
-+  ): boolean {
-+    signal.throwIfAborted()
-+    this.assertAdmitting(parent)
-+    this.authorizeLineage(
-+      parent,
-+      activation.childId,
-+      activation.handle.agent.session.header.parentSession,
-+    )
-+    const wakePending = activation.handle.agent.wakePending
-+    if (wakePending === undefined) {
-+      throw new SubagentError(
-+        `subagent "${activation.childId}" provider cannot wake durable pending work`,
-+        'NOT_RESUMABLE',
-+      )
-+    }
-+    activation.accepted.add(messageId)
-+    this.startObserver(activation)
-+    let resumed: boolean
-+    try {
-+      resumed = wakePending.call(activation.handle.agent, messageId)
-+    } catch (error: unknown) {
-+      activation.accepted.delete(messageId)
-+      throw error
-+    }
-+    if (!resumed) {
-+      activation.accepted.delete(messageId)
-+      return false
-+    }
-+    this.acquireOwnership(parent, activation.childId)
-+    activation.announced = true
-+    this.wake(activation)
-+    return true
-+  }
-+
-   /**
-    * Authorize one operation against the durable direct-parent lineage. Other
-    * agents, ancestors, teams, workflows, and hosts remain rejected until an
-@@ -1365,6 +1522,70 @@ export class SubagentContinuationManager {
-    * hold. A `next-turn` delivered while `waiting` wakes the same Agent and
-    * returns it to `running`, so this re-observes rather than settling early.
-    */
-+  private startObserver(activation: Activation): void {
-+    if (activation.observerStarted) return
-+    activation.observerStarted = true
-+    activation.observer.start(activation.handle.agent)
-+  }
-+
-+  /**
-+   * Retain an exact durable ancestry while a trusted caller addresses a deeper
-+   * child. Quiet ancestors acquire no Inbox input, turn, or lifecycle epoch.
-+   * Every edge is authorized against the stored direct parent, and teardown
-+   * uses the same Activation locks and handles as ordinary continuation.
-+   */
-+  async withAncestors<T>(root: Agent, ancestors: readonly SessionId[], signal: AbortSignal, operation: (parent: Agent) => Promise<T>): Promise<T> {
-+    if (ancestors.length > 8 || new Set([root.id, ...ancestors]).size !== ancestors.length + 1) {
-+      throw new SubagentError('continuable ancestry must be a bounded acyclic path', 'UNAUTHORIZED')
-+    }
-+    if (this.ctx.agents.get(root.id) !== root) throw new SubagentError('continuable ancestry requires the exact live root', 'UNAUTHORIZED')
-+    const retained: Activation[] = []
-+    let parent = root
-+    try {
-+      for (const childId of ancestors) {
-+        for (;;) {
-+          signal.throwIfAborted()
-+          this.assertAdmitting(parent)
-+          const directParent = parent
-+          const result = await this.locks.run(childId, async () => {
-+            signal.throwIfAborted()
-+            this.assertAdmitting(directParent)
-+            const existing = this.activations.get(childId)
-+            if (existing?.disposal !== undefined) return { disposal: existing.disposal } as const
-+            const activation = existing ?? await this.materializePersisted(directParent, childId, signal, true)
-+            this.authorizeLineage(directParent, childId, activation.parentSession)
-+            activation.retainers += 1
-+            return { activation } as const
-+          })
-+          if ('disposal' in result) { await result.disposal; continue }
-+          retained.push(result.activation)
-+          parent = result.activation.handle.agent
-+          break
-+        }
-+      }
-+      signal.throwIfAborted()
-+      this.assertAdmitting(parent)
-+      return await operation(parent)
-+    } finally {
-+      const errors: unknown[] = []
-+      for (const activation of retained.reverse()) {
-+        try {
-+          const release = await this.locks.run(activation.childId, () => {
-+            activation.retainers -= 1
-+            this.wake(activation)
-+            // An already-persisted pending message remains parked for its owning
-+            // resumePending call. Disposing that handle would clear its Inbox.
-+            const done = activation.disposal ?? (activation.retainers === 0 && !activation.observerStarted
-+              && activation.accepted.size === 0 ? this.dispose(activation, true) : undefined)
-+            return Promise.resolve({ done })
-+          })
-+          await release.done
-+        } catch (error: unknown) { errors.push(error) }
-+      }
-+      if (errors.length > 0) throw new AggregateError(errors, 'continuable ancestor residency release failed')
-+    }
-+  }
-+
-   private watchSettlement(activation: Activation): void {
-     void (async () => {
-       while (disposalOf(activation) === undefined) {
-@@ -1382,7 +1603,7 @@ export class SubagentContinuationManager {
-           }
-           // `dispose()` assigns its memoized transaction synchronously, so
-           // admission is closed before this critical section releases.
--          return Promise.resolve({ settling: true, done: this.dispose(activation) })
-+          return Promise.resolve({ settling: true, done: this.dispose(activation, activation.settlementDelivery === 'external') })
-         })
-         if (!settling.settling) {
-           // Still running, or waiting on descendants: re-observe after the next
-@@ -1413,14 +1634,14 @@ export class SubagentContinuationManager {
-    * @param activation - the residency epoch to stop and release.
-    * @returns the one disposal transaction owned by this Activation.
-    */
--  private dispose(activation: Activation): Promise<void> {
-+  private dispose(activation: Activation, preserveChildren = false): Promise<void> {
-     const existing = activation.disposal
-     if (existing !== undefined) return existing
-     const completion = Promise.withResolvers<void>()
-     // Presence is the admission cutoff. Assign it before the async helper starts
-     // because that helper cancels Agents and may synchronously re-enter callers.
-     activation.disposal = completion.promise
--    void this.finishDisposal(activation).then(completion.resolve, completion.reject)
-+    void this.finishDisposal(activation, preserveChildren).then(completion.resolve, completion.reject)
-     return completion.promise
-   }
- 
-@@ -1429,14 +1650,14 @@ export class SubagentContinuationManager {
-    * @param activation - the Activation whose disposal transaction is installed.
-    * @returns once the handle and ownership edge are released.
-    */
--  private async finishDisposal(activation: Activation): Promise<void> {
-+  private async finishDisposal(activation: Activation, preserveChildren: boolean): Promise<void> {
-     this.wake(activation)
-     const { childId } = activation
-     // Stop top-down before the first await. Slow descendant cleanup may delay
-     // release, but it cannot let this ancestor continue model or tool work.
-     activation.handle.agent.cancel({ kind: 'parent' })
-     const idle = activation.handle.agent.whenIdle()
--    const children = [...activation.ownedChildren]
-+    const children = (preserveChildren ? [] : [...activation.ownedChildren])
-       .map(child => this.activations.get(child))
-       .filter((child): child is Activation => child !== undefined)
-     const childDisposals = children.map(child => this.dispose(child))
-@@ -1466,7 +1687,7 @@ export class SubagentContinuationManager {
-       await this.flushFinalState(activation)
-       // Capture the child-dependent edge data while the child is still live:
-       // handle disposal unregisters it, and consumers read its log and scope.
--      activation.observer.capture(activation.handle.agent)
-+      if (activation.observerStarted) activation.observer.capture(activation.handle.agent)
-     } catch (error: unknown) {
-       failures.push(new SubagentError(
-         `subagent "${childId}" activation teardown failed: ${errorChain(error)}`,
-@@ -1504,13 +1725,13 @@ export class SubagentContinuationManager {
-     // race a parent watcher that resumes one microtask later, finds itself
-     // childless and quiet, and disposes an Agent whose `cancel()` clears the
-     // inbox this notice is sitting in.
--    this.notifySettlement(activation, activation.observer.terminal(failure))
-+    if (activation.observerStarted) this.notifySettlement(activation, activation.observer.terminal(failure))
-     // Release ownership even on failure: a retained failed child would pin its
-     // ancestors in `waiting` forever.
-     this.releaseOwnership(childId)
-     // Emit once the disposal outcome is known, so a rejecting scoped cleanup
-     // cannot be reported as a successful epoch.
--    activation.observer.settle(failure)
-+    if (activation.observerStarted) activation.observer.settle(failure)
-     if (failure !== undefined) throw failure
-   }
- 
-@@ -1533,7 +1754,7 @@ export class SubagentContinuationManager {
-    * @param terminal - how this epoch ended, as the terminal edge will report it.
-    */
-   private notifySettlement(activation: Activation, terminal: ActivationTerminal): void {
--    if (!activation.announced) return
-+    if (!activation.announced || activation.settlementDelivery === 'external') return
-     try {
-       const parent = this.ctx.agents.get(activation.parentSession)
-       if (parent === undefined) return
-@@ -1584,9 +1805,11 @@ export class SubagentContinuationManager {
-   }
- 
-   /**
--   * Request a best-effort final session flush after the child is quiescent.
--   * Listener failure is logged because flush participation cannot identify a
--   * particular persistence backend, and teardown must still release ownership.
-+   * Request a final session flush after the child is quiescent. Stock parent
-+   * delivery retains its best-effort compatibility behavior. External
-+   * settlement ownership makes the flush strict: its owner cannot durably
-+   * project an epoch after this manager releases the Session unless the child
-+   * prefix was confirmed first.
-    * @param activation - the Activation whose final events should be flushed.
-    */
-   private async flushFinalState(activation: Activation): Promise<void> {
-@@ -1594,6 +1817,13 @@ export class SubagentContinuationManager {
-     try {
-       await child.ctx.sessions.flush(child.session)
-     } catch (error: unknown) {
-+      if (activation.settlementDelivery === 'external') {
-+        throw new SubagentError(
-+          `subagent "${activation.childId}" external settlement flush failed: ${errorChain(error)}`,
-+          'PERSISTENCE_FLUSH_FAILED',
-+          { cause: error },
-+        )
-+      }
-       this.ctx.logger.warn(
-         `subagent "${activation.childId}" best-effort final session flush failed; `
-         + `the persisted state may be unavailable or stale on resume: ${errorChain(error)}`,
+   /** Admit a materialized child, commit its creation fact, and release it on failure. */
 diff --git a/packages/subagent/subagent/src/descriptor.ts b/packages/subagent/subagent/src/descriptor.ts
-index de9191cc50..75f39f5418 100644
+index de9191cc50fff632e3a9ff1c61e14a534df961a8..2bce55dd24b5f55430926bcce44d4b8b6ee8b785 100644
 --- a/packages/subagent/subagent/src/descriptor.ts
 +++ b/packages/subagent/subagent/src/descriptor.ts
 @@ -45,7 +45,7 @@ declare module '@deepseek-ai/dsh-session/types' {
@@ -802,15 +821,6 @@ index de9191cc50..75f39f5418 100644
  ])
  const TOOL_FILTER_KEYS = new Set(['allow', 'deny'])
  
-@@ -207,7 +212,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
-   if (typeof version !== 'number') {
-     throw new Error('persisted subagent descriptor version must be a number')
-   }
--  if (version !== SUBAGENT_DESCRIPTOR_VERSION) return undefined
-+  if (version !== SUBAGENT_DESCRIPTOR_VERSION && version !== 3 && version !== 4) return undefined
- 
-   const mode = value['mode']
-   if (mode !== 'one-shot' && mode !== 'continuable') {
 @@ -242,6 +247,10 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
    const toolFilter = Object.hasOwn(value, 'toolFilter')
      ? parseToolFilter(value['toolFilter'])
@@ -839,43 +849,45 @@ index de9191cc50..75f39f5418 100644
    const snapshot = snapshotJsonValue(candidate)
    if (snapshot === undefined) {
 diff --git a/packages/subagent/subagent/src/index.ts b/packages/subagent/subagent/src/index.ts
-index 28e50930cd..2445be8e8e 100644
+index 8a91e06e56c63006d473d421113936ed2d0331ad..6b7be426277294ee05cf4ff15fb8e685f16eaecb 100644
 --- a/packages/subagent/subagent/src/index.ts
 +++ b/packages/subagent/subagent/src/index.ts
-@@ -64,17 +64,23 @@ import { SubagentError } from './error.ts'
- import { assertSubagentMaxDepth } from './depth.ts'
+@@ -62,6 +62,8 @@ import type {
+   SubagentRunEndInfo,
+   SubagentRunInfo,
+   SubagentSendMessageOptions,
++  SubagentResumeOptions,
++  SubagentDeliveryOptions,
+   SubagentStartRequest,
+ } from './types.ts'
+ import { SubagentError } from './error.ts'
+@@ -69,6 +71,8 @@ import { assertSubagentMaxDepth } from './depth.ts'
  import { createActivationObserver, createLifecycleEmitter, observeRun } from './lifecycle.ts'
  import type { ActivationObserver, LifecycleEmitter } from './lifecycle.ts'
+ import SubagentContinuationManager from './continuation.ts'
 +import SubagentActivationSetupRegistry, { type ContinuableSetupContribution } from './activation-setup-registry.ts'
 +export type { ContinuableSetupContribution } from './activation-setup-registry.ts'
- import SubagentContinuationManager from './continuation.ts'
- import type {
-   ContinuableStart,
-   ContinuableStartSpec,
-   SubagentInterruptAuthority,
-   SubagentSendMessageOptions,
-+  SubagentResumeOptions,
-+  SubagentDeliveryOptions,
- } from './continuation.ts'
+ import type { SubagentDelivery } from './inbox.ts'
  import { listChildren as listSubagentChildren, listDescendants as listSubagentDescendants } from './list-children.ts'
  import type { SubagentDescendantListEntry, SubagentListEntry } from './list-children.ts'
- import { snapshotSubagentDescriptor } from './descriptor.ts'
- import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
-+// Keep host projection state and definitions reachable from the published entry.
-+export { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
- import { queueSubagentPrompt } from './internal.ts'
- 
- export * from './out-of-process.ts'
-@@ -126,6 +132,8 @@ export type {
-   ContinuableStartSpec,
-   SubagentInterruptAuthority,
+@@ -93,6 +97,8 @@ export type {
+   SubagentResult,
+   SubagentRun,
    SubagentSendMessageOptions,
 +  SubagentResumeOptions,
 +  SubagentDeliveryOptions,
-   SubagentSettledMessageSource,
- } from './continuation.ts'
- export type * from './control-types.ts'
-@@ -189,6 +197,7 @@ interface BrowserPromptSource {
+   SubagentStartRequest,
+   SubagentStopReason,
+   SubagentStopReasonMap,
+@@ -129,6 +135,7 @@ export type * from './control-types.ts'
+ export type { SubagentDescendantListEntry } from './list-children.ts'
+ export type { SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
+ export type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
++export { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
+ 
+ declare module '@deepseek-ai/cordis' {
+   interface Context {
+@@ -186,6 +193,7 @@ interface BrowserPromptSource {
  
  /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
  export class SubagentRuntime extends TypertRemoteService {
@@ -883,50 +895,86 @@ index 28e50930cd..2445be8e8e 100644
    private providers = new Map<string, SubagentProvider>()
    private continuations: SubagentContinuationManager | undefined
    /**
-@@ -203,6 +212,7 @@ export class SubagentRuntime extends TypertRemoteService {
+@@ -200,6 +208,7 @@ export class SubagentRuntime extends TypertRemoteService {
      this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
      ctx.inject(['agents'], (childCtx: Context) => {
        const manager = new SubagentContinuationManager(childCtx, {
-+        applySetup: child => this.activationSetups.apply(child),
++        applySetup: (childCtx, child) => this.activationSetups.apply(childCtx, child),
          prepareContinuable: (name, request) => this.prepareContinuable(name, request),
          observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
        })
-@@ -218,6 +228,11 @@ export class SubagentRuntime extends TypertRemoteService {
+@@ -216,6 +225,16 @@ export class SubagentRuntime extends TypertRemoteService {
      })
    }
  
-+  /** Install a trusted capability at unpublished fresh/cold child setup, revoked with its scope. */
++  /**
++   * Install a trusted capability at unpublished fresh/cold child setup, revoked with its scope.
++   * @param contribution - trusted child-scope setup invoked with its explicit unpublished Agent.
++   * @returns the effect-scoped contribution disposer.
++   */
 +  registerContinuableSetup(contribution: ContinuableSetupContribution): () => void {
++    // oxlint-disable-next-line typescript/no-misused-promises -- the single registry disposer is synchronous
 +    return this.ctx.effect(() => this.activationSetups.register(contribution), 'subagents.registerContinuableSetup()')
 +  }
 +
    /**
     * Establish one durable continuable child and deliver its initial prompt.
     * Resolves when the child's inbox accepts that prompt, without waiting for the
-@@ -254,6 +269,21 @@ export class SubagentRuntime extends TypertRemoteService {
-     return this.requireContinuations().sendMessage(sender, targetId, content, options)
+@@ -229,6 +248,52 @@ export class SubagentRuntime extends TypertRemoteService {
+     return this.requireContinuations().startContinuable(spec)
    }
  
-+  /** Wake one exact durable child Inbox identity without reinserting it. */
++  /**
++   * Wake one exact durable child Inbox identity without reinserting it.
++   * @param parent - exact live direct-parent Agent authorizing the operation.
++   * @param childId - durable direct-child session identity.
++   * @param messageId - already-durable pending identity; never removed or reinserted.
++   * @param options - caller cancellation before admission.
++   * @returns whether the existing identity was scheduled.
++   */
 +  async resumeContinuable(parent: Agent, childId: SessionId, messageId: MessageId, options: SubagentResumeOptions): Promise<boolean> {
 +    return this.requireContinuations().resumePending(parent, childId, messageId, options)
 +  }
 +
-+  /** Deliver trusted composition input with its original provenance and explicit scheduling. */
-+  async deliverContinuable(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentDeliveryOptions): Promise<MessageId> {
++  /**
++   * Deliver trusted composition input with its original provenance and explicit scheduling.
++   * @param parent - exact live direct-parent Agent authorizing the operation.
++   * @param childId - durable direct-child session identity.
++   * @param content - trusted input blocks admitted through the native inbox.
++   * @param options - delivery provenance, explicit scheduling and caller cancellation.
++   * @returns the identity accepted by the native child inbox.
++   */
++  async deliverContinuable(
++    parent: Agent,
++    childId: SessionId,
++    content: ContentBlock[],
++    options: SubagentDeliveryOptions,
++  ): Promise<MessageId> {
 +    return this.requireContinuations().deliverOwned(parent, childId, content, options)
 +  }
 +
-+  /** Retain exact direct-parent residency without injecting synthetic ancestor work. */
-+  async withContinuableAncestors<T>(root: Agent, ancestors: readonly SessionId[], options: SubagentResumeOptions, operation: (parent: Agent) => Promise<T>): Promise<T> {
++  /**
++   * Retain exact direct-parent residency without injecting synthetic ancestor work.
++   * @param root - exact live root authorizing the ancestry path.
++   * @param ancestors - bounded acyclic direct-child path, ordered from root to immediate parent.
++   * @param options - caller cancellation before admission.
++   * @param operation - work using the resident immediate parent before holds release.
++   * @returns the operation result after all residency holds release.
++   */
++  async withContinuableAncestors<T>(
++    root: Agent,
++    ancestors: readonly SessionId[],
++    options: SubagentResumeOptions,
++    operation: (parent: Agent) => Promise<T>,
++  ): Promise<T> {
 +    return await this.requireContinuations().withAncestors(root, ancestors, options.signal, operation)
 +  }
 +
    /**
-    * Queue one host-protocol message as a distinct direct-child turn.
-    * Symbol-keyed so host adapters can preserve their own provenance without
+    * Steer one model-authored message to the sender's direct parent or direct
+    * continuable child. A running target admits it at the nearest step boundary;
 diff --git a/packages/subagent/subagent/src/lifecycle.ts b/packages/subagent/subagent/src/lifecycle.ts
-index ba2db8e62c..2da77e6de4 100644
+index ba2db8e62c290f199e938acdae4a21f17f111c14..2da77e6de484044112503845cd17131178cd67de 100644
 --- a/packages/subagent/subagent/src/lifecycle.ts
 +++ b/packages/subagent/subagent/src/lifecycle.ts
 @@ -155,7 +155,7 @@ export function observeRun(
@@ -947,10 +995,47 @@ index ba2db8e62c..2da77e6de4 100644
        }, parent)
      },
 diff --git a/packages/subagent/subagent/src/types.ts b/packages/subagent/subagent/src/types.ts
-index 9ee1e09aef..61ebaeef28 100644
+index 1b9ce56c3f46f2a2e1bb53a1d8b3f03dd8581c13..1607a251e4b6d5e9aaeb2df3cb521f272bf978d4 100644
 --- a/packages/subagent/subagent/src/types.ts
 +++ b/packages/subagent/subagent/src/types.ts
-@@ -64,6 +64,12 @@ export interface SubagentRunEndInfo {
+@@ -11,7 +11,7 @@
+ 
+ import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
+ import type { Branded } from '@deepseek-ai/dsh-brand'
+-import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
++import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+ import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+ import type { ObjectJsonSchema, ToolRestriction } from '@deepseek-ai/dsh-tools'
+ import type { SubagentDescriptorData } from './descriptor.ts'
+@@ -45,6 +45,8 @@ export interface ContinuableStartSpec {
+    * the durable descriptor, and composes the child itself.
+    */
+   readonly request: Omit<SubagentStartRequest, 'label' | 'signal' | 'outputSchema'>
++  /** Settlement delivery owner. Defaults to the direct parent for stock behavior. */
++  readonly settlementDelivery?: 'parent' | 'external'
+   /** Caller cancellation, owning the operation only until inbox acceptance. */
+   readonly signal: AbortSignal
+ }
+@@ -72,6 +74,18 @@ export interface SubagentSendMessageOptions {
+   readonly signal: AbortSignal
+ }
+ 
++/** Options for waking an already-persisted child Inbox identity. */
++export interface SubagentResumeOptions {
++  readonly signal: AbortSignal
++}
++
++/** Trusted composition delivery with explicit scheduling and durable provenance. */
++export interface SubagentDeliveryOptions {
++  readonly delivery: 'steer' | 'queue'
++  readonly source: MessageSource
++  readonly signal: AbortSignal
++}
++
+ /**
+  * Observe-only identifying detail for a published subagent run, carried by
+  * `subagent/start`. One-shot runs and continuable Activation epochs share this
+@@ -108,6 +122,12 @@ export interface SubagentRunEndInfo {
    readonly local: boolean
    /** The terminal stop reason. */
    readonly stopReason: SubagentResult['stopReason']
@@ -965,12 +1050,17 @@ index 9ee1e09aef..61ebaeef28 100644
     * {@link SubagentResult.output}; absent on infrastructure rejection or when
 diff --git a/packages/subagent/subagent/tests/activation-setup-registry.spec.ts b/packages/subagent/subagent/tests/activation-setup-registry.spec.ts
 new file mode 100644
-index 0000000000..6231ed3936
+index 0000000000000000000000000000000000000000..76d231439cdd86fe5d5dbaee0959ccaddf1d44b1
 --- /dev/null
 +++ b/packages/subagent/subagent/tests/activation-setup-registry.spec.ts
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,173 @@
 +import { describe, expect, it } from 'vitest'
 +import { Context } from '@deepseek-ai/cordis'
++import type { Agent } from '@deepseek-ai/dsh-agent'
++import { SessionId } from '@deepseek-ai/dsh-session'
++
++// Registry tests exercise identity forwarding, not Agent behavior.
++const agent = { id: SessionId('unpublished-child') } as Agent
 +import SubagentActivationSetupRegistry from '../src/activation-setup-registry.ts'
 +
 +/** A child-like scoped context with observable disposal. */
@@ -984,11 +1074,16 @@ index 0000000000..6231ed3936
 +  it('installs contributions in registration order and commits them', () => {
 +    const registry = new SubagentActivationSetupRegistry()
 +    const order: string[] = []
-+    registry.register(() => { order.push('first'); return () => order.push('undo-first') })
++    registry.register((childCtx, childAgent) => {
++      expect(childCtx).toBe(child.ctx)
++      expect(childAgent).toBe(agent)
++      order.push('first')
++      return () => order.push('undo-first')
++    })
 +    registry.register(() => { order.push('second'); return () => order.push('undo-second') })
 +    const child = childContext()
 +
-+    const transaction = registry.apply(child.ctx)
++    const transaction = registry.apply(child.ctx, agent)
 +    expect(order).toEqual(['first', 'second'])
 +    expect(() => { transaction.commit() }).not.toThrow()
 +    expect(order).toEqual(['first', 'second'])
@@ -999,7 +1094,7 @@ index 0000000000..6231ed3936
 +    let disposals = 0
 +    const remove = registry.register(() => () => { disposals += 1 })
 +    const child = childContext()
-+    registry.apply(child.ctx).commit()
++    registry.apply(child.ctx, agent).commit()
 +
 +    remove()
 +    remove()
@@ -1012,7 +1107,7 @@ index 0000000000..6231ed3936
 +    let disposals = 0
 +    const remove = registry.register(() => () => { disposals += 1 })
 +    const child = childContext()
-+    registry.apply(child.ctx).commit()
++    registry.apply(child.ctx, agent).commit()
 +
 +    await child.close()
 +    remove()
@@ -1026,7 +1121,7 @@ index 0000000000..6231ed3936
 +    registry.register(() => { installed.push('kept'); return () => {} })
 +    remove()
 +
-+    registry.apply(childContext().ctx).commit()
++    registry.apply(childContext().ctx, agent).commit()
 +    expect(installed).toEqual(['kept'])
 +  })
 +
@@ -1034,7 +1129,7 @@ index 0000000000..6231ed3936
 +    const registry = new SubagentActivationSetupRegistry()
 +    let disposals = 0
 +    const remove = registry.register(() => () => { disposals += 1 })
-+    const transaction = registry.apply(childContext().ctx)
++    const transaction = registry.apply(childContext().ctx, agent)
 +
 +    remove()
 +    expect(disposals).toBe(1)
@@ -1050,7 +1145,7 @@ index 0000000000..6231ed3936
 +      return () => { disposals += 1 }
 +    })
 +
-+    const transaction = registry.apply(childContext().ctx)
++    const transaction = registry.apply(childContext().ctx, agent)
 +    expect(disposals).toBe(1)
 +    expect(() => { transaction.commit() }).toThrow(/revoked/)
 +  })
@@ -1067,7 +1162,7 @@ index 0000000000..6231ed3936
 +      }
 +    })
 +    for (const child of [childContext(), childContext(), childContext()]) {
-+      registry.apply(child.ctx).commit()
++      registry.apply(child.ctx, agent).commit()
 +    }
 +
 +    expect(() => { remove() }).toThrow(/failed to release 1 installation\(s\)/)
@@ -1083,7 +1178,7 @@ index 0000000000..6231ed3936
 +    })
 +    registry.register(() => () => { released.push('b') })
 +    const child = childContext()
-+    registry.apply(child.ctx).commit()
++    registry.apply(child.ctx, agent).commit()
 +
 +    await child.close().catch(() => undefined)
 +    expect(released).toEqual(['a', 'b'])
@@ -1096,7 +1191,7 @@ index 0000000000..6231ed3936
 +    registry.register(() => { throw new Error('boom') })
 +    registry.register(() => () => undone.push('third'))
 +
-+    expect(() => registry.apply(childContext().ctx)).toThrow(/boom/)
++    expect(() => registry.apply(childContext().ctx, agent)).toThrow(/boom/)
 +    expect(undone).toEqual(['first'])
 +  })
 +
@@ -1109,7 +1204,7 @@ index 0000000000..6231ed3936
 +      throw new Error('second failed after revoking the first')
 +    })
 +
-+    expect(() => registry.apply(childContext().ctx)).toThrow(/second failed/)
++    expect(() => registry.apply(childContext().ctx, agent)).toThrow(/second failed/)
 +    expect(disposals).toEqual(['first'])
 +  })
 +
@@ -1123,8 +1218,8 @@ index 0000000000..6231ed3936
 +    })
 +    const first = childContext()
 +    const second = childContext()
-+    registry.apply(first.ctx).commit()
-+    registry.apply(second.ctx).commit()
++    registry.apply(first.ctx, agent).commit()
++    registry.apply(second.ctx, agent).commit()
 +
 +    await first.close()
 +    expect(disposed).toEqual(['child-1'])
@@ -1133,23 +1228,19 @@ index 0000000000..6231ed3936
 +  })
 +})
 diff --git a/packages/subagent/subagent/tests/continuation.spec.ts b/packages/subagent/subagent/tests/continuation.spec.ts
-index 851720f228..2794c31ce8 100644
+index f2bbd16ef5974f74b5affa6470c84547fec48821..99625e91ff3b8e7d5af7e7152788f272a38cad68 100644
 --- a/packages/subagent/subagent/tests/continuation.spec.ts
 +++ b/packages/subagent/subagent/tests/continuation.spec.ts
-@@ -3,10 +3,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
- import { tmpdir } from 'node:os'
- import { join } from 'node:path'
- import { Context } from '@deepseek-ai/cordis'
--import type { Agent } from '@deepseek-ai/dsh-agent'
-+import { Inbox, type Agent } from '@deepseek-ai/dsh-agent'
+@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
+ import type { Agent } from '@deepseek-ai/dsh-agent'
  import AgentLoop from '@deepseek-ai/dsh-agent-loop'
  import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 -import { SessionId } from '@deepseek-ai/dsh-session'
 +import { Session, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
- import type { SessionEvent } from '@deepseek-ai/dsh-session'
+ import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
  import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
- import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-@@ -293,6 +293,7 @@ describe('SubagentRuntime.startContinuable', () => {
+ import * as toolSchedule from '@deepseek-ai/dsh-schedule'
+@@ -344,6 +344,7 @@ describe('SubagentRuntime.startContinuable', () => {
        version: SUBAGENT_DESCRIPTOR_VERSION,
        mode: 'continuable',
        provider: 'spawn',
@@ -1157,7 +1248,7 @@ index 851720f228..2794c31ce8 100644
        label: 'child task',
        agentProvider: 'mock',
        agentModel: 'mock',
-@@ -423,6 +424,7 @@ describe('SubagentRuntime.startContinuable', () => {
+@@ -535,6 +536,7 @@ describe('SubagentRuntime.startContinuable', () => {
        version: SUBAGENT_DESCRIPTOR_VERSION,
        mode: 'continuable',
        provider: 'spawn',
@@ -1165,7 +1256,7 @@ index 851720f228..2794c31ce8 100644
        label: 'child task',
      })
      await drainManager(ctx)
-@@ -457,6 +459,7 @@ describe('SubagentRuntime.startContinuable', () => {
+@@ -569,6 +571,7 @@ describe('SubagentRuntime.startContinuable', () => {
          version: SUBAGENT_DESCRIPTOR_VERSION,
          mode: 'continuable',
          provider: 'spawn',
@@ -1173,7 +1264,7 @@ index 851720f228..2794c31ce8 100644
          label: 'child task',
          toolFilter: { deny: ['noop'] },
        })
-@@ -707,6 +710,62 @@ describe('direct-child Queue residency routing', () => {
+@@ -840,6 +843,61 @@ describe('direct-child Queue residency routing', () => {
      expect(loaded.events.filter(event => event.type === 'subagent/descriptor')).toHaveLength(1)
    })
  
@@ -1187,12 +1278,13 @@ index 851720f228..2794c31ce8 100644
 +    const started = await ctx.subagents.startContinuable(startSpec(parent))
 +    await waitNoActivation(ctx, started.childId)
 +
-+    const loaded = await ctx.sessionPersistence.load(started.childId)
++    const loaded = await loadStoredSession(ctx.sessionPersistence, started.childId)
 +    const persisted = Session.fromRestore(
 +      started.childId,
 +      structuredClone(loaded.events),
 +      structuredClone(loaded.meta),
-+      { inheritedEventCount: loaded.inheritedEventCount },
++      loaded.inheritedEventCount,
++      'detached',
 +    )
 +    const persistedBefore = loaded.events.length
 +    const pending = createUserMessage({
@@ -1203,21 +1295,19 @@ index 851720f228..2794c31ce8 100644
 +      content: message('also durable'),
 +      source: { kind: 'agent-message', form: 'relay', senderSessionId: parent.id },
 +    })
-+    const inbox = new Inbox(persisted, {
-+      claimed: () => undefined,
-+      discarded: () => undefined,
-+      inserted: () => undefined,
-+    })
-+    inbox.append('next-turn', pending)
-+    inbox.append('next-turn', secondPending)
-+    await ctx.sessionPersistence.append(started.childId, persisted.snapshotEvents(SessionLogOffset(persistedBefore)))
++    persisted.append('agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 0, inserted: [pending, secondPending] })
++    const writer = await ctx.sessionPersistence.open(started.childId, 'write')
++    try {
++      await writer.append(persisted.snapshotEvents(SessionLogOffset(persistedBefore)))
++      await writer.flush()
++    } finally { await writer.close() }
 +
 +    await expect(ctx.subagents.resumeContinuable(parent, started.childId, pending.id, {
 +      signal: testSignal,
 +    })).resolves.toBe(true)
 +    await waitNoActivation(ctx, started.childId)
 +
-+    const recovered = await ctx.sessionPersistence.load(started.childId)
++    const recovered = await loadStoredSession(ctx.sessionPersistence, started.childId)
 +    expect(userTexts(recovered.events)).toEqual(['child task', 'already durable', 'also durable'])
 +    expect(recovered.events.flatMap(event => event.type === 'agent/inbox/spliced'
 +      ? event.data.inserted.filter(message => message.id === pending.id)
@@ -1236,40 +1326,62 @@ index 851720f228..2794c31ce8 100644
    it('cold-resumes after the initial provider unregisters', async () => {
      const { ctx, parent } = await setup([textResponse('first'), textResponse('after resume')])
      await ctx.plugin(InvariantRegistry)
-@@ -918,6 +977,32 @@ describe('continuable child ownership', () => {
+@@ -1127,6 +1185,54 @@ describe('continuable child ownership', () => {
  })
  
  describe('continuable durability and teardown', () => {
-+  it('installs trusted setup before fresh child work and releases it with the Activation', async () => {
-+    const releaseResponse = Promise.withResolvers<undefined>()
-+    const adapter = new GatedAdapter([
-+      { chunks: textResponse('setup complete'), gate: releaseResponse.promise },
-+    ])
-+    const { ctx, parent } = await setupWith(adapter)
-+    const installed: SessionId[] = []
-+    const released: SessionId[] = []
-+    const unregister = ctx.subagents.registerContinuableSetup((childCtx) => {
-+      const child = childCtx.agent
-+      if (child === undefined) throw new Error('trusted setup lacks its unpublished child Agent')
-+      installed.push(child.id)
-+      return () => { released.push(child.id) }
++  it('installs trusted setup before fresh and cold child work and releases each installation', async () => {
++    const { ctx, parent } = await setup([textResponse('first'), textResponse('resumed')])
++    const installed: Agent[] = []
++    const released: Agent[] = []
++    const unregister = ctx.subagents.registerContinuableSetup((childCtx, child) => {
++      expect(childCtx).toBe(child.ctx)
++      expect(ctx.agents.get(child.id)).toBeUndefined()
++      installed.push(child)
++      return () => { released.push(child) }
 +    })
-+
-+    const started = await ctx.subagents.startContinuable(startSpec(parent))
-+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-+    expect(installed).toEqual([started.childId])
-+    expect(released).toEqual([])
-+
-+    releaseResponse.resolve(undefined)
++    const started = await ctx.subagents.startContinuable({ ...startSpec(parent), settlementDelivery: 'external' })
 +    await waitNoActivation(ctx, started.childId)
-+    expect(released).toEqual([started.childId])
++    expect(installed).toHaveLength(1)
++    expect(released).toEqual(installed)
++    await ctx.subagents.deliverContinuable(parent, started.childId, message('continue'), {
++      signal: testSignal, delivery: 'queue', source: { kind: 'user' },
++    })
++    await waitNoActivation(ctx, started.childId)
++    expect(installed).toHaveLength(2)
++    expect(installed[0]).not.toBe(installed[1])
++    expect(installed.map(child => child.id)).toEqual([started.childId, started.childId])
++    expect(released).toEqual(installed)
 +    unregister()
++    expect(released).toHaveLength(2)
 +  })
 +
-   it('settles when the best-effort final flush has no listeners', async () => {
-     const releaseResponse = Promise.withResolvers<undefined>()
++  it('reports a one-time final flush failure even when cleanup can flush successfully', async () => {
++    const hold = Promise.withResolvers<undefined>()
++    const adapter = new GatedAdapter([{ chunks: textResponse('answer'), gate: hold.promise }])
++    const { ctx, parent } = await setupWith(adapter)
++    const ends: SubagentRunEndInfo[] = []
++    const warnings: string[] = []
++    ctx.on('subagent/end', info => void ends.push(info))
++    ctx.logger.warn = (message: string) => { warnings.push(message) }
++    const started = await ctx.subagents.startContinuable({ ...startSpec(parent), settlementDelivery: 'external' })
++    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
++    let finalFlushes = 0
++    ctx.on('session/flush', session => {
++      if (session.id === started.childId && ++finalFlushes === 1) throw new Error('transient final write failure')
++    })
++    hold.resolve(undefined)
++    await waitNoActivation(ctx, started.childId)
++    expect(finalFlushes).toBeGreaterThanOrEqual(2)
++    expect(ends).toHaveLength(1)
++    expect(ends[0]).toMatchObject({ infrastructureFailure: true, stopReason: 'error' })
++    expect(warnings.some(warning => warning.includes('transient final write failure'))).toBe(true)
++  })
++
+   it('rechecks direct Agent inbox work accepted during the final flush', async () => {
+     const releaseFirstTurn = Promise.withResolvers<undefined>()
      const adapter = new GatedAdapter([
-@@ -958,6 +1043,43 @@ describe('continuable durability and teardown', () => {
+@@ -1351,6 +1457,43 @@ describe('continuable durability and teardown', () => {
      expect(ends.at(-1)?.stopReason).toBe('completed')
    })
  
@@ -1313,7 +1425,7 @@ index 851720f228..2794c31ce8 100644
    it('logs a teardown failure reached through normal settlement', async () => {
      const hold = Promise.withResolvers<undefined>()
      const adapter = new GatedAdapter([{ chunks: textResponse('answer'), gate: hold.promise }])
-@@ -1966,7 +2088,222 @@ describe('continuable adjacent-Agent delivery', () => {
+@@ -2475,7 +2618,225 @@ describe('continuable adjacent-Agent delivery', () => {
    })
  })
  
@@ -1322,12 +1434,15 @@ index 851720f228..2794c31ce8 100644
 +    const { ctx, parent, adapter } = await setup([textResponse('first'), textResponse('recovered pending')])
 +    const child = await ctx.subagents.startContinuable({ ...startSpec(parent), settlementDelivery: 'external' })
 +    await waitNoActivation(ctx, child.childId)
-+    const loaded = await ctx.sessionPersistence.load(child.childId)
-+    const persisted = Session.fromRestore(child.childId, structuredClone(loaded.events), structuredClone(loaded.meta), loaded.inheritedEventCount)
++    const loaded = await loadStoredSession(ctx.sessionPersistence, child.childId)
++    const persisted = Session.fromRestore(child.childId, structuredClone(loaded.events), structuredClone(loaded.meta), loaded.inheritedEventCount, 'detached')
 +    const pending = createUserMessage({ content: message('already admitted'), source: { kind: 'user' } })
-+    const inbox = new Inbox(persisted, { claimed: () => undefined, discarded: () => undefined, inserted: () => undefined })
-+    inbox.append('next-turn', pending)
-+    await ctx.sessionPersistence.append(child.childId, persisted.snapshotEvents(SessionLogOffset(loaded.events.length)))
++    persisted.append('agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 0, inserted: [pending] })
++    const writer = await ctx.sessionPersistence.open(child.childId, 'write')
++    try {
++      await writer.append(persisted.snapshotEvents(SessionLogOffset(loaded.events.length)))
++      await writer.flush()
++    } finally { await writer.close() }
 +    await ctx.subagents.withContinuableAncestors(parent, [child.childId], { signal: testSignal }, async (resident) => {
 +      expect(resident.inbox.nextTurn.map(item => item.id)).toEqual([pending.id])
 +    })
@@ -1335,7 +1450,7 @@ index 851720f228..2794c31ce8 100644
 +    expect(ctx.agents.get(child.childId)?.inbox.nextTurn.map(item => item.id)).toEqual([pending.id])
 +    await expect(ctx.subagents.resumeContinuable(parent, child.childId, pending.id, { signal: testSignal })).resolves.toBe(true)
 +    await waitNoActivation(ctx, child.childId)
-+    const after = await ctx.sessionPersistence.load(child.childId)
++    const after = await loadStoredSession(ctx.sessionPersistence, child.childId)
 +    const insertions = after.events.flatMap(event => event.type === 'agent/inbox/spliced' ? event.data.inserted.filter(item => item.id === pending.id) : [])
 +    expect(insertions).toHaveLength(1)
 +    expect(adapter.requests).toHaveLength(2)
@@ -1359,7 +1474,7 @@ index 851720f228..2794c31ce8 100644
 +    await waitNoActivation(ctx, nested.childId)
 +    parentHold.resolve(undefined)
 +    await waitNoActivation(ctx, first.childId)
-+    const before = await ctx.sessionPersistence.load(first.childId)
++    const before = await loadStoredSession(ctx.sessionPersistence, first.childId)
 +    const beforeStarts = starts.filter(id => id === first.childId).length
 +    const beforeEnds = ends.filter(id => id === first.childId).length
 +    await ctx.subagents.withContinuableAncestors(parent, [first.childId], { signal: testSignal }, async (directParent) => {
@@ -1372,19 +1487,19 @@ index 851720f228..2794c31ce8 100644
 +    await waitNoActivation(ctx, nested.childId)
 +    await waitNoActivation(ctx, first.childId)
 +    expect(adapter.requests).toHaveLength(3)
-+    const after = (await ctx.sessionPersistence.load(first.childId)).events
++    const after = (await loadStoredSession(ctx.sessionPersistence, first.childId)).events
 +    expect(after.slice(0, before.events.length)).toEqual(before.events)
 +    expect(after.slice(before.events.length).map(event => event.type)).toEqual(['session/end-seed'])
 +    expect(starts.filter(id => id === first.childId)).toHaveLength(beforeStarts)
 +    expect(ends.filter(id => id === first.childId)).toHaveLength(beforeEnds)
-+    expect((await ctx.sessionPersistence.load(nested.childId)).meta.parentSession).toBe(first.childId)
++    expect((await loadStoredSession(ctx.sessionPersistence, nested.childId)).meta.parentSession).toBe(first.childId)
 +  })
 +
 +  it('rejects forged ancestry and releases every quiet ancestor after a callback failure', async () => {
 +    const { ctx, parent, adapter } = await setup([textResponse('done')])
 +    const child = await ctx.subagents.startContinuable({ ...startSpec(parent), settlementDelivery: 'external' })
 +    await waitNoActivation(ctx, child.childId)
-+    const before = await ctx.sessionPersistence.load(child.childId)
++    const before = await loadStoredSession(ctx.sessionPersistence, child.childId)
 +    const invoke = vi.fn(async () => undefined)
 +    await expect(ctx.subagents.withContinuableAncestors({ ...parent }, [child.childId], { signal: testSignal }, invoke)).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
 +    await expect(ctx.subagents.withContinuableAncestors(parent, [child.childId, child.childId], { signal: testSignal }, invoke)).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
@@ -1393,7 +1508,7 @@ index 851720f228..2794c31ce8 100644
 +    })).rejects.toThrow('synthetic routed operation failure')
 +    await waitNoActivation(ctx, child.childId)
 +    expect(invoke).not.toHaveBeenCalled()
-+    const after = (await ctx.sessionPersistence.load(child.childId)).events
++    const after = (await loadStoredSession(ctx.sessionPersistence, child.childId)).events
 +    expect(after.slice(0, before.events.length)).toEqual(before.events)
 +    expect(after.slice(before.events.length).map(event => event.type)).toEqual(['session/end-seed'])
 +    expect(adapter.requests).toHaveLength(1)
@@ -1451,7 +1566,7 @@ index 851720f228..2794c31ce8 100644
 +      delivery, source, signal: testSignal,
 +    })
 +    await waitNoActivation(ctx, started.childId)
-+    const restored = await ctx.sessionPersistence.load(started.childId)
++    const restored = await loadStoredSession(ctx.sessionPersistence, started.childId)
 +    expect(userTexts(restored.events)).toEqual(['child task', 'attributed follow-up', 'cold follow-up'])
 +    for (const event of restored.events) {
 +      if (event.type === 'user/message' && event.data.id !== started.messageId) {
@@ -1480,7 +1595,7 @@ index 851720f228..2794c31ce8 100644
 +    expect(ctx.agents.get(nested.childId)?.status).toBe('running')
 +    childHold.resolve(undefined)
 +    await waitNoActivation(ctx, nested.childId)
-+    expect(userTexts((await ctx.sessionPersistence.load(nested.childId)).events)).toEqual(['child task'])
++    expect(userTexts((await loadStoredSession(ctx.sessionPersistence, nested.childId)).events)).toEqual(['child task'])
 +  })
 +
 +  it('stops the durable descendants of a cold ancestor after its original Agent object was released', async () => {
@@ -1528,7 +1643,7 @@ index 851720f228..2794c31ce8 100644
 +    await waitNoActivation(ctx, started.childId)
 +    expect(settlementNotices(parent)).toEqual([])
 +
-+    const loaded = await ctx.sessionPersistence.load(started.childId)
++    const loaded = await loadStoredSession(ctx.sessionPersistence, started.childId)
 +    expect(loaded.events.find(event => event.type === 'subagent/descriptor')?.data)
 +      .toMatchObject({ settlementDelivery: 'external' })
 +  })

@@ -44,12 +44,11 @@ export interface AcceptedPatchedDshArtifactAuthority {
   readonly manifestSha256: string;
   readonly sha256SumsSha256: string;
   readonly consumerLockSha256: string;
-  readonly packageCount: 74;
+  readonly packageCount: 77;
   readonly runtimePackages: Readonly<Record<AcceptedDshRuntimePackageName, string>>;
   readonly requiredPatchedSeams: readonly [
     "agent.wakePending",
     "agent/pre-assistant-commit",
-    "session-persistence.isKnownEventType",
     "agents.setPublicationGuard",
     "sessions.setPublicationGuard",
     "subagents.continuableSetup",
@@ -60,8 +59,6 @@ export interface AcceptedPatchedDshArtifactAuthority {
     "subagents.deliverContinuable",
     "subagents.independentExternalSettlement",
     "subagents.withContinuableAncestors",
-    "llm-deepseek.streamToolIdentity",
-    "tokenMeter.estimateRequest",
     "compaction.capacitySafeCheckpoint",
     "systemPrompt.literalContributions",
     "subagents.literalPersona",
@@ -104,9 +101,9 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "runtimePackages",
     "requiredPatchedSeams",
   ], "accepted patched DSH artifact authority");
-  if (authority.formatVersion !== 1 || authority.packageCount !== 74
+  if (authority.formatVersion !== 1 || authority.packageCount !== 77
     || typeof authority.artifactVersion !== "string"
-    || !/^0\.1\.2-rc\.1\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
+    || !/^0\.1\.5-rc\.2\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
     throw new TypeError("accepted patched DSH artifact identity is invalid");
   }
   const runtimeValue = authority.runtimePackages;
@@ -125,7 +122,6 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
   const expectedSeams = [
     "agent.wakePending",
     "agent/pre-assistant-commit",
-    "session-persistence.isKnownEventType",
     "agents.setPublicationGuard",
     "sessions.setPublicationGuard",
     "subagents.continuableSetup",
@@ -136,8 +132,6 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "subagents.deliverContinuable",
     "subagents.independentExternalSettlement",
     "subagents.withContinuableAncestors",
-    "llm-deepseek.streamToolIdentity",
-    "tokenMeter.estimateRequest",
     "compaction.capacitySafeCheckpoint",
     "systemPrompt.literalContributions",
     "subagents.literalPersona",
@@ -162,7 +156,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     manifestSha256: exactSha256(authority.manifestSha256, "accepted patched DSH manifest"),
     sha256SumsSha256: exactSha256(authority.sha256SumsSha256, "accepted patched DSH SHA256SUMS"),
     consumerLockSha256: exactSha256(authority.consumerLockSha256, "accepted patched DSH consumer lock"),
-    packageCount: 74,
+    packageCount: 77,
     runtimePackages: frozenPackages,
     requiredPatchedSeams: Object.freeze(expectedSeams) as AcceptedPatchedDshArtifactAuthority["requiredPatchedSeams"],
   });

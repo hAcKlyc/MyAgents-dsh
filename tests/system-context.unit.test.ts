@@ -19,7 +19,7 @@ afterEach(async () => {
 const mounted = async () => {
   const root = new Context();
   roots.push(root);
-  await root.plugin(SystemPrompt, { includeHarnessIdentity: false, persona: "" });
+  await root.plugin(SystemPrompt, { includeHarnessIdentity: false, personaPrefix: "" });
   return root;
 };
 
@@ -52,7 +52,7 @@ describe("Host system context normalization", () => {
     await root.plugin(installPrimary);
     expect((await root.systemPrompt.assemble({ scope: primaryKey })).sections)
       .toContainEqual(expect.objectContaining({
-        name: "deployment:persona",
+        name: "deployment:persona-prefix",
         text: "legacy {{literal}}",
       }));
   });
@@ -121,12 +121,14 @@ describe("Host system context registration", () => {
     const childAssembly = await root.systemPrompt.assemble({ scope: childKey });
     expect(primaryAssembly.sections.map(({ name }) => name)).toEqual([
       "host:global",
-      "deployment:persona",
+      "deployment:persona-prefix",
       "host:root",
+      "deployment:persona-suffix",
     ]);
     expect(childAssembly.sections.map(({ name }) => name)).toEqual([
       "host:global",
-      "deployment:persona",
+      "deployment:persona-prefix",
+      "deployment:persona-suffix",
     ]);
     expect(childAssembly.contexts).toMatchObject([{
       name: "host:supplement",

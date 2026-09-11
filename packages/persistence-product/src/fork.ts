@@ -58,9 +58,31 @@ export interface ProductForkReceiptEventData {
   readonly token: string;
 }
 
+declare module "@deepseek-ai/dsh-session/types" {
+  interface SessionEventMap {
+    "myagents/session/fork": ProductForkReceiptEventData;
+  }
+}
+
+
 // Durable fork identities exclude every C0/DEL control byte.
 // eslint-disable-next-line no-control-regex
 const IDENTIFIER_PATTERN = /^(?=.{1,256}$)[^\u0000-\u001f\u007f]+$/u;
+
+export const validateProductForkReceipt = (value: unknown): ProductForkReceiptEventData => {
+  const keys = ["clientMutationId", "sourceGenerationId", "sourceRuntimeSessionId", "sourceStableBoundaryId",
+    "targetGenerationId", "targetPersistenceRef", "targetRuntimeSessionId", "targetWorkspaceIdentity", "token"];
+  if (value === null || typeof value !== "object" || Array.isArray(value)
+    || Reflect.ownKeys(value).length !== keys.length) throw new TypeError("fork receipt shape is invalid");
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)
+      || typeof descriptor.value !== "string" || !IDENTIFIER_PATTERN.test(descriptor.value)) {
+      throw new TypeError("fork receipt event identity is invalid");
+    }
+  }
+  return Object.freeze({ ...value }) as ProductForkReceiptEventData;
+};
 
 export const createProductForkReceiptEvent = (
   sequence: number,
@@ -68,13 +90,11 @@ export const createProductForkReceiptEvent = (
   data: ProductForkReceiptEventData,
 ): SessionEvent => {
   if (!Number.isSafeInteger(sequence) || sequence < 0
-    || !Number.isSafeInteger(time) || time < 0
-    || !Object.values(data).every((value) => typeof value === "string"
-      && IDENTIFIER_PATTERN.test(value))) {
+    || !Number.isSafeInteger(time) || time < 0) {
     throw new TypeError("fork receipt event identity is invalid");
   }
   return Object.freeze({
-    data: Object.freeze({ ...data }),
+    data: validateProductForkReceipt(data),
     seq: sequence,
     time,
     type: PRODUCT_FORK_EVENT_TYPES[0],

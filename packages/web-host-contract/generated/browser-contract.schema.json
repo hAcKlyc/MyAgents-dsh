@@ -1262,7 +1262,121 @@
                             "type": "object",
                             "required": [
                               "kind",
-                              "delta"
+                              "phase",
+                              "streamId"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "assistant_stream"
+                              },
+                              "phase": {
+                                "type": "string",
+                                "const": "start"
+                              },
+                              "streamId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "phase",
+                              "streamId",
+                              "chunkCount",
+                              "outcome"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "assistant_stream"
+                              },
+                              "phase": {
+                                "type": "string",
+                                "const": "end"
+                              },
+                              "streamId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "chunkCount": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "outcome": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "abandoned"
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "eventId",
+                                      "eventType"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "committed"
+                                      },
+                                      "eventId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "eventType": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "const": "assistant/message"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "assistant/attempt"
+                                          }
+                                        ]
+                                      },
+                                      "messageId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "delta",
+                              "streamId",
+                              "frameIndex"
                             ],
                             "properties": {
                               "kind": {
@@ -1272,6 +1386,16 @@
                               "delta": {
                                 "type": "string",
                                 "maxLength": 262144
+                              },
+                              "streamId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "frameIndex": {
+                                "type": "integer",
+                                "minimum": 0
                               }
                             },
                             "additionalProperties": false
@@ -1280,7 +1404,9 @@
                             "type": "object",
                             "required": [
                               "kind",
-                              "delta"
+                              "delta",
+                              "streamId",
+                              "frameIndex"
                             ],
                             "properties": {
                               "kind": {
@@ -1290,6 +1416,16 @@
                               "delta": {
                                 "type": "string",
                                 "maxLength": 262144
+                              },
+                              "streamId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "frameIndex": {
+                                "type": "integer",
+                                "minimum": 0
                               }
                             },
                             "additionalProperties": false
@@ -5807,7 +5943,121 @@
                                 "type": "object",
                                 "required": [
                                   "kind",
-                                  "delta"
+                                  "phase",
+                                  "streamId"
+                                ],
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "assistant_stream"
+                                  },
+                                  "phase": {
+                                    "type": "string",
+                                    "const": "start"
+                                  },
+                                  "streamId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "kind",
+                                  "phase",
+                                  "streamId",
+                                  "chunkCount",
+                                  "outcome"
+                                ],
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "assistant_stream"
+                                  },
+                                  "phase": {
+                                    "type": "string",
+                                    "const": "end"
+                                  },
+                                  "streamId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "chunkCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "outcome": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "required": [
+                                          "kind"
+                                        ],
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "const": "abandoned"
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "required": [
+                                          "kind",
+                                          "eventId",
+                                          "eventType"
+                                        ],
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "const": "committed"
+                                          },
+                                          "eventId": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "eventType": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "const": "assistant/message"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "assistant/attempt"
+                                              }
+                                            ]
+                                          },
+                                          "messageId": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "kind",
+                                  "delta",
+                                  "streamId",
+                                  "frameIndex"
                                 ],
                                 "properties": {
                                   "kind": {
@@ -5817,6 +6067,16 @@
                                   "delta": {
                                     "type": "string",
                                     "maxLength": 262144
+                                  },
+                                  "streamId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "frameIndex": {
+                                    "type": "integer",
+                                    "minimum": 0
                                   }
                                 },
                                 "additionalProperties": false
@@ -5825,7 +6085,9 @@
                                 "type": "object",
                                 "required": [
                                   "kind",
-                                  "delta"
+                                  "delta",
+                                  "streamId",
+                                  "frameIndex"
                                 ],
                                 "properties": {
                                   "kind": {
@@ -5835,6 +6097,16 @@
                                   "delta": {
                                     "type": "string",
                                     "maxLength": 262144
+                                  },
+                                  "streamId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "frameIndex": {
+                                    "type": "integer",
+                                    "minimum": 0
                                   }
                                 },
                                 "additionalProperties": false
@@ -9253,7 +9525,121 @@
                           "type": "object",
                           "required": [
                             "kind",
-                            "delta"
+                            "phase",
+                            "streamId"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "assistant_stream"
+                            },
+                            "phase": {
+                              "type": "string",
+                              "const": "start"
+                            },
+                            "streamId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "phase",
+                            "streamId",
+                            "chunkCount",
+                            "outcome"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "assistant_stream"
+                            },
+                            "phase": {
+                              "type": "string",
+                              "const": "end"
+                            },
+                            "streamId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "chunkCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "outcome": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "abandoned"
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "kind",
+                                    "eventId",
+                                    "eventType"
+                                  ],
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "committed"
+                                    },
+                                    "eventId": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 256,
+                                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                    },
+                                    "eventType": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string",
+                                          "const": "assistant/message"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "assistant/attempt"
+                                        }
+                                      ]
+                                    },
+                                    "messageId": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 256,
+                                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "delta",
+                            "streamId",
+                            "frameIndex"
                           ],
                           "properties": {
                             "kind": {
@@ -9263,6 +9649,16 @@
                             "delta": {
                               "type": "string",
                               "maxLength": 262144
+                            },
+                            "streamId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "frameIndex": {
+                              "type": "integer",
+                              "minimum": 0
                             }
                           },
                           "additionalProperties": false
@@ -9271,7 +9667,9 @@
                           "type": "object",
                           "required": [
                             "kind",
-                            "delta"
+                            "delta",
+                            "streamId",
+                            "frameIndex"
                           ],
                           "properties": {
                             "kind": {
@@ -9281,6 +9679,16 @@
                             "delta": {
                               "type": "string",
                               "maxLength": 262144
+                            },
+                            "streamId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "frameIndex": {
+                              "type": "integer",
+                              "minimum": 0
                             }
                           },
                           "additionalProperties": false

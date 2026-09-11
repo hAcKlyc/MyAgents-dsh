@@ -1,6 +1,6 @@
 import { SessionLogOffset } from "@deepseek-ai/dsh-session";
 import type { SessionStorageMetadata } from "@deepseek-ai/dsh-session-persistence";
-import { Inbox } from "@deepseek-ai/dsh-agent";
+import { FixtureInbox as Inbox } from "../fixtures/inbox-events.js";
 import {
   MessageId,
   freezeMessage,
@@ -10,12 +10,10 @@ import {
   type ToolCallBlock,
   type UserMessage,
 } from "@deepseek-ai/dsh-llm";
-import { KNOWN_SESSION_EVENT_TYPES, Session, SessionId, type SessionEvent, type SessionHeader } from "@deepseek-ai/dsh-session";
+import { KNOWN_SESSION_EVENT_TYPES, SESSION_FORMAT_VERSION, Session, SessionId, type SessionEvent, type SessionHeader } from "@deepseek-ai/dsh-session";
 import { isJsonValue, snapshotJsonValue, type JsonValue } from "@deepseek-ai/dsh-util-values";
 import {
   SessionPersistenceRevision,
-  type PersistenceBackend,
-  type StoredPrefix,
 } from "@deepseek-ai/dsh-session-persistence";
 import { PRODUCT_OPERATION_EVENT_TYPES } from "@myagents-dsh/operation-runtime";
 import {
@@ -605,8 +603,8 @@ export function commitPreparedAssistant(
 ): void {
   session.append(
     "assistant/message",
-    { message: prepared.message, step, turn },
-    { surfaceOp: "append", sourceEventSeqs: [] },
+    { stream: [], message: prepared.message, step, turn },
+    { surfaceOp: "append" },
   );
   for (const call of prepared.toolCalls) {
     session.append("tool/call", {
@@ -709,7 +707,8 @@ export interface DeleteCommitResult {
   readonly status: "already_deleted" | "deleted";
 }
 
-export class SharedGenerationMutationHarness implements PersistenceBackend<never> {
+/** Historical pure mutation model; current Provider ownership is tested separately. */
+export class SharedGenerationMutationHarness {
   readonly name = "shared-generation-mutation-spike";
   private cache: PreparedGeneration | undefined;
   private chain: Promise<void> = Promise.resolve();
@@ -730,7 +729,7 @@ export class SharedGenerationMutationHarness implements PersistenceBackend<never
     this.meta = Object.freeze({
       createdAt: 0,
       id: SessionId(sessionId),
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       isSeeded: false,
     });
   }
@@ -754,7 +753,7 @@ export class SharedGenerationMutationHarness implements PersistenceBackend<never
     return structuredClone(this.events);
   }
 
-  loadStored(id: SessionId, signal?: AbortSignal): Promise<StoredPrefix<never> | undefined> {
+  loadStored(id: SessionId, signal?: AbortSignal): Promise<{ meta: SessionHeader; inheritedEventCount: SessionLogOffset; events: SessionEvent[]; revision: ReturnType<typeof SessionPersistenceRevision> } | undefined> {
     signal?.throwIfAborted();
     if (id !== this.meta.id || this.tombstone !== undefined) return Promise.resolve(undefined);
     return Promise.resolve({

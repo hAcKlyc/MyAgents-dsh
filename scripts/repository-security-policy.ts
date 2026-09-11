@@ -65,12 +65,13 @@ export const isExactArtifactLauncherChildProcessSource = (
   ]);
 };
 
-export const isExactDynamicE2eChildProcessSource = (
+const isExactSpawnWorkerSource = (
+  ownerPath: string,
   relativePath: string,
   specifier: string,
   source: string,
 ): boolean => {
-  if (relativePath !== DYNAMIC_E2E_HOST_PATH || specifier !== "node:child_process") return false;
+  if (relativePath !== ownerPath || specifier !== "node:child_process") return false;
   const childProcessLoads = analyzeModuleLoads(source, relativePath).specifiers.filter((value) => {
     const canonical = value.startsWith("node:") ? value.slice(5) : value;
     return canonical.split("/")[0] === "child_process";
@@ -101,6 +102,20 @@ export const isExactDynamicE2eChildProcessSource = (
     },
   ]);
 };
+
+export const isExactDynamicE2eChildProcessSource = (
+  relativePath: string,
+  specifier: string,
+  source: string,
+): boolean => isExactSpawnWorkerSource(DYNAMIC_E2E_HOST_PATH, relativePath, specifier, source);
+
+export const isExactSessionOwnershipNativeTestSource = (
+  relativePath: string,
+  specifier: string,
+  source: string,
+): boolean => isExactSpawnWorkerSource(
+  "tests/product-session-ownership.native.test.ts", relativePath, specifier, source,
+);
 
 export const isExactWebHostRuntimeProcessSource = (
   relativePath: string,

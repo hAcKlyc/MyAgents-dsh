@@ -22,12 +22,10 @@ import { SessionLogOffset, type SessionEvent, type SessionHeader, type SessionId
 import { snapshotJsonValue, type JsonValue } from "@deepseek-ai/dsh-util-values";
 import {
   SessionPersistenceRevision,
-  type PersistenceBackend,
   type SessionPersistenceRevision as PersistenceRevision,
   type SessionPersistenceSnapshot,
   type SessionStorageMetadata,
-  type StoredPrefix,
-  type StoredSuffix,
+  type SessionInspection,
 } from "@deepseek-ai/dsh-session-persistence";
 import type { SqliteDurabilityPlan } from "@myagents-dsh/product-profile";
 import { canonicalSessionReadData } from "@myagents-dsh/protocol";
@@ -67,33 +65,23 @@ import {
 } from "./rewind.js";
 
 import {
-  isProductKnownSessionEventType,
-} from "./known-events.js";
-import {
-  PRODUCT_CHECKPOINT_DIRECTORIES_MIGRATION_SQL,
   PRODUCT_PERSISTENCE_APPLICATION_ID,
-  PRODUCT_CHECKPOINT_SCHEMA_SQL,
-  PRODUCT_DELETE_SCHEMA_SQL,
-  PRODUCT_DELETE_SCHEMA_V7_SQL,
-  PRODUCT_FORK_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_SQL,
-  PRODUCT_INHERITED_PREFIX_SCHEMA_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V2_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V3_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V4_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V5_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V6_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   PRODUCT_PERSISTENCE_TABLES,
-  PRODUCT_REWIND_CHILD_SCHEMA_SQL,
-  PRODUCT_SESSION_GENERATIONS_V6_SCHEMA_SQL,
-  PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL,
 } from "./schema.js";
+import { materializeProductSessionHeader, validateProductStoredEvents } from "./storage-contract.js";
+import type { ProductSessionOwnership, ProductSessionOwnershipProvider } from "./session-ownership.js";
 import { ProductSessionLockTable } from "./session-lock.js";
 
+export interface ProductStoredSession extends SessionInspection {
+  readonly revision: PersistenceRevision;
+  readonly generationId: string;
+}
+
 interface ProductSqliteStoreOptions {
+  readonly ownership: ProductSessionOwnershipProvider;
   readonly durability: SqliteDurabilityPlan;
   readonly runtimeHome: string;
 }
@@ -407,72 +395,6 @@ const EXPECTED_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_SQL
   })
   .sort((left, right) => compareCodePoints(left.name, right.name)));
 
-const EXPECTED_V1_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V1_SQL
-  .trim()
-  .split(/;\s*/u)
-  .filter((statement) => statement.length > 0)
-  .map((sql) => {
-    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
-    if (match?.[1] === undefined) throw new Error("product persistence v1 DDL contains an unknown statement");
-    return Object.freeze({ name: match[1], sql });
-  })
-  .sort((left, right) => compareCodePoints(left.name, right.name)));
-
-const EXPECTED_V2_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V2_SQL
-  .trim()
-  .split(/;\s*/u)
-  .filter((statement) => statement.length > 0)
-  .map((sql) => {
-    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
-    if (match?.[1] === undefined) throw new Error("product persistence v2 DDL contains an unknown statement");
-    return Object.freeze({ name: match[1], sql });
-  })
-  .sort((left, right) => compareCodePoints(left.name, right.name)));
-
-const EXPECTED_V3_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V3_SQL
-  .trim()
-  .split(/;\s*/u)
-  .filter((statement) => statement.length > 0)
-  .map((sql) => {
-    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
-    if (match?.[1] === undefined) throw new Error("product persistence v3 DDL contains an unknown statement");
-    return Object.freeze({ name: match[1], sql });
-  })
-  .sort((left, right) => compareCodePoints(left.name, right.name)));
-
-const EXPECTED_V4_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V4_SQL
-  .trim()
-  .split(/;\s*/u)
-  .filter((statement) => statement.length > 0)
-  .map((sql) => {
-    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
-    if (match?.[1] === undefined) throw new Error("product persistence v4 DDL contains an unknown statement");
-    return Object.freeze({ name: match[1], sql });
-  })
-  .sort((left, right) => compareCodePoints(left.name, right.name)));
-
-const EXPECTED_V5_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V5_SQL
-  .trim()
-  .split(/;\s*/u)
-  .filter((statement) => statement.length > 0)
-  .map((sql) => {
-    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
-    if (match?.[1] === undefined) throw new Error("product persistence v5 DDL contains an unknown statement");
-    return Object.freeze({ name: match[1], sql });
-  })
-  .sort((left, right) => compareCodePoints(left.name, right.name)));
-
-const EXPECTED_V6_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_V6_SQL
-  .trim()
-  .split(/;\s*/u)
-  .filter((statement) => statement.length > 0)
-  .map((sql) => {
-    const match = /^CREATE TABLE ([a-z_]+)\s/u.exec(sql);
-    if (match?.[1] === undefined) throw new Error("product persistence v6 DDL contains an unknown statement");
-    return Object.freeze({ name: match[1], sql });
-  })
-  .sort((left, right) => compareCodePoints(left.name, right.name)));
-
 const canonicalJson = (value: JsonValue): string => {
   if (value === null || typeof value === "boolean" || typeof value === "number"
     || typeof value === "string") {
@@ -555,8 +477,8 @@ const aggregateFailure = (primary: unknown, cleanup: unknown, description: strin
   throw new AggregateError([primary, cleanup], description);
 };
 
-/** Product SQLite implementation of the public DSH backend hooks. */
-export class ProductSqliteStore implements PersistenceBackend<never>, ProductCheckpointStore,
+/** Product SQLite storage and mutation authority behind the public SessionHandle Provider. */
+export class ProductSqliteStore implements ProductCheckpointStore,
   ProductDeleteStore, ProductForkStore, ProductRewindStore {
   readonly name = "product-session-persistence-sqlite";
 
@@ -580,7 +502,43 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     return this.#initializePromise;
   }
 
-  loadStored(id: SessionId, signal?: AbortSignal): Promise<StoredPrefix<never> | undefined> {
+  async #mutationLock<T>(
+    id: SessionId,
+    affectedIds: readonly SessionId[],
+    signal: AbortSignal | undefined,
+    work: () => Promise<T> | T,
+  ): Promise<T> {
+    const claims: ProductSessionOwnership[] = [];
+    let failure: unknown;
+    try {
+      for (const target of [...new Set(affectedIds)].sort(compareCodePoints)) {
+        claims.push(await this.#options.ownership.acquire(this.ownershipPath(target), target, signal));
+      }
+      return await this.#locks.run(id, signal, async () => {
+        for (const claim of claims) await claim.assertHeld();
+        return work();
+      });
+    } catch (error) {
+      failure = error;
+      throw error;
+    } finally {
+      const results = await Promise.allSettled(claims.reverse().map((claim) => claim.release()));
+      const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+      // Preserve both the operation and cleanup failures; ownership release must never appear successful.
+      // eslint-disable-next-line no-unsafe-finally
+      if (failures.length > 0) throw new AggregateError(
+        failure === undefined ? failures : [failure, ...failures], "Generation mutation ownership release failed", { cause: failure },
+      );
+    }
+  }
+
+  ownershipPath(id: SessionId): string {
+    this.#requireDatabase();
+    const key = createHash("sha256").update(String(id)).digest("hex");
+    return resolve(dirname(this.#options.durability.databasePath), `session-${key}.lock`);
+  }
+
+  loadStored(id: SessionId, signal?: AbortSignal): Promise<ProductStoredSession | undefined> {
     return this.#locks.run(id, signal, () => {
       const row = this.#readActiveSession(id);
       if (row === undefined) return undefined;
@@ -590,6 +548,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         inheritedEventCount: SessionLogOffset(row.inheritedEventCount),
         events,
         revision: this.#revision(row),
+        generationId: row.activeGenerationId,
       };
     });
   }
@@ -598,7 +557,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     id: SessionId,
     fromSeq: number,
     signal?: AbortSignal,
-  ): Promise<StoredSuffix | undefined> {
+  ): Promise<SessionInspection | undefined> {
     if (!Number.isSafeInteger(fromSeq) || fromSeq < 0) {
       return Promise.reject(new TypeError(
         `product SQLite suffix fromSeq must be a non-negative safe integer, got ${String(fromSeq)}`,
@@ -766,10 +725,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         storageState = sessionState;
         row = this.#decodeActiveSessionRow(raw);
         this.#decodeHeader(row);
-        const events = this.#readAndValidateEvents(row);
-        if (events.some((event) => !isProductKnownSessionEventType(event.type))) {
-          throw new Error("persisted recovery Session contains an unknown required event type");
-        }
+        this.#readAndValidateEvents(row);
       } catch {
         return Object.freeze({
           state: "recovery_required" as const,
@@ -1226,7 +1182,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     this.#validateDeleteIdentity(token, clientMutationId);
     const known = this.#readDelete(token);
     if (known === undefined) return Promise.reject(new Error("delete token is unavailable"));
-    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+    return this.#mutationLock(known.runtimeSessionId as SessionId, [known.runtimeSessionId as SessionId], signal, () => {
       signal?.throwIfAborted();
       const record = this.#requireDeleteIdentity(token, clientMutationId);
       if (record.phase === "committed") return record;
@@ -1283,7 +1239,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     this.#validateDeleteIdentity(token, clientMutationId);
     const known = this.#readDelete(token);
     if (known === undefined) return Promise.reject(new Error("delete token is unavailable"));
-    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+    return this.#mutationLock(known.runtimeSessionId as SessionId, [known.runtimeSessionId as SessionId], signal, () => {
       signal?.throwIfAborted();
       const record = this.#requireDeleteIdentity(token, clientMutationId);
       if (record.phase === "purged") return record;
@@ -1392,7 +1348,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     this.#validateDeleteIdentity(token, clientMutationId);
     const known = this.#readDelete(token);
     if (known === undefined) return Promise.reject(new Error("delete token is unavailable"));
-    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+    return this.#mutationLock(known.runtimeSessionId as SessionId, (known.phase === "prepared" || known.phase === "rolled_back") ? [] : [known.runtimeSessionId as SessionId], signal, () => {
       signal?.throwIfAborted();
       const record = this.#requireDeleteIdentity(token, clientMutationId);
       if (record.phase === "rolled_back") return record;
@@ -1786,7 +1742,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     this.#validateRewindSettlementIdentity(token, clientMutationId);
     const known = this.#readRewind(token);
     if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
-    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+    return this.#mutationLock(known.runtimeSessionId as SessionId, [known.runtimeSessionId as SessionId, ...this.#readRewindChildPlans(token).map((child) => child.childSessionId as SessionId)], signal, () => {
       signal?.throwIfAborted();
       const record = this.#requireRewindIdentity(token, clientMutationId);
       if (record.phase === "committed") return record;
@@ -2052,7 +2008,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     this.#validateRewindSettlementIdentity(token, clientMutationId);
     const known = this.#readRewind(token);
     if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
-    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+    return this.#mutationLock(known.runtimeSessionId as SessionId, (known.phase === "prepared" || known.phase === "rolled_back") ? [] : [known.runtimeSessionId as SessionId, ...this.#readRewindChildPlans(token).map((child) => child.childSessionId as SessionId)], signal, () => {
       signal?.throwIfAborted();
       const record = this.#requireRewindIdentity(token, clientMutationId);
       if (record.phase === "rolled_back") return record;
@@ -2219,20 +2175,6 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     });
   }
 
-  commitRepair(
-    storage: SessionStorageMetadata,
-    tornMarker: unknown,
-    closers: readonly SessionEvent[],
-  ): Promise<void> {
-    const { meta, inheritedEventCount } = storage;
-    return this.#locks.run(meta.id, undefined, () => {
-      if (tornMarker !== undefined) {
-        throw new Error(`session ${meta.id} product SQLite store cannot contain a torn physical row`);
-      }
-      this.#appendBatch(meta, closers, true, inheritedEventCount);
-    });
-  }
-
   async list(signal?: AbortSignal): Promise<SessionHeader[]> {
     signal?.throwIfAborted();
     await this.initialize();
@@ -2250,6 +2192,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     const snapshots = this.#activeSessionRows().map((row) => ({
       header: this.#decodeHeader(row),
       revision: this.#revision(row),
+      eventCount: row.eventCount,
     }));
     signal?.throwIfAborted();
     return snapshots;
@@ -2358,226 +2301,8 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       } catch (error) {
         this.#rollback(error, "schema bootstrap");
       }
-    } else {
-      this.#migrateSchemaIfNeeded();
     }
     this.#assertSchema();
-  }
-
-  #migrateSchemaIfNeeded(): void {
-    const database = this.#requireDatabase();
-    let version = asRecord(database.prepare("PRAGMA user_version").get(), "user version").user_version;
-    const readSchemaRows = (): ReadonlyArray<Readonly<{ name: string; sql: string }>> =>
-      (database.prepare(
-      "SELECT name, sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY name",
-    ).all() as unknown[]).map((value) => {
-      const row = asRecord(value, "migration schema authority row");
-      return {
-        name: rowString(row, "name", "migration schema authority row"),
-        sql: rowString(row, "sql", "migration schema authority row"),
-      };
-    });
-    if (version === 1) {
-      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V1_SCHEMA_ROWS)) {
-        throw new Error("product SQLite persistence v1 schema authority is incompatible");
-      }
-      this.#assertMigrationMetadata(1);
-      database.exec("BEGIN IMMEDIATE");
-      try {
-        database.exec(PRODUCT_CHECKPOINT_SCHEMA_SQL);
-        database.prepare("UPDATE store_meta SET schema_version = 2 WHERE singleton = 1").run();
-        database.exec("PRAGMA user_version = 2; COMMIT");
-      } catch (error) {
-        this.#rollback(error, "v1 checkpoint schema migration");
-      }
-      version = 2;
-    }
-    if (version === 2) {
-      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V2_SCHEMA_ROWS)) {
-        throw new Error("product SQLite persistence v2 schema authority is incompatible");
-      }
-      this.#assertMigrationMetadata(2);
-      database.exec("BEGIN IMMEDIATE");
-      try {
-        database.exec(PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL);
-        database.prepare("UPDATE store_meta SET schema_version = 3 WHERE singleton = 1").run();
-        database.exec("PRAGMA user_version = 3; COMMIT");
-      } catch (error) {
-        this.#rollback(error, "v2 stable-boundary schema migration");
-      }
-      version = 3;
-    }
-    if (version === 3) {
-      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V3_SCHEMA_ROWS)) {
-        throw new Error("product SQLite persistence v3 schema authority is incompatible");
-      }
-      this.#assertMigrationMetadata(3);
-      database.exec("BEGIN IMMEDIATE");
-      try {
-        database.exec(PRODUCT_REWIND_CHILD_SCHEMA_SQL);
-        database.prepare("UPDATE store_meta SET schema_version = 4 WHERE singleton = 1").run();
-        database.exec("PRAGMA user_version = 4; COMMIT");
-      } catch (error) {
-        this.#rollback(error, "v3 rewind-child schema migration");
-      }
-      version = 4;
-    }
-    if (version === 4) {
-      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V4_SCHEMA_ROWS)) {
-        throw new Error("product SQLite persistence v4 schema authority is incompatible");
-      }
-      this.#assertMigrationMetadata(4);
-      database.exec("BEGIN IMMEDIATE");
-      try {
-        database.exec(PRODUCT_FORK_SCHEMA_SQL);
-        database.prepare("UPDATE store_meta SET schema_version = 5 WHERE singleton = 1").run();
-        database.exec("PRAGMA user_version = 5; COMMIT");
-      } catch (error) {
-        this.#rollback(error, "v4 fork schema migration");
-      }
-      version = 5;
-    }
-    if (version === 5) {
-      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V5_SCHEMA_ROWS)) {
-        throw new Error("product SQLite persistence v5 schema authority is incompatible");
-      }
-      this.#assertMigrationMetadata(5);
-      database.exec("PRAGMA foreign_keys = OFF");
-      try {
-        database.exec("BEGIN IMMEDIATE");
-        try {
-          database.exec(PRODUCT_SESSION_GENERATIONS_V6_SCHEMA_SQL.replace(
-            "CREATE TABLE session_generations (",
-            "CREATE TABLE session_generations_v6 (",
-          ));
-          database.exec(`
-            INSERT INTO session_generations_v6(
-              session_id, generation_id, header_json, origin, state,
-              revision, event_count, head_hash, created_at
-            )
-            SELECT session_id, generation_id, header_json, origin, state,
-                   revision, event_count, head_hash, created_at
-              FROM session_generations;
-            DROP TABLE session_generations;
-          `);
-          database.exec(PRODUCT_SESSION_GENERATIONS_V6_SCHEMA_SQL);
-          database.exec(`
-            INSERT INTO session_generations(
-              session_id, generation_id, header_json, origin, state,
-              revision, event_count, head_hash, created_at
-            )
-            SELECT session_id, generation_id, header_json, origin, state,
-                   revision, event_count, head_hash, created_at
-              FROM session_generations_v6;
-            DROP TABLE session_generations_v6;
-          `);
-          database.exec(PRODUCT_DELETE_SCHEMA_SQL);
-          database.prepare("UPDATE store_meta SET schema_version = 6 WHERE singleton = 1").run();
-          database.exec("PRAGMA user_version = 6; COMMIT");
-        } catch (error) {
-          this.#rollback(error, "v5 delete schema migration");
-        }
-      } finally {
-        database.exec("PRAGMA foreign_keys = ON");
-      }
-      if (database.prepare("PRAGMA foreign_key_check").all().length > 0) {
-        throw new Error("product SQLite persistence v5 delete schema migration broke foreign keys");
-      }
-      version = 6;
-    }
-    if (version === 6) {
-      if (JSON.stringify(readSchemaRows()) !== JSON.stringify(EXPECTED_V6_SCHEMA_ROWS)) {
-        throw new Error("product SQLite persistence v6 schema authority is incompatible");
-      }
-      this.#assertMigrationMetadata(6);
-      database.exec("PRAGMA foreign_keys = OFF");
-      try {
-        database.exec("BEGIN IMMEDIATE");
-        try {
-          database.exec(PRODUCT_DELETE_SCHEMA_V7_SQL.replace(
-            "CREATE TABLE delete_journals (",
-            "CREATE TABLE delete_journals_v7 (",
-          ));
-          database.exec(`
-            INSERT INTO delete_journals_v7(
-              token, client_mutation_id, request_fingerprint, session_id,
-              source_generation_id, source_revision, phase, attempt,
-              receipt_json, created_at, updated_at
-            )
-            SELECT token, client_mutation_id, request_fingerprint, session_id,
-                   source_generation_id, source_revision, phase, attempt,
-                   receipt_json, created_at, updated_at
-              FROM delete_journals;
-            DROP TABLE delete_journals;
-          `);
-          database.exec(PRODUCT_DELETE_SCHEMA_V7_SQL);
-          database.exec(`
-            INSERT INTO delete_journals(
-              token, client_mutation_id, request_fingerprint, session_id,
-              source_generation_id, source_revision, phase, attempt,
-              receipt_json, created_at, updated_at
-            )
-            SELECT token, client_mutation_id, request_fingerprint, session_id,
-                   source_generation_id, source_revision, phase, attempt,
-                   receipt_json, created_at, updated_at
-              FROM delete_journals_v7;
-            DROP TABLE delete_journals_v7;
-          `);
-          database.prepare("UPDATE store_meta SET schema_version = 7 WHERE singleton = 1").run();
-          database.exec("PRAGMA user_version = 7; COMMIT");
-        } catch (error) {
-          this.#rollback(error, "v6 reference-aware purge schema migration");
-        }
-      } finally {
-        database.exec("PRAGMA foreign_keys = ON");
-      }
-      if (database.prepare("PRAGMA foreign_key_check").all().length > 0) {
-        throw new Error("product SQLite persistence v6 purge schema migration broke foreign keys");
-      }
-    }
-    if (version === 7 || version === 6) {
-      this.#assertMigrationMetadata(7);
-      database.exec("BEGIN IMMEDIATE");
-      try {
-        database.exec(PRODUCT_INHERITED_PREFIX_SCHEMA_SQL);
-        const rows = database.prepare("SELECT session_id, generation_id, header_json, event_count FROM session_generations").all();
-        const update = database.prepare("UPDATE session_generations SET inherited_event_count = ? WHERE session_id = ? AND generation_id = ?");
-        for (const value of rows) {
-          const row = asRecord(value, "legacy storage metadata");
-          const header = JSON.parse(rowString(row, "header_json", "legacy storage metadata")) as Record<string, unknown>;
-          const cut = header.seedLength ?? 0;
-          if (!Number.isSafeInteger(cut) || Number(cut) < 0 || Number(cut) > Number(row.event_count)) {
-            throw new Error("legacy Session inherited prefix is invalid");
-          }
-          update.run(Number(cut), rowString(row, "session_id", "legacy storage metadata"), rowString(row, "generation_id", "legacy storage metadata"));
-        }
-        database.prepare("UPDATE store_meta SET schema_version = 8 WHERE singleton = 1").run();
-        database.exec("PRAGMA user_version = 8; COMMIT");
-        version = 8;
-      } catch (error) {
-        this.#rollback(error, "v7 inherited Session prefix migration");
-      }
-    }
-    if (version === 8) {
-      this.#assertMigrationMetadata(8);
-      database.exec("BEGIN IMMEDIATE");
-      try {
-        database.exec(PRODUCT_CHECKPOINT_DIRECTORIES_MIGRATION_SQL);
-        database.prepare("UPDATE store_meta SET schema_version = 9 WHERE singleton = 1").run();
-        database.exec("PRAGMA user_version = 9; COMMIT");
-      } catch (error) {
-        this.#rollback(error, "v8 checkpoint directory migration");
-      }
-    }
-  }
-
-  #assertMigrationMetadata(version: number): void {
-    const meta = asRecord(this.#requireDatabase().prepare(
-      "SELECT schema_version, persistence_format FROM store_meta WHERE singleton = 1",
-    ).get(), `v${version} store metadata`);
-    if (meta.schema_version !== version || meta.persistence_format !== PRODUCT_PERSISTENCE_FORMAT) {
-      throw new Error(`product SQLite persistence v${version} store metadata is incompatible`);
-    }
   }
 
   #assertSchema(): void {
@@ -2586,7 +2311,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     const version = asRecord(database.prepare("PRAGMA user_version").get(), "user version");
     if (application.application_id !== PRODUCT_PERSISTENCE_APPLICATION_ID
       || version.user_version !== PRODUCT_PERSISTENCE_SCHEMA_VERSION) {
-      throw new Error("product SQLite persistence schema identity is incompatible");
+      throw new Error("product SQLite persistence schema identity is incompatible; reset the selected unreleased DSH development Session before opening it with this Runtime");
     }
     const schemaRows = (database.prepare(
       "SELECT name, sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -2599,13 +2324,13 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     });
     if (JSON.stringify(schemaRows) !== JSON.stringify(EXPECTED_SCHEMA_ROWS)
       || JSON.stringify(schemaRows.map(({ name }) => name)) !== JSON.stringify(PRODUCT_PERSISTENCE_TABLES)) {
-      throw new Error("product SQLite persistence table authority differs from schema v9");
+      throw new Error("product SQLite persistence table authority differs from schema v10");
     }
     for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
       const columns = (database.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all() as unknown[])
         .map((row) => rowString(asRecord(row, `${table} column`), "name", `${table} column`));
       if (JSON.stringify(columns) !== JSON.stringify(expected)) {
-        throw new Error(`product SQLite persistence ${table} columns differ from schema v9`);
+        throw new Error(`product SQLite persistence ${table} columns differ from schema v10`);
       }
     }
     const meta = asRecord(database.prepare(
@@ -2631,9 +2356,11 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
   }
 
   #appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean, inheritedEventCount: SessionLogOffset): void {
+    materializeProductSessionHeader(meta, inheritedEventCount);
+    validateProductStoredEvents(meta, [...events]);
     SessionLogOffset(inheritedEventCount);
     if (!meta.isSeeded && inheritedEventCount !== 0) throw new Error("unseeded Session has inherited events");
-    if (events.length === 0) return;
+    if (events.length === 0 && isMaterialized) return;
     const database = this.#requireDatabase();
     this.#assertSchema();
     database.exec("BEGIN IMMEDIATE");
@@ -2662,7 +2389,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         database.prepare(
           "INSERT INTO session_generations(session_id, generation_id, header_json, origin, state, revision, event_count, head_hash, created_at, inherited_event_count) VALUES (?, ?, ?, 'create', 'active', 0, 0, ?, ?, ?)",
         ).run(meta.id, generationId, headerJson, EMPTY_HEAD_HASH, createdAt, inheritedEventCount);
-        row = this.#readActiveSession(meta.id, false);
+        row = this.#readActiveSession(meta.id, false, true);
       } else if (row === undefined) {
         throw new Error(`session ${meta.id} has no active storage generation`);
       }
@@ -2697,6 +2424,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
         insert.run(meta.id, row.activeGenerationId, event.seq, event.type, event.time, envelopeJson, headHash);
         expectedSeq += 1;
       }
+      if (inheritedEventCount > expectedSeq) throw new Error("Session inherited prefix exceeds its materialized log");
       this.#materializeStableBoundary(row, events, expectedSeq, headHash);
       const revision = row.sessionRevision + 1;
       const sessionUpdate = database.prepare(
@@ -3501,6 +3229,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       store = new ProductSqliteStore({
         durability: Object.freeze({ ...this.#options.durability, databasePath }),
         runtimeHome: targetRuntimeHome,
+        ownership: this.#options.ownership,
       });
       this.#forkTargetStores.set(targetRuntimeHome, store);
     }
@@ -3591,7 +3320,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
   }
 
   async #stageForkTarget(stage: ForkTargetStageInput): Promise<void> {
-    await this.#locks.run(stage.sessionId as SessionId, undefined, () => {
+    await this.#mutationLock(stage.sessionId as SessionId, [stage.sessionId as SessionId], undefined, () => {
       this.#assertSchema();
       const database = this.#requireDatabase();
       const existing = database.prepare(`
@@ -3722,7 +3451,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     record: ProductForkRecord,
     signal?: AbortSignal,
   ): Promise<Readonly<Record<string, unknown>>> {
-    return this.#locks.run(record.targetRuntimeSessionId as SessionId, signal, () => {
+    return this.#mutationLock(record.targetRuntimeSessionId as SessionId, [record.targetRuntimeSessionId as SessionId], signal, () => {
       signal?.throwIfAborted();
       const database = this.#requireDatabase();
       const raw = database.prepare(`
@@ -3765,7 +3494,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
   }
 
   #abortForkTarget(record: ProductForkRecord, signal?: AbortSignal): Promise<void> {
-    return this.#locks.run(record.targetRuntimeSessionId as SessionId, signal, () => {
+    return this.#mutationLock(record.targetRuntimeSessionId as SessionId, [record.targetRuntimeSessionId as SessionId], signal, () => {
       signal?.throwIfAborted();
       const database = this.#requireDatabase();
       const raw = database.prepare(`
@@ -3825,7 +3554,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     });
   }
 
-  #readActiveSession(id: SessionId, validateSchema = true): ActiveSessionRow | undefined {
+  #readActiveSession(id: SessionId, validateSchema = true, allowIncompleteSeed = false): ActiveSessionRow | undefined {
     if (validateSchema) this.#assertSchema();
     const row = this.#requireDatabase().prepare(`
       SELECT s.id AS session_id,
@@ -3840,10 +3569,10 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
           ON g.session_id = s.id AND g.generation_id = s.active_generation_id
        WHERE s.id = ? AND s.state = 'active' AND g.state = 'active'
     `).get(id);
-    return row === undefined ? undefined : this.#decodeActiveSessionRow(row);
+    return row === undefined ? undefined : this.#decodeActiveSessionRow(row, allowIncompleteSeed);
   }
 
-  #decodeActiveSessionRow(value: unknown): ActiveSessionRow {
+  #decodeActiveSessionRow(value: unknown, allowIncompleteSeed = false): ActiveSessionRow {
     const row = asRecord(value, "active Session");
     const decoded = {
       activeGenerationId: rowString(row, "active_generation_id", "active Session"),
@@ -3857,8 +3586,8 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     };
     if (decoded.activeGenerationId.length === 0 || !HASH_PATTERN.test(decoded.headHash)
       || decoded.sessionRevision !== decoded.generationRevision
+      || (!allowIncompleteSeed && decoded.inheritedEventCount > decoded.eventCount)
       || decoded.eventCount > PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents
-      || decoded.inheritedEventCount > decoded.eventCount
       || Buffer.byteLength(decoded.headerJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes) {
       throw new Error("active Session generation identity is inconsistent");
     }
@@ -3887,7 +3616,8 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     if (previousHash !== row.headHash) {
       throw new Error(`session ${row.sessionId} active generation head hash is invalid`);
     }
-    return events;
+    if (row.inheritedEventCount > events.length) throw new Error("stored Session inherited prefix exceeds its log");
+    return validateProductStoredEvents(this.#decodeHeader(row), events);
   }
 
   #readAndValidateEventsFrom(row: ActiveSessionRow, fromSeq: number): SessionEvent[] {
@@ -3946,7 +3676,8 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
     if (previousHash !== row.headHash) {
       throw new Error(`session ${row.sessionId} active generation head hash is invalid`);
     }
-    return events;
+    if (row.inheritedEventCount > row.eventCount) throw new Error("stored Session inherited prefix exceeds its log");
+    return validateProductStoredEvents(this.#decodeHeader(row), events);
   }
 
   #validateEventEnvelope(
@@ -4011,19 +3742,7 @@ export class ProductSqliteStore implements PersistenceBackend<never>, ProductChe
       || (snapshot as Record<string, unknown>).id !== row.sessionId) {
       throw new Error(`session ${row.sessionId} header is incompatible with its locator`);
     }
-    const record = snapshot as Record<string, unknown>;
-    const { seedLength: legacyCut, ...header } = record;
-    if (legacyCut !== undefined && (!Number.isSafeInteger(legacyCut) || Number(legacyCut) < 0)) {
-      throw new Error(`session ${row.sessionId} legacy inherited prefix is invalid`);
-    }
-    if (header.isSeeded !== undefined && typeof header.isSeeded !== "boolean") {
-      throw new Error(`session ${row.sessionId} seeded marker is invalid`);
-    }
-    const isSeeded = header.isSeeded ?? (Number(legacyCut ?? 0) > 0 || row.inheritedEventCount > 0);
-    if (!isSeeded && row.inheritedEventCount !== 0) {
-      throw new Error(`session ${row.sessionId} inherited prefix disagrees with its header`);
-    }
-    return { ...header, isSeeded } as unknown as SessionHeader;
+    return materializeProductSessionHeader(snapshot as unknown as SessionHeader, SessionLogOffset(row.inheritedEventCount));
   }
 
   #revision(row: ActiveSessionRow): PersistenceRevision {

@@ -82,7 +82,7 @@ try {
   await context.plugin(LlmRuntime);
   await context.plugin(SessionStore);
   await context.plugin(SessionProjectionRegistry);
-  await context.plugin(SystemPrompt, { persona: "Synthetic performance workload." });
+  await context.plugin(SystemPrompt, { personaPrefix: "Synthetic performance workload." });
   await context.plugin(ToolRuntime);
   await context.plugin(AgentRegistry);
   await context.plugin(TokenMeter);

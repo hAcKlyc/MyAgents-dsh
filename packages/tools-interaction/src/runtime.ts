@@ -328,7 +328,7 @@ type PlanTransitionPermit = PlanTransition & Readonly<{
   session: Session;
 }>;
 
-const transitionData = (value: unknown, description: string): PlanTransition => {
+export const validateProductPlanTransition = (value: unknown, description = "Product plan transition"): PlanTransition => {
   const data = exactDataObject(value, [
     "active", "callId", "clientOperationId", "nextRevision", "planEventSeq",
     "priorRevision", "productTurnId", "sessionId",
@@ -391,7 +391,7 @@ const foldProductPlanWithPermit = (
     }
     if (event.type === "myagents/plan/transition") {
       if (pending !== undefined) throw new ProductPlanFoldError("durable plan history contains overlapping ownership facts");
-      const transition = transitionData(event.data, "durable product plan transition");
+      const transition = validateProductPlanTransition(event.data, "durable product plan transition");
       const expectedRevision = transitionRevision(
         revision,
         sessionId,
@@ -578,7 +578,7 @@ export class ProductPlanService extends Service {
         if (event.type !== "plan/mode" && event.type !== "myagents/plan/transition") return;
         try {
           if (event.type === "myagents/plan/transition") {
-            const transition = transitionData(event.data, "live product plan transition");
+            const transition = validateProductPlanTransition(event.data, "live product plan transition");
             if (this.permit?.session === session && this.permit.ownershipEventSeq === event.seq
               && this.matchesPermit(transition)) return;
           } else {

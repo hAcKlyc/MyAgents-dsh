@@ -34,6 +34,7 @@ describe("Batch 1 pre-artifact gate", () => {
     expect(plan.map(({ id }) => id)).toEqual([
       "dsh-source",
       "dsh-seams-source",
+      "session-ownership-native",
       "fault-matrix",
       "bounded-soak-1",
       "bounded-soak-2",

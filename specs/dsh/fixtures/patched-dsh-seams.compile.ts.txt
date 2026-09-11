@@ -7,7 +7,7 @@ import type {
 } from "@deepseek-ai/dsh-agent";
 import type { MessageId } from "@deepseek-ai/dsh-llm";
 import type { SessionPublicationGuard } from "@deepseek-ai/dsh-session";
-import type { PersistenceCoordinatorOptions } from "@deepseek-ai/dsh-session-persistence";
+import type { SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
 import type {
   ContinuableSetupContribution,
   ContinuableStartSpec,
@@ -30,8 +30,8 @@ export const compilePatchedDshSeams = (
   ctx: Context,
   agent: Agent,
   messageId: MessageId,
-  persistence: PersistenceCoordinatorOptions,
-): PersistenceCoordinatorOptions => {
+  persistence: SessionPersistence,
+): SessionPersistence => {
   const agentGuard: AgentPublicationGuard = () => undefined;
   const sessionGuard: SessionPublicationGuard = () => undefined;
   const disposeAgentGuard = ctx.agents.setPublicationGuard(agentGuard);
@@ -73,8 +73,5 @@ export const compilePatchedDshSeams = (
     void prepared;
     return next();
   });
-  return {
-    ...persistence,
-    isKnownEventType: (type: string) => type.startsWith("myagents/"),
-  };
+  return persistence;
 };

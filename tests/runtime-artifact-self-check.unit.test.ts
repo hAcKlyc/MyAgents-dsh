@@ -129,13 +129,13 @@ describe("Runtime artifact self-check", () => {
         actualNodeVersion: "24.20.0",
       });
       expect(report.profile.stage).toBe("batch-1-w4-a11");
-      expect(report.dsh.packageCount).toBe(74);
+      expect(report.dsh.packageCount).toBe(77);
       expect(report.contracts).toEqual({
         canonicalToolsSha256: "3b8eae749e9909e9d84cacf49dc6fd8c94c70a00548405adb43ae1540bc6218b",
-        eventsSha256: "d8816339d9af67fb272869a6d09bd56338677671aed4c083003c2d4911de0959",
+        eventsSha256: "43d932cdf82e0859bae60c6a02af94ab7c9878973b9616e4664f227673be838d",
         sessionFormat: "dsh-session-events-v1",
         persistenceFormat: "myagents-sqlite-session-v1",
-        persistenceSchemaVersion: 9,
+        persistenceSchemaVersion: 10,
         checkpointFormat: "root-write-edit-v1",
       });
       expect(report.protocol.availableHostMethods).toEqual([

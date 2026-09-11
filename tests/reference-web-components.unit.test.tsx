@@ -547,7 +547,7 @@ describe("Reference Web React shell", () => {
           },
           {
             runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
-            sequence: 2, emittedAt: now, turnId: "turn-1", event: { kind: "thinking_delta", delta: "Checking the workspace." },
+            sequence: 2, emittedAt: now, turnId: "turn-1", event: { streamId: "fixture-stream", frameIndex: 0, kind: "thinking_delta", delta: "Checking the workspace." },
           },
           {
             runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
@@ -564,7 +564,7 @@ describe("Reference Web React shell", () => {
           {
             runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",
             sequence: 5, emittedAt: now, turnId: "turn-1",
-            event: { kind: "assistant_delta", delta: "## 结果摘要\n\n- 已读取工作区\n\n```text\nverified\n```\n\n<img src=x onerror=alert(1)>" },
+            event: { streamId: "fixture-stream", frameIndex: 0, kind: "assistant_delta", delta: "## 结果摘要\n\n- 已读取工作区\n\n```text\nverified\n```\n\n<img src=x onerror=alert(1)>" },
           },
           {
             runtimeGeneration: "generation-1", productSessionId: "web-session-1", runtimeSessionId: "runtime-session-1",

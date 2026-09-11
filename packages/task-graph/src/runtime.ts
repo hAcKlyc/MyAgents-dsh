@@ -4,7 +4,7 @@ import { types as utilTypes } from "node:util";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
-import { SessionId, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { SessionId, SessionSeq, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
@@ -1158,7 +1158,7 @@ export class ProductTaskGraphService extends Service {
         validateProductTaskEventData(type, plan.data);
         const synthetic: SessionEvent = Object.freeze({
           data: plan.data,
-          seq: rootAgent.session.seq,
+          seq: SessionSeq(rootAgent.session.seq),
           time: 0,
           type,
         }) as SessionEvent;

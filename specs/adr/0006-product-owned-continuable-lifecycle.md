@@ -1,8 +1,10 @@
 # ADR 0006 — Bind continuable subagent settlement and retirement to one product owner
 
+Candidate disposition (2026-09-12, U15-W02): Rebase explicit unpublished Agent setup, attributed delivery, external settlement, strict durability and exact ancestor residency on native V3. Descriptor version 5 is the only accepted candidate format. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
+
 Status: accepted on 2026-08-21 for the fixed DSH source baseline
 
-Current disposition (2026-09-05): rebased as `DSH-SEAM-006` / patch 0005 for official DSH `0.1.2-rc.1` (`a66e470…`). Selected-child drain is now stock; trusted setup, external completion, attributed delivery, exact pending wake and cold-ancestor residency remain patched. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
+Historical disposition (2026-09-05): rebased as `DSH-SEAM-006` / patch 0005 for official DSH `0.1.2-rc.1` (`a66e470…`). Selected-child drain is now stock; trusted setup, external completion, attributed delivery, exact pending wake and cold-ancestor residency remain patched. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
 
 ## Context
 

@@ -1,3 +1,10 @@
+import { AgentRegistry } from "@deepseek-ai/dsh-agent";
+import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
+import { SessionStore } from "@deepseek-ai/dsh-session";
+import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
+import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import { ToolRuntime } from "@deepseek-ai/dsh-tools";
+import { LlmRuntime, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { Context } from "@deepseek-ai/cordis";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { CredentialRef } from "@deepseek-ai/dsh-credentials";
@@ -165,6 +172,77 @@ const modelOptions = (signal = new AbortController().signal): GenerateOptions =>
 });
 
 describe("Host credential and model route", () => {
+  it.each([true, false])("carries Host system-update capability through the real adapter and AgentLoop (in-history=%s)", async (inHistory) => {
+    const harness = await createHarness();
+    const root = harness.root;
+    await root.plugin(LlmRuntime);
+    await root.plugin(SessionStore);
+    await root.plugin(SessionProjectionRegistry);
+    await root.plugin(SystemPrompt, { includeHarnessIdentity: false, personaPrefix: "", personaSuffix: "" });
+    await root.plugin(ToolRuntime);
+    await root.plugin(AgentRegistry);
+    await root.plugin(AgentLoop, { agents: [] });
+    let requestIndex = 0;
+    const authorityContext = Object.assign(Object.create(Reflect.getPrototypeOf(root)) as object, {
+      get: root.get.bind(root), agents: root.agents,
+      productSession: { requireAgent: () => agent },
+      sdkOperations: { createModelRequestAuthority: () => ({ assertCurrent: () => undefined,
+        clientOperationId: `operation-${++requestIndex}`, dshTurn: requestIndex,
+        modelRequestId: `request-${requestIndex}`, rootCallId: `request-${requestIndex}`, turnId: `turn-${requestIndex}`,
+      }) },
+    }) as unknown as Context;
+    harness.pair.host.registerRequestHandler("host/credential/resolve", (params) => params.purpose === "availability"
+      ? { authoritativeCredentialRevision: "capability-credential", available: true, kind: "availability" as const }
+      : { authoritativeCredentialRevision: "capability-credential", kind: "material" as const, material: { [credentialValueField]: "synthetic-capability-fixture" } });
+    const authority = new HostDeepSeekModelAuthority(authorityContext, harness.credentialController,
+      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" });
+    const request = sessionRequest();
+    const selected: ModelExecutionProfile = { ...profile, ...(inHistory ? { systemPromptUpdate: "in-history" as const } : {}) };
+    await authority.preflight({ ...request, params: { ...request.params, provider: selected } });
+    const adapter = new HostDeepSeekLlmAdapter(authority, harness.credentials, harness.credentialController);
+    root.llm.registerAdapter([profile.providerRouteId], adapter);
+    const prepared = await root.llm.prepareCall({ provider: profile.providerRouteId, model: profile.modelId });
+    expect(prepared.systemPromptUpdate).toBe(inHistory ? "in-history" : undefined);
+    expect(prepared.inputModalities).toEqual(["text"]);
+    const wires: { messages: { role: string; content: unknown }[] }[] = [];
+    globalThis.fetch = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+      if (typeof init?.body !== "string") throw new Error("fixture needs JSON request bytes");
+      wires.push(JSON.parse(init.body) as (typeof wires)[number]);
+      return Promise.resolve(new Response('data: {"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        { headers: { "content-type": "text/event-stream" } }));
+    });
+    const failures: unknown[] = [];
+    root.on("agent/error", ({ error }) => { failures.push(error); });
+    let remove = root.systemPrompt.section({ name: "fixture:changing", order: 10, text: "first system", interpolate: false });
+    const handle = await root.agents.create({ sessionId: SessionId(request.runtimeSessionId), agentOptions: { provider: profile.providerRouteId, model: profile.modelId } });
+    const agent = handle.agent;
+    for (const turn of [1, 2]) {
+      if (turn === 2) { remove(); remove = root.systemPrompt.section({ name: "fixture:changing", order: 10, text: "second system", interpolate: false }); }
+      agent.followup(createUserMessage({ source: { kind: "user" }, content: [{ type: "text", text: `turn ${turn}` }] }));
+      await agent.whenIdle();
+    }
+    expect(failures).toEqual([]);
+    expect(wires).toHaveLength(2);
+    const first = wires[0]?.messages ?? [];
+    const second = wires[1]?.messages ?? [];
+    expect(first[0]).toEqual({ role: "system", content: "first system" });
+    if (inHistory) {
+      expect(second.slice(0, first.length)).toEqual(first);
+      expect(second.filter(({ role }) => role === "system")).toEqual([
+        { role: "system", content: "first system" }, { role: "system", content: "second system" },
+      ]);
+    } else {
+      expect(second.filter(({ role }) => role === "system")).toEqual([{ role: "system", content: "second system" }]);
+    }
+    remove();
+    await handle.dispose();
+  });
+
+  it("refuses an invalid declared system-update capability before Provider preflight", () => {
+    expect(() => validateHostDeepSeekProfile({ ...profile, systemPromptUpdate: "guess" } as never))
+      .toThrow("system prompt update capability");
+  });
+
   it("resolves child models from explicit Host authority without ambiguous names or role overrides", () => {
     const parent = { provider: profile.providerRouteId, model: profile.modelId };
     const inherited = new AgentCollaborationPolicy(profile);

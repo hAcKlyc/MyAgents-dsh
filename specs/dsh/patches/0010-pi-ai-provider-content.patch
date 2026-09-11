@@ -1,13 +1,52 @@
+diff --git a/packages/llm/llm-pi-ai/README.i18n.yaml b/packages/llm/llm-pi-ai/README.i18n.yaml
+index 12266ad5e062aa95fe1742c567899fa98f640650..ab9b00a17ef53940aabd00f50c16630da5814791 100644
+--- a/packages/llm/llm-pi-ai/README.i18n.yaml
++++ b/packages/llm/llm-pi-ai/README.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write packages/llm/llm-pi-ai/README.md
+-README.md: 7f52d3f04634c805fc69b4c00365b9843d308252
+-README.zh.md: 7916d2e6e03c163f9f8031344ff8aa36cfff379e
++README.md: 472a502448300891915f5890f4c8da8637e1c957
++README.zh.md: b2cee67ddafc1456ac0db1e1a0b605ecc777a14a
+diff --git a/packages/llm/llm-pi-ai/README.md b/packages/llm/llm-pi-ai/README.md
+index 7f52d3f04634c805fc69b4c00365b9843d308252..472a502448300891915f5890f4c8da8637e1c957 100644
+--- a/packages/llm/llm-pi-ai/README.md
++++ b/packages/llm/llm-pi-ai/README.md
+@@ -155,6 +155,8 @@ The plugin declares every installed catalog provider it can authenticate in the
+ 
+ Successful assistant responses store a versioned, lossless-JSON replay state beside the provider and model that produced them — response-level facts plus one per-block entry per streamed block. At request time, `LlmRuntime` passes replay state only when the same adapter instance owns both routes; the adapter validates it and restores native response ids, provider signatures, and optional `providerThinkingLevel` effort metadata, keeping absent effort metadata absent. Replay validates the requested model identity against the assistant source and separately restores an Anthropic response model when the provider resolved an alias or fallback. An unusable state degrades to provider-neutral content instead of failing the request. pi-ai tool-call arguments are parsed objects, so the adapter parses input and re-stringifies output to the harness raw-JSON convention; pi-ai in-stream error events map to terminal `finish` chunks.
+ 
++Provider-executed tool calls and results remain ordered, structured content. They never enter the client tool executor. Matching-route replay restores their raw blocks while retaining distinct requested and response model identities. This behavior requires the paired pi-ai transport extension; an unpatched transport cannot emit the extra content events.
++
+ </details>
+ 
+ -----
+diff --git a/packages/llm/llm-pi-ai/README.zh.md b/packages/llm/llm-pi-ai/README.zh.md
+index 7916d2e6e03c163f9f8031344ff8aa36cfff379e..b2cee67ddafc1456ac0db1e1a0b605ecc777a14a 100644
+--- a/packages/llm/llm-pi-ai/README.zh.md
++++ b/packages/llm/llm-pi-ai/README.zh.md
+@@ -155,6 +155,8 @@ Settings 写入会在合并组合层与用户层后严格校验每个新增或
+ 
+ 成功 assistant 响应会存储带版本的、无损 JSON 回放状态，与产生它们的提供方和模型放在一起——响应级事实加每个流式块一条逐块条目。请求时，`LlmRuntime` 仅当同一适配器实例拥有两条路由时才传递回放状态；适配器校验它并恢复原生响应 id、提供方签名与可选的 `providerThinkingLevel` effort 元数据，缺失的 effort 元数据仍保持缺失。回放会对照 assistant 来源校验请求模型身份，并在提供方解析别名或回退时单独恢复 Anthropic 响应模型。无法使用的状态会降级为提供方无关内容而不是让请求失败。pi-ai 工具调用参数是解析后的对象，因此适配器解析输入并重新字符串化输出，以符合 harness 原始 JSON 约定；pi-ai 流内错误事件映射为终止 `finish` 分片。
+ 
++提供方执行的工具调用与结果保持有序的结构化内容，绝不进入客户端工具执行器。匹配路由的回放恢复原始块，同时保留请求模型与响应模型的独立标识。该行为依赖配套的 pi-ai 传输扩展；未打补丁的传输无法发出额外内容事件。
++
+ </details>
+ 
+ -----
 diff --git a/packages/llm/llm-pi-ai/src/provider-content.ts b/packages/llm/llm-pi-ai/src/provider-content.ts
 new file mode 100644
-index 0000000000..0be2525b9c
+index 0000000000000000000000000000000000000000..02d5de8c9ef634761060692e0b02f731ca1b1038
 --- /dev/null
 +++ b/packages/llm/llm-pi-ai/src/provider-content.ts
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,76 @@
 +/** Generic Provider-owned content carried by the pi-ai Anthropic Messages adapter. */
 +
 +import type { AssistantMessage } from '@earendil-works/pi-ai'
 +
++/** A provider-executed invocation retained as non-executable harness content. */
 +export interface ProviderToolCallBlock {
 +  type: 'provider-tool-call'
 +  id: string
@@ -17,6 +56,7 @@ index 0000000000..0be2525b9c
 +  raw: Readonly<Record<string, unknown>>
 +}
 +
++/** A provider-executed result with its original replay fields. */
 +export interface ProviderToolResultBlock {
 +  type: 'provider-tool-result'
 +  toolCallId: string
@@ -33,6 +73,7 @@ index 0000000000..0be2525b9c
 +  }
 +}
 +
++/** Invocation emitted by the independently patched pi-ai transport. */
 +export interface PiProviderToolCall {
 +  type: 'providerToolCall'
 +  id: string
@@ -42,6 +83,7 @@ index 0000000000..0be2525b9c
 +  raw: Record<string, unknown>
 +}
 +
++/** Result emitted by the independently patched pi-ai transport. */
 +export interface PiProviderToolResult {
 +  type: 'providerToolResult'
 +  toolCallId: string
@@ -51,11 +93,14 @@ index 0000000000..0be2525b9c
 +  raw: Record<string, unknown>
 +}
 +
++/** Provider content accepted from the paired transport patch. */
 +export type PiProviderToolContent = PiProviderToolCall | PiProviderToolResult
++/** Native assistant response including ordered provider-owned content. */
 +export type PiAssistantMessage = Omit<AssistantMessage, 'content'> & {
 +  content: Array<AssistantMessage['content'][number] | PiProviderToolContent>
 +}
 +
++/** Live provider-content edges; never client tool execution requests. */
 +export type PiProviderToolEvent =
 +  | { type: 'provider_tool_start'; contentIndex: number; partial: PiAssistantMessage }
 +  | {
@@ -65,11 +110,16 @@ index 0000000000..0be2525b9c
 +    partial: PiAssistantMessage
 +  }
 +
++/**
++ * Widen the native response to include the paired transport extension.
++ * @param message - assistant response from the installed pi-ai adapter.
++ * @returns the same response without cloning or changing replay identities.
++ */
 +export function asPiAssistantMessage(message: AssistantMessage): PiAssistantMessage {
-+  return message as PiAssistantMessage
++  return message
 +}
 diff --git a/packages/llm/llm-pi-ai/src/replay.ts b/packages/llm/llm-pi-ai/src/replay.ts
-index bae4cfc40d..17e93a3f7e 100644
+index 3e71c11f840fede22ef0145d7600f8fdc8c1c9dd..a0030cf94b5600b5002e7a8937cb93130fef3061 100644
 --- a/packages/llm/llm-pi-ai/src/replay.ts
 +++ b/packages/llm/llm-pi-ai/src/replay.ts
 @@ -11,12 +11,15 @@
@@ -88,16 +138,16 @@ index bae4cfc40d..17e93a3f7e 100644
  
  /** Versioned response-level half of the pi-ai replay envelope. */
  export interface PiAiReplayResponse {
-@@ -69,7 +72,7 @@ function emptyPiUsage(): PiUsage {
-  * @param message - completed native pi-ai assistant response.
+@@ -74,7 +77,7 @@ function emptyPiUsage(): PiUsage {
+  * @param requestedModel - request identity stored in the assistant source; defaults to the native model.
   * @returns the versioned lossless-JSON replay projection.
   */
--export function toPiReplayState(message: AssistantMessage): ReplayEnvelope {
-+export function toPiReplayState(message: PiAssistantMessage): ReplayEnvelope {
+-export function toPiReplayState(message: AssistantMessage, requestedModel = message.model): ReplayEnvelope {
++export function toPiReplayState(message: PiAssistantMessage, requestedModel = message.model): ReplayEnvelope {
+   const responseModel = message.api === 'anthropic-messages' && message.model !== requestedModel
+     ? message.model : message.responseModel
    const response: PiAiReplayResponse = {
-     kind: 'pi-ai',
-     version: 2,
-@@ -97,6 +100,8 @@ export function toPiReplayState(message: AssistantMessage): ReplayEnvelope {
+@@ -105,6 +108,8 @@ export function toPiReplayState(message: AssistantMessage, requestedModel = mess
            type: 'tool-call',
            ...block.thoughtSignature === undefined ? {} : { thoughtSignature: block.thoughtSignature },
          }
@@ -106,7 +156,7 @@ index bae4cfc40d..17e93a3f7e 100644
        }
      }),
    }
-@@ -128,7 +133,9 @@ function readReplayState(value: unknown): PiAiReplayState {
+@@ -137,7 +142,9 @@ function readReplayState(value: unknown): PiAiReplayState {
    for (const [index, value] of blocks.entries()) {
      if (typeof value !== 'object' || value === null || Array.isArray(value)) return invalidReplay(`block ${index} must be an object`)
      const block = value as Record<string, unknown>
@@ -117,7 +167,7 @@ index bae4cfc40d..17e93a3f7e 100644
      for (const signature of ['textSignature', 'thinkingSignature', 'thoughtSignature'] as const) {
        if (block[signature] !== undefined && typeof block[signature] !== 'string') return invalidReplay(`block ${index} ${signature} must be a string`)
      }
-@@ -176,12 +183,12 @@ function foreignAssistant(message: Message): AssistantMessage {
+@@ -185,12 +192,12 @@ function foreignAssistant(message: Message): AssistantMessage {
  }
  
  /** Recombine durable Harness content with validated pi-ai replay metadata. */
@@ -132,7 +182,7 @@ index bae4cfc40d..17e93a3f7e 100644
      const replay = state.blocks[index]
      if (replay === undefined || replay.type !== block.type) return invalidReplay(`block ${index} does not match assistant content`)
      switch (block.type) {
-@@ -203,6 +210,22 @@ function replayedAssistant(message: Message, source: ModelMessageSource, rawStat
+@@ -212,6 +219,22 @@ function replayedAssistant(message: Message, source: ModelMessageSource, rawStat
          arguments: parseArguments(block.arguments),
          ...replay.type === 'tool-call' && replay.thoughtSignature !== undefined ? { thoughtSignature: replay.thoughtSignature } : {},
        }
@@ -155,7 +205,7 @@ index bae4cfc40d..17e93a3f7e 100644
        /* v8 ignore next -- readReplayState rejects unknown replay tags, so an equal plugin-added Harness tag cannot reach this switch */
        default: return invalidReplay(`block ${index} has an unsupported Harness type`)
      }
-@@ -238,7 +261,7 @@ export function toPiAssistant(message: Message, onDegrade?: (reason: string) =>
+@@ -250,7 +273,7 @@ export function toPiAssistant(message: Message, onDegrade?: (reason: string) =>
    const source = message.source
    if (source.kind !== 'model' || source.replayState === undefined) return foreignAssistant(message)
    try {
@@ -165,7 +215,7 @@ index bae4cfc40d..17e93a3f7e 100644
      /* v8 ignore next -- replayedAssistant throws only INVALID_REPLAY_STATE LlmErrors; the
         guard keeps a future non-replay failure loud instead of silently degrading it */
 diff --git a/packages/llm/llm-pi-ai/src/stream.ts b/packages/llm/llm-pi-ai/src/stream.ts
-index 203e639052..79e3fe7ae6 100644
+index 9bc2f98c4c16839417d74196bf474e288443d4e6..7fab6869b2031c480c40265e5937e2b6001de9ee 100644
 --- a/packages/llm/llm-pi-ai/src/stream.ts
 +++ b/packages/llm/llm-pi-ai/src/stream.ts
 @@ -13,6 +13,7 @@ import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExcee
@@ -176,7 +226,7 @@ index 203e639052..79e3fe7ae6 100644
  import { toPiReplayState } from './replay.ts'
  
  /**
-@@ -139,7 +140,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
+@@ -140,7 +141,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
   *   `LlmError` (`STREAM_CLOSED`) if the source ends without a terminal event.
   */
  export async function* toStreamChunks(
@@ -184,8 +234,8 @@ index 203e639052..79e3fe7ae6 100644
 +  events: AsyncIterable<AssistantMessageEvent | PiProviderToolEvent>,
    contextWindow?: number,
    callerSignal?: AbortSignal,
- ): AsyncGenerator<StreamChunk> {
-@@ -203,12 +204,31 @@ export async function* toStreamChunks(
+   requestedModel?: string,
+@@ -205,12 +206,31 @@ export async function* toStreamChunks(
            },
          }
          break
@@ -213,12 +263,12 @@ index 203e639052..79e3fe7ae6 100644
          yield {
            type: 'finish',
            reason: mapStopReason(event.message, contextWindow),
--          replayState: toPiReplayState(event.message),
-+          replayState: toPiReplayState(asPiAssistantMessage(event.message)),
+-          replayState: toPiReplayState(event.message, requestedModel),
++          replayState: toPiReplayState(asPiAssistantMessage(event.message), requestedModel),
          }
          return
        case 'error':
-@@ -230,3 +250,38 @@ export async function* toStreamChunks(
+@@ -232,3 +252,38 @@ export async function* toStreamChunks(
    }
    throw new LlmError('pi-ai event stream ended without done/error', 'STREAM_CLOSED')
  }
@@ -258,32 +308,32 @@ index 203e639052..79e3fe7ae6 100644
 +  }
 +}
 diff --git a/packages/llm/llm-pi-ai/tests/convert.spec.ts b/packages/llm/llm-pi-ai/tests/convert.spec.ts
-index c80df43df1..b1bc4008fc 100644
+index 74ecb3d71d03e3a089f8631485422f9188844872..bf668522292767b873fdfdd913c09cebcb896e20 100644
 --- a/packages/llm/llm-pi-ai/tests/convert.spec.ts
 +++ b/packages/llm/llm-pi-ai/tests/convert.spec.ts
-@@ -5,6 +5,7 @@ import { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESP
- import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
- import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-works/pi-ai'
+@@ -7,6 +7,7 @@ import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-w
+ import { transformMessages } from '@earendil-works/pi-ai/api/transform-messages'
+ import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
  import { toPiContext } from '../src/context.ts'
 +import type { PiAssistantMessage, PiProviderToolCall, PiProviderToolResult } from '../src/provider-content.ts'
  import { toPiReplayState } from '../src/replay.ts'
  import { mapStopReason, mapUsage, toStreamChunks } from '../src/stream.ts'
  
-@@ -33,6 +34,12 @@ function assistant(overrides: Partial<AssistantMessage> = {}): AssistantMessage
+@@ -35,6 +36,12 @@ function assistant(overrides: Partial<AssistantMessage> = {}): AssistantMessage
    }
  }
  
 +function providerAssistant(
 +  content: Array<PiProviderToolCall | PiProviderToolResult>,
 +): PiAssistantMessage {
-+  return { ...assistant({ content: [] }), content } as PiAssistantMessage
++  return { ...assistant({ content: [] }), content }
 +}
 +
  async function* feed(...events: AssistantMessageEvent[]): AsyncGenerator<AssistantMessageEvent> {
    for (const event of events) yield event
  }
-@@ -452,6 +459,66 @@ describe('toPiContext', () => {
-     expect(context.messages[0]).not.toHaveProperty('responseId')
+@@ -496,6 +503,66 @@ describe('toPiContext', () => {
+     expect(context.messages[0]).not.toHaveProperty('providerThinkingLevel')
    })
  
 +  it('replays Provider-owned content only through matching native replay state', () => {
@@ -349,7 +399,7 @@ index c80df43df1..b1bc4008fc 100644
    it('degrades unsupported replay-state versions to provider-neutral history', () => {
      const onDegrade = vi.fn()
      const context = toPiContext({
-@@ -713,6 +780,85 @@ describe('toStreamChunks', () => {
+@@ -801,6 +868,85 @@ describe('toStreamChunks', () => {
      ])
    })
  

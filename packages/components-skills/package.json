@@ -15,6 +15,6 @@
     "@myagents-dsh/tools-agent": "0.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-skill": "0.1.2-rc.1.myagents.a66e47020478.db06dc323417 || 0.1.2-rc.1"
+    "@deepseek-ai/dsh-skill": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2"
   }
 }

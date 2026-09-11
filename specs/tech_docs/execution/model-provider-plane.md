@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: model-provider-plane
-updated: 2026-09-05
+updated: 2026-09-12
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_integration.md
@@ -33,7 +33,15 @@ The official composition registers two deliberately different routes behind DSH 
 | Route | Active implementation | API behavior |
 | --- | --- | --- |
 | `deepseek-official` | MyAgents `HostDeepSeekLlmAdapter` wrapping the official DSH DeepSeek adapter | fixed official DeepSeek route using its accepted `openai-completions` profile, DeepSeek-native streaming and Files/attachments |
-| Host-declared ordinary API route | `@deepseek-ai/dsh-llm-pi-ai@0.1.2-rc.1.myagents.a66e47020478.687734e8d36c` using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `0.84.2` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
+| Host-declared ordinary API route | `@deepseek-ai/dsh-llm-pi-ai@0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68` using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `0.85.1` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
+
+These are UPG15 source/package candidates; the Host lock still selects the previous accepted
+handoff. DeepSeek's resolved model metadata passes explicit `systemPromptUpdate: in-history`
+through `prepareCall` to the native AgentLoop. With that declaration, changed system instructions
+append in history; without it, the native loop updates the leading system message. Model capability
+is never inferred from the Provider name, and undeclared input modalities default to text only.
+Real LlmRuntime/AgentLoop fixtures verify the resulting second-request wire using fake SSE and Host
+credentials. They do not claim live Provider acceptance.
 
 The configured API family is preserved. Anthropic-compatible profiles use Anthropic Messages; OpenAI Chat Completions and Responses profiles use their corresponding direct pi-ai transports. This Runtime does not route those families through the historical MyAgents Anthropic bridge when the installed adapter supports them.
 

@@ -1,5 +1,12 @@
 import { SessionSeq, SessionLogOffset } from "@deepseek-ai/dsh-session";
-import { Context } from "@deepseek-ai/cordis";
+import { AgentRegistry } from "@deepseek-ai/dsh-agent";
+import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
+import { LlmRuntime } from "@deepseek-ai/dsh-llm";
+import SessionProjectionRegistry from "@deepseek-ai/dsh-session-projection";
+import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import { ToolRuntime } from "@deepseek-ai/dsh-tools";
+import type { SessionHandle, SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
+import { Context, symbols } from "@deepseek-ai/cordis";
 import {
   SESSION_FORMAT_VERSION,
   SessionId,
@@ -32,6 +39,34 @@ import {
 } from "@myagents-dsh/persistence-product";
 import { canonicalSessionReadData, SessionReadAssembler } from "@myagents-dsh/protocol";
 import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
+
+const fixtureWriters = new WeakMap<object, Map<SessionId, SessionHandle>>();
+const fixtureIdentity = (persistence: SessionPersistence): object =>
+  (persistence as unknown as Record<PropertyKey, object>)[symbols.original] ?? persistence;
+const createFixtureSession = async (persistence: SessionPersistence, meta: SessionHeader): Promise<void> => {
+  const writer = await persistence.create(meta);
+  let writers = fixtureWriters.get(fixtureIdentity(persistence));
+  if (writers === undefined) { writers = new Map(); fixtureWriters.set(fixtureIdentity(persistence), writers); }
+  writers.set(meta.id, writer);
+};
+const appendFixtureEvents = async (persistence: SessionPersistence, id: SessionId, events: readonly SessionEvent[]): Promise<void> => {
+  const writers = fixtureWriters.get(fixtureIdentity(persistence));
+  const writer = writers?.get(id) ?? await persistence.open(id, "write");
+  try { await writer.append(events); await writer.flush(); } finally { writers?.delete(id); await writer.close(); }
+};
+const inspectFixtureSession = async (persistence: SessionPersistence, id: SessionId, offset = 0) => {
+  const reader = await persistence.open(id, "read");
+  try { return { meta: reader.header, inheritedEventCount: reader.inheritedEventCount, events: (await reader.read(offset)).events }; }
+  finally { await reader.close(); }
+};
+const mountNativeLoop = async (ctx: Context): Promise<void> => {
+  await ctx.plugin(LlmRuntime);
+  await ctx.plugin(SessionProjectionRegistry);
+  await ctx.plugin(SystemPrompt, {});
+  await ctx.plugin(ToolRuntime);
+  await ctx.plugin(AgentRegistry);
+  await ctx.plugin(AgentLoop, { agents: [] });
+};
 
 const roots: string[] = [];
 
@@ -167,37 +202,39 @@ describe("ProductSqliteSessionPersistence", () => {
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-storage-bounds");
     const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, turn(0, 1));
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
 
     const oversized = Object.freeze({
       data: Object.freeze({ text: "x".repeat(PRODUCT_PERSISTENCE_LIMITS.maxEventBytes) }),
       seq: 2,
       time: 3,
-      type: "assistant/message" as const,
+      type: "fixture/optional-json",
+      ignorable: true,
     }) as unknown as SessionEvent;
-    await expect(context.sessionPersistence.append(id, [oversized]))
+    await expect(appendFixtureEvents(context.sessionPersistence, id, [oversized]))
       .rejects.toThrow(/persisted byte bound/u);
-    expect((await context.sessionPersistence.readFrom(id, SessionLogOffset(0))).events).toHaveLength(2);
+    expect((await inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(0))).events).toHaveLength(2);
 
     let deepData: unknown = "leaf";
     for (let depth = 0; depth <= PRODUCT_PERSISTENCE_LIMITS.maxJsonDepth; depth += 1) {
       deepData = { child: deepData };
     }
-    await expect(context.sessionPersistence.append(id, [Object.freeze({
+    await expect(appendFixtureEvents(context.sessionPersistence, id, [Object.freeze({
       data: deepData,
       seq: 2,
       time: 3,
-      type: "assistant/message" as const,
+      type: "fixture/optional-json",
+      ignorable: true,
     }) as unknown as SessionEvent])).rejects.toThrow(/JSON depth bound/u);
-    expect((await context.sessionPersistence.readFrom(id, SessionLogOffset(0))).events).toHaveLength(2);
+    expect((await inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(0))).events).toHaveLength(2);
 
     const probe = new DatabaseSync(databasePath);
     probe.prepare("UPDATE sessions SET event_count = ? WHERE id = ?")
       .run(PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents + 1, id);
     probe.prepare("UPDATE session_generations SET event_count = ? WHERE session_id = ?")
       .run(PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents + 1, id);
-    await expect(context.sessionPersistence.inspect(id)).rejects.toThrow(/generation identity/u);
+    await expect(inspectFixtureSession(context.sessionPersistence, id)).rejects.toThrow(/generation identity/u);
     probe.close();
     await context.fiber.dispose();
   });
@@ -207,8 +244,8 @@ describe("ProductSqliteSessionPersistence", () => {
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-journal-bound");
     const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, turn(0, 1));
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("journal-bound fixture did not install product persistence");
     }
@@ -217,7 +254,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const source = probe.prepare(
       "SELECT active_generation_id FROM sessions WHERE id = ?",
     ).get(id) as { active_generation_id: string };
-    const sourceRevision = String((await persistence.listSnapshots())[0]?.revision);
+    const sourceRevision = String((await persistence.list())[0]?.revision);
     const insert = probe.prepare(`
       INSERT INTO delete_journals(
         token, client_mutation_id, request_fingerprint, session_id,
@@ -253,18 +290,18 @@ describe("ProductSqliteSessionPersistence", () => {
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-database-substitution");
     const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, turn(0, 1));
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
 
     const moved = `${databasePath}.moved`;
     await rename(databasePath, moved);
     await symlink(moved, databasePath);
-    await expect(context.sessionPersistence.listSnapshots()).rejects.toThrow(/identity changed/u);
-    await expect(context.sessionPersistence.inspect(id)).rejects.toThrow(/identity changed/u);
+    await expect(context.sessionPersistence.list()).rejects.toThrow(/identity changed/u);
+    await expect(inspectFixtureSession(context.sessionPersistence, id)).rejects.toThrow(/identity changed/u);
     await context.fiber.dispose();
   });
 
-  it("migrates the exact v1 Session store through checkpoint and stable-boundary schemas", async () => {
+  it("refuses the old v1 store without migrating its schema", async () => {
     const runtimeHome = await makeRuntimeHome();
     const platform = selectPlatformAdapter("darwin-arm64");
     const databasePath = productSessionDatabasePath(platform, runtimeHome);
@@ -278,27 +315,17 @@ describe("ProductSqliteSessionPersistence", () => {
     database.close();
     await chmod(databasePath, 0o600);
 
-    const context = await mount(runtimeHome);
+    await expect(mount(runtimeHome)).rejects.toThrow(/schema identity is incompatible/);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
-    expect((probe.prepare("PRAGMA user_version").get() as { user_version: number }).user_version)
-      .toBe(PRODUCT_PERSISTENCE_SCHEMA_VERSION);
-    expect(probe.prepare(
-      "SELECT schema_version, store_id FROM store_meta WHERE singleton = 1",
-    ).get()).toEqual({
-      schema_version: PRODUCT_PERSISTENCE_SCHEMA_VERSION,
-      store_id: "store-v1-fixture",
-    });
-    expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_records")).toBe(0);
-    expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_blobs")).toBe(0);
-    expect(scalar(probe, "SELECT count(*) AS value FROM delete_journals")).toBe(0);
-    expect(scalar(probe, "SELECT count(*) AS value FROM stable_boundaries")).toBe(0);
-    expect(scalar(probe, "SELECT count(*) AS value FROM rewind_child_plans")).toBe(0);
-    expect(scalar(probe, "SELECT count(*) AS value FROM fork_journals")).toBe(0);
+    expect(probe.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
+    expect(probe.prepare("SELECT schema_version, store_id FROM store_meta WHERE singleton = 1").get())
+      .toEqual({ schema_version: 1, store_id: "store-v1-fixture" });
+    expect(probe.prepare("SELECT count(*) AS value FROM sqlite_schema WHERE type = 'table' AND name = 'checkpoint_records'").get())
+      .toEqual({ value: 0 });
     probe.close();
-    await context.fiber.dispose();
   });
 
-  it("migrates v8 stores to the directory journal without inventing historical ownership", async () => {
+  it("refuses v8 stores without adding directory ownership", async () => {
     const runtimeHome = await makeRuntimeHome();
     const platform = selectPlatformAdapter("darwin-arm64");
     const databasePath = productSessionDatabasePath(platform, runtimeHome);
@@ -309,18 +336,14 @@ describe("ProductSqliteSessionPersistence", () => {
     database.exec(`PRAGMA application_id = ${PRODUCT_PERSISTENCE_APPLICATION_ID}; PRAGMA user_version = 8;`);
     database.close();
     await chmod(databasePath, 0o600);
-    const context = await mount(runtimeHome);
+    await expect(mount(runtimeHome)).rejects.toThrow(/schema identity is incompatible/);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
-    expect(probe.prepare("PRAGMA user_version").get()).toEqual({ user_version: PRODUCT_PERSISTENCE_SCHEMA_VERSION });
-    expect(probe.prepare("PRAGMA table_info(checkpoint_records)").all().at(-1)).toMatchObject({
-      name: "directory_plan_json", type: "TEXT", notnull: 0, dflt_value: null,
-    });
-    expect(probe.prepare("SELECT directory_plan_json FROM checkpoint_records").all()).toEqual([]);
+    expect(probe.prepare("PRAGMA user_version").get()).toEqual({ user_version: 8 });
+    expect(probe.prepare("PRAGMA table_info(checkpoint_records)").all().some((row) => row.name === "directory_plan_json")).toBe(false);
     probe.close();
-    await context.fiber.dispose();
   });
 
-  it("migrates legacy fork metadata while preserving its original header and event bytes", async () => {
+  it("refuses legacy fork metadata while preserving its original header and event bytes", async () => {
     const runtimeHome = await makeRuntimeHome();
     const platform = selectPlatformAdapter("darwin-arm64");
     const databasePath = productSessionDatabasePath(platform, runtimeHome);
@@ -345,28 +368,21 @@ describe("ProductSqliteSessionPersistence", () => {
       .run(id, row.event.seq, row.event.type, row.event.time, row.bytes, row.head);
     database.close();
     await chmod(databasePath, 0o600);
-    const context = await mount(runtimeHome);
-    const restored = await context.sessionPersistence.inspect(id);
-    expect(restored.inheritedEventCount).toBe(2);
-    expect(restored.meta).toMatchObject({ isSeeded: true, parentSession: "legacy-parent" });
-    expect(restored.meta).not.toHaveProperty("seedLength");
-    expect(restored.events).toEqual(events);
-    await context.sessionPersistence.append(id, turn(2, 2));
+    await expect(mount(runtimeHome)).rejects.toThrow(/schema identity is incompatible/);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
-    expect(probe.prepare("SELECT header_json, inherited_event_count FROM session_generations").get())
-      .toEqual({ header_json: headerBytes, inherited_event_count: 2 });
-    expect(probe.prepare("SELECT envelope_json FROM session_events WHERE seq < 2 ORDER BY seq").all())
+    expect(probe.prepare("PRAGMA user_version").get()).toEqual({ user_version: 7 });
+    expect(probe.prepare("SELECT header_json FROM session_generations").get()).toEqual({ header_json: headerBytes });
+    expect(probe.prepare("SELECT envelope_json FROM session_events ORDER BY seq").all())
       .toEqual(rows.map(({ bytes }) => ({ envelope_json: bytes })));
     probe.close();
-    await context.fiber.dispose();
   });
 
   it("persists and projects one opaque stable boundary for a closed durable history", async () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-stable-boundary");
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, turn(0, 1));
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
@@ -411,8 +427,8 @@ describe("ProductSqliteSessionPersistence", () => {
     });
     const firstTurn = turn(1, 1);
     const sourceEvents = Object.freeze([configuration, ...firstTurn]);
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, sourceEvents);
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, sourceEvents);
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
@@ -459,8 +475,8 @@ describe("ProductSqliteSessionPersistence", () => {
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-delete-source");
     const events = turn(0, 1);
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, events);
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, events);
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("delete fixture did not install product persistence");
     }
@@ -531,7 +547,7 @@ describe("ProductSqliteSessionPersistence", () => {
       storageState: "tombstoned",
     });
     expect(await persistence.list()).toEqual([]);
-    await expect(persistence.readFrom(id, SessionLogOffset(0))).rejects.toThrow(/not found|unavailable/u);
+    await expect(inspectFixtureSession(persistence, id, SessionLogOffset(0))).rejects.toThrow(/not found|unavailable/u);
 
     const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
     const tombstoneProbe = new DatabaseSync(databasePath);
@@ -546,14 +562,14 @@ describe("ProductSqliteSessionPersistence", () => {
     const rolledBack = await persistence.rollbackDelete(prepared.token, "delete-client-1");
     expect(rolledBack).toMatchObject({ attempt: 2, phase: "rolled_back" });
     expect(await persistence.rollbackDelete(prepared.token, "delete-client-1")).toEqual(rolledBack);
-    expect((await persistence.readFrom(id, SessionLogOffset(0))).events).toEqual(events);
+    expect((await inspectFixtureSession(persistence, id, SessionLogOffset(0))).events).toEqual(events);
     await expect(persistence.inspectRecovery(id)).resolves.toMatchObject({
       state: "resume_candidate",
       generationId: prepared.sourceGenerationId,
       durableSequence: 2,
       storageState: "active",
     });
-    expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId))).toEqual([id]);
+    expect((await persistence.list()).map(({ header: { id: sessionId } }) => String(sessionId))).toEqual([id]);
     await context.fiber.dispose();
   });
 
@@ -563,8 +579,8 @@ describe("ProductSqliteSessionPersistence", () => {
     const id = SessionId("product-persistence-delete-revision-drift");
     const firstTurn = turn(0, 1);
     const secondTurn = turn(2, 2);
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, firstTurn);
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, firstTurn);
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("delete revision-drift fixture did not install product persistence");
     }
@@ -573,12 +589,12 @@ describe("ProductSqliteSessionPersistence", () => {
       clientMutationId: "delete-client-revision-drift",
       runtimeSessionId: id,
     });
-    await persistence.append(id, secondTurn);
+    await appendFixtureEvents(persistence, id, secondTurn);
     await expect(persistence.commitDelete(prepared.token, "delete-client-revision-drift"))
       .rejects.toThrow(/locator or revision changed/u);
     expect(await persistence.getDelete(prepared.token)).toEqual(prepared);
-    expect((await persistence.readFrom(id, SessionLogOffset(0))).events).toEqual([...firstTurn, ...secondTurn]);
-    expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId))).toEqual([id]);
+    expect((await inspectFixtureSession(persistence, id, SessionLogOffset(0))).events).toEqual([...firstTurn, ...secondTurn]);
+    expect((await persistence.list()).map(({ header: { id: sessionId } }) => String(sessionId))).toEqual([id]);
     expect(await persistence.rollbackDelete(prepared.token, "delete-client-revision-drift"))
       .toMatchObject({ phase: "rolled_back" });
     await context.fiber.dispose();
@@ -588,8 +604,8 @@ describe("ProductSqliteSessionPersistence", () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-delete-purge");
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, turn(0, 1));
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("delete purge fixture did not install product persistence");
     }
@@ -628,8 +644,8 @@ describe("ProductSqliteSessionPersistence", () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-recovery-corrupt");
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, turn(0, 1));
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("recovery fixture did not install product persistence");
     }
@@ -656,8 +672,8 @@ describe("ProductSqliteSessionPersistence", () => {
     const id = SessionId("product-persistence-rewind");
     const firstTurn = turn(0, 1);
     const secondTurn = turn(2, 2);
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, firstTurn);
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, firstTurn);
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
@@ -670,14 +686,14 @@ describe("ProductSqliteSessionPersistence", () => {
     const targetStableBoundaryId = targetRead.durableHead.stableBoundaryId;
     if (targetStableBoundaryId === undefined) throw new Error("rewind target boundary is unavailable");
     const excludedChildId = SessionId("product-persistence-rewind-child");
-    await context.sessionPersistence.create(Object.freeze({
+    await createFixtureSession(context.sessionPersistence, Object.freeze({
       ...header(excludedChildId),
       origin: "subagent" as const,
       parentSession: id,
       isSeeded: false,
     }));
-    await context.sessionPersistence.append(excludedChildId, turn(0, 1));
-    await persistence.append(id, secondTurn);
+    await appendFixtureEvents(context.sessionPersistence, excludedChildId, turn(0, 1));
+    await appendFixtureEvents(persistence, id, secondTurn);
     const allEvents = [...firstTurn, ...secondTurn];
     const prepared = await persistence.prepareRewind({
       clientMutationId: "rewind-client-1",
@@ -713,7 +729,7 @@ describe("ProductSqliteSessionPersistence", () => {
       },
     });
     expect(await persistence.commitRewind(prepared.token, "rewind-client-1")).toEqual(committed);
-    expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId)).sort())
+    expect((await persistence.list()).map(({ header: { id: sessionId } }) => String(sessionId)).sort())
       .toEqual([String(id)]);
     const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
@@ -761,8 +777,8 @@ describe("ProductSqliteSessionPersistence", () => {
     const rolledBack = await persistence.rollbackRewind(prepared.token, "rewind-client-1");
     expect(rolledBack.phase).toBe("rolled_back");
     expect(await persistence.rollbackRewind(prepared.token, "rewind-client-1")).toEqual(rolledBack);
-    expect((await persistence.readFrom(id, SessionLogOffset(0))).events).toEqual(allEvents);
-    expect((await persistence.list()).map(({ id: sessionId }) => String(sessionId)).sort())
+    expect((await inspectFixtureSession(persistence, id, SessionLogOffset(0))).events).toEqual(allEvents);
+    expect((await persistence.list()).map(({ header: { id: sessionId } }) => String(sessionId)).sort())
       .toEqual([String(excludedChildId), String(id)].sort());
     await context.fiber.dispose();
   });
@@ -777,8 +793,8 @@ describe("ProductSqliteSessionPersistence", () => {
     const sourceId = SessionId("product-persistence-fork-source");
     const sourceHeader = header(sourceId);
     const firstTurn = turn(0, 1);
-    await context.sessionPersistence.create(sourceHeader);
-    await context.sessionPersistence.append(sourceId, firstTurn);
+    await createFixtureSession(context.sessionPersistence, sourceHeader);
+    await appendFixtureEvents(context.sessionPersistence, sourceId, firstTurn);
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
@@ -832,8 +848,8 @@ describe("ProductSqliteSessionPersistence", () => {
 
     const occupied = await mount(occupiedTargetHome);
     const occupiedId = SessionId("product-persistence-fork-occupied");
-    await occupied.sessionPersistence.create(header(occupiedId));
-    await occupied.sessionPersistence.append(occupiedId, turn(0, 1));
+    await createFixtureSession(occupied.sessionPersistence, header(occupiedId));
+    await appendFixtureEvents(occupied.sessionPersistence, occupiedId, turn(0, 1));
     await occupied.fiber.dispose();
     await expect(persistence.prepareFork({
       clientMutationId: "fork-client-occupied",
@@ -900,7 +916,7 @@ describe("ProductSqliteSessionPersistence", () => {
       },
     });
     expect(await persistence.commitFork(prepared.token, "fork-client-1")).toEqual(committed);
-    expect((await persistence.readFrom(sourceId, SessionLogOffset(0))).events).toEqual(firstTurn);
+    expect((await inspectFixtureSession(persistence, sourceId, SessionLogOffset(0))).events).toEqual(firstTurn);
     probe = new DatabaseSync(targetDatabasePath, { readOnly: true });
     const target = probe.prepare(`
       SELECT s.state, s.event_count, g.state AS generation_state, g.header_json
@@ -941,7 +957,7 @@ describe("ProductSqliteSessionPersistence", () => {
       targetRuntimeHome: staleTargetHome,
       targetWorkspaceIdentity: "fork-target-workspace-1",
     });
-    await persistence.append(sourceId, turn(2, 2));
+    await appendFixtureEvents(persistence, sourceId, turn(2, 2));
     await expect(persistence.commitFork(stalePrepared.token, "fork-client-stale-source"))
       .rejects.toThrow(/source locator, revision, or boundary changed/u);
     expect((await persistence.abortFork(stalePrepared.token, "fork-client-stale-source")).phase)
@@ -977,7 +993,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const meta = header(id);
     const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
 
-    await context.sessionPersistence.create(meta);
+    await createFixtureSession(context.sessionPersistence, meta);
     let probe = new DatabaseSync(databasePath, { readOnly: true });
     expect(scalar(probe, "SELECT count(*) AS value FROM sessions")).toBe(0);
     const storeMeta = probe.prepare(
@@ -989,7 +1005,7 @@ describe("ProductSqliteSessionPersistence", () => {
     });
     probe.close();
 
-    await context.sessionPersistence.append(id, turn(0, 1));
+    await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
     probe = new DatabaseSync(databasePath, { readOnly: true });
     const first = probe.prepare(
       "SELECT active_generation_id, event_count, revision, head_hash FROM sessions WHERE id = ?",
@@ -1012,9 +1028,9 @@ describe("ProductSqliteSessionPersistence", () => {
     )).toBe(1);
     probe.close();
 
-    const firstRevision = await context.sessionPersistence.listSnapshots();
-    await context.sessionPersistence.append(id, turn(2, 2));
-    const secondRevision = await context.sessionPersistence.listSnapshots();
+    const firstRevision = await context.sessionPersistence.list();
+    await appendFixtureEvents(context.sessionPersistence, id, turn(2, 2));
+    const secondRevision = await context.sessionPersistence.list();
     expect(secondRevision[0]?.revision).not.toBe(firstRevision[0]?.revision);
 
     probe = new DatabaseSync(databasePath, { readOnly: true });
@@ -1031,36 +1047,36 @@ describe("ProductSqliteSessionPersistence", () => {
     ).get(id, first.active_generation_id) as { envelope_json: string }).envelope_json).toBe(firstEnvelope);
     probe.close();
 
-    await expect(context.sessionPersistence.append(id, turn(5, 3))).rejects.toThrow(/expected 4.*got 5/u);
-    await expect(context.sessionPersistence.create(meta)).rejects.toThrow(/already exists/u);
+    await expect(appendFixtureEvents(context.sessionPersistence, id, turn(5, 3))).rejects.toThrow(/expected 4.*got 5/u);
+    await expect(createFixtureSession(context.sessionPersistence, meta)).rejects.toThrow(/already exists/u);
     await context.fiber.dispose();
 
     const reopened = await mount(runtimeHome);
-    await expect(reopened.sessionPersistence.create(meta)).rejects.toThrow(/already has a persisted log/u);
-    const stored = await reopened.sessionPersistence.inspect(id);
+    await expect(createFixtureSession(reopened.sessionPersistence, meta)).rejects.toThrow(/already exists/u);
+    const stored = await inspectFixtureSession(reopened.sessionPersistence, id);
     expect(stored.events.map(({ seq }) => seq)).toEqual([0, 1, 2, 3]);
     await reopened.fiber.dispose();
   });
 
-  it("reads an exact validated suffix without scanning unrelated prefix envelopes", async () => {
+  it("reads native handle slices and refuses corruption anywhere in the observed prefix", async () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-suffix");
     const meta = header(id);
     const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
 
-    await context.sessionPersistence.create(meta);
-    await context.sessionPersistence.append(id, [...turn(0, 1), ...turn(2, 2)]);
+    await createFixtureSession(context.sessionPersistence, meta);
+    await appendFixtureEvents(context.sessionPersistence, id, [...turn(0, 1), ...turn(2, 2)]);
 
-    const complete = await context.sessionPersistence.readFrom(id, SessionLogOffset(0));
-    const suffix = await context.sessionPersistence.readFrom(id, SessionLogOffset(2));
+    const complete = await inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(0));
+    const suffix = await inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(2));
     expect(Buffer.from(JSON.stringify(suffix.events))).toEqual(
       Buffer.from(JSON.stringify(complete.events.slice(2))),
     );
-    expect((await context.sessionPersistence.readFrom(id, SessionLogOffset(4))).events).toEqual([]);
-    expect((await context.sessionPersistence.readFrom(id, SessionLogOffset(99))).events).toEqual([]);
-    await expect(context.sessionPersistence.readFrom(id, -1 as SessionLogOffset)).rejects.toThrow(/non-negative safe integer/u);
-    await expect(context.sessionPersistence.readFrom(id, Number.MAX_SAFE_INTEGER + 1 as SessionLogOffset))
+    expect((await inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(4))).events).toEqual([]);
+    expect((await inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(99))).events).toEqual([]);
+    await expect(inspectFixtureSession(context.sessionPersistence, id, -1 as SessionLogOffset)).rejects.toThrow(/non-negative safe integer/u);
+    await expect(inspectFixtureSession(context.sessionPersistence, id, Number.MAX_SAFE_INTEGER + 1 as SessionLogOffset))
       .rejects.toThrow(/non-negative safe integer/u);
 
     const probe = new DatabaseSync(databasePath);
@@ -1073,24 +1089,48 @@ describe("ProductSqliteSessionPersistence", () => {
        WHERE session_id = ? AND generation_id = ? AND seq = 0
     `).run("not-json", id, generation.active_generation_id);
 
-    expect((await context.sessionPersistence.readFrom(id, SessionLogOffset(2))).events.map(({ seq }) => seq))
-      .toEqual([2, 3]);
-    await expect(context.sessionPersistence.readFrom(id, SessionLogOffset(0))).rejects.toThrow(/event 0 contains invalid JSON/u);
+    await expect(inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(2))).rejects.toThrow(/event 0 contains invalid JSON/u);
+    await expect(inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(0))).rejects.toThrow(/event 0 contains invalid JSON/u);
 
     probe.prepare(`
       UPDATE session_events
          SET envelope_json = ?
        WHERE session_id = ? AND generation_id = ? AND seq = 2
     `).run("also-not-json", id, generation.active_generation_id);
-    await expect(context.sessionPersistence.readFrom(id, SessionLogOffset(2))).rejects.toThrow(/event 2 contains invalid JSON/u);
+    await expect(inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(2))).rejects.toThrow(/event 0 contains invalid JSON/u);
 
     probe.prepare(`
       DELETE FROM session_events
        WHERE session_id = ? AND generation_id = ? AND seq = 1
     `).run(id, generation.active_generation_id);
     probe.close();
-    await expect(context.sessionPersistence.readFrom(id, SessionLogOffset(2))).rejects.toThrow(/prefix.*not contiguous/u);
+    await expect(inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(2))).rejects.toThrow(/event count|not contiguous/u);
     await context.fiber.dispose();
+  });
+
+  it.each([2_048, 16_384, 1_048_576])("keeps dense UTF-8 history pages within %i bytes without dropping events", async (budget) => {
+    const context = await mount(await makeRuntimeHome());
+    const id = SessionId(`dense-read-${budget}`);
+    const events = Array.from({ length: 300 }, (_, seq) => ({
+      type: "synthetic/diagnostic", seq, time: seq + 1, ignorable: true,
+      data: { text: `条目-${seq}-🙂-\\-"`.repeat(8) },
+    })) as unknown as SessionEvent[];
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, events);
+    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) throw new Error("missing Provider");
+    const assembler = new SessionReadAssembler();
+    let cursor: string | undefined;
+    do {
+      const page = await context.sessionPersistence.readSession({
+        runtimeSessionId: id, runtimeGeneration: "dense-read", maxResultBytes: budget,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      expect(Buffer.byteLength(JSON.stringify(page), "utf8")).toBeLessThanOrEqual(budget);
+      expect(page.records.length).toBeGreaterThan(0);
+      assembler.accept(page, cursor);
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    expect(assembler.finish().map(({ data }) => data)).toEqual(events.map(({ data }) => data));
   });
 
   it("projects one stable hash-verified cursor chain and chunks an oversized event", async () => {
@@ -1102,21 +1142,21 @@ describe("ProductSqliteSessionPersistence", () => {
       { data: { turn: 1 }, seq: 0, time: 1, type: "turn/start" },
       { data: { turn: 1, step: 1 }, seq: 1, time: 2, type: "step/start" },
       {
-        data: { turn: 1, step: 1, chunk: { type: "text-delta", index: 0, text: largeText } },
+        data: { turn: 1, step: 1, stream: [{ type: "text-chunks", index: 0, time0: 3, dt: [], texts: [largeText] }] },
         seq: 2,
         time: 3,
-        type: "assistant/chunk",
+        type: "assistant/attempt",
       },
       { data: { turn: 1, step: 1 }, seq: 3, time: 4, type: "step/end" },
       { data: { turn: 1, reason: { kind: "completed" } }, seq: 4, time: 5, type: "turn/end" },
     ]) as unknown as readonly SessionEvent[];
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, events);
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, events);
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
     const persistence = context.sessionPersistence;
-    const revisionsBefore = await persistence.listSnapshots();
+    const revisionsBefore = await persistence.list();
     const assembler = new SessionReadAssembler();
     const pages: Awaited<ReturnType<typeof persistence.readSession>>[] = [];
     let cursor: string | undefined;
@@ -1137,7 +1177,7 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(reconstructed.map(({ sequence, eventType }) => ({ sequence, eventType }))).toEqual([
       { sequence: 0, eventType: "turn/start" },
       { sequence: 1, eventType: "step/start" },
-      { sequence: 2, eventType: "assistant/chunk" },
+      { sequence: 2, eventType: "assistant/attempt" },
       { sequence: 3, eventType: "step/end" },
       { sequence: 4, eventType: "turn/end" },
     ]);
@@ -1149,7 +1189,7 @@ describe("ProductSqliteSessionPersistence", () => {
       chunks.map((_, index) => index),
     );
     expect(new Set(chunks.map(({ chunkCount }) => chunkCount))).toEqual(new Set([chunks.length]));
-    expect(await persistence.listSnapshots()).toEqual(revisionsBefore);
+    expect(await persistence.list()).toEqual(revisionsBefore);
 
     const first = await persistence.readSession({
       maxResultBytes: 4_096,
@@ -1194,7 +1234,7 @@ describe("ProductSqliteSessionPersistence", () => {
       runtimeSessionId: id,
     })).rejects.toMatchObject({ code: "session_read_frame_too_small" });
 
-    await persistence.append(id, turn(5, 2));
+    await appendFixtureEvents(persistence, id, turn(5, 2));
     await expect(persistence.readSession({
       cursor: validCursor,
       maxResultBytes: 4_096,
@@ -1222,16 +1262,16 @@ describe("ProductSqliteSessionPersistence", () => {
       { data: { turn: 1 }, seq: 0, time: 1, type: "turn/start" },
       { data: { turn: 1, step: 1 }, seq: 1, time: 2, type: "step/start" },
       {
-        data: { turn: 1, step: 1, chunk: { type: "text-delta", index: 0, text: largeText } },
+        data: { turn: 1, step: 1, stream: [{ type: "text-chunks", index: 0, time0: 3, dt: [], texts: [largeText] }] },
         seq: 2,
         time: 3,
-        type: "assistant/chunk",
+        type: "assistant/attempt",
       },
       { data: { turn: 1, step: 1 }, seq: 3, time: 4, type: "step/end" },
       { data: { turn: 1, reason: { kind: "completed" } }, seq: 4, time: 5, type: "turn/end" },
     ]) as unknown as readonly SessionEvent[];
-    await context.sessionPersistence.create(header(id));
-    await context.sessionPersistence.append(id, events);
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, events);
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
@@ -1268,27 +1308,34 @@ describe("ProductSqliteSessionPersistence", () => {
     const runtimeHome = await makeRuntimeHome();
     const id = SessionId("product-persistence-interrupted");
     const first = await mount(runtimeHome);
-    await first.sessionPersistence.create(header(id));
-    await first.sessionPersistence.append(id, turn(0, 1).slice(0, 1));
+    await createFixtureSession(first.sessionPersistence, header(id));
+    await appendFixtureEvents(first.sessionPersistence, id, turn(0, 1).slice(0, 1));
     await first.fiber.dispose();
 
     const reopened = await mount(runtimeHome);
-    const repaired = await reopened.sessionPersistence.load(id);
-    expect(repaired.events).toHaveLength(2);
+    await mountNativeLoop(reopened);
+    const resumed = await reopened.agents.resume({ resumeSessionId: id });
+    const repaired = await inspectFixtureSession(reopened.sessionPersistence, id);
+    await resumed.dispose();
+    expect(repaired.events).toHaveLength(3);
+    expect(repaired.events[2]?.type).toBe("session/end-seed");
     expect(repaired.events[0]).toMatchObject({ seq: 0, type: "turn/start", data: { turn: 1 } });
     expect(repaired.events[1]).toMatchObject({
       seq: 1,
       type: "turn/end",
       data: { turn: 1, reason: { kind: "interrupted" } },
     });
-    const durable = await reopened.sessionPersistence.readFrom(id, SessionLogOffset(0));
+    const durable = await inspectFixtureSession(reopened.sessionPersistence, id, SessionLogOffset(0));
     expect(Buffer.from(JSON.stringify(durable.events))).toEqual(
       Buffer.from(JSON.stringify(repaired.events)),
     );
     await reopened.fiber.dispose();
 
     const secondReopen = await mount(runtimeHome);
-    const secondLoad = await secondReopen.sessionPersistence.load(id);
+    await mountNativeLoop(secondReopen);
+    const secondAgent = await secondReopen.agents.resume({ resumeSessionId: id });
+    const secondLoad = await inspectFixtureSession(secondReopen.sessionPersistence, id);
+    await secondAgent.dispose();
     expect(secondLoad.events).toEqual(repaired.events);
     await secondReopen.fiber.dispose();
   });
@@ -1297,16 +1344,32 @@ describe("ProductSqliteSessionPersistence", () => {
     const runtimeHome = await makeRuntimeHome();
     const id = SessionId("product-persistence-unknown-event");
     const first = await mount(runtimeHome);
-    await first.sessionPersistence.create(header(id));
-    await first.sessionPersistence.append(id, [Object.freeze({
+    await createFixtureSession(first.sessionPersistence, header(id));
+    await appendFixtureEvents(first.sessionPersistence, id, [Object.freeze({
       data: Object.freeze({ required: true }),
       seq: SessionSeq(0),
       time: 1,
       type: "myagents/unknown-required-event",
+      ignorable: true,
     }) as unknown as SessionEvent, ...turn(1, 1)]);
     await first.fiber.dispose();
 
     const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    // Synthesize a well-hashed log from a newer harness; current writers must
+    // reject unknown required events before admission.
+    const fixture = new DatabaseSync(databasePath);
+    const rows = fixture.prepare("SELECT seq, envelope_json FROM session_events WHERE session_id = ? ORDER BY seq").all(id) as { seq: number; envelope_json: string }[];
+    let head = createHash("sha256").digest("hex");
+    for (const row of rows) {
+      const event = JSON.parse(row.envelope_json) as Record<string, unknown>;
+      delete event.ignorable;
+      const envelope = canonicalSessionReadData(event).bytes.toString("utf8");
+      head = createHash("sha256").update(Buffer.from(head, "hex")).update(envelope).digest("hex");
+      fixture.prepare("UPDATE session_events SET envelope_json = ?, chain_hash = ? WHERE session_id = ? AND seq = ?").run(envelope, head, id, row.seq);
+    }
+    fixture.prepare("UPDATE sessions SET head_hash = ? WHERE id = ?").run(head, id);
+    fixture.prepare("UPDATE session_generations SET head_hash = ? WHERE session_id = ?").run(head, id);
+    fixture.close();
     const before = new DatabaseSync(databasePath, { readOnly: true });
     const beforeRow = before.prepare(
       "SELECT event_count, head_hash FROM sessions WHERE id = ?",
@@ -1314,9 +1377,8 @@ describe("ProductSqliteSessionPersistence", () => {
     before.close();
 
     const reopened = await mount(runtimeHome);
-    expect((await reopened.sessionPersistence.readFrom(id, SessionLogOffset(1))).events.map(({ seq }) => seq))
-      .toEqual([1, 2]);
-    await expect(reopened.sessionPersistence.inspect(id)).rejects.toThrow(/unknown to this harness/u);
+    await expect(inspectFixtureSession(reopened.sessionPersistence, id, SessionLogOffset(1))).rejects.toThrow(/unknown to this harness/u);
+    await expect(inspectFixtureSession(reopened.sessionPersistence, id)).rejects.toThrow(/unknown to this harness/u);
     await reopened.fiber.dispose();
 
     const after = new DatabaseSync(databasePath, { readOnly: true });
@@ -1326,23 +1388,22 @@ describe("ProductSqliteSessionPersistence", () => {
     after.close();
   });
 
-  it("allows exactly one first materialization across competing coordinators", async () => {
+  it("takes exactly one write handle across competing Providers", async () => {
     const runtimeHome = await makeRuntimeHome();
     const first = await mount(runtimeHome);
     const second = await mount(runtimeHome);
     const id = SessionId("product-persistence-collision");
     const meta = header(id);
 
-    await Promise.all([
-      first.sessionPersistence.create(meta),
-      second.sessionPersistence.create(meta),
+    const admissions = await Promise.allSettled([
+      first.sessionPersistence.create(meta), second.sessionPersistence.create(meta),
     ]);
-    const settlements = await Promise.allSettled([
-      first.sessionPersistence.append(id, turn(0, 1)),
-      second.sessionPersistence.append(id, turn(0, 1)),
-    ]);
-    expect(settlements.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
-    expect(settlements.filter(({ status }) => status === "rejected")).toHaveLength(1);
+    expect(admissions.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    expect(admissions.filter(({ status }) => status === "rejected")).toHaveLength(1);
+    const accepted = admissions.find((result) => result.status === "fulfilled");
+    if (accepted?.status !== "fulfilled") throw new Error("fixture has no owner");
+    await accepted.value.append(turn(0, 1));
+    await accepted.value.close();
 
     const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
@@ -1364,6 +1425,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const session = context.sessions.create(SessionId("product-persistence-drain"), {
       meta: { cwd: "/fixture/workspace" },
     });
+    await context.sessionPersistence.create(session.header);
     session.append("turn/start", { turn: 1 });
     await context.fiber.dispose();
 
@@ -1425,7 +1487,7 @@ describe("ProductSqliteSessionPersistence", () => {
       platform,
       preparedSessionCacheSize: undefined,
       runtimeHome,
-    } as never)).rejects.toThrow(/bounded safe integer/u);
+    } as never)).rejects.toThrow(/unsupported field/u);
     await context.fiber.dispose();
   });
 });

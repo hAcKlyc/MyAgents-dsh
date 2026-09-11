@@ -1,3 +1,4 @@
+import { lastAssistantStreamChunk } from "@deepseek-ai/dsh-llm";
 import type {} from "@deepseek-ai/dsh-compaction";
 import type {} from "@deepseek-ai/dsh-llm-retry";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
@@ -112,10 +113,11 @@ export const deriveAccruedTurnTokenUsage = (events: readonly SessionEvent[]): Ex
       reported = false;
       sample = undefined;
       failed = false;
-    } else if (event.type === "assistant/message" || (event.type === "assistant/chunk" && event.data.chunk.type === "usage")) {
+    } else if (event.type === "assistant/message" || event.type === "assistant/attempt") {
       if (event.data.step !== step) return undefined;
-      const usage = event.type === "assistant/message" ? event.data.usage
-        : event.data.chunk.type === "usage" ? event.data.chunk.usage : undefined;
+      const usage = (event.type === "assistant/message" ? event.data.usage : undefined)
+        ?? lastAssistantStreamChunk(event.data.stream, "usage")?.usage;
+      if (event.type === "assistant/attempt" && usage === undefined) failed = true;
       if (usage !== undefined) {
         reported = true;
         sample = exactReportedUsage(usage);
@@ -132,9 +134,6 @@ export const deriveAccruedTurnTokenUsage = (events: readonly SessionEvent[]): Ex
     } else if (event.type === "llm/retry-started") {
       if (step !== undefined) return undefined;
       step = event.data.step;
-    } else if (event.type === "assistant/chunk" && event.data.chunk.type === "finish"
-      && (event.data.chunk.reason.kind === "error" || event.data.chunk.reason.kind === "aborted")) {
-      failed = true;
     }
   }
   if ((reported || failed) && sample === undefined) return undefined;

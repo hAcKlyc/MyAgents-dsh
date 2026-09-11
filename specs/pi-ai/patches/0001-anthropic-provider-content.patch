@@ -1,8 +1,8 @@
 diff --git a/packages/ai/src/api/anthropic-messages.ts b/packages/ai/src/api/anthropic-messages.ts
-index b9586120..9184d14d 100644
+index de3a51cf4fff36177a678bf5383c6a30008ee2e1..2276af57a3c32d6d6b70c44040ff71856acd8241 100644
 --- a/packages/ai/src/api/anthropic-messages.ts
 +++ b/packages/ai/src/api/anthropic-messages.ts
-@@ -19,6 +19,8 @@ import type {
+@@ -22,6 +22,8 @@ import type {
  	Model,
  	ProviderEnv,
  	ProviderHeaders,
@@ -11,7 +11,7 @@ index b9586120..9184d14d 100644
  	SimpleStreamOptions,
  	StopReason,
  	StreamFunction,
-@@ -328,6 +330,58 @@ const ANTHROPIC_MESSAGE_EVENTS: ReadonlySet<string> = new Set([
+@@ -331,6 +333,65 @@ const ANTHROPIC_MESSAGE_EVENTS: ReadonlySet<string> = new Set([
  	"content_block_stop",
  ]);
  
@@ -50,27 +50,34 @@ index b9586120..9184d14d 100644
 +function isProviderToolCallBlock(value: unknown): value is RawProviderToolCall {
 +	if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
 +	const block = value as Record<string, unknown>;
-+	return (block.type === "server_tool_use" || block.type === "mcp_tool_use")
-+		&& typeof block.id === "string"
-+		&& block.id.length > 0
-+		&& typeof block.name === "string"
-+		&& block.name.length > 0;
++	return (
++		(block.type === "server_tool_use" || block.type === "mcp_tool_use") &&
++		typeof block.id === "string" &&
++		block.id.length > 0 &&
++		typeof block.name === "string" &&
++		block.name.length > 0
++	);
 +}
 +
-+function isProviderToolResultBlock(value: unknown, providerCallIds: ReadonlySet<string>): value is RawProviderToolResult {
++function isProviderToolResultBlock(
++	value: unknown,
++	providerCallIds: ReadonlySet<string>,
++): value is RawProviderToolResult {
 +	if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
 +	const block = value as Record<string, unknown>;
-+	return typeof block.type === "string"
-+		&& typeof block.tool_use_id === "string"
-+		&& block.tool_use_id.length > 0
-+		&& (block.type === "tool_result" ? providerCallIds.has(block.tool_use_id) : block.type.endsWith("_tool_result"))
-+		&& (block.is_error === undefined || typeof block.is_error === "boolean");
++	return (
++		typeof block.type === "string" &&
++		typeof block.tool_use_id === "string" &&
++		block.tool_use_id.length > 0 &&
++		(block.type === "tool_result" ? providerCallIds.has(block.tool_use_id) : block.type.endsWith("_tool_result")) &&
++		(block.is_error === undefined || typeof block.is_error === "boolean")
++	);
 +}
 +
  function flushSseEvent(state: SseDecoderState): ServerSentEvent | null {
  	if (!state.event && state.data.length === 0) {
  		return null;
-@@ -583,7 +637,9 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -588,7 +649,9 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  			stream.push({ type: "start", partial: output });
  
  			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
@@ -81,7 +88,7 @@ index b9586120..9184d14d 100644
  
  			for await (const event of iterateAnthropicEvents(response, options?.signal)) {
  				if (event.type === "message_start") {
-@@ -640,6 +696,35 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -661,6 +724,43 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  						};
  						output.content.push(block);
  						stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
@@ -100,7 +107,11 @@ index b9586120..9184d14d 100644
 +							index: event.index,
 +						};
 +						output.content.push(block);
-+						stream.push({ type: "provider_tool_start", contentIndex: output.content.length - 1, partial: output });
++						stream.push({
++							type: "provider_tool_start",
++							contentIndex: output.content.length - 1,
++							partial: output,
++						});
 +					} else if (isProviderToolResultBlock(event.content_block, providerCallIds)) {
 +						const raw = { ...event.content_block } as Record<string, unknown>;
 +						const block: ProviderBlock = {
@@ -113,11 +124,15 @@ index b9586120..9184d14d 100644
 +							index: event.index,
 +						};
 +						output.content.push(block);
-+						stream.push({ type: "provider_tool_start", contentIndex: output.content.length - 1, partial: output });
++						stream.push({
++							type: "provider_tool_start",
++							contentIndex: output.content.length - 1,
++							partial: output,
++						});
  					}
  				} else if (event.type === "content_block_delta") {
  					if (event.delta.type === "text_delta") {
-@@ -678,6 +763,10 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -699,6 +799,10 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  								delta: event.delta.partial_json,
  								partial: output,
  							});
@@ -128,7 +143,7 @@ index b9586120..9184d14d 100644
  						}
  					} else if (event.delta.type === "signature_delta") {
  						const index = blocks.findIndex((b) => b.index === event.index);
-@@ -717,6 +806,20 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -738,6 +842,20 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  								toolCall: block,
  								partial: output,
  							});
@@ -149,7 +164,7 @@ index b9586120..9184d14d 100644
  						}
  					}
  				} else if (event.type === "message_delta") {
-@@ -1235,6 +1338,8 @@ function convertMessages(
+@@ -1325,6 +1443,8 @@ function convertMessages(
  						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
  						input: block.arguments ?? {},
  					});
@@ -159,10 +174,10 @@ index b9586120..9184d14d 100644
  			}
  			if (blocks.length === 0) continue;
 diff --git a/packages/ai/src/api/mistral-conversations.ts b/packages/ai/src/api/mistral-conversations.ts
-index b52eae4c..efef5ef0 100644
+index 979b467ed35984224a9e90e0e3c5c5acfd37d0d7..a0fdc15fa91e5b5f669595e0db5aa433770512d7 100644
 --- a/packages/ai/src/api/mistral-conversations.ts
 +++ b/packages/ai/src/api/mistral-conversations.ts
-@@ -822,6 +822,7 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
+@@ -827,6 +827,7 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
  					}
  					continue;
  				}
@@ -171,7 +186,7 @@ index b52eae4c..efef5ef0 100644
  					id: block.id,
  					type: "function",
 diff --git a/packages/ai/src/providers/faux.ts b/packages/ai/src/providers/faux.ts
-index 284a099b..5ff41974 100644
+index c80de5c874a3e6f18f668f62a4cf4559e276d640..8497f8eeb8bedce18b262525a67d41c2be232c96 100644
 --- a/packages/ai/src/providers/faux.ts
 +++ b/packages/ai/src/providers/faux.ts
 @@ -1,5 +1,6 @@
@@ -217,10 +232,10 @@ index 284a099b..5ff41974 100644
  		stream.push({ type: "toolcall_start", contentIndex: index, partial: { ...partial } });
  		for (const chunk of splitStringByTokenSize(JSON.stringify(block.arguments), minTokenSize, maxTokenSize)) {
 diff --git a/packages/ai/src/types.ts b/packages/ai/src/types.ts
-index 7e1fd00a..e5ff6179 100644
+index fe318fe4266f192b083586f2187854986a58f301..08bebeddd7e9d80448f01617bba98cb4633fe23f 100644
 --- a/packages/ai/src/types.ts
 +++ b/packages/ai/src/types.ts
-@@ -367,6 +367,32 @@ export interface ToolCall {
+@@ -380,6 +380,32 @@ export interface ToolCall {
  	namespace?: string;
  }
  
@@ -253,7 +268,7 @@ index 7e1fd00a..e5ff6179 100644
  export interface Usage {
  	input: number;
  	output: number;
-@@ -414,7 +440,7 @@ export interface UserMessage {
+@@ -427,7 +453,7 @@ export interface UserMessage {
  
  export interface AssistantMessage {
  	role: "assistant";
@@ -262,7 +277,7 @@ index 7e1fd00a..e5ff6179 100644
  	api: Api;
  	provider: ProviderId;
  	model: string;
-@@ -531,6 +557,13 @@ export type AssistantMessageEvent =
+@@ -554,6 +580,13 @@ export type AssistantMessageEvent =
  	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
  	| { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
  	| { type: "toolcall_end"; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
@@ -277,7 +292,7 @@ index 7e1fd00a..e5ff6179 100644
  			type: "done";
  			reason: Extract<StopReason, "stop" | "length" | "toolUse" | "deferred">;
 diff --git a/packages/ai/src/utils/estimate.ts b/packages/ai/src/utils/estimate.ts
-index b434969e..506cc49a 100644
+index b434969ecc1e9cb767b558cd09d9b485d6400d2f..506cc49a20bccd1d8c6acea41c47ff0209cf5bca 100644
 --- a/packages/ai/src/utils/estimate.ts
 +++ b/packages/ai/src/utils/estimate.ts
 @@ -53,8 +53,10 @@ export function estimateMessageTokens(message: Message): number {
@@ -292,8 +307,21 @@ index b434969e..506cc49a 100644
  		}
  	}
  	return Math.ceil(chars / CHARS_PER_TOKEN);
+diff --git a/packages/ai/src/utils/text.ts b/packages/ai/src/utils/text.ts
+index 66f5b9c5b656568adab56fcc9362ddbf04e67d5e..5bd599101bd3f07f68bb5cba763ac8afff3e33d6 100644
+--- a/packages/ai/src/utils/text.ts
++++ b/packages/ai/src/utils/text.ts
+@@ -1,6 +1,6 @@
+-import type { ImageContent, TextContent, ThinkingContent, ToolCall } from "../types.ts";
++import type { AssistantContent, ImageContent } from "../types.ts";
+ 
+-type Content = TextContent | ImageContent | ThinkingContent | ToolCall;
++type Content = AssistantContent | ImageContent;
+ 
+ /** Extract and join text from message content. */
+ export function contentText(content: string | readonly Content[], separator = "\n"): string {
 diff --git a/packages/ai/test/anthropic-sse-parsing.test.ts b/packages/ai/test/anthropic-sse-parsing.test.ts
-index 4f111a61..be41c5b2 100644
+index 9982ae82eae49d68911037d290477a3ef4b91269..55206b520dd1d536995f78a5919ea2a6c71d19e2 100644
 --- a/packages/ai/test/anthropic-sse-parsing.test.ts
 +++ b/packages/ai/test/anthropic-sse-parsing.test.ts
 @@ -3,7 +3,7 @@ import { Type } from "typebox";
@@ -305,179 +333,255 @@ index 4f111a61..be41c5b2 100644
  
  function createSseResponse(events: Array<{ event: string; data: string }>): Response {
  	const body = events.map(({ event, data }) => `event: ${event}\ndata: ${data}\n`).join("\n");
-@@ -68,17 +68,172 @@ const minimalAnthropicEvents = [
+@@ -68,19 +68,222 @@ const minimalAnthropicEvents = [
  	},
  ];
  
 -function createFakeAnthropicClient(response: Response): Anthropic {
 +function createFakeAnthropicClient(response: Response, onCreate?: (params: unknown) => void): Anthropic {
  	return {
- 		messages: {
--			create: () => ({
-+			create: (params: unknown) => {
-+				onCreate?.(params);
-+				return ({
- 				asResponse: async () => response,
--			}),
-+				});
-+			},
+ 		beta: {
+ 			messages: {
+-				create: () => ({
+-					asResponse: async () => response,
+-				}),
++				create: (params: unknown) => {
++					onCreate?.(params);
++					return { asResponse: async () => response };
++				},
+ 			},
  		},
  	} as unknown as Anthropic;
  }
  
  describe("Anthropic raw SSE parsing", () => {
-+	it.each(["absent", "client", "unrelated"])("does not promote a generic result with %s Provider authority", async (authority) => {
-+		const model = getModel("anthropic", "claude-haiku-4-5");
-+		const rawBlocks = [
-+			...(authority === "absent" ? [] : [{
-+				type: authority === "client" ? "tool_use" : "server_tool_use",
-+				id: authority === "client" ? "result-owner" : "unrelated-call",
-+				name: "synthetic_tool", input: {},
-+			}]),
-+			{ type: "tool_result", tool_use_id: "result-owner", content: "Unrelated result" },
-+		];
-+		const events = [
-+			minimalAnthropicEvents[0],
-+			...rawBlocks.flatMap((content_block, index) => [
-+				{ event: "content_block_start", data: JSON.stringify({ type: "content_block_start", index, content_block }) },
-+				{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index }) },
-+			]),
-+			...minimalAnthropicEvents.filter(({ event }) => event === "message_delta" || event === "message_stop"),
-+		];
-+		const result = await streamAnthropic(model, {
-+			messages: [{ role: "user", content: "Synthetic request", timestamp: 0 }],
-+		}, { client: createFakeAnthropicClient(createSseResponse(events)) }).result();
-+		expect(result.stopReason).not.toBe("error");
-+		expect(result.content.some(({ type }) => type === "providerToolResult")).toBe(false);
-+		if (authority === "client") expect(result.content[0]).toMatchObject({ type: "toolCall", id: "result-owner" });
-+	});
++	it.each(["absent", "client", "unrelated"])(
++		"does not promote a generic result with %s Provider authority",
++		async (authority) => {
++			const model = getModel("anthropic", "claude-haiku-4-5");
++			const rawBlocks = [
++				...(authority === "absent"
++					? []
++					: [
++							{
++								type: authority === "client" ? "tool_use" : "server_tool_use",
++								id: authority === "client" ? "result-owner" : "unrelated-call",
++								name: "synthetic_tool",
++								input: {},
++							},
++						]),
++				{ type: "tool_result", tool_use_id: "result-owner", content: "Unrelated result" },
++			];
++			const events = [
++				minimalAnthropicEvents[0],
++				...rawBlocks.flatMap((content_block, index) => [
++					{
++						event: "content_block_start",
++						data: JSON.stringify({ type: "content_block_start", index, content_block }),
++					},
++					{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index }) },
++				]),
++				...minimalAnthropicEvents.filter(({ event }) => event === "message_delta" || event === "message_stop"),
++			];
++			const result = await streamAnthropic(
++				model,
++				{
++					messages: [{ role: "user", content: "Synthetic request", timestamp: 0 }],
++				},
++				{ client: createFakeAnthropicClient(createSseResponse(events)) },
++			).result();
++			expect(result.stopReason).not.toBe("error");
++			expect(result.content.some(({ type }) => type === "providerToolResult")).toBe(false);
++			if (authority === "client") expect(result.content[0]).toMatchObject({ type: "toolCall", id: "result-owner" });
++		},
++	);
 +
 +	it.each([
-+		{ callType: "server_tool_use", resultType: "web_search_tool_result", content: [{ type: "web_search_result", title: "Reference", url: "https://example.test/reference" }] },
-+		{ callType: "server_tool_use", resultType: "tool_result", content: "[{'text': [{'title': 'Reference', 'link': 'https://example.test/reference'}]}]" },
-+		{ callType: "mcp_tool_use", resultType: "tool_result", content: { type: "service_error", message: "Synthetic failure" } },
-+	])("preserves $callType/$resultType as ordered non-executable content and exact replay", async ({ callType, resultType, content }) => {
-+		const model = getModel("anthropic", "claude-haiku-4-5");
-+		const context: Context = {
-+			messages: [{ role: "user", content: "Find a public reference.", timestamp: Date.now() }],
-+		};
-+		const providerEvents = [
-+			{
-+				event: "message_start",
-+				data: JSON.stringify({
-+					type: "message_start",
-+					message: {
-+						id: "msg_provider_tool",
-+						usage: { input_tokens: 8, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
-+					},
-+				}),
-+			},
-+			{
-+				event: "content_block_start",
-+				data: JSON.stringify({
-+					type: "content_block_start",
-+					index: 0,
-+					content_block: { type: callType, id: "provider_call_1", name: "provider_rewritten_name", input: {} },
-+				}),
-+			},
-+			{
-+				event: "content_block_delta",
-+				data: JSON.stringify({
-+					type: "content_block_delta",
-+					index: 0,
-+					delta: { type: "input_json_delta", partial_json: '{"query":"public reference"}' },
-+				}),
-+			},
-+			{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 0 }) },
-+			{
-+				event: "content_block_start",
-+				data: JSON.stringify({
-+					type: "content_block_start",
-+					index: 1,
-+					content_block: {
-+						type: resultType,
-+						tool_use_id: "provider_call_1",
-+						content,
-+					},
-+				}),
-+			},
-+			{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 1 }) },
-+			{
-+				event: "content_block_start",
-+				data: JSON.stringify({ type: "content_block_start", index: 2, content_block: { type: "text", text: "" } }),
-+			},
-+			{
-+				event: "content_block_delta",
-+				data: JSON.stringify({ type: "content_block_delta", index: 2, delta: { type: "text_delta", text: "Found it." } }),
-+			},
-+			{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 2 }) },
-+			{
-+				event: "message_delta",
-+				data: JSON.stringify({
-+					type: "message_delta",
-+					delta: { stop_reason: "end_turn" },
-+					usage: { input_tokens: 8, output_tokens: 7, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
-+				}),
-+			},
-+			{ event: "message_stop", data: JSON.stringify({ type: "message_stop" }) },
-+		];
++		{
++			callType: "server_tool_use",
++			resultType: "web_search_tool_result",
++			content: [{ type: "web_search_result", title: "Reference", url: "https://example.test/reference" }],
++		},
++		{
++			callType: "server_tool_use",
++			resultType: "tool_result",
++			content: "[{'text': [{'title': 'Reference', 'link': 'https://example.test/reference'}]}]",
++		},
++		{
++			callType: "mcp_tool_use",
++			resultType: "tool_result",
++			content: { type: "service_error", message: "Synthetic failure" },
++		},
++	])(
++		"preserves $callType/$resultType as ordered non-executable content and exact replay",
++		async ({ callType, resultType, content }) => {
++			const model = getModel("anthropic", "claude-haiku-4-5");
++			const context: Context = {
++				messages: [{ role: "user", content: "Find a public reference.", timestamp: Date.now() }],
++			};
++			const providerEvents = [
++				{
++					event: "message_start",
++					data: JSON.stringify({
++						type: "message_start",
++						message: {
++							id: "msg_provider_tool",
++							model: model.id,
++							usage: {
++								input_tokens: 8,
++								output_tokens: 0,
++								cache_read_input_tokens: 0,
++								cache_creation_input_tokens: 0,
++							},
++						},
++					}),
++				},
++				{
++					event: "content_block_start",
++					data: JSON.stringify({
++						type: "content_block_start",
++						index: 0,
++						content_block: { type: callType, id: "provider_call_1", name: "provider_rewritten_name", input: {} },
++					}),
++				},
++				{
++					event: "content_block_delta",
++					data: JSON.stringify({
++						type: "content_block_delta",
++						index: 0,
++						delta: { type: "input_json_delta", partial_json: '{"query":"public reference"}' },
++					}),
++				},
++				{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 0 }) },
++				{
++					event: "content_block_start",
++					data: JSON.stringify({
++						type: "content_block_start",
++						index: 1,
++						content_block: {
++							type: resultType,
++							tool_use_id: "provider_call_1",
++							content,
++						},
++					}),
++				},
++				{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 1 }) },
++				{
++					event: "content_block_start",
++					data: JSON.stringify({
++						type: "content_block_start",
++						index: 2,
++						content_block: { type: "text", text: "" },
++					}),
++				},
++				{
++					event: "content_block_delta",
++					data: JSON.stringify({
++						type: "content_block_delta",
++						index: 2,
++						delta: { type: "text_delta", text: "Found it." },
++					}),
++				},
++				{ event: "content_block_stop", data: JSON.stringify({ type: "content_block_stop", index: 2 }) },
++				{
++					event: "message_delta",
++					data: JSON.stringify({
++						type: "message_delta",
++						delta: { stop_reason: "end_turn" },
++						usage: {
++							input_tokens: 8,
++							output_tokens: 7,
++							cache_read_input_tokens: 0,
++							cache_creation_input_tokens: 0,
++						},
++					}),
++				},
++				{ event: "message_stop", data: JSON.stringify({ type: "message_stop" }) },
++			];
 +
-+		const stream = streamAnthropic(model, context, {
-+			client: createFakeAnthropicClient(createSseResponse(providerEvents)),
-+		});
-+		const observed = [];
-+		for await (const event of stream) observed.push(event);
-+		const result = await stream.result();
++			const stream = streamAnthropic(model, context, {
++				client: createFakeAnthropicClient(createSseResponse(providerEvents)),
++			});
++			const observed = [];
++			for await (const event of stream) observed.push(event);
++			const result = await stream.result();
 +
-+		expect(observed.map((event) => event.type)).toEqual([
-+			"start",
-+			"provider_tool_start",
-+			"provider_tool_end",
-+			"provider_tool_start",
-+			"provider_tool_end",
-+			"text_start",
-+			"text_delta",
-+			"text_end",
-+			"done",
-+		]);
-+		const call = result.content[0] as ProviderToolCall;
-+		const toolResult = result.content[1] as ProviderToolResult;
-+		expect(call).toMatchObject({
-+			type: "providerToolCall",
-+			id: "provider_call_1",
-+			name: "provider_rewritten_name",
-+			input: { query: "public reference" },
-+			providerType: callType,
-+			raw: { type: callType, id: "provider_call_1", name: "provider_rewritten_name", input: { query: "public reference" } },
-+		});
-+		expect(toolResult).toMatchObject({
-+			type: "providerToolResult",
-+			toolCallId: "provider_call_1",
-+			providerType: resultType,
-+			content,
-+		});
-+		expect(result.content[2]).toEqual({ type: "text", text: "Found it." });
++			expect(observed.map((event) => event.type)).toEqual([
++				"start",
++				"provider_tool_start",
++				"provider_tool_end",
++				"provider_tool_start",
++				"provider_tool_end",
++				"text_start",
++				"text_delta",
++				"text_end",
++				"done",
++			]);
++			const call = result.content[0] as ProviderToolCall;
++			const toolResult = result.content[1] as ProviderToolResult;
++			expect(call).toMatchObject({
++				type: "providerToolCall",
++				id: "provider_call_1",
++				name: "provider_rewritten_name",
++				input: { query: "public reference" },
++				providerType: callType,
++				raw: {
++					type: callType,
++					id: "provider_call_1",
++					name: "provider_rewritten_name",
++					input: { query: "public reference" },
++				},
++			});
++			expect(toolResult).toMatchObject({
++				type: "providerToolResult",
++				toolCallId: "provider_call_1",
++				providerType: resultType,
++				content,
++			});
++			expect(result.content[2]).toEqual({ type: "text", text: "Found it." });
 +
-+		let replayPayload: unknown;
-+		const replayContext: Context = {
-+			messages: [
-+				context.messages[0],
-+				result,
-+				{ role: "user", content: "Continue.", timestamp: Date.now() },
-+			],
-+		};
-+		await streamAnthropic(model, replayContext, {
-+			client: createFakeAnthropicClient(createSseResponse(minimalAnthropicEvents), (params) => {
-+				replayPayload = params;
-+			}),
-+		}).result();
-+		const replayMessages = (replayPayload as { messages: Array<{ role: string; content: unknown }> }).messages;
-+		expect(replayMessages[1]).toEqual({
-+			role: "assistant",
-+			content: [call.raw, toolResult.raw, { type: "text", text: "Found it." }],
-+		});
-+	});
++			let replayPayload: unknown;
++			const replayContext: Context = {
++				messages: [context.messages[0], result, { role: "user", content: "Continue.", timestamp: Date.now() }],
++			};
++			await streamAnthropic(model, replayContext, {
++				client: createFakeAnthropicClient(createSseResponse(minimalAnthropicEvents), (params) => {
++					replayPayload = params;
++				}),
++			}).result();
++			const replayMessages = (replayPayload as { messages: Array<{ role: string; content: unknown }> }).messages;
++			expect(replayMessages[1]).toEqual({
++				role: "assistant",
++				content: [call.raw, toolResult.raw, { type: "text", text: "Found it." }],
++			});
++		},
++	);
 +
- 	it("repairs malformed SSE JSON and malformed streamed tool JSON", async () => {
- 		const model = getModel("anthropic", "claude-haiku-4-5");
- 		const context: Context = {
+ 	it("fails safely when Anthropic falls back after output begins", async () => {
+ 		const model = getModel("anthropic", "claude-opus-5");
+ 		const response = createSseResponse([
+diff --git a/packages/ai/test/text.test.ts b/packages/ai/test/text.test.ts
+index 43dc21c84636c5362990684c643d48823236595b..99c0a32532a8ba8e3fb1767ddaf9a88a92ceaf8d 100644
+--- a/packages/ai/test/text.test.ts
++++ b/packages/ai/test/text.test.ts
+@@ -5,5 +5,20 @@ const content: AssistantMessage["content"] = [
+ 	{ type: "thinking", thinking: "reasoning" },
+ 	{ type: "text", text: "first" },
+ 	{ type: "toolCall", id: "1", name: "read", arguments: {} },
++	{
++		type: "providerToolCall",
++		id: "server-1",
++		name: "search",
++		input: {},
++		providerType: "server_tool_use",
++		raw: { type: "server_tool_use", id: "server-1", name: "search", input: {} },
++	},
++	{
++		type: "providerToolResult",
++		toolCallId: "server-1",
++		content: "provider text",
++		providerType: "tool_result",
++		raw: { type: "tool_result", tool_use_id: "server-1", content: "provider text" },
++	},
+ 	{ type: "text", text: "second" },
+ ];

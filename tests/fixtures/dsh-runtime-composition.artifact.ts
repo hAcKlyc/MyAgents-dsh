@@ -26,7 +26,7 @@ import {
   createUserMessage,
 } from "@deepseek-ai/dsh-llm";
 import { assembleContextFor, type Agent } from "@deepseek-ai/dsh-agent";
-import { PERSONA_SECTION, SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import { PERSONA_PREFIX_SECTION, SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import {
   ProductComponentService,
@@ -967,7 +967,7 @@ const composition = await composeDshRootServices({
     }),
   }),
   providers: ["fixture"],
-  systemPrompt: { persona: "Composition fallback persona before primary Session admission." },
+  systemPrompt: { personaPrefix: "Composition fallback persona before primary Session admission." },
   tools: { mode: "native" },
 });
 assert.equal(composition.context.compaction instanceof BasicCompactionEngine, true);
@@ -2465,7 +2465,7 @@ assert.equal(exitedHostPlan.mode, "normal");
 let primaryAgent = composition.context.productSession.requireAgent();
 const primaryPrompt = await composition.context.systemPrompt.assemble(assembleContextFor(primaryAgent));
 assert.equal(
-  primaryPrompt.sections.find(({ name }) => name === PERSONA_SECTION)?.text,
+  primaryPrompt.sections.find(({ name }) => name === PERSONA_PREFIX_SECTION)?.text,
   primarySessionParams.systemPrompt,
   "created primary Session must install the requested persona in its Agent scope",
 );
@@ -2806,18 +2806,13 @@ await forkReloadContext.plugin(ProductSqliteSessionPersistence, {
   runtimeHome: fixtureForkRuntimeHome,
   writeBatchMaxDelayMs: 1,
 });
-const forkPreparation = await forkReloadContext.sessionPersistence.prepare(
-  SessionId("artifact-forked-session"),
-);
-assert.deepEqual(forkPreparation.session.deriveMessages(), rewindTargetDerivedMessages);
-assert.equal(
-  forkPreparation.session.snapshotEvents().some(
-    (event) => (event as { readonly type: string }).type === "myagents/session/fork",
-  ),
-  true,
-);
-assert.equal(forkPreparation.session.snapshotEvents().at(-1)?.type, "session/end-seed");
-forkPreparation[Symbol.dispose]();
+const forkReader = await forkReloadContext.sessionPersistence.open(SessionId("artifact-forked-session"), "read");
+const forkRestored = Session.fromRestore(forkReader.id, (await forkReader.read()).events,
+  forkReader.header, forkReader.inheritedEventCount, "shared-frozen");
+assert.deepEqual(forkRestored.deriveMessages(), rewindTargetDerivedMessages);
+assert.equal(forkRestored.snapshotEvents().some((event) => event.type === "myagents/session/fork"), true);
+assert.equal(forkRestored.snapshotEvents().at(-1)?.type, "session/end-seed");
+await forkReader.close();
 await forkReloadContext.fiber.dispose();
 
 const forkAbortPrepared = await hostClient.sessionForkPrepare({
@@ -4142,22 +4137,28 @@ await persistenceReloadContext.plugin(ProductSqliteSessionPersistence, {
   platform: persistencePlatform,
   runtimeHome: fixtureRuntimeHome,
 });
-const persistedPrimary = await persistenceReloadContext.sessionPersistence.inspect(
-  SessionId("dsh-artifact-primary"),
-);
+const primaryReader = await persistenceReloadContext.sessionPersistence.open(SessionId("dsh-artifact-primary"), "read");
+const persistedPrimary = { meta: primaryReader.header, events: (await primaryReader.read()).events };
+await primaryReader.close();
 assert.equal(persistedPrimary.events.length, persistenceSession.event_count);
 assert.ok(persistedPrimary.events.some(({ type }) => type.startsWith("myagents/")));
 const invalidResumeSessionId = SessionId("dsh-artifact-invalid-resume");
-await persistenceReloadContext.sessionPersistence.create(Object.freeze({
-  ...persistedPrimary.meta,
-  id: invalidResumeSessionId,
+const invalidWriter = await persistenceReloadContext.sessionPersistence.create(Object.freeze({
+  ...persistedPrimary.meta, id: invalidResumeSessionId,
 }));
-await persistenceReloadContext.sessionPersistence.append(invalidResumeSessionId, [Object.freeze({
-  data: Object.freeze({ required: true }),
-  seq: 0,
-  time: 1,
-  type: "myagents/unknown-required-resume-fixture",
-}) as unknown as SessionEvent]);
+const unknownEvent = { data: { required: true }, seq: 0, time: 1,
+  type: "myagents/unknown-required-resume-fixture", ignorable: true } as unknown as SessionEvent;
+await invalidWriter.append([unknownEvent]);
+await invalidWriter.close();
+// Corrupt only this isolated synthetic fixture into a correctly hashed log from
+// an unknown required writer; the current Provider itself refuses such writes.
+const invalidProbe = new DatabaseSync(persistencePath);
+const requiredEnvelope = canonicalSessionReadData({ data: unknownEvent.data, seq: 0, time: 1, type: unknownEvent.type }).bytes.toString("utf8");
+const requiredHead = createHash("sha256").update(Buffer.from(createHash("sha256").digest("hex"), "hex")).update(requiredEnvelope).digest("hex");
+invalidProbe.prepare("UPDATE session_events SET envelope_json = ?, chain_hash = ? WHERE session_id = ?").run(requiredEnvelope, requiredHead, invalidResumeSessionId);
+invalidProbe.prepare("UPDATE sessions SET head_hash = ? WHERE id = ?").run(requiredHead, invalidResumeSessionId);
+invalidProbe.prepare("UPDATE session_generations SET head_hash = ? WHERE session_id = ?").run(requiredHead, invalidResumeSessionId);
+invalidProbe.close();
 await persistenceReloadContext.fiber.dispose();
 const persistedPrimaryBytes = JSON.stringify(persistedPrimary.events);
 
@@ -4355,7 +4356,7 @@ assert.deepEqual(resumedPrimary.extensionCatalog, resumedComposition.context.pro
 const resumedAgent = resumedComposition.context.productSession.requireAgent();
 const resumedPrompt = await resumedComposition.context.systemPrompt.assemble(assembleContextFor(resumedAgent));
 assert.equal(
-  resumedPrompt.sections.find(({ name }) => name === PERSONA_SECTION)?.text,
+  resumedPrompt.sections.find(({ name }) => name === PERSONA_PREFIX_SECTION)?.text,
   resumeSessionParams.systemPrompt,
   "resumed primary Session must restore the requested persona in its fresh Agent scope",
 );
@@ -4533,7 +4534,7 @@ pruneOnlySession.append("request/header", {
   header: { config: { provider: "fixture", model: "fixture-model" } },
   reason: "initial",
 });
-pruneOnlySession.append("assistant/message", {
+pruneOnlySession.append("assistant/message", { stream: [],
   turn: 1,
   step: 1,
   message: createMessage({

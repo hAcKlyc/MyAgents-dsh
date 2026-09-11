@@ -17,7 +17,6 @@ import {
   Session,
   SessionId,
 } from "@deepseek-ai/dsh-session";
-import type { PersistenceBackend } from "@deepseek-ai/dsh-session-persistence";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -661,7 +660,7 @@ describe("product persistence and mutation spike", () => {
     source.append("user/message", user, { surfaceOp: "append" });
     source.append(
       "assistant/message",
-      {
+      { stream: [],
         turn: 1,
         step: 1,
         message: freezeMessage({
@@ -671,7 +670,7 @@ describe("product persistence and mutation spike", () => {
           content: [{ type: "text", text: "answer" }],
         }),
       },
-      { surfaceOp: "append", sourceEventSeqs: [] },
+      { surfaceOp: "append" },
     );
     source.append("turn/end", { turn: 1, reason: { kind: "completed" } });
     const boundary = source.snapshotEvents().length;
@@ -768,12 +767,12 @@ describe("product persistence and mutation spike", () => {
         .map((event) => event.data));
   });
 
-  it("provides public-backend inspect/revision plus recoverable exact-revision delete", async () => {
+  it("preserves the historical mutation model for recoverable exact-revision delete", async () => {
     const source = Session.create(SessionId("delete-source"));
     source.append("turn/start", { turn: 1 });
     source.append("turn/end", { turn: 1, reason: { kind: "completed" } });
     const harness = new SharedGenerationMutationHarness(source.snapshotEvents(), "delete-source");
-    const backend: PersistenceBackend<never> = harness;
+    const backend = harness;
 
     const loaded = await backend.loadStored(SessionId("delete-source"));
     expect(loaded?.events).toEqual(source.snapshotEvents());
@@ -857,20 +856,16 @@ describe("accepted DSH seam decision registry", () => {
       "forbidden-until-patched-DSH-artifact-and-batch-1-gate",
     );
     expect(evidence.decisions.map(({ status }) => status)).toEqual([
-      "required_upstream_patch_accepted",
-      "required_upstream_patch_accepted",
-      "required_upstream_patch_accepted",
-      "public_provider_composition_accepted",
-      "required_upstream_patch_accepted",
-      "required_upstream_patch_accepted",
-      "required_upstream_patch_accepted",
-      "required_upstream_patch_accepted",
-      "required_upstream_patch_accepted",
-      "required_upstream_patch_accepted",
-      "required_upstream_patch_accepted",
-      "required_upstream_patch_accepted",
+      "candidate_patch_pending_product_validation",
+      "candidate_patch_pending_product_validation",
+      "candidate_retirement_pending_product_validation",
+      "candidate_public_composition_pending_product_validation",
+      "candidate_patch_pending_product_validation",
+      "candidate_patch_pending_product_validation",
+      "candidate_retirement_pending_product_validation",
+      ...Array.from({ length: 5 }, () => "candidate_patch_pending_product_validation"),
     ]);
-    expect(evidence.patchSeries).toHaveLength(11);
+    expect(evidence.patchSeries).toHaveLength(9);
     for (const patch of evidence.patchSeries) {
       const digest = createHash("sha256")
         .update(readFileSync(resolve(repositoryRoot, patch.path)))
@@ -891,10 +886,10 @@ describe("accepted DSH seam decision registry", () => {
         files: Array<{ blob: string; sha256: string }>;
       };
     };
-    expect(evidence.authority.commit).toBe("a66e4702047846cdaa10c66c9d3df3951f5ea70d");
-    expect(evidence.authority.declaredRelease).toBe("0.1.2-rc.1");
+    expect(evidence.authority.commit).toBe("fb2c4b9e698e30edb738bca4cf0618587db7d203");
+    expect(evidence.authority.declaredRelease).toBe("0.1.5-rc.2");
     expect(evidence.authority.executablePackageAssociation).toBe("unproven");
-    expect(evidence.authority.files).toHaveLength(49);
+    expect(evidence.authority.files).toHaveLength(146);
     expect(evidence.authority.files.every(({ blob, sha256 }) =>
       /^[0-9a-f]{40}$/u.test(blob) && /^[0-9a-f]{64}$/u.test(sha256))).toBe(true);
   });

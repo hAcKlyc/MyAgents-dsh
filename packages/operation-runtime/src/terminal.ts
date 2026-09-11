@@ -200,7 +200,7 @@ export const durableSessionEventId = (runtimeSessionId: string, sequence: number
 
 const eventTurn = (event: SessionEvent): number | undefined => {
   if (event.type === "turn/start" || event.type === "turn/end"
-    || event.type === "assistant/chunk" || event.type === "assistant/message") {
+    || event.type === "assistant/attempt" || event.type === "assistant/message") {
     return event.data.turn;
   }
   return undefined;

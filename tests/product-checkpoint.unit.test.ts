@@ -1,5 +1,10 @@
+import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
+import { LlmRuntime } from "@deepseek-ai/dsh-llm";
+import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
+import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { Context } from "@deepseek-ai/cordis";
-import type { Agent } from "@deepseek-ai/dsh-agent";
+import { AgentRegistry } from "@deepseek-ai/dsh-agent";
 import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import {
   ProductCheckpointService,
@@ -24,6 +29,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+
+const mountCheckpointLoop = async (context: Context): Promise<void> => {
+  await context.plugin(LlmRuntime);
+  await context.plugin(SessionProjectionRegistry);
+  await context.plugin(SystemPrompt, {});
+  await context.plugin(ToolRuntime);
+  await context.plugin(AgentRegistry);
+  await context.plugin(AgentLoop, { agents: [] });
+};
 
 const roots: string[] = [];
 const digest = (value: Uint8Array): string => createHash("sha256").update(value).digest("hex");
@@ -97,24 +111,14 @@ const checkpointHarness = async (options: Readonly<{ nativeFs?: boolean; reopenR
     writeBatchMaxDelayMs: 1,
   });
   if (store === undefined) throw new Error("checkpoint Store fixture did not register");
-  let session: Session;
-  if (options.reopenRuntimeHome === undefined) {
-    session = context.sessions.create(SessionId("checkpoint-primary"), { meta: { cwd: "/fixture/workspace" } });
-    session.append("turn/start", { turn: 1 });
-  } else {
-    const preparation = await context.sessionPersistence.prepare(SessionId("checkpoint-primary"));
-    session = preparation.session;
-    try {
-      context.effect(function* () {
-        yield context.sessions.enter(session);
-        context.sessions.announce(session);
-      });
-    } finally {
-      preparation[Symbol.dispose]();
-    }
-  }
+  await mountCheckpointLoop(context);
+  const handle = options.reopenRuntimeHome === undefined
+    ? await context.agents.create({ sessionId: SessionId("checkpoint-primary"), meta: { cwd: "/fixture/workspace" } })
+    : await context.agents.resume({ resumeSessionId: SessionId("checkpoint-primary") });
+  const agent = handle.agent;
+  const session = agent.session;
+  if (options.reopenRuntimeHome === undefined) session.append("turn/start", { turn: 1 });
   await context.sessions.flush(session);
-  const agent = Object.freeze({ id: session.id, session }) as unknown as Agent;
   const workspace = options.nativeFs === true ? join(root, "workspace") : "/fixture/workspace";
   if (options.nativeFs === true && options.reopenRuntimeHome === undefined) await mkdir(workspace);
   const platformTarget = `${process.platform}-${process.arch}` as "darwin-arm64" | "linux-x64" | "win32-x64";
@@ -182,6 +186,7 @@ const checkpointHarness = async (options: Readonly<{ nativeFs?: boolean; reopenR
     session,
     setBytes: (value: Uint8Array | undefined) => { bytes = value; },
     setSnapshot: (value: unknown) => { snapshotOverride = value; },
+    retire: () => handle.dispose(),
     failNextDirectoryReceipt: () => { failDirectoryReceipt = true; },
     store,
   });
@@ -402,6 +407,7 @@ describe("ProductCheckpointService", () => {
 
     await state.context.productCheckpoint.publishRewindFiles(record.token);
     expect(Buffer.from(state.getBytes() ?? [])).toEqual(Buffer.from(before));
+    await state.retire();
     await persistence.commitRewind(record.token, "checkpoint-rewind-1");
     let database = new DatabaseSync(state.databasePath, { readOnly: true });
     expect(database.prepare("SELECT event_count FROM sessions WHERE id = ?").get(state.session.id))
@@ -443,12 +449,12 @@ describe("ProductCheckpointService", () => {
       runtimeHome,
       writeBatchMaxDelayMs: 1,
     });
-    const session = context.sessions.create(SessionId("checkpoint-primary"), {
-      meta: { cwd: "/fixture/workspace" },
-    });
+    await mountCheckpointLoop(context);
+    const handleOwner = await context.agents.create({ sessionId: SessionId("checkpoint-primary"), meta: { cwd: "/fixture/workspace" } });
+    const agent = handleOwner.agent;
+    const session = agent.session;
     session.append("turn/start", { turn: 1 });
     await context.sessions.flush(session);
-    const agent = Object.freeze({ id: session.id, session }) as unknown as Agent;
     const executionEnvironment = environment(runtimeHome);
     let bytes: Uint8Array | undefined = Buffer.from("before", "utf8");
     const capture = (): Promise<ProductCheckpointFileSnapshot> => Promise.resolve(Object.freeze({

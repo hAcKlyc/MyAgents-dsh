@@ -1,10 +1,12 @@
 # ADR 0011 — Preserve Provider-owned structured content without executing it
 
+Candidate disposition (2026-09-12, U15-W02): Rebase DSH provider content and pi-ai 0.85.1 transport while preserving requested versus response model replay identities and non-executable provider blocks. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
+
 - Status: accepted
 - Date: 2026-09-03
 - Scope: `B3-XR-PST`, `PST-W3`
 
-Current disposition (2026-09-03): retained as `DSH-SEAM-011` / patch 0010, paired with the pinned `pi-ai` patch authority under `specs/pi-ai/`.
+Historical disposition (2026-09-03): retained as `DSH-SEAM-011` / patch 0010, paired with the pinned `pi-ai` patch authority under `specs/pi-ai/`.
 
 Self-test correction (2026-09-05): the same pi-ai seam also retains generic `tool_result` when
 its ID belongs to an observed server/MCP call in that response. Tool naming and opaque result

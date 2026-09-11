@@ -1,10 +1,12 @@
 # ADR 0009 — Preserve external Prompt contributions as literal text
 
+Candidate disposition (2026-09-12, U15-W02): Rebase literal contributions while preserving official persona prefix/suffix ordering; descriptor versions 3 and 4 are refused. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
+
 - Status: accepted
 - Date: 2026-09-01
 - Scope: `B3-XR-SCTX`, `SCX-03`, `SCX-09`, `SCX-10`
 
-Current disposition (2026-09-01): retained as `DSH-SEAM-009` / patch 0008.
+Historical disposition (2026-09-01): retained as `DSH-SEAM-009` / patch 0008.
 
 ## Context
 

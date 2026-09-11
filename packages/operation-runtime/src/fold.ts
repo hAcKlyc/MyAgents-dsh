@@ -14,6 +14,7 @@ import {
   type ProductOperationRequestContext,
   type ProductOperationRecoveryWake,
   type ProductOperationTerminal,
+  type ProductOperationEventType,
 } from "./events.js";
 import { validateOperationLimits } from "./limits.js";
 import { deriveOperationAccruedCostUsd, deriveOperationTerminal } from "./terminal.js";
@@ -479,6 +480,21 @@ const validateRecoveryWake = (value: unknown): ProductOperationRecoveryWake => {
     phase: event.phase,
     recordedAt: nonNegativeTimestamp(event.recordedAt, "operation wake time"),
   });
+};
+
+const operationPayloadValidators = Object.freeze({
+  "myagents/operation/accepted": validateAccepted,
+  "myagents/operation/message": validateMessage,
+  "myagents/operation/claimed": validateClaim,
+  "myagents/operation/request-context": validateRequestContext,
+  "myagents/operation/limit": validateLimit,
+  "myagents/operation/terminal": validateTerminal,
+  "myagents/operation/recovery-wake": validateRecoveryWake,
+} satisfies Record<ProductOperationEventType, (value: unknown) => unknown>);
+
+/** Reuse the fold's exact payload validators at the durable storage boundary. */
+export const validateProductOperationEventData = (type: ProductOperationEventType, value: unknown): void => {
+  operationPayloadValidators[type](value);
 };
 
 export const readOperationMessageSource = (

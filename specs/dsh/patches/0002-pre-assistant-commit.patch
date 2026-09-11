@@ -1,8 +1,82 @@
+diff --git a/docs/architecture.i18n.yaml b/docs/architecture.i18n.yaml
+index d591a9fa3648e067852339bc9c16f2be5548356a..615d5126960f4284c4be6525e16a7f2eba7de3e3 100644
+--- a/docs/architecture.i18n.yaml
++++ b/docs/architecture.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write docs/architecture.md
+-architecture.md: 688341582044e72e8548c8e6b1535450793ddce4
+-architecture.zh.md: 6817986015a2aa90d6fcb094da3e972ccfe08483
++architecture.md: 2f0a3d1b874c49e20a6931c01adbc0031145766f
++architecture.zh.md: ada9da08eaa5a1510462276023fb94d4874da561
+diff --git a/docs/architecture.md b/docs/architecture.md
+index 688341582044e72e8548c8e6b1535450793ddce4..2f0a3d1b874c49e20a6931c01adbc0031145766f 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -94,6 +94,7 @@ turn/start
+      derive and freeze model history from the log
+      stream the bound prepared call -> llm/stream -> agent/assistant-stream start
+        agent/assistant-stream chunk*
++       agent/pre-assistant-commit (successful tool arguments only)
+        assistant/message | assistant/attempt -> agent/assistant-stream end
+      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
+      step/end
+diff --git a/docs/architecture.zh.md b/docs/architecture.zh.md
+index 6817986015a2aa90d6fcb094da3e972ccfe08483..ada9da08eaa5a1510462276023fb94d4874da561 100644
+--- a/docs/architecture.zh.md
++++ b/docs/architecture.zh.md
+@@ -98,6 +98,7 @@ turn/start
+      derive and freeze model history from the log
+      stream the bound prepared call -> llm/stream -> agent/assistant-stream start
+        agent/assistant-stream chunk*
++       agent/pre-assistant-commit (successful tool arguments only)
+        assistant/message | assistant/attempt -> agent/assistant-stream end
+      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
+      step/end
+diff --git a/packages/core/agent-loop/README.i18n.yaml b/packages/core/agent-loop/README.i18n.yaml
+index e724b8ae17807c487ab317de4580dd3068a9177a..f7bfdaf1ca5ed92ab64991a6ce2236e52ca6d507 100644
+--- a/packages/core/agent-loop/README.i18n.yaml
++++ b/packages/core/agent-loop/README.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write packages/core/agent-loop/README.md
+-README.md: 31316e4b9259362951824fc13375a820035ba849
+-README.zh.md: 06ad80f32fd20d76aa367b8203700235e39072fb
++README.md: 3d473d90afcba33aa63e46a268a61a74c95d1a98
++README.zh.md: 5dba88f5bb07d0eee206720dfcdce6a4565348ff
+diff --git a/packages/core/agent-loop/README.md b/packages/core/agent-loop/README.md
+index 31316e4b9259362951824fc13375a820035ba849..3d473d90afcba33aa63e46a268a61a74c95d1a98 100644
+--- a/packages/core/agent-loop/README.md
++++ b/packages/core/agent-loop/README.md
+@@ -124,6 +124,8 @@ Prompt admission uses the actual `prepareCall()` result, not the preceding `requ
+ 
+ Final adapter selection, dispatch, and iteration failures arrive as terminal finishes and enter `agent/request-error`; a handling listener returns `{ kind: 'retry' }` without calling `next()`, while an unhandled failure is terminal. Middleware, result-processing, tool, and other extension failures remain thrown and close the turn directly — plugin failure ends the turn, not the loop. Undispatched model tool calls after cancellation receive synthetic `tool/call` plus `ABORTED_BEFORE_DISPATCH` result pairs. The [explicit-cancellation decision](../../../.agents/notes/implemented/architecture/2026-07-16-explicit-turn-cancellation.md) owns the signal lifecycle.
+ 
++The `agent/pre-assistant-commit` waterfall governs the complete successful assistant message before settlement. It may replace tool arguments only; the loop validates lossless JSON and preserves message, block and tool identities. Durable content, permission and execution use the governed arguments; the embedded stream retains the original provider response. Rejection or cancellation commits no governed message.
++
+ </details>
+ 
+ -----
+diff --git a/packages/core/agent-loop/README.zh.md b/packages/core/agent-loop/README.zh.md
+index 06ad80f32fd20d76aa367b8203700235e39072fb..5dba88f5bb07d0eee206720dfcdce6a4565348ff 100644
+--- a/packages/core/agent-loop/README.zh.md
++++ b/packages/core/agent-loop/README.zh.md
+@@ -124,6 +124,8 @@ const handle = await ctx.agents.create({
+ 
+ 最终适配器选择、分发与迭代失败以终止结束的形式到达并进入 `agent/request-error`；拥有恢复权的监听器返回 `{ kind: 'retry' }` 且不调用 `next()`，未被处理的失败则是终态。Middleware、结果处理、工具及其他扩展失败仍会抛出并直接关闭轮次——插件失败结束的是轮次，不是循环。取消后未分发的模型工具调用会收到合成的 `tool/call` 加 `ABORTED_BEFORE_DISPATCH` 结果对。[显式取消决策](../../../.agents/notes/implemented/architecture/2026-07-16-explicit-turn-cancellation.zh.md) 拥有信号生命周期。
+ 
++`agent/pre-assistant-commit` waterfall 在结算之前处理完整的成功助手消息。它只能替换工具参数；循环验证无损 JSON，并保持消息、内容块和工具标识。持久化内容、权限与执行使用处理后的参数；内嵌流保留提供方原始响应。拒绝或取消时不提交处理后的消息。
++
+ </details>
+ 
+ -----
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index 98b4987bee..153d1104b4 100644
+index 86b460f2d9371e78931e513a5ca26d386a33ba20..bf61f8641331402acfc76def7843487c160b539d 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
-@@ -12,19 +12,22 @@ import type {
+@@ -12,18 +12,21 @@ import type {
    AgentStatus,
    CancelOptions,
    InboxTarget,
@@ -11,11 +85,10 @@ index 98b4987bee..153d1104b4 100644
    PreStepDecision,
    RequestErrorAction,
  } from '@deepseek-ai/dsh-agent'
- import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
+ import { agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
 -import type { GenerateOptions, LlmCallConfig, Message, MessageId, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 +import type { AssistantMessage, GenerateOptions, LlmCallConfig, Message, MessageId, PreparedLlmCall, ToolCallBlock } from '@deepseek-ai/dsh-llm'
  import {
-   BlockAssembler,
    LlmError,
    createAssistantMessage,
    errorChain,
@@ -26,8 +99,8 @@ index 98b4987bee..153d1104b4 100644
 +import { deepFreeze, isJsonValue, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
  import type { Scope } from '@deepseek-ai/dsh-scope'
  import { createScope } from '@deepseek-ai/dsh-scope'
- import type { EpochHeader, RequestContext, Session, SessionId, SessionSeq, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
-@@ -57,6 +60,127 @@ type PreparedStep =
+ import type { EpochHeader, RequestContext, Session, SessionId, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
+@@ -59,6 +62,127 @@ type PreparedStep =
      assembly: PromptAssembly
    }
  
@@ -89,7 +162,7 @@ index 98b4987bee..153d1104b4 100644
 +): PreparedAssistantCommit {
 +  const candidateMessage = candidate.message
 +  if (candidateMessage.id !== original.message.id
-+    || candidateMessage.role !== 'assistant'
++    || (candidateMessage as { role: unknown }).role !== 'assistant'
 +    || !exactDataValue(candidateMessage.source, original.message.source)
 +    || ownDataKeys(candidateMessage).join() !== ownDataKeys(original.message).join()
 +    || candidateMessage.content.length !== original.message.content.length) {
@@ -155,60 +228,60 @@ index 98b4987bee..153d1104b4 100644
  /** Remove adapter-derived values before plugins propose the next request config. */
  function requestProposal(header: EpochHeader): LlmCallConfig {
    if (header.adapterDefaults === undefined) return header.config
-@@ -415,7 +539,7 @@ export class ReactLoopAgent implements Agent {
-         continue
-       }
+@@ -471,7 +595,7 @@ export class ReactLoopAgent implements Agent {
+           continue
+         }
  
--      const message = createAssistantMessage({
-+      const assembledMessage = createAssistantMessage({
-         content: assembler.blocks(),
-         source: {
-           provider: request.provider,
-@@ -423,6 +547,18 @@ export class ReactLoopAgent implements Agent {
-           ...assembler.replayState !== undefined ? { replayState: assembler.replayState } : {},
-         },
-       })
-+      const initialCommit = preparedAssistantCommit(assembledMessage)
-+      let selectedCommit = initialCommit
-+      if (finish.kind !== 'max-tokens' && initialCommit.toolCalls.length > 0) {
-+        const proposedCommit = await this.dispatch.waterfall(
-+          'agent/pre-assistant-commit',
-+          { commit: initialCommit, turn, step, signal },
-+          () => Promise.resolve(initialCommit),
-+        )
-+        signal.throwIfAborted()
-+        selectedCommit = validatePreparedAssistantCommit(initialCommit, proposedCommit)
-+      }
-+      const { message, toolCalls } = selectedCommit
-       this.session.append(
-         'assistant/message',
-         {
-@@ -435,10 +571,16 @@ export class ReactLoopAgent implements Agent {
-       )
-       if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
+-        const message = createAssistantMessage({
++        const assembledMessage = createAssistantMessage({
+           content: live.blocks(),
+           source: {
+             provider: request.provider,
+@@ -479,6 +603,20 @@ export class ReactLoopAgent implements Agent {
+             ...live.replayState !== undefined ? { replayState: live.replayState } : {},
+           },
+         })
++        const initialCommit = preparedAssistantCommit(assembledMessage)
++        let selectedCommit = initialCommit
++        if (finish.kind !== 'max-tokens' && initialCommit.toolCalls.length > 0) {
++          const proposedCommit = await this.dispatch.waterfall(
++            'agent/pre-assistant-commit',
++            { commit: initialCommit, turn, step, signal },
++            () => Promise.resolve(initialCommit),
++          )
++          signal.throwIfAborted()
++          selectedCommit = validatePreparedAssistantCommit(initialCommit, proposedCommit)
++        }
++        const { message, toolCalls } = selectedCommit
++        // The embedded stream retains model-observed arguments. Only the
++        // governed message is authoritative for subsequent requests/execution.
+         live.settle(
+           'assistant/message',
+           () => this.session.append('assistant/message', {
+@@ -491,10 +629,11 @@ export class ReactLoopAgent implements Agent {
+         )
+         if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
  
--      const toolCalls = message.content.filter(block => block.type === 'tool-call')
-       if (toolCalls.length === 0) return { kind: 'completed' }
-       const { concluded } = await executeToolCalls(
--        this.loopCtx, turn, step, toolCalls, signal,
-+        this.loopCtx, turn, step,
-+        toolCalls.map(call => ({
-+          type: 'tool-call',
-+          id: call.callId,
-+          name: call.name,
-+          arguments: call.rawArguments,
-+        })),
-+        signal,
-         context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
-       )
-       return concluded ? { kind: 'completed' } : null
+-        const toolCalls = message.content.filter(block => block.type === 'tool-call')
+         if (toolCalls.length === 0) return { kind: 'completed' }
+         const { concluded } = await executeToolCalls(
+-          this.loopCtx, turn, step, toolCalls, signal,
++          this.loopCtx, turn, step,
++          toolCalls.map(call => ({ type: 'tool-call', id: call.callId, name: call.name, arguments: call.rawArguments })),
++          signal,
+           context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
+         )
+         return concluded ? { kind: 'completed' } : null
 diff --git a/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
 new file mode 100644
-index 0000000000..0501450524
+index 0000000000000000000000000000000000000000..2cb749d337d1259f6e64ac942f14b09ab5dd2b5f
 --- /dev/null
 +++ b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
-@@ -0,0 +1,283 @@
-+import { describe, expect, it } from 'vitest'
+@@ -0,0 +1,321 @@
++import { afterEach, describe, expect, it } from 'vitest'
++import { mkdtemp, rm } from 'node:fs/promises'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
 +import { Context } from '@deepseek-ai/cordis'
 +import AgentRegistry, {
 +  type Agent,
@@ -227,14 +300,24 @@ index 0000000000..0501450524
 +import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 +import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 +import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
++import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 +import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 +import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 +import { maxTokensResponse, MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 +
-+async function harness(adapter: MockAdapter): Promise<Context> {
++const contexts: Context[] = []
++const directories: string[] = []
++afterEach(async () => {
++  for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
++  for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true })
++})
++
++async function harness(adapter: MockAdapter, root?: string): Promise<Context> {
 +  const ctx = new Context()
++  contexts.push(ctx)
 +  await ctx.plugin(LlmRuntime)
 +  await ctx.plugin(SessionStore)
++  if (root !== undefined) await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
 +  await ctx.plugin(SessionProjectionRegistry)
 +  await ctx.plugin(SystemPrompt)
 +  await ctx.plugin(ToolRuntime)
@@ -272,7 +355,7 @@ index 0000000000..0501450524
 +    id: commit.message.id,
 +    role: 'assistant',
 +    source: commit.message.source,
-+    content: commit.message.content.map((block) => block.type === 'tool-call'
++    content: commit.message.content.map(block => block.type === 'tool-call'
 +      ? { ...block, arguments: JSON.stringify(values[block.name]) }
 +      : block),
 +  })
@@ -289,8 +372,10 @@ index 0000000000..0501450524
 +
 +describe('agent/pre-assistant-commit', () => {
 +  it('makes transformed multi-call input authoritative through history, permission, execution, result, and resume', async () => {
++    const root = await mkdtemp(join(tmpdir(), 'dsh-pre-assistant-commit-'))
++    directories.push(root)
 +    const adapter = new MockAdapter([parallelToolResponse(), textResponse('done')])
-+    const ctx = await harness(adapter)
++    const ctx = await harness(adapter, root)
 +    const preparedOrder: string[] = []
 +    const permissionInputs: unknown[] = []
 +    const executions: unknown[] = []
@@ -320,7 +405,7 @@ index 0000000000..0501450524
 +      permissionInputs.push(execution.arguments)
 +      return next()
 +    })
-+    const agent = ctx.agentLoop.create(SessionId('pre-commit-authoritative'), { provider: 'mock', model: 'mock' })
++    const agent = await ctx.agentLoop.create(SessionId('pre-commit-authoritative'), { provider: 'mock', model: 'mock' })
 +
 +    send(agent)
 +    await agent.whenIdle()
@@ -338,12 +423,33 @@ index 0000000000..0501450524
 +      .map(event => event.type === 'tool/result' && event.data.message.source.callId)
 +    expect(resultIds).toEqual([ToolCallId('call-a'), ToolCallId('call-b')])
 +    const authoritativeLog = JSON.stringify(agent.session.snapshotEvents().filter(event =>
-+      event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result'))
++      event.type === 'assistant/message' || event.type === 'tool/call' || event.type === 'tool/result')
++      .map(event => event.type === 'assistant/message' ? event.data.message : event.data))
++    const sourceStreams = JSON.stringify(agent.session.snapshotEvents()
++      .filter(event => event.type === 'assistant/message').map(event => event.data.stream))
++    expect(sourceStreams).toContain('old-a')
++    expect(sourceStreams).toContain('old-b')
 +    expect(authoritativeLog).not.toContain('old-a')
 +    expect(authoritativeLog).not.toContain('old-b')
 +    const resumed = Session.create(SessionId('pre-commit-resumed'), agent.session.snapshotEvents())
 +    expect(JSON.stringify(resumed.deriveMessages())).not.toContain('old-a')
 +    expect(JSON.stringify(resumed.deriveMessages())).toContain('published')
++    await ctx.sessions.flush(agent.session)
++    const originalEvents = agent.session.snapshotEvents()
++    await ctx.fiber.dispose()
++    const coldAdapter = new MockAdapter([textResponse('continued')])
++    const cold = await harness(coldAdapter, root)
++    const handle = await cold.agents.resume({
++      resumeSessionId: agent.id, agentOptions: { provider: 'mock', model: 'mock' },
++    })
++    expect(handle.agent.session.snapshotEvents().slice(0, originalEvents.length)).toEqual(originalEvents)
++    expect(handle.agent.session.snapshotEvents().slice(originalEvents.length))
++      .toEqual([expect.objectContaining({ type: 'session/end-seed', data: {} })])
++    send(handle.agent)
++    await handle.agent.whenIdle()
++    expect(coldAdapter.requests).toHaveLength(1)
++    expect(JSON.stringify(coldAdapter.requests[0]?.messages)).not.toContain('old-a')
++    expect(JSON.stringify(coldAdapter.requests[0]?.messages)).toContain('published')
 +  })
 +
 +  it('keeps byte-equivalent stock behavior without a listener', async () => {
@@ -354,7 +460,7 @@ index 0000000000..0501450524
 +      name: 'echo', description: 'echo', parameters: { text: { type: 'string', required: true } },
 +      async execute(input) { executions.push(input); return [{ type: 'text', text: 'ok' }] },
 +    }))
-+    const agent = ctx.agentLoop.create(SessionId('pre-commit-default'), { provider: 'mock', model: 'mock' })
++    const agent = await ctx.agentLoop.create(SessionId('pre-commit-default'), { provider: 'mock', model: 'mock' })
 +
 +    send(agent)
 +    await agent.whenIdle()
@@ -375,7 +481,7 @@ index 0000000000..0501450524
 +      dispatched += 1
 +      throw new Error('tool-input waterfall must not own non-dispatched output')
 +    })
-+    const agent = ctx.agentLoop.create(SessionId(`pre-commit-bypass-${response.at(-1)?.type}`), {
++    const agent = await ctx.agentLoop.create(SessionId(`pre-commit-bypass-${response.at(-1)?.type}`), {
 +      provider: 'mock', model: 'mock',
 +    })
 +
@@ -422,7 +528,7 @@ index 0000000000..0501450524
 +        }
 +        throw new Error(failure === 'timeout' ? 'hook timeout' : failure === 'denial' ? 'hook denied' : 'hook crashed')
 +      })
-+      const agent = ctx.agentLoop.create(SessionId(`pre-commit-${failure}`), { provider: 'mock', model: 'mock' })
++      const agent = await ctx.agentLoop.create(SessionId(`pre-commit-${failure}`), { provider: 'mock', model: 'mock' })
 +
 +      send(agent)
 +      await agent.whenIdle()
@@ -442,11 +548,13 @@ index 0000000000..0501450524
 +    ctx.on('agent/pre-assistant-commit', async ({ signal }, next) => {
 +      entered.resolve(signal)
 +      await new Promise<void>((_resolve, reject) => {
-+        signal.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
++        signal.addEventListener('abort', () => {
++          reject(signal.reason instanceof Error ? signal.reason : new Error('hook cancelled', { cause: signal.reason }))
++        }, { once: true })
 +      })
 +      return next()
 +    })
-+    const agent = ctx.agentLoop.create(SessionId('pre-commit-cancel'), { provider: 'mock', model: 'mock' })
++    const agent = await ctx.agentLoop.create(SessionId('pre-commit-cancel'), { provider: 'mock', model: 'mock' })
 +
 +    send(agent)
 +    await entered.promise
@@ -474,7 +582,7 @@ index 0000000000..0501450524
 +      await release.promise
 +      return replaceArguments(inherited, { echo: { text: 'revision-a' } })
 +    })
-+    const agent = ctx.agentLoop.create(SessionId('pre-commit-hmr'), { provider: 'mock', model: 'mock' })
++    const agent = await ctx.agentLoop.create(SessionId('pre-commit-hmr'), { provider: 'mock', model: 'mock' })
 +    send(agent)
 +    await entered.promise
 +    disposeFirst()
@@ -491,36 +599,24 @@ index 0000000000..0501450524
 +    expect(seen).not.toContain('execute:revision-b')
 +  })
 +})
-diff --git a/packages/core/agent/package.json b/packages/core/agent/package.json
-index 60ffb53923..e8969eb8b0 100644
---- a/packages/core/agent/package.json
-+++ b/packages/core/agent/package.json
-@@ -56,5 +56,8 @@
-     "@deepseek-ai/dsh-typert-registry": "workspace:^",
-     "@deepseek-ai/cordis": "workspace:^",
-     "@deepseek-ai/dsh-session-projection": "workspace:^"
-+  },
-+  "dependencies": {
-+    "@deepseek-ai/dsh-util-values": "workspace:^"
-   }
- }
 diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
-index 1a7ef01fa7..c9fe19dae0 100644
+index df0111b90c6f4178ea140f119602c9d4ae3ffcfa..bf565a23eeedb12f7df04a34a9c01742139b66bc 100644
 --- a/packages/core/agent/src/runtime-types.ts
 +++ b/packages/core/agent/src/runtime-types.ts
-@@ -7,9 +7,10 @@
- 
+@@ -8,10 +8,11 @@
  import type { Context } from '@deepseek-ai/cordis'
  import type { Scoped } from '@deepseek-ai/dsh-scope'
--import type { LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
-+import type { AssistantMessage, ToolCallId, LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
- import type { AgentCancelCause, Session, UserMessage } from '@deepseek-ai/dsh-session'
+ import type {
+-  LlmAttemptId, LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId, ResolvedRetryPolicy, StreamChunk,
++  AssistantMessage, ToolCallId, LlmAttemptId, LlmCallConfig, LlmFailure, MessageId, ReasoningEffortId, ResolvedRetryPolicy, StreamChunk,
+ } from '@deepseek-ai/dsh-llm'
+ import type { AgentCancelCause, Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
  export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
 +import type { JsonValue } from '@deepseek-ai/dsh-util-values'
- import type { Inbox } from './inbox.ts'
- import type { Agent } from './types.ts'
+ import type { Agent, InboxTarget } from './types.ts'
  export type { Agent } from './types.ts'
-@@ -65,6 +66,20 @@ export type PreStepDecision =
+ import type {} from '@deepseek-ai/dsh-system-prompt'
+@@ -121,6 +122,20 @@ export type PreStepDecision =
  /** Action returned by a listener that owns model-request recovery. */
  export type RequestErrorAction = { kind: 'retry' } | undefined
  
@@ -541,7 +637,7 @@ index 1a7ef01fa7..c9fe19dae0 100644
  /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
  export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
  
-@@ -260,6 +275,14 @@ declare module '@deepseek-ai/cordis' {
+@@ -356,6 +371,16 @@ declare module '@deepseek-ai/cordis' {
       * @mode waterfall
      */
      'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
@@ -551,16 +647,18 @@ index 1a7ef01fa7..c9fe19dae0 100644
 +     * validates that only existing tool-call arguments changed and rebuilds
 +     * scheduler inputs from the returned message.
 +     * @mode waterfall
++     * @param payload - complete assistant commit with immutable identities and transformable tool arguments.
++     * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): listeners receive only the payload Agent scope.
 +     */
 +    'agent/pre-assistant-commit'(this: Scoped<Agent>, payload: { agent: Agent; commit: Readonly<PreparedAssistantCommit>; turn: number; step: number; signal: AbortSignal }, next: () => Promise<PreparedAssistantCommit>): Promise<PreparedAssistantCommit>
      /**
       * Handle one failed model-request attempt before the loop retries or closes
       * its step. A listener returns `{ kind: 'retry' }` without calling `next()`
 diff --git a/packages/core/scope/src/scoped-events.generated.ts b/packages/core/scope/src/scoped-events.generated.ts
-index e7f24ca4cb..64e7c2464e 100644
+index 8a35f59873b63cfb7a2ce3bb652dbf635fc9bde1..33b43becacbfb3707eda2ce555e03d6022b05688 100644
 --- a/packages/core/scope/src/scoped-events.generated.ts
 +++ b/packages/core/scope/src/scoped-events.generated.ts
-@@ -14,6 +14,7 @@ const scopedSubjectResolvers: Readonly<Record<string, ScopedSubjectResolver | nu
+@@ -15,6 +15,7 @@ const scopedSubjectResolvers: Readonly<Record<string, ScopedSubjectResolver | nu
    'agent/inbox/claimed': args => (args[0] as Record<string, unknown>)['agent'],
    'agent/inbox/discarded': args => (args[0] as Record<string, unknown>)['agent'],
    'agent/inbox/inserted': args => (args[0] as Record<string, unknown>)['agent'],
@@ -569,7 +667,7 @@ index e7f24ca4cb..64e7c2464e 100644
    'agent/request': args => (args[0] as Record<string, unknown>)['agent'],
    'agent/request-error': args => (args[0] as Record<string, unknown>)['agent'],
 diff --git a/packages/core/scope/tests/invariant.spec.ts b/packages/core/scope/tests/invariant.spec.ts
-index 2adc3d787b..d29d2e96f8 100644
+index 57a4a6d091a9d412f392ec13d82f5754567fe2a6..3c4fe97735bbd8bd6c378e015038a51f0cd603e3 100644
 --- a/packages/core/scope/tests/invariant.spec.ts
 +++ b/packages/core/scope/tests/invariant.spec.ts
 @@ -2,7 +2,7 @@ import { freezeMessage, MessageId } from '@deepseek-ai/dsh-llm'
@@ -597,21 +695,6 @@ index 2adc3d787b..d29d2e96f8 100644
 +        { agent, commit, turn: 1, step: 1, signal },
 +        () => Promise.resolve(commit),
 +      ],
-       'agent/request-error': [
-         {
-           agent,
-diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
-index 4521b1bbf4..6f415c03bb 100644
---- a/pnpm-lock.yaml
-+++ b/pnpm-lock.yaml
-@@ -4178,6 +4178,10 @@ importers:
-         version: link:../../core/system-prompt
- 
-   packages/core/agent:
-+    dependencies:
-+      '@deepseek-ai/dsh-util-values':
-+        specifier: workspace:^
-+        version: link:../../util/values
-     devDependencies:
-       '@deepseek-ai/cordis':
-         specifier: workspace:^
+       'agent/assistant-stream': [{
+         agent,
+         frame: {

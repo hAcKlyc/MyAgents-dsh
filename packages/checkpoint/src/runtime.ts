@@ -363,7 +363,7 @@ const validateFileSnapshot = (
   });
 };
 
-const validateEvent = (event: SessionEvent, description: string): ProductCheckpointEventData => {
+export const validateProductCheckpointEvent = (event: SessionEvent, description = "Product checkpoint event"): ProductCheckpointEventData => {
   if (event.type !== "myagents/checkpoint/state") throw new TypeError(`${description} has the wrong type`);
   const data = event.data as unknown;
   if (data === null || typeof data !== "object" || Array.isArray(data) || utilTypes.isProxy(data)) {
@@ -456,7 +456,7 @@ const foldCheckpointLineages = (session: Session): ReadonlyMap<string, FoldedChe
   const folded = new Map<string, FoldedCheckpoint>();
   for (const event of session.snapshotEvents()) {
     if (event.type !== "myagents/checkpoint/state") continue;
-    const current = validateEvent(event, `checkpoint event ${event.seq}`);
+    const current = validateProductCheckpointEvent(event, `checkpoint event ${event.seq}`);
     if (current.sessionId !== String(session.id)) {
       throw new Error("checkpoint event Session identity differs from its log");
     }

@@ -1,6 +1,544 @@
+diff --git a/docs/subsystems/core.i18n.yaml b/docs/subsystems/core.i18n.yaml
+index 07faf5ab836f5df5303d112196a860b3eacadc0c..021192298ba3de76e1956df9df01b7fda70434da 100644
+--- a/docs/subsystems/core.i18n.yaml
++++ b/docs/subsystems/core.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write docs/subsystems/core.md
+-core.md: 27ff30a9e63c86ffb54ccf57dea18ebf3fe39846
+-core.zh.md: cedd113de5d5d551b8b558f9f33c7cacf6aa4953
++core.md: fe6e00f080ac3b92a5d8cbc14948eadcc33c65d5
++core.zh.md: 7154880ca4bd64b9f4140518447b87b28bbbf3e2
+diff --git a/docs/subsystems/core.md b/docs/subsystems/core.md
+index 27ff30a9e63c86ffb54ccf57dea18ebf3fe39846..fe6e00f080ac3b92a5d8cbc14948eadcc33c65d5 100644
+--- a/docs/subsystems/core.md
++++ b/docs/subsystems/core.md
+@@ -71,72 +71,74 @@ interface Agent {
+   readonly status: AgentStatus
+   /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
+   readonly ctx: Context
+-
+   /**
+-   * Clear queued and steering work — unless `keepInbox` — and abort the active
+-   * turn or between-turn task. The first cause wins for that activity. With no
+-   * active activity, cancellation is a no-op and does not arm later work.
+-   * @param cause - the stable caller intent carried by the active operation signal.
+-   * @param options - cancellation options; `keepInbox` preserves pending work.
+-   */
++     * Clear queued and steering work — unless `keepInbox` — and abort the active
++     * turn or between-turn task. The first cause wins for that activity. With no
++     * active activity, cancellation is a no-op and does not arm later work.
++     * @param cause - the stable caller intent carried by the active operation signal.
++     * @param options - cancellation options; `keepInbox` preserves pending work.
++     */
+   cancel(cause: AgentCancelCause, options?: CancelOptions): void
+-
+   /**
+-   * Resolve after the current whole-agent activity reaches quiescence. This
+-   * follows replacement work started before the observed driver retires,
+-   * but does not identify the settlement of any particular message.
+-   * @returns fulfillment after no active driver or maintenance task remains.
+-   */
++     * Resolve after the current whole-agent activity reaches quiescence. This
++     * follows replacement work started before the observed driver retires,
++     * but does not identify the settlement of any particular message.
++     * @returns fulfillment after no active driver or maintenance task remains.
++     */
+   whenIdle(): Promise<void>
+-
+   /**
+-   * Run one non-turn maintenance task from the true idle phase. The task starts
+-   * synchronously after claiming that phase; later waking input remains in the
+-   * inbox until the task settles, while public status stays `idle`.
+-   * `whenIdle()` follows both the task and any waking work released behind it.
+-   * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
+-   * @throws synchronously when turn-driving or another maintenance task already owns the agent.
+-   * @returns the task promise.
+-   */
++       * Wake the driver only when the exact identity is already pending. This
++       * performs no Inbox mutation and therefore preserves durable FIFO order and
++       * cancellation history. Repeated calls are safe: the driver wake is already
++       * a level-triggered/latching operation.
++       * @param messageId - an existing next-step or next-turn message identity.
++       * @returns whether that identity was still pending when the wake was requested.
++       */
++  wakePending?(messageId: MessageId): boolean
++  /**
++     * Run one non-turn maintenance task from the true idle phase. The task starts
++     * synchronously after claiming that phase; later waking input remains in the
++     * inbox until the task settles, while public status stays `idle`.
++     * `whenIdle()` follows both the task and any waking work released behind it.
++     * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
++     * @throws synchronously when turn-driving or another maintenance task already owns the agent.
++     * @returns the task promise.
++     */
+   runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>
+-
+   /**
+-   * Route identified input to an inbox boundary and optionally wake the driver.
+-   * Waking input submitted after active cancellation is queued for the next
+-   * turn and runs when the aborted activity converges to idle; a `disposed`
+-   * cancel leaves it parked. A wake submitted while already idle always opens
+-   * its turn boundary, even when its message is cleared before the driver
+-   * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
+-   * @param message - identified content and the source that supplied it.
+-   * @param target - the preferred next-turn or next-step inbox boundary.
+-   * @param wakeup - whether delivery may wake the driver.
+-   */
++     * Route identified input to an inbox boundary and optionally wake the driver.
++     * Waking input submitted after active cancellation is queued for the next
++     * turn and runs when the aborted activity converges to idle; a `disposed`
++     * cancel leaves it parked. A wake submitted while already idle always opens
++     * its turn boundary, even when its message is cleared before the driver
++     * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
++     * @param message - identified content and the source that supplied it.
++     * @param target - the preferred next-turn or next-step inbox boundary.
++     * @param wakeup - whether delivery may wake the driver.
++     */
+   send(message: UserMessage, target: InboxTarget, wakeup: boolean): void
+-
+   /**
+-   * Queue an ordinary follow-up turn and wake the driver. The item becomes the
+-   * sole ordinary message of its own turn.
+-   * @param message - identified prompt content and the source that supplied it.
+-   */
++     * Queue an ordinary follow-up turn and wake the driver. The item becomes the
++     * sole ordinary message of its own turn.
++     * @param message - identified prompt content and the source that supplied it.
++     */
+   followup(message: UserMessage): void
+-
+   /**
+-   * Submit steering for the nearest step. An idle driver starts a turn;
+-   * a running driver consumes it at its next step boundary.
+-   * A rejected step leaves steering parked in the inbox until the next
+-   * wake; cancellation or disposal may discard pending steering.
+-   * @param message - identified steering content and the source that supplied it.
+-   */
++     * Submit steering for the nearest step. An idle driver starts a turn;
++     * a running driver consumes it at its next step boundary.
++     * A rejected step leaves steering parked in the inbox until the next
++     * wake; cancellation or disposal may discard pending steering.
++     * @param message - identified steering content and the source that supplied it.
++     */
+   steer(message: UserMessage): void
+-
+   /**
+-   * Queue model-facing context for the next pre-step without waking the
+-   * driver. A running driver claims it at the nearest later step boundary;
+-   * idle drivers leave it pending until follow-up or steering
+-   * wakes them. It may miss a request whose pre-step already claimed its
+-   * batch. Cancellation or disposal may discard pending context.
+-   * @param message - identified injected context and the source that supplied it.
+-   */
++     * Queue model-facing context for the next pre-step without waking the
++     * driver. A running driver claims it at the nearest later step boundary;
++     * idle drivers leave it pending until follow-up or steering
++     * wakes them. It may miss a request whose pre-step already claimed its
++     * batch. Cancellation or disposal may discard pending context.
++     * @param message - identified injected context and the source that supplied it.
++     */
+   inject(message: UserMessage): void
+ }
+ ```
+@@ -409,6 +411,35 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
+ 
+ The two core IDs are `ToolCallId` (correlates a tool call with its result; dsh-llm) and `SessionId` (the shared live agent and durable session identity; dsh-session). Capability packages brand their own ids too, such as `JobId` in [jobs.md](jobs.md).
+ 
++### `PreparedAssistantToolCall`
++
++```ts type-equiv
++/** One assembled tool call at the pre-assistant-commit boundary. */
++interface PreparedAssistantToolCall {
++  readonly callId: ToolCallId
++  readonly name: string
++  readonly rawArguments: string
++  readonly parsedArguments: JsonValue
++}
++```
++
++### `PreparedAssistantCommit`
++
++```ts type-equiv
++/** Complete immutable plan committed to assistant history and tool scheduling. */
++interface PreparedAssistantCommit {
++  readonly message: AssistantMessage
++  readonly toolCalls: readonly PreparedAssistantToolCall[]
++}
++```
++
++### `AgentPublicationGuard`
++
++```ts type-equiv
++/** Deployment policy checked synchronously before registry publication. */
++type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void
++```
++
+ <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ 
+ <a id="cordis-surface"></a>
+@@ -796,6 +827,17 @@ withoutInitiator<T>(operation: () => T): T
+  */
+ setFactory(factory: AgentFactory): () => void
+ 
++/**
++ * Install the one process-wide Agent publication guard. The guard runs at
++ * the authoritative {@link enter} boundary after identity/collision checks
++ * and before the registry mutates. A synchronous throw rejects publication
++ * without exposing the candidate. Registration is effect-scoped and
++ * exclusive; the returned disposer restores stock behavior.
++ * @param guard - deployment-owned synchronous publication policy.
++ * @returns the exact Cordis effect disposer.
++ */
++setPublicationGuard(guard: AgentPublicationGuard): () => void
++
+ /**
+  * Create and publish a new agent through the registered factory.
+  * Distinct from {@link register} (which records an already-constructed
+@@ -1060,6 +1102,29 @@ Types: [Scoped](scope.md) · [UserMessage](session.md)
+ 
+ Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+ 
++<a id="agentpre-assistant-commit--waterfall"></a>
++
++#### `agent/pre-assistant-commit` — waterfall
++
++Transform a complete assembled assistant response before any `assistant/message` or `tool/call` event is appended. The AgentLoop validates that only existing tool-call arguments changed and rebuilds scheduler inputs from the returned message.
++
++```ts cordis-catalog
++/**
++ * Transform a complete assembled assistant response before any
++ * `assistant/message` or `tool/call` event is appended. The AgentLoop
++ * validates that only existing tool-call arguments changed and rebuilds
++ * scheduler inputs from the returned message.
++ * @mode waterfall
++ * @param payload - complete assistant commit with immutable identities and transformable tool arguments.
++ * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): listeners receive only the payload Agent scope.
++ */
++'agent/pre-assistant-commit'(this: Scoped<Agent>, payload: { agent: Agent; commit: Readonly<PreparedAssistantCommit>; turn: number; step: number; signal: AbortSignal }, next: () => Promise<PreparedAssistantCommit>): Promise<PreparedAssistantCommit>
++```
++
++Types: [Scoped](scope.md)
++
++Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
++
+ <a id="agentpre-step--waterfall"></a>
+ 
+ #### `agent/pre-step` — waterfall
+diff --git a/docs/subsystems/core.zh.md b/docs/subsystems/core.zh.md
+index cedd113de5d5d551b8b558f9f33c7cacf6aa4953..7154880ca4bd64b9f4140518447b87b28bbbf3e2 100644
+--- a/docs/subsystems/core.zh.md
++++ b/docs/subsystems/core.zh.md
+@@ -75,72 +75,74 @@ interface Agent {
+   readonly status: AgentStatus
+   /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
+   readonly ctx: Context
+-
+   /**
+-   * Clear queued and steering work — unless `keepInbox` — and abort the active
+-   * turn or between-turn task. The first cause wins for that activity. With no
+-   * active activity, cancellation is a no-op and does not arm later work.
+-   * @param cause - the stable caller intent carried by the active operation signal.
+-   * @param options - cancellation options; `keepInbox` preserves pending work.
+-   */
++     * Clear queued and steering work — unless `keepInbox` — and abort the active
++     * turn or between-turn task. The first cause wins for that activity. With no
++     * active activity, cancellation is a no-op and does not arm later work.
++     * @param cause - the stable caller intent carried by the active operation signal.
++     * @param options - cancellation options; `keepInbox` preserves pending work.
++     */
+   cancel(cause: AgentCancelCause, options?: CancelOptions): void
+-
+   /**
+-   * Resolve after the current whole-agent activity reaches quiescence. This
+-   * follows replacement work started before the observed driver retires,
+-   * but does not identify the settlement of any particular message.
+-   * @returns fulfillment after no active driver or maintenance task remains.
+-   */
++     * Resolve after the current whole-agent activity reaches quiescence. This
++     * follows replacement work started before the observed driver retires,
++     * but does not identify the settlement of any particular message.
++     * @returns fulfillment after no active driver or maintenance task remains.
++     */
+   whenIdle(): Promise<void>
+-
+   /**
+-   * Run one non-turn maintenance task from the true idle phase. The task starts
+-   * synchronously after claiming that phase; later waking input remains in the
+-   * inbox until the task settles, while public status stays `idle`.
+-   * `whenIdle()` follows both the task and any waking work released behind it.
+-   * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
+-   * @throws synchronously when turn-driving or another maintenance task already owns the agent.
+-   * @returns the task promise.
+-   */
++       * Wake the driver only when the exact identity is already pending. This
++       * performs no Inbox mutation and therefore preserves durable FIFO order and
++       * cancellation history. Repeated calls are safe: the driver wake is already
++       * a level-triggered/latching operation.
++       * @param messageId - an existing next-step or next-turn message identity.
++       * @returns whether that identity was still pending when the wake was requested.
++       */
++  wakePending?(messageId: MessageId): boolean
++  /**
++     * Run one non-turn maintenance task from the true idle phase. The task starts
++     * synchronously after claiming that phase; later waking input remains in the
++     * inbox until the task settles, while public status stays `idle`.
++     * `whenIdle()` follows both the task and any waking work released behind it.
++     * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
++     * @throws synchronously when turn-driving or another maintenance task already owns the agent.
++     * @returns the task promise.
++     */
+   runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>
+-
+   /**
+-   * Route identified input to an inbox boundary and optionally wake the driver.
+-   * Waking input submitted after active cancellation is queued for the next
+-   * turn and runs when the aborted activity converges to idle; a `disposed`
+-   * cancel leaves it parked. A wake submitted while already idle always opens
+-   * its turn boundary, even when its message is cleared before the driver
+-   * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
+-   * @param message - identified content and the source that supplied it.
+-   * @param target - the preferred next-turn or next-step inbox boundary.
+-   * @param wakeup - whether delivery may wake the driver.
+-   */
++     * Route identified input to an inbox boundary and optionally wake the driver.
++     * Waking input submitted after active cancellation is queued for the next
++     * turn and runs when the aborted activity converges to idle; a `disposed`
++     * cancel leaves it parked. A wake submitted while already idle always opens
++     * its turn boundary, even when its message is cleared before the driver
++     * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
++     * @param message - identified content and the source that supplied it.
++     * @param target - the preferred next-turn or next-step inbox boundary.
++     * @param wakeup - whether delivery may wake the driver.
++     */
+   send(message: UserMessage, target: InboxTarget, wakeup: boolean): void
+-
+   /**
+-   * Queue an ordinary follow-up turn and wake the driver. The item becomes the
+-   * sole ordinary message of its own turn.
+-   * @param message - identified prompt content and the source that supplied it.
+-   */
++     * Queue an ordinary follow-up turn and wake the driver. The item becomes the
++     * sole ordinary message of its own turn.
++     * @param message - identified prompt content and the source that supplied it.
++     */
+   followup(message: UserMessage): void
+-
+   /**
+-   * Submit steering for the nearest step. An idle driver starts a turn;
+-   * a running driver consumes it at its next step boundary.
+-   * A rejected step leaves steering parked in the inbox until the next
+-   * wake; cancellation or disposal may discard pending steering.
+-   * @param message - identified steering content and the source that supplied it.
+-   */
++     * Submit steering for the nearest step. An idle driver starts a turn;
++     * a running driver consumes it at its next step boundary.
++     * A rejected step leaves steering parked in the inbox until the next
++     * wake; cancellation or disposal may discard pending steering.
++     * @param message - identified steering content and the source that supplied it.
++     */
+   steer(message: UserMessage): void
+-
+   /**
+-   * Queue model-facing context for the next pre-step without waking the
+-   * driver. A running driver claims it at the nearest later step boundary;
+-   * idle drivers leave it pending until follow-up or steering
+-   * wakes them. It may miss a request whose pre-step already claimed its
+-   * batch. Cancellation or disposal may discard pending context.
+-   * @param message - identified injected context and the source that supplied it.
+-   */
++     * Queue model-facing context for the next pre-step without waking the
++     * driver. A running driver claims it at the nearest later step boundary;
++     * idle drivers leave it pending until follow-up or steering
++     * wakes them. It may miss a request whose pre-step already claimed its
++     * batch. Cancellation or disposal may discard pending context.
++     * @param message - identified injected context and the source that supplied it.
++     */
+   inject(message: UserMessage): void
+ }
+ ```
+@@ -419,6 +421,35 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
+ 
+ 两个核心 ID 是 `ToolCallId`（关联工具调用及其结果；dsh-llm）和 `SessionId`（活跃 agent 与持久会话共享的标识；dsh-session）。能力包也会品牌化各自的 id，例如 [jobs.md](jobs.zh.md) 中的 `JobId`。
+ 
++### `PreparedAssistantToolCall`
++
++```ts type-equiv
++/** One assembled tool call at the pre-assistant-commit boundary. */
++interface PreparedAssistantToolCall {
++  readonly callId: ToolCallId
++  readonly name: string
++  readonly rawArguments: string
++  readonly parsedArguments: JsonValue
++}
++```
++
++### `PreparedAssistantCommit`
++
++```ts type-equiv
++/** Complete immutable plan committed to assistant history and tool scheduling. */
++interface PreparedAssistantCommit {
++  readonly message: AssistantMessage
++  readonly toolCalls: readonly PreparedAssistantToolCall[]
++}
++```
++
++### `AgentPublicationGuard`
++
++```ts type-equiv
++/** Deployment policy checked synchronously before registry publication. */
++type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void
++```
++
+ <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ 
+ <a id="cordis-surface"></a>
+@@ -806,6 +837,17 @@ withoutInitiator<T>(operation: () => T): T
+  */
+ setFactory(factory: AgentFactory): () => void
+ 
++/**
++ * Install the one process-wide Agent publication guard. The guard runs at
++ * the authoritative {@link enter} boundary after identity/collision checks
++ * and before the registry mutates. A synchronous throw rejects publication
++ * without exposing the candidate. Registration is effect-scoped and
++ * exclusive; the returned disposer restores stock behavior.
++ * @param guard - deployment-owned synchronous publication policy.
++ * @returns the exact Cordis effect disposer.
++ */
++setPublicationGuard(guard: AgentPublicationGuard): () => void
++
+ /**
+  * Create and publish a new agent through the registered factory.
+  * Distinct from {@link register} (which records an already-constructed
+@@ -1070,6 +1112,29 @@ Types: [Scoped](scope.zh.md) · [UserMessage](session.zh.md)
+ 
+ Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+ 
++<a id="agentpre-assistant-commit--waterfall"></a>
++
++#### `agent/pre-assistant-commit` — waterfall
++
++Transform a complete assembled assistant response before any `assistant/message` or `tool/call` event is appended. The AgentLoop validates that only existing tool-call arguments changed and rebuilds scheduler inputs from the returned message.
++
++```ts cordis-catalog
++/**
++ * Transform a complete assembled assistant response before any
++ * `assistant/message` or `tool/call` event is appended. The AgentLoop
++ * validates that only existing tool-call arguments changed and rebuilds
++ * scheduler inputs from the returned message.
++ * @mode waterfall
++ * @param payload - complete assistant commit with immutable identities and transformable tool arguments.
++ * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): listeners receive only the payload Agent scope.
++ */
++'agent/pre-assistant-commit'(this: Scoped<Agent>, payload: { agent: Agent; commit: Readonly<PreparedAssistantCommit>; turn: number; step: number; signal: AbortSignal }, next: () => Promise<PreparedAssistantCommit>): Promise<PreparedAssistantCommit>
++```
++
++Types: [Scoped](scope.zh.md)
++
++Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
++
+ <a id="agentpre-step--waterfall"></a>
+ 
+ #### `agent/pre-step` — waterfall
+diff --git a/docs/subsystems/session.i18n.yaml b/docs/subsystems/session.i18n.yaml
+index c7296b9ca5f57d65ec44137c2f955d403b74a443..26bfe62749a592e1a56519bba835f57819f55a0f 100644
+--- a/docs/subsystems/session.i18n.yaml
++++ b/docs/subsystems/session.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write docs/subsystems/session.md
+-session.md: 2b99ca8267d35978f245e6bdbf020226c976e363
+-session.zh.md: e6cff2d239caf7cd99be13463b412479a6f6e79b
++session.md: d8b153b96fa22440031f58d9cb546820d8d7a1c2
++session.zh.md: 7cefaa037a3b7c0c75e7982dca2f31a6b4e8787a
+diff --git a/docs/subsystems/session.md b/docs/subsystems/session.md
+index 2b99ca8267d35978f245e6bdbf020226c976e363..d8b153b96fa22440031f58d9cb546820d8d7a1c2 100644
+--- a/docs/subsystems/session.md
++++ b/docs/subsystems/session.md
+@@ -682,6 +682,18 @@ The backends that consume this contract are on [persistence.md](persistence.md).
+ 
+ `SessionOpenWorkspacePathRequest` carries an absolute or workspace-resolved `path`; optional `action: "reveal"` selects file-manager navigation instead of default-application opening. `SessionOpenWorkspacePathValue` confirms that the Host accepted the native handoff. A Session-aware Client resolves relative paths against its current Session cwd when known; the controller hands the path to the opener unchanged and reports invalid requests, cancellation, and opener failures through the Session Remote error vocabulary.
+ 
++### `SessionPublicationGuard`
++
++```ts type-equiv
++/**
++ * Synchronous fail-closed guard invoked immediately before a Session store
++ * entry becomes visible. Deployments with a stricter publication policy may
++ * install one through {@link SessionStore.setPublicationGuard}; stock DSH
++ * behavior is unchanged when no guard is installed.
++ */
++type SessionPublicationGuard = (session: Session) => void
++```
++
+ <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ 
+ <a id="cordis-surface"></a>
+@@ -850,6 +862,17 @@ In-memory session store (`ctx.sessions`).
+ Persistence is intentionally not implemented here — the agent lifecycle attaches a session-log writer to each published session's write handle; a session published outside that lifecycle persists nothing.
+ 
+ ```ts cordis-catalog
++/**
++ * Install the one process-wide Session publication guard. The guard runs at
++ * the authoritative {@link enter} boundary after collision/attachment checks
++ * and before store or attachment state mutates. A synchronous throw rejects
++ * publication without exposing the candidate. Registration is effect-scoped
++ * and exclusive; the returned disposer restores stock behavior.
++ * @param guard - deployment-owned synchronous publication policy.
++ * @returns the exact Cordis effect disposer.
++ */
++setPublicationGuard(guard: SessionPublicationGuard): () => void
++
+ /**
+  * Create a session owned by the calling fiber: disposing that fiber stops
+  * event notification and removes the session from the store. `options.seed`
+diff --git a/docs/subsystems/session.zh.md b/docs/subsystems/session.zh.md
+index e6cff2d239caf7cd99be13463b412479a6f6e79b..7cefaa037a3b7c0c75e7982dca2f31a6b4e8787a 100644
+--- a/docs/subsystems/session.zh.md
++++ b/docs/subsystems/session.zh.md
+@@ -686,6 +686,18 @@ interface TurnEndReasonMap {
+ 
+ `SessionOpenWorkspacePathRequest` 携带绝对路径或已按 workspace 解析的 `path`。`SessionOpenWorkspacePathValue` 确认 Host 已接受原生交接。Session-aware Client 会在已知当前 Session cwd 时据此解析相对路径；controller 将路径原样交给打开器，并通过 Session Remote 错误词汇表报告无效请求、取消与打开器失败。 可选的 `action: "reveal"` 选择文件管理器导航；省略时使用默认应用打开。
+ 
++### `SessionPublicationGuard`
++
++```ts type-equiv
++/**
++ * Synchronous fail-closed guard invoked immediately before a Session store
++ * entry becomes visible. Deployments with a stricter publication policy may
++ * install one through {@link SessionStore.setPublicationGuard}; stock DSH
++ * behavior is unchanged when no guard is installed.
++ */
++type SessionPublicationGuard = (session: Session) => void
++```
++
+ <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ 
+ <a id="cordis-surface"></a>
+@@ -854,6 +866,17 @@ In-memory session store (`ctx.sessions`).
+ Persistence is intentionally not implemented here — the agent lifecycle attaches a session-log writer to each published session's write handle; a session published outside that lifecycle persists nothing.
+ 
+ ```ts cordis-catalog
++/**
++ * Install the one process-wide Session publication guard. The guard runs at
++ * the authoritative {@link enter} boundary after collision/attachment checks
++ * and before store or attachment state mutates. A synchronous throw rejects
++ * publication without exposing the candidate. Registration is effect-scoped
++ * and exclusive; the returned disposer restores stock behavior.
++ * @param guard - deployment-owned synchronous publication policy.
++ * @returns the exact Cordis effect disposer.
++ */
++setPublicationGuard(guard: SessionPublicationGuard): () => void
++
+ /**
+  * Create a session owned by the calling fiber: disposing that fiber stops
+  * event notification and removes the session from the store. `options.seed`
 diff --git a/packages/core/agent-loop/tests/publication-guards.spec.ts b/packages/core/agent-loop/tests/publication-guards.spec.ts
 new file mode 100644
-index 0000000000..bd829ddb2b
+index 0000000000000000000000000000000000000000..bd829ddb2b0851f16c901c22d886af98ff6731ac
 --- /dev/null
 +++ b/packages/core/agent-loop/tests/publication-guards.spec.ts
 @@ -0,0 +1,77 @@
@@ -81,26 +619,59 @@ index 0000000000..bd829ddb2b
 +    disposeSession()
 +  })
 +})
+diff --git a/packages/core/agent/README.i18n.yaml b/packages/core/agent/README.i18n.yaml
+index 6b72fc7c6a4c7ababb4bb012b99be976993549ad..f0a285c266a13fcfd91163c4138685fbc2a6130d 100644
+--- a/packages/core/agent/README.i18n.yaml
++++ b/packages/core/agent/README.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write packages/core/agent/README.md
+-README.md: 82460df7492d470a55c37c4691af2a7d349144fe
+-README.zh.md: ed5f236bea9f972199d2528c5a2a32cb7e044df1
++README.md: 6646b09e7be9e935fe61018fb573999a1d73b709
++README.zh.md: 3b8548161e24902c66dd5bd044013855d6b67127
+diff --git a/packages/core/agent/README.md b/packages/core/agent/README.md
+index 82460df7492d470a55c37c4691af2a7d349144fe..6646b09e7be9e935fe61018fb573999a1d73b709 100644
+--- a/packages/core/agent/README.md
++++ b/packages/core/agent/README.md
+@@ -114,6 +114,8 @@ Each driver runs its complete lifetime inside `ctx.agents.withInitiator(agent, .
+ 
+ The `AgentHandle` disposer is a capability: among consumers, only its holder can tear the agent down. The registered factory provider is a structural co-owner, because scoped agents depend on that provider's service API; provider unload stops and drains every live handle it made. `ctx.agents.get(id)` still returns a bare `Agent` — the handle is exposed only to the consumer that created it.
+ 
++A deployment can install one effect-scoped publication guard before an Agent becomes visible. The guard runs synchronously and rejects creation before registry mutation. `wakePending()` schedules an existing durable inbox identity without changing its FIFO position; callers must retain the owning handle.
++
+ </details>
+ 
+ -----
+diff --git a/packages/core/agent/README.zh.md b/packages/core/agent/README.zh.md
+index ed5f236bea9f972199d2528c5a2a32cb7e044df1..3b8548161e24902c66dd5bd044013855d6b67127 100644
+--- a/packages/core/agent/README.zh.md
++++ b/packages/core/agent/README.zh.md
+@@ -114,6 +114,8 @@ await handle.agent.whenIdle()
+ 
+ `AgentHandle` disposer 是一项能力：在消费方中，只有其持有者能拆除该 agent。已注册的工厂提供方是结构化共同拥有者，因为作用域 agent 依赖该提供方的服务 API；提供方卸载会停止并排空它创建的每个实时句柄。`ctx.agents.get(id)` 仍返回裸 `Agent`——句柄只暴露给创建它的消费方。
+ 
++部署可以在 Agent 可见之前安装一个随 effect 释放的发布检查。检查同步运行，拒绝时不会修改注册表。`wakePending()` 调度已有的持久化收件箱标识，不改变其 FIFO 位置；调用方必须持有所属句柄。
++
+ </details>
+ 
+ -----
 diff --git a/packages/core/agent/src/index.ts b/packages/core/agent/src/index.ts
-index 6e3db1edb0..2b8491ab1d 100644
+index 21c95b5c600d393d3cfd2bf37f76f40fea22cb58..67ca40aa11d66e9fceba6614e763dfca525d5b93 100644
 --- a/packages/core/agent/src/index.ts
 +++ b/packages/core/agent/src/index.ts
-@@ -61,6 +61,14 @@ export type AgentSetup = (
-   agentCtx: Context,
- ) => AgentSetupCommit | Promise<AgentSetupCommit | void> | void
+@@ -226,6 +226,9 @@ interface InitiatorRun {
+ }
  
-+/**
-+ * Synchronous fail-closed guard invoked immediately before an Agent registry
-+ * entry becomes visible. Deployments that own a stricter publication policy
-+ * install one guard through {@link AgentRegistry.setPublicationGuard}; stock
-+ * DSH behavior is unchanged when no guard is installed.
-+ */
+ /** Plain holder prevents Cordis from tracing the factory field before the caller context is known. */
++/** Deployment policy checked synchronously before registry publication. */
 +export type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void
 +
- /**
-  * Options for programmatically creating an agent through the registry factory
-  * ({@link AgentRegistry.create}). The caller supplies the single live
-@@ -249,6 +257,7 @@ interface FactorySlot {
+ interface FactorySlot {
+   readonly target: AgentFactory
+ }
+@@ -245,6 +248,7 @@ interface FactorySlot {
  export class AgentRegistry extends Service {
    private store = new Map<SessionId, AgentEntry>()
    private factory: FactorySlot | undefined
@@ -108,7 +679,7 @@ index 6e3db1edb0..2b8491ab1d 100644
    private readonly initiators = new AsyncLocalStorage<Agent | undefined>()
    private readonly initiatorRuns = new AsyncLocalStorage<InitiatorRun>()
    private initiatorState: 'active' | 'closing' | 'disposed' = 'active'
-@@ -381,6 +390,28 @@ export class AgentRegistry extends Service {
+@@ -370,6 +374,28 @@ export class AgentRegistry extends Service {
      return dispose
    }
  
@@ -137,7 +708,7 @@ index 6e3db1edb0..2b8491ab1d 100644
    /** Return the active creation factory. */
    private requireFactory(): FactorySlot {
      if (this.factory === undefined) throw new Error(NO_FACTORY_MESSAGE)
-@@ -474,6 +505,7 @@ export class AgentRegistry extends Service {
+@@ -464,6 +490,7 @@ export class AgentRegistry extends Service {
      // This is the authoritative collision boundary. Concurrent create/resume
      // operations may both prepare, but only one exact entry can publish.
      if (this.store.has(id)) throw new Error(`agent "${id}" is already registered`)
@@ -145,11 +716,87 @@ index 6e3db1edb0..2b8491ab1d 100644
      const entry: AgentEntry = {
        id,
        agent,
+diff --git a/packages/core/scope/README.i18n.yaml b/packages/core/scope/README.i18n.yaml
+index 73a271b3a31be2b047a09d132de1f7e289b65b3d..ddeb57e426895fb15b9dbe0c8597dacdc13312b1 100644
+--- a/packages/core/scope/README.i18n.yaml
++++ b/packages/core/scope/README.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write packages/core/scope/README.md
+-README.md: 72c41e4c1a3b8f8a79940838ead7447f64781cc4
+-README.zh.md: 066a5bef3ba4b396f3e5bc60324443e36df61352
++README.md: 2e17d107b70715e9dd448e833b98219b255ff7b6
++README.zh.md: ba2d5f8161b829cccd72eccef8b748b7b06894dc
+diff --git a/packages/core/scope/README.md b/packages/core/scope/README.md
+index 72c41e4c1a3b8f8a79940838ead7447f64781cc4..2e17d107b70715e9dd448e833b98219b255ff7b6 100644
+--- a/packages/core/scope/README.md
++++ b/packages/core/scope/README.md
+@@ -76,6 +76,8 @@ One relation powers both directions: registration views inherit DOWN the chain (
+ 
+ `scopeTarget` composes the base's existing `Context.filter` with the scope predicate: an untagged listener is admitted; a tagged listener is admitted iff its tag is the dispatch key or an ancestor of it; `key === undefined` admits untagged listeners only. `{ global: true }` listeners bypass filtering. The `Scoped<T>` brand demands the carrier as the `this` type of a scope-filtered event, so dispatching with a bare subject is a compile error.
+ 
++The scoped assistant-commit waterfall uses the Agent identity carried in its payload. Contributions remain visible only in their registration scope and disappear when that scope is disposed.
++
+ </details>
+ 
+ -----
+diff --git a/packages/core/scope/README.zh.md b/packages/core/scope/README.zh.md
+index 066a5bef3ba4b396f3e5bc60324443e36df61352..ba2d5f8161b829cccd72eccef8b748b7b06894dc 100644
+--- a/packages/core/scope/README.zh.md
++++ b/packages/core/scope/README.zh.md
+@@ -76,6 +76,8 @@ await scope.dispose()   // unwinds every registration made through scope.ctx
+ 
+ `scopeTarget` 把基对象的现有 `Context.filter` 与作用域谓词组合起来：无标签监听器放行；有标签监听器仅当标签为分发键或其祖先时放行；`key === undefined` 只放行无标签监听器。带 `{ global: true }` 的监听器绕过筛选。`Scoped<T>` brand 要求带作用域事件以载体作为 `this` 类型，因此用裸主体分发会产生编译错误。
+ 
++作用域内的助手提交 waterfall 使用载荷携带的 Agent 标识。贡献项只在注册作用域内可见，并在该作用域释放时移除。
++
+ </details>
+ 
+ -----
+diff --git a/packages/core/session/README.i18n.yaml b/packages/core/session/README.i18n.yaml
+index 6b68ca2d743e3add673f7dd6ed4b2ec553c97329..4af99739b2a875e42aff50ce6c6b2d63323375b0 100644
+--- a/packages/core/session/README.i18n.yaml
++++ b/packages/core/session/README.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write packages/core/session/README.md
+-README.md: cdcab8ec4d2f6960bb651aff46745b20f91632e2
+-README.zh.md: 745615f67084430475e0739b22afa35556b71ee6
++README.md: dcac17a0f1918ffc2bdf55b0093dd008686ba8a7
++README.zh.md: 7c7a44742744b70bf0a387273401c77452381f6c
+diff --git a/packages/core/session/README.md b/packages/core/session/README.md
+index cdcab8ec4d2f6960bb651aff46745b20f91632e2..dcac17a0f1918ffc2bdf55b0093dd008686ba8a7 100644
+--- a/packages/core/session/README.md
++++ b/packages/core/session/README.md
+@@ -111,6 +111,8 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads,
+ 
+ The loop logs a full canonical `request/header` snapshot (call config, adapter defaults, assembled tool schemas — the rendered system prompt is a `system/message` surface node, not header state) at each loop-instance boundary and on change; `foldRequestHeader(events)` reconstructs it by selecting the latest snapshot, making every conversation request a pure function of the log. Route metadata (`request/context`) is separate logged state appended only when the provider, model, capacity, or `systemPromptUpdate` mode differs; it records the actual prepared call's mode after prompt and user admission, rather than supplying that admission decision.
+ 
++A deployment may install one synchronous publication guard on the Session store. The guard runs before attachment or store mutation, and its effect-scoped disposer restores ordinary admission. The guard does not replace persistence write ownership.
++
+ </details>
+ 
+ -----
+diff --git a/packages/core/session/README.zh.md b/packages/core/session/README.zh.md
+index 745615f67084430475e0739b22afa35556b71ee6..7c7a44742744b70bf0a387273401c77452381f6c 100644
+--- a/packages/core/session/README.zh.md
++++ b/packages/core/session/README.zh.md
+@@ -111,6 +111,8 @@ session.deriveMessages()         // the derived model history
+ 
+ 循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、组装后的工具 schema——渲染后的系统提示词是 `system/message` surface 节点，不是 header 状态）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型、容量或 `systemPromptUpdate` 模式变化时追加；它在提示词与用户消息准入之后记录实际已准备调用的模式，而非提供准入决策。
+ 
++部署可以在 Session 存储上安装一个同步发布检查。检查在挂接或修改存储之前运行，其 effect 释放函数恢复普通准入。检查不替代持久化写入所有权。
++
+ </details>
+ 
+ -----
 diff --git a/packages/core/session/src/index.ts b/packages/core/session/src/index.ts
-index c55cc5fb6a..c8d035f597 100644
+index 9db83274097372c2ad2e79e10b3add1ee63a3980..c3c7269b89749597ba8bfdd19c8d509f81aca6c9 100644
 --- a/packages/core/session/src/index.ts
 +++ b/packages/core/session/src/index.ts
-@@ -824,6 +824,14 @@ export class Session {
+@@ -859,6 +859,14 @@ export class Session {
  /** A fork source: either the live session object or its live store id. */
  export type SessionForkSource = Session | SessionId
  
@@ -164,7 +811,7 @@ index c55cc5fb6a..c8d035f597 100644
  /**
   * Rejection codes for session forking: the fork source id is unknown to the
   * live store (`SESSION_NOT_FOUND`) or names a session object that is not the
-@@ -856,6 +864,7 @@ export class SessionForkError extends Error {
+@@ -892,6 +900,7 @@ export class SessionForkError extends Error {
  export class SessionStore extends Service {
    private store = new Map<SessionId, SessionEntry>()
    private counter = 0
@@ -172,7 +819,7 @@ index c55cc5fb6a..c8d035f597 100644
  
    constructor(ctx: Context) {
      super(ctx, 'sessions')
-@@ -870,6 +879,28 @@ export class SessionStore extends Service {
+@@ -906,6 +915,28 @@ export class SessionStore extends Service {
      })
    }
  
@@ -201,7 +848,7 @@ index c55cc5fb6a..c8d035f597 100644
    /**
     * Create a session owned by the calling fiber: disposing that fiber stops
     * event notification and removes the session from the store. `options.seed`
-@@ -981,6 +1012,7 @@ export class SessionStore extends Service {
+@@ -1032,6 +1063,7 @@ export class SessionStore extends Service {
      // preparation. Only one exact same-id transaction can publish.
      if (this.store.has(id)) throw new Error(`session "${id}" already exists`)
      if (attachments.has(session)) throw new Error(`session "${id}" is already attached to a store`)

@@ -22,7 +22,8 @@ const config = JSON.parse(configBytes);
 const worker = resolve(repository, "tests/fixtures/dsh-upgrade-performance.ts");
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 const git = args => {
-  const result = spawnSync("git", args, { cwd: repository, encoding: "utf8" });
+  const result = spawnSync("git", args, { cwd: repository, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  assert.equal(result.error, undefined);
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
 };

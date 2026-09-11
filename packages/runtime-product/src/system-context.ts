@@ -5,18 +5,9 @@ import type {
   SystemContextSnapshot,
 } from "@myagents-dsh/protocol";
 import { ProtocolError } from "@myagents-dsh/protocol";
-import { PERSONA_SECTION } from "@deepseek-ai/dsh-system-prompt";
+import { PERSONA_PREFIX_SECTION } from "@deepseek-ai/dsh-system-prompt";
 import { createHash } from "node:crypto";
 
-declare module "@deepseek-ai/dsh-system-prompt" {
-  interface PromptSection {
-    readonly interpolate?: boolean;
-  }
-
-  interface PromptContext {
-    readonly interpolate?: boolean;
-  }
-}
 
 export const RUNTIME_OPERATING_CONTRACT = `You are an execution agent. Complete the user's request using the available tools and current context.
 
@@ -156,7 +147,7 @@ const registerSections = (
       disposers.push(context.systemPrompt.section({
         interpolate: false,
         name: contributions.legacySystemPrompt && scope === "root" && section.id === "legacy-persona"
-          ? PERSONA_SECTION
+          ? PERSONA_PREFIX_SECTION
           : `host:${section.id}`,
         order: section.order,
         text: section.text,

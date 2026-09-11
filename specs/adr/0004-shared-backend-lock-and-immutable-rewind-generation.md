@@ -1,8 +1,10 @@
 # ADR 0004 — Shared backend lock and immutable rewind generation
 
+Candidate disposition (2026-09-12, U15-W02): Keep public Provider composition, now through SessionPersistence/SessionHandle. Cross-process writer ownership, immutable generation mutations and cold restoration still require product evidence. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
+
 Status: accepted on 2026-08-16 as the Batch 1 persistence composition
 
-Current disposition (2026-08-29): implemented through the public DSH PersistenceBackend plus the product-owned SQLite mutation companion as `DSH-SEAM-004`; no DSH core patch is carried for this decision.
+Historical disposition (2026-08-29): implemented through the public DSH PersistenceBackend plus the product-owned SQLite mutation companion as `DSH-SEAM-004`; no DSH core patch is carried for this decision.
 
 ## Context
 

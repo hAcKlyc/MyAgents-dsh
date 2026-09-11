@@ -1,10 +1,12 @@
 # ADR 0008 — Keep capacity-safe compaction inside the official DSH engine
 
+Candidate disposition (2026-09-12, U15-W02): Rebase exact summary request estimation and capacity-safe structured compaction onto native V3 system messages and file-request pricing. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
+
 - Status: accepted
 - Date: 2026-08-29
 - Scope: `B1-W4-A11`, `CP-P0-03` through `CP-P0-07`
 
-Current disposition (2026-09-03): retained as `DSH-SEAM-008` / patch 0007 in the current ten-patch artifact and documented by `specs/tech_docs/execution/compaction.md`.
+Historical disposition (2026-09-03): retained as `DSH-SEAM-008` / patch 0007 in the current ten-patch artifact and documented by `specs/tech_docs/execution/compaction.md`.
 
 ## Context
 

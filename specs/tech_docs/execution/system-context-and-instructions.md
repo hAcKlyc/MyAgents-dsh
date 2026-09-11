@@ -1,7 +1,7 @@
 ---
 type: technical-architecture
 status: implemented
-updated: 2026-09-02
+updated: 2026-09-12
 module: system-context-and-instructions
 product_scope: ../../prd/prd_0.3_myagents_dsh_system_context.md
 ---
@@ -40,7 +40,7 @@ optional generic harness-identity contribution.
 
 ## 3. Host contract and normalization
 
-Source-candidate protocol `2.5.0` retains unchanged the optional `SystemContextSnapshot` added in
+Source-candidate protocol `5.0.0` retains the optional `SystemContextSnapshot` added in
 `2.2.0` for `session/create`, `session/resume` and
 `config/apply`. A snapshot contains up to 32 ordered sections and 32 ordered contexts. Every entry
 has a Host id, numeric order, `global` or `root` scope, and literal UTF-8 Markdown text. Context text
@@ -54,7 +54,8 @@ has a 512 KiB aggregate Runtime bound in addition to the generated per-field bou
 - ids are unique per contribution kind across both scopes;
 - arrays and entries are cloned, frozen and deterministically hashed;
 - Host bodies are registered with DSH literal interpolation disabled and namespaced as `host:<id>`;
-  the legacy `systemPrompt` compatibility path retains the historical `deployment:persona` name.
+  the legacy `systemPrompt` input is installed through the native `PERSONA_PREFIX_SECTION`.
+  Native persona suffix contributions remain independently owned and preserved.
 
 The generic schema deliberately has no required `product`, `persona`, `session` or `workspace`
 field. A Host may evolve its product composition without a Runtime release. The focused PRD records

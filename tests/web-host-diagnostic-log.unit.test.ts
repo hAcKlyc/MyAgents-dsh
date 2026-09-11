@@ -32,7 +32,7 @@ describe("Reference Web diagnostic log", () => {
           sequence: 1,
           emittedAt: "2026-08-25T00:00:00.000Z",
           turnId: "turn-1",
-          event: { kind: "assistant_delta", delta: "SECRET_CONVERSATION_CANARY" },
+          event: { streamId: "fixture-stream", frameIndex: 0, kind: "assistant_delta", delta: "SECRET_CONVERSATION_CANARY" },
         },
       },
     } satisfies HostEvent);

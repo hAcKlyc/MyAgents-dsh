@@ -6,9 +6,9 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 ## Two authorities, deliberately not conflated
 
-- Source/design evidence is `deepseek-harness@a66e4702047846cdaa10c66c9d3df3951f5ea70d` (tree `27ab636bb3d77e698f5637e518db44ae1f61e262`), whose manifests declare `0.1.2-rc.1`.
-- Development dependency evidence is the public npm `0.1.2-rc.1` package set plus `@deepseek-ai/cordis@4.0.2`, pinned by exact versions, tarball URLs, and SHA-512 integrities in `package-lock.json`.
-- Candidate executable authority is the source-built, ten-patch artifact `0.1.2-rc.1.myagents.a66e47020478.3fff39022bbd`, content-addressed by manifest SHA-256 `246236a8afd45f51367df69d43422d739ba4fed2208503179613066ff3adebd4`. Its Provider-content seam also binds the separately pinned and patched pi-ai `0.84.2` authority under `specs/pi-ai/`.
+- Source/design evidence is `deepseek-harness@fb2c4b9e698e30edb738bca4cf0618587db7d203` (tree `bd7dd6d90010a35d3d6ff9f12c1f6207d5b6fe38`), declaring `0.1.5-rc.2`.
+- Development dependency resolution is exact public npm `0.1.5-rc.2` plus Cordis `4.0.2`, independently pinned by package-lock tarball URLs and integrities.
+- Executable candidates are source-built with all nine core patches and separately patched pi-ai `0.85.1`. The accepted patched-artifact manifest records W02 package bytes; later Product/lock/builder changes require fresh verification and do not inherit that acceptance.
 
 The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 
@@ -22,36 +22,22 @@ Some upstream package manifests expose implementation subpaths. MyAgents-dsh per
 
 The generated baseline traverses the complete production dependency closure, including required peers and optional production packages. Every row records the exact package path, version, registry tarball, integrity, and SPDX license expression. Its license policy records the retention/notice obligation for every expression present in that closure. The verifier additionally requires every installed `@deepseek-ai/*` package to identify the upstream repository and ship a readable MIT `LICENSE` file. Artifact-level notice collation remains owned by the Pre-Batch artifact gate; this baseline is its exact dependency input.
 
-## Accepted limitations
+## Candidate limitations and seam decisions
 
-The manifest records executable consequences and follow-up decisions for the unproven source/release association, forbidden upstream source wildcards, absent authoritative pre-tool argument rewrite, append-only persistence without product mutations, the persistence coordinator's closed known-event set, and the MCP SDK public type graph's explicit DOM-library requirement. None is bypassed with a private import or a second runtime authority.
+The source is fixed to DSH 0.1.5-rc.2. Registry tarballs do not prove their association with that
+commit. Product imports use public exports only; source-private wildcards stay forbidden.
+The native V3 SessionHandle Provider now supplies Product required-event validation without the
+retired PersistenceCoordinator predicate patch. Product mutations remain in the SQLite companion,
+sharing exact writer ownership and immutable generation fencing.
 
-## Accepted seam decisions
+`seam-decisions-v1.json` records all twelve seams and their provisional retire/reduce/rebase or
+public-composition disposition. Nine core patches remain; retired files 0003 and 0006 are removed.
+The source gate verifies every exact upstream blob, applies the ordered series only in a detached
+worktree and runs the selected source regressions. The patchless seam 004 still requires fresh
+Product and native ownership proof. The affected ADRs preserve each semantic and removal condition.
 
-`seam-decisions-v1.json` is the generated registry for the eleven evidence-backed Foundation, Batch 1 and Batch 3 decisions. `npm run check:dsh-seams` verifies its patch digests. `npm run check:dsh-seams-source` additionally verifies every touched fixed-source blob, applies the ten patches to a detached temporary worktree, installs only from the primed exact pnpm store, compiles the selected upstream package graph, and runs the bounded patched-source regressions across Agent cancellation/wake, pre-assistant commit, generated scope routing, persistence, publication guards, continuable-subagent lifecycle, DeepSeek streamed tool identity preservation, pi-ai Provider-content preservation/replay, capacity-safe compaction, literal Prompt contributions and project-instruction selection. CI repeats that gate from separately SHA-pinned checkouts. The numbered ADRs record why each choice was accepted.
-
-These patches target the fixed rc.2 source/design authority. They are not claimed to be the source of the installed registry packages, are not applied to `node_modules`, and do not activate the official product profile. Batch 1 must still pass the accumulated Runtime gates before this candidate may become production authority.
-
-## Batch 1 upstream rebaseline
-
-`B1-DSH-R1` is the accepted release-blocking refresh of this authority. On 2026-08-23 the official checkout was fetched through lightweight tag `dsh-v0.1.2-rc.1`, exact commit `a66e4702047846cdaa10c66c9d3df3951f5ea70d`, tree `27ab636bb3d77e698f5637e518db44ae1f61e262`, 854 commits beyond the prior rc.5 source baseline. The source, lock, reduced patch series, public compile fixtures, 52-package bundle, clean consumer, real AgentLoop, and commit-bound Runtime artifact were accepted at implementation commit `336899ee0a4d4cf7614031cfaddb358a7400c529`; the candidate profile remains `workstream-evidence-only`.
-
-The versioned review matrix is [upstream-rebaseline-0.1.2-rc.1.md](./upstream-rebaseline-0.1.2-rc.1.md).
-
-The mandatory post-Workstream-4 refresh is recorded in [upstream-refresh-b1-final-0.1.2-rc.1.md](./upstream-refresh-b1-final-0.1.2-rc.1.md). A final G6 preflight again found the newest release and `origin/master` identical to the immutable rc.2 pin, then caught an official-route V4-Flash stream defect in that exact source. The accepted six-patch source gate and rebuilt 54-package bundle include the minimal translator correction and regression.
-
-The focused compaction P0 refresh is recorded in [upstream-refresh-b1-compaction-p0-0.1.2-rc.1.md](./upstream-refresh-b1-compaction-p0-0.1.2-rc.1.md). It keeps the same immutable upstream commit, directly composes the official Tool Result Pruner, and adds only patch 0007 for summary-request estimation, capacity-safe range selection, structured checkpoint validation/repair, and content-free telemetry that the public rc.2 seams cannot express.
-
-The refresh compares public APIs and behavior, not only package versions. Patches 0001–0004 remain required and were rebased with new source/blob evidence. Patch 0005 was reduced: ProductWork now uses upstream caller-reserved identity and `drainContinuableChildren`, while the patch retains only exact external settlement delivery, strict final durability, resume/no-reinsert recovery, and infrastructure-failure attribution that rc.2 still lacks.
-
-## Patched Batch 1 artifact
-
-`npm run build:dsh-artifact -- --source <fixed-checkout> --out <new-directory> --pnpm-store <primed-store> --npm-cache <primed-cache>` is the only owner for turning the accepted source/patch authority into installable DSH package bytes. The output parent must already exist and contain no symlink component. The command rejects any Node/npm/pnpm identity other than `24.20.0`/`11.19.0`/`11.7.0`, verifies the exact commit/tree, freezes the ordered patch bytes once for verification and application, uses an isolated empty HOME and npm configuration, and performs only offline installs from the explicitly supplied stores before building the complete upstream Host graph.
-
-The builder derives the official profile's 49 direct DSH packages and their required internal runtime/peer closure from the fixed source. The current closure is 58 packages; Batch 1 W4-A10 adds the upstream public token-meter and basic-compaction Providers, W4-A11 adds the official Tool Result Pruner, Batch 3 system context composes the official Agent Instructions package, and the Provider-content correction includes the official pi-ai adapter plus its authorization peer. Every DSH workspace manifest is staged to one version derived from the fixed commit and ordered patch digest, and every internal dependency section is pinned to that exact version before `pnpm pack`; no rc5/rc6 mixture or `workspace:` range may survive. Non-runtime upstream README payloads are omitted, every remaining member passes the shared forbidden-content scanner, and the member set is rewritten as a stable USTAR/gzip stream. Two independent pack passes must therefore be byte-identical, not merely semantically equal. The raw tarballs retain their own SHA-256 and SHA-512 integrity in `patched-dsh-artifact-v1.json` and `SHA256SUMS`.
-
-The artifact manifest binds the root lock, accepted DSH dependency baseline, exact toolchain, complete local builder-source closure, 15 exact external roots, consumer manifest/lock, and both compile fixtures. The additional platform-neutral `@img/sharp-wasm32` root makes npm 11.8's `sharp` optional-dependency installation explicit instead of leaving an extraneous subtree. The delivered consumer declares all 55 local tarballs explicitly so npm can satisfy unpublished required peers. The verification consumer is always assembled in a dedicated temporary root independent of both the repository and requested output. That root rejects any ancestor `node_modules`; TypeScript resolution tracing must prove every resolved path stays inside it. The gate performs offline `npm install`, removes the tree, repeats with `npm ci`, runs `npm ls --all`, rejects every external name/version/integrity tuple outside the accepted authority, rejects any rc6 or escaping symlink, and compiles both fixtures with the consumer's own TypeScript installation. This proves `wakePending`, `agent/pre-assistant-commit`, `isKnownEventType`, the Agent/Session publication guards, the public attachment Store seam, external settlement/retirement, exact summary-request estimation, and the official pruner/basic-engine composition come from the packed declarations.
-
-`npm run verify:dsh-artifact -- --artifact <bundle-directory> --expected-manifest-sha256 <ledger-digest>` is the read-only existing-bundle verifier. It rejects bundle aliases, hardlinks, special files, escaping or non-canonical consumer paths, and entry identity changes. It then recomputes current source/patch/builder/lock authority, deterministic tar bytes without reordering semantic `exports`/`imports` conditions, package closure, content findings, consumer-lock tuples, every package digest/integrity, and the exact `SHA256SUMS` projection. The ledger binds both the full manifest digest and the `SHA256SUMS` digest for the accepted candidate. The Foundation profile remains inactive; Batch 1 may activate a production profile only after the Runtime composition and accumulated gate binds that exact manifest identity.
-
-UPG-W11 rebuilds the same official commit/tree and unchanged ten-patch series after the root lock and builder-source authority changed. Two isolated builds produce identical 76-file outputs and 72 package tarballs. The accepted manifest records the new authority; this is not an upstream version change or a new patch adjudication. Runtime/platform/handoff evidence is rebuilt after source admission, with final receipts owned by the UPG-W11 Host subledger.
+W02 has two byte-identical complete 77-package builds and independent consumer validation. W03
+Provider/V3 lifecycle and W04 protocol 5.0.0 live-stream/model source adaptation have deterministic
+regression evidence. The [UPG15 PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md) owns final Product,
+Runtime, native and Host acceptance. Later lock/builder/source changes require fresh artifacts;
+clean patch application and old handoffs cannot establish acceptance for new bytes.

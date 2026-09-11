@@ -809,14 +809,8 @@ class PrimaryRootPublicationFence {
   }
 
   install(): readonly [() => void, () => void] {
-    type PatchedAgentRegistry = Context["agents"] & {
-      setPublicationGuard(guard: (agent: Agent, owner: Agent | undefined) => void): () => void;
-    };
-    type PatchedSessionStore = Context["sessions"] & {
-      setPublicationGuard(guard: (session: Session) => void): () => void;
-    };
-    const agents = this.context.agents as PatchedAgentRegistry;
-    const sessions = this.context.sessions as PatchedSessionStore;
+    const agents = this.context.agents;
+    const sessions = this.context.sessions;
     if (typeof agents.setPublicationGuard !== "function"
       || typeof sessions.setPublicationGuard !== "function") {
       throw new Error("accepted DSH root-publication guard seams are unavailable");
@@ -832,10 +826,7 @@ class PrimaryRootPublicationFence {
           && this.#permit?.agent === agent
           && this.#permit.session === agent.session;
         const childPermit = this.#childPermits.get(agent.session);
-        // The accepted DSH continuation manager owns child lifecycles through
-        // one agentless activation fiber. Durable parentage is instead the
-        // exact, already-validated Session header captured by this permit.
-        const childPermitted = owner === undefined && childPermit?.agent === agent;
+        const childPermitted = childPermit?.agent === agent && owner === childPermit.parent;
         if (!rootPermitted && !childPermitted) {
           throw new Error("root Agent publication lacks the primary Session admission authority");
         }
@@ -849,9 +840,8 @@ class PrimaryRootPublicationFence {
 
   prepare(runtimeSessionId: string): Readonly<{ setup: AgentSetup; cancel: () => void }> {
     let expected: Agent | undefined;
-    const setup: AgentSetup = (agentContext) => {
-      const agent = agentContext.agent;
-      if (agent?.id !== runtimeSessionId) {
+    const setup: AgentSetup = (_agentContext, agent) => {
+      if (agent.id !== runtimeSessionId) {
         throw new Error("unpublished root Agent identity differs from the primary Session admission");
       }
       expected = agent;
@@ -1632,15 +1622,14 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
         },
         meta: { cwd: request.workspace.path },
         sessionId: SessionId(request.runtimeSessionId),
-        setup: async (agentContext) => {
-          const agent = agentContext.agent;
-          if (agent?.id !== request.runtimeSessionId) {
+        setup: async (agentContext, agent) => {
+          if (agent.id !== request.runtimeSessionId) {
             throw new Error("unpublished root Agent differs from the admitted primary Session");
           }
           registerRootSystemContext(agentContext, request.systemContext);
           request.signal.throwIfAborted();
           this.assertPublicationCurrent?.(agent, request);
-          const preparedPublication = await publication.setup(agentContext);
+          const preparedPublication = await publication.setup(agentContext, agent);
           if (preparedPublication === undefined) {
             throw new Error("primary Session publication guard did not prepare a commit boundary");
           }
@@ -1705,9 +1694,8 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
           provider: request.params.provider.providerRouteId,
         },
         resumeSessionId: SessionId(request.runtimeSessionId),
-        setup: async (agentContext) => {
-          const agent = agentContext.agent;
-          if (agent?.id !== request.runtimeSessionId) {
+        setup: async (agentContext, agent) => {
+          if (agent.id !== request.runtimeSessionId) {
             throw new Error("unpublished resumed Agent differs from the admitted primary Session");
           }
           registerRootSystemContext(agentContext, request.systemContext);
@@ -1715,7 +1703,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
           await this.validateResume?.(agent, request);
           request.signal.throwIfAborted();
           this.assertPublicationCurrent?.(agent, request);
-          const preparedPublication = await publication.setup(agentContext);
+          const preparedPublication = await publication.setup(agentContext, agent);
           if (preparedPublication === undefined) {
             throw new Error("primary Session publication guard did not prepare a commit boundary");
           }

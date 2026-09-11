@@ -185,12 +185,6 @@ import {
   RUNTIME_OPERATING_CONTRACT_ORDER,
 } from "./system-context.js";
 
-declare module "@deepseek-ai/dsh-agent-instructions" {
-  interface Config {
-    candidateSelection?: "all" | "first";
-    fileTouchToolNames?: string[];
-  }
-}
 
 export type { HostBackedInteractionProviderConfig } from "./host-interaction.js";
 
@@ -1534,7 +1528,11 @@ export const installCanonicalToolPlane = async (
             // DSH emits subagent/end after final flush and handle disposal. Verify
             // the captured immutable prefix through persistence; a detached Session
             // cannot be sent back through the live SessionStore flush entry point.
-            const persisted = await permissionDeadline.wait(root.sessionPersistence.inspect(session.id), "completed child durability inspection");
+            const persisted = await permissionDeadline.wait((async () => {
+              const reader = await root.sessionPersistence.open(session.id, "read");
+              try { return { meta: reader.header, events: (await reader.read()).events }; }
+              finally { await reader.close(); }
+            })(), "completed child durability inspection");
             const captured = session.snapshotEvents();
             if (session.header.origin !== "subagent" || !isDeepStrictEqual(persisted.meta, session.header)
               || persisted.events.length < captured.length
@@ -2287,7 +2285,7 @@ export const composeDshRootServices = async (
       path: ":memory:",
       openAt: "first-search",
       readWindowMax: 256,
-      persistedInspectConcurrency: 4,
+      persistedReadConcurrency: 4,
     });
     await root.plugin(await loadSessionProjectionRegistry());
     await root.plugin(AgentRegistry);

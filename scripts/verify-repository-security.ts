@@ -19,6 +19,7 @@ import {
   ARTIFACT_LAUNCHER_PATH,
   DYNAMIC_E2E_HOST_PATH,
   isExactDynamicE2eChildProcessSource,
+  isExactSessionOwnershipNativeTestSource,
   isExactArtifactLauncherChildProcessSource,
   isExactProductNetworkTransportSource,
   isExactWebHostRuntimeProcessSource,
@@ -140,6 +141,7 @@ for (const relativePath of repositoryPaths) {
       if (isNetworkCapableModule(specifier)
         && !isExactArtifactLauncherChildProcessSource(relativePath, specifier, source)
         && !isExactDynamicE2eChildProcessSource(relativePath, specifier, source)
+        && !isExactSessionOwnershipNativeTestSource(relativePath, specifier, source)
         && !isExactProductNetworkTransportSource(relativePath, specifier, source)
         && !isExactWebHostRuntimeProcessSource(relativePath, specifier, source)
         && !isExactWebHostBrowserServerSource(relativePath, specifier, source)) {

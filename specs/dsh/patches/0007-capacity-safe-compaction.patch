@@ -1,5 +1,361 @@
+diff --git a/docs/persistence-catalog.i18n.yaml b/docs/persistence-catalog.i18n.yaml
+index 389c95a40b9d149de09fd7a8f259cc5a49934084..6b6f55ab700cb468024e01f0f2b7319b30b0524c 100644
+--- a/docs/persistence-catalog.i18n.yaml
++++ b/docs/persistence-catalog.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write docs/persistence-catalog.md
+-persistence-catalog.md: 46e91f23a7aad053791df190f769ad911f334b68
+-persistence-catalog.zh.md: 087915b83d4dfd5c45a1583658d6ebe091904a3f
++persistence-catalog.md: 21801130a8626df45d8f105c6c45408b059bae4a
++persistence-catalog.zh.md: 656f9a3a905e9f0b81e0d6950a20984dd804c289
+diff --git a/docs/persistence-catalog.md b/docs/persistence-catalog.md
+index 46e91f23a7aad053791df190f769ad911f334b68..21801130a8626df45d8f105c6c45408b059bae4a 100644
+--- a/docs/persistence-catalog.md
++++ b/docs/persistence-catalog.md
+@@ -299,7 +299,7 @@ Source: [`packages/interaction/commands/src/types.ts:103`](../packages/interacti
+ 'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
+ ```
+ 
+-Source: [`packages/compaction/compaction/src/types.ts:72`](../packages/compaction/compaction/src/types.ts)
++Source: [`packages/compaction/compaction/src/types.ts:74`](../packages/compaction/compaction/src/types.ts)
+ 
+ <a id="compactionprune--log-only"></a>
+ 
+@@ -325,7 +325,7 @@ Source: [`packages/compaction/compaction/src/types.ts:72`](../packages/compactio
+ }
+ ```
+ 
+-Source: [`packages/compaction/compaction/src/types.ts:82`](../packages/compaction/compaction/src/types.ts)
++Source: [`packages/compaction/compaction/src/types.ts:84`](../packages/compaction/compaction/src/types.ts)
+ 
+ <a id="compactionstart--log-only"></a>
+ 
+@@ -380,8 +380,10 @@ Source: [`packages/compaction/compaction/src/types.ts:24`](../packages/compactio
+   | {
+     /** Complete provider output before the backend's safe summary projection. */
+     rawOutput: ContentBlock[]
+-    /** Identifies exactly one call through this context's `ctx.llm.stream()`. */
++    /** Identifies direct calls through this context's `ctx.llm.stream()`. */
+     llmStreamCall: true
++    /** Exact number of direct stream calls; absent legacy events mean one. */
++    llmStreamCallCount?: number
+   }
+   | {
+     /** Optional complete output from an unmarked template, remote, or other summarizer. */
+diff --git a/docs/persistence-catalog.zh.md b/docs/persistence-catalog.zh.md
+index 087915b83d4dfd5c45a1583658d6ebe091904a3f..656f9a3a905e9f0b81e0d6950a20984dd804c289 100644
+--- a/docs/persistence-catalog.zh.md
++++ b/docs/persistence-catalog.zh.md
+@@ -301,7 +301,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
+ 'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
+ ```
+ 
+-来源：[`packages/compaction/compaction/src/types.ts:72`](../packages/compaction/compaction/src/types.ts)
++来源：[`packages/compaction/compaction/src/types.ts:74`](../packages/compaction/compaction/src/types.ts)
+ 
+ <a id="compactionprune--log-only"></a>
+ 
+@@ -327,7 +327,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
+ }
+ ```
+ 
+-来源：[`packages/compaction/compaction/src/types.ts:82`](../packages/compaction/compaction/src/types.ts)
++来源：[`packages/compaction/compaction/src/types.ts:84`](../packages/compaction/compaction/src/types.ts)
+ 
+ <a id="compactionstart--log-only"></a>
+ 
+@@ -382,8 +382,10 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
+   | {
+     /** Complete provider output before the backend's safe summary projection. */
+     rawOutput: ContentBlock[]
+-    /** Identifies exactly one call through this context's `ctx.llm.stream()`. */
++    /** Identifies direct calls through this context's `ctx.llm.stream()`. */
+     llmStreamCall: true
++    /** Exact number of direct stream calls; absent legacy events mean one. */
++    llmStreamCallCount?: number
+   }
+   | {
+     /** Optional complete output from an unmarked template, remote, or other summarizer. */
+diff --git a/docs/subsystems/compaction.i18n.yaml b/docs/subsystems/compaction.i18n.yaml
+index c6b7cd2682e3992ebd36a3b823d5bcc57678b035..cfb0945221a3b7f630843e2fa73e1979faa7321d 100644
+--- a/docs/subsystems/compaction.i18n.yaml
++++ b/docs/subsystems/compaction.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write docs/subsystems/compaction.md
+-compaction.md: 6a8743feac0481626f171e3926c7f924508db54a
+-compaction.zh.md: 1b8d2a2d1e47067583593ca3fae039bc78ed06f9
++compaction.md: 048e5cc45b170c4446dad3ec138f9d61e12da414
++compaction.zh.md: debab485c294a16e57fa71a9b7923b43b1287036
+diff --git a/docs/subsystems/compaction.md b/docs/subsystems/compaction.md
+index 6a8743feac0481626f171e3926c7f924508db54a..048e5cc45b170c4446dad3ec138f9d61e12da414 100644
+--- a/docs/subsystems/compaction.md
++++ b/docs/subsystems/compaction.md
+@@ -117,6 +117,39 @@ interface PruneResult {
+ }
+ ```
+ 
++### `CompactionTelemetry`
++
++```ts type-equiv
++/** Process-local, content-free compaction diagnostic metadata. */
++interface CompactionTelemetry {
++  readonly kind: 'prune' | 'range' | 'summary' | 'convergence'
++  readonly status: 'succeeded' | 'failed' | 'skipped'
++  readonly sessionId: string
++  readonly trigger?: 'explicit' | 'pressure' | 'context-overflow'
++  readonly provider?: string
++  readonly model?: string
++  readonly contextWindow?: number
++  readonly configuredMaxTokens?: number
++  readonly effectiveMaxTokens?: number
++  readonly safetyMarginTokens?: number
++  readonly inputTokens?: number
++  readonly outputTokens?: number
++  readonly beforeTokens?: number
++  readonly afterTokens?: number
++  readonly thresholdTokens?: number
++  readonly retainTokens?: number
++  readonly prunedResults?: number
++  readonly prunedChars?: number
++  readonly rangeStart?: number
++  readonly rangeEnd?: number
++  readonly rangeNodes?: number
++  readonly streamCalls?: number
++  readonly repairAttempts?: number
++  readonly durationMs?: number
++  readonly errorCode?: string
++}
++```
++
+ <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ 
+ <a id="cordis-surface"></a>
+@@ -235,4 +268,25 @@ pruneSession(session: Session): PruneResult
+ Types: [ContentBlock](llm-streaming.md) · [Session](session.md)
+ 
+ Source: [`packages/compaction/compaction-tool-result-pruner/src/index.ts`](../../packages/compaction/compaction-tool-result-pruner/src/index.ts)
++
++<a id="compaction-events"></a>
++
++### `compaction/*` events
++
++<a id="compactiontelemetry--emit"></a>
++
++#### `compaction/telemetry` — emit
++
++Bounded process-local diagnostics; never includes model-visible content.
++
++```ts cordis-catalog
++/**
++ * Bounded process-local diagnostics; never includes model-visible content.
++ * @mode emit
++ * @param event - content-free compaction measurements and stable outcome classification.
++ */
++'compaction/telemetry'(event: Readonly<CompactionTelemetry>): void
++```
++
++Source: [`packages/compaction/compaction-basic/src/types.ts`](../../packages/compaction/compaction-basic/src/types.ts)
+ <!-- END GENERATED cordis-surface -->
+diff --git a/docs/subsystems/compaction.zh.md b/docs/subsystems/compaction.zh.md
+index 1b8d2a2d1e47067583593ca3fae039bc78ed06f9..debab485c294a16e57fa71a9b7923b43b1287036 100644
+--- a/docs/subsystems/compaction.zh.md
++++ b/docs/subsystems/compaction.zh.md
+@@ -117,6 +117,39 @@ interface PruneResult {
+ }
+ ```
+ 
++### `CompactionTelemetry`
++
++```ts type-equiv
++/** Process-local, content-free compaction diagnostic metadata. */
++interface CompactionTelemetry {
++  readonly kind: 'prune' | 'range' | 'summary' | 'convergence'
++  readonly status: 'succeeded' | 'failed' | 'skipped'
++  readonly sessionId: string
++  readonly trigger?: 'explicit' | 'pressure' | 'context-overflow'
++  readonly provider?: string
++  readonly model?: string
++  readonly contextWindow?: number
++  readonly configuredMaxTokens?: number
++  readonly effectiveMaxTokens?: number
++  readonly safetyMarginTokens?: number
++  readonly inputTokens?: number
++  readonly outputTokens?: number
++  readonly beforeTokens?: number
++  readonly afterTokens?: number
++  readonly thresholdTokens?: number
++  readonly retainTokens?: number
++  readonly prunedResults?: number
++  readonly prunedChars?: number
++  readonly rangeStart?: number
++  readonly rangeEnd?: number
++  readonly rangeNodes?: number
++  readonly streamCalls?: number
++  readonly repairAttempts?: number
++  readonly durationMs?: number
++  readonly errorCode?: string
++}
++```
++
+ <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ 
+ <a id="cordis-surface"></a>
+@@ -235,4 +268,25 @@ pruneSession(session: Session): PruneResult
+ Types: [ContentBlock](llm-streaming.zh.md) · [Session](session.zh.md)
+ 
+ Source: [`packages/compaction/compaction-tool-result-pruner/src/index.ts`](../../packages/compaction/compaction-tool-result-pruner/src/index.ts)
++
++<a id="compaction-events"></a>
++
++### `compaction/*` events
++
++<a id="compactiontelemetry--emit"></a>
++
++#### `compaction/telemetry` — emit
++
++Bounded process-local diagnostics; never includes model-visible content.
++
++```ts cordis-catalog
++/**
++ * Bounded process-local diagnostics; never includes model-visible content.
++ * @mode emit
++ * @param event - content-free compaction measurements and stable outcome classification.
++ */
++'compaction/telemetry'(event: Readonly<CompactionTelemetry>): void
++```
++
++Source: [`packages/compaction/compaction-basic/src/types.ts`](../../packages/compaction/compaction-basic/src/types.ts)
+ <!-- END GENERATED cordis-surface -->
+diff --git a/docs/subsystems/token-meter.i18n.yaml b/docs/subsystems/token-meter.i18n.yaml
+index 9c36d99ef58dfb798d7101641a4d88a85cf82fb5..f008279e3057b57db92cb4d7b5e16586c76b93dd 100644
+--- a/docs/subsystems/token-meter.i18n.yaml
++++ b/docs/subsystems/token-meter.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write docs/subsystems/token-meter.md
+-token-meter.md: 8accb9cf9f0b97ee7684e327da336a31943ff49e
+-token-meter.zh.md: 6c149ec3f225a7012ca8d8d2312835663917b5d2
++token-meter.md: aa36e2ce0727304e1f4f87ea894efc26b9a72480
++token-meter.zh.md: c021f5eaa26d35e8be8287691c7694c7e4e563b6
+diff --git a/docs/subsystems/token-meter.md b/docs/subsystems/token-meter.md
+index 8accb9cf9f0b97ee7684e327da336a31943ff49e..aa36e2ce0727304e1f4f87ea894efc26b9a72480 100644
+--- a/docs/subsystems/token-meter.md
++++ b/docs/subsystems/token-meter.md
+@@ -53,6 +53,17 @@ interface TokenSurfaceNode {
+ 
+ Surface order is authoritative; replacement nodes can have higher durable seqs than later positional nodes. The snapshot is immutable and does not grow when the underlying replay fold advances.
+ 
++### `TokenRequestEstimateInput`
++
++```ts type-equiv
++/** Exact model-visible request, priced under its actual route when supplied. */
++interface TokenRequestEstimateInput {
++  readonly tools?: readonly ToolSchema[]
++  readonly messages: readonly Message[]
++  readonly route?: { readonly provider: string; readonly model: string }
++}
++```
++
+ <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ 
+ <a id="cordis-surface"></a>
+@@ -98,6 +109,14 @@ measure(session: Session, requestHeader?: EpochHeader): TokenMeasurement
+  * @returns content and role-framing tokens under the fixed service heuristic.
+  */
+ estimateMessage(message: Message): number
++
++/**
++ * Heuristically price one exact model-visible request with the same fixed
++ * estimator used by durable pressure measurement.
++ * @param input - exact system, tool, and ordered message envelope.
++ * @returns total estimated request input tokens.
++ */
++estimateRequest(input: TokenRequestEstimateInput): number
+ ```
+ 
+ Types: [EpochHeader](session.md) · [Message](llm-streaming.md) · [Session](session.md)
+diff --git a/docs/subsystems/token-meter.zh.md b/docs/subsystems/token-meter.zh.md
+index 6c149ec3f225a7012ca8d8d2312835663917b5d2..c021f5eaa26d35e8be8287691c7694c7e4e563b6 100644
+--- a/docs/subsystems/token-meter.zh.md
++++ b/docs/subsystems/token-meter.zh.md
+@@ -53,6 +53,17 @@ interface TokenSurfaceNode {
+ 
+ 表层顺序具有权威性；替换节点的持久 seq 可能高于位置排在其后的节点。该快照不可变，不会随底层回放折叠推进而增长。
+ 
++### `TokenRequestEstimateInput`
++
++```ts type-equiv
++/** Exact model-visible request, priced under its actual route when supplied. */
++interface TokenRequestEstimateInput {
++  readonly tools?: readonly ToolSchema[]
++  readonly messages: readonly Message[]
++  readonly route?: { readonly provider: string; readonly model: string }
++}
++```
++
+ <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ 
+ <a id="cordis-surface"></a>
+@@ -98,6 +109,14 @@ measure(session: Session, requestHeader?: EpochHeader): TokenMeasurement
+  * @returns content and role-framing tokens under the fixed service heuristic.
+  */
+ estimateMessage(message: Message): number
++
++/**
++ * Heuristically price one exact model-visible request with the same fixed
++ * estimator used by durable pressure measurement.
++ * @param input - exact system, tool, and ordered message envelope.
++ * @returns total estimated request input tokens.
++ */
++estimateRequest(input: TokenRequestEstimateInput): number
+ ```
+ 
+ Types: [EpochHeader](session.zh.md) · [Message](llm-streaming.zh.md) · [Session](session.zh.md)
+diff --git a/packages/compaction/compaction-basic/README.i18n.yaml b/packages/compaction/compaction-basic/README.i18n.yaml
+index 628c41342a29ea74635ebab627654acb861f5086..0be6ec975ceccb45feecb9cc4cf4c9dc4a409de1 100644
+--- a/packages/compaction/compaction-basic/README.i18n.yaml
++++ b/packages/compaction/compaction-basic/README.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write packages/compaction/compaction-basic/README.md
+-README.md: f4045f99f55ba77a1f3741717141baa52d94d742
+-README.zh.md: f8d7f62165ab63215f225550dbc5916bfe7942d6
++README.md: 1511948b19658a72e1083064bcaa047dc83fac05
++README.zh.md: 9699898372aa908039a43255d5a6513ec3eb56f6
+diff --git a/packages/compaction/compaction-basic/README.md b/packages/compaction/compaction-basic/README.md
+index f4045f99f55ba77a1f3741717141baa52d94d742..1511948b19658a72e1083064bcaa047dc83fac05 100644
+--- a/packages/compaction/compaction-basic/README.md
++++ b/packages/compaction/compaction-basic/README.md
+@@ -136,6 +136,8 @@ The transaction validates the surface span and the durable lock, appends `compac
+ | [`src/types.ts`](src/types.ts) | `BasicCompactionConfig` and resolved policy vocabulary |
+ | — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
+ 
++Summary fitting uses the independently resolved summary model and the complete request estimate, including its output reserve. It selects the largest fitting balanced older range and rejects known overflow before dispatch. Checkpoints require the structured continuity sections and allow one bounded repair. Telemetry carries counts, timing and stable error codes without conversation content. The native V3 system head is included once in summary history.
++
+ </details>
+ 
+ -----
+diff --git a/packages/compaction/compaction-basic/README.zh.md b/packages/compaction/compaction-basic/README.zh.md
+index f8d7f62165ab63215f225550dbc5916bfe7942d6..9699898372aa908039a43255d5a6513ec3eb56f6 100644
+--- a/packages/compaction/compaction-basic/README.zh.md
++++ b/packages/compaction/compaction-basic/README.zh.md
+@@ -136,6 +136,8 @@ kind: "package-reference"
+ | [`src/types.ts`](src/types.ts) | `BasicCompactionConfig` 与已解析策略词汇 |
+ | — | 不发布运行时不变式伴生入口；持久标记对可在会话日志中观察。 |
+ 
++摘要范围拟合使用独立解析的摘要模型及完整请求估算，并预留输出容量。它选择能容纳的最大平衡旧历史范围，在发送之前拒绝已知溢出。检查点要求结构化连续性章节，最多允许一次有界修复。遥测只携带计数、耗时和稳定错误码，不含对话内容。原生 V3 系统头在摘要历史中只出现一次。
++
+ </details>
+ 
+ -----
 diff --git a/packages/compaction/compaction-basic/src/index.ts b/packages/compaction/compaction-basic/src/index.ts
-index 7a6ce3daba..de3b93542a 100644
+index 7a6ce3dabae76f9545ce9ad53815613084c553c7..a06e68cd0d3db892f9c91a4c0cfb46cd9a29f17f 100644
 --- a/packages/compaction/compaction-basic/src/index.ts
 +++ b/packages/compaction/compaction-basic/src/index.ts
 @@ -26,9 +26,16 @@ import {
@@ -152,7 +508,7 @@ index 7a6ce3daba..de3b93542a 100644
              agent,
              {
                owner: null,
-@@ -427,6 +469,111 @@ export class BasicCompactionEngine extends CompactionEngine {
+@@ -427,6 +469,112 @@ export class BasicCompactionEngine extends CompactionEngine {
        summarize: (input, owner, abort) => this.summarize(input, owner, abort),
      }
    }
@@ -173,7 +529,8 @@ index 7a6ce3daba..de3b93542a 100644
 +  ): Promise<{ start: SessionSeq; end: SessionSeq }> {
 +    // A subclass replacing the documented summarizer hook owns its request
 +    // shape and capacity policy; never fit it using the stock prompt envelope.
-+    if (Object.getPrototypeOf(this)?.summarize !== BasicCompactionEngine.prototype.summarize) {
++    const prototype = Object.getPrototypeOf(this) as { summarize?: unknown } | null
++    if (prototype?.summarize !== BasicCompactionEngine.prototype.summarize) {
 +      return { start, end }
 +    }
 +    try {
@@ -265,10 +622,10 @@ index 7a6ce3daba..de3b93542a 100644
  
  export default BasicCompactionEngine
 diff --git a/packages/compaction/compaction-basic/src/region.ts b/packages/compaction/compaction-basic/src/region.ts
-index c639814ce7..b50ba1642e 100644
+index 8bdecee0cf44ccce769b8702e597b3f50499c3fe..034968db9015431cf2adc9df200fd715ad3051b5 100644
 --- a/packages/compaction/compaction-basic/src/region.ts
 +++ b/packages/compaction/compaction-basic/src/region.ts
-@@ -135,6 +135,44 @@ export function selectCompactableRange(
+@@ -153,6 +153,44 @@ export function selectCompactableRange(
    return { start: first, end: cutoff }
  }
  
@@ -313,7 +670,7 @@ index c639814ce7..b50ba1642e 100644
  /**
   * Run the single compaction transaction over one selected positional span.
   * Selection and validation are read-only. Idle/log validation and
-@@ -452,7 +490,13 @@ function commitCompactionBody(
+@@ -470,7 +508,13 @@ function commitCompactionBody(
      checkpointMessage,
    } = summarized
    const callProvenance = summarized.llmStreamCall === true
@@ -328,7 +685,7 @@ index c639814ce7..b50ba1642e 100644
      : summarized.rawOutput === undefined ? {} : { rawOutput: summarized.rawOutput }
    const summaryEvent = session.append('compaction/summary', {
      compactionId: startEvent.data.compactionId,
-@@ -505,7 +549,7 @@ function completeCompaction(
+@@ -525,7 +569,7 @@ function completeCompaction(
   * @param shadowedSeqs - the surface-node seqs, in order, being compacted.
   * @returns the replayed conversation prefix to condense.
   */
@@ -338,7 +695,7 @@ index c639814ce7..b50ba1642e 100644
    shadowedSeqs: readonly SessionSeq[],
  ): SummarizationInput {
 diff --git a/packages/compaction/compaction-basic/src/summarizer.ts b/packages/compaction/compaction-basic/src/summarizer.ts
-index e77d9ec0a0..d6ce4e26da 100644
+index 5fe259a756d57e604d1bacd6d6957ca8e7ff6c29..a21faec99275265c32d13d15a30c49dda4812e8e 100644
 --- a/packages/compaction/compaction-basic/src/summarizer.ts
 +++ b/packages/compaction/compaction-basic/src/summarizer.ts
 @@ -1,15 +1,27 @@
@@ -372,7 +729,7 @@ index e77d9ec0a0..d6ce4e26da 100644
  
  interface SummaryConfig {
    readonly summarizationProvider: string
-@@ -17,70 +29,107 @@ interface SummaryConfig {
+@@ -17,68 +29,108 @@ interface SummaryConfig {
    readonly maxTokens: number
  }
  
@@ -381,11 +738,13 @@ index e77d9ec0a0..d6ce4e26da 100644
 +
 +/** Stable fail-closed classification for a known-invalid summary request. */
 +export class SummaryCapacityError extends Error {
++  /** Stable error classification for callers and content-free telemetry. */
 +  readonly code = 'COMPACTION_SUMMARY_CAPACITY'
 +}
 +
 +/** Stable fail-closed classification for an unusable checkpoint. */
 +export class SummaryValidationError extends Error {
++  /** Stable error classification for callers and content-free telemetry. */
 +  readonly code = 'COMPACTION_SUMMARY_INVALID'
 +}
 +
@@ -512,15 +871,13 @@ index e77d9ec0a0..d6ce4e26da 100644
 - */
 +/** The exact replayed conversation prefix condensed by the summarizer. */
  export interface SummarizationInput {
--  /** The conversation's own system prompt, reused for prefix-cache alignment; absent for a system-less request. */
-   readonly system?: string
 -  /** The conversation's tool schemas, reused for prefix-cache alignment; absent when the request carried none. */
    readonly tools?: readonly ToolSchema[]
--  /** The shadowed region, in surface order, that precedes the compaction instruction. */
+-  /** The derived system head, when present, followed by the shadowed region in surface order. */
    readonly messages: readonly Message[]
  }
  
-@@ -90,41 +139,23 @@ export type SummaryResult = {
+@@ -88,41 +140,23 @@ export type SummaryResult = {
    provider: string
    model: string
    maxTokens?: number
@@ -567,7 +924,7 @@ index e77d9ec0a0..d6ce4e26da 100644
    const latest = agent.session.requestHeader()?.config
    const configured = config.summarizationProvider.length === 0
      ? undefined
-@@ -137,26 +168,192 @@ export async function summarizeWithLlm(
+@@ -135,25 +169,220 @@ export async function summarizeWithLlm(
      : undefined
    const target = configured ?? latest ?? agentTarget
    if (target === undefined) {
@@ -588,7 +945,14 @@ index e77d9ec0a0..d6ce4e26da 100644
 -    }),
 -  ]
 -  const options: GenerateOptions = {
-+/** Resolve and validate the one adapter-owned summary capacity authority. */
++/**
++ * Resolve and validate the one adapter-owned summary capacity authority.
++ * @param ctx - composition with the LLM and token-meter services.
++ * @param config - resolved summary route and output limit.
++ * @param agent - owner supplying the latest durable request route when configuration omits it.
++ * @param signal - cancellation of model-capacity resolution.
++ * @returns the validated route, output cap and remaining input budget.
++ */
 +export async function resolveSummaryCapacity(
 +  ctx: Context,
 +  config: SummaryConfig,
@@ -629,7 +993,14 @@ index e77d9ec0a0..d6ce4e26da 100644
 +  })
 +}
 +
-+/** Build and price the exact request sent for one summary attempt. */
++/**
++ * Build and price the exact request sent for one summary attempt.
++ * @param meter - shared estimator with route image/file pricing.
++ * @param input - exact history and tools to summarize.
++ * @param instruction - trailing summary or repair instruction.
++ * @param route - resolved summary model used for request pricing.
++ * @returns estimated tokens for the complete summary request.
++ */
 +export function estimateSummaryRequest(
 +  meter: TokenMeter,
 +  input: SummarizationInput,
@@ -638,13 +1009,16 @@ index e77d9ec0a0..d6ce4e26da 100644
 +): number {
 +  return meter.estimateRequest({
 +    ...route === undefined ? {} : { route },
-+    ...input.system === undefined ? {} : { system: input.system },
 +    ...input.tools === undefined ? {} : { tools: input.tools },
 +    messages: [...input.messages, instructionMessage(instruction)],
 +  })
 +}
 +
-+/** Emit diagnostics defensively so an observer can never break compaction. */
++/**
++ * Emit diagnostics defensively so an observer can never break compaction.
++ * @param ctx - event publication context.
++ * @param event - content-free diagnostic snapshot; observer failures are contained.
++ */
 +export function emitCompactionTelemetry(ctx: Context, event: CompactionTelemetry): void {
 +  try {
 +    ctx.emit('compaction/telemetry', Object.freeze({ ...event }))
@@ -653,7 +1027,15 @@ index e77d9ec0a0..d6ce4e26da 100644
 +  }
 +}
 +
-+/** Run the cache-reusing summary call with one bounded structural repair. */
++/**
++ * Run the cache-reusing summary call with one bounded structural repair.
++ * @param ctx - composition with the LLM and token-meter services.
++ * @param config - resolved summary route and output limit.
++ * @param input - exact prefix and selected history, including any system messages.
++ * @param agent - owner of the summary route and direct-call attribution.
++ * @param signal - cancellation forwarded into every summary attempt.
++ * @returns validated summary with call-count provenance and aggregate usage when known.
++ */
 +export async function summarizeWithLlm(
 +  ctx: Context,
 +  config: SummaryConfig,
@@ -735,7 +1117,11 @@ index e77d9ec0a0..d6ce4e26da 100644
 +  }
 +}
 +
-+/** Wrap raw summary blocks in the durable checkpoint framing. */
++/**
++ * Wrap raw summary blocks in the durable checkpoint framing.
++ * @param summary - validated raw summary content.
++ * @returns framed blocks for the replacement user message.
++ */
 +export function frameSummary(summary: readonly ContentBlock[]): ContentBlock[] {
 +  return [
 +    { type: 'text', text: `${CHECKPOINT_PREAMBLE}\n\n${SUMMARY_OPEN_TAG}` },
@@ -765,14 +1151,13 @@ index e77d9ec0a0..d6ce4e26da 100644
 +    provider: capacity.provider,
 +    model: capacity.model,
 +    messages: [...input.messages, instructionMessage(instruction)],
-     ...input.system === undefined ? {} : { system: input.system },
      ...input.tools === undefined ? {} : { tools: [...input.tools] },
 -    maxTokens: config.maxTokens,
 +    maxTokens: capacity.effectiveMaxTokens,
      sessionId: agent.session.id,
      purpose: 'compaction',
      ...signal === undefined ? {} : { signal },
-@@ -164,34 +361,62 @@ export async function summarizeWithLlm(
+@@ -161,34 +390,62 @@ export async function summarizeWithLlm(
    for await (const chunk of ctx.llm.stream(options)) assembler.push(chunk)
    const error = finishError(assembler.finish)
    if (error !== undefined) throw error
@@ -855,7 +1240,7 @@ index e77d9ec0a0..d6ce4e26da 100644
  }
  
  /** Map a terminal summarization finish to its fail-closed error. */
-@@ -213,7 +438,7 @@ function finishError(finish: FinishReason): Error | undefined {
+@@ -210,7 +467,7 @@ function finishError(finish: FinishReason): Error | undefined {
    }
  }
  
@@ -864,7 +1249,7 @@ index e77d9ec0a0..d6ce4e26da 100644
  function summaryText(
    blocks: readonly ContentBlock[],
  ): Array<Extract<ContentBlock, { type: 'text' }>> {
-@@ -222,3 +447,38 @@ function summaryText(
+@@ -219,3 +476,38 @@ function summaryText(
    }
    return blocks.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
  }
@@ -904,10 +1289,10 @@ index e77d9ec0a0..d6ce4e26da 100644
 +  return 'COMPACTION_SUMMARY_FAILED'
 +}
 diff --git a/packages/compaction/compaction-basic/src/types.ts b/packages/compaction/compaction-basic/src/types.ts
-index 05fc354573..70d7f96956 100644
+index 05fc35457337b49d466e1516a7094c9a655118e2..ba8fc2bf128b66c44cf08a684f353dd5d3d19121 100644
 --- a/packages/compaction/compaction-basic/src/types.ts
 +++ b/packages/compaction/compaction-basic/src/types.ts
-@@ -6,6 +6,42 @@
+@@ -6,6 +6,46 @@
  
  import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
  
@@ -942,7 +1327,11 @@ index 05fc354573..70d7f96956 100644
 +
 +declare module '@deepseek-ai/cordis' {
 +  interface Events {
-+    /** Bounded process-local diagnostics; never includes model-visible content. */
++    /**
++     * Bounded process-local diagnostics; never includes model-visible content.
++     * @mode emit
++     * @param event - content-free compaction measurements and stable outcome classification.
++     */
 +    'compaction/telemetry'(event: Readonly<CompactionTelemetry>): void
 +  }
 +}
@@ -952,10 +1341,10 @@ index 05fc354573..70d7f96956 100644
    /** Compact at this fraction of the model's context window. Defaults to `0.8`. */
 diff --git a/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts b/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts
 new file mode 100644
-index 0000000000..ca28af76d7
+index 0000000000000000000000000000000000000000..1f16469f7b35368fda478ab4b9211bde37ca54e9
 --- /dev/null
 +++ b/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,346 @@
 +import { describe, expect, it } from 'vitest'
 +import { Context } from '@deepseek-ai/cordis'
 +import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
@@ -964,6 +1353,7 @@ index 0000000000..ca28af76d7
 +import {
 +  ToolCallId,
 +  createMessage,
++  createSystemMessage,
 +  createToolResultMessage,
 +  createUserMessage,
 +  LlmAdapter,
@@ -976,7 +1366,7 @@ index 0000000000..ca28af76d7
 +  StreamChunk,
 +  TokenUsage,
 +} from '@deepseek-ai/dsh-llm'
-+import { Session, SessionId, deriveEventMessage } from '@deepseek-ai/dsh-session'
++import { Session, SessionId } from '@deepseek-ai/dsh-session'
 +import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 +import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 +import type { LlmImageRequestPricing } from '@deepseek-ai/dsh-llm'
@@ -1014,13 +1404,13 @@ index 0000000000..ca28af76d7
 +class CapacityAdapter extends LlmAdapter {
 +  readonly calls: GenerateOptions[] = []
 +  readonly outputs: ContentBlock[][]
-+  readonly usage: TokenUsage | readonly (TokenUsage | undefined)[]
++  readonly usage: TokenUsage | (TokenUsage | undefined)[]
 +
 +  constructor(
 +    readonly contextWindow: number,
 +    readonly defaultMaxTokens: number,
 +    outputs: ContentBlock[][] = [[{ type: 'text', text: checkpoint() }]],
-+    usage: TokenUsage | readonly (TokenUsage | undefined)[] = { inputTokens: 10, outputTokens: 5 },
++    usage: TokenUsage | (TokenUsage | undefined)[] = { inputTokens: 10, outputTokens: 5 },
 +  ) {
 +    super()
 +    this.outputs = [...outputs]
@@ -1046,7 +1436,7 @@ index 0000000000..ca28af76d7
 +      else if (block.type === 'reasoning') yield { type: 'reasoning-delta', index, text: block.text }
 +      else yield { type: 'block-end', index, block }
 +    }
-+    const usage = Array.isArray(this.usage) ? this.usage[this.calls.length - 1] : this.usage as TokenUsage
++    const usage = Array.isArray(this.usage) ? this.usage[this.calls.length - 1] : this.usage
 +    if (usage !== undefined) yield { type: 'usage', usage }
 +    yield { type: 'finish', reason: { kind: 'stop' } }
 +  }
@@ -1074,10 +1464,12 @@ index 0000000000..ca28af76d7
 +function openSession(id: string, texts: readonly string[], system?: string): Session {
 +  const session = Session.create(SessionId(id))
 +  session.append('turn/start', { turn: 1 })
++  if (system !== undefined) session.append('system/message', {
++    turn: 1, step: 1, message: createSystemMessage(system, '@deepseek-ai/dsh-system-prompt'),
++  }, { surfaceOp: 'append' })
 +  session.append('request/header', {
 +    header: {
 +      config: { provider: 'route', model: 'route' },
-+      ...system === undefined ? {} : { system },
 +    },
 +    reason: 'initial',
 +  })
@@ -1091,7 +1483,7 @@ index 0000000000..ca28af76d7
 +}
 +
 +describe('capacity-safe stock compaction', () => {
-+  it.each(['user', 'nested-tool'] as const)('prices %s images under the independently selected summary route', async kind => {
++  it.each(['user', 'nested-tool'] as const)('prices %s images under the independently selected summary route', async (kind) => {
 +    class ImageCapacityAdapter extends CapacityAdapter {
 +      override imageRequestPricing(): LlmImageRequestPricing {
 +        return { priceImages: images => images.map(() => ({ visualTokens: 20_000, text: 'image' })) }
@@ -1120,8 +1512,7 @@ index 0000000000..ca28af76d7
 +    const adapter = new CapacityAdapter(32_000, 512)
 +    const { meter } = context(adapter)
 +    const session = openSession('request-estimate', ['hello'], 'system')
-+    const message = deriveEventMessage(session.snapshotEvents().at(-1)!)!
-+    expect(meter.estimateRequest({ system: 'system', messages: [message] }))
++    expect(meter.estimateRequest({ messages: session.deriveMessages() }))
 +      .toBe(meter.measure(session).totalTokens)
 +  })
 +
@@ -1196,7 +1587,9 @@ index 0000000000..ca28af76d7
 +    const result = await engine.run({ messages: [createUserMessage({
 +      content: [{ type: 'text', text: 'history' }], source: { kind: 'user' },
 +    })] }, owner(openSession('repair-missing-bucket', ['history'])))
-+    expect(result).toMatchObject({ llmStreamCallCount: 2, usage: { inputTokens: 20, outputTokens: 10, cacheWriteTokens: 0, totalTokens: 36 } })
++    expect(result).toMatchObject({
++      llmStreamCallCount: 2, usage: { inputTokens: 20, outputTokens: 10, cacheWriteTokens: 0, totalTokens: 36 },
++    })
 +    expect((result as { usage: TokenUsage }).usage).not.toHaveProperty('cacheReadTokens')
 +  })
 +
@@ -1288,7 +1681,7 @@ index 0000000000..ca28af76d7
 +    const adapter = new CapacityAdapter(32_768, 512)
 +    const { ctx } = context(adapter)
 +    const telemetry: CompactionTelemetry[] = []
-+    ctx.on('compaction/telemetry', event => { telemetry.push(event) })
++    ctx.on('compaction/telemetry', (event) => { telemetry.push(event) })
 +    void new BasicCompactionEngine(ctx, { auto: false })
 +    const session = openSession('service-proxy', ['history '.repeat(500)])
 +    const [start] = session.surface.nodes
@@ -1299,7 +1692,7 @@ index 0000000000..ca28af76d7
 +  })
 +})
 diff --git a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
-index e6ed88274b..9f2b872190 100644
+index bd6a48af66bef11cb2313e6a2f475886619e1563..ba755c4bad2d658205c7af4b72df12d03db042be 100644
 --- a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
 +++ b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
 @@ -32,6 +32,32 @@ import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
@@ -1335,7 +1728,7 @@ index e6ed88274b..9f2b872190 100644
  class ContextAdapter extends LlmAdapter {
    constructor(private readonly contextWindow: number) {
      super()
-@@ -1127,6 +1153,16 @@ class ScriptedAdapter extends LlmAdapter {
+@@ -1208,6 +1234,16 @@ class ScriptedAdapter extends LlmAdapter {
      super()
    }
  
@@ -1352,7 +1745,7 @@ index e6ed88274b..9f2b872190 100644
    override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
      this.lastOptions = options
      for (const [index, block] of this.blocks.entries()) {
-@@ -1171,7 +1207,10 @@ async function summarizerHarness(
+@@ -1252,7 +1288,10 @@ async function summarizerHarness(
    await ctx.plugin(LlmRuntime)
    await ctx.plugin(SessionProjectionRegistry)
    void new TokenMeter(ctx)
@@ -1364,7 +1757,16 @@ index e6ed88274b..9f2b872190 100644
    ctx.llm.registerAdapter([model], adapter)
    const compact = new ExposedCompactionEngine(ctx, config)
    return { ctx, adapter, compact }
-@@ -1188,9 +1227,10 @@ describe('default one-shot summarizer', () => {
+@@ -1261,7 +1300,7 @@ async function summarizerHarness(
+ describe('default one-shot summarizer', () => {
+   it.each([undefined, '', 'SYSTEM HEAD\n精确前缀\n'])('preserves the routed prefix through region summarization with system %j', async (system) => {
+     const { adapter, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }])
+-    const session = conversation(3, undefined, system)
++    const session = conversation(3, 'prefix history '.repeat(80), system)
+     const tools = [{ name: 'do_thing', description: 'd', parameters: { type: 'object' } }]
+     session.append('request/header', {
+       header: { config: { provider: MODEL, model: MODEL }, tools },
+@@ -1290,9 +1329,10 @@ describe('default one-shot summarizer', () => {
    })
  
    it('uses configured model/default cap, forwards cancellation, and keeps only safe text', async () => {
@@ -1376,7 +1778,7 @@ index e6ed88274b..9f2b872190 100644
        { type: 'tool-call', id: ToolCallId('unexpected'), name: 'x', arguments: '{}' },
      ], undefined, MODEL, {
        auto: false,
-@@ -1203,13 +1243,14 @@ describe('default one-shot summarizer', () => {
+@@ -1305,13 +1345,14 @@ describe('default one-shot summarizer', () => {
      const output = await compact.runSummarize(promptInput('transcript'), agent(session, 'fallback'), SIGNAL)
  
      expect(output).toEqual({
@@ -1393,7 +1795,7 @@ index e6ed88274b..9f2b872190 100644
        provider: MODEL,
        model: MODEL,
        maxTokens: 321,
-@@ -1224,7 +1265,8 @@ describe('default one-shot summarizer', () => {
+@@ -1326,7 +1367,8 @@ describe('default one-shot summarizer', () => {
        purpose: 'compaction',
      })
      const instruction = adapter.lastOptions?.messages.at(-1)?.content[0]
@@ -1403,8 +1805,8 @@ index e6ed88274b..9f2b872190 100644
    })
  
    it('replays the conversation prefix and appends the instruction as the final message', async () => {
-@@ -1258,9 +1300,9 @@ describe('default one-shot summarizer', () => {
-     expect(messages[0]).toEqual(prefix)
+@@ -1360,9 +1402,9 @@ describe('default one-shot summarizer', () => {
+     expect(messages.slice(0, -1)).toEqual([system, prefix])
      const last = messages.at(-1)?.content[0]
      const lastText = last?.type === 'text' ? last.text : ''
 -    expect(lastText).toContain('Write concise English engineering prose.')
@@ -1416,7 +1818,7 @@ index e6ed88274b..9f2b872190 100644
    })
  
    it('applies the routed model policy without changing the replayed prefix', async () => {
-@@ -1280,7 +1322,7 @@ describe('default one-shot summarizer', () => {
+@@ -1382,7 +1424,7 @@ describe('default one-shot summarizer', () => {
          }],
        },
      )
@@ -1425,7 +1827,7 @@ index e6ed88274b..9f2b872190 100644
      ctx.llm.registerAdapter(['policy-summary'], policyAdapter)
      const prefix: Message = createUserMessage({
        content: [{ type: 'text', text: 'warm prefix' }],
-@@ -1322,7 +1364,8 @@ describe('default one-shot summarizer', () => {
+@@ -1424,7 +1466,8 @@ describe('default one-shot summarizer', () => {
  
    it('records the model actually dispatched after one-shot stream routing', async () => {
      const { ctx, compact } = await summarizerHarness([{ type: 'text', text: 'unused' }])
@@ -1435,7 +1837,7 @@ index e6ed88274b..9f2b872190 100644
      ctx.llm.registerAdapter(['routed-summary-provider'], routedAdapter)
      ctx.on('llm/stream', (options, next) => {
        options.provider = 'routed-summary-provider'
-@@ -1334,7 +1377,7 @@ describe('default one-shot summarizer', () => {
+@@ -1436,7 +1479,7 @@ describe('default one-shot summarizer', () => {
      const nodes = session.surface.nodes
      await compact.compactRegion(nodes[0]!, nodes[3]!, agent(session, MODEL), SIGNAL)
      expect(session.snapshotEvents().findLast(event => event.type === 'compaction/summary')?.data).toMatchObject({
@@ -1444,7 +1846,7 @@ index e6ed88274b..9f2b872190 100644
        llmStreamCall: true,
        provider: 'routed-summary-provider',
        model: 'routed-summary-model',
-@@ -1402,7 +1445,7 @@ describe('default one-shot summarizer', () => {
+@@ -1504,7 +1547,7 @@ describe('default one-shot summarizer', () => {
    it('rejects empty or reasoning-only successful output', async () => {
      const { compact } = await summarizerHarness([{ type: 'reasoning', text: 'private' }])
      await expect(compact.runSummarize(promptInput('history'), agent(conversation(1), MODEL)))
@@ -1454,10 +1856,10 @@ index e6ed88274b..9f2b872190 100644
  
    it('rejects image summary output instead of silently dropping it', async () => {
 diff --git a/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts b/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts
-index f7b44e1940..e8607a63f0 100644
+index a527226c03ff26c7a4386de531bd12faf0431e4d..12da28e6004fc992282d9efda6373148980a240d 100644
 --- a/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts
 +++ b/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts
-@@ -18,6 +18,30 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
+@@ -17,6 +17,30 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
  import * as LlmRetry from '@deepseek-ai/dsh-llm-retry'
  import { Session, SessionId, type SessionEvent, type SurfaceEvent } from '@deepseek-ai/dsh-session'
  
@@ -1488,7 +1890,7 @@ index f7b44e1940..e8607a63f0 100644
  /**
   * CBR-001 regression through the real loop. A replacement checkpoint has a high
   * log seq at the surface head and carries no tool pair, so both adjacent cuts
-@@ -92,7 +116,8 @@ class OverflowRecoveryAdapter extends LlmAdapter {
+@@ -91,7 +115,8 @@ class OverflowRecoveryAdapter extends LlmAdapter {
        provider,
        id: model,
        name: model,
@@ -1498,7 +1900,7 @@ index f7b44e1940..e8607a63f0 100644
      })
    }
  
-@@ -106,10 +131,10 @@ class OverflowRecoveryAdapter extends LlmAdapter {
+@@ -105,10 +130,10 @@ class OverflowRecoveryAdapter extends LlmAdapter {
      const trailing = options.messages.at(-1)?.content
        .map(block => (block.type === 'text' ? block.text : ''))
        .join('') ?? ''
@@ -1511,7 +1913,7 @@ index f7b44e1940..e8607a63f0 100644
        yield { type: 'finish', reason: { kind: 'stop' } }
        return
      }
-@@ -326,7 +351,7 @@ describe('context-overflow recovery across the real loop and compaction-basic',
+@@ -398,7 +423,7 @@ describe('context-overflow recovery across the real loop and compaction-basic',
        await ctx.plugin(BasicCompactionEngine, {
          thresholdRatio: 1,
          retainTokens: 100,
@@ -1520,7 +1922,7 @@ index f7b44e1940..e8607a63f0 100644
          compactionRetries: 0,
          maxOverflowRetries: 1,
        })
-@@ -349,8 +374,8 @@ describe('context-overflow recovery across the real loop and compaction-basic',
+@@ -421,8 +446,8 @@ describe('context-overflow recovery across the real loop and compaction-basic',
          const instruction = adapter.summaryRequests[0]!.messages.at(-1)?.content
            .map(block => (block.type === 'text' ? block.text : ''))
            .join('') ?? ''
@@ -1531,7 +1933,7 @@ index f7b44e1940..e8607a63f0 100644
          expect(JSON.stringify(adapter.conversationRequests[0]!.messages)).toContain('OLD HISTORY SENTINEL')
          const retry = JSON.stringify(adapter.conversationRequests[1]!.messages)
          expect(retry).toContain('RECOVERY CHECKPOINT')
-@@ -403,7 +428,7 @@ describe('context-overflow recovery across the real loop and compaction-basic',
+@@ -474,7 +499,7 @@ describe('context-overflow recovery across the real loop and compaction-basic',
      await ctx.plugin(BasicCompactionEngine, {
        thresholdRatio: 1,
        retainTokens: 100,
@@ -1540,8 +1942,46 @@ index f7b44e1940..e8607a63f0 100644
        compactionRetries: 0,
        maxOverflowRetries: 1,
      })
+diff --git a/packages/compaction/compaction/README.i18n.yaml b/packages/compaction/compaction/README.i18n.yaml
+index b2d0ceea836097dd344a3b78be465cbaeb400394..f4496f5872cdba038acbe4f581783ceb353e589f 100644
+--- a/packages/compaction/compaction/README.i18n.yaml
++++ b/packages/compaction/compaction/README.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write packages/compaction/compaction/README.md
+-README.md: 829ed373be0cf04a10b19eff3abdc431ad5b6d2b
+-README.zh.md: cf09468dcf8b5bdf58db4b83a7bed1d70b71b2e7
++README.md: 9efd59a0b515848bcc4698eac566d5bde14010d1
++README.zh.md: a0d9006d3748e333be6f3dc337f912ba47b0531c
+diff --git a/packages/compaction/compaction/README.md b/packages/compaction/compaction/README.md
+index 829ed373be0cf04a10b19eff3abdc431ad5b6d2b..9efd59a0b515848bcc4698eac566d5bde14010d1 100644
+--- a/packages/compaction/compaction/README.md
++++ b/packages/compaction/compaction/README.md
+@@ -113,6 +113,8 @@ One log-recorded lock is shared by all entry points. Tail inspection finds the l
+ 
+ The `compaction/*` events extend `SessionEventMap` (merge-extensible) via declaration merging — session events, not cordis `Events`, and all log-only. The generated [persistence log event catalog](../../../docs/persistence-catalog.md) owns the per-event payloads; `compaction/prune` documents the shadow-price protocol shared with the tool-result pruner.
+ 
++Direct summary-call provenance records `llmStreamCallCount` when a backend makes multiple calls. An absent count on an event already marked `llmStreamCall: true` means one call; unknown usage remains unknown.
++
+ </details>
+ 
+ -----
+diff --git a/packages/compaction/compaction/README.zh.md b/packages/compaction/compaction/README.zh.md
+index cf09468dcf8b5bdf58db4b83a7bed1d70b71b2e7..a0d9006d3748e333be6f3dc337f912ba47b0531c 100644
+--- a/packages/compaction/compaction/README.zh.md
++++ b/packages/compaction/compaction/README.zh.md
+@@ -113,6 +113,8 @@ kind: "package-reference"
+ 
+ `compaction/*` 事件通过 declaration merging 扩展 `SessionEventMap`（可合并扩展）——它们是会话事件，不是 cordis `Events`，且都仅写入日志。生成的[持久化日志事件目录](../../../docs/persistence-catalog.zh.md)拥有每个事件的 payload；`compaction/prune` 记录了与工具结果修剪器共享的影子价格协议。
+ 
++后端发起多次调用时，摘要直接调用来源记录 `llmStreamCallCount`。已标记 `llmStreamCall: true` 的事件若省略计数，则表示一次调用；未知用量保持未知。
++
+ </details>
+ 
+ -----
 diff --git a/packages/compaction/compaction/src/invariant.ts b/packages/compaction/compaction/src/invariant.ts
-index ce19a6670f..e44f324dd7 100644
+index ce19a6670f605dc6a6584b0fc75661127ceb1817..e44f324dd76d1702fb8af52f98db189c443cb0e3 100644
 --- a/packages/compaction/compaction/src/invariant.ts
 +++ b/packages/compaction/compaction/src/invariant.ts
 @@ -231,6 +231,13 @@ function validateCompactionEvent(
@@ -1559,7 +1999,7 @@ index ce19a6670f..e44f324dd7 100644
        kind: 'summary',
        compactionId: open.compactionId,
 diff --git a/packages/compaction/compaction/src/types.ts b/packages/compaction/compaction/src/types.ts
-index 5a7d12c1b2..cd0a9b4f23 100644
+index 5a7d12c1b21a9ed55287a1935a3f8104d30722b9..cd0a9b4f231541e9f7b4f6ca0a46739a561e8a99 100644
 --- a/packages/compaction/compaction/src/types.ts
 +++ b/packages/compaction/compaction/src/types.ts
 @@ -55,8 +55,10 @@ declare module '@deepseek-ai/dsh-session/types' {
@@ -1574,8 +2014,46 @@ index 5a7d12c1b2..cd0a9b4f23 100644
        }
        | {
          /** Optional complete output from an unmarked template, remote, or other summarizer. */
+diff --git a/packages/llm/token-meter/README.i18n.yaml b/packages/llm/token-meter/README.i18n.yaml
+index b483cfd3ecb291de4011e89840fa3a98dc2d8323..37fd7c3644e9e04f97412e66ea525cb648c3ac82 100644
+--- a/packages/llm/token-meter/README.i18n.yaml
++++ b/packages/llm/token-meter/README.i18n.yaml
+@@ -2,5 +2,5 @@
+ # side as of the last confirmed-consistent state. Both languages carry equal authority;
+ # after editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write packages/llm/token-meter/README.md
+-README.md: 4a2173a9f23e2aa0695c4368d4f9741b60bd2d25
+-README.zh.md: 23b12324fa5169d365546ef91133758692998711
++README.md: 07566be8f9aa29c7f29c16257b52d3960c6069c0
++README.zh.md: 88eacf400a88d6f69296357bbbb9ce4196d5306c
+diff --git a/packages/llm/token-meter/README.md b/packages/llm/token-meter/README.md
+index 4a2173a9f23e2aa0695c4368d4f9741b60bd2d25..07566be8f9aa29c7f29c16257b52d3960c6069c0 100644
+--- a/packages/llm/token-meter/README.md
++++ b/packages/llm/token-meter/README.md
+@@ -98,6 +98,8 @@ Each `measure()` call synchronizes the fold to the current durable tail, then re
+ 
+ `contextBreakdown` retains plain-JSON `{ seq, heuristicTokens, system }` entries in surface order and reuses the measurement plan/commit fold. Its state and surface transitions are O(current retained surface), not O(1) and not O(total historical log); replaced entries and message bodies are not retained. State version 4 invalidates scalar checkpoints and replays the log. `contextPressure` remains the scalar shadow-price consumer: replacements without adjacent claims contribute zero delta. The usage fold retains one last-sample slot because legal logs never report usage for an earlier step after a later step reports usage.
+ 
++`estimateRequest()` prices an explicit request with the same node analysis as durable pressure measurement. System messages stay in history. Route-aware image pricing and the current file-to-text projection are included, so summary fitting and actual request projection use the same accounting inputs.
++
+ </details>
+ 
+ -----
+diff --git a/packages/llm/token-meter/README.zh.md b/packages/llm/token-meter/README.zh.md
+index 23b12324fa5169d365546ef91133758692998711..88eacf400a88d6f69296357bbbb9ce4196d5306c 100644
+--- a/packages/llm/token-meter/README.zh.md
++++ b/packages/llm/token-meter/README.zh.md
+@@ -100,6 +100,8 @@ const price = ctx.tokenMeter.estimateMessage(message)
+ 
+ `contextBreakdown` 按 surface 顺序保留纯 JSON 的 `{ seq, heuristicTokens, system }` 条目，并复用测量服务的 plan/commit fold。其状态与 surface 转换成本为 O(当前保留 surface)，不是 O(1)，也不是 O(完整历史日志)；被替换条目和消息正文不保留。状态版本 4 使标量检查点失效并重放日志。`contextPressure` 仍是标量影子价消费方：没有相邻 claim 的替换贡献零增量。用量 fold 保留一个最后样本槽，因为合法日志不会在更晚步骤报告用量后再次报告更早步骤的用量。
+ 
++`estimateRequest()` 使用与持久化压力测量相同的节点分析为显式请求计价。系统消息保留在历史中。估算包含按路由的图片计价与当前文件到文本的投影，因此摘要拟合和实际请求投影使用相同计量输入。
++
+ </details>
+ 
+ -----
 diff --git a/packages/llm/token-meter/src/estimate.ts b/packages/llm/token-meter/src/estimate.ts
-index 4c633c1a06..02f14743c2 100644
+index c82d621242f78765750356cb806212dad27a0ea4..547d2456af72f13b227753922fc4a1278cca2c14 100644
 --- a/packages/llm/token-meter/src/estimate.ts
 +++ b/packages/llm/token-meter/src/estimate.ts
 @@ -6,8 +6,9 @@
@@ -1589,23 +2067,7 @@ index 4c633c1a06..02f14743c2 100644
  
  /** Fixed text-density estimate used until exact tokenization is needed. */
  const CHARS_PER_TOKEN = 4
-@@ -75,8 +76,13 @@ export function estimateMessage(message: Message): number {
-  * @returns heuristic system-prompt tokens; 0 when absent.
-  */
- export function estimateSystemTokens(header: EpochHeader | undefined): number {
--  if (header?.system === undefined) return 0
--  return Math.ceil(header.system.length / CHARS_PER_TOKEN) + ROLE_OVERHEAD
-+  return estimateSystem(header?.system)
-+}
-+
-+/** Price an optional raw system prompt with the request-envelope heuristic. */
-+function estimateSystem(system: string | undefined): number {
-+  if (system === undefined) return 0
-+  return Math.ceil(system.length / CHARS_PER_TOKEN) + ROLE_OVERHEAD
- }
- 
- /**
-@@ -85,8 +91,13 @@ export function estimateSystemTokens(header: EpochHeader | undefined): number {
+@@ -95,6 +96,21 @@ export function estimateMessage(message: Message): number {
   * @returns heuristic tool-schema tokens; 0 when absent or empty.
   */
  export function estimateToolsTokens(header: EpochHeader | undefined): number {
@@ -1614,34 +2076,26 @@ index 4c633c1a06..02f14743c2 100644
 +  return estimateTools(header?.tools)
 +}
 +
-+/** Price optional raw tool schemas with the request-envelope heuristic. */
++/** Price optional raw tool schemas with the same request-envelope heuristic. */
 +function estimateTools(tools: readonly ToolSchema[] | undefined): number {
 +  if (tools === undefined || tools.length === 0) return 0
 +  return Math.ceil(JSON.stringify(tools).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD
- }
- 
- /**
-@@ -97,3 +108,15 @@ export function estimateToolsTokens(header: EpochHeader | undefined): number {
- export function estimateHeader(header: EpochHeader | undefined): number {
-   return estimateSystemTokens(header) + estimateToolsTokens(header)
- }
++}
 +
 +/**
-+ * Price one exact arbitrary model-visible request with the same estimator used
-+ * by durable pressure measurement.
-+ * @param input - exact system, tool, and ordered message envelope.
-+ * @returns heuristic input tokens for the complete request.
++ * Price one exact ordered request, including its system-role messages.
++ * @param input - request history and optional tool schemas.
++ * @returns route-independent request token estimate.
 + */
 +export function estimateRequest(input: TokenRequestEstimateInput): number {
-+  return estimateSystem(input.system)
-+    + estimateTools(input.tools)
++  return estimateTools(input.tools)
 +    + input.messages.reduce((total, message) => total + estimateMessage(message), 0)
-+}
+ }
 diff --git a/packages/llm/token-meter/src/index.ts b/packages/llm/token-meter/src/index.ts
-index 5e045223e3..de94f574cb 100644
+index 348213ef4d9362c32935dae5e95cde2514174cd7..7bfa667eefb6fe92fde90a7e2bcf5aa941be99a3 100644
 --- a/packages/llm/token-meter/src/index.ts
 +++ b/packages/llm/token-meter/src/index.ts
-@@ -23,11 +23,12 @@ import type {
+@@ -28,11 +28,12 @@ import type {
    TokenMeasurement,
    TokenMeasurementBaseline,
    TokenMeterConfig,
@@ -1649,14 +2103,14 @@ index 5e045223e3..de94f574cb 100644
  } from './types.ts'
  import { contextBreakdownProjectionDefinition } from './breakdown-projection.ts'
  import { contextPressureProjectionDefinition, tokenUsageProjectionDefinition } from './usage-projection.ts'
--import { estimateContent, estimateHeader, estimateMessage, ROLE_OVERHEAD } from './estimate.ts'
+-import { estimateContent, estimateMessage, estimateToolsTokens, ROLE_OVERHEAD } from './estimate.ts'
 -import { commitSurfaceTokens, planSurfaceTokens } from './surface-fold.ts'
-+import { estimateContent, estimateHeader, estimateMessage, estimateRequest, ROLE_OVERHEAD } from './estimate.ts'
++import { estimateContent, estimateMessage, estimateRequest, estimateToolsTokens, ROLE_OVERHEAD } from './estimate.ts'
 +import { analyzeNode, commitSurfaceTokens, planSurfaceTokens } from './surface-fold.ts'
  import type { MeterSurfaceNode } from './surface-fold.ts'
  import { priceSurface } from './route-pricing.ts'
  
-@@ -199,6 +200,22 @@ export class TokenMeter extends Service {
+@@ -214,6 +215,21 @@ export class TokenMeter extends Service {
      return estimateMessage(message)
    }
  
@@ -1670,30 +2124,36 @@ index 5e045223e3..de94f574cb 100644
 +    const base = estimateRequest(input)
 +    const pricing = input.route === undefined ? undefined
 +      : this.ctx.get('llm')?.imageRequestPricing(input.route.provider, input.route.model)
-+    if (pricing === undefined) return base
 +    const nodes = input.messages.map((message, index) => analyzeNode(SessionSeq(index), message))
 +    return base - nodes.reduce((total, node) => total + node.heuristicTokens, 0)
-+      + priceSurface(nodes, pricing).surfaceTokens
++      + priceSurface(nodes, pricing, this._fileRequestText()).surfaceTokens
 +  }
 +
    /** Catch one session's fold up to the current durable tail. */
    private _sync(session: Session): ReplayState {
      let state = this.states.get(session)
 diff --git a/packages/llm/token-meter/src/surface-fold.ts b/packages/llm/token-meter/src/surface-fold.ts
-index ae293a7f57..0b5a3ab181 100644
+index d0cccea9476db50a84fcea8a85d7d7a068d019de..f9db817c3d756fe2e3322e8ff3f23746335830a9 100644
 --- a/packages/llm/token-meter/src/surface-fold.ts
 +++ b/packages/llm/token-meter/src/surface-fold.ts
-@@ -61,7 +61,7 @@ function collectImages(blocks: readonly ContentBlock[], images: ImageAttachmentR
+@@ -74,8 +74,13 @@ function collectProjectedAttachments(
+   return { imageTokens, fileTokens }
  }
  
- /** Build one priced node from a surface event's derived message. */
+-/** Build one priced node from a surface event's derived message. */
 -function analyzeNode(seq: SessionSeq, message: Message | null): MeterSurfaceNode {
++/**
++ * Build one priced node from a surface event's derived message.
++ * @param seq - sequence identity assigned to this priced node.
++ * @param message - canonical request message to analyze.
++ * @returns immutable node pricing inputs, including image and file occurrences.
++ */
 +export function analyzeNode(seq: SessionSeq, message: Message | null): MeterSurfaceNode {
-   if (message === null) return { seq, heuristicTokens: 0, imageFreeTokens: 0, images: [] }
-   const heuristicTokens = estimateMessage(message)
-   const images: ImageAttachmentRef[] = []
+   if (message === null) {
+     return {
+       seq,
 diff --git a/packages/llm/token-meter/src/types.ts b/packages/llm/token-meter/src/types.ts
-index 487e031385..f84e0576dc 100644
+index 487e031385da91e4f900ce3bf471f7bac791e6b5..18dfb045e91b083f3594f4215852c32dac26dc0c 100644
 --- a/packages/llm/token-meter/src/types.ts
 +++ b/packages/llm/token-meter/src/types.ts
 @@ -4,7 +4,7 @@
@@ -1705,13 +2165,12 @@ index 487e031385..f84e0576dc 100644
  import type { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session/types'
  
  export type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageProjection } from './projection.ts'
-@@ -12,6 +12,14 @@ export type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageP
+@@ -12,6 +12,13 @@ export type { ContextBreakdownProjection, ContextPressureProjection, TokenUsageP
  /** Token-meter plugin configuration; the fixed estimator has no settings. */
  export type TokenMeterConfig = Record<string, never>
  
 +/** Exact model-visible request, priced under its actual route when supplied. */
 +export interface TokenRequestEstimateInput {
-+  readonly system?: string
 +  readonly tools?: readonly ToolSchema[]
 +  readonly messages: readonly Message[]
 +  readonly route?: { readonly provider: string; readonly model: string }
@@ -1720,3 +2179,15 @@ index 487e031385..f84e0576dc 100644
  /** The baseline from which a signed surface delta produces current pressure. */
  export type TokenMeasurementBaseline =
    | { readonly kind: 'none'; readonly tokens: 0 }
+diff --git a/packages/llm/token-meter/tests/route-pricing.spec.ts b/packages/llm/token-meter/tests/route-pricing.spec.ts
+index 6488552253355fbe2bf29713e7ead3bed7103ff2..a8d7dbe7ad0b6992b0fb472514e237ad9b39f55b 100644
+--- a/packages/llm/token-meter/tests/route-pricing.spec.ts
++++ b/packages/llm/token-meter/tests/route-pricing.spec.ts
+@@ -129,6 +129,7 @@ describe('request projection pricing', () => {
+     if (projected === undefined) throw new Error('missing projected file message')
+     expect(measurement.nodes[0]?.tokens).toBe(estimateMessage(projected))
+     expect(measurement.nodes[0]?.tokens).toBeGreaterThan(estimateMessage(message))
++    expect(meter.estimateRequest({ messages: [message] })).toBe(estimateMessage(projected))
+   })
+ 
+   it('prices a first multimodal request estimate with the routed visual tokens', async () => {

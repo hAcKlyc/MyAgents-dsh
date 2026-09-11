@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: operations-messages-and-turns
-updated: 2026-09-05
+updated: 2026-09-12
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decisions:
   - ../../prd/tech_rfc_0.1_runtime_architecture.md
@@ -14,6 +14,13 @@ implementation_decisions:
 ## 1. Purpose and authority
 
 This guide explains the product operation envelope that maps Host queries, queued input, steering, follow-up, interruption and limits onto DSH messages and turns. DSH AgentLoop remains the only loop and the DSH Session event stream remains durable truth. Exact RPC shapes live in the protocol source; operation behavior lives in `packages/operation-runtime/src/`.
+
+The rc.2 dev adaptation reads usage from `assistant/message` and `assistant/attempt` embedded
+streams. Completed-turn accounting remains the official TokenMeter fold; Product's pre-request
+budget observation reads settled attempts without adding durable chunk events. The same
+operation payload validators are exposed to the Product persistence admission boundary, while
+operation relationships stay owned by the operation fold. Full upgrade regressions remain in
+[UPG15](../../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md).
 
 ## 2. Relationships
 

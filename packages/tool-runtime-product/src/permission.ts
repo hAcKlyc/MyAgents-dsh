@@ -614,6 +614,17 @@ const validateConfigEvent = (value: unknown): ProductPermissionConfigEvent => {
   });
 };
 
+const permissionPayloadValidators = Object.freeze({
+  "myagents/permission/config": validateConfigEvent,
+  "myagents/permission/rule": validateRuleEvent,
+  "myagents/permission/rule/revoked": validateRuleRevokedEvent,
+} satisfies Record<ProductPermissionEventType, (value: unknown) => unknown>);
+
+/** Validate durable payloads without supplying a second permission-policy authority. */
+export const validateProductPermissionEventData = (type: ProductPermissionEventType, value: unknown): void => {
+  permissionPayloadValidators[type](value);
+};
+
 export const foldProductPermissions = (
   events: readonly SessionEvent[],
   sessionId: string,

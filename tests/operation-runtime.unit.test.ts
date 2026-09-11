@@ -1,6 +1,7 @@
+import { FixtureInbox as Inbox } from "./fixtures/inbox-events.js";
 import { SessionSeq } from "@deepseek-ai/dsh-session";
 import { Context } from "@deepseek-ai/cordis";
-import { Inbox, type Agent } from "@deepseek-ai/dsh-agent";
+import { type Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId, freezeMessage, MessageId, type MessageSource } from "@deepseek-ai/dsh-llm";
 import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import SessionStore from "@deepseek-ai/dsh-session";
@@ -489,7 +490,7 @@ describe("durable product-operation fold", () => {
       model: "fixture-model",
       contextWindow: 8_192,
     });
-    fixture.agent.session.append("assistant/message", {
+    fixture.agent.session.append("assistant/message", { stream: [],
       turn: 1,
       step: 1,
       message: freezeMessage({
@@ -499,7 +500,7 @@ describe("durable product-operation fold", () => {
         content: [{ type: "text", text: "durable answer after child result" }],
       }),
       usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     fixture.agent.session.append("step/end", { turn: 1, step: 1 });
     fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
 
@@ -924,7 +925,7 @@ describe("SdkOperationService admission and idempotency", () => {
       discarded: () => undefined,
       inserted: () => undefined,
     });
-    childState.value = { id: childSession.id, inbox: childInbox, session: childSession } as Agent;
+    childState.value = { id: childSession.id, inbox: childInbox, session: childSession } as unknown as Agent;
     childInbox.append("next-turn", freezeMessage({
       id: MessageId("unrelated-child-message"),
       role: "user",
@@ -1033,7 +1034,7 @@ describe("SdkOperationService admission and idempotency", () => {
       model: "fixture-model",
       contextWindow: 4_096,
     });
-    fixture.agent.session.append("assistant/message", {
+    fixture.agent.session.append("assistant/message", { stream: [],
       turn: 1,
       step: 1,
       message: freezeMessage({
@@ -1043,7 +1044,7 @@ describe("SdkOperationService admission and idempotency", () => {
         content: [{ type: "text", text: "completed before queued follow-up shutdown" }],
       }),
       usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     fixture.agent.session.append("step/end", { turn: 1, step: 1 });
     const mutableAgent = fixture.agent as unknown as {
       cancel: (cause: { kind: string }, options: { keepInbox: boolean }) => void;
@@ -1169,14 +1170,14 @@ describe("SdkOperationService admission and idempotency", () => {
     fixture.inbox.claim("next-turn", 1);
     fixture.agent.session.append("step/start", { turn: 1, step: 1 });
     fixture.agent.session.append("request/context", { provider: "fixture", model: "fixture-model", contextWindow: 8_192 });
-    fixture.agent.session.append("assistant/message", {
+    fixture.agent.session.append("assistant/message", { stream: [],
       turn: 1, step: 1,
       message: freezeMessage({
         id: MessageId("unknown-usage-answer"), role: "assistant", source: { kind: "model", provider: "fixture", model: "fixture-model" },
         content: [{ type: "text", text: "The requested work is complete." }],
       }),
       usage: { inputTokens: 7, outputTokens: 2 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     fixture.agent.session.append("step/end", { turn: 1, step: 1 });
     fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
     await vi.waitFor(() => expect(fixture.service.lookup("operation-1")?.terminal?.kind).toBe("succeeded"));
@@ -1207,7 +1208,7 @@ describe("SdkOperationService admission and idempotency", () => {
       model: "fixture-model",
       contextWindow: 8_192,
     });
-    fixture.agent.session.append("assistant/message", {
+    fixture.agent.session.append("assistant/message", { stream: [],
       turn: 1,
       step: 1,
       message: freezeMessage({
@@ -1217,7 +1218,7 @@ describe("SdkOperationService admission and idempotency", () => {
         content: [{ type: "text", text: "durable answer" }],
       }),
       usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 1 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     fixture.agent.session.append("step/end", { turn: 1, step: 1 });
     fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
 
@@ -1270,7 +1271,7 @@ describe("SdkOperationService admission and idempotency", () => {
       type: "assistant/message",
       seq: persistedTerminal.seq,
       time: persistedTerminal.time,
-      data: {
+      data: { stream: [],
         turn: 1,
         step: 2,
         message: freezeMessage({
@@ -1282,7 +1283,7 @@ describe("SdkOperationService admission and idempotency", () => {
         usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
       },
       surfaceOp: "append",
-      sourceEventSeqs: [],
+
     };
     const late = [
       ...valid.slice(0, terminalIndex),
@@ -1586,7 +1587,7 @@ describe("SdkOperationService admission and idempotency", () => {
       model: "fixture-model",
       contextWindow: 4_096,
     });
-    fixture.agent.session.append("assistant/message", {
+    fixture.agent.session.append("assistant/message", { stream: [],
       turn: 1,
       step: 1,
       message: freezeMessage({
@@ -1596,7 +1597,7 @@ describe("SdkOperationService admission and idempotency", () => {
         content: [{ type: "text", text: "durable completed answer before follow-up" }],
       }),
       usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     fixture.agent.session.append("step/end", { turn: 1, step: 1 });
     const followupId = "operation-followup-before-close";
     fixture.agent.session.append("myagents/operation/message", {
@@ -1711,7 +1712,7 @@ describe("SdkOperationService admission and idempotency", () => {
       model: "fixture-model",
       contextWindow: 4_096,
     });
-    fixture.agent.session.append("assistant/message", {
+    fixture.agent.session.append("assistant/message", { stream: [],
       turn: 1,
       step: 1,
       message: freezeMessage({
@@ -1721,7 +1722,7 @@ describe("SdkOperationService admission and idempotency", () => {
         content: [{ type: "text", text: "first" }],
       }),
       usage: { inputTokens: 2, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     fixture.agent.session.append("step/end", { turn: 1, step: 1 });
     fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
     const followupId = "operation-followup-without-context";
@@ -1747,7 +1748,7 @@ describe("SdkOperationService admission and idempotency", () => {
     fixture.agent.session.append("turn/start", { turn: 2 });
     fixture.inbox.claim("next-turn", 2);
     fixture.agent.session.append("step/start", { turn: 2, step: 1 });
-    fixture.agent.session.append("assistant/message", {
+    fixture.agent.session.append("assistant/message", { stream: [],
       turn: 2,
       step: 1,
       message: freezeMessage({
@@ -1757,7 +1758,7 @@ describe("SdkOperationService admission and idempotency", () => {
         content: [{ type: "text", text: "second" }],
       }),
       usage: { inputTokens: 3, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     fixture.agent.session.append("step/end", { turn: 2, step: 1 });
     fixture.agent.session.append("turn/end", { turn: 2, reason: { kind: "completed" } });
 
@@ -1794,7 +1795,7 @@ describe("SdkOperationService admission and idempotency", () => {
       model: "fixture-model",
       contextWindow: 4_096,
     });
-    const assistant = fixture.agent.session.append("assistant/message", {
+    const assistant = fixture.agent.session.append("assistant/message", { stream: [],
       turn: 1,
       step: 1,
       message: freezeMessage({
@@ -1804,7 +1805,7 @@ describe("SdkOperationService admission and idempotency", () => {
         content: [{ type: "text", text: "anchored after birth" }],
       }),
       usage: { inputTokens: 3, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     const hasAnchor = (): boolean => fixture.agent.session.snapshotEvents().some(
       (event) => event.type === "myagents/operation/request-context"
         && event.data.assistantEventSeq === assistant.seq,
@@ -1924,7 +1925,7 @@ describe("SdkOperationService admission and idempotency", () => {
       model: "fixture-model",
       contextWindow: 8_192,
     });
-    fixture.agent.session.append("assistant/message", {
+    fixture.agent.session.append("assistant/message", { stream: [],
       turn: 1,
       step: 1,
       message: freezeMessage({
@@ -1934,7 +1935,7 @@ describe("SdkOperationService admission and idempotency", () => {
         content: [{ type: "tool-call", id: ToolCallId("budget-tool-call"), name: "Read", arguments: "{}" }],
       }),
       usage: { inputTokens: 2, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
 
     expect(() => fixture.service.createModelRequestAuthority(
       fixture.agent,
@@ -1983,7 +1984,7 @@ describe("SdkOperationService admission and idempotency", () => {
       model: "fixture-model",
       contextWindow: 8_192,
     });
-    fixture.agent.session.append("assistant/message", {
+    fixture.agent.session.append("assistant/message", { stream: [],
       turn: 1,
       step: 1,
       message: freezeMessage({
@@ -1993,7 +1994,7 @@ describe("SdkOperationService admission and idempotency", () => {
         content: [{ type: "text", text: "complete at the exact budget" }],
       }),
       usage: { inputTokens: 2, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    }, { surfaceOp: "append", sourceEventSeqs: [] });
+    }, { surfaceOp: "append" });
     await vi.waitFor(() => expect(fixture.agent.session.snapshotEvents().some(
       (event) => event.type === "myagents/operation/request-context",
     )).toBe(true));

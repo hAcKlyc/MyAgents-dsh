@@ -27,6 +27,7 @@ import {
   WEB_HOST_RUNTIME_PROCESS_PATH,
   WEB_HOST_BROWSER_SERVER_PATH,
   isExactArtifactLauncherChildProcessSource,
+  isExactSessionOwnershipNativeTestSource,
   isExactProductNetworkTransportSource,
   isExactWebHostRuntimeProcessSource,
   isExactWebHostBrowserServerSource,
@@ -126,6 +127,15 @@ describe("repository and packed-artifact forbidden-content policy", () => {
       "node:child_process",
       exact,
     )).toBe(false);
+  });
+
+  it("limits native ownership process tests to their exact spawn-only import", () => {
+    const path = "tests/product-session-ownership.native.test.ts";
+    const source = 'import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";';
+    expect(isExactSessionOwnershipNativeTestSource(path, "node:child_process", source)).toBe(true);
+    expect(isExactSessionOwnershipNativeTestSource("tests/other.unit.test.ts", "node:child_process", source)).toBe(false);
+    expect(isExactSessionOwnershipNativeTestSource(path, "node:child_process", source.replace("spawn,", "spawn, exec,"))).toBe(false);
+    expect(isExactSessionOwnershipNativeTestSource(path, "node:child_process", source + 'import("node:child_process")')).toBe(false);
   });
 
   it("recognizes only the exact product-owned network transport module set", () => {

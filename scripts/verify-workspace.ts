@@ -77,6 +77,7 @@ const expectedScripts = new Map([
   ["typecheck", "npm run check:foundation && tsc -b --pretty false"],
   ["lint", "eslint . --max-warnings 0"],
   ["test", "npm run check:foundation && vitest run --maxWorkers=1 --no-file-parallelism"],
+  ["test:session-ownership-native", "node --import tsx --test tests/product-session-ownership.native.test.ts"],
   ["test:web-host-process", "vitest run --config vitest.web-host-process.config.ts --maxWorkers=1 --no-file-parallelism"],
   ["build:web", "npm run build --workspace @myagents-dsh/reference-web"],
   ["web", "npm run build:web && tsx scripts/run-reference-web-host.ts"],
@@ -181,8 +182,8 @@ const expectedWorkspaceFiles = new Map([
     "src/read.ts",
     "src/rewind.ts",
     "src/schema.ts",
-    "src/session-lock.ts",
-    "src/sqlite-store.ts",
+    "src/session-handle.ts", "src/session-lock.ts", "src/session-ownership.ts",
+    "src/sqlite-store.ts", "src/storage-contract.ts",
   ]],
   ["packages/product-profile", [
     "manifests/accepted-patched-dsh-artifact-v1.json",

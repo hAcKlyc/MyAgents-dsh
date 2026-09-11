@@ -254,7 +254,7 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
     ],
     [
       "baseUrl", "compatibility", "effort", "inputModalities", "pricing", "reasoning",
-      "reasoningEffortMap",
+      "reasoningEffortMap", "systemPromptUpdate",
     ],
     "Host DeepSeek Provider profile",
   );
@@ -281,6 +281,9 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
       "provider_profile_unsupported",
       "the native DeepSeek route accepts a text-first subset of text and image modalities",
     );
+  }
+  if (Object.hasOwn(record, "systemPromptUpdate") && candidate.systemPromptUpdate !== "in-history") {
+    throw new ProtocolError("provider_profile_invalid", "DeepSeek system prompt update capability must be in-history when declared");
   }
   validatePricing(candidate);
   profileDefaults(candidate);
@@ -578,7 +581,8 @@ const connectionFor = (profile: ProviderProfile): DeepSeekConnectionOptions => O
     id: profile.modelId,
     imageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
     imagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
-    inputModalities: [...(profile.inputModalities ?? ["text", "image"])] as ModelModality[],
+    inputModalities: [...(profile.inputModalities ?? ["text"])] as ModelModality[],
+    ...(profile.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: profile.systemPromptUpdate }),
     maxTokens: profile.maxTokens,
   })]),
   maxRequestFilesBytes: DEFAULT_MAX_REQUEST_FILES_BYTES,

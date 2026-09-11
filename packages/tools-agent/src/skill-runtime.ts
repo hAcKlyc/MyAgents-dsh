@@ -102,11 +102,6 @@ declare module "@deepseek-ai/cordis" {
   }
 }
 
-declare module "@deepseek-ai/dsh-system-prompt" {
-  interface PromptContext {
-    readonly interpolate?: boolean;
-  }
-}
 
 type JsonObject = Record<string, unknown>;
 

@@ -2,7 +2,7 @@
 type: technical-architecture
 status: source-candidate
 module: event-projection-and-reconciliation
-updated: 2026-09-06
+updated: 2026-09-12
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
 ---
@@ -27,7 +27,7 @@ admission/terminal and Product state events—live in the DSH Session sequence. 
 also have separate durable SQLite authority. Runtime notifications are a bounded carrier whitelist,
 not a projection of every durable fact or every schema event kind.
 
-The `2.5.0` source maps durable/live facts to `turn_admitted`, `queued_message`, `turn_started`,
+The `5.0.0` source maps durable/live facts to `turn_admitted`, `queued_message`, `turn_started`,
 assistant/thinking deltas, assistant `message_event`, structured Tool start/end, usage,
 `turn_terminal`, compaction start/end and full Product status snapshots for context, TaskGraph, work
 and Plan. It also maps generic Provider-owned call/result blocks to the distinct `provider_tool`
@@ -52,12 +52,12 @@ It never infers status from decorative prose. A call with no corresponding resul
 a synthetic successful end event; the Host stops its animation at the turn boundary and shows the
 result as unconfirmed. A returned result indicates Provider completion, not content-quality approval.
 
-Operation correlation during live projection and close uses ProductWork's exported Session-only
+Operation correlation for durable projection and close uses ProductWork's exported Session-only
 root-context proof. It never calls `ProductSessionService.requireAgent()` or dynamically resolves
 ProductWork merely to interpret durable history; a closing generation therefore uses the same
 fail-closed ownership rule as cold validation and operation retirement.
 
-DSH removes an Inbox batch before publishing its synchronous per-message claim/cancellation
+DSH records a native `agent/inbox/spliced` boundary removing an Inbox batch before publishing its synchronous per-message claim/cancellation
 receipts. Projection validates each receipt through the adjacent receipts of that same boundary,
 so the first of several simultaneous child reports is not mistaken for an incomplete durable
 claim. The strict fold still rejects a missing sibling receipt or contradictory ownership; it
@@ -98,16 +98,24 @@ The projector refuses an unexplained non-quiescent Session-object replacement. I
 expose SQLite storage-generation identity; persistence owns that validation. Product terminal
 projection still requires the admission-time notification reservation.
 
-Two sequence spaces must not be confused. `runtime/event.sequence` increments per emitted envelope
-within one Runtime process generation; baseline entries have such a sequence but no durable source
-sequence. `session/read.records[].sequence` is DSH `SessionEvent.seq`. Assistant/thinking chunk
-projection intentionally skips flush and is provisional, including a context sample captured from a
-usage chunk; other live source events flush before notification. Baseline trusts already successful
-binding/folds and does not add another persistence flush.
+Three sequence spaces must not be confused. `runtime/event.sequence` increments per emitted
+envelope within one process generation; ready baseline entries have no durable source sequence.
+`session/read.records[].sequence` is DSH `SessionEvent.seq`. Native `agent/assistant-stream` frames
+have their own Agent-lifetime revision and attempt-local chunk index. The projector verifies both,
+assigns a fresh wire stream id and keeps at most one active attempt plus a bounded delivery queue.
+
+Live start/delta/end observations are anchored after the preceding durable sequence and drained by
+the same ordered writer. Text/reasoning may reach the Host before a durable assistant event.
+A committed end verifies the exact Session event, native turn/step and chunk count, then crosses a
+persistence barrier. Abandoned attempts carry no message identity. Cold recovery reads native V3
+`assistant/message` / `assistant/attempt` compact streams; it does not re-emit historical deltas.
+Provider observations come from committed native block-end chunks, while ordinary final message
+content remains the authority for Host history. Context/usage read native summaries and the last
+attempt usage rather than counting every intermediate usage chunk.
 
 ## 5. UI and Host implications
 
-- Within one Runtime generation/turn, process envelopes strictly in sequence. Merge only adjacent same-kind text/thinking deltas; a kind/tool boundary creates a new block, and `turn_terminal` closes an unfinished thinking block. The protocol has no explicit text/thinking start/end or cross-delta block id.
+- Within one Runtime generation/turn, process envelopes strictly in sequence. Merge only adjacent same-kind text/thinking deltas; a kind/tool boundary creates a new block, and `turn_terminal` closes an unfinished thinking block. The assistant stream id binds each attempt; visible frame positions increase but can skip non-text native chunks. Start/end metadata never creates a completed Host message.
 - A request timeout or dropped notification is an unknown observation state, not proof of command failure or success.
 - Reload/resume reconstructs cold history in durable `session/read` order. Disposable view state—drafts, selection, expansion, scroll and loading animation—may remain Host-local.
 - Retry actions must use operation/message/mutation identities and status APIs. They must not clear visible history unless the Runtime committed a rewind/fork/delete result that changes the selected durable history.
@@ -127,19 +135,14 @@ Diagnostics may report sanitized event types, identities and revisions. They mus
 
 ## 7. Current source-candidate acceptance boundary
 
-Protocol/profile `2.5.0`, the official projection-registry seam and the checked-in DSH/pi-ai
-authorities are byte-stable. Focused tests cover ready ordering,
-zero/route-switch/failed contexts, usage chunks without a final assistant message, Task/Work/Plan
-live and ready snapshots, compaction, rich and aggregate-oversized Tool results, sequence gaps and
-restart, plus Provider-content conversion, same-route replay and non-canonical projection. The
-isolated 58-package Runtime composition gate passes with the patched adapter graph.
+UPG15 protocol `5.0.0` and native V3 projection are source candidates. Runtime tests cover
+pre-commit visibility, abandoned attempts, committed event identity, frame revision/position failures,
+ready status, lifecycle replacement, Provider-content correlation, usage and tool/status snapshots.
+Host source tests validate stream/turn identity and preserve final native-history reconciliation.
 
-This remains a source candidate because MyAgents still contains the correctly verified historical
-Runtime resource. No current `2.5.0` commit-bound Runtime/platform/handoff evidence has been
-accepted, and split source tests do not satisfy the required staged producer-to-consumer journey.
-The joint REC/CAP/PST artifact campaign must build the final committed source, create a new immutable
-handoff with its own three-platform evidence, ingest those exact bytes and exercise live plus cold
-Provider-tool journeys in the packaged client before this module becomes accepted delivery truth.
+The prior protocol 4.0.0 Host resource remains historical delivery evidence. UPG15 still requires
+exact-source Runtime/platform/handoff builds, official Host ingestion and the staged live/cold
+journeys. Source tests and package reproduction do not replace those acceptance gates.
 
 ## 8. Architecture-correct change path
 

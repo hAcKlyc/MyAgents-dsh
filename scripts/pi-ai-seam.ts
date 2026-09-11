@@ -8,42 +8,42 @@ const repositoryRoot = resolve(import.meta.dirname, "..");
 
 export const PI_AI_SOURCE = Object.freeze({
   repository: "https://github.com/earendil-works/pi.git",
-  commit: "914cf1472e715297caa30db4b9535d534a9eb718",
-  tree: "73f6a2a71a4fb941c5688753931c2aa6f95902c5",
-  tag: "v0.84.2",
+  commit: "d981de1229ef899957bbe968bc8dcda02a21f477",
+  tree: "346294a615d2d0ad4f6e5fbccb4cee4ccd7b2d6c",
+  tag: "v0.85.1",
   packageName: "@earendil-works/pi-ai",
-  packageVersion: "0.84.2",
-  registryIntegrity: "sha512-6MzsrYIYNVlE7SfpbL2yYb67Qo58p/7Q+xWG1RZvoX1P80aRCHSod2/13aFpxkow1lPO2LEh3c495J0Gwmyjig==",
+  packageVersion: "0.85.1",
+  registryIntegrity: "sha512-+VgVIJDkDO2efYJKEEqvPTH4zmnIaXdAppGbO+vKFA9qy5PdhFiAenuFAkU+oiCSfOC4dMHDyrjdQeL4ZoC5CQ==",
   files: Object.freeze([
     Object.freeze({
       path: "package-lock.json",
-      blob: "1f77aa69a44915990ba2e4f41573cb2b7005b0ca",
-      sha256: "5c1c06c9c578c436e6cb0599231a9299493f3d7ff6f8443aba76e2d7a204bf8f",
+      blob: "aad45bdb63cc1c2407fbe14d6d1ddfd2bf77f64f",
+      sha256: "e3569b99e673a0051be908f2bed57651b90a966a5a0d208913c29e6830a6a6c2",
     }),
     Object.freeze({
       path: "packages/ai/package.json",
-      blob: "fe1f336d89b4cdb500956b9431ed4306c3182d49",
-      sha256: "9575365ce609dca8e1fd4fa72471d55006e1e0f81310c0808f93abc4bc14bbf9",
+      blob: "17a7e8e27686163418a171868b0ecaef7333cd54",
+      sha256: "b54df5a36d523febdeebfc5682dc4faed101fee10aba913d5f3679582f018da3",
     }),
     Object.freeze({
       path: "packages/ai/src/api/anthropic-messages.ts",
-      blob: "b9586120dd075257e37f50d55dff6f4acb57eb9f",
-      sha256: "28445137aa4c6bd47bb97f541a9d0687dfcf050546eef47b01903396b5b4c1d6",
+      blob: "de3a51cf4fff36177a678bf5383c6a30008ee2e1",
+      sha256: "9abf35ebe5dbe3a9d7a621c420aa0cbf474eb2ec7c79e1bea8e28966c564b7ab",
     }),
     Object.freeze({
       path: "packages/ai/src/api/mistral-conversations.ts",
-      blob: "b52eae4cf8f8f5c435891b4e088b3e76799edb10",
-      sha256: "fa88195b0ea6e26d8210a1888c0190502baf317388f619179bf2580db6debcce",
+      blob: "979b467ed35984224a9e90e0e3c5c5acfd37d0d7",
+      sha256: "042e8886f68da48b4218726bcbc20ff440510b23dbdbffe5ea9c7fb8a876b762",
     }),
     Object.freeze({
       path: "packages/ai/src/providers/faux.ts",
-      blob: "284a099b314b3b247826f9622bddf25909b252b5",
-      sha256: "d819e22fcfba388d043246d34d770f2e2614f351de47f102c69f310c21fc6c65",
+      blob: "c80de5c874a3e6f18f668f62a4cf4559e276d640",
+      sha256: "83f09999c95c355b4befcb47019836a1b3636593cd72b96f540108db0b5f570a",
     }),
     Object.freeze({
       path: "packages/ai/src/types.ts",
-      blob: "7e1fd00a378011b6e6fe2cbc4267c947efcbdbd9",
-      sha256: "62e6982bdd44e602ff53fcdcf2c4dfd1120bd9db207695ddf27e723ed9a0f73e",
+      blob: "fe318fe4266f192b083586f2187854986a58f301",
+      sha256: "ae0427bfba137623df3a27c545ab405d4a3ad4163ec94c9fec5d4e10eb36759c",
     }),
     Object.freeze({
       path: "packages/ai/src/utils/estimate.ts",
@@ -51,14 +51,34 @@ export const PI_AI_SOURCE = Object.freeze({
       sha256: "8334f683185cc11d7e867f30963dfc4b9d89c3db79e852364e89a24cb89b316a",
     }),
     Object.freeze({
+      path: "packages/ai/src/utils/text.ts",
+      blob: "66f5b9c5b656568adab56fcc9362ddbf04e67d5e",
+      sha256: "442d027929fa6db4aa19638d64b55838ccada6c07f350610c53a521cd620ddf3",
+    }),
+    Object.freeze({
       path: "packages/ai/test/anthropic-sse-parsing.test.ts",
-      blob: "4f111a61d93ef6af00313237bf18415f382f8c87",
-      sha256: "c58248ad7d439f5fffebd9363638805cce955d03c5aa95615a8663222d127ac6",
+      blob: "9982ae82eae49d68911037d290477a3ef4b91269",
+      sha256: "1490a2949d49277e95e43c7d8ed02968a3ea5030c1a4645b96f6a1c490499a3c",
+    }),
+    Object.freeze({
+      path: "packages/ai/test/context-estimate.test.ts",
+      blob: "85047309e6f5c04e8c71fad6bac04ad1fbdc2594",
+      sha256: "e2cd7ca0026cc365586da4b7700b4f612e904803b1b92c143568c8646427d958",
+    }),
+    Object.freeze({
+      path: "packages/ai/test/faux-provider.test.ts",
+      blob: "557885f23ddcd749a7b7fcacd7d3a17a66899c92",
+      sha256: "fea06efc607060cbad9885d7cc9bff5151f0a0510d3631e7bb8bbc7e547ab999",
+    }),
+    Object.freeze({
+      path: "packages/ai/test/text.test.ts",
+      blob: "43dc21c84636c5362990684c643d48823236595b",
+      sha256: "e731172d854c7d603705fb43be143c98dfb4a722f7b4e98a8866d92e85d54a67",
     }),
     Object.freeze({
       path: "packages/telemetry/package.json",
-      blob: "37e1153223ed0a22002580bf5422602f83b8a1f6",
-      sha256: "ba3e45a83f94a06a0f311b9412f99e73c760d3eb0adee5909e4f2a356f109958",
+      blob: "7885ae202bab85336e005ffecf1fa65cff79f549",
+      sha256: "ef1fd481ce3c32458a6f4b41cf20dadf99765e9cbd31f44cc5a9ceabe4af8fcf",
     }),
   ]),
 });
@@ -82,7 +102,7 @@ const patchBytes = (): Buffer => Buffer.from(readFileSync(resolve(repositoryRoot
 
 export const buildPiAiSeamEvidence = (): object => ({
   schemaVersion: 1,
-  recordedAt: "2026-09-05",
+  recordedAt: "2026-09-12",
   authority: PI_AI_SOURCE,
   patch: {
     order: 1,
@@ -181,7 +201,8 @@ export const verifyPiAiSource = (
     run("npm", ["run", "build:offline", "--workspace", PI_AI_SOURCE.packageName], worktree, environment);
     run("npm", [
       "exec", "--workspace", PI_AI_SOURCE.packageName, "--", "vitest", "run",
-      "test/anthropic-sse-parsing.test.ts", "--maxWorkers=1", "--no-file-parallelism",
+      "test/anthropic-sse-parsing.test.ts", "test/text.test.ts",
+      "test/faux-provider.test.ts", "test/context-estimate.test.ts", "--maxWorkers=1", "--no-file-parallelism",
     ], worktree, environment);
     if (options.packageTarballTo !== undefined) {
       const destination = resolve(options.packageTarballTo);

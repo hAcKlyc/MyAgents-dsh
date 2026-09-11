@@ -1,8 +1,10 @@
 # ADR 0002 — Authoritative pre-assistant-commit waterfall
 
+Candidate disposition (2026-09-12, U15-W02): Reduce the patch by dropping upstream-owned util-values wiring; govern the assembled tool arguments before native settlement while preserving the original stream. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
+
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 
-Current disposition (2026-08-29): retained and rebased as `DSH-SEAM-002` / patch 0002 for official DSH `0.1.1-rc.2`. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
+Historical disposition (2026-08-29): retained and rebased as `DSH-SEAM-002` / patch 0002 for official DSH `0.1.1-rc.2`. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
 
 ## Context
 

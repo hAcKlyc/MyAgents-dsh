@@ -16,7 +16,7 @@ describe("accepted patched DSH runtime authority", () => {
     expect(ACCEPTED_PATCHED_DSH_ARTIFACT.runtimePackages["@deepseek-ai/dsh-llm-deepseek"])
       .toBe(ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion);
     expect(ACCEPTED_PATCHED_DSH_ARTIFACT.requiredPatchedSeams)
-      .toContain("llm-deepseek.streamToolIdentity");
+      .not.toContain("llm-deepseek.streamToolIdentity");
     expect(ACCEPTED_PATCHED_DSH_ARTIFACT.requiredPatchedSeams)
       .toContain("agentInstructions.firstCandidateSelection");
     expect(() => assertAcceptedPatchedDshArtifact(structuredClone(ACCEPTED_PATCHED_DSH_ARTIFACT)))

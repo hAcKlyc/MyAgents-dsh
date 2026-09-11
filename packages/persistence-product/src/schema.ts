@@ -1,5 +1,5 @@
 export const PRODUCT_PERSISTENCE_FORMAT = "myagents-sqlite-session-v1" as const;
-export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 9 as const;
+export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 10 as const;
 export const PRODUCT_PERSISTENCE_APPLICATION_ID = 0x4d594147 as const;
 
 export const PRODUCT_PERSISTENCE_SCHEMA_V1_SQL = `

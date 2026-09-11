@@ -10,9 +10,9 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "4.0.0" as const;
+export const PROTOCOL_VERSION = "5.0.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
-export const DSH_ENGINE_VERSION = "0.1.2-rc.1.myagents.a66e47020478.db06dc323417" as const;
+export const DSH_ENGINE_VERSION = "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
 export const DEEPSEEK_WEB_SEARCH_POLICY_REF = "deepseek-official-web-search-v1" as const;
@@ -310,6 +310,7 @@ export const ModelExecutionProfileSchema = strictObject({
   credentialRef: identifier,
   contextWindow: Type.Integer({ minimum: 1 }),
   maxTokens: Type.Integer({ minimum: 1 }),
+  systemPromptUpdate: Type.Optional(Type.Literal("in-history")),
   inputModalities: Type.Optional(Type.Array(Type.Union([
     Type.Literal("text"),
     Type.Literal("image"),
@@ -892,8 +893,21 @@ export const RuntimeEventSchema = Type.Union([
   strictObject({ kind: Type.Literal("turn_admitted"), admission: turnAdmission }),
   strictObject({ kind: Type.Literal("turn_started") }),
   strictObject({ kind: Type.Literal("turn_terminal"), clientOperationId: identifier, terminal: TurnTerminalSchema }),
-  strictObject({ kind: Type.Literal("assistant_delta"), delta: Type.String({ maxLength: 262_144 }) }),
-  strictObject({ kind: Type.Literal("thinking_delta"), delta: Type.String({ maxLength: 262_144 }) }),
+  strictObject({ kind: Type.Literal("assistant_stream"), phase: Type.Literal("start"), streamId: identifier }),
+  strictObject({
+    kind: Type.Literal("assistant_stream"), phase: Type.Literal("end"), streamId: identifier,
+    chunkCount: nonNegativeInteger,
+    outcome: Type.Union([
+      strictObject({ kind: Type.Literal("abandoned") }),
+      strictObject({
+        kind: Type.Literal("committed"), eventId: identifier,
+        eventType: Type.Union([Type.Literal("assistant/message"), Type.Literal("assistant/attempt")]),
+        messageId: Type.Optional(identifier),
+      }),
+    ]),
+  }),
+  strictObject({ kind: Type.Literal("assistant_delta"), delta: Type.String({ maxLength: 262_144 }), streamId: identifier, frameIndex: nonNegativeInteger }),
+  strictObject({ kind: Type.Literal("thinking_delta"), delta: Type.String({ maxLength: 262_144 }), streamId: identifier, frameIndex: nonNegativeInteger }),
   strictObject({ kind: Type.Literal("message_event"), role: Type.Union([Type.Literal("assistant"), Type.Literal("user"), Type.Literal("tool_result")]), eventId: identifier, messageId: Type.Optional(identifier) }),
   strictObject({ kind: Type.Literal("queued_message"), messageId: identifier, state: queuedMessageState, eventId: Type.Optional(identifier) }),
   strictObject({ kind: Type.Literal("tool"), phase: Type.Literal("start"), name: identifier, input: Type.Unknown() }),
