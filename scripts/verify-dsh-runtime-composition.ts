@@ -1664,7 +1664,7 @@ const main = (): void => {
       "canonical tool pipeline evidence",
     );
     const expectedModelTools = [...CANONICAL_TOOL_NAMES.filter((name) => name !== "pwsh"), "mcp__artifact_host__release_check"].toSorted();
-    if (canonicalToolPipeline.callCount !== 38
+    if (canonicalToolPipeline.callCount !== 43
       || JSON.stringify(canonicalToolPipeline.names) !== JSON.stringify(CANONICAL_TOOL_NAMES)
       || JSON.stringify(canonicalToolPipeline.observedRootToolNames) !== JSON.stringify(expectedModelTools)
       || canonicalToolPipeline.onlyExpectedToolNames !== true
