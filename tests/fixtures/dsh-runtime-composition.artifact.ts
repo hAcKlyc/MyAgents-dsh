@@ -4940,8 +4940,10 @@ const permissionDecidedEvents = primaryAgent.session.snapshotEvents().filter(({ 
 const permissionRuleEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule");
 const permissionRuleRevokedEvents = primaryAgent.session.snapshotEvents()
   .filter(({ type }) => type === "myagents/permission/rule/revoked");
-assert.equal(permissionAskedEvents.length, 26);
-assert.equal(permissionDecidedEvents.length, 26);
+assert.equal(permissionAskedEvents.length, 27);
+assert.equal(permissionDecidedEvents.length, 27);
+assert.equal(hostInteractionCalls.filter((request) => request.kind === "permission"
+  && request.authority?.callId === "artifact-foreground-spill-call").length, 1);
 assert.equal(permissionRuleEvents.length, 3);
 assert.equal(permissionRuleRevokedEvents.length, 1);
 assert.equal(hostInteractionResponses.length, hostInteractionCalls.length + 2);
