@@ -191,6 +191,25 @@ const createWebHarness = async (options: Readonly<{
 };
 
 describe("safe Web Providers and canonical Web tools", () => {
+  it.each(["local-fetch", "host-fetch", "search"] as const)("preserves a valid %s result without optional usage", async (route) => {
+    const harness = await createWebHarness({
+      utility: { run: () => Promise.resolve({ answer: "Useful answer", citations: [], truncated: false }) },
+      ...(route === "host-fetch" ? { host: { available: () => true, run: (request: ProductHostWebFetchRequest) => Promise.resolve({
+        answer: "Useful answer", citations: [], finalUrl: request.url, url: request.url, truncated: false,
+      }) } } : {}),
+      search: { available: () => true, credentialRef: "credential-ref-v1", policyRef: policy.policyRef,
+        providerId: "approved-search", run: () => Promise.resolve({
+          answer: "Useful answer", citations: [], results: [], searchCount: 1, durationMs: 1, truncated: false,
+        }) },
+    });
+    try {
+      const result = await harness.execute(route === "search" ? "WebSearch" : "WebFetch",
+        route === "search" ? { query: "Fixture" } : { url: "https://example.com/source", prompt: "Summarize" });
+      expect(result).toMatchObject({ isError: false, value: { answer: "Useful answer" } });
+      expect(result.value).not.toHaveProperty("usage");
+    } finally { await harness.context.fiber.dispose(); }
+  });
+
   it.each(["WebFetch", "WebSearch"] as const)("preserves permission failures before %s dispatch", async (tool) => {
     const failure = new ProductPermissionError("permission_revision_stale", "Permission revision changed", {
       cause: new Error("synthetic-private-cause https://example.test/?key=fixture-secret"),
@@ -709,7 +728,7 @@ describe("safe Web Providers and canonical Web tools", () => {
       }),
     });
     await expect(search.execute("WebSearch", { query: "usage mismatch" }))
-      .resolves.toMatchObject({ isError: true, error: { info: { code: "provider_search_failed" } } });
+      .resolves.toMatchObject({ isError: false, value: { results: [] } });
     providerMode = "url";
     await expect(search.execute("WebSearch", { query: "unsafe URL" }))
       .resolves.toMatchObject({ isError: true, error: { info: { code: "provider_search_failed" } } });

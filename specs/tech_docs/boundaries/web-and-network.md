@@ -16,6 +16,8 @@ implementation_decision: ../../prd/tech_rfc_0.1_runtime_architecture.md
 
 This guide explains canonical `WebSearch`/`WebFetch`, safe direct HTTP and managed MCP network transport. `packages/tools-web/` owns canonical web tool behavior and the safe HTTP client; model profile and Host capability admission select the backend.
 
+Canonical WebFetch/WebSearch usage is optional. Missing or unusable Provider metering must not invalidate a useful answer or search result; canonical output normalization omits unusable usage while preserving content and provenance. Agent output follows the same optional-metering rule. Valid usage remains exact and separately attributable, and unavailable statistics are never fabricated as zero. Permission, URL/domain/citation provenance, cancellation and execution bounds remain authoritative.
+
 ## 2. Relationships
 
 - **Owns:** operation-frozen Runtime network-policy enforcement, Runtime safe-HTTP DNS/address/redirect/size/deadline controls, canonical result/citation validation and web queue bounds.

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
 import { Value } from "typebox/value";
+import type { Static } from "typebox";
 import { validateNormalizedEffectiveToolCatalog } from "@myagents-dsh/protocol/tool-catalog";
 
 export {
@@ -14,7 +15,7 @@ import {
   canonicalToolContractAuthority,
   type CanonicalToolName,
 } from "./contract-source.js";
-import { CANONICAL_JSON_LIMITS, stableJson } from "./schema.js";
+import { CANONICAL_JSON_LIMITS, stableJson, tokenUsage } from "./schema.js";
 
 export const CANONICAL_TOOL_CONTRACT_SHA256 = createHash("sha256")
   .update(stableJson(canonicalToolContractAuthority()))
@@ -121,6 +122,14 @@ const validateToolValue = (
   value: unknown,
 ): unknown => {
   const normalized = normalizeCanonicalJson(value, `${name} ${direction}`);
+  if (direction === "output" && (name === "WebFetch" || name === "WebSearch" || name === "Agent")
+    && normalized !== null && typeof normalized === "object" && !Array.isArray(normalized)) {
+    const output = normalized as Record<string, unknown>;
+    const usage = output.usage;
+    // Optional metering must not invalidate usable content or a completed child.
+    if (Object.hasOwn(output, "usage") && (!Value.Check(tokenUsage, usage)
+      || !hasExactTokenUsageTotal(usage))) delete output.usage;
+  }
   const schema = direction === "input"
     ? CANONICAL_TOOL_CONTRACTS[name].executionInputSchema
     : CANONICAL_TOOL_CONTRACTS[name].outputSchema;
@@ -171,17 +180,9 @@ const asRecord = (value: unknown, description: string): Record<string, unknown> 
   return value as Record<string, unknown>;
 };
 
-const assertTokenUsageTotal = (value: unknown, description: string): void => {
-  const usage = asRecord(value, description);
-  const inputTokens = usage.inputTokens as number;
-  const outputTokens = usage.outputTokens as number;
-  const cacheReadTokens = usage.cacheReadTokens as number;
-  const cacheWriteTokens = usage.cacheWriteTokens as number;
-  const totalTokens = usage.totalTokens as number;
-  const computedTotal = inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
-  if (!Number.isSafeInteger(computedTotal) || computedTotal !== totalTokens) {
-    fail(description, "totalTokens differs from its component token counts");
-  }
+const hasExactTokenUsageTotal = (usage: Static<typeof tokenUsage>): boolean => {
+  const computedTotal = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
+  return Number.isSafeInteger(computedTotal) && computedTotal === usage.totalTokens;
 };
 
 const assertTaskSequence = (value: unknown, description: string): void => {
@@ -192,8 +193,7 @@ const assertTaskSequence = (value: unknown, description: string): void => {
 };
 
 const validateOutputSemantics = (name: CanonicalToolName, normalized: unknown): void => {
-  if (name !== "Glob" && name !== "WebFetch" && name !== "WebSearch" && name !== "Agent"
-    && name !== "AskUserQuestion" && name !== "TaskCreate" && name !== "TaskGet"
+  if (name !== "Glob" && name !== "AskUserQuestion" && name !== "TaskCreate" && name !== "TaskGet"
     && name !== "TaskList" && name !== "TaskUpdate") return;
   const output = asRecord(normalized, `${name} output`);
   switch (name) {
@@ -204,15 +204,6 @@ const validateOutputSemantics = (name: CanonicalToolName, normalized: unknown): 
       }
       return;
     }
-    case "WebFetch":
-    case "WebSearch":
-      assertTokenUsageTotal(output.usage, `${name} output usage`);
-      return;
-    case "Agent":
-      if (Object.hasOwn(output, "usage")) {
-        assertTokenUsageTotal(output.usage, "Agent output usage");
-      }
-      return;
     case "AskUserQuestion": {
       const answers = output.answers as Array<Record<string, unknown>>;
       const observed = new Set<number>();

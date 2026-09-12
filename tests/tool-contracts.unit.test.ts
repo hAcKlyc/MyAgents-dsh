@@ -289,7 +289,7 @@ describe("canonical tool contract authority", () => {
       numFiles: 999,
     })).toThrow(/filename count/u);
     for (const name of ["WebFetch", "WebSearch", "Agent"] as const) {
-      expect(() => validateCanonicalToolOutput(name, {
+      expect(validateCanonicalToolOutput(name, {
         ...CANONICAL_TOOL_SCHEMA_FIXTURES[name].output,
         usage: {
           inputTokens: 1,
@@ -298,7 +298,7 @@ describe("canonical tool contract authority", () => {
           cacheWriteTokens: 0,
           totalTokens: 999,
         },
-      })).toThrow(/component token counts/u);
+      })).not.toHaveProperty("usage");
     }
     expect(() => validateCanonicalToolOutput("AskUserQuestion", {
       ...CANONICAL_TOOL_SCHEMA_FIXTURES.AskUserQuestion.output,

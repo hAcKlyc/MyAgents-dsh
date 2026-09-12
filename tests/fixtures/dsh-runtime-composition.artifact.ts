@@ -1123,13 +1123,6 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
             answer: `${request.prompt}: ${request.source}`,
             citations: Object.freeze([{ title: "Governed document", url: request.finalUrl }]),
             truncated: false,
-            usage: Object.freeze({
-              cacheReadTokens: 0,
-              cacheWriteTokens: 0,
-              inputTokens: 4,
-              outputTokens: 2,
-              totalTokens: 6,
-            }),
           }));
         },
       }),
@@ -1155,13 +1148,6 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
           }]),
           searchCount: 1,
           truncated: false,
-          usage: Object.freeze({
-            cacheReadTokens: 0,
-            cacheWriteTokens: 0,
-            inputTokens: 3,
-            outputTokens: 1,
-            totalTokens: 4,
-          }),
         }));
       },
     }),
@@ -3172,13 +3158,6 @@ assert.deepEqual(webFetchOutput, {
   finalUrl: "https://redirect.example.com/document.pdf",
   truncated: false,
   url: "https://example.com/document.pdf",
-  usage: {
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    inputTokens: 4,
-    outputTokens: 2,
-    totalTokens: 6,
-  },
 });
 const webSearchOutput = JSON.parse(durableToolText("artifact-web-search-call")) as Record<string, unknown>;
 assert.deepEqual(webSearchOutput, {
@@ -3192,13 +3171,6 @@ assert.deepEqual(webSearchOutput, {
   }],
   searchCount: 1,
   truncated: false,
-  usage: {
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    inputTokens: 3,
-    outputTokens: 1,
-    totalTokens: 4,
-  },
 });
 assert.deepEqual(webToolEvidence.filter((entry) => !entry.startsWith("search:")), [
   "dns:example.com",

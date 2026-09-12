@@ -85,7 +85,7 @@ export interface CanonicalWebFetchToolsConfig {
       readonly answer: string;
       readonly citations: readonly Readonly<{ readonly title: string; readonly url: string }>[];
       readonly truncated: boolean;
-      readonly usage: Readonly<{
+      readonly usage?: Readonly<{
         readonly inputTokens: number;
         readonly outputTokens: number;
         readonly cacheReadTokens: number;
@@ -103,7 +103,7 @@ export interface CanonicalWebFetchToolsConfig {
       readonly finalUrl: string;
       readonly truncated: boolean;
       readonly url: string;
-      readonly usage: Readonly<{
+      readonly usage?: Readonly<{
         readonly inputTokens: number;
         readonly outputTokens: number;
         readonly cacheReadTokens: number;
@@ -132,7 +132,7 @@ export interface CanonicalWebSearchToolsConfig {
     }>[];
     readonly searchCount: number;
     readonly truncated: boolean;
-    readonly usage: Readonly<{
+    readonly usage?: Readonly<{
       readonly inputTokens: number;
       readonly outputTokens: number;
       readonly cacheReadTokens: number;
@@ -168,7 +168,7 @@ interface ProductSearchDetail {
   readonly results: readonly Readonly<{ readonly snippet: string; readonly title: string; readonly url: string }>[];
   readonly searchCount: number;
   readonly truncated: boolean;
-  readonly usage: Readonly<{
+  readonly usage?: Readonly<{
     readonly inputTokens: number;
     readonly outputTokens: number;
     readonly cacheReadTokens: number;
@@ -501,13 +501,18 @@ class ProductSearchProvider implements WebSearchProvider {
         "WebSearch Provider result",
       ) as ProductSearchDetail;
       store.context.signal.throwIfAborted();
-      const detailKeys = ["citations", "durationMs", "results", "searchCount", "truncated", "usage"];
+      const detailKeys = ["citations", "durationMs", "results", "searchCount", "truncated"];
       if (detailKeys.some((key) => !Object.hasOwn(detail, key))
         || Reflect.ownKeys(detail).some((key) => typeof key !== "string"
-          || ![...detailKeys, "answer", "warnings"].includes(key))) {
+          || ![...detailKeys, "answer", "warnings", "usage"].includes(key))) {
         throw new TypeError("WebSearch Provider result has an invalid exact shape");
       }
       const checked = validateCanonicalToolOutput("WebSearch", { query: request.query, ...detail }) as JsonObject;
+      if (!Object.hasOwn(checked, "usage")) {
+        const availableDetail = { ...detail };
+        delete availableDetail.usage;
+        detail = availableDetail;
+      }
       if (detail.warnings?.includes("unverified_search_results")
         && (store.allowedDomains !== undefined || store.blockedDomains !== undefined)) {
         detail = Object.freeze({ ...detail, warnings: Object.freeze([
@@ -784,7 +789,7 @@ export class CanonicalWebTools extends Service {
               finalUrl: redactUrl(fetched.url),
               truncated: fetched.truncated || source.truncated || utility.truncated === true,
               url: redactUrl(args.url as string),
-              usage: utility.usage,
+              ...(utility.usage === undefined ? {} : { usage: utility.usage }),
             }) as JsonObject;
             const finalUrl = redactUrl(fetched.url);
             const citationUrls = assertHttpCitations(output.citations, "WebFetch");
