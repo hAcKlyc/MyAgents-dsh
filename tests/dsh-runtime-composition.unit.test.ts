@@ -34,15 +34,18 @@ describe("DSH root service composition boundary", () => {
       adapter,
       agentLoop: { maxParallelToolCalls: 2 },
       providers: ["fixture"],
-      systemPrompt: { persona: "Synthetic test persona." },
+      systemPrompt: { personaPrefix: "Synthetic test persona.", personaSuffix: "Synthetic closing guidance." },
       tools: { mode: "native" },
     })).toMatchObject({
       adapter,
       agentLoop: { maxParallelToolCalls: 2 },
       providers: ["fixture"],
-      systemPrompt: { persona: "Synthetic test persona." },
+      systemPrompt: { personaPrefix: "Synthetic test persona.", personaSuffix: "Synthetic closing guidance." },
       tools: { mode: "native" },
     });
+    expect(() => validateDshRootCompositionOptions({
+      systemPrompt: { persona: "Obsolete deployment field." },
+    })).toThrow("unsupported field");
     expect(() => validateDshRootCompositionOptions({
       adapter,
       agentLoop: { agents: [{ id: "injected" }] },

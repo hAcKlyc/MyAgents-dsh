@@ -350,7 +350,7 @@ export const validateDshRootCompositionOptions = (
     ? {}
     : exactOwnDataKeys(
       options.systemPrompt,
-      ["includeHarnessIdentity", "includeRuntimeContext", "persona", "toolOrder"],
+      ["includeHarnessIdentity", "includeRuntimeContext", "personaPrefix", "personaSuffix", "toolOrder"],
       "DSH SystemPrompt options",
     );
   const tools = options.tools === undefined

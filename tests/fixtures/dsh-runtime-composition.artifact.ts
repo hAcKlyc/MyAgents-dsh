@@ -967,7 +967,10 @@ const composition = await composeDshRootServices({
     }),
   }),
   providers: ["fixture"],
-  systemPrompt: { personaPrefix: "Composition fallback persona before primary Session admission." },
+  systemPrompt: {
+    personaPrefix: "Composition fallback persona before primary Session admission.",
+    personaSuffix: "Composition closing guidance after primary Session admission.",
+  },
   tools: { mode: "native" },
 });
 assert.equal(composition.context.compaction instanceof BasicCompactionEngine, true);
@@ -2468,6 +2471,11 @@ assert.equal(
   primaryPrompt.sections.find(({ name }) => name === PERSONA_PREFIX_SECTION)?.text,
   primarySessionParams.systemPrompt,
   "created primary Session must install the requested persona in its Agent scope",
+);
+assert.equal(
+  primaryPrompt.sections.find(({ name }) => name === "deployment:persona-suffix")?.text,
+  "Composition closing guidance after primary Session admission.",
+  "the public deployment suffix must survive the scoped Host persona prefix",
 );
 for (const name of artifactEffectiveTools) {
   assert.ok(composition.context.tools.get(name, primaryAgent), `missing canonical tool ${name}`);
