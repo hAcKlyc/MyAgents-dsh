@@ -1698,19 +1698,17 @@ const main = (): void => {
     }
     const webEvidence = exactObject(evidence.canonicalWebEvidence, "canonical Web tool evidence");
     const webFetch = exactObject(webEvidence.fetch, "canonical WebFetch output evidence");
-    const webFetchUsage = exactObject(webFetch.usage, "canonical WebFetch usage evidence");
     const webSearch = exactObject(webEvidence.search, "canonical WebSearch output evidence");
-    const webSearchUsage = exactObject(webSearch.usage, "canonical WebSearch usage evidence");
     if (webFetch.url !== "https://example.com/document.pdf"
       || webFetch.finalUrl !== "https://redirect.example.com/document.pdf"
       || webFetch.answer !== "Summarize the governed document: converted governed PDF fixture"
       || webFetch.truncated !== false
-      || webFetchUsage.totalTokens !== 6
+      || Object.hasOwn(webFetch, "usage")
       || webSearch.query !== "governed web fixture"
       || webSearch.searchCount !== 1
       || webSearch.durationMs !== 7
       || webSearch.truncated !== false
-      || webSearchUsage.totalTokens !== 4
+      || Object.hasOwn(webSearch, "usage")
       || !Array.isArray(webEvidence.permissions)
       || JSON.stringify(webEvidence.permissions.filter((entry) => typeof entry === "string"
         && entry.startsWith("permission:WebFetch:"))) !== JSON.stringify([
