@@ -4943,7 +4943,7 @@ const permissionRuleRevokedEvents = primaryAgent.session.snapshotEvents()
 assert.equal(permissionAskedEvents.length, 27);
 assert.equal(permissionDecidedEvents.length, 27);
 assert.equal(hostInteractionCalls.filter((request) => request.kind === "permission"
-  && request.authority?.callId === "artifact-foreground-spill-call").length, 1);
+  && request.authority.callId === "artifact-foreground-spill-call").length, 1);
 assert.equal(permissionRuleEvents.length, 3);
 assert.equal(permissionRuleRevokedEvents.length, 1);
 assert.equal(hostInteractionResponses.length, hostInteractionCalls.length + 2);
