@@ -855,7 +855,7 @@ adapter.enqueue({
 adapter.enqueue({
   calls: [
     { id: "artifact-plan-read-call", name: "Read", arguments: JSON.stringify({ file_path: fixturePlanPath }) },
-    { id: "artifact-plan-bash-denied-call", name: "bash", arguments: JSON.stringify({ description: "Artifact Shell check", command: "printf forbidden" }) },
+    { id: "artifact-plan-bash-research-call", name: "bash", arguments: JSON.stringify({ description: "Inspect during planning", command: "printf plan-shell-research" }) },
   ],
   kind: "tool-calls",
 });
@@ -3253,10 +3253,11 @@ assert.ok(durableToolText("artifact-plan-write-call").includes(`<path>${fixtureP
 assert.match(durableToolText("artifact-plan-write-call"), /Created file/u);
 assert.ok(durableToolText("artifact-plan-read-call").includes(`<path>${fixturePlanPath}</path>`));
 assert.match(durableToolText("artifact-plan-read-call"), /1: # Governed plan\n2: \n3: 1\. Keep DSH as the only AgentLoop\./u);
-const deniedPlanBash = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
-  && String(event.data.message.source.callId) === "artifact-plan-bash-denied-call");
-assert.ok(deniedPlanBash?.type === "tool/result");
-assert.equal(deniedPlanBash.data.message.content[0].isError, true);
+const planBash = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
+  && String(event.data.message.source.callId) === "artifact-plan-bash-research-call");
+assert.ok(planBash?.type === "tool/result");
+assert.equal(planBash.data.message.content[0].isError, false);
+assert.equal(durableToolText("artifact-plan-bash-research-call"), "plan-shell-research");
 assert.equal(composition.context.productProcesses.snapshot().liveProcesses, 0);
 assert.deepEqual(JSON.parse(durableToolText("artifact-exit-plan-call")), {
   disposition: "approved",
@@ -4948,8 +4949,8 @@ const permissionDecidedEvents = primaryAgent.session.snapshotEvents().filter(({ 
 const permissionRuleEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule");
 const permissionRuleRevokedEvents = primaryAgent.session.snapshotEvents()
   .filter(({ type }) => type === "myagents/permission/rule/revoked");
-assert.equal(permissionAskedEvents.length, 25);
-assert.equal(permissionDecidedEvents.length, 25);
+assert.equal(permissionAskedEvents.length, 26);
+assert.equal(permissionDecidedEvents.length, 26);
 assert.equal(permissionRuleEvents.length, 3);
 assert.equal(permissionRuleRevokedEvents.length, 1);
 assert.equal(hostInteractionResponses.length, hostInteractionCalls.length + 2);

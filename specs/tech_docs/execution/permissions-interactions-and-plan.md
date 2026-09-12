@@ -121,6 +121,8 @@ In `default` mode, model-driven interaction tools can produce two Host interacti
 
 Plan is not a fifth permission mode. `ProductPlanService` owns one durable `normal | plan` state, the managed plan artifact, prompt contribution and monotonic tool guard. Model-visible `EnterPlanMode` and `ExitPlanMode` continue to use that service.
 
+Plan keeps the platform's ordinary `bash` or `pwsh` tool available for research, matching the Explore role's prompt-guided read-only use. The Plan prompt permits inspection and forbids file changes, dependency installation, builds, configuration changes and other Shell side effects. The Runtime does not classify command text or claim a read-only process sandbox. Shell calls still traverse the existing permission, Hook, operation-revision, workspace-cwd and executable checks; Plan itself grants no Shell approval. Governed `Write`/`Edit` remain limited to the managed plan file, and submitting the plan still requires explicit review.
+
 Current source-candidate protocol `2.5.0` retains `plan/apply` unchanged so a first-party Host can
 apply the product's Plan selector at a quiescent boundary. The request carries a client operation
 identity, expected Plan revision and desired mode. Entering `plan` prepares the managed artifact;

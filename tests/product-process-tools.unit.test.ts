@@ -28,6 +28,7 @@ import {
   CANONICAL_TOOL_CONTRACT_SHA256,
   CANONICAL_TOOL_NAMES,
   effectiveToolCatalogDigest,
+  type CanonicalToolName,
 } from "@myagents-dsh/tool-contracts";
 import {
   ProductPermissionError,
@@ -45,6 +46,7 @@ import {
   type ProductProcessRuntimeConfig,
 } from "@myagents-dsh/tools-process";
 import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
+import { ProductPlanService, type ProductPlanController } from "@myagents-dsh/tools-interaction";
 import { LocalWorkspaceFileSystem, requireLocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 import { createHash } from "node:crypto";
 import { chmod, mkdtemp, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
@@ -196,6 +198,7 @@ const harness = async (options: Readonly<{
   dialect?: "bash" | "pwsh";
   realPermission?: ProductLocalInteractionProvider;
   permissionMode?: "default" | "bypassPermissions";
+  planMode?: boolean;
   readEnvironment?: ProductProcessRuntimeConfig["readEnvironment"];
 }> = {}) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-process-tools-")));
@@ -343,12 +346,36 @@ const harness = async (options: Readonly<{
     checkpoint: Object.freeze({ prepare: () => Promise.reject(new Error("checkpoint not used")) }),
     environment: () => environment,
     plan: Object.freeze({
-      assert: () => undefined,
+      assert: (product: ProductToolContext, tool: CanonicalToolName) => {
+        if (options.planMode) context.productPlan.assertTool(product, tool);
+      },
       resolveFileTarget: () => Promise.resolve(undefined),
     }),
     requireAgent: () => agent,
     resolveOperation: () => Object.freeze({ dshTurn: 1, operation: currentOperation }),
   });
+  if (options.planMode) {
+    let controller: ProductPlanController | undefined;
+    await context.plugin(ProductPlanService, {
+      durability: { flush: () => Promise.resolve(true) },
+      environment: () => environment,
+      io: requireLocalWorkspaceFileSystem(context.fs).createPlanIoAuthority(),
+      requireAgent: () => agent,
+      registerController: (value) => { controller = value; },
+      revision: "plan-v1",
+    });
+    if (controller === undefined) throw new Error("plan controller was not registered");
+    const entered = await controller.apply(agent, {
+      clientOperationId: "host-enter-plan",
+      expectedRevision: controller.snapshot(agent).revision,
+      mode: "plan",
+      signal: new AbortController().signal,
+    });
+    currentOperation = Object.freeze({
+      ...currentOperation,
+      birth: Object.freeze({ ...currentOperation.birth, planRevision: entered.revision }),
+    });
+  }
   await context.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 2 });
   const processIo = requireLocalWorkspaceFileSystem(context.fs).createProcessIoAuthority();
   await context.plugin(ProductProcessRuntime, { io: processIo, process: config });
@@ -394,9 +421,11 @@ const harness = async (options: Readonly<{
 };
 
 describe("official Shell tools with product policy", () => {
-  it.each(["bash", "pwsh"] as const)("uses real permission admission for %s in the workspace and a subdirectory", async (dialect) => {
+  it.each([
+    ["bash", false], ["pwsh", false], ["bash", true], ["pwsh", true],
+  ] as const)("uses real permission admission for %s with plan=%s in the workspace and a subdirectory", async (dialect, planMode) => {
     const pending: Array<{ request: ProductPermissionInteractionRequest; settlement: ProductLocalInteractionSettlement<unknown> }> = [];
-    const state = await harness({ dialect, realPermission: {
+    const state = await harness({ dialect, planMode, realPermission: {
       revision: "interaction-v1",
       decidePermission: (request, settlement) => { pending.push({ request, settlement }); return () => undefined; },
       answerQuestions: () => { throw new Error("unexpected question"); },
@@ -422,9 +451,11 @@ describe("official Shell tools with product policy", () => {
     await state.context.fiber.dispose();
   });
 
-  it.each(["deny", "cancel"] as const)("does not spawn through real permission after %s", async (decision) => {
+  it.each([
+    ["deny", false], ["cancel", false], ["deny", true], ["cancel", true],
+  ] as const)("does not spawn through real permission after %s with plan=%s", async (decision, planMode) => {
     let pending: { request: ProductPermissionInteractionRequest; settlement: ProductLocalInteractionSettlement<unknown> } | undefined;
-    const state = await harness({ realPermission: {
+    const state = await harness({ planMode, realPermission: {
       revision: "interaction-v1", decidePermission: (request, settlement) => { pending = { request, settlement }; return () => undefined; },
       answerQuestions: () => { throw new Error("unexpected question"); },
     } });

@@ -607,8 +607,9 @@ export class ProductPlanService extends Service {
           if (prompt.agent === undefined || prompt.agent !== this.configValue.requireAgent()) return "";
           const snapshot = this.snapshot(prompt.agent);
           if (snapshot.mode !== "plan") return "";
-          return `Hard plan mode is active. Explore and edit only the managed plan artifact ${snapshot.planPath}. `
-            + "Do not execute processes or perform non-plan mutations. The plan path may not exist yet: use Write to author the plan there before submitting ExitPlanMode for explicit review.";
+          return `Plan mode is active. Research the task and edit only the managed plan artifact ${snapshot.planPath}. `
+            + "Use the available Bash or PowerShell tool only for read-only inspection. Do not use shell commands to modify files, install dependencies, run builds, change settings, or perform other side effects. "
+            + "Shell calls follow the usual permission policy. The plan path may not exist yet: use Write to author the plan there before submitting ExitPlanMode for explicit review.";
         },
       });
       return async () => {

@@ -3,10 +3,10 @@
   "authority": "packages/tool-contracts/src/contract-source.ts",
   "behaviorFixtureCount": 122,
   "canonicalToolCount": 24,
-  "catalogSchemaSha256": "410eb5225c3d53225812721726cb499cd43374f1adbf922bbff1b82134c28f99",
-  "contractSha256": "3b8eae749e9909e9d84cacf49dc6fd8c94c70a00548405adb43ae1540bc6218b",
-  "documentationSha256": "4f98e90160fe5e2d454740a87c77b116bca7f98b287425c80f64611e3deab8ed",
-  "fixturesSha256": "a02d4e9e60f5f81f41aef83edfd0e9d84ab659e033a061d7be92f10b3eaf1078",
+  "catalogSchemaSha256": "5e277d1c5cb62f0a72411cc71dfdbe1df1d9c85d8cd0e301bdcd80f5b5043f2b",
+  "contractSha256": "ed6eb7df2eb3798f8ef054934af1c642af265106e0fbaf9739ef3006fbc16b84",
+  "documentationSha256": "461a5c1c4726121cadc945bb50f05802f0207c917570ce36223e2ce35e93bad4",
+  "fixturesSha256": "3f91d43d8c82cd786b536c7bcdac82eb910aac0b8d89d6a5b584126f4a752113",
   "generator": "scripts/generate-tool-contracts.ts",
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
@@ -14,7 +14,7 @@
     "packages/protocol/src/tool-catalog-schema.ts"
   ],
   "profile": "canonical-agent-experience-v1",
-  "reuseMatrixSha256": "d2b3b0b26d7b57fcbd94dbc1906c391ecb34d4910845e775849d03b76f5bd0de",
+  "reuseMatrixSha256": "98efdff75571223068fcc8237a8bd1293983c6f3fca9d584b3fb285c44c66c22",
   "toolDigests": {
     "Agent": "e96aabde17104c59aa9a113951bbbd78be5e0744cf50d45b57930d4a16e20f89",
     "AskUserQuestion": "636c602d528e80a423e2eeae53dbf3fc60c881bedde405fb922f61ad30a25d1d",
@@ -34,11 +34,11 @@
     "WebFetch": "34a5131c26502ecbcd1002de6288ba0c7017c18beeaa46803d8d0683831f2ddc",
     "WebSearch": "e8543011fe5c98f37ea5aab5f89195d32bdf8c958ac8f8fc8b1ebf9778fc472b",
     "Write": "37a52bdf6e5ffe62c4ef7f90deffb7f185d832ae5e431a103d0713608c9b35c7",
-    "bash": "7cf8f44ba3832ffbf38071adb8c019a557461e29e06c633004995e3c5afc9cd5",
+    "bash": "94ffcd4ea5a0d3978ebeb1e660546342d74f7c338dabe0ee336574a21de11042",
     "job_kill": "4b4575ebd38272690828238e7ba0b1279d536acc5b0ee7e4e61ef5a766df54ad",
     "job_list": "ec08f4cacb906606ce3a6a79645c7699d7c41df58f214cc4fe40a66ac9181384",
     "job_output": "512e3fe63f26a6a076cfcb94449bb22f2f2e152fce19c62ef508ee72b422b8e7",
     "ls": "98335fd6d8109cff2de7473a87a069cbf3ea86445a3b85aa9e2aa16a7a9bae32",
-    "pwsh": "6fdd23f9aafff357ae2b77945cbd55a2b5ad903d1b6cbc7a85ef051d246b243d"
+    "pwsh": "8278cdb5d0054b52d15c7d7d24570582126406797855f7bec3693a4b6ba998e5"
   }
 }

@@ -85,7 +85,7 @@ describe("canonical tool contract authority", () => {
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
       CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "managed-plan-file-only")).toEqual(["Write", "Edit"]);
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
-      CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "denied")).toEqual(["bash", "pwsh", "job_kill", "TaskStop", "SendMessage"]);
+      CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "denied")).toEqual(["job_kill", "TaskStop", "SendMessage"]);
     expect(CANONICAL_TOOL_CONTRACTS.Agent.planPolicy).toMatchObject({
       denialCode: "plan_safe_agent_unavailable",
       mode: "plan-safe-child-only",

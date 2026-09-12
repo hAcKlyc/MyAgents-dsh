@@ -419,6 +419,8 @@ An acknowledged interactive desktop request waits without a human-decision wall-
 
 Shell approval carries ephemeral full command, sealed working directory and optional description through the existing interaction schema. This review projection never changes permission tuple matching or durable rule contents; its ownership is documented in [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md#5-blocking-interactions).
 
+Plan retains the selected Bash/PowerShell tool for prompt-guided read-only research, with ordinary Shell authorization and execution checks. Governed file mutations remain limited to the managed plan artifact. [Plan policy](./tech_docs/execution/permissions-interactions-and-plan.md#6-host-controlled-plan-state) owns this boundary; no command parser or read-only OS sandbox is introduced.
+
 ## 11. Declarative component lifecycle
 
 Host extension input contains descriptors and content resources, never executable plugin code. `ProductComponentService` compiles a snapshot into a prepared component generation:

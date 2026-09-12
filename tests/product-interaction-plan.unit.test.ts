@@ -515,7 +515,13 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     const read = await state.execute("Read", { file_path: entered.planPath });
     expect(read.isError).toBe(false);
 
-    const rootCall = ToolCallId("hard-plan-guard");
+    const planPrompt = (await state.context.systemPrompt.assemble({ agent: state.agent })).sections
+      .find(({ name }) => name === "product:plan-policy")?.text;
+    expect(planPrompt).toContain("Bash or PowerShell tool only for read-only inspection");
+    expect(planPrompt).toContain("usual permission policy");
+    expect(planPrompt).toContain(entered.planPath);
+
+    const rootCall = ToolCallId("plan-shell-research");
     expect(() => state.context.productTools.resolve({
       agent: state.agent,
       arguments: Object.freeze({}),
@@ -523,7 +529,11 @@ describe("canonical interaction and DSH-backed plan mode", () => {
       name: "bash",
       rootCallId: rootCall,
       signal: new AbortController().signal,
-    } as never)).toThrow(expect.objectContaining({ code: "plan_mode_side_effect_forbidden" }));
+    } as never)).not.toThrow();
+    expect((await state.execute("Write", {
+      content: "unapproved implementation",
+      file_path: join(state.workspace, "implementation.txt"),
+    })).isError).toBe(true);
 
     state.questionResponders.push(state.answer(["Keep planning"]));
     const rejected = state.output(await state.execute("ExitPlanMode", {}));
