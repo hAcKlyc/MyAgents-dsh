@@ -154,3 +154,5 @@ precedence, NO_PROXY, changed subsequent policy, safe-HTTP MCP transport, cancel
 shutdown. Unit tests separately reject private literals, unsafe redirects and capability getters,
 and prove no direct fallback. This is macOS source evidence, not HTTPS, arbitrary-client, packed,
 other-platform or real-Provider acceptance.
+
+Concurrent generation shutdown and Provider iterator cleanup use idempotent destruction of already-retiring pools; closing an already-destroyed undici pool would otherwise replace the original cancellation with a cleanup error. The native loopback regression keeps both general and Provider requests stalled while disposing the generation.

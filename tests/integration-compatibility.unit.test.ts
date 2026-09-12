@@ -1,3 +1,4 @@
+import { PI_AI_SOURCE } from "../scripts/pi-ai-seam.js";
 import { createHash } from "node:crypto";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -84,6 +85,8 @@ describe("MyAgents-dsh integration compatibility manifest", () => {
     const artifact = verifyInstalledRuntimeArtifact(root);
     const manifest = createMyAgentsDshCompatibilityManifest(artifact, generatedClientSha256, platforms);
     expect(manifest.runtime.artifactSha256).toBe(artifact.manifestSha256);
+    expect(manifest.apiFamilies.map(family => family.piAiVersion))
+      .toEqual(Array.from({ length: 3 }, () => PI_AI_SOURCE.packageVersion));
     expect(manifest.apiFamilies.map(({ id }) => id)).toEqual([
       "anthropic-messages", "openai-completions", "openai-responses",
     ]);

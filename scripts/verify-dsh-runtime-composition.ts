@@ -47,7 +47,7 @@ import {
   verifyExistingBundle,
 } from "./build-patched-dsh-artifact.js";
 import { readDshSeamPatchSet } from "./dsh-seam-decisions.js";
-import { verifyPiAiSource } from "./pi-ai-seam.js";
+import { PI_AI_SOURCE, verifyPiAiSource } from "./pi-ai-seam.js";
 import { materializeRuntimeArtifactFileLinks } from "./runtime-artifact-packaging.js";
 import { evaluateToolchain } from "./toolchain-policy.mjs";
 
@@ -223,8 +223,8 @@ const officialPiAiTypeboxVersion = "1.3.7" as const;
 const runtimeNodeTypesVersion = "24.13.3" as const;
 const officialPiAiAdapterPackage = "@deepseek-ai/dsh-llm-pi-ai" as const;
 const officialPiAiAuthorizationPeerPackage = "@deepseek-ai/dsh-authorization" as const;
-const officialPiAiCorePackage = "@earendil-works/pi-ai" as const;
-const officialPiAiCoreVersion = "0.84.2" as const;
+const officialPiAiCorePackage = PI_AI_SOURCE.packageName;
+const officialPiAiCoreVersion = PI_AI_SOURCE.packageVersion;
 const run = (
   command: string,
   args: readonly string[],
@@ -1103,7 +1103,7 @@ const main = (): void => {
     const buildRoot = cleanBuildRuntimeComposition(temporaryRoot, environment);
     run("npm", ["ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], consumerRoot, environment);
     prepareRuntimeConsumerOverrides(consumerRoot);
-    const patchedPiAiTarball = resolve(bundleRoot, "earendil-works-pi-ai-patched-0.84.2.tgz");
+    const patchedPiAiTarball = resolve(bundleRoot, `earendil-works-pi-ai-patched-${PI_AI_SOURCE.packageVersion}.tgz`);
     verifyPiAiSource(piAiSourceRoot, {
       compileAndTest: true,
       npmCache: values["npm-cache"],

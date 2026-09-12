@@ -52,7 +52,7 @@ class ScopedModelDispatcher extends Dispatcher {
         this.#scopes.delete(scope);
         const retiring = [...owned.values()];
         owned.clear();
-        try { await Promise.all(retiring.map((pool) => pool.close())); }
+        try { await Promise.all(retiring.map((pool) => this.#closed ? pool.destroy() : pool.close())); }
         finally { for (const pool of retiring) this.#active.delete(pool); }
       });
     }

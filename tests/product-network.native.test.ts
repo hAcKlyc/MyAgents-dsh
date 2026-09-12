@@ -146,8 +146,16 @@ await test("Runtime request-scoped proxy routing uses real loopback HTTP request
       const pending = fetch(`${destination}/stall`);
       const pendingResult = assert.rejects(pending);
       await stalled.promise;
+      stalled = Promise.withResolvers<undefined>();
+      const providerPending = fetchProvider({ httpProxy: providerA, noProxy: "" }, "/stall");
+      const providerResult = assert.rejects(providerPending, error => {
+        assert(error instanceof Error);
+        assert.equal(error.message, "fetch failed");
+        return true;
+      });
+      await stalled.promise;
       await network.dispose(); network = undefined;
-      await pendingResult;
+      await Promise.all([pendingResult, providerResult]);
     }
     await assert.rejects(installProductNetworkTransport({ HTTP_PROXY: "socks5://synthetic:secret@127.0.0.1:9" }, () => undefined), error => {
       assert(error instanceof Error);
