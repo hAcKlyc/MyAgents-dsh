@@ -937,7 +937,11 @@ export class RuntimeEventProjector {
       }
     });
     this.#stopAssistantStream = config.context.on("agent/assistant-stream", ({ agent, frame }) => {
-      if (!this.#ownsSession(agent.session) || this.#config.productSession.snapshot().state !== "ready") return;
+      if (!this.#ownsSession(agent.session)) return;
+      const state = this.#config.productSession.snapshot().state;
+      const settling = state === "closing" && frame.type !== "start"
+        && this.#liveAgent === agent && this.#liveAttempt !== undefined;
+      if (state !== "ready" && !settling) return;
       try { this.#observeAssistantStream(agent, frame); }
       catch (error) { this.#fail(error); }
     });
@@ -1161,7 +1165,9 @@ export class RuntimeEventProjector {
 
   #observeAssistantStream(agent: Agent, frame: AssistantStreamFrame): void {
     if (this.#stopped || this.#closed || this.#failure !== undefined) return;
-    if (this.#config.productSession.requireAgent() !== agent || this.#sourceSession !== agent.session
+    const currentAgent = this.#config.productSession.snapshot().state === "ready"
+      ? this.#config.productSession.requireAgent() : this.#liveAgent;
+    if (currentAgent !== agent || this.#sourceSession !== agent.session
       || this.#nextSourceSequence === undefined) {
       throw new TypeError("assistant stream does not belong to the attached primary Agent");
     }

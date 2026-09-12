@@ -26,7 +26,7 @@ import {
   createUserMessage,
 } from "@deepseek-ai/dsh-llm";
 import { assembleContextFor, type Agent } from "@deepseek-ai/dsh-agent";
-import { PERSONA_PREFIX_SECTION, SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import { PERSONA_PREFIX_SECTION, renderPrompt, SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import {
   ProductComponentService,
@@ -433,7 +433,11 @@ const childAdapter = new ScriptedFakeLlmAdapter({
   model: "fixture-model",
   contextWindow: artifactContextWindow,
 });
+const lateJobNoticeAdapter = new ScriptedFakeLlmAdapter({
+  provider: "fixture", model: "fixture-model", contextWindow: artifactContextWindow,
+});
 class ArtifactRoutingLlmAdapter extends LlmAdapter {
+  readonly completedInputs = new Set<string>();
   override providerInfo(provider: string): LlmProviderInfo {
     return adapter.providerInfo(provider);
   }
@@ -448,7 +452,23 @@ class ArtifactRoutingLlmAdapter extends LlmAdapter {
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const selected = options.sessionId === "dsh-artifact-primary" ? adapter : childAdapter;
-    yield* selected.stream(options);
+    const input = options.messages.findLast(({ role, source }) => role === "user" && source.kind === "myagents-operation");
+    const tail = options.messages.at(-1);
+    // Real background Jobs can report after the scripted final answer. That
+    // legitimate extra step must not consume the next user scenario's script.
+    if (selected === adapter && input !== undefined && this.completedInputs.has(input.id)
+      && tail?.role === "user" && tail.source.kind === "plugin"
+      && tail.source.plugin === "tool-jobs" && tail.source.form === "notice") {
+      lateJobNoticeAdapter.enqueue({ kind: "complete", text: "Background job completion observed." });
+      yield* lateJobNoticeAdapter.stream(options);
+      return;
+    }
+    for await (const chunk of selected.stream(options)) {
+      if (selected === adapter && input !== undefined && chunk.type === "finish" && chunk.reason.kind === "stop") {
+        this.completedInputs.add(input.id);
+      }
+      yield chunk;
+    }
   }
 }
 const routedAdapter = new ArtifactRoutingLlmAdapter();
@@ -771,7 +791,7 @@ adapter.enqueue({
       name: "bash",
       arguments: JSON.stringify({
         description: "Artifact large output check",
-        command: `${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(200004))'`,
+        command: `while [ ! -f .artifact-job-release ]; do /bin/sleep 0.01; done; ${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(200004))'`,
         run_in_background: true,
       }),
     },
@@ -2597,7 +2617,12 @@ const approvalContextMessage = {
   role: "user" as const,
   content: [{ type: "text" as const, text: approvalRuntimeContext }],
 };
+const primarySystemMessage = {
+  role: "system" as const,
+  content: [{ type: "text" as const, text: renderPrompt(primaryPrompt) }],
+};
 assert.deepEqual(primaryAgent.session.deriveMessages().map(({ role, content }) => ({ role, content })), [
+  primarySystemMessage,
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
   approvalContextMessage,
   { role: "assistant", content: [{ type: "text", text: "first completion" }] },
@@ -2605,10 +2630,12 @@ assert.deepEqual(primaryAgent.session.deriveMessages().map(({ role, content }) =
   { role: "assistant", content: [{ type: "text", text: "second completion" }] },
 ]);
 assert.deepEqual(adapter.requests[0]?.messages.map(({ role, content }) => ({ role, content })), [
+  primarySystemMessage,
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
   approvalContextMessage,
 ]);
 assert.deepEqual(adapter.requests[1]?.messages.map(({ role, content }) => ({ role, content })), [
+  primarySystemMessage,
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
   approvalContextMessage,
   { role: "assistant", content: [{ type: "text", text: "first completion" }] },
@@ -2980,6 +3007,15 @@ assert.deepEqual(primaryAgent.session.snapshotEvents()
   "prepared", "published", "settled",
 ]);
 
+let backgroundJobsReleased = false;
+const stopJobDeliveryBarrier = composition.context.on("agent/turn-stopping", async ({ agent }) => {
+  if (agent !== primaryAgent || backgroundJobsReleased) return;
+  backgroundJobsReleased = true;
+  await writeFile(join(fixtureWorkspace, ".artifact-job-release"), "synthetic job barrier\n");
+  await waitUntil(() => agent.session.snapshotEvents().filter((event) => event.type === "agent/inbox/spliced"
+    && event.data.inserted.some(({ source }) => source.kind === "plugin" && source.plugin === "tool-jobs"
+      && source.form === "notice")).length === 2, "both real Jobs publish their native completion notices");
+});
 await composition.context.sdkOperations.start({
   ...turnStartParams,
   clientOperationId: "artifact-process-search-operation",
@@ -2991,6 +3027,12 @@ await waitUntil(
   () => composition.context.sdkOperations.lookup("artifact-process-search-operation")?.state === "terminal",
   "bounded process/search operation terminal",
 );
+stopJobDeliveryBarrier();
+assert.ok(lateJobNoticeAdapter.requests.length >= 1, "the real late Job notice must execute an additional model step");
+assert.ok(lateJobNoticeAdapter.requests.every(({ messages }) => {
+  const source = messages.findLast(({ role, source }) => role === "user" && source.kind === "myagents-operation")?.source;
+  return source?.kind === "myagents-operation" && source.clientOperationId === "artifact-process-search-operation";
+}), "late Job model work must retain its original Product operation");
 assert.equal(
   composition.context.sdkOperations.lookup("artifact-process-search-operation")?.terminal?.kind,
   "succeeded",
@@ -3392,6 +3434,10 @@ await waitUntil(
 assert.equal(
   composition.context.sdkOperations.lookup("artifact-host-tool-operation")?.terminal?.kind,
   "succeeded",
+  JSON.stringify({
+    terminal: composition.context.sdkOperations.lookup("artifact-host-tool-operation")?.terminal,
+    tail: primaryAgent.session.snapshotEvents().slice(-50).map(({ type, seq, data }) => ({ type, seq, data })),
+  }),
 );
 assert.equal(durableToolText("artifact-host-tool-call", 3), "Host release check accepted");
 const hostToolResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
@@ -3486,6 +3532,10 @@ assert.equal(typeof backgroundAgentAdmission.outputPath, "string");
 const backgroundAgentTaskId = backgroundAgentAdmission.taskId as string;
 const backgroundAgentId = backgroundAgentAdmission.agentId as string;
 const backgroundAgentOutputPath = backgroundAgentAdmission.outputPath as string;
+await waitUntil(
+  () => childAdapter.requests.filter(({ sessionId }) => sessionId === backgroundAgentId).length === 2,
+  "background child report delivered and next model request admitted",
+);
 const [backgroundAgentSnapshot] = composition.context.productWork.snapshot();
 assert.ok(backgroundAgentSnapshot);
 const { startedAt: backgroundAgentStartedAt, lastActivityAt: backgroundLastActivityAt, activation: backgroundActivation, handleRevision: backgroundHandleRevision, ...backgroundAgentStableSnapshot } = backgroundAgentSnapshot;
@@ -3514,11 +3564,15 @@ await waitUntil(
   "background child model request",
 );
 const childRequest = childAdapter.requests.find(({ sessionId }) => sessionId === backgroundAgentId);
+assert.ok(childRequest);
 assert.ok(composition.context.agents.get(SessionId(backgroundAgentId)));
 assert.equal(composition.context.agents.get(SessionId(backgroundAgentId))?.status, "running");
-assert.deepEqual(childRequest?.toolNames, ["SendMessage", "TaskStop"]);
-assert.match(childRequest.system ?? "", /bounded declarative release reviewer/u);
-assert.match(childRequest.system ?? "", /frozen declarative Skill document/u);
+assert.deepEqual(childRequest.toolNames, ["SendMessage", "TaskStop"]);
+const childSystemText = childRequest.messages.filter(({ role }) => role === "system")
+  .flatMap(({ content }) => content).filter((block) => block.type === "text")
+  .map((block) => block.text).join("\n");
+assert.match(childSystemText, /bounded declarative release reviewer/u);
+assert.match(childSystemText, /frozen declarative Skill document/u);
 await waitUntil(
   () => primaryAgent.session.snapshotEvents().some((event) => event.type === "agent/inbox/spliced"
     && event.data.inserted.some((message) => message.source.kind === "agent-message"
@@ -4029,12 +4083,23 @@ const retiredRpcStatus = await hostClient.runtimeStatus({}).catch((error: unknow
 assert.equal(retiredRpcStatus.primarySessionState, "retired");
 assert.equal(retiredRpcStatus.active.rootTurns, 0);
 assert.equal(retiredRpcStatus.active.queuedInputs, 0);
+const collaborationOperationIds = new Set(projectedRuntimeEvents.flatMap(({ event }) =>
+  event.kind === "turn_admitted" && event.admission.origin === "collaboration"
+    ? [event.admission.clientOperationId] : []));
+const userOperationTerminals = () => projectedRuntimeEvents.filter(({ event }) =>
+  event.kind === "turn_terminal" && !collaborationOperationIds.has(event.clientOperationId));
 await waitUntil(
-  () => projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal").length === 24,
-  "twenty-four projected Runtime terminals",
-);
+  () => userOperationTerminals().length === 24,
+  "twenty-four projected user/command Runtime terminals",
+).catch((error: unknown) => {
+  throw new Error(JSON.stringify({
+    projectedTerminals: projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal"),
+    fatalErrors: hostFatalErrors.map(({ message }) => message),
+    processBoundarySchedules,
+  }), { cause: error });
+});
 assert.deepEqual(
-  projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal")
+  userOperationTerminals()
     .map(({ event }) => event.kind === "turn_terminal"
       ? event.terminal.kind === "aborted"
         ? `${event.terminal.kind}:${event.terminal.reason}`
@@ -4047,6 +4112,10 @@ assert.deepEqual(
     "aborted:user", "aborted:user", "aborted:user", "aborted:user", "aborted:host_shutdown",
   ],
 );
+assert.ok(projectedRuntimeEvents.filter(({ event }) => event.kind === "turn_terminal"
+  && collaborationOperationIds.has(event.clientOperationId))
+  .every(({ event }) => event.kind === "turn_terminal" && event.terminal.kind === "succeeded"),
+"separately admitted collaboration reports must settle successfully");
 const firstUsage = projectedRuntimeEvents.find(({ event }) => event.kind === "usage");
 assert.ok(firstUsage?.event.kind === "usage");
 assert.deepEqual(firstUsage.event.usage, {
@@ -4913,6 +4982,7 @@ process.stdout.write(`${JSON.stringify({
   snapshotPreflightFailureDisposed: true,
   startupFailureDisposed: true,
   contexts: adapter.requests.slice(0, 2).map(({ messages }) => messages.length),
+  lateJobNoticeRequests: lateJobNoticeAdapter.requests.length,
   nativeRpcEngineVersion: rpcInitialization.runtimeEngine.version,
   nativeRpcInitialized: rpcStatus.initialized,
   nativeRpcProfileDigest: rpcInitialization.profileDigest,

@@ -168,9 +168,13 @@ describe("native assistant stream projection", () => {
     const agent = { id: session.id, session } as unknown as Agent;
     const delivered: RuntimeEventEnvelope[] = [];
     const failures: ProtocolError[] = [];
+    let lifecycle: "ready" | "closing" = "ready";
     const projector = new RuntimeEventProjector({ context,
       peer: { notify: (_method: string, envelope: RuntimeEventEnvelope) => { delivered.push(envelope); return Promise.resolve(); } } as unknown as JsonRpcPeer,
-      productSession: { snapshot: () => ({ state: "ready", runtimeSessionId: session.id }), requireAgent: () => agent } as unknown as ProductSessionService,
+      productSession: { snapshot: () => ({ state: lifecycle, runtimeSessionId: session.id }), requireAgent: () => {
+        if (lifecycle !== "ready") throw new Error("primary Session is closing");
+        return agent;
+      } } as unknown as ProductSessionService,
       runtimeGeneration: "live-generation", productSessionId: () => "product-live", onFailure: (error) => failures.push(error),
     });
     const fixture = appendAcceptedOperation(session);
@@ -178,7 +182,8 @@ describe("native assistant stream projection", () => {
     fixture.inbox.claim("next-turn", 1);
     session.append("step/start", { turn: 1, step: 1 });
     const emit = (frame: AssistantStreamFrame): void => { context.emit("agent/assistant-stream", { agent, frame }); };
-    return { session, projector, delivered, failures, emit, flushes: () => flushes };
+    return { session, projector, delivered, failures, emit, flushes: () => flushes,
+      closeAdmission: () => { lifecycle = "closing"; } };
   };
 
   it("shows deltas before commit, then links exactly one durable message without replaying its text", async () => {
@@ -238,6 +243,24 @@ describe("native assistant stream projection", () => {
     expect(state.failures).toHaveLength(1);
     expect(state.delivered.some(({ event }) => event.kind === "assistant_delta")).toBe(false);
     await expect(state.projector.close()).rejects.toBeInstanceOf(ProtocolError);
+  });
+
+  it("drains the admitted native stream while primary Session admission is closing", async () => {
+    const state = await mountedStream();
+    const attemptId = LlmAttemptId("live-stream-root:1");
+    state.emit({ type: "start", attemptId, revision: 1, turn: 1, step: 1 });
+    state.closeAdmission();
+    state.emit({ type: "chunk", attemptId, revision: 2, index: 0, time: 1,
+      chunk: { type: "reasoning-delta", index: 0, text: "settling" } });
+    state.emit({ type: "end", attemptId, revision: 3, index: 1, outcome: { kind: "abandoned" } });
+    state.emit({ type: "start", attemptId: LlmAttemptId("late-attempt"), revision: 4, turn: 1, step: 2 });
+    await state.projector.whenIdle();
+    expect(state.failures).toEqual([]);
+    expect(state.delivered.filter(({ event }) => event.kind === "assistant_stream").map(({ event }) =>
+      event.kind === "assistant_stream" ? event.phase : undefined)).toEqual(["start", "end"]);
+    expect(state.delivered.at(-1)?.event).toMatchObject({ kind: "assistant_stream", phase: "end",
+      chunkCount: 1, outcome: { kind: "abandoned" } });
+    await state.projector.close();
   });
 });
 

@@ -27,6 +27,7 @@ import protocolMetaJson from "@myagents-dsh/protocol/protocol-meta.json" with { 
 import {
   SessionReadAssembler,
   validateMethodResult,
+  validateNotificationParams,
 } from "@myagents-dsh/protocol";
 import { PRODUCT_PERSISTENCE_SCHEMA_VERSION } from "@myagents-dsh/persistence-product";
 import { CANONICAL_TOOL_NAMES } from "@myagents-dsh/tool-contracts";
@@ -290,6 +291,73 @@ const exactObject = (value: unknown, description: string): JsonObject => {
     throw new TypeError(`${description} must be an object`);
   }
   return value as JsonObject;
+};
+
+
+/** Validate native stream/operation causality without imposing an interleaving on child reports. */
+export const verifyRuntimeStreamEvidence = (values: readonly unknown[]): ReadonlySet<string> => {
+  const operations = new Map<string, { clientOperationId: string; terminal: boolean }>();
+  const collaboration = new Set<string>();
+  const messages = new Map<string, { turnId: string | undefined; messageId: string | undefined }>();
+  const streams = new Set<string>();
+  let active: { id: string; turnId: string; lastIndex: number } | undefined;
+  let generation: string | undefined;
+  for (const [index, value] of values.entries()) {
+    const envelope = validateNotificationParams("runtime/event", value);
+    const { event, turnId } = envelope;
+    generation ??= envelope.runtimeGeneration;
+    if (envelope.sequence !== index + 1 || generation !== envelope.runtimeGeneration) {
+      throw new Error("Runtime projection sequence/generation differs");
+    }
+    if (event.kind === "turn_admitted") {
+      if (turnId !== event.admission.turnId || operations.has(turnId)) throw new Error("duplicate or foreign Runtime admission");
+      operations.set(turnId, { clientOperationId: event.admission.clientOperationId, terminal: false });
+      if (event.admission.origin === "collaboration") collaboration.add(event.admission.clientOperationId);
+    } else if (["turn_started", "queued_message", "assistant_stream", "assistant_delta", "thinking_delta", "turn_terminal"].includes(event.kind)) {
+      const operation = turnId === undefined ? undefined : operations.get(turnId);
+      if (operation === undefined || operation.terminal) throw new Error("Runtime operation event lacks an open admission");
+      if (event.kind === "turn_terminal") {
+        if (event.clientOperationId !== operation.clientOperationId || active?.turnId === turnId) {
+          throw new Error("Runtime terminal differs from its operation or precedes stream settlement");
+        }
+        if (collaboration.has(event.clientOperationId) && event.terminal.kind !== "succeeded") {
+          throw new Error("Runtime collaboration report did not succeed");
+        }
+        operation.terminal = true;
+      }
+    }
+    if (event.kind === "message_event" && event.role === "assistant") {
+      if (messages.has(event.eventId)) throw new Error("duplicate Runtime assistant message");
+      messages.set(event.eventId, { turnId, messageId: event.messageId });
+    }
+    if (event.kind === "assistant_stream") {
+      if (event.phase === "start") {
+        if (active !== undefined || streams.has(event.streamId) || turnId === undefined) throw new Error("overlapping or reused Runtime stream");
+        streams.add(event.streamId);
+        active = { id: event.streamId, turnId, lastIndex: -1 };
+      } else {
+        if (active?.id !== event.streamId || active.turnId !== turnId || event.chunkCount <= active.lastIndex) {
+          throw new Error("Runtime stream end differs from its active stream");
+        }
+        if (event.outcome.kind === "committed" && event.outcome.eventType === "assistant/message") {
+          const message = messages.get(event.outcome.eventId);
+          if (message?.turnId !== turnId || message.messageId !== event.outcome.messageId) {
+            throw new Error("Runtime stream commit lacks its exact durable assistant message");
+          }
+        }
+        active = undefined;
+      }
+    } else if (event.kind === "assistant_delta" || event.kind === "thinking_delta") {
+      if (active?.id !== event.streamId || active.turnId !== turnId || event.frameIndex <= active.lastIndex) {
+        throw new Error("Runtime delta differs from its active stream or frame order");
+      }
+      active.lastIndex = event.frameIndex;
+    }
+  }
+  if (active !== undefined || operations.size === 0 || [...operations.values()].some(({ terminal }) => !terminal)) {
+    throw new Error("Runtime projection ends with an unfinished stream or operation");
+  }
+  return collaboration;
 };
 
 const stageVerifiedBundle = (artifactRoot: string, destination: string): void => {
@@ -1270,6 +1338,7 @@ const main = (): void => {
       || evidence.directRootLifecycleDisposed !== true
       || evidence.snapshotPreflightFailureDisposed !== true
       || evidence.startupFailureDisposed !== true
+      || typeof evidence.lateJobNoticeRequests !== "number" || evidence.lateJobNoticeRequests < 1
       || evidence.patchedWakePending !== true
       || evidence.publicationGuardsVerified !== true
       || evidence.publicationTransientVerified !== true
@@ -1858,95 +1927,12 @@ const main = (): void => {
     }
     const projectedEvents = eventEnvelopes.map(({ event }, index) =>
       exactObject(event, `observed Runtime event payload ${String(index)}`));
-    const expectedEventKinds = [
-      // Only the first request reports every usage bucket; all later usage is unknown.
-      // Nominal success, follow-up success, and provider failure.
-      "turn_admitted", "turn_started", "queued_message", "context",
-      "assistant_delta", "assistant_delta", "message_event", "usage", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "assistant_delta",
-      "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "assistant_delta",
-      "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "turn_terminal",
-      // Canonical text/binary file, process-search, and Web tool operations.
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "message_event", "assistant_delta", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "message_event", "assistant_delta", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      // Interaction, plan workflow, and Task graph operations.
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "message_event", "message_event", "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "message_event", "message_event", "message_event",
-      "message_event", "message_event", "message_event",
-      "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      // Declarative Command/Skill, Host tool, four ProductWork operations, and retained process output.
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      // Explicit child message is queued, then wakes a second native turn in the same operation.
-      "turn_admitted", "turn_started", "queued_message", "message_event", "queued_message",
-      "assistant_delta", "message_event", "turn_started", "queued_message",
-      "assistant_delta", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      // Stop emits one epoch report, queued and consumed before terminal publication.
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "queued_message", "turn_started", "queued_message",
-      "assistant_delta", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event",
-      "assistant_delta", "message_event", "turn_terminal",
-      // Host-interaction cancellation, process abort, running/queued cancellation, and Session close.
-      "turn_admitted", "turn_started", "queued_message", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "message_event", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "assistant_delta",
-      "turn_admitted", "queued_message", "message_event", "turn_terminal", "turn_terminal",
-      "turn_admitted", "turn_started", "queued_message", "turn_terminal",
-    ];
+    const collaborationOperationIds = verifyRuntimeStreamEvidence(evidence.workstreamRuntimeEvents);
     const actualEventKinds = projectedEvents.map(({ kind }) => kind);
-    const productProjectionKinds = new Set([
-      "compaction",
-      "context",
-      "plan",
-      "task_graph",
-      "work",
-    ]);
+    const productProjectionKinds = new Set(["compaction", "context", "plan", "task_graph", "work"]);
     const productProjectionEvents = projectedEvents.filter(
       ({ kind }) => typeof kind === "string" && productProjectionKinds.has(kind),
     );
-    const expectedOperationEventKinds = expectedEventKinds.filter(
-      (kind) => !productProjectionKinds.has(kind),
-    );
-    const operationEventKinds = actualEventKinds.filter(
-      (kind) => kind !== "tool" && !productProjectionKinds.has(String(kind)),
-    );
-    if (JSON.stringify(operationEventKinds) !== JSON.stringify(expectedOperationEventKinds)) {
-      const firstDifference = Array.from(
-        { length: Math.max(operationEventKinds.length, expectedOperationEventKinds.length) },
-        (_, index) => index,
-      ).find((index) => operationEventKinds[index] !== expectedOperationEventKinds[index]);
-      const contextStart = Math.max(0, (firstDifference ?? 0) - 5);
-      const contextEnd = (firstDifference ?? 0) + 8;
-      throw new Error(
-        `Runtime operation workstream event sequence differs from exact evidence at ${String(firstDifference)}: `
-        + `expected=${JSON.stringify(expectedOperationEventKinds.slice(contextStart, contextEnd))}, `
-        + `actual=${JSON.stringify(operationEventKinds.slice(contextStart, contextEnd))}, `
-        + `lengths=${String(expectedOperationEventKinds.length)}/${String(operationEventKinds.length)}`,
-      );
-    }
     const projectionEvents = (kind: string): JsonObject[] => productProjectionEvents.filter(
       (event) => event.kind === kind,
     );
@@ -2033,9 +2019,7 @@ const main = (): void => {
     const incompleteToolLifecycle = [...toolLifecycles.entries()].find(
       ([, lifecycle]) => lifecycle.endIndex === undefined || lifecycle.endIndex <= lifecycle.startIndex,
     );
-    if (toolLifecycles.size !== 40 || incompleteToolLifecycle !== undefined
-      || actualEventKinds.length
-        !== expectedOperationEventKinds.length + toolLifecycles.size * 2 + productProjectionEvents.length) {
+    if (toolLifecycles.size !== 40 || incompleteToolLifecycle !== undefined) {
       throw new Error(
         `Runtime tool lifecycle evidence differs: calls=${String(toolLifecycles.size)}, `
         + `events=${String(actualEventKinds.filter((kind) => kind === "tool").length)}, `
@@ -2043,7 +2027,8 @@ const main = (): void => {
       );
     }
     const terminalOutcomes = projectedEvents
-      .filter(({ kind }) => kind === "turn_terminal")
+      .filter(({ kind, clientOperationId }) => kind === "turn_terminal"
+        && !collaborationOperationIds.has(String(clientOperationId)))
       .map(({ terminal }, index) => {
         const value = exactObject(terminal, `observed Runtime terminal ${String(index)}`);
         return value.kind === "aborted" ? `${value.kind}:${String(value.reason)}` : value.kind;

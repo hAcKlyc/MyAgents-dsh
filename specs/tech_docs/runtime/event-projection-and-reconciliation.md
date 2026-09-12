@@ -113,6 +113,14 @@ Provider observations come from committed native block-end chunks, while ordinar
 content remains the authority for Host history. Context/usage read native summaries and the last
 attempt usage rather than counting every intermediate usage chunk.
 
+Primary Session closure stops new stream admission but drains chunks and the native end for the
+already admitted Agent/attempt. This uses the retained live Agent identity while the public
+`requireAgent` admission port is closed. Dropping these frames would leave the Host preview open
+and lose the final commit/abandon boundary. The packed evidence validator checks that every stream
+settles before its operation terminal, with exact durable message correlation and monotonic visible
+frame positions. It validates separately admitted collaboration operations without imposing one
+global event interleaving on concurrent delivery.
+
 ## 5. UI and Host implications
 
 - Within one Runtime generation/turn, process envelopes strictly in sequence. Merge only adjacent same-kind text/thinking deltas; a kind/tool boundary creates a new block, and `turn_terminal` closes an unfinished thinking block. The assistant stream id binds each attempt; visible frame positions increase but can skip non-text native chunks. Start/end metadata never creates a completed Host message.
