@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: platform-and-local-execution
-updated: 2026-09-06
+updated: 2026-09-12
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_architecture.md
 ---
@@ -52,6 +52,10 @@ The official `shell-env` registry owns trusted `DSH_*` injection. Initialization
 Foreground expiry ends the command and returns the official `timedOut` result. Background execution is explicit and has no foreground deadline; `job_output`, `job_list`, and `job_kill` use the official owner-scoped Jobs registry. Completion notices use stock quiet delivery through the sole DSH Inbox, so a busy Agent receives the notice at its next step and an idle Agent retains it for the next managed operation. Waiting/reading a terminal job marks it reported and suppresses duplicate notices. ProductWork's `TaskStop` now addresses Agent handles only.
 
 Official output remains official: stdout/stderr are bounded and may spill to upstream-owned files. Product code retains only the producing Agent's spill-file identity so governed `Read` can read it, rejecting other Agents, hardlinks and replaced files. It neither allocates nor rewrites Shell output. Background reads go through `job_output`; old product `outputPath`/automatic promotion semantics are retired. The sole DSH ToolRuntime forwards stock registrations with only the public `output.presentationMeta` callback added. This pure Host projection derives exit/state/job identity from the validated official value and an explicit workdir from the arguments. It preserves official schema, render and execution; middleware-authored success metadata is intentionally not used because DSH renormalizes it.
+
+Foreground spill registration canonicalizes the parent directory before capturing the final no-follow file. The official per-process OS temporary directory can contain platform aliases such as `/var` → `/private/var`; it is separate from child Agent output under Runtime home. The canonical path is both the returned `spillPath` and the producing Agent's Read lookup key. This accepts directory aliases while retaining singly-linked regular-file, byte-bound and version checks. The default inline threshold is 64,000 bytes per stream, owned by the installed official Shell configuration.
+
+If capture cannot grant Read authority, product middleware removes only that stream's `spillPath` from the successful official value. It retains the bounded tail, truncation and exact exit/signal/timeout facts; the official renderer reports unavailable full output and DSH regenerates content/meta from that value. Other streams remain independently usable. Cancellation still follows the caller signal. A bounded stderr warning records tool/call/stream and a stable error code through the existing Host diagnostic path, without commands, file paths, output or raw exceptions. No output files, fallback executor or retry policy are added. R5 coverage includes synthetic aliases and invalid files plus real packed foreground spills and Host governed Read, rather than only manually created canonical fixture paths.
 
 Glob/Grep retain their sealed search policy over the same subprocess seam. Managed MCP stdio remains a separate declarative argv/cwd/credential boundary and does not inherit Shell tool authorization.
 

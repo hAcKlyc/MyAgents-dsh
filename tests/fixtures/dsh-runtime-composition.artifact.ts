@@ -782,6 +782,15 @@ adapter.enqueue({
     { id: "artifact-ls-call", name: "ls", arguments: JSON.stringify({}) },
     { id: "artifact-bash-call", name: "bash", arguments: JSON.stringify({ description: "Artifact Shell check", command: "printf artifact-bash" }) },
     {
+      id: "artifact-foreground-spill-call",
+      name: "bash",
+      arguments: JSON.stringify({
+        description: "Retain real foreground stdout and stderr through platform temporary paths",
+        command: "'" + process.execPath.replaceAll("'", "'\\''")
+          + "' -e 'process.stdout.write(\"x\".repeat(81000)); process.stderr.write(\"e\".repeat(64001))'",
+      }),
+    },
+    {
       id: "artifact-background-bash-call",
       name: "bash",
       arguments: JSON.stringify({ description: "Artifact Shell check", command: "/bin/sleep 0.05; printf artifact-background", run_in_background: true }),
@@ -3028,6 +3037,7 @@ const processSearchCallIds = [
   "artifact-grep-call",
   "artifact-ls-call",
   "artifact-bash-call",
+  "artifact-foreground-spill-call",
   "artifact-background-bash-call",
   "artifact-background-flood-call",
 ];
@@ -3106,6 +3116,15 @@ assert.deepEqual({
 });
 assert.equal(processSearchText("artifact-ls-call"), "governed.txt\npixel.png\nskills/");
 assert.match(processSearchText("artifact-bash-call"), /artifact-bash/u);
+const foregroundSpillText = processSearchText("artifact-foreground-spill-call");
+const foregroundSpillPaths = [...foregroundSpillText.matchAll(/\[output truncated; full output: (.+)\]/gu)]
+  .map((match) => match[1]);
+assert.equal(foregroundSpillPaths.length, 2);
+for (const [index, path] of foregroundSpillPaths.entries()) {
+  assert.ok(path !== undefined);
+  assert.equal(await realpath(path), path);
+  assert.equal(await readFile(path, "utf8"), index === 0 ? "x".repeat(81_000) : "e".repeat(64_001));
+}
 const shellMeta = (callId: string): Record<string, unknown> => {
   const event = processSearchResults.find((candidate) => candidate.type === "tool/result"
     && String(candidate.data.message.source.callId) === callId);

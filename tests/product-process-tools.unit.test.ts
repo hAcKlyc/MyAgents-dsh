@@ -49,7 +49,7 @@ import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
 import { ProductPlanService, type ProductPlanController } from "@myagents-dsh/tools-interaction";
 import { LocalWorkspaceFileSystem, requireLocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, link, mkdtemp, mkdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -785,6 +785,99 @@ describe("official Shell tools with product policy", () => {
     await writeFile(output, "replacement");
     await expect(state.context.fs.readBytes(target, undefined, 1_024)).rejects.toThrow();
     await state.context.fiber.dispose();
+  });
+
+  it.each(["bash", "pwsh"] as const)("registers %s output through a directory alias under its canonical Read identity", async (dialect) => {
+    const state = await harness({ dialect });
+    const directory = join(state.root, "spill");
+    const alias = join(state.root, "spill-alias");
+    await mkdir(directory);
+    await symlink(directory, alias, "dir");
+    const output = join(directory, "output.log");
+    await writeFile(output, "full upstream output");
+    state.fakeSubprocess.plans.push({
+      outcome: { exitCode: 0, signal: null },
+      stdout: "output tail", stdoutLossy: true, stdoutSpillPath: join(alias, "output.log"), stderr: "",
+    });
+    const result = await state.execute({ command: "large-output" });
+    expect(result).toMatchObject({ isError: false, value: { stdout: { spillPath: output } }, meta: { exitCode: 0 } });
+    expect(JSON.stringify(result.content)).toContain(output);
+    const product: ProductToolContext = {
+      agent: state.agent, birth: state.operation.birth, callId: "read-spill", catalog,
+      clientOperationId: state.operation.clientOperationId, dshTurn: 1, environment: state.environment,
+      origin: "root", productTurnId: state.operation.productTurnId, rootCallId: "read-spill", signal: new AbortController().signal,
+    };
+    const target = await state.context.productProcesses.resolveRetainedOutput(product, output);
+    expect(target?.displayPath).toBe(output);
+    if (target === undefined) throw new Error("canonical retained output is missing");
+    expect(Buffer.from(await state.context.fs.readBytes(target, undefined, 1_024)).toString()).toBe("full upstream output");
+    await expect(state.context.productProcesses.resolveRetainedOutput({ ...product, agent: { id: "other" } as Agent }, output)).resolves.toBeUndefined();
+    await rename(output, `${output}.original`);
+    await writeFile(output, "replacement");
+    await expect(state.context.fs.readBytes(target, undefined, 1_024)).rejects.toThrow();
+    await state.context.fiber.dispose();
+  });
+
+  it("keeps cancellation authoritative during output registration", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const state = await harness();
+    const directory = join(state.root, "cancelled-spill");
+    await mkdir(directory);
+    const output = join(directory, "output.log");
+    await writeFile(output, "full output");
+    const controller = new AbortController();
+    const resolveTarget = state.context.fs.resolve.bind(state.context.fs);
+    vi.spyOn(state.context.fs, "resolve").mockImplementation((value, options) => {
+      if (value === directory) controller.abort();
+      return resolveTarget(value, options);
+    });
+    state.fakeSubprocess.plans.push({
+      outcome: { exitCode: 0, signal: null }, stdout: "tail", stdoutLossy: true, stdoutSpillPath: output, stderr: "",
+    });
+    expect((await state.execute({ command: "large-output" }, controller.signal)).isError).toBe(true);
+    expect(warning).not.toHaveBeenCalled();
+    await state.context.fiber.dispose();
+  });
+
+  it.each(["missing", "symlink", "hardlink"] as const)("keeps command output and exit status when a spill is %s without granting Read", async (failure) => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const state = await harness();
+    const output = join(state.root, "unavailable-output.log");
+    const valid = join(state.root, "stderr.log");
+    await writeFile(valid, "complete stderr");
+    if (failure === "symlink") await symlink(valid, output);
+    if (failure === "hardlink") {
+      const privateFile = join(state.root, "other.log");
+      await writeFile(privateFile, "unrelated content");
+      await link(privateFile, output);
+    }
+    state.fakeSubprocess.plans.push({
+      outcome: { exitCode: 17, signal: null },
+      stdout: "stdout tail", stdoutLossy: true, stdoutSpillPath: output,
+      stderr: "stderr tail", stderrLossy: true, stderrSpillPath: valid,
+    });
+    const result = await state.execute({ command: "large-output" });
+    expect(result).toMatchObject({
+      isError: false, meta: { exitCode: 17, status: "failed" },
+      value: { stdout: { text: "stdout tail", truncated: true }, stderr: { spillPath: valid } },
+    });
+    expect(JSON.stringify(result.content)).toContain("full output: (unavailable)");
+    expect(JSON.stringify(result.content)).toContain("[exit code: 17]");
+    expect(JSON.stringify(result)).not.toContain(output);
+    expect(warning).toHaveBeenCalledOnce();
+    expect(JSON.stringify(warning.mock.calls)).toContain("shell-output");
+    expect(JSON.stringify(warning.mock.calls)).not.toContain(state.root);
+    const product: ProductToolContext = {
+      agent: state.agent, birth: state.operation.birth, callId: "read-spill", catalog,
+      clientOperationId: state.operation.clientOperationId, dshTurn: 1, environment: state.environment,
+      origin: "root", productTurnId: state.operation.productTurnId, rootCallId: "read-spill", signal: new AbortController().signal,
+    };
+    await expect(state.context.productProcesses.resolveRetainedOutput(product, output)).resolves.toBeUndefined();
+    expect((await state.context.productProcesses.resolveRetainedOutput(product, valid))?.displayPath).toBe(valid);
+    state.fakeSubprocess.plans.push({ outcome: { exitCode: 0, signal: null }, stdout: "next command", stderr: "" });
+    expect(await state.execute({ command: "next" })).toMatchObject({ isError: false, meta: { exitCode: 0 } });
+    await state.context.fiber.dispose();
+    warning.mockRestore();
   });
 
 });

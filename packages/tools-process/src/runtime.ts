@@ -3,7 +3,7 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
 import { scrubbedParentEnv, type SubprocessHandle, type SubprocessSpawnSpec } from "@deepseek-ai/dsh-subprocess";
-import type { FsTarget } from "@deepseek-ai/dsh-fs";
+import { FsError, type FsTarget } from "@deepseek-ai/dsh-fs";
 import { CANONICAL_TOOL_CONTRACTS, isOfficialShellTool } from "@myagents-dsh/tool-contracts";
 import { ProductToolError, type ProductToolContext, type ProductToolExecutionEnvironment } from "@myagents-dsh/tool-runtime-product";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -309,19 +309,35 @@ export class ProductProcessRuntime extends Service {
         ctx.productTools.assertCurrent(product, exec.name);
       }
       const result = await this.calls.run({ product, cwd, shell }, next);
-      if (shell && result.value !== null && typeof result.value === "object" && !Array.isArray(result.value)) {
-        const output = result.value as JsonObject;
+      if (shell && !result.isError && result.value !== null && typeof result.value === "object" && !Array.isArray(result.value)) {
+        const output = { ...result.value };
         if (output.kind === "foreground") {
-          for (const stream of [output.stdout, output.stderr]) {
-            if (stream !== null && typeof stream === "object" && "spillPath" in stream && typeof stream.spillPath === "string") {
-              const target = await this.io.captureShellOutput(stream.spillPath, product.signal);
-              let owned = this.outputs.get(product.agent);
-              if (owned === undefined) this.outputs.set(product.agent, owned = new Map<string, FsTarget>());
-              owned.set(stream.spillPath, target);
+          for (const name of ["stdout", "stderr"] as const) {
+            const stream = output[name];
+            if (stream !== null && typeof stream === "object" && !Array.isArray(stream) && typeof stream.spillPath === "string") {
+              const retained = { ...stream };
+              try {
+                const target = await this.io.captureShellOutput(stream.spillPath, product.signal);
+                let owned = this.outputs.get(product.agent);
+                if (owned === undefined) this.outputs.set(product.agent, owned = new Map<string, FsTarget>());
+                owned.set(target.displayPath, target);
+                retained.spillPath = target.displayPath;
+              } catch (cause) {
+                product.signal.throwIfAborted();
+                // Read authorization is optional result enrichment. Keep the
+                // command outcome and bounded tail; the official renderer
+                // already explains truncated output without a usable file.
+                delete retained.spillPath;
+                console.warn("[dsh:shell-output] retained output unavailable", JSON.stringify({
+                  tool: exec.name, callId: product.callId, stream: name,
+                  code: cause instanceof FsError ? cause.code : "OUTPUT_CAPTURE_FAILED",
+                }));
+              }
+              output[name] = retained;
             }
           }
+          return { ...result, value: output };
         }
-
       }
       return result;
     });

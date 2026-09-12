@@ -879,8 +879,15 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
         await this.captureWorkspace(path, signal),
       normalizeAbsolutePath: (path: string) => this.adapterValue.normalizeAbsolutePath(path),
       processPath: (target: FsTarget) => this.processPath(target),
-      captureShellOutput: async (path: string, signal: AbortSignal) =>
-        await this.captureOutputFile(path, this.pathValue.dirname(path), 64 * 1_024 * 1_024, signal),
+      captureShellOutput: async (path: string, signal: AbortSignal) => {
+        // Upstream allocates under os.tmpdir(), whose parents may be aliases
+        // (for example /var -> /private/var). Resolve the directory only: the
+        // final file must still pass the no-follow and identity checks below.
+        const requested = this.adapterValue.normalizeAbsolutePath(path);
+        const directory = await this.resolve(this.pathValue.dirname(requested), { signal });
+        const canonical = this.pathValue.join(directory.displayPath, this.pathValue.basename(requested));
+        return this.captureOutputFile(canonical, directory.displayPath, 64 * 1_024 * 1_024, signal);
+      },
       revalidateWorkspace: async (
         authority: ProductProcessWorkspaceAuthority,
         path: string,

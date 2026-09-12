@@ -367,7 +367,7 @@ approval. Concurrent literal Edits use current locked preimages and the same che
 [History consumers](./tech_docs/state/sessions-persistence-and-recovery.md) recover stale snapshots
 by discarding all partial pages and retrying the complete read within explicit attempt/page bounds.
 
-Official DSH owns Shell definitions, Bash/PowerShell execution, foreground deadlines, output and background Jobs. MyAgents retains execution authorization and Host projection through public seams. The exact component and lifecycle boundary is maintained in [Platform and local execution](./tech_docs/boundaries/platform-and-local-execution.md#4-sealed-process-environment); `TaskStop` owns Agent handles, and official `job_kill` owns Shell Jobs.
+Official DSH owns Shell definitions, Bash/PowerShell execution, foreground deadlines, output and background Jobs. MyAgents retains execution authorization, canonical spill-read registration and Host projection through public seams. Optional output registration cannot replace a completed command's result; directory aliases resolve before the existing file identity checks. The exact component and lifecycle boundary is maintained in [Platform and local execution](./tech_docs/boundaries/platform-and-local-execution.md#4-sealed-process-environment); `TaskStop` owns Agent handles, and official `job_kill` owns Shell Jobs.
 
 Read/Write/Edit reuse official DSH definition factories inside the same governed tool execution.
 The local product filesystem extends official `LocalFileSystem`, which owns resolution, text
