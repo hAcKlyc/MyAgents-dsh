@@ -64,9 +64,9 @@ type InteractionRecord = {
   readonly interactionId: string;
   readonly registration: Promise<"waiting" | "expired">;
   readonly reject: (error: Error) => void;
-  readonly resolve: (
+  readonly prepareResponse: (
     params: MethodParams<"interaction/respond">,
-  ) => Promise<ProductLocalInteractionEffectReceipt>;
+  ) => () => Promise<ProductLocalInteractionEffectReceipt>;
   state: InteractionState;
   settlement?: Promise<MethodResult<"interaction/respond">>;
 };
@@ -199,11 +199,12 @@ class ProductHostInteractionBridge {
           || params.decision === "answered") {
           throw new TypeError("permission interaction response has an invalid decision or value");
         }
-        return settlement.resolve(validateProductPermissionInteractionResponse(Object.freeze({
+        const response = validateProductPermissionInteractionResponse(Object.freeze({
           interactionId: request.interactionId,
           expectedPermissionRevision: request.expectedPermissionRevision,
           decision: params.decision,
-        }), request));
+        }), request);
+        return () => settlement.resolve(response);
       },
       (error) => settlement.reject(error),
       prepareReview === undefined ? undefined : async () => {
@@ -255,13 +256,16 @@ class ProductHostInteractionBridge {
             "interaction_cancelled",
             "Host cancelled the question interaction",
           );
-          settlement.reject(error);
-          return Promise.reject(error);
+          return () => {
+            settlement.reject(error);
+            return Promise.resolve({});
+          };
         }
         if (params.decision !== "answered" || !Object.hasOwn(params, "value")) {
           throw new TypeError("question interaction response has an invalid decision or value");
         }
-        return settlement.resolve(validateProductQuestionAnswer(params.value, request));
+        const answer = validateProductQuestionAnswer(params.value, request);
+        return () => settlement.resolve(answer);
       },
       (error) => settlement.reject(error),
     );
@@ -272,9 +276,9 @@ class ProductHostInteractionBridge {
     assertCurrent: () => void,
     request: InteractionRequest,
     expectedRevision: string,
-    resolve: (
+    prepareResponse: (
       params: MethodParams<"interaction/respond">,
-    ) => Promise<ProductLocalInteractionEffectReceipt>,
+    ) => () => Promise<ProductLocalInteractionEffectReceipt>,
     reject: (error: Error) => void,
     prepare?: () => Promise<InteractionRequest>,
   ): () => void {
@@ -296,7 +300,7 @@ class ProductHostInteractionBridge {
       interactionId: id,
       registration: registrationState,
       reject,
-      resolve,
+      prepareResponse,
       state: "registering",
     };
     this.#active.set(id, record);
@@ -378,15 +382,23 @@ class ProductHostInteractionBridge {
       ));
       return Object.freeze({ state: "rejected" as const, code: "interaction_authority_stale" });
     }
-    const settlement = Promise.resolve().then(() => this.#settle(record, params));
+    // Input validation does not consume the interaction or enter its effect phase.
+    // Only a prepared response may acquire the single settlement promise.
+    let apply: () => Promise<ProductLocalInteractionEffectReceipt>;
+    try {
+      apply = record.prepareResponse(params);
+    } catch {
+      return { state: "rejected", code: "interaction_response_invalid" };
+    }
+    const settlement = Promise.resolve().then(() => this.#settle(record, apply));
     record.settlement = settlement;
     return await settlement;
   }
 
-  async #settle(record: InteractionRecord, params: MethodParams<"interaction/respond">): Promise<MethodResult<"interaction/respond">> {
+  async #settle(record: InteractionRecord, apply: () => Promise<ProductLocalInteractionEffectReceipt>): Promise<MethodResult<"interaction/respond">> {
     const id = record.interactionId;
     try {
-      const receipt = await record.resolve(params);
+      const receipt = await apply();
       this.#remember(id, "settled");
       return { state: "applied", effectivePolicyRevision: receipt.effectivePolicyRevision ?? record.expectedRevision };
     } catch (error) {

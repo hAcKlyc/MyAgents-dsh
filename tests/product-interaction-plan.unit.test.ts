@@ -781,9 +781,11 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     }, controller.signal);
     void pending.catch(() => undefined);
     while (pendingSettlement === undefined) await yieldImmediate();
-    controller.abort(new Error("synthetic caller cancellation"));
+    controller.abort({ kind: "user-interrupt" });
     void pendingSettlement.resolve({ answers: [] });
-    expect(await pending).toMatchObject({ isError: true });
+    expect(await pending).toMatchObject({
+      isError: true, error: { message: "Tool execution cancelled", info: { code: "ABORTED" } },
+    });
 
     const childSession = state.context.sessions.create(SessionId("interaction-plan-child"));
     const child = Object.freeze({

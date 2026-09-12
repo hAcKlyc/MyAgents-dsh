@@ -345,6 +345,8 @@ const fixtureAbortedForkRuntimeHome = join(fixtureRoot, "fork-aborted-runtime-ho
 const fixtureAttachmentStaging = join(fixtureRoot, "attachments");
 const fixtureTemporaryRoot = join(fixtureRoot, "temporary");
 const fixtureFile = join(fixtureWorkspace, "governed.txt");
+const fixtureSearchRoot = join(fixtureWorkspace, "search-fixtures");
+const fixtureSearchCount = 40_001;
 const fixtureImageFile = join(fixtureWorkspace, "pixel.png");
 const fixtureImageBytes = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -779,6 +781,11 @@ adapter.enqueue({
   calls: [
     { id: "artifact-glob-call", name: "Glob", arguments: JSON.stringify({ pattern: "**/*.txt" }) },
     { id: "artifact-grep-call", name: "Grep", arguments: JSON.stringify({ pattern: "governed" }) },
+    { id: "artifact-grep-broad-count", name: "Grep", arguments: JSON.stringify({ pattern: "needle", path: join(fixtureSearchRoot, "lines.fixture"), output_mode: "count" }) },
+    { id: "artifact-grep-broad-content", name: "Grep", arguments: JSON.stringify({ pattern: "needle", path: join(fixtureSearchRoot, "lines.fixture"), output_mode: "content", offset: 20_000, head_limit: 2 }) },
+    { id: "artifact-grep-many-submatches", name: "Grep", arguments: JSON.stringify({ pattern: "hit", path: join(fixtureSearchRoot, "submatches.fixture"), output_mode: "content", "-o": true, offset: 20_000, head_limit: 2 }) },
+    { id: "artifact-grep-long-submatch", name: "Grep", arguments: JSON.stringify({ pattern: "x+", path: join(fixtureSearchRoot, "long.fixture"), output_mode: "content", "-o": true }) },
+    { id: "artifact-glob-broad", name: "Glob", arguments: JSON.stringify({ pattern: "*.fixture", path: join(fixtureSearchRoot, "many") }) },
     { id: "artifact-ls-call", name: "ls", arguments: JSON.stringify({}) },
     { id: "artifact-bash-call", name: "bash", arguments: JSON.stringify({ description: "Artifact Shell check", command: "printf artifact-bash" }) },
     {
@@ -832,15 +839,17 @@ adapter.enqueue({
     id: "artifact-ask-user-call",
     name: "AskUserQuestion",
     arguments: JSON.stringify({
-      questions: [{
-        question: "Proceed with the governed plan workflow?",
-        header: "Plan",
+      questions: [0, 1, 2].map(index => ({
+        question: `Choose a synthetic workflow step ${index}`,
+        header: `Step ${index}`,
         options: [
-          { label: "Proceed", description: "Continue with plan-mode evidence." },
-          { label: "Stop", description: "Stop before plan-mode evidence." },
+          { label: "Proceed", description: "Continue with the fixture." },
+          { label: "Stop", description: "Stop the fixture." },
+          { label: "Review, then continue", description: "Review first." },
+          { label: "Later", description: "Defer the fixture." },
         ],
-        multiSelect: false,
-      }],
+        multiSelect: index === 1,
+      })),
     }),
   }],
   kind: "tool-calls",
@@ -1499,9 +1508,12 @@ hostPeer.registerRequestHandler("host/interaction/request", (params, context) =>
     interactionToolEvidence.push(`question:${normalizedQuestions.map(({ id }) => id).join(",")}`);
     decision = "answered";
     value = {
-      answers: normalizedQuestions.map((question) => ({
+      answers: normalizedQuestions.map((question, index) => ({
         id: question.id,
-        selected: [question.intent?.kind === "plan-review" ? question.intent.approve : "Proceed"],
+        selected: normalizedQuestions.length === 3
+          ? index === 2 ? [] : index === 1 ? ["Proceed", "Review, then continue"] : ["Proceed"]
+          : [question.intent?.kind === "plan-review" ? question.intent.approve : "Proceed"],
+        ...(normalizedQuestions.length === 3 && index === 2 ? { custom: "Write locally, then continue" } : {}),
       })),
     };
   }
@@ -3002,6 +3014,17 @@ assert.deepEqual(primaryAgent.session.snapshotEvents()
   "prepared", "published", "settled",
 ]);
 
+// Native search transport must survive broad results, separately from the visible page.
+await mkdir(join(fixtureSearchRoot, "many"), { recursive: true });
+await Promise.all([
+  writeFile(join(fixtureSearchRoot, "lines.fixture"), (`needle ${"z".repeat(240)}\n`).repeat(fixtureSearchCount)),
+  writeFile(join(fixtureSearchRoot, "submatches.fixture"), "hit ".repeat(20_002) + "\n"),
+  writeFile(join(fixtureSearchRoot, "long.fixture"), "x".repeat(70_000) + "\n"),
+]);
+for (let offset = 0; offset < 20_001; offset += 200) {
+  await Promise.all(Array.from({ length: Math.min(200, 20_001 - offset) }, (_, index) =>
+    writeFile(join(fixtureSearchRoot, "many", `${offset + index}.fixture`), "")));
+}
 let backgroundJobsReleased = false;
 const stopJobDeliveryBarrier = composition.context.on("agent/turn-stopping", async ({ agent }) => {
   if (agent !== primaryAgent || backgroundJobsReleased) return;
@@ -3035,6 +3058,8 @@ assert.equal(
 const processSearchCallIds = [
   "artifact-glob-call",
   "artifact-grep-call",
+  "artifact-grep-broad-count", "artifact-grep-broad-content", "artifact-grep-many-submatches",
+  "artifact-grep-long-submatch", "artifact-glob-broad",
   "artifact-ls-call",
   "artifact-bash-call",
   "artifact-foreground-spill-call",
@@ -3114,7 +3139,24 @@ assert.deepEqual({
   records: [{ path: "governed.txt" }],
   truncated: false,
 });
-assert.equal(processSearchText("artifact-ls-call"), "governed.txt\npixel.png\nskills/");
+assert.equal(processSearchText("artifact-ls-call"), "governed.txt\npixel.png\nsearch-fixtures/\nskills/");
+const broadCount = JSON.parse(processSearchText("artifact-grep-broad-count")) as { records: unknown[]; truncated: boolean };
+assert.deepEqual(broadCount.records, [{ count: fixtureSearchCount, path: "search-fixtures/lines.fixture" }]);
+assert.equal(broadCount.truncated, false);
+const broadContent = JSON.parse(processSearchText("artifact-grep-broad-content")) as { records: { line: number }[]; truncated: boolean };
+assert.deepEqual(broadContent.records.map((record: { line: number }) => record.line), [20_001, 20_002]);
+assert.equal(broadContent.truncated, true);
+const manySubmatches = JSON.parse(processSearchText("artifact-grep-many-submatches")) as { records: { text: string }[]; truncated: boolean };
+assert.equal(manySubmatches.records.length, 2);
+assert.equal(manySubmatches.truncated, false);
+assert.ok(manySubmatches.records.every((record: { text: string }) => record.text === "hit"));
+const longSubmatch = JSON.parse(processSearchText("artifact-grep-long-submatch")) as { records: { text: string }[]; truncated: boolean };
+assert.equal(longSubmatch.records[0]?.text, "x".repeat(500) + "... [truncated]");
+assert.equal(longSubmatch.truncated, true);
+const broadGlob = JSON.parse(processSearchText("artifact-glob-broad")) as { filenames: string[]; truncated: boolean };
+assert.equal(broadGlob.filenames.length, 100);
+assert.equal(broadGlob.truncated, true);
+await rm(fixtureSearchRoot, { recursive: true, force: true });
 assert.match(processSearchText("artifact-bash-call"), /artifact-bash/u);
 const foregroundSpillText = processSearchText("artifact-foreground-spill-call");
 const foregroundSpillPaths = [...foregroundSpillText.matchAll(/\[output truncated; full output: (.+)\]/gu)]
@@ -3220,7 +3262,11 @@ await waitUntil(
 assert.equal(composition.context.sdkOperations.lookup("artifact-interaction-operation")?.terminal?.kind, "succeeded");
 const askUserOutput = JSON.parse(durableToolText("artifact-ask-user-call")) as Record<string, unknown>;
 assert.equal(typeof askUserOutput.interactionId, "string");
-assert.deepEqual(askUserOutput.answers, [{ questionIndex: 0, selectedLabels: ["Proceed"] }]);
+assert.deepEqual(askUserOutput.answers, [
+  { questionIndex: 0, selectedLabels: ["Proceed"] },
+  { questionIndex: 1, selectedLabels: ["Proceed", "Review, then continue"] },
+  { questionIndex: 2, selectedLabels: [], otherText: "Write locally, then continue" },
+]);
 assert.equal(askUserOutput.policyRevision, composition.context.productPermission.currentRevision(primaryAgent));
 
 await composition.context.sdkOperations.start({

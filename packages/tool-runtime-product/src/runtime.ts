@@ -2,7 +2,7 @@ import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { FsTarget } from "@deepseek-ai/dsh-fs";
 import { HarnessError } from "@deepseek-ai/dsh-llm";
-import type { ToolExecution } from "@deepseek-ai/dsh-tools";
+import { TOOL_ABORTED, type ToolExecution } from "@deepseek-ai/dsh-tools";
 import { deadline, timeoutOf } from "@deepseek-ai/dsh-timeout";
 import type { OperationBirthSnapshot, ProductOperationRecord } from "@myagents-dsh/operation-runtime";
 import {
@@ -192,11 +192,14 @@ type JsonObject = Record<string, unknown>;
 /** Trusted service callbacks follow ordinary Promise/thenable semantics. */
 
 
-/**
- * Apply a cooperative executor deadline after any human authorization has
- * settled. Permissionable definitions omit DSH's outer timeout because that
- * timer starts before permission/interaction handling.
- */
+/** DSH cancellation reasons are control records, not printable exceptions. */
+export const throwIfProductToolAborted = (signal: AbortSignal): void => {
+  if (!signal.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  throw new ProductToolError(TOOL_ABORTED, "Tool execution cancelled", { cause: signal.reason });
+};
+
+/** Apply an executor deadline after human authorization has settled. */
 export const runWithProductToolExecutionDeadline = async <T>(
   context: ProductToolContext,
   timeoutMs: number | undefined,
@@ -219,7 +222,7 @@ export const runWithProductToolExecutionDeadline = async <T>(
       if (timedOut !== undefined) {
         throw new ProductToolError(code, `tool call timed out after ${String(timedOut.timeoutMs)}ms`);
       }
-      context.signal.throwIfAborted();
+      throwIfProductToolAborted(context.signal);
       return result;
     } catch (error) {
       const timedOut = timeoutOf(boundary.signal, code);
@@ -536,9 +539,9 @@ export class ProductToolRuntime extends Service {
     context: ProductToolContext,
     request: ProductToolPermissionRequest,
   ): Promise<void> {
-    context.signal.throwIfAborted();
+    throwIfProductToolAborted(context.signal);
     const decision: unknown = await Promise.resolve(this.ctx.productPermission.authorize(context, Object.freeze({ ...request })));
-    context.signal.throwIfAborted();
+    throwIfProductToolAborted(context.signal);
     if (decision !== "allow") {
       throw new ProductToolError("permission_denied", `${request.tool} permission was denied`);
     }
@@ -549,9 +552,9 @@ export class ProductToolRuntime extends Service {
     context: ProductToolContext,
     request: ProductExternalToolPermissionRequest,
   ): Promise<void> {
-    context.signal.throwIfAborted();
+    throwIfProductToolAborted(context.signal);
     const decision: unknown = await Promise.resolve(this.ctx.productPermission.authorizeExternal(context, Object.freeze({ ...request })));
-    context.signal.throwIfAborted();
+    throwIfProductToolAborted(context.signal);
     if (decision !== "allow") {
       throw new ProductToolError("permission_denied", `${request.tool} permission was denied`);
     }
@@ -630,9 +633,9 @@ export class ProductToolRuntime extends Service {
     path: string,
     mode: "read" | "write",
   ): Promise<FsTarget | undefined> {
-    context.signal.throwIfAborted();
+    throwIfProductToolAborted(context.signal);
     const target: unknown = await Promise.resolve(this.configValue.plan.resolveFileTarget(context, tool, path, mode));
-    context.signal.throwIfAborted();
+    throwIfProductToolAborted(context.signal);
     this.assertCurrent(context, tool);
     if (target === undefined) return undefined;
     return snapshotFsTarget(target, "plan file-target authority result");
@@ -642,7 +645,7 @@ export class ProductToolRuntime extends Service {
     context: ProductToolContext,
     request: ProductToolCheckpointRequest,
   ): Promise<ProductToolCheckpointHandle> {
-    context.signal.throwIfAborted();
+    throwIfProductToolAborted(context.signal);
     const pending = Promise.resolve<unknown>(this.configValue.checkpoint.prepare(context, Object.freeze({
       ...request,
       afterBytes: Uint8Array.from(request.afterBytes),
@@ -669,7 +672,7 @@ export class ProductToolRuntime extends Service {
       await cleanup();
     };
     try {
-      context.signal.throwIfAborted();
+      throwIfProductToolAborted(context.signal);
       const handle = exactOwnDataObject(
         candidate,
         Object.hasOwn(candidate as object, "verify") ? ["abort", "commit", "conflict", "receipt", "verify"] : ["abort", "commit", "conflict", "receipt"],

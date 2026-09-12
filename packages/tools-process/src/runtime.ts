@@ -1,3 +1,4 @@
+import { throwIfProductToolAborted } from "@myagents-dsh/tool-runtime-product";
 import { ToolRuntime, type ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { Service, type Context } from "@deepseek-ai/cordis";
@@ -45,7 +46,6 @@ export interface ProductSearchResult {
   readonly durationMs: number;
   readonly exitCode: number;
   readonly stderr: string;
-  readonly stdout: string;
 }
 
 export interface ResolvedProductProcessAuthority {
@@ -294,7 +294,12 @@ export class ProductProcessRuntime extends Service {
         }
       }
       const shell = exec.name === "bash" || exec.name === "pwsh";
-      const workspace = shell ? await this.io.captureWorkspace(cwd, product.signal) : undefined;
+      const workspace = shell ? await this.io.captureWorkspace(cwd, product.signal).catch((error: unknown) => {
+        if (error instanceof FsError && error.code === "FS_NOT_FOUND") {
+          throw new ProductToolError("path_denied", `${exec.name} workdir is not an existing readable directory: ${cwd}`, { cause: error });
+        }
+        throw error;
+      }) : undefined;
       await ctx.productTools.authorize(product, {
         tool: exec.name,
         permissionClass: CANONICAL_TOOL_CONTRACTS[exec.name].permissionClass,
@@ -323,7 +328,7 @@ export class ProductProcessRuntime extends Service {
                 owned.set(target.displayPath, target);
                 retained.spillPath = target.displayPath;
               } catch (cause) {
-                product.signal.throwIfAborted();
+                throwIfProductToolAborted(product.signal);
                 // Read authorization is optional result enrichment. Keep the
                 // command outcome and bounded tail; the official renderer
                 // already explains truncated output without a usable file.
@@ -394,7 +399,7 @@ export class ProductProcessRuntime extends Service {
       await this.io.verifyExecutable(path, this.config.executableSha256[key], product.signal);
       return path;
     } catch (cause) {
-      product.signal.throwIfAborted();
+      throwIfProductToolAborted(product.signal);
       throw new ProductToolError(key === "ripgrep" ? "search_dependency_missing" : "shell_dependency_missing", "configured executable is unavailable", { cause });
     }
   }
@@ -413,7 +418,7 @@ export class ProductProcessRuntime extends Service {
     workspace: ProductProcessWorkspaceAuthority,
     tool: "Glob" | "Grep",
     argv: readonly string[],
-    maxStdoutBytes: number,
+    consumeStdout: (stdout: AsyncIterable<Uint8Array>) => Promise<void>,
   ): Promise<ProductSearchResult> {
     const authority = this.authorityFor(product);
     try {
@@ -430,7 +435,7 @@ export class ProductProcessRuntime extends Service {
       );
       await this.resolveRipgrep(product);
     } catch (error) {
-      product.signal.throwIfAborted();
+      throwIfProductToolAborted(product.signal);
       if (error instanceof ProductToolError) {
         if (tool === "Glob" && error.code === "search_dependency_missing") {
           throw new ProductToolError("search_failed", "Glob search dependency is unavailable", { cause: error });
@@ -452,12 +457,12 @@ export class ProductProcessRuntime extends Service {
         signal: product.signal,
         stdio: {
           stdin: "ignore",
-          stdout: { maxBytes: maxStdoutBytes },
+          stdout: "pipe",
           stderr: { maxBytes: 65_536 },
         },
       });
     } catch (error) {
-      product.signal.throwIfAborted();
+      throwIfProductToolAborted(product.signal);
       throw new ProductToolError("search_failed", "search process could not start", { cause: error });
     } finally {
       releaseReservation();
@@ -470,33 +475,32 @@ export class ProductProcessRuntime extends Service {
       await handle.waitForExit().catch(() => undefined);
       throw new ProductToolError("search_failed", "search process returned invalid output streams", { cause: error });
     }
+    let stdoutConsumption: Promise<void> | undefined;
     try {
-      const outcome = await handle.done;
+      if (handle.stdout === undefined) throw new ProductToolError("search_failed", "search stdout is unavailable");
+      stdoutConsumption = consumeStdout(handle.stdout);
+      const [outcome] = await Promise.all([handle.done, stdoutConsumption]);
       await handle.waitForExit();
       await this.io.revalidateWorkspace(
         workspace,
         workspace.target.displayPath,
         product.signal,
       );
-      const stdout = handle.collected.stdout?.readFrom(0);
       const stderr = handle.collected.stderr?.readFrom(0);
-      if (stdout === undefined || stderr === undefined || stdout.lossy || stderr.lossy) {
-        throw new ProductToolError("search_failed", "search output exceeded its declared raw bound");
-      }
-      if (product.signal.aborted) product.signal.throwIfAborted();
+      if (stderr === undefined) throw new ProductToolError("search_failed", "search diagnostics are unavailable");
+      if (product.signal.aborted) throwIfProductToolAborted(product.signal);
       return Object.freeze({
         durationMs: Math.max(0, Date.now() - startedAt),
         exitCode: outcome.exitCode ?? 2,
         stderr: stderr.text,
-        stdout: stdout.text,
       });
     } catch (error) {
       handle.terminate();
-      const cleanup = await Promise.allSettled([handle.done, handle.waitForExit()]);
+      const cleanup = await Promise.allSettled([handle.done, handle.waitForExit(), stdoutConsumption?.catch(() => undefined)]);
       const cleanupErrors = cleanup.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
       if (product.signal.aborted) {
         try {
-          product.signal.throwIfAborted();
+          throwIfProductToolAborted(product.signal);
         } catch (abort) {
           if (cleanupErrors.length > 0) {
             throw new AggregateError([abort, ...cleanupErrors], "cancelled search process cleanup failed", { cause: abort });

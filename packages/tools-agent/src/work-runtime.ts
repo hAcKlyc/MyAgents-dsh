@@ -1,3 +1,4 @@
+import { throwIfProductToolAborted } from "@myagents-dsh/tool-runtime-product";
 import { ownsOfficialJobNotice } from "@myagents-dsh/operation-runtime";
 import { createHash } from "node:crypto";
 import { isPromise, isProxy } from "node:util/types";
@@ -174,6 +175,7 @@ export const PRODUCT_WORK_EVENT_SCHEMAS = deepFreeze({
     eventSeq: eventSequence,
     ordinal: Type.Integer({ minimum: 1, maximum: MAX_WORK_EPOCHS }),
     result: Type.Optional(Type.String({ maxLength: MAX_INLINE_OUTPUT_BYTES })),
+    completionFormat: Type.Optional(Type.Literal("final-message-v1")),
     resultTruncated: Type.Optional(Type.Boolean()),
     usage: Type.Optional(usageSchema),
     sessionId: eventIdentifier,
@@ -809,6 +811,21 @@ const appendBoundedUtf8 = (current: string, suffix: string, maxBytes: number): s
   return current + bytes.subarray(0, end).toString("utf8");
 };
 
+const tailUtf8 = (value: string, maxBytes: number): string => {
+  const bytes = Buffer.from(value, "utf8");
+  if (bytes.length <= maxBytes) return value;
+  let start = bytes.length - maxBytes;
+  while (start < bytes.length && ((bytes[start] ?? 0) & 0xc0) === 0x80) start += 1;
+  return bytes.subarray(start).toString("utf8");
+};
+
+const appendOutput = (current: string, suffix: string, maxBytes: number): string => {
+  const combined = current + suffix;
+  if (Buffer.byteLength(combined, "utf8") <= maxBytes) return combined;
+  const notice = "[Earlier child output omitted; newest output retained.]\n";
+  return notice + tailUtf8(combined, maxBytes - Buffer.byteLength(notice, "utf8"));
+};
+
 const epochOutput = (
   events: readonly SessionEvent[],
   epoch: Pick<ProductWorkEpochEventData, "agentId" | "childStartSeq" | "childEndSeq" | "stopReason">,
@@ -823,7 +840,7 @@ const epochOutput = (
   }
   let output = "";
   for (const reply of replies) {
-    output = appendBoundedUtf8(
+    output = appendOutput(
       output,
       `${output.length === 0 ? "" : LIVE_CHILD_REPLY_SEPARATOR}${reply}`,
       MAX_AGENT_OUTPUT_BYTES,
@@ -838,7 +855,7 @@ const accumulatedEpochOutput = (
 ): string => {
   let output = "";
   for (const epoch of entry.epochs) {
-    output = appendBoundedUtf8(
+    output = appendOutput(
       output,
       `${output.length === 0 ? "" : RESUMED_CHILD_RUN_SEPARATOR}${epochOutput(events, epoch)}`,
       MAX_AGENT_OUTPUT_BYTES,
@@ -854,7 +871,7 @@ const accumulatedLiveOutput = (
 ): string => {
   let output = accumulatedEpochOutput(events, entry);
   for (const [index, reply] of assistantReplies(events.slice(activeStartSeq)).entries()) {
-    output = appendBoundedUtf8(
+    output = appendOutput(
       output,
       `${output.length === 0
         ? ""
@@ -3027,10 +3044,12 @@ export class ProductWorkService extends Service {
     events: readonly SessionEvent[],
   ): Promise<ProductWorkEpochEventData> {
     return await this.serialize(async () => {
-      const output = epochOutput(events, { ...boundary, agentId: entry.agentId });
-      const inline = boundedInline(output.length === 0
-        ? `subagent ${entry.agentId} settled without a closing message (${boundary.stopReason})`
-        : output);
+      // The epoch result is its final visible assistant message. Progress narration
+      // stays in the retained output and never displaces the closing answer.
+      const output = assistantReplies(events.slice(boundary.childStartSeq, boundary.childEndSeq)).at(-1)
+        ?? `subagent ${entry.agentId} settled without a closing message (${boundary.stopReason})`;
+      const result = tailUtf8(output, MAX_INLINE_OUTPUT_BYTES);
+      const inline = { result, truncated: result !== output };
       const usage = usageFrom(events.slice(boundary.childStartSeq, boundary.childEndSeq));
       const epoch = validateEventData("myagents/work/epoch", {
         agentId: entry.agentId,
@@ -3040,6 +3059,7 @@ export class ProductWorkService extends Service {
         eventSeq: entry.root.session.seq,
         ordinal: entry.epochs.length + 1,
         result: inline.result,
+        completionFormat: "final-message-v1",
         resultTruncated: inline.truncated,
         ...(usage === undefined ? {} : { usage }),
         sessionId: entry.root.id,
@@ -3096,21 +3116,29 @@ export class ProductWorkService extends Service {
       if (entry.mode === "foreground" && epoch.ordinal === 1
         && terminalForStopReason(epoch.stopReason) === "succeeded" && !this.messages.has(messageId)) return;
       const output = epoch.result ?? epochOutput(events, epoch);
-      let excerpt = appendBoundedUtf8("", output, 1_536);
+      const finalMessage = epoch.completionFormat === "final-message-v1";
+      // The durable epoch identifies its projection, so recovery can reproduce
+      // previously accepted completion intents byte for byte.
+      let excerpt = finalMessage ? tailUtf8(output, MAX_COMPLETION_REPORT_BYTES) : appendBoundedUtf8("", output, 1_536);
       const summary = `Child activation ${String(epoch.ordinal)} ${epoch.stopReason}`;
-      const serializeReport = (): string => JSON.stringify({
+      let includeOutputPath = finalMessage;
+      const serializeReport = (result = excerpt): string => JSON.stringify({
         kind: "activation_completion",
         agentId: entry.agentId,
         taskId: entry.taskId,
         epochId: epoch.epochId,
         ordinal: epoch.ordinal,
         outcome: terminalForStopReason(epoch.stopReason),
-        result: excerpt,
+        result,
+        ...(includeOutputPath && entry.created.outputPath !== undefined ? { outputPath: entry.created.outputPath } : {}),
         truncated: excerpt !== output || epoch.resultTruncated === true,
       });
+      if (Buffer.byteLength(`${summary}\n\n${serializeReport("")}`, "utf8") > MAX_COMPLETION_REPORT_BYTES) includeOutputPath = false;
       let body = serializeReport();
       while (Buffer.byteLength(`${summary}\n\n${body}`, "utf8") > MAX_COMPLETION_REPORT_BYTES && excerpt.length > 0) {
-        excerpt = appendBoundedUtf8("", excerpt, Math.floor(Buffer.byteLength(excerpt, "utf8") / 2));
+        const excess = Buffer.byteLength(`${summary}\n\n${body}`, "utf8") - MAX_COMPLETION_REPORT_BYTES;
+        const budget = Math.max(0, Buffer.byteLength(excerpt, "utf8") - excess);
+        excerpt = finalMessage ? tailUtf8(excerpt, budget) : appendBoundedUtf8("", excerpt, Math.floor(Buffer.byteLength(excerpt, "utf8") / 2));
         body = serializeReport();
       }
       const content = parentReportContent(entry.agentId, messageText(summary, body));
@@ -3500,7 +3528,7 @@ export class ProductWorkService extends Service {
           this.config.output.create(product.environment.runtimeHome, taskId, product.signal),
           "Agent output allocation",
         ));
-        product.signal.throwIfAborted();
+        throwIfProductToolAborted(product.signal);
         this.ctx.productTools.assertCurrent(product, "Agent");
         this.assertAccepting();
       }

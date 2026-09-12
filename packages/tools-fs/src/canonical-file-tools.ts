@@ -1,3 +1,4 @@
+import { throwIfProductToolAborted } from "@myagents-dsh/tool-runtime-product";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import { FsError, type FsInfo, type FsTarget, type FsWriteIntent } from "@deepseek-ai/dsh-fs";
 import { prepareTextEdit } from "@deepseek-ai/dsh-fs-local";
@@ -24,6 +25,7 @@ import type {} from "@myagents-dsh/tools-process";
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
 import { isProxy } from "node:util/types";
+import { StringDecoder } from "node:string_decoder";
 import {
   LocalWorkspaceFileSystem,
   requireLocalWorkspaceFileSystem,
@@ -57,9 +59,9 @@ const settleCheckpoint = async (
   await checkpoint[branch]();
 };
 
-const asObject = (value: unknown, description: string): JsonObject => {
+const asObject = (value: unknown, description: string, code = "invalid_tool_input"): JsonObject => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new ProductToolError("invalid_tool_input", `${description} must be an object`);
+    throw new ProductToolError(code, `${description} must be an object`);
   }
   return value as JsonObject;
 };
@@ -98,7 +100,7 @@ const renderText = (_args: unknown, value: unknown): ContentBlock[] => textBlock
 interface RipgrepLineRecord {
   readonly context: boolean;
   readonly line: number;
-  readonly matches?: readonly string[];
+  readonly matches: readonly string[];
   readonly path: string;
   readonly text: string;
 }
@@ -115,61 +117,70 @@ const ripgrepText = (value: unknown, description: string): string => {
   throw new ProductToolError("search_failed", `${description} is malformed`);
 };
 
-const parseRipgrepLines = (stdout: string): readonly RipgrepLineRecord[] => {
-  const records: RipgrepLineRecord[] = [];
-  for (const line of stdout.split("\n")) {
-    if (line.length === 0) continue;
-    let parsed: unknown;
-    try { parsed = JSON.parse(line); } catch (error) {
-      throw new ProductToolError("search_failed", "ripgrep emitted malformed JSON", { cause: error });
-    }
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new ProductToolError("search_failed", "ripgrep emitted a malformed record");
-    }
-    const record = parsed as JsonObject;
-    if (record.type !== "match" && record.type !== "context") continue;
-    if (record.data === null || typeof record.data !== "object" || Array.isArray(record.data)) {
-      throw new ProductToolError("search_failed", "ripgrep emitted malformed match data");
-    }
-    const data = record.data as JsonObject;
-    if (!Number.isSafeInteger(data.line_number) || (data.line_number as number) < 1) {
-      throw new ProductToolError("search_failed", "ripgrep emitted an invalid line number");
-    }
-    let submatches: readonly string[] | undefined;
-    if (Object.hasOwn(data, "submatches")) {
-      if (!Array.isArray(data.submatches) || data.submatches.length > 20_000) {
-        throw new ProductToolError("search_failed", "ripgrep emitted malformed submatches");
+// Consume one native record at a time. Retention belongs to the tool projection;
+// a broad search must not fail because its raw transport exceeds an inline budget.
+const consumeSearchRecords = async (
+  stdout: AsyncIterable<Uint8Array>,
+  delimiters: readonly [string] | readonly [string, string],
+  consume: (fields: readonly string[]) => Promise<void>,
+): Promise<void> => {
+  const decoder = new StringDecoder("utf8");
+  let pending = "";
+  let fields: string[] = [];
+  const drain = async (): Promise<void> => {
+    let start = 0;
+    for (;;) {
+      const delimiter = fields.length === 0 || delimiters.length === 1 ? delimiters[0] : delimiters[1];
+      const end = pending.indexOf(delimiter, start);
+      if (end < 0) break;
+      fields.push(pending.slice(start, end));
+      start = end + delimiter.length;
+      if (fields.length === delimiters.length) {
+        await consume(fields);
+        fields = [];
       }
-      submatches = Object.freeze(data.submatches.map((submatch) => {
-        if (submatch === null || typeof submatch !== "object" || Array.isArray(submatch)) {
-          throw new ProductToolError("search_failed", "ripgrep emitted malformed submatches");
-        }
-        const candidate = submatch as JsonObject;
-        if (Reflect.ownKeys(candidate).length !== 3
-          || !["end", "match", "start"].every((key) => Object.hasOwn(candidate, key))
-          || !Number.isSafeInteger(candidate.start) || (candidate.start as number) < 0
-          || !Number.isSafeInteger(candidate.end) || (candidate.end as number) < (candidate.start as number)) {
-          throw new ProductToolError("search_failed", "ripgrep emitted malformed submatches");
-        }
-        const text = ripgrepText(candidate.match, "ripgrep submatch");
-        if (Buffer.byteLength(text, "utf8") > 65_536) {
-          throw new ProductToolError("search_failed", "ripgrep submatch exceeded its bound");
-        }
-        return text;
-      }));
     }
-    records.push(Object.freeze({
-      context: record.type === "context",
-      line: data.line_number as number,
-      ...(submatches === undefined ? {} : { matches: submatches }),
-      path: ripgrepText(data.path, "ripgrep path"),
-      text: ripgrepText(data.lines, "ripgrep line").replace(/\r?\n$/u, ""),
-    }));
-    if (records.length > 20_000) {
-      throw new ProductToolError("search_failed", "ripgrep result count exceeded the raw record bound");
+    pending = pending.slice(start);
+  };
+  for await (const chunk of stdout) {
+    pending += decoder.write(chunk);
+    await drain();
+  }
+  pending += decoder.end();
+  await drain();
+  if (pending.length > 0) fields.push(pending);
+  if (fields.length === delimiters.length) await consume(fields);
+  else if (fields.length > 0) throw new ProductToolError("search_failed", "ripgrep emitted an incomplete record");
+};
+
+const parseRipgrepLine = (line: string, onlyMatching: boolean): RipgrepLineRecord | undefined => {
+  if (line.length === 0) return;
+  let parsed: unknown;
+  try { parsed = JSON.parse(line); } catch (error) {
+    throw new ProductToolError("search_failed", "ripgrep emitted malformed JSON", { cause: error });
+  }
+  const record = asObject(parsed, "ripgrep record", "search_failed");
+  if (record.type !== "match" && record.type !== "context") return;
+  const data = asObject(record.data, "ripgrep match data", "search_failed");
+  if (!Number.isSafeInteger(data.line_number) || (data.line_number as number) < 1) {
+    throw new ProductToolError("search_failed", "ripgrep emitted an invalid line number");
+  }
+  const matches: string[] = [];
+  if (onlyMatching && record.type === "match") {
+    if (!Array.isArray(data.submatches)) {
+      throw new ProductToolError("search_failed", "ripgrep omitted required only-match submatches");
+    }
+    for (const submatch of data.submatches) {
+      matches.push(ripgrepText(asObject(submatch, "ripgrep submatch", "search_failed").match, "ripgrep submatch"));
     }
   }
-  return Object.freeze(records);
+  return {
+    context: record.type === "context",
+    line: data.line_number as number,
+    matches,
+    path: ripgrepText(data.path, "ripgrep path"),
+    text: ripgrepText(data.lines, "ripgrep line").replace(/\r?\n$/u, ""),
+  };
 };
 
 const truncateGrepLine = (value: string): Readonly<{ text: string; truncated: boolean }> =>
@@ -487,7 +498,7 @@ export class CanonicalFileTools extends Service {
         }
         const prior = ctx.productTools.readState(product, String(target.targetKey));
         if (prior?.complete !== true) {
-          throw new ProductToolError("read_required", "Read the entire current file before Edit. A partial Read does not qualify; call Read without offset or limit, then retry Edit.");
+          throw new ProductToolError("read_required", "Read the entire current file before Edit. Use a range covering the whole file, or omit offset and limit, then retry Edit.");
         }
         const oldString = args.old_string as string;
         const newString = args.new_string as string;
@@ -631,36 +642,35 @@ export class CanonicalFileTools extends Service {
       const separator = command.indexOf("--");
       if (separator < 0) command.push("--null");
       else command.splice(separator, 0, "--null");
+      const filenames: string[] = [];
+      let truncated = false;
+      let bytes = 2;
       const result = await ctx.productProcesses.runSearch(
         product,
         Object.freeze({ target: root.root, identity: root.rootIdentity }),
         "Glob",
         command,
-        8 * 1_024 * 1_024,
+        async (stdout) => consumeSearchRecords(stdout, ["\0"], async ([value]) => {
+          if (!value) return;
+          if (filenames.length >= 100 || truncated) { truncated = true; return; }
+          const path = await this.#searchResultPath(ctx, product, root.root, value);
+          const size = Buffer.byteLength(JSON.stringify(path), "utf8") + (filenames.length > 0 ? 1 : 0);
+          if (bytes + size > 60_000) { truncated = true; return; }
+          filenames.push(path);
+          bytes += size;
+        }),
       );
       if (result.exitCode !== 0 && result.exitCode !== 1) {
-        const diagnostic = searchDiagnostic(result.stderr, "Glob search failed");
         throw new ProductToolError(
           searchReportsInvalidPattern(result.stderr) ? "invalid_pattern" : "search_failed",
-          diagnostic,
+          searchDiagnostic(result.stderr, "Glob search failed"),
         );
       }
-      const raw = result.stdout.split("\0").filter((value) => value.length > 0);
-      if (raw.length > 20_000) throw new ProductToolError("search_failed", "Glob candidate count exceeded its bound");
-      const filenames: string[] = [];
-      const seen = new Set<string>();
-      for (const value of raw) {
-        const path = await this.#searchResultPath(ctx, product, root.root, value);
-        if (seen.has(path)) continue;
-        seen.add(path);
-        if (filenames.length < 100) filenames.push(path);
-      }
-      while (Buffer.byteLength(JSON.stringify(filenames), "utf8") > 60_000) filenames.pop();
       return Object.freeze({
         durationMs: result.durationMs,
         filenames: Object.freeze(filenames),
         numFiles: filenames.length,
-        truncated: seen.size > filenames.length,
+        truncated,
       });
         },
       );
@@ -697,11 +707,13 @@ export class CanonicalFileTools extends Service {
       } catch (error) {
         throw new ProductToolError("invalid_pattern", "Grep expression or glob is invalid", { cause: error });
       }
-      const separator = base.indexOf("--");
       const mode = (args.output_mode as "content" | "files_with_matches" | "count" | undefined)
         ?? "files_with_matches";
-      const options: string[] = ["--no-config", "--sort=path"];
-      if (mode === "files_with_matches") options.push("--max-count", "1");
+      if (mode !== "content") base = base.filter(argument => argument !== "--json");
+      const separator = base.indexOf("--");
+      const options: string[] = ["--no-config", mode === "files_with_matches" ? "--sortr=modified" : "--sort=path"];
+      if (mode === "files_with_matches") options.push("--files-with-matches", "--null");
+      if (mode === "count") options.push("--count", "--null", "--with-filename");
       if (mode === "content" && args["-n"] !== false) options.push("--line-number");
       if (args["-i"] === true) options.push("--ignore-case");
       if (mode === "content" && args["-o"] === true) options.push("--only-matching");
@@ -720,76 +732,61 @@ export class CanonicalFileTools extends Service {
       const command = separator < 0
         ? [...base, ...options]
         : [...base.slice(0, separator), ...options, ...base.slice(separator)];
+      const offset = (args.offset as number | undefined) ?? 0;
+      const limit = (args.head_limit as number | undefined) ?? 250;
+      const capacity = limit === 0 ? CANONICAL_JSON_LIMITS.maxArrayItems : Math.min(limit, CANONICAL_JSON_LIMITS.maxArrayItems);
+      const selected: JsonObject[] = [];
+      let ordinal = 0;
+      let bytes = 2;
+      let full = false;
+      let truncated = false;
+      // Resolve only paths that enter the visible page, once per contiguous file.
+      let lastPath: string | undefined;
+      let resolvedPath = "";
+      const retain = async (path: string, fields: JsonObject): Promise<void> => {
+        if (ordinal++ < offset) return;
+        if (selected.length >= capacity || full) { truncated = true; return; }
+        if (lastPath !== path) {
+          resolvedPath = await this.#searchResultPath(ctx, product, root.root, path);
+          lastPath = path;
+        }
+        const record = { ...fields, path: resolvedPath };
+        const size = Buffer.byteLength(JSON.stringify(record), "utf8") + (selected.length > 0 ? 1 : 0);
+        if (bytes + size > 250_000) { full = true; truncated = true; return; }
+        selected.push(record);
+        bytes += size;
+      };
       const result = await ctx.productProcesses.runSearch(
         product,
         Object.freeze({ target: root.root, identity: root.rootIdentity }),
         "Grep",
         command,
-        8 * 1_024 * 1_024,
+        async (stdout) => consumeSearchRecords(stdout,
+          mode === "content" ? ["\n"] : mode === "count" ? ["\0", "\n"] : ["\0"],
+          async ([value, count]) => {
+            if (!value) return;
+            if (mode === "files_with_matches") { await retain(value, {}); return; }
+            if (mode === "count") {
+              const total = Number(count);
+              if (!Number.isSafeInteger(total) || total < 0) throw new ProductToolError("search_failed", "ripgrep emitted an invalid count");
+              await retain(value, { count: total });
+              return;
+            }
+            const record = parseRipgrepLine(value, args["-o"] === true);
+            if (record === undefined) return;
+            const texts = args["-o"] === true ? (record.context ? [] : record.matches) : [record.text];
+            for (const text of texts) {
+              const bounded = truncateGrepLine(text);
+              if (bounded.truncated && ordinal >= offset && selected.length < capacity && !full) truncated = true;
+              await retain(record.path, { ...(args["-n"] === false ? {} : { line: record.line }), text: bounded.text });
+            }
+          }),
       );
       if (result.exitCode !== 0 && result.exitCode !== 1) {
-        const diagnostic = searchDiagnostic(result.stderr, "Grep search failed");
         throw new ProductToolError(
           searchReportsInvalidPattern(result.stderr) ? "invalid_pattern" : "search_failed",
-          diagnostic,
+          searchDiagnostic(result.stderr, "Grep search failed"),
         );
-      }
-      const transport = parseRipgrepLines(result.stdout);
-      const pathRecords = await Promise.all(transport.map(async (record) => Object.freeze({
-        ...record,
-        path: await this.#searchResultPath(ctx, product, root.root, record.path),
-      })));
-      const matches = pathRecords.filter((record) => !record.context);
-      let allRecords: JsonObject[];
-      let lineTruncated = false;
-      if (mode === "files_with_matches") {
-        const ranked = await Promise.all([...new Set(matches.map(({ path }) => path))].map(async (path) => {
-          const target = await ctx.fs.resolve(path, {
-            cwd: product.environment.workspace.canonicalRoot,
-            signal: product.signal,
-          });
-          const info = await ctx.fs.stat(target, product.signal);
-          if (info?.type !== "file") throw new ProductToolError("search_failed", "Grep result identity changed");
-          const mtimeMs = await requireLocalWorkspaceFileSystem(ctx.fs).modificationTime(target, product.signal);
-          return Object.freeze({ mtimeMs, path });
-        }));
-        ranked.sort((left, right) => right.mtimeMs - left.mtimeMs
-          || (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
-        allRecords = ranked.map(({ path }) => Object.freeze({ path }));
-      } else if (mode === "count") {
-        const counts = new Map<string, number>();
-        for (const { path } of matches) counts.set(path, (counts.get(path) ?? 0) + 1);
-        allRecords = [...counts].map(([path, count]) => Object.freeze({ count, path }));
-      } else {
-        const contentRecords = args["-o"] === true
-          ? pathRecords.flatMap(({ context, line, matches: submatches, path }) => {
-              if (context) return [];
-              if (submatches === undefined) {
-                throw new ProductToolError("search_failed", "ripgrep omitted required only-match submatches");
-              }
-              return submatches.map((text) => Object.freeze({ line, path, text }));
-            })
-          : pathRecords;
-        const boundedRecords = contentRecords.map(({ line, path, text }) => {
-          const bounded = truncateGrepLine(text);
-          return Object.freeze({ bounded, line, path });
-        });
-        lineTruncated = boundedRecords.some(({ bounded }) => bounded.truncated);
-        allRecords = boundedRecords.map(({ bounded, line, path }) => Object.freeze({
-            ...(args["-n"] === false ? {} : { line }),
-            path,
-            text: bounded.text,
-          }));
-      }
-      const offset = (args.offset as number | undefined) ?? 0;
-      const limit = (args.head_limit as number | undefined) ?? 250;
-      const selected = limit === 0
-        ? allRecords.slice(offset, offset + CANONICAL_JSON_LIMITS.maxArrayItems)
-        : allRecords.slice(offset, offset + Math.min(limit, CANONICAL_JSON_LIMITS.maxArrayItems));
-      let truncated = lineTruncated || offset + selected.length < allRecords.length;
-      while (Buffer.byteLength(JSON.stringify(selected), "utf8") > 250_000 && selected.length > 0) {
-        selected.pop();
-        truncated = true;
       }
       return Object.freeze({
         durationMs: result.durationMs,
@@ -841,7 +838,7 @@ export class CanonicalFileTools extends Service {
           version: String(info.version),
         }, 100_001, product.signal);
       } catch (error) {
-        product.signal.throwIfAborted();
+        throwIfProductToolAborted(product.signal);
         throw new ProductToolError("list_failed", "bounded directory enumeration failed", { cause: error });
       }
       const ordered = [...entries].sort((left, right) => {
@@ -879,7 +876,7 @@ export class CanonicalFileTools extends Service {
     tool: "Glob" | "Grep" | "ls",
     path: string | undefined,
   ): Promise<SearchRootAuthority> {
-    product.signal.throwIfAborted();
+    throwIfProductToolAborted(product.signal);
     const input = path ?? ".";
     const pathInfo = await ctx.fs.lstat(input, { cwd: product.environment.workspace.canonicalRoot }, product.signal);
     if (pathInfo === undefined) {
@@ -907,7 +904,7 @@ export class CanonicalFileTools extends Service {
       }
       return authority;
     } catch (error) {
-      product.signal.throwIfAborted();
+      throwIfProductToolAborted(product.signal);
       if (error instanceof ProductToolError) throw error;
       throw new ProductToolError(
         tool === "Grep" ? "path_denied" : "directory_not_found",
@@ -957,7 +954,7 @@ export class CanonicalFileTools extends Service {
       }
       return local.contains(workspace, target) ? local.projectRelative(workspace, target) : target.displayPath;
     } catch (error) {
-      product.signal.throwIfAborted();
+      throwIfProductToolAborted(product.signal);
       throw new ProductToolError("search_failed", "search path projection failed closed", { cause: error });
     }
   }
@@ -969,14 +966,14 @@ export class CanonicalFileTools extends Service {
     path: string,
     mode: "read" | "write",
   ): Promise<Readonly<{ checkpointEligible: boolean; target: FsTarget }>> {
-    product.signal.throwIfAborted();
+    throwIfProductToolAborted(product.signal);
     const planTarget = await ctx.productTools.resolvePlanFileTarget(product, tool, path, mode);
     if (planTarget !== undefined) return Object.freeze({ checkpointEligible: false, target: planTarget });
     let target: FsTarget;
     try {
       target = await ctx.fs.resolve(path, { cwd: product.environment.workspace.canonicalRoot, signal: product.signal });
     } catch (error) {
-      product.signal.throwIfAborted();
+      throwIfProductToolAborted(product.signal);
       if (tool === "Write" && error instanceof FsError && error.code === "FS_NOT_FOUND") {
         throw new ProductToolError(
           "directory_not_found",

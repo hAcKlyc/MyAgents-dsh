@@ -1,3 +1,4 @@
+import { throwIfProductToolAborted } from "@myagents-dsh/tool-runtime-product";
 import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 
@@ -849,7 +850,7 @@ export class ProductPlanService extends Service {
         "plan artifact resolution",
       ), "plan artifact resolution result");
     } catch (error) {
-      context.signal.throwIfAborted();
+      throwIfProductToolAborted(context.signal);
       throw new ProductToolError("plan_artifact_unavailable", safeErrorCodes(error).has("FS_NOT_FOUND")
         ? `The plan file does not exist yet. Use Write on ${managedPath} to create it before reading or submitting it.`
         : "managed plan artifact failed identity validation", { cause: error });
@@ -934,10 +935,10 @@ export class ProductPlanService extends Service {
             "AskUserQuestion settlement",
           ));
         } catch (error) {
-          context.signal.throwIfAborted();
+          throwIfProductToolAborted(context.signal);
           throw interactionError(error, "interaction_rejected", "question interaction failed closed");
         }
-        context.signal.throwIfAborted();
+        throwIfProductToolAborted(context.signal);
         this.ctx.productTools.assertCurrent(context, "AskUserQuestion");
         const byId = new Map(answer.answers.map((item) => [item.id, item]));
         return Object.freeze({
@@ -983,7 +984,7 @@ export class ProductPlanService extends Service {
               this.configValue.io.prepare(runtimeHome, sessionId, controller.signal),
               "managed plan artifact preparation",
             )), "managed plan artifact preparation result");
-            context.signal.throwIfAborted();
+            throwIfProductToolAborted(context.signal);
             if (before.mode === "plan") {
               if (target.displayPath !== before.planPath) {
                 throw new ProductToolError("plan_state_conflict", "managed plan artifact identity changed");
@@ -1058,7 +1059,7 @@ export class ProductPlanService extends Service {
             "plan approval interaction",
           ));
         } catch (error) {
-          context.signal.throwIfAborted();
+          throwIfProductToolAborted(context.signal);
           const codes = safeErrorCodes(error);
           if (["interaction_cancelled", "interaction_timeout", "ASK_ABORTED"].some((code) => codes.has(code))) {
             return Object.freeze({
@@ -1074,7 +1075,7 @@ export class ProductPlanService extends Service {
             "plan approval failed closed",
           );
         }
-        context.signal.throwIfAborted();
+        throwIfProductToolAborted(context.signal);
         return await runWithProductToolExecutionDeadline(
           context,
           CANONICAL_TOOL_CONTRACTS.ExitPlanMode.timeoutMs,

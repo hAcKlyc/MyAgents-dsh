@@ -1,3 +1,4 @@
+import { throwIfProductToolAborted } from "./runtime.js";
 import { createHash } from "node:crypto";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
@@ -1382,7 +1383,7 @@ export class ProductPermissionService extends Service {
     rawRequest: ProductToolPermissionRequest,
   ): Promise<"allow" | "deny"> {
     this.assertHealthy();
-    context.signal.throwIfAborted();
+    throwIfProductToolAborted(context.signal);
     const request = exactOwnDataObject(
       rawRequest,
       ["permissionClass", "target", "tool"],
@@ -1404,7 +1405,7 @@ export class ProductPermissionService extends Service {
     rawRequest: unknown,
   ): Promise<"allow" | "deny"> {
     this.assertHealthy();
-    context.signal.throwIfAborted();
+    throwIfProductToolAborted(context.signal);
     const request = exactOwnDataObject(
       rawRequest,
       ["permissionClass", "target", "tool"],
@@ -1434,7 +1435,7 @@ export class ProductPermissionService extends Service {
     await this.readOperationPolicy(context);
     if (this.configValue.hook !== undefined) {
       const hookDecision: unknown = await Promise.resolve(this.configValue.hook.authorize(context, normalized));
-      context.signal.throwIfAborted();
+      throwIfProductToolAborted(context.signal);
       if (hookDecision === "deny") return "deny";
       if (hookDecision === "allow_once") {
         await this.readOperationPolicy(context);
@@ -1566,7 +1567,7 @@ export class ProductPermissionService extends Service {
         signal: controller.signal,
         toolName: request.tool,
       });
-      context.signal.throwIfAborted();
+      throwIfProductToolAborted(context.signal);
       if (controller.signal.aborted && controller.signal.reason instanceof ProductPermissionError) {
         throw controller.signal.reason;
       }

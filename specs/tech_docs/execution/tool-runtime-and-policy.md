@@ -156,7 +156,7 @@ A tool change must update the handwritten contract source, generated catalog/sch
 
 Composition-installed callbacks use ordinary Promise/thenable semantics. Promise subclasses, own observation fields and Proxy functions do not establish a security boundary inside trusted Runtime JavaScript. The tool service caches the parsed catalog by its immutable source identity and compares admitted revision/digest during execution. Model arguments, external RPC declarations, path/URL/attachment identity and post-approval policy checks retain their boundary validation.
 
-A governed Edit without a current complete Read instructs the caller to run Read without offset or limit and then retry. This improves recovery guidance without changing ReadState authority or permitting a partial/stale read to authorize a mutation.
+A governed Edit without a current complete Read instructs the caller to read a range covering the whole file, or omit offset and limit, and then retry. This improves recovery guidance without changing ReadState authority or permitting a partial/stale read to authorize a mutation.
 
 Image publication and model consumption have different lifetimes. The tool's attachment scope ends
 with the tool execution; the next model stream must acquire durable attachment bytes under its own
@@ -165,3 +165,9 @@ HostAttachmentStore scope for iterator creation, every next() and iterator clean
 credential scope for both official pi-ai and DeepSeek adapters. Reusing a completed tool scope or
 adding image references without model-request attachment authority makes the next Provider call fail.
 The Host native fixture verifies image bytes in the actual next Anthropic wire request.
+
+## Streamed search and cancellation presentation
+
+Grep/Glob use the existing ProductProcess authority and DSH subprocess pipe. The process owner drains stdout concurrently with exit and joins the consumer during cancellation cleanup. The filesystem owner decodes complete native records incrementally, retaining only the requested visible page; memory depends on that page and the largest individual transport record, not the total response. Count uses native `--count --null --with-filename`; file lists use NUL separators and native modified-time ordering. Content uses JSON line records. Existing inline array/byte budgets and line previews report truncation without rejecting the entire broad search. Returned paths still pass filesystem authority; error/timeout/identity changes remain errors. No second executor or ambient ripgrep is introduced.
+
+Structured DSH cancellation reasons are control records. Product tools convert non-Error cancellation into a readable ABORTED error and retain existing typed Error reasons; arbitrary objects are not serialized into model-visible error text. Missing Shell workdir errors identify the directory requirement. stdout and stderr preserve their own order only; child signals cannot be inferred solely from a parent Shell exit code.

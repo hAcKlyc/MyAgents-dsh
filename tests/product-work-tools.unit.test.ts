@@ -1442,6 +1442,37 @@ describe("canonical Agent Work projection", () => {
     expect(epochs.map((event) => (event.data as { ordinal: number }).ordinal)).toEqual([1, 2]);
   });
 
+  it("delivers the final assistant answer without letting narration consume the completion budget", async () => {
+    const state = await harness();
+    const started = await state.execute("Agent", { description: "Final result fixture", prompt: "Inspect a synthetic fixture." });
+    const { agentId, outputPath } = (started as { value: { agentId: string; outputPath: string } }).value;
+    const final = "Verified findings.\n" + "Detail: confirmed.\n".repeat(100) + "FINAL CONCLUSION: ready.";
+    state.subagents.emitEnd(agentId, ["PROGRESS ".repeat(3_000), final]);
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]).toMatchObject({ result: final, resultTruncated: false }));
+    await vi.waitFor(() => {
+      const reports = state.agent.session.snapshotEvents().flatMap(event => event.type === "agent/inbox/spliced"
+        ? event.data.inserted.filter(message => message.source.kind === "subagent-report") : []);
+      const text = reports.flatMap(message => message.content.flatMap(block => block.type === "text" ? [block.text] : [])).join("\n");
+      expect(text).toContain("FINAL CONCLUSION: ready.");
+      expect(text).toContain(outputPath);
+      expect(text).not.toContain("PROGRESS");
+    });
+    expect(state.finalizedOutputs.get(outputPath)).toContain("PROGRESS");
+    expect(state.finalizedOutputs.get(outputPath)).toContain(final);
+  });
+
+  it("keeps the latest closing answer in retained output after its history exceeds the retention budget", async () => {
+    const state = await harness();
+    const started = await state.execute("Agent", { description: "Retained tail fixture", prompt: "Finish a long synthetic trace." });
+    const { agentId, outputPath } = (started as { value: { agentId: string; outputPath: string } }).value;
+    state.subagents.emitEnd(agentId, ["x".repeat(8 * 1_024 * 1_024 + 200), "FINAL: 完成 ✓"]);
+    await vi.waitFor(() => expect(state.context.productWork.snapshot()[0]).toMatchObject({ result: "FINAL: 完成 ✓", resultTruncated: false }));
+    await vi.waitFor(() => expect(state.finalizedOutputs.get(outputPath)).toContain("FINAL: 完成 ✓"));
+    const retained = state.finalizedOutputs.get(outputPath) ?? "";
+    expect(Buffer.byteLength(retained)).toBeLessThanOrEqual(8 * 1_024 * 1_024);
+    expect(retained).not.toContain("\ufffd");
+  });
+
   it("publishes each durable background assistant reply before the child epoch ends", async () => {
     const state = await harness();
     const started = await state.execute("Agent", {

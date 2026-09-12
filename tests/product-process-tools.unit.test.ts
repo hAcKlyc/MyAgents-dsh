@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { LocalBashExecutor } from "@deepseek-ai/dsh-bash-local";
 import { PwshLocalExecutor } from "@deepseek-ai/dsh-pwsh-local";
 import * as ShellEnv from "@deepseek-ai/dsh-shell-env";
@@ -77,7 +78,7 @@ interface FakeSpawnPlan {
 class FakeSubprocessHandle implements SubprocessHandle {
   readonly pid = 42;
   readonly stdin = undefined;
-  readonly stdout = undefined;
+  readonly stdout: Readable;
   readonly stderr = undefined;
   readonly collected;
   readonly done: Promise<SubprocessOutcome>;
@@ -88,6 +89,7 @@ class FakeSubprocessHandle implements SubprocessHandle {
   waitHits = 0;
 
   constructor(plan: FakeSpawnPlan) {
+    this.stdout = Readable.from([Buffer.from(plan.stdout)]);
     this.done = new Promise((resolve, reject) => {
       this.#resolve = resolve;
       this.#reject = reject;
@@ -576,7 +578,7 @@ describe("official Shell tools with product policy", () => {
       signal,
     }) satisfies ProductToolContext;
     const authority = await state.processIo.captureWorkspace(state.workspace, signal);
-    const pending = state.context.productProcesses.runSearch(product, authority, "Glob", ["--files"], 1_024);
+    const pending = state.context.productProcesses.runSearch(product, authority, "Glob", ["--files"], async (stdout) => { for await (const chunk of stdout) { expect(chunk).toBeInstanceOf(Uint8Array); } });
     const rejection = expect(pending).rejects.toThrow(/identity changed|stale|workspace is unavailable/u);
     await new Promise<void>((resolve) => { setImmediate(resolve); });
     await rename(state.workspace, join(state.root, "search-root.displaced"));
@@ -616,7 +618,7 @@ describe("official Shell tools with product policy", () => {
       authority,
       "Grep",
       ["--files"],
-      1_024,
+      async (stdout) => { for await (const chunk of stdout) { expect(chunk).toBeInstanceOf(Uint8Array); } },
     )).resolves.toMatchObject({ exitCode: 0 });
     await state.context.fiber.dispose();
   });
@@ -647,7 +649,7 @@ describe("official Shell tools with product policy", () => {
       signal,
     }) satisfies ProductToolContext;
     const authority = await state.processIo.captureWorkspace(state.workspace, signal);
-    await expect(state.context.productProcesses.runSearch(product, authority, "Grep", ["--files"], 1_024))
+    await expect(state.context.productProcesses.runSearch(product, authority, "Grep", ["--files"], async (stdout) => { for await (const chunk of stdout) { expect(chunk).toBeInstanceOf(Uint8Array); } }))
       .rejects.toThrow(/configured executable is unavailable/u);
     expect(state.fakeSubprocess.specs).toHaveLength(0);
     await state.context.fiber.dispose();
@@ -670,13 +672,22 @@ describe("official Shell tools with product policy", () => {
       signal: new AbortController().signal,
     }) satisfies ProductToolContext;
     const workspace = await state.processIo.captureWorkspace(state.workspace, product.signal);
-    await expect(state.context.productProcesses.runSearch(product, workspace, "Glob", ["--files"], 1_024))
+    await expect(state.context.productProcesses.runSearch(product, workspace, "Glob", ["--files"], async (stdout) => { for await (const chunk of stdout) { expect(chunk).toBeInstanceOf(Uint8Array); } }))
       .rejects.toMatchObject({ code: "search_failed" });
-    await expect(state.context.productProcesses.runSearch(product, workspace, "Grep", ["--json"], 1_024))
+    await expect(state.context.productProcesses.runSearch(product, workspace, "Grep", ["--json"], async (stdout) => { for await (const chunk of stdout) { expect(chunk).toBeInstanceOf(Uint8Array); } }))
       .rejects.toMatchObject({ code: "search_dependency_missing" });
     expect(state.fakeSubprocess.specs).toHaveLength(0);
     await state.context.fiber.dispose();
   });
+  it("identifies an unavailable shell workdir before starting a process", async () => {
+    const state = await harness();
+    const result = await state.execute({ command: "pwd", workdir: "missing-directory" });
+    expect(result).toMatchObject({ isError: true, error: { info: { code: "path_denied" } } });
+    expect(JSON.stringify(result)).toContain("workdir is not an existing readable directory");
+    expect(state.fakeSubprocess.specs).toHaveLength(0);
+    await state.context.fiber.dispose();
+  });
+
   it("uses the official Bash definition and foreground result with a sealed environment", async () => {
     const state = await harness();
     state.fakeSubprocess.plans.push({ outcome: { exitCode: 7, signal: null }, stdout: "output\n", stderr: "warning\n" });

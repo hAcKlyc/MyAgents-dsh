@@ -11,6 +11,38 @@ import type { ProductPermissionInteractionRequest } from "@myagents-dsh/tool-run
 import { describe, expect, it, vi } from "vitest";
 
 describe("Host interaction bridge", () => {
+  it.each(["answer", "cancel"] as const)("keeps an invalid question response correctable by %s", async (next) => {
+    let interactionId = "";
+    const resolve = vi.fn(() => Promise.resolve({}));
+    const reject = vi.fn();
+    const bridge = createProductHostInteractionBridge({
+      controller: { notifyInteractionCancelled: vi.fn() },
+      hostPorts: { requestInteraction: (_authority: unknown, request: { interactionId: string }) => {
+        interactionId = request.interactionId;
+        return Promise.resolve({ registered: true });
+      } } as unknown as HostPortService,
+      resolveAuthority: () => ({ authority: {} as HostPortRequestAuthority, assertCurrent: vi.fn(),
+        clientOperationId: "operation-question", dshTurn: 1, expectedConfigRevision: "config-v1",
+        expectedPermissionRevision: "permission-v1", productTurnId: "turn-question" }),
+      revision: "scenario-v1", deadlineMs: 30_000,
+    });
+    bridge.provider.answerQuestions({ agent: { id: "question-agent" } as Agent,
+      questions: [{ id: "q", question: "Choose", options: [{ label: "One" }, { label: "Two" }] }],
+    }, { resolve, reject });
+    const base = { interactionId, expectedRevision: "permission-v1" };
+    await expect(bridge.controller.respond({ ...base, decision: "answered", value: { answers: [{ id: "q", selected: ["Free text"] }] } }))
+      .resolves.toEqual({ state: "rejected", code: "interaction_response_invalid" });
+    expect(resolve).not.toHaveBeenCalled();
+    expect(reject).not.toHaveBeenCalled();
+    const corrected = next === "answer"
+      ? { ...base, decision: "answered" as const, value: { answers: [{ id: "q", selected: [], custom: "Free text, preserved" }] } }
+      : { ...base, decision: "cancelled" as const };
+    await expect(bridge.controller.respond(corrected)).resolves.toEqual({ state: "applied", effectivePolicyRevision: "permission-v1" });
+    await expect(bridge.controller.respond(corrected)).resolves.toEqual({ state: "already_settled" });
+    expect(resolve).toHaveBeenCalledTimes(next === "answer" ? 1 : 0);
+    expect(reject).toHaveBeenCalledTimes(next === "cancel" ? 1 : 0);
+  });
+
   it("waits for Host registration before applying an immediately returned response", async () => {
     let acknowledge: (result: MethodResult<"host/interaction/request">) => void = () => undefined;
     const registration = new Promise<MethodResult<"host/interaction/request">>((resolve) => {

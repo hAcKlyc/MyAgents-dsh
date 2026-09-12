@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { prepareImageFile, DEFAULT_MAX_IMAGE_BYTES, DEFAULT_MAX_IMAGE_PIXELS, DEFAULT_MAX_IMAGES_PER_MESSAGE, DEFAULT_MAX_MESSAGE_IMAGE_BYTES } from "@deepseek-ai/dsh-attachment-local";
 import type { SaveImageAttachment } from "@deepseek-ai/dsh-attachment";
 import { SessionSeq } from "@deepseek-ai/dsh-session";
@@ -164,7 +165,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
   let beforeImageRead: (() => Promise<void>) | undefined;
   let checkpointOverride: unknown = noOverride;
   let checkpointPrepareHook: ((request: ProductToolCheckpointRequest) => Promise<void>) | undefined;
-  let searchResult: ProductSearchResult = Object.freeze({ durationMs: 1, exitCode: 1, stderr: "", stdout: "" });
+  let searchResult: ProductSearchResult & { stdout: string } = Object.freeze({ durationMs: 1, exitCode: 1, stderr: "", stdout: "" });
   let searchImplementation: ((product: ProductToolContext) => Promise<ProductSearchResult>) | undefined;
   const searchCommands: string[][] = [];
   const searchWorkdirs: string[] = [];
@@ -217,15 +218,21 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
   });
   context.provide("productProcesses", {
     resolveRetainedOutput: () => Promise.resolve(undefined),
-    runSearch: (
+    runSearch: async (
       _product: ProductToolContext,
       workdir: ProductProcessWorkspaceAuthority,
       _tool: "Glob" | "Grep",
       command: readonly string[],
+      consume: (stdout: AsyncIterable<Uint8Array>) => Promise<void>,
     ) => {
       searchWorkdirs.push(workdir.target.displayPath);
       searchCommands.push([...command]);
-      return searchImplementation?.(_product) ?? Promise.resolve(searchResult);
+      if (searchImplementation) return await searchImplementation(_product);
+      const bytes = Buffer.from(searchResult.stdout);
+      await consume(Readable.from((function* () {
+        for (let offset = 0; offset < bytes.length; offset += 997) yield bytes.subarray(offset, offset + 997);
+      })()));
+      return searchResult;
     },
   } as never);
   context.provide("llm", {
@@ -344,7 +351,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
     setPermissionDecision: (decision: "allow" | "deny") => { permissionDecision = decision; },
     setPermissionPromise: (pending: Promise<"allow" | "deny"> | undefined) => { permissionPromise = pending; },
     setChildAllowedTools: (tools: readonly string[]) => { childAllowedTools = Object.freeze([...tools]); },
-    setSearchResult: (value: ProductSearchResult) => { searchResult = value; },
+    setSearchResult: (value: ProductSearchResult & { stdout: string }) => { searchResult = value; },
     setSearchImplementation: (
       value: ((product: ProductToolContext) => Promise<ProductSearchResult>) | undefined,
     ) => { searchImplementation = value; },
@@ -564,7 +571,7 @@ describe("canonical filesystem tools", () => {
     await state.execute("Read", { file_path: path, offset: 2, limit: 1 });
     const partialEdit = await state.execute("Edit", { file_path: path, old_string: "one", new_string: "changed" });
     expect(partialEdit).toMatchObject({ isError: true, error: { info: { code: "read_required" } } });
-    expect(JSON.stringify(partialEdit)).toContain("call Read without offset or limit");
+    expect(JSON.stringify(partialEdit)).toContain("Use a range covering the whole file");
     await expect(state.execute("Write", { file_path: path, content: "forbidden" }))
       .resolves.toMatchObject({ isError: true, error: { info: { code: "read_required" } } });
     await state.execute("Read", { file_path: path });
@@ -973,17 +980,7 @@ describe("canonical filesystem tools", () => {
       durationMs: 9,
       exitCode: 0,
       stderr: "",
-      stdout: [
-        JSON.stringify({
-          type: "match",
-          data: { path: { text: "./src/a.ts" }, line_number: 1, lines: { text: "const alpha = 1;\n" } },
-        }),
-        JSON.stringify({
-          type: "match",
-          data: { path: { text: "./src/b.ts" }, line_number: 1, lines: { text: "const beta = 2;\n" } },
-        }),
-        "",
-      ].join("\n"),
+      stdout: "./src/a.ts\u00001\n./src/b.ts\u00001\n",
     }));
     await expect(state.execute("Grep", {
       pattern: "const",
@@ -998,7 +995,22 @@ describe("canonical filesystem tools", () => {
         truncated: true,
       },
     });
-    expect(state.searchCommands[1]).toEqual(expect.arrayContaining(["--json", "--no-config", "--sort=path"]));
+    expect(state.searchCommands[1]).toEqual(expect.arrayContaining(["--count", "--null", "--with-filename", "--no-config", "--sort=path"]));
+    await state.context.fiber.dispose();
+  });
+
+  it("paginates beyond twenty thousand records without retaining the raw search response", async () => {
+    const state = await harness();
+    await writeFile(join(state.workspace, "broad.txt"), "fixture\n");
+    const stdout = Array.from({ length: 20_002 }, (_, index) => JSON.stringify({
+      type: "match", data: { path: { text: "broad.txt" }, line_number: index + 1, lines: { text: "界".repeat(250) + "\n" } },
+    })).join("\n");
+    expect(Buffer.byteLength(stdout)).toBeGreaterThan(8 * 1_024 * 1_024);
+    state.setSearchResult({ durationMs: 1, exitCode: 0, stderr: "", stdout });
+    await expect(state.execute("Grep", { pattern: "界", output_mode: "content", offset: 20_000, head_limit: 1 }))
+      .resolves.toMatchObject({ isError: false, value: {
+        records: [{ path: "broad.txt", line: 20_001, text: "界".repeat(250) }], truncated: true,
+      } });
     await state.context.fiber.dispose();
   });
 
@@ -1015,10 +1027,7 @@ describe("canonical filesystem tools", () => {
       durationMs: 2,
       exitCode: 0,
       stderr: "",
-      stdout: ["./src/older.ts", "./src/newer.ts"].map((path) => JSON.stringify({
-        type: "match",
-        data: { path: { text: path }, line_number: 1, lines: { text: "const value = 1;\n" } },
-      })).join("\n"),
+      stdout: "./src/newer.ts\0./src/older.ts\0",
     }));
     await expect(state.execute("Grep", { pattern: "const" })).resolves.toMatchObject({
       isError: false,
@@ -1029,7 +1038,7 @@ describe("canonical filesystem tools", () => {
         truncated: false,
       },
     });
-    expect(state.searchCommands.at(-1)).toEqual(expect.arrayContaining(["--max-count", "1"]));
+    expect(state.searchCommands.at(-1)).toEqual(expect.arrayContaining(["--files-with-matches", "--null", "--sortr=modified"]));
     expect(state.searchCommands.at(-1)).not.toContain("--line-number");
 
     const longLine = "x".repeat(800);
@@ -1114,10 +1123,7 @@ describe("canonical filesystem tools", () => {
       durationMs: 4,
       exitCode: 0,
       stderr: "",
-      stdout: JSON.stringify({
-        type: "match",
-        data: { path: { text: "./src/older.ts" }, line_number: 1, lines: { text: "x\n" } },
-      }),
+      stdout: "./src/older.ts\u00001\n",
     }));
     await expect(state.execute("Grep", {
       "-o": true,
@@ -1221,7 +1227,7 @@ describe("canonical filesystem tools", () => {
       error: { info: { code: "search_failed" } },
     });
     state.setSearchResult(Object.freeze({ durationMs: 1, exitCode: 0, stderr: "", stdout: "not-json\n" }));
-    await expect(state.execute("Grep", { pattern: "fixture" })).resolves.toMatchObject({
+    await expect(state.execute("Grep", { pattern: "fixture", output_mode: "content" })).resolves.toMatchObject({
       isError: true,
       error: { info: { code: "search_failed" } },
     });

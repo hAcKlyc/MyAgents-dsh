@@ -1,3 +1,4 @@
+import { throwIfProductToolAborted } from "@myagents-dsh/tool-runtime-product";
 import { Resolver } from "node:dns/promises";
 import { request as httpRequest, type ClientRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -785,9 +786,9 @@ export class ProductSafeHttpClient {
       let current = parseSafeUrl(rawUrl, this.#policy);
       const redirectOrigins: string[] = [];
       for (let redirectCount = 0; ; redirectCount += 1) {
-        context.signal.throwIfAborted();
+        throwIfProductToolAborted(context.signal);
         await authorizeHop(current, context);
-        context.signal.throwIfAborted();
+        throwIfProductToolAborted(context.signal);
         // Human approval is outside both the network budget and concurrency
         // reservation. Each bounded redirect hop acquires only when executable.
         const network = boundedDeadline(context.signal, this.#policy.timeoutMs);

@@ -1,3 +1,4 @@
+import { throwIfProductToolAborted } from "@myagents-dsh/tool-runtime-product";
 import { createHash } from "node:crypto";
 import { isProxy } from "node:util/types";
 
@@ -1222,7 +1223,7 @@ export class ProductSkillService extends Service {
             this.#dynamicViewPermits.delete(lookupSignal);
             throw error;
           }
-          product.signal.throwIfAborted();
+          throwIfProductToolAborted(product.signal);
           if (!observed.complete) {
             throw new ProductToolError("skill_invalid", "Skill catalog observation is incomplete");
           }
@@ -1268,7 +1269,7 @@ export class ProductSkillService extends Service {
             this.loadPermits.delete(lookupSignal);
             this.#dynamicViewPermits.delete(lookupSignal);
           }
-          product.signal.throwIfAborted();
+          throwIfProductToolAborted(product.signal);
           ctx.productTools.assertCurrent(product, "Skill");
           if (definition === undefined) {
             throw new ProductToolError("skill_invalid", "Skill disappeared after its authorized catalog snapshot");
@@ -1312,7 +1313,7 @@ export class ProductSkillService extends Service {
             },
           );
         } catch (error) {
-          product.signal.throwIfAborted();
+          throwIfProductToolAborted(product.signal);
           if (error instanceof ProductToolError) throw error;
           throw new ProductToolError("skill_invalid", "Skill could not be validated and loaded", { cause: error });
         } finally {

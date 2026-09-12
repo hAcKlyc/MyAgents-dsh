@@ -1,3 +1,4 @@
+import { throwIfProductToolAborted } from "@myagents-dsh/tool-runtime-product";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isProxy } from "node:util/types";
 
@@ -500,7 +501,7 @@ class ProductSearchProvider implements WebSearchProvider {
         await Promise.resolve<unknown>(pending),
         "WebSearch Provider result",
       ) as ProductSearchDetail;
-      store.context.signal.throwIfAborted();
+      throwIfProductToolAborted(store.context.signal);
       const detailKeys = ["citations", "durationMs", "results", "searchCount", "truncated"];
       if (detailKeys.some((key) => !Object.hasOwn(detail, key))
         || Reflect.ownKeys(detail).some((key) => typeof key !== "string"
@@ -732,7 +733,7 @@ export class CanonicalWebTools extends Service {
                 await Promise.resolve<unknown>(pending),
                 "Host WebFetch result",
               );
-              product.signal.throwIfAborted();
+              throwIfProductToolAborted(product.signal);
               const output = validateCanonicalToolOutput("WebFetch", result) as JsonObject;
               if (output.url !== requestedUrl.toString()) {
                 throw new ProductToolError(
@@ -765,14 +766,14 @@ export class CanonicalWebTools extends Service {
         }
         const store: FetchExecutionStore = { context: product, prompt: args.prompt as string };
         const fetched = await this.#fetchStorage.run(store, () => ctx.web.fetch({ url: args.url as string }, product.signal));
-        product.signal.throwIfAborted();
+        throwIfProductToolAborted(product.signal);
         if (fetched.url !== store.fetched?.finalUrl) {
           throw new ProductToolError("unsupported_content", "WebFetch Provider omitted exact retrieval provenance");
         }
         const source = truncateUtf8(fetched.body.content, 1_000_000);
         return await runWithProductToolExecutionDeadline(product, contract.timeoutMs, async (product) => {
           try {
-            product.signal.throwIfAborted();
+            throwIfProductToolAborted(product.signal);
             const utilityResult = await Promise.resolve<unknown>(runUtility(Object.freeze({
               context: product,
               finalUrl: redactUrl(fetched.url),
@@ -781,7 +782,7 @@ export class CanonicalWebTools extends Service {
               source: source.text,
               statusCode: fetched.statusCode,
             })));
-            product.signal.throwIfAborted();
+            throwIfProductToolAborted(product.signal);
             const utility = normalizeCanonicalJson(utilityResult, "WebFetch utility result") as JsonObject;
             const output = validateCanonicalToolOutput("WebFetch", {
               answer: utility.answer,
