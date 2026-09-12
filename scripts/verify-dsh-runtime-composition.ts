@@ -1664,7 +1664,8 @@ const main = (): void => {
       "canonical tool pipeline evidence",
     );
     const expectedModelTools = [...CANONICAL_TOOL_NAMES.filter((name) => name !== "pwsh"), "mcp__artifact_host__release_check"].toSorted();
-    if (canonicalToolPipeline.callCount !== 43
+    const expectedCanonicalCallCount = 43;
+    if (canonicalToolPipeline.callCount !== expectedCanonicalCallCount
       || JSON.stringify(canonicalToolPipeline.names) !== JSON.stringify(CANONICAL_TOOL_NAMES)
       || JSON.stringify(canonicalToolPipeline.observedRootToolNames) !== JSON.stringify(expectedModelTools)
       || canonicalToolPipeline.onlyExpectedToolNames !== true
@@ -2017,7 +2018,8 @@ const main = (): void => {
     const incompleteToolLifecycle = [...toolLifecycles.entries()].find(
       ([, lifecycle]) => lifecycle.endIndex === undefined || lifecycle.endIndex <= lifecycle.startIndex,
     );
-    if (toolLifecycles.size !== 41 || incompleteToolLifecycle !== undefined) {
+    // Three additional lifecycle/cancellation calls follow the canonical matrix.
+    if (toolLifecycles.size !== expectedCanonicalCallCount + 3 || incompleteToolLifecycle !== undefined) {
       throw new Error(
         `Runtime tool lifecycle evidence differs: calls=${String(toolLifecycles.size)}, `
         + `events=${String(actualEventKinds.filter((kind) => kind === "tool").length)}, `
