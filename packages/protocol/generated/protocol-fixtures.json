@@ -309,7 +309,7 @@
         },
         "runtimeGeneration": "generation-1",
         "runtimeVersion": "0.0.0",
-        "schemaSha256": "3bad4f30883c845a6c2b093dd25e0309a64e0a4cc1621ff3e37ffb4b727387a3",
+        "schemaSha256": "932d1075630d5a3909aa605fe12b2d78819c3773ae4e3c9b7a8989c2e9db65b8",
         "sessionFormat": "dsh-session-events-v1"
       }
     },
@@ -1221,7 +1221,7 @@
     }
   ],
   "protocolVersion": "5.0.0",
-  "schemaSha256": "3bad4f30883c845a6c2b093dd25e0309a64e0a4cc1621ff3e37ffb4b727387a3",
+  "schemaSha256": "932d1075630d5a3909aa605fe12b2d78819c3773ae4e3c9b7a8989c2e9db65b8",
   "valid": [
     {
       "frame": {
@@ -1436,7 +1436,7 @@
           },
           "runtimeGeneration": "generation-1",
           "runtimeVersion": "0.0.0",
-          "schemaSha256": "3bad4f30883c845a6c2b093dd25e0309a64e0a4cc1621ff3e37ffb4b727387a3",
+          "schemaSha256": "932d1075630d5a3909aa605fe12b2d78819c3773ae4e3c9b7a8989c2e9db65b8",
           "sessionFormat": "dsh-session-events-v1"
         }
       },

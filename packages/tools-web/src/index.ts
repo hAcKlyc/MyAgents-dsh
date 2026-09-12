@@ -20,6 +20,7 @@ export type {
   ProductHttpResponse,
   ProductHttpRequest,
   ProductHttpTransport,
+  ProductHttpProxyTransport,
   ProductNetworkPolicy,
   ProductSafeHttpClientConfig,
   ProductSafeHttpOpenRequest,

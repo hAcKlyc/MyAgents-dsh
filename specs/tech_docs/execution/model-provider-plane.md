@@ -130,3 +130,11 @@ Prefer an installed DSH/public adapter that natively supports the Host-selected 
 | Upstream request and Provider-content conformance | `tests/pi-ai-provider-conformance.unit.test.ts`, `specs/pi-ai/seam-evidence-v1.json`, official Provider composition/profile tests |
 | DSH adapter patch authority | `specs/dsh/seam-decisions-v1.json`, ADR 0011 |
 | Product route evidence | Host policy/conformance plus representative packed/native/live Provider campaigns |
+
+
+UPG15 Provider requests may receive `providerNetwork` with credential material. The existing
+credential AsyncLocalStorage scope freezes that Host-selected policy, gates access on resolved and
+current authority, and releases request-owned proxy pools when the model iterator exits. Scope
+revocation prevents later network admission. Main, child and utility requests use their existing
+model authority; network settings do not enter profile identity or durable context. Ordinary
+network and Shell follow the Host general launch snapshot. See [Web/network](../boundaries/web-and-network.md).

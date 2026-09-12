@@ -360,7 +360,8 @@ describe("Host credential and model route", () => {
         await releaseMaterial.promise;
       }
       return { authoritativeCredentialRevision: "credential-v1", kind: "material" as const,
-        material: { [credentialValueField]: `synthetic-${params.profileRevision}` } };
+        material: { [credentialValueField]: `synthetic-${params.profileRevision}` },
+        providerNetwork: { httpProxy: `http://${params.profileRevision}.proxy.test:8000`, noProxy: "localhost" } };
     });
     const bindings = await Promise.all([profile, childProfile].map((candidate) =>
       harness.credentialController.preflightProvider({
@@ -375,11 +376,28 @@ describe("Host credential and model route", () => {
       dshTurn: 1, modelRequestId: request, rootCallId: request, signal: new AbortController().signal, turnId: "turn-1",
     });
     harness.credentialController.activateProviderBindings(bindings);
-    const results = await Promise.all(bindings.map((binding, index) =>
-      harness.credentialController.runWithProviderRequestScope(scopeFor(binding, `parallel-${index}`), async () => {
-        await Promise.resolve();
-        return harness.credentials.resolve(binding.profile.credentialRef as CredentialRef);
-      })));
+    const cleanups: string[] = [];
+    const results = await Promise.all(bindings.map(async (binding, index) => {
+      const scope = scopeFor(binding, `parallel-${index}`);
+      try {
+        return await harness.credentialController.runWithProviderRequestScope(scope, async () => {
+          expect(() => harness.credentialController.currentProviderNetworkScope()).toThrow("resolved current");
+          const credential = await harness.credentials.resolve(binding.profile.credentialRef as CredentialRef);
+          const network = harness.credentialController.currentProviderNetworkScope();
+          expect(network?.policy.httpProxy).toBe(`http://${binding.profile.revision}.proxy.test:8000`);
+          network?.registerDisposer(() => { cleanups.push(binding.profile.revision); return Promise.resolve(); });
+          await Promise.resolve();
+          expect(harness.credentialController.currentProviderNetworkScope()).toBe(network);
+          return credential;
+        });
+      } finally {
+        await harness.credentialController.closeProviderRequestScope(scope);
+        await harness.credentialController.closeProviderRequestScope(scope);
+        expect(() => harness.credentialController.runWithProviderRequestScope(scope, () => undefined)).toThrow("scope is invalid");
+      }
+    }));
+    expect(cleanups.sort()).toEqual([profile.revision, childProfile.revision].sort());
+    expect(harness.credentialController.currentProviderNetworkScope()).toBeUndefined();
     expect(results.map((result) => result?.value)).toEqual([
       `synthetic-${profile.revision}`, `synthetic-${childProfile.revision}`,
     ]);

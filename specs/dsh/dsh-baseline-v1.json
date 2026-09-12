@@ -23,6 +23,20 @@
   "publicCompileFixture": "packages/product-profile/src/dsh-public-surface.compile.ts",
   "publicSeams": [
     {
+      "id": "http-proxy",
+      "package": "@deepseek-ai/dsh-http-proxy",
+      "importPath": "@deepseek-ai/dsh-http-proxy",
+      "classification": "provider",
+      "batchUse": [
+        "U15-W05"
+      ],
+      "values": [
+        "installProxyFromEnvironment",
+        "proxyRouteFor"
+      ],
+      "types": []
+    },
+    {
       "id": "local-file-provider",
       "package": "@deepseek-ai/dsh-fs-local",
       "importPath": "@deepseek-ai/dsh-fs-local",

@@ -11,13 +11,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@napi-rs/canvas": "1.0.8",
     "@myagents-dsh/checkpoint": "0.0.0",
     "@myagents-dsh/component-runtime": "0.0.0",
     "@myagents-dsh/components-agents": "0.0.0",
     "@myagents-dsh/components-commands": "0.0.0",
-    "@myagents-dsh/components-host-tools": "0.0.0",
     "@myagents-dsh/components-hooks": "0.0.0",
+    "@myagents-dsh/components-host-tools": "0.0.0",
     "@myagents-dsh/components-mcp": "0.0.0",
     "@myagents-dsh/components-skills": "0.0.0",
     "@myagents-dsh/host-ports": "0.0.0",
@@ -32,8 +31,10 @@
     "@myagents-dsh/tools-interaction": "0.0.0",
     "@myagents-dsh/tools-process": "0.0.0",
     "@myagents-dsh/tools-web": "0.0.0",
+    "@napi-rs/canvas": "1.0.8",
     "pdfjs-dist": "6.2.108",
-    "turndown": "7.2.4"
+    "turndown": "7.2.4",
+    "undici": "8.10.0"
   },
   "devDependencies": {
     "@types/turndown": "5.0.6"
@@ -50,6 +51,7 @@
     "@deepseek-ai/dsh-compaction-tool-result-pruner": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
     "@deepseek-ai/dsh-credentials": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
     "@deepseek-ai/dsh-fs": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
+    "@deepseek-ai/dsh-http-proxy": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
     "@deepseek-ai/dsh-jobs-local": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
     "@deepseek-ai/dsh-llm": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
     "@deepseek-ai/dsh-llm-deepseek": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",

@@ -133,6 +133,7 @@ describe("official Host-profiled Provider composition", () => {
         }),
       } as never, {
         runWithProviderRequestScope: (_scope: unknown, action: () => unknown) => action(),
+        closeProviderRequestScope: () => Promise.resolve(),
       } as never);
       const chunks: StreamChunk[] = [];
       for await (const chunk of root.llm.stream({

@@ -213,6 +213,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/composition.ts",
       "src/host-interaction.ts",
       "src/host-model.ts",
+      "src/network-transport.ts",
       "src/host-settings.ts",
       "src/host-web-bridge.ts",
       "src/host-web-fetch.ts",

@@ -143,6 +143,7 @@ const runtimeCompositionSourcePaths = [
   "packages/runtime-product/src/collaboration-policy.ts",
   "packages/runtime-product/src/host-interaction.ts",
   "packages/runtime-product/src/host-model.ts",
+  "packages/runtime-product/src/network-transport.ts",
   "packages/runtime-product/src/host-settings.ts",
   "packages/runtime-product/src/host-web-bridge.ts",
   "packages/runtime-product/src/host-web-fetch.ts",

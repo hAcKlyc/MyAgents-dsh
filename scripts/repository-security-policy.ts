@@ -25,6 +25,53 @@ export const isExactProductNetworkTransportSource = (
   return JSON.stringify(observed) === JSON.stringify([...allowed].sort());
 };
 
+export const isExactNativeNetworkTestSource = (
+  relativePath: string,
+  specifier: string,
+  source: string,
+): boolean => {
+  if (relativePath !== "tests/product-network.native.test.ts") return false;
+  const allowed = ["node:dns", "node:http", "node:net"];
+  if (!allowed.includes(specifier)) return false;
+  const loads = analyzeModuleLoads(source, relativePath).specifiers.filter((value) =>
+    ["dns", "http", "https", "net", "tls", "http2", "dgram", "child_process", "undici"].includes(value.replace(/^node:/u, "").split("/")[0] ?? ""));
+  if (JSON.stringify(loads.sort()) !== JSON.stringify(allowed)) return false;
+  const file = ts.createSourceFile(relativePath, source, ts.ScriptTarget.Latest, true);
+  const imports = file.statements.filter((node): node is ts.ImportDeclaration =>
+    ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && allowed.includes(node.moduleSpecifier.text));
+  const observed = imports.map((node) => {
+    const clause = node.importClause;
+    return { module: (node.moduleSpecifier as ts.StringLiteral).text, default: clause?.name?.text ?? null,
+      named: clause?.namedBindings !== undefined && ts.isNamedImports(clause.namedBindings)
+        ? clause.namedBindings.elements.map((item) => [item.propertyName?.text ?? item.name.text, item.name.text, item.isTypeOnly]) : [],
+      phase: clause?.phaseModifier ?? null };
+  });
+  return JSON.stringify(observed) === JSON.stringify([
+    { module: "node:dns", default: "dns", named: [], phase: null },
+    { module: "node:http", default: null, named: [["createServer", "createServer", false], ["request", "httpRequest", false]], phase: null },
+    { module: "node:net", default: null, named: [["connect", "connect", false], ["Socket", "Socket", true]], phase: null },
+  ]);
+};
+
+export const isExactRuntimeNetworkTransportSource = (
+  relativePath: string,
+  specifier: string,
+  source: string,
+): boolean => {
+  if (relativePath !== "packages/runtime-product/src/network-transport.ts" || specifier !== "undici") return false;
+  if (analyzeModuleLoads(source, relativePath).specifiers.filter((value) => value === "undici").length !== 1) return false;
+  const file = ts.createSourceFile(relativePath, source, ts.ScriptTarget.Latest, true);
+  const declarations = file.statements.filter((node): node is ts.ImportDeclaration =>
+    ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text === "undici");
+  const clause = declarations.length === 1 ? declarations[0]?.importClause : undefined;
+  if (clause === undefined || clause.phaseModifier !== undefined || clause.name !== undefined
+    || clause.namedBindings === undefined || !ts.isNamedImports(clause.namedBindings)) return false;
+  return JSON.stringify(clause.namedBindings.elements.map((item) => ({
+    name: item.name.text, imported: item.propertyName?.text ?? item.name.text, typeOnly: item.isTypeOnly,
+  }))) === JSON.stringify(["Agent", "Dispatcher", "EnvHttpProxyAgent", "getGlobalDispatcher", "request", "setGlobalDispatcher"]
+    .map((name) => ({ name, imported: name, typeOnly: false })));
+};
+
 export const isExactArtifactLauncherChildProcessSource = (
   relativePath: string,
   specifier: string,

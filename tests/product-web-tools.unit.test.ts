@@ -22,6 +22,7 @@ import {
   type ProductDnsAnswer,
   type ProductHttpResponse,
   type ProductHttpTransport,
+  type ProductHttpProxyTransport,
   type ProductNetworkPolicy,
   type ProductWebContentRequest,
   type ProductWebSearchRequest,
@@ -287,6 +288,65 @@ describe("safe Web Providers and canonical Web tools", () => {
     await expect(client.fetch("https://example.com", productContext(), () => Promise.resolve()))
       .rejects.toMatchObject({ code: "unsafe_destination" });
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("revalidates proxied redirects without using local DNS or a direct fallback", async () => {
+    const lookup = vi.fn(() => Promise.reject(new Error("direct DNS forbidden")));
+    const direct = vi.fn<ProductHttpTransport["dispatch"]>(() => Promise.reject(new Error("direct forbidden")));
+    const proxied = vi.fn<ProductHttpProxyTransport["dispatch"]>((url) => Promise.resolve(
+      url.hostname === "example.com"
+        ? response(302, { location: "https://redirect.example.com/final" }, [])
+        : response(200, {}, ["proxied"]),
+    ));
+    const routes: string[] = [];
+    const client = new ProductSafeHttpClient(policy, { lookup, transport: { dispatch: direct },
+      proxyTransportFor: url => { routes.push(url.origin); return { dispatch: proxied }; },
+    });
+    const permission = vi.fn(() => Promise.resolve());
+    const result = await client.fetch("https://example.com/start", productContext(), permission);
+    expect(Buffer.from(result.bytes).toString()).toBe("proxied");
+    expect(routes).toEqual(["https://example.com", "https://redirect.example.com"]);
+    expect(permission).toHaveBeenCalledTimes(2);
+    expect(lookup).not.toHaveBeenCalled();
+    expect(direct).not.toHaveBeenCalled();
+    proxied.mockRejectedValueOnce(new Error("proxy refused"));
+    await expect(client.fetch("https://example.com", productContext(), permission))
+      .rejects.toMatchObject({ code: "network_policy_denied" });
+    expect(lookup).not.toHaveBeenCalled();
+    expect(direct).not.toHaveBeenCalled();
+  });
+
+  it("denies private literals and forbidden proxied redirects before selecting transport", async () => {
+    const dispatch = vi.fn<ProductHttpProxyTransport["dispatch"]>(() => Promise.resolve(
+      response(302, { location: "http://169.254.169.254/metadata" }, []),
+    ));
+    const selector = vi.fn(() => ({ dispatch }));
+    const client = new ProductSafeHttpClient({ ...policy, allowedHosts: [] }, { proxyTransportFor: selector });
+    for (const url of ["http://127.0.0.1", "http://10.0.0.1", "http://[::1]", "http://[::ffff:127.0.0.1]",
+      "http://169.254.169.254", "http://metadata.google.internal", "http://user:secret@example.com", "http://example.com:1234"]) {
+      await expect(client.fetch(url, productContext(), () => Promise.resolve()))
+        .rejects.toMatchObject({ code: "unsafe_destination" });
+    }
+    expect(selector).not.toHaveBeenCalled();
+    await expect(client.fetch("https://example.com", productContext(), () => Promise.resolve()))
+      .rejects.toMatchObject({ code: "unsafe_destination" });
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
+  it("does not evaluate proxy transport getters or Proxy traps", async () => {
+    let effects = 0;
+    const invalid = [
+      Object.defineProperty({}, "dispatch", { get: () => { effects += 1; throw new Error("getter"); } }),
+      new Proxy({}, { getOwnPropertyDescriptor: () => { effects += 1; throw new Error("trap"); } }),
+    ];
+    for (const capability of invalid) {
+      const client = new ProductSafeHttpClient(policy, {
+        proxyTransportFor: () => capability as ProductHttpProxyTransport,
+      });
+      await expect(client.fetch("https://example.com", productContext(), () => Promise.resolve()))
+        .rejects.toMatchObject({ code: "network_policy_denied" });
+    }
+    expect(effects).toBe(0);
   });
 
   it("pins each hop and repeats policy plus permission checks across redirects", async () => {

@@ -5548,6 +5548,29 @@
                   }
                 },
                 "type": "object"
+              },
+              "providerNetwork": {
+                "additionalProperties": false,
+                "properties": {
+                  "httpProxy": {
+                    "maxLength": 4096,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "httpsProxy": {
+                    "maxLength": 4096,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "noProxy": {
+                    "maxLength": 8192,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "noProxy"
+                ],
+                "type": "object"
               }
             },
             "required": [

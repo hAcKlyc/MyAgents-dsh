@@ -74,7 +74,13 @@ export interface ProductHttpTransport {
   ): Promise<ProductHttpResponse>;
 }
 
+/** Trusted composition-selected proxy; URL/literal-address policy remains with this client. */
+export interface ProductHttpProxyTransport {
+  dispatch(url: URL, signal: AbortSignal, request?: ProductHttpRequest): Promise<ProductHttpResponse>;
+}
+
 export interface ProductSafeHttpClientConfig {
+  readonly proxyTransportFor?: (url: URL) => ProductHttpProxyTransport | undefined;
   /** Test/builder seam; reject only after abort has made resolution work quiescent. */
   readonly lookup?: (hostname: string, signal: AbortSignal) => Promise<readonly ProductDnsAnswer[]>;
   readonly transport?: ProductHttpTransport;
@@ -635,6 +641,7 @@ export class ProductSafeHttpClient {
   readonly #lookup: (hostname: string, signal: AbortSignal) => Promise<readonly ProductDnsAnswer[]>;
   readonly #policy: ProductNetworkPolicy;
   readonly #transport: ProductHttpTransport;
+  readonly #proxyTransportFor: ((url: URL) => ProductHttpProxyTransport | undefined) | undefined;
   #active = 0;
   readonly #waiters: Array<(release: () => void) => void> = [];
 
@@ -643,10 +650,17 @@ export class ProductSafeHttpClient {
     const candidate: unknown = config;
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
       || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
-      || Reflect.ownKeys(candidate).some((key) => key !== "lookup" && key !== "transport")) {
+      || Reflect.ownKeys(candidate).some((key) => key !== "lookup" && key !== "transport" && key !== "proxyTransportFor")) {
       throw new TypeError("safe HTTP client config must be a plain exact object");
     }
     const normalized = candidate as ProductSafeHttpClientConfig;
+    const proxyDescriptor = Object.getOwnPropertyDescriptor(normalized, "proxyTransportFor");
+    if (proxyDescriptor !== undefined && (!("value" in proxyDescriptor)
+      || typeof proxyDescriptor.value !== "function" || isProxy(proxyDescriptor.value))) {
+      throw new TypeError("safe HTTP proxy selector must be an own-data function");
+    }
+    this.#proxyTransportFor = proxyDescriptor === undefined ? undefined
+      : (url) => Reflect.apply(proxyDescriptor.value as NonNullable<ProductSafeHttpClientConfig["proxyTransportFor"]>, normalized, [url]);
     const lookupDescriptor = Object.getOwnPropertyDescriptor(normalized, "lookup");
     if (lookupDescriptor !== undefined && (!("value" in lookupDescriptor)
       || typeof lookupDescriptor.value !== "function" || isProxy(lookupDescriptor.value))) {
@@ -704,10 +718,7 @@ export class ProductSafeHttpClient {
     try {
       release = await this.#acquire(signal);
       const url = parseSafeUrl(rawUrl, this.#policy);
-      const resolved = await this.#resolve(url.hostname, signal);
-      signal.throwIfAborted();
-      const address = selectPublicAddress(resolved.addresses, resolved.pref64s);
-      const dispatched = this.#transport.dispatch(url, address, signal, normalized.request);
+      const dispatched = this.#dispatch(url, signal, normalized.request);
       if (!isPromise(dispatched) || isProxy(dispatched)) {
         throw new ProductToolError("unsafe_destination", "safe HTTP transport must return a native Promise");
       }
@@ -784,10 +795,7 @@ export class ProductSafeHttpClient {
         try {
           const signal = network.signal;
           release = await this.#acquire(signal);
-          const resolved = await this.#resolve(current.hostname, signal);
-          signal.throwIfAborted();
-          const address = selectPublicAddress(resolved.addresses, resolved.pref64s);
-          const dispatched = this.#transport.dispatch(current, address, signal);
+          const dispatched = this.#dispatch(current, signal);
           if (!isPromise(dispatched) || isProxy(dispatched)) {
             throw new ProductToolError("unsafe_destination", "WebFetch transport must return a native Promise");
           }
@@ -861,6 +869,38 @@ export class ProductSafeHttpClient {
       if (error instanceof ProductToolError) throw error;
       throw new ProductToolError("network_policy_denied", "WebFetch transport failed safely", { cause: error });
     }
+  }
+
+  async #dispatch(url: URL, signal: AbortSignal, request?: ProductHttpRequest): Promise<ProductHttpResponse> {
+    signal.throwIfAborted();
+    // Public-address checks also apply to explicit proxy routes; the proxy only
+    // owns DNS for non-literal names, never permission to reach a private literal.
+    const literal = lookupHostname(url.hostname);
+    const family = isIP(literal);
+    if (family === 4 || family === 6) selectPublicAddress([{ address: literal, family }], []);
+    const proxy: unknown = this.#proxyTransportFor?.(url);
+    let dispatched: Promise<ProductHttpResponse>;
+    if (proxy === undefined) {
+      const resolved = await this.#resolve(url.hostname, signal);
+      signal.throwIfAborted();
+      dispatched = this.#transport.dispatch(url, selectPublicAddress(resolved.addresses, resolved.pref64s), signal, request);
+    } else {
+      // An explicitly selected proxy owns remote DNS. The caller has already
+      // applied URL/hostname/literal-address policy; a proxy failure never falls back.
+      if (proxy === null || typeof proxy !== "object" || isProxy(proxy)) {
+        throw new TypeError("safe HTTP proxy transport must be an own-data capability");
+      }
+      const dispatch = Object.getOwnPropertyDescriptor(proxy, "dispatch");
+      if (dispatch === undefined || !("value" in dispatch) || typeof dispatch.value !== "function"
+        || isProxy(dispatch.value) || Reflect.ownKeys(proxy).length !== 1) {
+        throw new TypeError("safe HTTP proxy transport must expose one own-data dispatch method");
+      }
+      dispatched = Reflect.apply(dispatch.value as ProductHttpProxyTransport["dispatch"], proxy, [url, signal, request]);
+    }
+    if (!isPromise(dispatched) || isProxy(dispatched)) {
+      throw new ProductToolError("unsafe_destination", "safe HTTP transport must return a native Promise");
+    }
+    return dispatched;
   }
 
   async #resolve(hostname: string, signal: AbortSignal): Promise<Readonly<{

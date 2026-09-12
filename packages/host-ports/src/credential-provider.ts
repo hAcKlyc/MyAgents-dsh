@@ -15,6 +15,7 @@ import {
   validateMethodParams,
   type MethodParams,
   type MethodResult,
+  type ProviderNetworkPolicy,
 } from "@myagents-dsh/protocol";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isProxy } from "node:util/types";
@@ -86,7 +87,14 @@ export interface HostCredentialProviderConfig {
   readonly registerController: (controller: HostCredentialProviderController) => void;
 }
 
+export interface HostProviderNetworkScope {
+  readonly policy: Readonly<ProviderNetworkPolicy>;
+  readonly registerDisposer: (dispose: () => Promise<void>) => void;
+}
+
 export interface HostCredentialProviderController {
+  readonly currentProviderNetworkScope: () => HostProviderNetworkScope | undefined;
+  readonly closeProviderRequestScope: (scope: HostProviderRequestScope) => Promise<void>;
   /** Atomically replaces the admitted, root-scoped model credential bindings. */
   readonly activateProviderBindings: (
     bindings: readonly HostProviderCredentialBinding[],
@@ -124,6 +132,10 @@ type RequestScopeState = {
   readonly binding: HostProviderCredentialBinding;
   readonly modelRequestId: string;
   resolved: boolean;
+  closed: boolean;
+  network?: HostProviderNetworkScope;
+  readonly disposers: Set<() => Promise<void>>;
+  closePromise?: Promise<void>;
 };
 
 type McpBindingState = Readonly<{
@@ -331,6 +343,8 @@ export class HostCredentialProvider extends CredentialProvider {
     const normalized = normalizeConfig(config);
     this.#authorityFactory = normalized.authorityFactory;
     const controller: HostCredentialProviderController = Object.freeze({
+      currentProviderNetworkScope: () => this.#currentProviderNetworkScope(),
+      closeProviderRequestScope: (scope: HostProviderRequestScope) => this.#closeProviderRequestScope(scope),
       activateProviderBindings: (bindings: readonly HostProviderCredentialBinding[]) =>
         this.#activateProviderBindings(bindings),
       activateProviderBinding: (binding: HostProviderCredentialBinding) =>
@@ -466,6 +480,8 @@ export class HostCredentialProvider extends CredentialProvider {
       binding: input.binding,
       modelRequestId: input.modelRequestId,
       resolved: false,
+      closed: false,
+      disposers: new Set(),
     });
     return scope;
   }
@@ -475,7 +491,7 @@ export class HostCredentialProvider extends CredentialProvider {
       throw new TypeError("Host Provider scoped action must be a non-proxy function");
     }
     const state = this.#requestScopes.get(scope);
-    if (state === undefined) {
+    if (state === undefined || state.closed) {
       throw fixedCredentialError(
         "provider_credential_scope_invalid",
         "Provider credential request scope is invalid",
@@ -487,10 +503,35 @@ export class HostCredentialProvider extends CredentialProvider {
     return this.#activeScope.run(state, action);
   }
 
+  #currentProviderNetworkScope(): HostProviderNetworkScope | undefined {
+    const state = this.#activeScope.getStore();
+    if (state === undefined) return undefined;
+    if (state.closed || state.network === undefined || !this.#activeProviderBindings.has(state.binding)) {
+      throw fixedCredentialError("provider_credential_scope_invalid", "Provider network access requires resolved current request authority");
+    }
+    return state.network;
+  }
+
+  #closeProviderRequestScope(scope: HostProviderRequestScope): Promise<void> {
+    const state = this.#requestScopes.get(scope);
+    if (state === undefined) return Promise.resolve();
+    state.closed = true;
+    return state.closePromise ??= Promise.resolve().then(async () => {
+      const disposers = [...state.disposers];
+      state.disposers.clear();
+      delete state.network;
+      const results = await Promise.allSettled(disposers.map((dispose) => dispose()));
+      if (results.some((result) => result.status === "rejected")) {
+        // Resource errors can include credential-bearing proxy endpoints.
+        throw fixedCredentialError("provider_request_cleanup_failed", "Provider request transport cleanup failed");
+      }
+    });
+  }
+
   resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
     const provider = originalHostCredentialProvider(this);
     const scope = provider.#activeScope.getStore();
-    if (scope === undefined || scope.resolved || ref !== scope.binding.profile.credentialRef
+    if (scope === undefined || scope.closed || scope.resolved || ref !== scope.binding.profile.credentialRef
       || !provider.#activeProviderBindings.has(scope.binding)) {
       return Promise.reject(fixedCredentialError(
         "provider_credential_scope_invalid",
@@ -506,7 +547,7 @@ export class HostCredentialProvider extends CredentialProvider {
       purpose: "model_request",
       subject: "provider",
     }).then((result): ResolvedCredential => {
-      if (!provider.#activeProviderBindings.has(scope.binding)) {
+      if (scope.closed || !provider.#activeProviderBindings.has(scope.binding)) {
         throw fixedCredentialError("provider_credential_revision_stale", "Provider request binding was revoked", true);
       }
       if (result.kind !== "material") {
@@ -535,6 +576,26 @@ export class HostCredentialProvider extends CredentialProvider {
           "Host Provider credential material is invalid",
         );
       }
+      const network = exactOwnDataObject(
+        result.providerNetwork ?? { noProxy: "" }, ["noProxy"], ["httpProxy", "httpsProxy"],
+        "Host Provider request network policy",
+      );
+      if (typeof network.noProxy !== "string" || network.noProxy.length > 8_192
+        || ["httpProxy", "httpsProxy"].some((key) => Object.hasOwn(network, key)
+          && (typeof network[key] !== "string" || network[key].length === 0 || network[key].length > 4_096))) {
+        throw fixedCredentialError("provider_network_policy_invalid", "Host Provider request network policy is invalid");
+      }
+      const policy: Readonly<ProviderNetworkPolicy> = Object.freeze({
+        noProxy: network.noProxy,
+        ...(network.httpProxy === undefined ? {} : { httpProxy: network.httpProxy as string }),
+        ...(network.httpsProxy === undefined ? {} : { httpsProxy: network.httpsProxy as string }),
+      });
+      scope.network = Object.freeze({ policy, registerDisposer: (dispose: () => Promise<void>) => {
+        if (scope.closed || typeof dispose !== "function" || isProxy(dispose)) {
+          throw fixedCredentialError("provider_credential_scope_invalid", "Provider request resource scope is closed or invalid");
+        }
+        scope.disposers.add(dispose);
+      } });
       return Object.freeze({ source: "host", value: material.apiKey });
     });
   }

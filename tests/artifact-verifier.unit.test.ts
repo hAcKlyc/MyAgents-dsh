@@ -28,6 +28,8 @@ import {
   WEB_HOST_BROWSER_SERVER_PATH,
   isExactArtifactLauncherChildProcessSource,
   isExactSessionOwnershipNativeTestSource,
+  isExactRuntimeNetworkTransportSource,
+  isExactNativeNetworkTestSource,
   isExactProductNetworkTransportSource,
   isExactWebHostRuntimeProcessSource,
   isExactWebHostBrowserServerSource,
@@ -136,6 +138,18 @@ describe("repository and packed-artifact forbidden-content policy", () => {
     expect(isExactSessionOwnershipNativeTestSource("tests/other.unit.test.ts", "node:child_process", source)).toBe(false);
     expect(isExactSessionOwnershipNativeTestSource(path, "node:child_process", source.replace("spawn,", "spawn, exec,"))).toBe(false);
     expect(isExactSessionOwnershipNativeTestSource(path, "node:child_process", source + 'import("node:child_process")')).toBe(false);
+  });
+
+  it("keeps Runtime and native-loopback network imports in their exact owners", () => {
+    const source = 'import { Agent, Dispatcher, EnvHttpProxyAgent, getGlobalDispatcher, request, setGlobalDispatcher } from "undici";';
+    const path = "packages/runtime-product/src/network-transport.ts";
+    expect(isExactRuntimeNetworkTransportSource(path, "undici", source)).toBe(true);
+    expect(isExactRuntimeNetworkTransportSource("packages/other.ts", "undici", source)).toBe(false);
+    expect(isExactRuntimeNetworkTransportSource(path, "undici", source.replace("request,", "fetch, request,"))).toBe(false);
+    const fixture = 'import dns from "node:dns"; import { createServer, request as httpRequest } from "node:http"; import { connect, type Socket } from "node:net";';
+    expect(isExactNativeNetworkTestSource("tests/product-network.native.test.ts", "node:http", fixture)).toBe(true);
+    expect(isExactNativeNetworkTestSource("tests/other.unit.test.ts", "node:http", fixture)).toBe(false);
+    expect(isExactNativeNetworkTestSource("tests/product-network.native.test.ts", "node:http", fixture + 'import("node:https");')).toBe(false);
   });
 
   it("recognizes only the exact product-owned network transport module set", () => {

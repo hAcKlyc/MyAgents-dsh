@@ -28,6 +28,7 @@ import {
   createProductSkillComponentCompiler,
   installCanonicalToolPlane,
   installHostModelPlane,
+  installHostNetworkPlane,
   installProductComponentPlane,
   staticSkillCatalogDigest,
   type DshRootComposition,
@@ -129,13 +130,13 @@ const sha256File = async (path: string): Promise<string> =>
   createHash("sha256").update(await readFile(path)).digest("hex");
 
 /** Host owns the child environment policy. Read only its admitted declarations, never ambient extras. */
-const readProcessEnvironment = (keys: readonly string[]): Readonly<Record<string, string>> =>
+const readProcessEnvironment = (environment: Readonly<Record<string, string | undefined>>, keys: readonly string[]): Readonly<Record<string, string>> =>
   Object.freeze(Object.fromEntries(keys.flatMap((key) => {
-    const value = process.env[key];
+    const value = environment[key];
     return value === undefined ? [] : [[key, value]];
   })));
 
-const processAuthority = async (target: PlatformTarget) => {
+const processAuthority = async (target: PlatformTarget, launchEnvironment: Readonly<Record<string, string | undefined>>) => {
   const platform = selectPlatformAdapter(target);
   if (target !== resolveRuntimePlatformTarget(process.platform, process.arch)) {
     throw new Error("official Runtime process authority must match the native artifact target");
@@ -151,7 +152,7 @@ const processAuthority = async (target: PlatformTarget) => {
     shellDialect: platform.shell.dialect,
     allowedCommandRefs: Object.freeze(["runtime-shell", "bundled-node", "bundled-ripgrep"]),
     environmentValues: Object.freeze({}),
-    readEnvironment: readProcessEnvironment,
+    readEnvironment: (keys: readonly string[]) => readProcessEnvironment(launchEnvironment, keys),
     executablePaths: Object.freeze({ shell, bundledNode, ripgrep }),
     executableRefs: Object.freeze({ shell: "runtime-shell", bundledNode: "bundled-node", ripgrep: "bundled-ripgrep" }),
     executableSha256: Object.freeze({ shell: shellSha256, bundledNode: nodeSha256, ripgrep: ripgrepSha256 }),
@@ -161,6 +162,9 @@ const processAuthority = async (target: PlatformTarget) => {
 export const composeOfficialRuntimeServices = async (
   target: PlatformTarget = resolveRuntimePlatformTarget(process.platform, process.arch),
 ): Promise<DshRootComposition> => {
+  // The public proxy installer normalizes process.env. Shell admission must keep
+  // the exact Host-selected launch values and key set, including ALL_PROXY.
+  const launchEnvironment = Object.freeze({ ...process.env });
   const authority: { composition?: DshRootComposition } = {};
   const configured = await composeDshRootServices({
     operationBirthAuthority: Object.freeze({
@@ -195,6 +199,7 @@ export const composeOfficialRuntimeServices = async (
   authority.composition = configured;
   try {
     await installHostModelPlane(configured, Object.freeze({ resolveUserId: anonymousUserId }));
+    await installHostNetworkPlane(configured, launchEnvironment);
     const interaction = createHostBackedInteractionProvider(configured, Object.freeze({
       revision: OFFICIAL_HOST_INTERACTION_REVISION,
       deadlineMs: 120_000,
@@ -210,7 +215,7 @@ export const composeOfficialRuntimeServices = async (
       }),
       plan: Object.freeze({ revision: OFFICIAL_PLAN_REVISION }),
       platformTarget: target,
-      process: await processAuthority(target),
+      process: await processAuthority(target, launchEnvironment),
       skills: OFFICIAL_STATIC_SKILL_CATALOG,
       temporaryRoot: await realpath(process.env.TMPDIR ?? tmpdir()),
       web: Object.freeze({

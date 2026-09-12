@@ -781,9 +781,18 @@ const credentialResolve = Type.Union([
   strictObject({ authority: HostRequestAuthoritySchema, credentialRef: identifier, subject: Type.Literal("mcp"), serverId: identifier, extensionDigest: sha256, credentialRevision: revision, materialSlot: Type.Union([Type.Literal("env"), Type.Literal("header"), Type.Literal("oauth")]), purpose: Type.Literal("availability") }),
   strictObject({ authority: HostRequestAuthoritySchema, credentialRef: identifier, subject: Type.Literal("mcp"), serverId: identifier, extensionDigest: sha256, credentialRevision: revision, materialSlot: Type.Union([Type.Literal("env"), Type.Literal("header"), Type.Literal("oauth")]), purpose: Type.Literal("connection"), connectionAttemptId: identifier }),
 ]);
+// Ephemeral request transport policy, carried only on the credential reverse port.
+// It never belongs in a declarative model profile or Session snapshot.
+export const ProviderNetworkPolicySchema = strictObject({
+  httpProxy: Type.Optional(Type.String({ minLength: 1, maxLength: 4_096 })),
+  httpsProxy: Type.Optional(Type.String({ minLength: 1, maxLength: 4_096 })),
+  noProxy: Type.String({ maxLength: 8_192 }),
+});
+export type ProviderNetworkPolicy = Static<typeof ProviderNetworkPolicySchema>;
+
 const credentialResolveResult = Type.Union([
   strictObject({ kind: Type.Literal("availability"), available: Type.Boolean(), authoritativeCredentialRevision: revision, reasonCode: Type.Optional(identifier) }),
-  strictObject({ kind: Type.Literal("material"), authoritativeCredentialRevision: revision, material: Type.Record(Type.String({ maxLength: 128 }), Type.String({ maxLength: 65_536 })) }),
+  strictObject({ kind: Type.Literal("material"), authoritativeCredentialRevision: revision, material: Type.Record(Type.String({ maxLength: 128 }), Type.String({ maxLength: 65_536 })), providerNetwork: Type.Optional(ProviderNetworkPolicySchema) }),
 ]);
 
 const attachmentRef = strictObject({ attachmentId: identifier, mimeType: identifier, sizeBytes: nonNegativeInteger, sha256 });

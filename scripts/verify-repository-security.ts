@@ -22,6 +22,8 @@ import {
   isExactSessionOwnershipNativeTestSource,
   isExactArtifactLauncherChildProcessSource,
   isExactProductNetworkTransportSource,
+  isExactRuntimeNetworkTransportSource,
+  isExactNativeNetworkTestSource,
   isExactWebHostRuntimeProcessSource,
   isExactWebHostBrowserServerSource,
 } from "./repository-security-policy.js";
@@ -143,6 +145,8 @@ for (const relativePath of repositoryPaths) {
         && !isExactDynamicE2eChildProcessSource(relativePath, specifier, source)
         && !isExactSessionOwnershipNativeTestSource(relativePath, specifier, source)
         && !isExactProductNetworkTransportSource(relativePath, specifier, source)
+        && !isExactRuntimeNetworkTransportSource(relativePath, specifier, source)
+        && !isExactNativeNetworkTestSource(relativePath, specifier, source)
         && !isExactWebHostRuntimeProcessSource(relativePath, specifier, source)
         && !isExactWebHostBrowserServerSource(relativePath, specifier, source)) {
         failures.push(`${relativePath} imports network-capable module ${specifier} outside the isolation/composition owner`);

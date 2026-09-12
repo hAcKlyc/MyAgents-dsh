@@ -86,7 +86,8 @@
     "web": "npm run build:web && tsx scripts/run-reference-web-host.ts",
     "preview:web": "npm run build:web && tsx scripts/run-reference-web-visual-fixture.ts",
     "build": "npm run check:foundation && npm run build:web && tsc -b --pretty false",
-    "test:session-ownership-native": "node --import tsx --test tests/product-session-ownership.native.test.ts"
+    "test:session-ownership-native": "node --import tsx --test tests/product-session-ownership.native.test.ts",
+    "test:network-native": "node --import tsx --test tests/product-network.native.test.ts"
   },
   "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.220",

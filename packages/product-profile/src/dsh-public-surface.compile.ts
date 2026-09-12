@@ -1,3 +1,4 @@
+import { installProxyFromEnvironment, proxyRouteFor } from "@deepseek-ai/dsh-http-proxy";
 import { LocalFileSystem, prepareTextEdit } from "@deepseek-ai/dsh-fs-local";
 import { createReadTool, createReadImageTool, createWriteTool, createEditTool, type ReadToolCaps } from "@deepseek-ai/dsh-tool-fs";
 import * as OfficialBashLocal from "@deepseek-ai/dsh-bash-local";
@@ -263,3 +264,5 @@ export interface DshPublicSurfaceTypes {
 
 export const officialFileComposition = { LocalFileSystem, prepareTextEdit, createReadTool, createReadImageTool, createWriteTool, createEditTool };
 export type OfficialReadCaps = ReadToolCaps;
+
+export const officialNetworkComposition = { installProxyFromEnvironment, proxyRouteFor };

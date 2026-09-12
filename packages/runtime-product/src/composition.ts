@@ -1,3 +1,4 @@
+import { installProductNetworkTransport, type ProductNetworkTransport } from "./network-transport.js";
 import * as ToolBash from "@deepseek-ai/dsh-tool-bash";
 import * as ToolPwsh from "@deepseek-ai/dsh-tool-pwsh";
 import * as ToolJobs from "@deepseek-ai/dsh-tool-jobs";
@@ -475,6 +476,7 @@ type CompositionAuthorityState = {
   readonly hostPorts: HostPortServiceController;
   hostAttachments: HostAttachmentStoreController | undefined;
   hostCredentials: HostCredentialProviderController | undefined;
+  networkTransport?: ProductNetworkTransport;
   hostModelAuthority: HostModelAuthority | undefined;
   readonly installHostModelGuards: (authority: HostModelAuthority) => void;
   readonly snapshot: () => DshRootCompositionSnapshot;
@@ -1909,7 +1911,8 @@ const createManagedMcpNetworkFetch = (composition: DshRootComposition): typeof g
         policyRef,
         timeoutMs: 120_000,
       }) satisfies ProductNetworkPolicy;
-      client = new ProductSafeHttpClient(policy);
+      const network = compositionAuthorities.get(root)?.networkTransport;
+      client = new ProductSafeHttpClient(policy, network === undefined ? {} : { proxyTransportFor: network.proxyTransportFor });
     } else if (policyRef !== environment.network.policyRef) {
       throw new ProtocolError("network_policy_denied", "Runtime network policy reference changed");
     }
@@ -2171,6 +2174,21 @@ export const installHostModelPlane = async (
     authority.hostModelPlane = "failed";
     throw error;
   }
+};
+
+export const installHostNetworkPlane = async (
+  composition: DshRootComposition,
+  environment: Readonly<Record<string, string | undefined>>,
+): Promise<void> => {
+  const root = composition.context;
+  const authority = compositionAuthorities.get(root);
+  if (authority?.composition !== composition || authority.claimed || authority.networkTransport !== undefined
+    || authority.hostCredentials === undefined || authority.hostModelPlane !== "installed") {
+    throw new Error("Host network plane requires the unclaimed root model composition");
+  }
+  const network = await installProductNetworkTransport(environment, authority.hostCredentials.currentProviderNetworkScope);
+  authority.networkTransport = network;
+  root.effect(() => network.dispose, "Runtime general and request-scoped Provider transports");
 };
 
 export const installHostDeepSeekModelPlane = installHostModelPlane;

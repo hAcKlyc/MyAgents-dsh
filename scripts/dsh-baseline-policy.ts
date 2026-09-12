@@ -83,6 +83,7 @@ export interface PublicSeamEvidence {
 }
 
 export const publicSeams: PublicSeamEvidence[] = [
+  { id: "http-proxy", package: "@deepseek-ai/dsh-http-proxy", importPath: "@deepseek-ai/dsh-http-proxy", classification: "provider", batchUse: ["U15-W05"], values: ["installProxyFromEnvironment", "proxyRouteFor"], types: [] },
   { id: "local-file-provider", package: "@deepseek-ai/dsh-fs-local", importPath: "@deepseek-ai/dsh-fs-local", classification: "helper", batchUse: ["UPG-W16"], values: ["LocalFileSystem", "prepareTextEdit"], types: [] },
   { id: "file-tool-factories", package: "@deepseek-ai/dsh-tool-fs", importPath: "@deepseek-ai/dsh-tool-fs", classification: "helper", batchUse: ["UPG-W16"], values: ["createReadTool", "createReadImageTool", "createWriteTool", "createEditTool"], types: ["ReadToolCaps"] },
   {"id": "bash-local", "package": "@deepseek-ai/dsh-bash-local", "importPath": "@deepseek-ai/dsh-bash-local", "classification": "provider", "batchUse": ["UPG-W10"], "values": ["LocalBashExecutor"], "types": [], "compileEvidence": "runtime-package-root"},

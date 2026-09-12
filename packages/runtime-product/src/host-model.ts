@@ -1104,7 +1104,11 @@ export class HostModelAuthority {
       signal: context.signal,
       turnId: context.productTurnId,
     });
-    return this.#credentials.runWithProviderRequestScope(scope, () => action(binding.profile));
+    try {
+      return await this.#credentials.runWithProviderRequestScope(scope, () => action(binding.profile));
+    } finally {
+      await this.#credentials.closeProviderRequestScope(scope);
+    }
   }
 
   async runHostWebRequest<T>(
@@ -1204,29 +1208,33 @@ const scopedProviderStream = async function* (
   runWithAttachments: ModelRequestRunner,
 ): AsyncGenerator<StreamChunk> {
   const run: ModelRequestRunner = (action) => runWithAttachments(() => credentials.runWithProviderRequestScope(scope, action));
-  const iterator = run(() => next()[Symbol.asyncIterator]());
-  let exhausted = false;
-  let failure: LlmError | undefined;
   try {
-    for (;;) {
-      const result = await run(() => iterator.next());
-      if (result.done) {
-        exhausted = true;
-        return;
+    const iterator = run(() => next()[Symbol.asyncIterator]());
+    let exhausted = false;
+    let failure: LlmError | undefined;
+    try {
+      for (;;) {
+        const result = await run(() => iterator.next());
+        if (result.done) {
+          exhausted = true;
+          return;
+        }
+        yield sanitizeProviderChunk(result.value);
       }
-      yield sanitizeProviderChunk(result.value);
+    } catch (error) {
+      failure = sanitizeProviderFailure(error);
+      throw failure;
+    } finally {
+      const returnIterator = iterator.return?.bind(iterator);
+      if (!exhausted && returnIterator !== undefined) {
+        await run(() => returnIterator())
+          .catch((error: unknown) => Promise.reject(failure === undefined
+            ? sanitizeProviderFailure(error)
+            : new LlmError("Provider request and cleanup failed", "PROVIDER_FAILURE")));
+      }
     }
-  } catch (error) {
-    failure = sanitizeProviderFailure(error);
-    throw failure;
   } finally {
-    const returnIterator = iterator.return?.bind(iterator);
-    if (!exhausted && returnIterator !== undefined) {
-      await run(() => returnIterator())
-        .catch((error: unknown) => Promise.reject(failure === undefined
-          ? sanitizeProviderFailure(error)
-          : new LlmError("Provider request and cleanup failed", "PROVIDER_FAILURE")));
-    }
+    await credentials.closeProviderRequestScope(scope);
   }
 };
 
@@ -1339,31 +1347,35 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
   ): AsyncIterable<StreamChunk> {
     const { scope, runWithAttachments } = this.#authority.request(options);
     const run: ModelRequestRunner = (action) => runWithAttachments(() => this.#credentialController.runWithProviderRequestScope(scope, action));
-    const iterator = run(() => dispatch(options)[Symbol.asyncIterator]());
-    let exhausted = false;
-    let failure: LlmError | undefined;
     try {
-      for (;;) {
-        const result = await run(() => iterator.next());
-        if (result.done) {
-          exhausted = true;
-          return;
+      const iterator = run(() => dispatch(options)[Symbol.asyncIterator]());
+      let exhausted = false;
+      let failure: LlmError | undefined;
+      try {
+        for (;;) {
+          const result = await run(() => iterator.next());
+          if (result.done) {
+            exhausted = true;
+            return;
+          }
+          yield result.value;
         }
-        yield result.value;
+      } catch (error) {
+        failure = sanitizeProviderFailure(error, "DeepSeek provider");
+        throw failure;
+      } finally {
+        const returnIterator = iterator.return?.bind(iterator);
+        if (!exhausted && returnIterator !== undefined) {
+          await run(() => returnIterator()).catch((error: unknown) => Promise.reject(failure === undefined
+            ? sanitizeProviderFailure(error, "DeepSeek provider")
+            : new LlmError(
+                "DeepSeek provider request and cleanup failed",
+                "PROVIDER_FAILURE",
+              )));
+        }
       }
-    } catch (error) {
-      failure = sanitizeProviderFailure(error, "DeepSeek provider");
-      throw failure;
     } finally {
-      const returnIterator = iterator.return?.bind(iterator);
-      if (!exhausted && returnIterator !== undefined) {
-        await run(() => returnIterator()).catch((error: unknown) => Promise.reject(failure === undefined
-          ? sanitizeProviderFailure(error, "DeepSeek provider")
-          : new LlmError(
-              "DeepSeek provider request and cleanup failed",
-              "PROVIDER_FAILURE",
-            )));
-      }
+      await this.#credentialController.closeProviderRequestScope(scope);
     }
   }
 }

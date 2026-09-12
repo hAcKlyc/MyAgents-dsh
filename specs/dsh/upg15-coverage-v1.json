@@ -214,13 +214,29 @@
       "runtimeFiles": [
         "tests/host-web-search.unit.test.ts",
         "tests/host-web-fetch.unit.test.ts",
-        "tests/product-mcp-components.unit.test.ts"
+        "tests/product-mcp-components.unit.test.ts",
+        "tests/product-network.native.test.ts",
+        "tests/product-web-tools.unit.test.ts",
+        "tests/host-credential-model.unit.test.ts"
       ],
       "workstream": "U15-W05/W06",
       "scenario": "General/provider scope cross-products, inherited env, NO_PROXY, concurrent/config-change routes, redacted diagnostics",
-      "boundaries": "Local HTTP targets/proxies and actual transport owners; Host proxy tests extended",
-      "status": "planned_not_verified_on_candidate",
-      "evidence": []
+      "boundaries": "Real macOS loopback HTTP target/proxies, actual public DSH installer and safe-HTTP transport; synthetic Host credential scopes. Shell/HTTPS/packed/other-native paths remain pending.",
+      "status": "partial_source_verified_packed_paths_pending",
+      "evidence": [
+        {
+          "command": "npm run test:network-native",
+          "report": "w05-network-native-8.log",
+          "sha256": "a363d69e592addf00424bb908afe97ddd31944f70843419e52e0333bea03f8dd",
+          "result": "pass; four launch-policy variants, concurrent Provider routing, NO_PROXY, cancellation and stalled shutdown"
+        },
+        {
+          "command": "npm test",
+          "report": "w05-full-tests-2.log",
+          "sha256": "d164a07235a52277d240d165f0caca8305ca3e6a4e06e30359f0ae99b8c5bbed",
+          "result": "73 files / 838 tests pass; includes proxy boundary and request scope regression"
+        }
+      ]
     },
     {
       "acceptance": "U15-A13",

@@ -182,6 +182,7 @@ export const createGatePlan = (outputRoot: string, dshSource?: string): readonly
       : ["exec", "--", "tsx", "scripts/snapshot-dsh-baseline.ts", "--check", "--check-source", dshSource], 180_000),
     npm("dsh-seams-source", dshSource === undefined ? ["run", "check:dsh-seams-source"]
       : ["exec", "--", "tsx", "scripts/verify-dsh-seams.ts", "--check-source", dshSource, "--compile-test"], 300_000),
+    npm("network-native", ["run", "test:network-native"], 120_000),
     npm("session-ownership-native", ["run", "test:session-ownership-native"], 120_000),
     vitest("fault-matrix", faultMatrixFiles, 300_000),
   ];

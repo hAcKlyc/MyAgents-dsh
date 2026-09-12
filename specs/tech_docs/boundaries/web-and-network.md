@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: web-and-network
-updated: 2026-09-05
+updated: 2026-09-12
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_dsh_provider_server_tools.md
@@ -46,7 +46,7 @@ uses the complete existing Host WebFetch seam. No arbitrary HTTP reverse port is
 
 ## 4. WebFetch flow
 
-For Runtime-owned HTTP fetch, `ProductSafeHttpClient` validates HTTP(S) URL syntax, forbids credentials, applies allow/deny host and port policy, resolves DNS, rejects non-public and embedded/translated private addresses, dispatches to the selected address, and repeats validation at every redirect. It bounds redirects, compressed/decompressed bytes, concurrency, queue depth and deadline and always disposes the response body.
+For Runtime-owned HTTP fetch, `ProductSafeHttpClient` validates HTTP(S) URL syntax, forbids credentials, applies allow/deny host and port policy, resolves DNS, rejects non-public and embedded/translated private addresses, dispatches to the selected address, and repeats validation at every redirect. It bounds redirects, compressed/decompressed bytes, concurrency, queue depth and deadline and always disposes the response body. An explicit composition-owned proxy retains URL, hostname, literal-address, redirect, permission, size and deadline checks; the trusted proxy owns remote DNS for names. Local DNS pinning/private-answer defense is a direct-route guarantee, not a claim about the proxy's resolver. Proxy failure never retries directly.
 
 Fetched content is converted through the selected content service and a bounded utility model step
 where configured. The canonical result validates and projects controlled URL provenance rather than
@@ -77,14 +77,14 @@ remaining real-provider acceptance boundary are recorded in the
 
 Managed remote MCP HTTP/SSE transports reuse a same-origin guarded fetch backed by the
 composition-owned `ProductSafeHttpClient`; there is no ambient `globalThis.fetch` fallback.
-Credentials are supplied only through the component's Host credential scope. This claim excludes
+Credentials are supplied only through the component's Host credential scope. The official composition selects its captured general proxy route through the public DSH HTTP-proxy service; it does not borrow a model Provider's policy. This claim excludes
 stdio MCP: it is a trusted local subprocess and, like Bash or a build-time plugin, may use the local
 user's network authority outside `ProductSafeHttpClient`.
 
 ## 7. Failure and security boundary
 
 Runtime-owned WebFetch, standalone DeepSeek WebSearch and managed remote MCP use
-`ProductSafeHttpClient`, which owns DNS/private-address, redirect and byte/decompression defense.
+`ProductSafeHttpClient`, which owns direct DNS/private-address, literal-address, redirect and byte/decompression defense; an explicitly selected trusted proxy owns remote name resolution.
 Host-backed canonical web only verifies HTTP(S)/no-userinfo at Runtime admission, applies Product
 permission and validates the returned canonical shape; the trusted Host owns its own DNS/private
 address, redirect, byte and decompression controls.
@@ -121,3 +121,36 @@ Add a backend behind the canonical web Provider/Host capability, not as a second
 | Exact schemas/claims | `packages/tool-contracts/`, `packages/artifact-verifier/src/integration-compatibility.ts` |
 
 HTTP status failures report the actual status code in both Runtime-owned and Host-owned WebFetch. The Host connection error text includes its already-classified system code (for example `ECONNRESET`); raw proxy URLs, credentials and upstream exception messages remain outside model-visible errors.
+
+
+## UPG15 request-scoped network composition
+
+The trusted Runtime composition installs the public `dsh-http-proxy` launch policy once per
+generation. A single undici dispatcher delegates ordinary traffic to that captured general policy
+and model traffic to the existing credential request scope. `host/credential/resolve` may include
+bounded `providerNetwork` material (HTTP/HTTPS proxy and NO_PROXY); it is never written into the
+profile or Session. The Host selects its app overlay or inherited baseline. An absent optional
+policy retains the explicit direct model behavior of other Hosts.
+
+Each Provider request owns its proxy pools and releases them in `finally`, including stream
+creation failure, abort and early iterator close. Different simultaneous Providers cannot replace
+each other's dispatcher. General settings are captured at Runtime launch; Provider settings are
+captured at credential resolution and affect subsequent requests. Loopback model requests bypass
+proxies. Unsupported selected endpoints fail with fixed errors that exclude credentials/URLs.
+Generation disposal terminates stalled owned requests, restores the prior dispatcher/environment,
+and releases all pools. The official installer can retain the pre-existing dispatcher when no
+proxy is configured; composition creates its own direct pool in that case and never closes the
+caller's pool.
+
+Shell/Jobs keep the exact Host-selected launch environment and sealed key set, including ALL_PROXY,
+separately from DSH's normalized process environment. Commands must support those variables; no
+transparent proxy is promised. Host canonical Web retains its existing general-content and
+Provider-utility/search routing. Attachment reverse acquisition/publication is local byte/lease
+transport, not an independent public HTTP route; network-capable Host tools retain Host ownership.
+
+`test:network-native` uses only local target/proxy servers and synthetic names. It exercises actual
+HTTP routing for concurrent general/direct/two-Provider policies, inherited ALL_PROXY, casing
+precedence, NO_PROXY, changed subsequent policy, safe-HTTP MCP transport, cancellation and stalled
+shutdown. Unit tests separately reject private literals, unsafe redirects and capability getters,
+and prove no direct fallback. This is macOS source evidence, not HTTPS, arbitrary-client, packed,
+other-platform or real-Provider acceptance.
