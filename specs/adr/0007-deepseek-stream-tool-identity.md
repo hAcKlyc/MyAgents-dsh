@@ -1,5 +1,7 @@
 # ADR 0007 — Preserve established DeepSeek stream tool identities
 
+RC3 refresh (2026-09-23): see the [complete seam adjudication](../dsh/upstream-refresh-2026-09-23.md). Official rc.3 adds no runtime/public-seam behavior; the current registry preserves this decision and its removal condition. Historical evidence below remains bound to its original bytes.
+
 Candidate disposition (2026-09-12, U15-W02): Candidate retirement: use the official streamed call identity preservation. The local stream-identity patch is absent from the candidate series. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
 
 Status: accepted for the fixed DSH `0.1.1-rc.2` source baseline

@@ -6,9 +6,9 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 ## Two authorities, deliberately not conflated
 
-- Source/design evidence is `deepseek-harness@fb2c4b9e698e30edb738bca4cf0618587db7d203` (tree `bd7dd6d90010a35d3d6ff9f12c1f6207d5b6fe38`), declaring `0.1.5-rc.2`.
-- Development dependency resolution is exact public npm `0.1.5-rc.2` plus Cordis `4.0.2`, independently pinned by package-lock tarball URLs and integrities.
-- Executable candidates are source-built with all nine core patches and separately patched pi-ai `0.85.1`. The accepted patched-artifact manifest records W02 package bytes; later Product/lock/builder changes require fresh verification and do not inherit that acceptance.
+- Source/design evidence is `deepseek-harness@a4c74a91e06b00fe0b0937bde982170c526cc842` (tree `bf4fd1ddccc211107ffb8b7074c83afac2bd7ea1`), declaring `0.1.5-rc.3`.
+- Development dependency resolution is exact public npm `0.1.5-rc.3` plus Cordis `4.0.2`, independently pinned by package-lock tarball URLs and integrities.
+- Executable candidates are source-built with all nine core patches and separately patched pi-ai `0.85.1`. The accepted patched-artifact manifest is the exact package-byte authority; later Product/lock/builder changes require fresh verification and do not inherit prior acceptance.
 
 The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 
@@ -24,7 +24,7 @@ The generated baseline traverses the complete production dependency closure, inc
 
 ## Candidate limitations and seam decisions
 
-The source is fixed to DSH 0.1.5-rc.2. Registry tarballs do not prove their association with that
+The source is fixed to DSH 0.1.5-rc.3. Registry tarballs do not prove their association with that
 commit. Product imports use public exports only; source-private wildcards stay forbidden.
 The native V3 SessionHandle Provider now supplies Product required-event validation without the
 retired PersistenceCoordinator predicate patch. Product mutations remain in the SQLite companion,
@@ -36,8 +36,12 @@ The source gate verifies every exact upstream blob, applies the ordered series o
 worktree and runs the selected source regressions. The patchless seam 004 still requires fresh
 Product and native ownership proof. The affected ADRs preserve each semantic and removal condition.
 
-W02 has two byte-identical complete 77-package builds and independent consumer validation. W03
+Historical rc.2 W02 has two byte-identical complete 77-package builds and independent consumer validation. W03
 Provider/V3 lifecycle and W04 protocol 5.0.0 live-stream/model source adaptation have deterministic
 regression evidence. The [UPG15 PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md) owns final Product,
 Runtime, native and Host acceptance. Later lock/builder/source changes require fresh artifacts;
 clean patch application and old handoffs cannot establish acceptance for new bytes.
+
+## RC3 maintenance refresh
+
+[2026-09-23 source and seam review](./upstream-refresh-2026-09-23.md) owns the rc.2 to rc.3 comparison. All nine patch bytes remain unchanged; seam 002 is rebased unchanged in this refresh (its earlier reduction belongs to the rc.2 upgrade). No Session reset, protocol operation, or model-route policy changes are needed. New artifact and Host acceptance records must be used for the new bytes.

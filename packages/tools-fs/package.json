@@ -19,12 +19,12 @@
     "@myagents-dsh/tools-process": "0.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-fs-local": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
-    "@deepseek-ai/dsh-tool-fs": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
+    "@deepseek-ai/dsh-fs-local": "0.1.5-rc.3.myagents.a4c74a91e06b.13b108f38d68 || 0.1.5-rc.3",
+    "@deepseek-ai/dsh-tool-fs": "0.1.5-rc.3.myagents.a4c74a91e06b.13b108f38d68 || 0.1.5-rc.3",
     "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-fs": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
-    "@deepseek-ai/dsh-llm": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
-    "@deepseek-ai/dsh-tool-fs-search": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2",
-    "@deepseek-ai/dsh-tools": "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68 || 0.1.5-rc.2"
+    "@deepseek-ai/dsh-fs": "0.1.5-rc.3.myagents.a4c74a91e06b.13b108f38d68 || 0.1.5-rc.3",
+    "@deepseek-ai/dsh-llm": "0.1.5-rc.3.myagents.a4c74a91e06b.13b108f38d68 || 0.1.5-rc.3",
+    "@deepseek-ai/dsh-tool-fs-search": "0.1.5-rc.3.myagents.a4c74a91e06b.13b108f38d68 || 0.1.5-rc.3",
+    "@deepseek-ai/dsh-tools": "0.1.5-rc.3.myagents.a4c74a91e06b.13b108f38d68 || 0.1.5-rc.3"
   }
 }

@@ -33,7 +33,7 @@ import {
   type PackedDshPackageEvidence,
 } from "../scripts/patched-dsh-artifact-policy.js";
 
-const sourceVersion = "0.1.5-rc.2";
+const sourceVersion = "0.1.5-rc.3";
 const rootNames = [...expectedDshDependencies.keys()]
   .filter((name) => name.startsWith("@deepseek-ai/dsh-"));
 const transitiveNames = Array.from(
@@ -83,7 +83,7 @@ describe("patched DSH artifact authority", () => {
 
     expect(first).toEqual(second);
     expect(first.artifactVersion).toMatch(
-      /^0\.1\.5-rc\.2\.myagents\.fb2c4b9e698e\.[a-f0-9]{12}$/u,
+      /^0\.1\.5-rc\.3\.myagents\.a4c74a91e06b\.[a-f0-9]{12}$/u,
     );
     expect(first.patchSeriesSha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(first.patches).toHaveLength(9);

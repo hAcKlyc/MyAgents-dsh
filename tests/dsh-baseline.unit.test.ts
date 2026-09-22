@@ -42,7 +42,7 @@ describe("DSH dependency authority", () => {
     expect(generated).toBe(baselineBytes);
     expect(baseline.executableBaseline).toEqual({
       registry: "https://registry.npmjs.org",
-      dshRelease: "0.1.5-rc.2",
+      dshRelease: "0.1.5-rc.3",
       sourceAssociation: "unproven",
       directPackageCount: 61,
       productionPackageCount: 337,

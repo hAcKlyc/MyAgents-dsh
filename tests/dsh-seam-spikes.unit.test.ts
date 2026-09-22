@@ -874,7 +874,7 @@ describe("accepted DSH seam decision registry", () => {
     }
   });
 
-  it("pins the exact audited rc.2 source blobs without claiming registry source equivalence", () => {
+  it("pins the exact audited rc.3 source blobs without claiming registry source equivalence", () => {
     const evidence = JSON.parse(readFileSync(
       resolve(repositoryRoot, "specs/dsh/seam-decisions-v1.json"),
       "utf8",
@@ -886,8 +886,8 @@ describe("accepted DSH seam decision registry", () => {
         files: Array<{ blob: string; sha256: string }>;
       };
     };
-    expect(evidence.authority.commit).toBe("fb2c4b9e698e30edb738bca4cf0618587db7d203");
-    expect(evidence.authority.declaredRelease).toBe("0.1.5-rc.2");
+    expect(evidence.authority.commit).toBe("a4c74a91e06b00fe0b0937bde982170c526cc842");
+    expect(evidence.authority.declaredRelease).toBe("0.1.5-rc.3");
     expect(evidence.authority.executablePackageAssociation).toBe("unproven");
     expect(evidence.authority.files).toHaveLength(146);
     expect(evidence.authority.files.every(({ blob, sha256 }) =>

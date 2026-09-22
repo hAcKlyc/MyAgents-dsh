@@ -21,7 +21,7 @@ This table records the current source boundaries. The active PRDs own acceptance
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
-| DSH source distribution | Fixed official source plus required isolated patches | DSH `0.1.5-rc.2` at `fb2c4b9e698e30edb738bca4cf0618587db7d203`, nine candidate core patches and 77 packages; the separately patched pi-ai is `0.85.1`. W02 package evidence is accepted; final Product seam and Runtime acceptance remain in UPG15. |
+| DSH source distribution | Fixed official source plus required isolated patches | DSH `0.1.5-rc.3` at `a4c74a91e06b00fe0b0937bde982170c526cc842`, nine retained core patches and 77 packages; the separately patched pi-ai is `0.85.1`. The [RC3 refresh](./dsh/upstream-refresh-2026-09-23.md) records current-byte package and Runtime verification separately from final product acceptance. |
 | Standalone Runtime and native RPC | Protocol `5.0.0` source candidate | Native V3 durable Session events, explicit live assistant-stream boundaries and per-model system-prompt-update capability. Exact vocabulary and shapes come from the generated contract. |
 | Batch 3 integration handoff | Updated through the official immutable builder | The current [MyAgents lock](../../MyAgents-integration-myagents-dsh/src/shared/integrated-runtimes/dsh-lock.json) selects the accepted Runtime, contracts and platform evidence. The Host still consumes the prior protocol 4.0.0 delivery until UPG15 rebuilds and ingests an exact new handoff. |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Its older frozen web artifact does not prove the current Runtime source. |

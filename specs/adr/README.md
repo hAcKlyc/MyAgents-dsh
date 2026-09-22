@@ -2,7 +2,7 @@
 
 ADRs explain accepted durable choices that cannot be reconstructed safely from code alone. Product scope lives in `specs/prd/`, current running architecture in `specs/ARCHITECTURE.md` and `specs/tech_docs/`, and exact patch identity/order/removal conditions in `specs/dsh/seam-decisions-v1.json`.
 
-All eleven recorded decisions are accepted for the current official DSH `0.1.1-rc.2` source authority. Ten require ordered upstream patches; ADR 0004 is implemented through the public persistence Provider plus product mutation companion.
+The current DSH `0.1.5-rc.3` registry records twelve seams: nine retained patches, two retired patches and one public persistence composition. See the [RC3 refresh](../dsh/upstream-refresh-2026-09-23.md) for every disposition; older acceptance statements below remain historical.
 
 | Decision | Current disposition | Executable seam |
 | --- | --- | --- |

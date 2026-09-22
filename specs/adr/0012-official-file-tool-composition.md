@@ -1,5 +1,7 @@
 # Official file tools with product mutation authority
 
+RC3 refresh (2026-09-23): see the [complete seam adjudication](../dsh/upstream-refresh-2026-09-23.md). Official rc.3 adds no runtime/public-seam behavior; the current registry preserves this decision and its removal condition. Historical evidence below remains bound to its original bytes.
+
 Candidate disposition (2026-09-12, U15-W02): Rebase public stock tool factories and guarded atomic publication while preserving current scoped tool guidance, image metadata and Windows file behavior. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
 
 Accepted 2026-09-08 for UPG-W16.

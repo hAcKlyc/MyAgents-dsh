@@ -8,9 +8,9 @@ const repositoryRoot = resolve(import.meta.dirname, "..");
 
 export const DSH_SEAM_SOURCE = Object.freeze({
   repository: "https://github.com/deepseek-ai/deepseek-harness.git",
-  commit: "fb2c4b9e698e30edb738bca4cf0618587db7d203",
-  tree: "bd7dd6d90010a35d3d6ff9f12c1f6207d5b6fe38",
-  declaredRelease: "0.1.5-rc.2",
+  commit: "a4c74a91e06b00fe0b0937bde982170c526cc842",
+  tree: "bf4fd1ddccc211107ffb8b7074c83afac2bd7ea1",
+  declaredRelease: "0.1.5-rc.3",
   executablePackageAssociation: "unproven",
   files: Object.freeze([
     Object.freeze({
@@ -180,8 +180,8 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "package.json",
-      blob: "a9b7c19269e9560bf63bd6fae69c942b4e994589",
-      sha256: "cc9dbff36d169b085d78b88b4663cbbc64529cdfaa14219796dd8ab741adbf33",
+      blob: "a084efa26d66e942ea5bdaf99622c2b01cbdae86",
+      sha256: "f7717609315a6eb5949acf5f400e976328274aa0e9be3ee1532e45c9529f41d9",
     }),
     Object.freeze({
       path: "packages/compaction/compaction-basic/README.i18n.yaml",
@@ -335,8 +335,8 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/core/agent/package.json",
-      blob: "b34895cb880164d673c590c8d1b022bd9cd7b9eb",
-      sha256: "20c45f04db710d7e965bd65a5d5ae44dc2cccd5d82de74c29be8b01fc446863e",
+      blob: "a8ef1afde90816a312e58da2adda230ec7eee415",
+      sha256: "6d5bb2945fb5b9944a2dac364be2e5ff67cd9af5105ff7875cead797256b5887",
     }),
     Object.freeze({
       path: "packages/core/agent/src/index.ts",
@@ -730,8 +730,8 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "pnpm-lock.yaml",
-      blob: "be1647c24bbdb3d70d022e0c296e173e0025ddd8",
-      sha256: "a6515566578a26c29b5faddaf94abb5ec452ce6e533f8957e813328ebd4b3c27",
+      blob: "91f79de0d85cb6a6d7b471da17f271852ca838b9",
+      sha256: "4049fcc1d15a06b89c05035a44d7fd8e2062461199633427a9d6aac51a54b959",
     }),
     Object.freeze({
       path: "scripts/gen-cordis-catalog.ts",
@@ -844,10 +844,10 @@ export function buildDshSeamDecisions(): object {
 
   return {
     schemaVersion: 1,
-    recordedAt: "2026-09-12",
+    recordedAt: "2026-09-23",
     authority: DSH_SEAM_SOURCE,
     productProfileActivation: "forbidden-until-patched-DSH-artifact-and-batch-1-gate",
-    candidateIntegration: "U15-W02; final product disposition remains gated by U15-W03 through U15-W07",
+    candidateIntegration: "RC3 refresh; exact candidate acceptance requires rebuilt artifact, Runtime composition and Host gates",
     patchSeries: DSH_SEAM_PATCHES.map((path, index) => patchEvidence(path, index + 1)),
     decisions: [
       {
@@ -870,7 +870,7 @@ export function buildDshSeamDecisions(): object {
       },
       {
         id: "DSH-SEAM-002",
-        upgradeDisposition: "reduce",
+        upgradeDisposition: "rebase",
         seam: "authoritative-pre-assistant-tool-input-transform",
         status: "candidate_patch_pending_product_validation",
         adr: "specs/adr/0002-pre-assistant-commit-waterfall.md",

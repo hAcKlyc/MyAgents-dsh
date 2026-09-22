@@ -12,7 +12,7 @@ export type { CanonicalToolName } from "../generated/canonical-tools.generated.j
 
 export const PROTOCOL_VERSION = "5.0.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
-export const DSH_ENGINE_VERSION = "0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68" as const;
+export const DSH_ENGINE_VERSION = "0.1.5-rc.3.myagents.a4c74a91e06b.13b108f38d68" as const;
 export const SESSION_FORMAT = "dsh-session-events-v1" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
 export const DEEPSEEK_WEB_SEARCH_POLICY_REF = "deepseek-official-web-search-v1" as const;
