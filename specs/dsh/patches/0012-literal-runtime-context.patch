@@ -1,0 +1,90 @@
+From 69f6a1ee6e649ba61042554b0ea26761a830d9d0 Mon Sep 17 00:00:00 2001
+From: Ethan <ethan@EthandeMacBook-Air.local>
+Date: Fri, 25 Sep 2026 01:55:27 +0800
+Subject: [PATCH] feat(prompt): preserve literal runtime contexts on rc2
+
+Host-owned dynamic context can contain user supplied template braces. Carry an explicit literal flag through assembly and rendering while retaining normal variable interpolation by default.
+---
+ packages/core/system-prompt/src/index.ts      |  9 ++++++++-
+ .../system-prompt/tests/system-prompt.spec.ts | 20 ++++++++++++++++++-
+ 2 files changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/packages/core/system-prompt/src/index.ts b/packages/core/system-prompt/src/index.ts
+index 6935ed1d06..60ef032472 100644
+--- a/packages/core/system-prompt/src/index.ts
++++ b/packages/core/system-prompt/src/index.ts
+@@ -83,6 +83,8 @@ export interface PromptContext {
+   readonly order: number
+   /** Static text or a provider evaluated for each assembly. Empty text contributes nothing. */
+   readonly text: string | ((context: AssembleContext) => string)
++  /** Whether to interpolate prompt variables. Defaults to true; false preserves literal text. */
++  readonly interpolate?: boolean
+ }
+ 
+ /** One section of an assembly: {@link PromptSection} with its text resolved. */
+@@ -101,6 +103,8 @@ export interface AssembledContext {
+   name: string
+   /** The resolved text before variable interpolation. */
+   text: string
++  /** Whether to interpolate prompt variables. Defaults to true; false preserves literal text. */
++  interpolate?: boolean
+ }
+ 
+ /** Tool schemas visible in one assembly and their pre-restriction name set. */
+@@ -317,7 +321,9 @@ export function joinContextSections(sections: readonly ContextSnapshotSection[])
+  */
+ export function renderContextSections(assembly: PromptAssembly): ContextSnapshotSection[] {
+   return assembly.contexts
+-    .map(context => ({ name: context.name, text: interpolate(context, assembly.variables, 'context') }))
++    .map(context => ({ name: context.name, text: context.interpolate === false
++      ? context.text
++      : interpolate(context, assembly.variables, 'context') }))
+     .filter(section => section.text.length > 0)
+ }
+ 
+@@ -618,6 +624,7 @@ export class SystemPrompt extends Service {
+           .map(entry => ({
+             name: entry.name,
+             text: typeof entry.text === 'function' ? entry.text(context) : entry.text,
++            ...entry.interpolate !== undefined ? { interpolate: entry.interpolate } : {},
+           })),
+       tools: orderTools(collected, this.toolOrder, knownNames),
+       variables,
+diff --git a/packages/core/system-prompt/tests/system-prompt.spec.ts b/packages/core/system-prompt/tests/system-prompt.spec.ts
+index 16a79c807f..2cd8b76a33 100644
+--- a/packages/core/system-prompt/tests/system-prompt.spec.ts
++++ b/packages/core/system-prompt/tests/system-prompt.spec.ts
+@@ -1,7 +1,7 @@
+ import { describe, expect, it } from 'vitest'
+ import { Context } from '@deepseek-ai/cordis'
+ import SystemPrompt, {
+-  AssembleContext, PromptAssembly, renderContextSnapshot, renderPrompt,
++  AssembleContext, PromptAssembly, renderContextSections, renderContextSnapshot, renderPrompt,
+ } from '@deepseek-ai/dsh-system-prompt'
+ import type { PromptContextOrderName, PromptSectionOrderName } from '@deepseek-ai/dsh-system-prompt'
+ 
+@@ -265,6 +265,24 @@ describe('SystemPrompt', () => {
+     expect((await ctx.systemPrompt.assemble()).contexts).toEqual([{ name: 'policy', text: 'first' }])
+   })
+ 
++  it('preserves literal braces in Host-owned dynamic context while ordinary contexts interpolate', async () => {
++    const ctx = new Context()
++    try {
++      await ctx.plugin(SystemPrompt)
++      ctx.systemPrompt.variable('model', () => 'deepseek-v4')
++      ctx.systemPrompt.context({ name: 'literal', order: 1, text: '{{model}} {{unknown}}', interpolate: false })
++      ctx.systemPrompt.context({ name: 'template', order: 2, text: '{{model}}' })
++      const assembly = await ctx.systemPrompt.assemble()
++      expect(assembly.contexts[0]).toEqual({ name: 'literal', text: '{{model}} {{unknown}}', interpolate: false })
++      expect(renderContextSections(assembly)).toEqual([
++        { name: 'literal', text: '{{model}} {{unknown}}' },
++        { name: 'template', text: 'deepseek-v4' },
++      ])
++    } finally {
++      await ctx.fiber.dispose()
++    }
++  })
++
+   it('rolls back a section when a system-prompt/change listener throws (P1-1)', async () => {
+     const ctx = new Context()
+     await ctx.plugin(SystemPrompt)

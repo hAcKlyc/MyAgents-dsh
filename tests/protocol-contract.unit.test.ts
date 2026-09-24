@@ -115,7 +115,7 @@ describe("candidate-v2 protocol authority", () => {
     expect(() => validateMethodResult("session/resume", {
       state: "ready",
       runtimeSessionId: "runtime-recovery",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 0 },
       effectiveConfigRevision: "config-v1",
     })).toThrow();
@@ -202,7 +202,7 @@ describe("candidate-v2 protocol authority", () => {
     const data = { turn: 1 };
     expect(() => validateMethodResult("session/read", {
       runtimeSessionId: "session-read-hash",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [{
         kind: "event",
@@ -214,7 +214,7 @@ describe("candidate-v2 protocol authority", () => {
     })).not.toThrow();
     expect(() => validateMethodResult("session/read", {
       runtimeSessionId: "session-read-hash",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [{
         kind: "event",
@@ -230,7 +230,7 @@ describe("candidate-v2 protocol authority", () => {
     const assembler = new SessionReadAssembler();
     assembler.accept({
       runtimeSessionId: "session-read-chunks",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [{
         kind: "event_chunk",
@@ -247,7 +247,7 @@ describe("candidate-v2 protocol authority", () => {
     });
     expect(() => assembler.accept({
       runtimeSessionId: "session-read-chunks",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [{
         kind: "event_chunk",
@@ -264,7 +264,7 @@ describe("candidate-v2 protocol authority", () => {
 
     expect(() => validateMethodResult("session/read", {
       runtimeSessionId: "session-read-stalled",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [],
       nextCursor: "cursor-stalled",
@@ -272,7 +272,7 @@ describe("candidate-v2 protocol authority", () => {
     const repeatedCursorAssembler = new SessionReadAssembler();
     repeatedCursorAssembler.accept({
       runtimeSessionId: "session-read-repeat",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 2 },
       records: [{
         kind: "event",
@@ -285,7 +285,7 @@ describe("candidate-v2 protocol authority", () => {
     });
     expect(() => repeatedCursorAssembler.accept({
       runtimeSessionId: "session-read-repeat",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 2 },
       records: [{
         kind: "event",

@@ -25,7 +25,6 @@ import {
   DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES,
   DEFAULT_MAX_REQUEST_FILES_BYTES,
   DEFAULT_REQUEST_IMAGE_MAX_BYTES,
-  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   DeepSeekAdapter,
   PUBLIC_BASE_URL,
@@ -47,6 +46,7 @@ import {
 } from "@myagents-dsh/protocol";
 import { productRootAgent, type ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { HostSettingsProvider } from "./host-settings.js";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { isProxy } from "node:util/types";
@@ -56,6 +56,7 @@ import { AgentCollaborationPolicy } from "./collaboration-policy.js";
 
 export type HostProviderProfile = MethodParams<"session/create">["provider"];
 type ProviderProfile = HostProviderProfile;
+type HostDeepSeekConnection = DeepSeekConnectionOptions & Readonly<{ apiKeyEnv: string }>;
 type PiAiCompatProfile = NonNullable<NonNullable<ProviderProfile["compatibility"]>["wireCompat"]>;
 type PiAiReasoningEfforts = NonNullable<ProviderProfile["reasoningEffortMap"]>;
 type PiAiModelProfile = Readonly<{
@@ -254,17 +255,17 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
     ],
     [
       "baseUrl", "compatibility", "effort", "inputModalities", "pricing", "reasoning",
-      "reasoningEffortMap", "systemPromptUpdate",
+      "reasoningEffortMap", "systemPromptUpdate", "toolUpdate",
     ],
     "Host DeepSeek Provider profile",
   );
   const candidate = record as unknown as ProviderProfile;
   if (candidate.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE
     || candidate.provider !== "deepseek"
-    || candidate.api !== "openai-completions") {
+    || candidate.api !== "anthropic-messages") {
     throw new ProtocolError(
       "provider_profile_unsupported",
-      "the Runtime supports only the approved DeepSeek chat-completions route",
+      "the Runtime supports only the approved DeepSeek Messages route",
     );
   }
   if (Object.hasOwn(record, "compatibility") || Object.hasOwn(record, "reasoningEffortMap")) {
@@ -282,8 +283,13 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
       "the native DeepSeek route accepts a text-first subset of text and image modalities",
     );
   }
-  if (Object.hasOwn(record, "systemPromptUpdate") && candidate.systemPromptUpdate !== "in-history") {
+  const systemPromptUpdate: unknown = Reflect.get(record, "systemPromptUpdate");
+  if (Object.hasOwn(record, "systemPromptUpdate") && systemPromptUpdate !== "in-history") {
     throw new ProtocolError("provider_profile_invalid", "DeepSeek system prompt update capability must be in-history when declared");
+  }
+  const toolUpdate: unknown = Reflect.get(record, "toolUpdate");
+  if (toolUpdate !== undefined && toolUpdate !== "addition-only" && toolUpdate !== "in-history") {
+    throw new ProtocolError("provider_profile_invalid", "DeepSeek tool update capability is invalid");
   }
   validatePricing(candidate);
   profileDefaults(candidate);
@@ -570,7 +576,7 @@ const translateHostPiAiProfiles = (
   return freezeJson({ providers });
 };
 
-const connectionFor = (profile: ProviderProfile): DeepSeekConnectionOptions => Object.freeze({
+const connectionFor = (profile: ProviderProfile): HostDeepSeekConnection => Object.freeze({
   apiKeyEnv: credentialRef(profile.credentialRef),
   baseURL: profile.baseUrl ?? HOST_DEEPSEEK_BASE_URL,
   defaultContextWindow: profile.contextWindow,
@@ -580,9 +586,9 @@ const connectionFor = (profile: ProviderProfile): DeepSeekConnectionOptions => O
     contextWindow: profile.contextWindow,
     id: profile.modelId,
     imageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
-    imagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
     inputModalities: [...(profile.inputModalities ?? ["text"])] as ModelModality[],
     ...(profile.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: profile.systemPromptUpdate }),
+    ...(profile.toolUpdate === undefined ? {} : { toolUpdate: profile.toolUpdate }),
     maxTokens: profile.maxTokens,
   })]),
   maxRequestFilesBytes: DEFAULT_MAX_REQUEST_FILES_BYTES,
@@ -751,7 +757,7 @@ export class HostModelAuthority {
       if (binding === undefined) throw new ProtocolError("provider_profile_invalid", "Primary Provider binding is missing");
       assertCurrent();
       const settingsProvider = typeof (this.#context as unknown as { get?: unknown }).get === "function"
-        ? this.#context.get("settings")
+        ? this.#context.get("settings") as unknown as HostSettingsProvider | undefined
         : undefined;
       const previousPiSettings = this.#piSettings;
       const nextPiSettings = translateHostPiAiProfiles(collaboration.profiles, this.#config.requestDeadlineMs);
@@ -836,7 +842,7 @@ export class HostModelAuthority {
       || (runtimeSessionId !== undefined
         && rollback.nextBinding.runtimeSessionId !== runtimeSessionId)) return;
     const settingsProvider = typeof (this.#context as unknown as { get?: unknown }).get === "function"
-      ? this.#context.get("settings")
+      ? this.#context.get("settings") as unknown as HostSettingsProvider | undefined
       : undefined;
     if (rollback.settingsReplaced && settingsProvider === undefined) {
       throw new ProtocolError(
@@ -865,7 +871,7 @@ export class HostModelAuthority {
     }
   }
 
-  connection(provider = HOST_DEEPSEEK_PROVIDER_ROUTE, model?: string): DeepSeekConnectionOptions {
+  connection(provider = HOST_DEEPSEEK_PROVIDER_ROUTE, model?: string): HostDeepSeekConnection {
     const profile = model === undefined ? this.requireBinding().profile : this.bindingFor(provider, model).profile;
     if (profile.providerRouteId !== HOST_DEEPSEEK_PROVIDER_ROUTE) {
       throw new ProtocolError(
@@ -1252,9 +1258,9 @@ export const installHostLlmRequestScope = (
 };
 
 export class HostDeepSeekLlmAdapter extends LlmAdapter {
-  readonly #adapter: DeepSeekAdapter;
-  readonly #adapters = new WeakMap<ProviderProfile, DeepSeekAdapter>();
-  readonly #adapterForProfile: (profile: ProviderProfile) => DeepSeekAdapter;
+  readonly #adapter: DeepSeekAdapter<HostDeepSeekConnection>;
+  readonly #adapters = new WeakMap<ProviderProfile, DeepSeekAdapter<HostDeepSeekConnection>>();
+  readonly #adapterForProfile: (profile: ProviderProfile) => DeepSeekAdapter<HostDeepSeekConnection>;
   readonly #authority: HostModelAuthority;
   readonly #credentialController: HostCredentialProviderController;
 
@@ -1266,20 +1272,21 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
     super();
     this.#authority = authority;
     this.#credentialController = credentialController;
-    const createAdapter = (options: () => DeepSeekConnectionOptions) => new DeepSeekAdapter({
+    const createAdapter = (options: () => HostDeepSeekConnection) => new DeepSeekAdapter({
       options,
       prepareExtensions: (request) => authority.prepareDeepSeekExtensions(request),
-      resolveApiKey: async (connection) => {
+      resolveAuth: async (connection) => {
         try {
-          const resolved = await credentials.resolve(connection.apiKeyEnv);
+          const resolved = await credentials.resolve(credentialRef(connection.apiKeyEnv));
           if (resolved === undefined) {
             throw new LlmError("Host Provider credential is unavailable", "MISSING_CREDENTIAL");
           }
-          return assertUsableApiKey(
+          const apiKey = assertUsableApiKey(
             resolved.value,
             "@myagents-dsh/runtime-product",
             connection.apiKeyEnv,
           );
+          return { headers: { "x-api-key": apiKey } };
         } catch {
           throw new LlmError("Host Provider credential resolution failed", "AUTH");
         }
@@ -1291,7 +1298,7 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
     this.#adapterForProfile = (profile) => createAdapter(() => connectionFor(profile));
   }
 
-  #routedAdapter(provider: string, model: string): DeepSeekAdapter {
+  #routedAdapter(provider: string, model: string): DeepSeekAdapter<HostDeepSeekConnection> {
     if (provider !== HOST_DEEPSEEK_PROVIDER_ROUTE) throw new ProtocolError("provider_profile_stale", "Native DeepSeek adapter received a foreign Provider route");
     const profile = this.#authority.collaborationPolicy().profileFor(provider, model);
     let adapter = this.#adapters.get(profile);

@@ -454,19 +454,18 @@ class ArtifactRoutingLlmAdapter extends LlmAdapter {
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const selected = options.sessionId === "dsh-artifact-primary" ? adapter : childAdapter;
-    const input = options.messages.findLast(({ role, source }) => role === "user" && source.kind === "myagents-operation");
+    const input = options.messages.findLast(({ role, source }) => role === "user" && source?.kind === "myagents-operation");
     const tail = options.messages.at(-1);
     // Real background Jobs can report after the scripted final answer. That
     // legitimate extra step must not consume the next user scenario's script.
-    if (selected === adapter && input !== undefined && this.completedInputs.has(input.id)
-      && tail?.role === "user" && tail.source.kind === "plugin"
-      && tail.source.plugin === "tool-jobs" && tail.source.form === "notice") {
+    if (selected === adapter && input?.id !== undefined && this.completedInputs.has(input.id)
+      && tail?.role === "user" && tail.source?.kind === "tool-jobs" && tail.source.form === "notice") {
       lateJobNoticeAdapter.enqueue({ kind: "complete", text: "Background job completion observed." });
       yield* lateJobNoticeAdapter.stream(options);
       return;
     }
     for await (const chunk of selected.stream(options)) {
-      if (selected === adapter && input !== undefined && chunk.type === "finish" && chunk.reason.kind === "stop") {
+      if (selected === adapter && input?.id !== undefined && chunk.type === "finish" && chunk.reason.kind === "stop") {
         this.completedInputs.add(input.id);
       }
       yield chunk;
@@ -1679,10 +1678,10 @@ const initializeRequest: InitializeParams = {
 const hostModelProfile = Object.freeze({
   revision: "artifact-host-model-v1",
   providerRouteId: "deepseek-official",
-  api: "openai-completions" as const,
+  api: "anthropic-messages" as const,
   provider: "deepseek",
   modelId: "deepseek-artifact-fixture",
-  baseUrl: "https://api.deepseek.com",
+  baseUrl: "https://api.deepseek.com/anthropic",
   credentialRef: "ARTIFACT_HOST_MODEL_KEY",
   contextWindow: 8_192,
   maxTokens: 512,
@@ -1886,28 +1885,40 @@ await hostModelComposition.context.productSession.bindCreate({
 const previousFetch = globalThis.fetch;
 const hostModelAuthorization: string[] = [];
 let hostModelFetchSequence = 0;
+const hostModelMessagesSse = (block: { type: "text"; text: string } | {
+  type: "tool_use"; id: string; name: string; input: Record<string, unknown>;
+}): string => {
+  const tool = block.type === "tool_use";
+  const events = [
+    { type: "message_start", message: { id: "artifact-message", model: hostModelProfile.modelId, usage: { input_tokens: 2, output_tokens: 0 } } },
+    { type: "content_block_start", index: 0, content_block: tool
+      ? { type: "tool_use", id: block.id, name: block.name, input: {} }
+      : { type: "text", text: "" } },
+    { type: "content_block_delta", index: 0, delta: tool
+      ? { type: "input_json_delta", partial_json: JSON.stringify(block.input) }
+      : { type: "text_delta", text: block.text } },
+    { type: "content_block_stop", index: 0 },
+    { type: "message_delta", delta: { stop_reason: tool ? "tool_use" : "end_turn" }, usage: { output_tokens: 3 } },
+    { type: "message_stop" },
+  ];
+  return events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
+};
 globalThis.fetch = (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-  hostModelAuthorization.push(new Headers(init?.headers).get("authorization") ?? "");
+  hostModelAuthorization.push(new Headers(init?.headers).get("x-api-key") ?? "");
   hostModelFetchSequence += 1;
-  const payload = hostModelFetchSequence === 1
-    ? `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"artifact-host-model-child-call","type":"function","function":{"name":"Agent","arguments":${JSON.stringify(JSON.stringify({
+  const block = hostModelFetchSequence === 1
+    ? { type: "tool_use" as const, id: "artifact-host-model-child-call", name: "Agent", input: {
         description: "Verify child model lineage",
         prompt: "Return one concise child result through the approved Host model route.",
         run_in_background: false,
         subagent_type: "general",
-      }))}}}]},"finish_reason":"tool_calls"}]}`
+      } }
     : hostModelFetchSequence === 2
-      ? '{"choices":[{"delta":{"content":"child credential route verified"},"finish_reason":"stop"}]}'
+      ? { type: "text" as const, text: "child credential route verified" }
       : hostModelFetchSequence === 3
-        ? `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"artifact-host-model-mcp-call","type":"function","function":{"name":"mcp__artifact-mcp__echo","arguments":${JSON.stringify(JSON.stringify({ value: "ping" }))}}}]},"finish_reason":"tool_calls"}]}`
-        : '{"choices":[{"delta":{"content":"root credential and MCP route verified"},"finish_reason":"stop"}]}';
-  const stream = [
-    `data: ${payload}`,
-    'data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3}}',
-    "data: [DONE]",
-    "",
-  ].join("\n\n");
-  return Promise.resolve(new Response(stream, {
+        ? { type: "tool_use" as const, id: "artifact-host-model-mcp-call", name: "mcp__artifact-mcp__echo", input: { value: "ping" } }
+        : { type: "text" as const, text: "root credential and MCP route verified" };
+  return Promise.resolve(new Response(hostModelMessagesSse(block), {
     headers: { "content-type": "text/event-stream" },
     status: 200,
   }));
@@ -1986,7 +1997,7 @@ try {
 } finally {
   globalThis.fetch = previousFetch;
 }
-assert.deepEqual(hostModelAuthorization, Array.from({ length: 6 }, () => `Bearer ${hostModelSecret}`));
+assert.deepEqual(hostModelAuthorization, Array.from({ length: 6 }, () => hostModelSecret));
 assert.ok(hostModelInteractionCalls.length > 0);
 assert.equal(hostModelCredentialCalls.length, 8);
 assert.deepEqual(hostModelCredentialCalls.map(({ purpose }) => purpose), [
@@ -2087,12 +2098,7 @@ const hostModelMcpResult = hostModelComposition.context.productSession.requireAg
     && String(event.data.message.source.callId) === "artifact-host-model-mcp-call",
 );
 assert.ok(hostModelMcpResult?.type === "tool/result");
-assert.deepEqual(hostModelMcpResult.data.message.content, [{
-  content: [{ type: "text", text: "artifact MCP result" }],
-  isError: false,
-  toolCallId: "artifact-host-model-mcp-call",
-  type: "tool-result",
-}]);
+assert.deepEqual(hostModelMcpResult.data.message.content, [{ type: "text", text: "artifact MCP result" }]);
 assert.equal(hostModelMcpPermissionVerified, true);
 const hostCredentialModelVerified = hostModelFetchSequence === 6
   && hostCredentialPublicControllerHidden
@@ -2403,7 +2409,7 @@ assert.equal(primaryPublicationSnapshotVerified, true);
 assert.equal(roguePublicationObserved, false);
 assert.equal(createdPrimary.state, "ready");
 assert.equal(createdPrimary.runtimeSessionId, "dsh-artifact-primary");
-assert.equal(createdPrimary.historyFormat, "dsh-session-events-v1");
+assert.equal(createdPrimary.historyFormat, "dsh-session-events-v2");
 assert.equal(createdPrimary.durableHead.sequence, primaryBinding.durableSequence);
 assert.equal(createdPrimary.effectiveConfigRevision, "artifact-config-v1");
 assert.deepEqual(createdPrimary.toolCatalog, validatedArtifactToolCatalog);
@@ -2909,7 +2915,7 @@ const governedToolResults = primaryAgent.session.snapshotEvents().filter((event)
     .includes(String(event.data.message.source.callId)));
 assert.equal(governedToolResults.length, 2, JSON.stringify(governedToolResults));
 assert.equal(governedToolResults.every((event) => event.type === "tool/result"
-  && event.data.message.content[0].isError !== true), true, JSON.stringify(governedToolResults));
+  && event.data.message.isError !== true), true, JSON.stringify(governedToolResults));
 assert.equal(await readFile(fixtureFile, "utf8"), transformedWriteContent);
 assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
   `permission:Write:${fixtureFile}`,
@@ -2966,7 +2972,7 @@ assert.equal(
 const binaryReadResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-binary-read-call");
 assert.ok(binaryReadResult?.type === "tool/result");
-const binaryReadValue = binaryReadResult.data.message.content[0];
+const binaryReadValue = binaryReadResult.data.message;
 assert.equal(binaryReadValue.isError, false);
 assert.equal(binaryReadValue.content.length, 2);
 assert.ok(binaryReadValue.content[0]?.type === "text");
@@ -2994,9 +3000,9 @@ const governedEditResult = primaryAgent.session.snapshotEvents().findLast((event
 const governedEditReadResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-edit-read-call");
 assert.ok(governedEditReadResult?.type === "tool/result");
-assert.equal(governedEditReadResult.data.message.content[0].isError, false, JSON.stringify(governedEditReadResult));
+assert.equal(governedEditReadResult.data.message.isError, false, JSON.stringify(governedEditReadResult));
 assert.ok(governedEditResult?.type === "tool/result");
-assert.equal(governedEditResult.data.message.content[0].isError, false, JSON.stringify(governedEditResult));
+assert.equal(governedEditResult.data.message.isError, false, JSON.stringify(governedEditResult));
 assert.equal(await readFile(fixtureFile, "utf8"), editedFileContent);
 assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
   `permission:Write:${fixtureFile}`,
@@ -3031,7 +3037,7 @@ const stopJobDeliveryBarrier = composition.context.on("agent/turn-stopping", asy
   backgroundJobsReleased = true;
   await writeFile(join(fixtureWorkspace, ".artifact-job-release"), "synthetic job barrier\n");
   await waitUntil(() => agent.session.snapshotEvents().filter((event) => event.type === "agent/inbox/spliced"
-    && event.data.inserted.some(({ source }) => source.kind === "plugin" && source.plugin === "tool-jobs"
+    && event.data.inserted.some(({ source }) => source.kind === "tool-jobs"
       && source.form === "notice")).length === 2, "both real Jobs publish their native completion notices");
 });
 await composition.context.sdkOperations.start({
@@ -3048,7 +3054,7 @@ await waitUntil(
 stopJobDeliveryBarrier();
 assert.ok(lateJobNoticeAdapter.requests.length >= 1, "the real late Job notice must execute an additional model step");
 assert.ok(lateJobNoticeAdapter.requests.every(({ messages }) => {
-  const source = messages.findLast(({ role, source }) => role === "user" && source.kind === "myagents-operation")?.source;
+  const source = messages.findLast(({ role, source }) => role === "user" && source?.kind === "myagents-operation")?.source;
   return source?.kind === "myagents-operation" && source.clientOperationId === "artifact-process-search-operation";
 }), "late Job model work must retain its original Product operation");
 assert.equal(
@@ -3070,16 +3076,16 @@ const processSearchResults = primaryAgent.session.snapshotEvents().filter((event
   event.type === "tool/result" && processSearchCallIds.includes(String(event.data.message.source.callId)));
 assert.equal(processSearchResults.length, processSearchCallIds.length);
 assert.equal(processSearchResults.every((event) => event.type === "tool/result"
-  && event.data.message.content[0].isError !== true), true, JSON.stringify(processSearchResults.map((event) => ({
+  && event.data.message.isError !== true), true, JSON.stringify(processSearchResults.map((event) => ({
   callId: event.type === "tool/result" ? String(event.data.message.source.callId) : "unexpected",
-  result: event.type === "tool/result" ? event.data.message.content[0] : undefined,
+  result: event.type === "tool/result" ? event.data.message : undefined,
 }))));
 const processSearchText = (callId: string): string => {
   const event = processSearchResults.find((candidate) => candidate.type === "tool/result"
     && String(candidate.data.message.source.callId) === callId);
   assert.ok(event?.type === "tool/result");
-  const resultBlock = event.data.message.content[0];
-  assert.equal(resultBlock.type, "tool-result");
+  const resultBlock = event.data.message;
+  assert.equal(resultBlock.role, "tool");
   const content = resultBlock.content;
   assert.equal(content.length, 1);
   const block = content[0];
@@ -3090,8 +3096,8 @@ const durableToolText = (callId: string, expectedContentLength = 1): string => {
   const event = primaryAgent.session.snapshotEvents().findLast((candidate) => candidate.type === "tool/result"
     && String(candidate.data.message.source.callId) === callId);
   assert.ok(event?.type === "tool/result");
-  const resultBlock = event.data.message.content[0];
-  assert.equal(resultBlock.type, "tool-result");
+  const resultBlock = event.data.message;
+  assert.equal(resultBlock.role, "tool");
   let productWorkDiagnostic: unknown;
   if (resultBlock.isError === true) {
     try {
@@ -3183,17 +3189,18 @@ assert.ok(fileToolEvidence.some((entry) => entry.startsWith("permission:bash:"))
 for (const safeTool of ["Read", "Glob", "Grep", "ls"]) {
   assert.equal(fileToolEvidence.some((entry) => entry.startsWith(`permission:${safeTool}:`)), false);
 }
-const backgroundJobs = composition.context.jobs.list(primaryAgent);
+const backgroundJobs = composition.context.jobs.list(primaryAgent.session.id);
 assert.equal(backgroundJobs.length, 2);
 const backgroundJob = backgroundJobs.find(({ id }) => id === backgroundRecord.jobId);
 assert.ok(backgroundJob);
-await composition.context.jobs.wait(backgroundJob.id, 5_000, primaryAgent);
+await composition.context.jobs.wait(backgroundJob.id, 5_000, primaryAgent.session.id);
 const backgroundFloodJob = backgroundJobs.find(({ id }) => id === backgroundFloodRecord.jobId);
 assert.ok(backgroundFloodJob);
-await composition.context.jobs.wait(backgroundFloodJob.id, 5_000, primaryAgent);
-const retainedFlood = composition.context.jobs.read(backgroundFloodJob.id, primaryAgent);
-assert.ok(retainedFlood.text.includes("x".repeat(256)));
-assert.ok(Buffer.byteLength(retainedFlood.text, "utf8") < 200_004);
+await composition.context.jobs.wait(backgroundFloodJob.id, 5_000, primaryAgent.session.id);
+const retainedFlood = composition.context.jobs.read(backgroundFloodJob.id, primaryAgent.session.id);
+const retainedFloodText = retainedFlood.chunks.map(({ text }) => text).join("");
+assert.ok(retainedFloodText.includes("x".repeat(256)));
+assert.ok(Buffer.byteLength(retainedFloodText, "utf8") < 200_004);
 
 assert.equal(composition.context.productProcesses.snapshot().liveProcesses, 0);
 
@@ -3293,7 +3300,7 @@ assert.match(durableToolText("artifact-plan-read-call"), /1: # Governed plan\n2:
 const planBash = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-plan-bash-research-call");
 assert.ok(planBash?.type === "tool/result");
-assert.equal(planBash.data.message.content[0].isError, false);
+assert.equal(planBash.data.message.isError, false);
 assert.equal(durableToolText("artifact-plan-bash-research-call"), "plan-shell-research");
 assert.equal(composition.context.productProcesses.snapshot().liveProcesses, 0);
 assert.deepEqual(JSON.parse(durableToolText("artifact-exit-plan-call")), {
@@ -3348,7 +3355,7 @@ assert.deepEqual(taskCreateDependent.task, {
 const cycleResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-tg-cycle-call");
 assert.ok(cycleResult?.type === "tool/result");
-assert.equal(cycleResult.data.message.content[0].isError, true);
+assert.equal(cycleResult.data.message.isError, true);
 const taskGet = JSON.parse(durableToolText("artifact-tg-get-call")) as Record<string, unknown>;
 const taskList = JSON.parse(durableToolText("artifact-tg-list-call")) as Record<string, unknown>;
 assert.deepEqual(taskGet.task, {
@@ -3442,6 +3449,7 @@ assert.deepEqual(await composition.context.skills.snapshot({
   complete: true,
   skills: [{
     name: "fixture-audit",
+    path: fixtureSkillSourcePath,
     description: "Audits the synthetic Runtime artifact and returns bounded evidence.",
     invocation: { modelInvocable: true, userInvocable: true },
     source: "bundled",
@@ -3488,8 +3496,7 @@ if (!hostToolPutEvidence.endsWith(":host-tool-pixel.png")) {
 }
 const normalizedHostToolAttachmentId = hostToolPutEvidence.slice(4, -":host-tool-pixel.png".length);
 assert.ok(hostToolResult.data.message.content.some((block) =>
-  block.content.some((content) => content.type === "image"
-    && String(content.attachment.attachmentId) === normalizedHostToolAttachmentId)));
+  block.type === "image" && String(block.attachment.attachmentId) === normalizedHostToolAttachmentId));
 assert.deepEqual(hostToolAttachmentEvidence, [
   `acquire:${fixtureImageAttachmentId}:artifact-runtime-lease-2`,
   `put:${normalizedHostToolAttachmentId}:host-tool-pixel.png`,
@@ -3841,10 +3848,10 @@ const retainedOutputRead = retainedOutputResults.find((event) => event.type === 
 const unrelatedRuntimeRead = retainedOutputResults.find((event) => event.type === "tool/result"
   && String(event.data.message.source.callId) === "artifact-runtime-private-read-call");
 assert.ok(retainedOutputRead?.type === "tool/result");
-assert.equal(retainedOutputRead.data.message.content[0].isError, false);
-assert.match(JSON.stringify(retainedOutputRead.data.message.content[0].content), /artifact-background/u);
+assert.equal(retainedOutputRead.data.message.isError, false);
+assert.match(JSON.stringify(retainedOutputRead.data.message.content), /artifact-background/u);
 assert.ok(unrelatedRuntimeRead?.type === "tool/result");
-assert.equal(unrelatedRuntimeRead.data.message.content[0].isError, true);
+assert.equal(unrelatedRuntimeRead.data.message.isError, true);
 
 const canonicalToolCalls = primaryAgent.session.snapshotEvents().filter((event) =>
   event.type === "tool/call" && artifactEffectiveToolSet.has(event.data.name));
@@ -4464,7 +4471,7 @@ const [resumedPrimary, exactResumedPrimary] = await Promise.all([
 assert.deepEqual(exactResumedPrimary, resumedPrimary);
 assert.equal(resumedPrimary.state, "ready");
 assert.equal(resumedPrimary.runtimeSessionId, "dsh-artifact-primary");
-assert.equal(resumedPrimary.historyFormat, "dsh-session-events-v1");
+assert.equal(resumedPrimary.historyFormat, "dsh-session-events-v2");
 assert.equal(resumedPrimary.effectiveConfigRevision, "artifact-config-v1");
 assert.deepEqual(resumedPrimary.toolCatalog, validatedArtifactToolCatalog);
 assert.deepEqual(resumedPrimary.extensionCatalog, resumedComposition.context.productComponents.catalog());
@@ -4565,8 +4572,7 @@ assert.equal(compactionSummaryStreamCalls, 1);
 assert.equal(compactionEnd.data.compactionId, compactionStart.data.compactionId);
 assert.equal(compactionEnd.data.error, undefined);
 assert.deepEqual(compactionReplacement.data.source, {
-  kind: "plugin",
-  plugin: "compact",
+  kind: "compact-checkpoint",
   compactionId: compactionStart.data.compactionId,
   sourceCommandId: compactionStart.data.sourceCommandId,
 });
@@ -4576,7 +4582,7 @@ assert.equal(compactionReceipt.data.startSeq, compactionStart.seq);
 assert.equal(compactionReceipt.data.summarySeq, compactionSummary.seq);
 assert.equal(compactionReceipt.data.endSeq, compactionEnd.seq);
 assert.equal(compactionReceipt.data.resultEventCount, resumedAgent.session.snapshotEvents().length);
-assert.equal(resumeAdapter.requests[0]?.maxTokens, 8_192);
+assert.equal(resumeAdapter.requests[0]?.maxTokens, 65_536);
 assert.match(
   resumeAdapter.requests[0].messages.at(-1)?.content
     .filter((block) => block.type === "text")
@@ -5145,8 +5151,7 @@ process.stdout.write(`${JSON.stringify({
     imageRequestContainsReference: adapter.requests[2]?.messages.at(-1)?.content.some((block) =>
       block.type === "image" && String(block.attachment.attachmentId) === normalizedImageAttachmentId),
     hostToolImageReference: hostToolResult.data.message.content.some((block) =>
-      block.content.some((content) => content.type === "image"
-        && String(content.attachment.attachmentId) === normalizedHostToolAttachmentId)),
+      block.type === "image" && String(block.attachment.attachmentId) === normalizedHostToolAttachmentId),
     stagingEntriesAfterUse: hostAttachmentStagingEntriesAfterUse,
   },
   hostCredentialModelVerified,

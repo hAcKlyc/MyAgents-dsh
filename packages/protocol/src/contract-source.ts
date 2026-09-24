@@ -10,10 +10,10 @@ export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "5.0.0" as const;
+export const PROTOCOL_VERSION = "6.0.0" as const;
 export const RUNTIME_VERSION = "0.0.0" as const;
-export const DSH_ENGINE_VERSION = "0.1.5-rc.3.myagents.a4c74a91e06b.13b108f38d68" as const;
-export const SESSION_FORMAT = "dsh-session-events-v1" as const;
+export const DSH_ENGINE_VERSION = "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e" as const;
+export const SESSION_FORMAT = "dsh-session-events-v2" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
 export const DEEPSEEK_WEB_SEARCH_POLICY_REF = "deepseek-official-web-search-v1" as const;
 export const HOST_CANONICAL_WEB_ADAPTER_ID = "myagents-host-canonical-web-v1" as const;
@@ -311,6 +311,7 @@ export const ModelExecutionProfileSchema = strictObject({
   contextWindow: Type.Integer({ minimum: 1 }),
   maxTokens: Type.Integer({ minimum: 1 }),
   systemPromptUpdate: Type.Optional(Type.Literal("in-history")),
+  toolUpdate: Type.Optional(Type.Union([Type.Literal("addition-only"), Type.Literal("in-history")])),
   inputModalities: Type.Optional(Type.Array(Type.Union([
     Type.Literal("text"),
     Type.Literal("image"),

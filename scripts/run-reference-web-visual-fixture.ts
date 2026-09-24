@@ -131,7 +131,7 @@ const server = new LoopbackBrowserServer({
         state: "succeeded",
         result: command.kind === "history.read" ? {
           runtimeSessionId: "fixture-runtime-session",
-          historyFormat: "dsh-session-events-v1",
+          historyFormat: "dsh-session-events-v2",
           durableHead: { sequence: 0 },
           records: [],
         } : { fixture: true },

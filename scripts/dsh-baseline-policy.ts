@@ -5,71 +5,72 @@ import { DSH_SEAM_SOURCE } from "./dsh-seam-decisions.js";
 type JsonObject = Record<string, unknown>;
 
 export const expectedDshDependencies = new Map([
-  ["@deepseek-ai/cordis", "4.0.2"],
-  ["@deepseek-ai/dsh-agent", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-agent-instructions", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-agent-loop", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-agent-presets", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-attachment", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-attachment-local", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-bash-local", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-commands", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-compaction", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-compaction-basic", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-compaction-tool-result-pruner", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-credentials", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-fs", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-fs-local", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-invariants", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-jobs", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-jobs-local", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-llm", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-llm-deepseek", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-llm-pi-ai", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-mcp-client", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-plan-mode", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-pwsh-local", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-sandbox", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-sandbox-policy", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-scope", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-session", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-session-persistence", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-session-projection", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-session-projection-cache", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-session-query", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-session-query-sqlite", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-settings", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-shell", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-shell-env", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-skill", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-storage", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-storage-domain", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-subagent", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-subagent-in-process-driver", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-subagent-spawn-in-process", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-subprocess", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-subprocess-local", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-system-prompt", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-timeout", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-token-meter", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-tool-bash", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-tool-call-timeout-policy", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-tool-fs", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-tool-fs-search", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-tool-jobs", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-tool-pwsh", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-tool-web", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-tools", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-typert-protocol", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-user-approval", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-user-questions", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-util-values", "0.1.5-rc.3"],
-  ["@deepseek-ai/dsh-web", "0.1.5-rc.3"],
+  ["@deepseek-ai/cordis", "4.0.4"],
+  ["@deepseek-ai/dsh-agent", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-agent-instructions", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-agent-loop", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-attachment", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-attachment-local", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-bash-local", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-commands", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-compaction", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-compaction-basic", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-compaction-tool-result-pruner", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-credentials", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-fs", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-fs-local", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-invariants", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-jobs", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-jobs-local", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-llm", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-llm-deepseek", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-llm-pi-ai", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-mcp-client", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-mcp-resources", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-plan-mode", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-pwsh-local", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-sandbox", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-sandbox-policy", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-scope", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-session", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-session-persistence", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-session-projection", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-session-projection-cache", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-session-query", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-session-query-sqlite", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-settings", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-shell", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-shell-env", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-skill", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-storage", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-storage-domain", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-subagent", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-subagent-in-process-driver", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-subagent-spawn-in-process", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-subprocess", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-subprocess-local", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-system-prompt", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-timeout", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-token-meter", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-tool-bash", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-tool-call-timeout-policy", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-tool-fs", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-tool-fs-search", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-tool-jobs", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-tool-pwsh", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-tool-web", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-tools", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-typert-protocol", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-user-approval", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-user-questions", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-util-values", "0.1.7-rc.2"],
+  ["@deepseek-ai/dsh-web", "0.1.7-rc.2"],
 ] as const);
 
 // The source-built HTTP proxy package requires an exact production undici root.
 // Keeping it explicit avoids resolving the dev-only jsdom copy in consumers.
 const expectedRootDependencies = [...expectedDshDependencies, ["undici", "8.10.0"]];
+const expectedRootOptionalDependencies = [["@img/sharp-wasm32", "0.35.3"]];
 
 export interface PublicSeamEvidence {
   id: string;
@@ -104,10 +105,10 @@ export const publicSeams: PublicSeamEvidence[] = [
   { id: "agent-loop", package: "@deepseek-ai/dsh-agent-loop", importPath: "@deepseek-ai/dsh-agent-loop", classification: "direct", batchUse: ["B1-W1"], values: ["AgentLoop"], types: ["Config"] },
   { id: "tools", package: "@deepseek-ai/dsh-tools", importPath: "@deepseek-ai/dsh-tools", classification: "direct", batchUse: ["B1-W1", "B1-W2", "B1-W3"], values: ["ToolRuntime", "defineTool"], types: ["ToolDefinition", "ToolExecution", "ToolExecutionResult", "ToolRunContext"] },
   { id: "llm", package: "@deepseek-ai/dsh-llm", importPath: "@deepseek-ai/dsh-llm", classification: "provider", batchUse: ["B1-W1", "B1-W3"], values: ["LlmAdapter", "LlmError", "LlmRuntime", "assertUsableApiKey", "resolveRetryPolicy"], types: ["GenerateOptions", "LlmModelInfo", "LlmProviderInfo", "LlmResolvedModelInfo", "StreamChunk"] },
-  { id: "llm-deepseek", package: "@deepseek-ai/dsh-llm-deepseek", importPath: "@deepseek-ai/dsh-llm-deepseek", classification: "provider", batchUse: ["B1-W3"], values: ["DEFAULT_STREAM_IDLE_TIMEOUT_MS", "DeepSeekAdapter", "PUBLIC_BASE_URL"], types: ["DeepSeekConnectionOptions", "RequestDefaults"] },
+  { id: "llm-deepseek", package: "@deepseek-ai/dsh-llm-deepseek", importPath: "@deepseek-ai/dsh-llm-deepseek", classification: "helper", batchUse: ["B1-W3", "B3-XR-UPG17"], values: ["DEFAULT_STREAM_IDLE_TIMEOUT_MS", "DeepSeekAdapter", "PUBLIC_BASE_URL"], types: ["DeepSeekConnectionOptions", "RequestDefaults"] },
   { id: "llm-pi-ai", package: "@deepseek-ai/dsh-llm-pi-ai", importPath: "@deepseek-ai/dsh-llm-pi-ai", classification: "provider", batchUse: ["B3-W1"], values: ["Config", "PiAiAdapter", "apply", "inject", "name", "recordKeyFor", "supportedProtocols"], types: ["PiAiAdapterOptions", "PiAiCompatProfile", "PiAiModality", "PiAiModelProfile", "PiAiProviderProfile"], compileEvidence: "runtime-package-root" },
   { id: "llm-retry", package: "@deepseek-ai/dsh-llm-retry", importPath: "@deepseek-ai/dsh-llm-retry", classification: "helper", batchUse: ["B3-XR-UPG"], values: ["RetryId"], types: [], compileEvidence: "runtime-package-root" },
-  { id: "settings", package: "@deepseek-ai/dsh-settings", importPath: "@deepseek-ai/dsh-settings", classification: "provider", batchUse: ["B3-W1"], values: ["SettingsProvider"], types: ["SettingsNamespace", "SettingsScope"] },
+  { id: "settings", package: "@deepseek-ai/dsh-settings", importPath: "@deepseek-ai/dsh-settings", classification: "provider", batchUse: ["B3-W1"], values: ["SettingsForms"], types: ["SettingsNamespace", "SettingsPathOp"] },
   { id: "system-prompt", package: "@deepseek-ai/dsh-system-prompt", importPath: "@deepseek-ai/dsh-system-prompt", classification: "direct", batchUse: ["B1-W1", "B1-W3"], values: ["SystemPrompt"], types: ["PromptAssembly", "PromptContext", "PromptSection"] },
   { id: "persistence", package: "@deepseek-ai/dsh-session-persistence", importPath: "@deepseek-ai/dsh-session-persistence", classification: "provider", batchUse: ["B1-W1", "B1-W4"], values: ["SessionPersistence", "validateStoredEvents"], types: ["SessionHandle", "SessionInspection", "SessionPersistenceSnapshot"] },
   { id: "compaction", package: "@deepseek-ai/dsh-compaction", importPath: "@deepseek-ai/dsh-compaction", classification: "provider", batchUse: ["B1-W4"], values: ["CompactionEngine", "CompactionId"], types: ["CompactionAgentContext", "CompactionResult"] },
@@ -118,7 +119,7 @@ export const publicSeams: PublicSeamEvidence[] = [
   { id: "subagents", package: "@deepseek-ai/dsh-subagent", importPath: "@deepseek-ai/dsh-subagent", classification: "direct", batchUse: ["B1-W2"], values: ["SubagentRuntime", "finalAssistantOutput"], types: ["SubagentInterruptAuthority", "SubagentProvider", "SubagentResult"] },
   { id: "subagent-in-process-driver", package: "@deepseek-ai/dsh-subagent-in-process-driver", importPath: "@deepseek-ai/dsh-subagent-in-process-driver", classification: "helper", batchUse: ["B1-W2"], values: ["startInProcessRun"], types: ["InProcessRunOptions"] },
   { id: "subagent-spawn-in-process", package: "@deepseek-ai/dsh-subagent-spawn-in-process", importPath: "@deepseek-ai/dsh-subagent-spawn-in-process", classification: "provider", batchUse: ["B1-W2"], values: ["apply"], types: ["Config"] },
-  { id: "jobs", package: "@deepseek-ai/dsh-jobs", importPath: "@deepseek-ai/dsh-jobs", classification: "provider", batchUse: ["B1-W2"], values: ["JobId", "JobRegistry"], types: ["JobSnapshot", "JobStart"] },
+  { id: "jobs", package: "@deepseek-ai/dsh-jobs", importPath: "@deepseek-ai/dsh-jobs", classification: "provider", batchUse: ["B1-W2"], values: ["JobId", "JobRegistry"], types: ["JobView", "JobRead"] },
   { id: "jobs-local", package: "@deepseek-ai/dsh-jobs-local", importPath: "@deepseek-ai/dsh-jobs-local", classification: "provider", batchUse: ["B1-W2"], values: ["LocalJobRegistry"], types: ["Config"] },
   { id: "approval", package: "@deepseek-ai/dsh-user-approval", importPath: "@deepseek-ai/dsh-user-approval", classification: "provider", batchUse: ["B1-W2", "B1-W3"], values: ["ApprovalRequestId", "ApprovalService"], types: ["ApprovalOutcome", "ApprovalRequest"] },
   { id: "questions", package: "@deepseek-ai/dsh-user-questions", importPath: "@deepseek-ai/dsh-user-questions", classification: "provider", batchUse: ["B1-W2", "B1-W3"], values: ["UserQuestionService"], types: ["AskUserQuestionRequest"] },
@@ -145,7 +146,7 @@ const allowedPublicDshImportPaths = new Set(publicSeams.map(({ importPath }) => 
 export const knownLimitations = [
   {
     id: "source-release-association-unproven",
-    effect: "The executable npm 0.1.5-rc.3 bytes have no published gitHead and are not claimed to correspond byte-for-byte to the fixed tagged source commit.",
+    effect: "The executable npm 0.1.7-rc.2 bytes have no published gitHead and are not claimed to correspond byte-for-byte to the fixed tagged source commit.",
     decision: "Treat the lockfile tarball URLs and integrities as executable authority and the fixed commit as separate source/design evidence.",
   },
   {
@@ -257,9 +258,17 @@ export const buildDshBaseline = (rootPackage: JsonObject, lockfile: PackageLock)
   if (JSON.stringify(rootLockDependencyEntries) !== JSON.stringify(dependencyEntries)) {
     throw new Error("package-lock root dependencies must equal the exact accepted DSH dependency authority");
   }
+  const optionalEntries = Object.entries((rootPackage.optionalDependencies ?? {}) as JsonObject)
+    .sort(([left], [right]) => compareCodePoints(left, right));
+  const rootLockOptionalEntries = Object.entries(rootLock.optionalDependencies ?? {})
+    .sort(([left], [right]) => compareCodePoints(left, right));
+  if (JSON.stringify(optionalEntries) !== JSON.stringify(expectedRootOptionalDependencies)
+    || JSON.stringify(rootLockOptionalEntries) !== JSON.stringify(optionalEntries)) {
+    throw new Error("root optional dependency authority differs from the accepted DSH baseline");
+  }
   const directPaths = new Set<string>();
   const pending: string[] = [];
-  for (const [name, version] of dependencyEntries) {
+  for (const [name, version] of [...dependencyEntries, ...optionalEntries]) {
     const path = resolveDependencyPath(packages, "", name);
     if (path === undefined) throw new Error(`lockfile does not resolve direct dependency ${name}`);
     const entry = packages[path];
@@ -332,7 +341,7 @@ export const buildDshBaseline = (rootPackage: JsonObject, lockfile: PackageLock)
     },
     executableBaseline: {
       registry: "https://registry.npmjs.org",
-      dshRelease: "0.1.5-rc.3",
+      dshRelease: "0.1.7-rc.2",
       sourceAssociation: "unproven",
       directPackageCount: directPaths.size,
       productionPackageCount: productionPackages.length,

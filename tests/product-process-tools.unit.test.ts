@@ -77,6 +77,7 @@ interface FakeSpawnPlan {
 
 class FakeSubprocessHandle implements SubprocessHandle {
   readonly pid = 42;
+  readonly control = undefined;
   readonly stdin = undefined;
   readonly stdout: Readable;
   readonly stderr = undefined;
@@ -146,6 +147,10 @@ class FakeSubprocessRuntime extends SubprocessRuntime {
   resolveExecutablePromise: Promise<string> | undefined;
   resolveExecutableHook: ((command: string, call: number) => Promise<string>) | undefined;
   resolveExecutableCalls = 0;
+
+  terminalEnvironment(): Promise<{ platform: "posix" }> {
+    return Promise.resolve({ platform: "posix" });
+  }
 
   resolveExecutable(command: string): Promise<string> {
     this.resolveExecutableCalls += 1;
@@ -384,10 +389,10 @@ const harness = async (options: Readonly<{
   await context.plugin(ShellEnv, { dshHome: runtimeHome });
   if (options.dialect === "pwsh") {
     await context.plugin(PwshLocalExecutor, { pwshPath: executablePaths.shell });
-    await context.plugin(ToolPwsh, { enableRunInBackground: true });
+    await context.plugin(ToolPwsh, { enableRunInBackground: true, promoteOnTimeout: false });
   } else {
     await context.plugin(LocalBashExecutor);
-    await context.plugin(ToolBash, { enableRunInBackground: true });
+    await context.plugin(ToolBash, { enableRunInBackground: true, promoteOnTimeout: false });
   }
   await context.plugin(ToolJobs, { completionDelivery: "quiet" });
   let call = 0;
@@ -725,7 +730,7 @@ describe("official Shell tools with product policy", () => {
     const result = await state.execute({ command: "slow", timeoutMs: 10 });
     expect(result).toMatchObject({ meta: { status: "timeout" }, value: { kind: "foreground", timedOut: true } });
     expect(state.fakeSubprocess.handles[0]?.terminateHits).toBeGreaterThan(0);
-    expect(state.context.jobs.list(state.agent)).toEqual([]);
+    expect(state.context.jobs.list(state.agent.session.id)).toEqual([]);
     await state.context.fiber.dispose();
   });
 
@@ -737,10 +742,12 @@ describe("official Shell tools with product policy", () => {
     const jobId = (result.value as { jobId: JobId }).jobId;
     const listed = await state.execute({}, undefined, "job_list");
     expect(listed.value).toMatchObject([{ id: jobId, status: "running" }]);
+    await vi.waitFor(() => expect(state.context.jobs.readAt(jobId, 0, state.agent.session.id).chunks
+      .map(({ text }) => text).join("")).toContain("background output\n"));
     const output = await state.execute({ job_id: jobId }, undefined, "job_output");
     expect(output.value).toMatchObject({ text: "background output\n", job: { id: jobId } });
     await state.execute({ job_id: jobId }, undefined, "job_kill");
-    await state.context.jobs.wait(jobId, 1_000, state.agent);
+    await state.context.jobs.wait(jobId, 1_000, state.agent.session.id);
     expect(state.fakeSubprocess.handles[0]?.terminateHits).toBeGreaterThan(0);
     state.fakeSubprocess.plans.push({ stdout: "complete", stderr: "" });
     const completed = await state.execute({ command: "naturally-finished", run_in_background: true });
@@ -748,7 +755,7 @@ describe("official Shell tools with product policy", () => {
     expect(completed).toMatchObject({ isError: false, meta: { status: "background" }, value: { kind: "background" } });
     await state.fakeSubprocess.handles.at(-1)?.done;
     await new Promise<void>((resolve) => { setImmediate(resolve); });
-    expect(state.inject.mock.calls[0]?.[0]).toMatchObject({ source: { kind: "plugin", plugin: "tool-jobs", form: "notice" } });
+    expect(state.inject.mock.calls[0]?.[0]).toMatchObject({ source: { kind: "tool-jobs", form: "notice" } });
     expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
     await state.context.fiber.dispose();
   });
@@ -761,8 +768,7 @@ describe("official Shell tools with product policy", () => {
     const jobId = (result.value as { jobId: JobId }).jobId;
     controller.abort();
     expect(state.fakeSubprocess.handles[0]?.terminateHits).toBe(0);
-    const stranger = { id: "other-agent" } as Agent;
-    expect(() => state.context.jobs.read(jobId, stranger)).toThrow();
+    expect(() => state.context.jobs.read(jobId, SessionId("other-session"))).toThrow();
     await state.disposeAgent();
     expect(state.fakeSubprocess.handles[0]?.terminateHits).toBeGreaterThan(0);
     await state.context.fiber.dispose();

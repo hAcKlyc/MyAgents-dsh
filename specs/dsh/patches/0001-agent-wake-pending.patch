@@ -1,5 +1,5 @@
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index 06e1f51b57277ba296698b6c8b810f0e455e3695..86b460f2d9371e78931e513a5ca26d386a33ba20 100644
+index bcd7ad17a82699c395c3a14855cdee6ed4a2b905..f1b32adfeccefb62dd05748a916e8803d8aa1f97 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
 @@ -16,7 +16,7 @@ import type {
@@ -11,7 +11,7 @@ index 06e1f51b57277ba296698b6c8b810f0e455e3695..86b460f2d9371e78931e513a5ca26d38
  import {
    LlmError,
    createAssistantMessage,
-@@ -134,6 +134,14 @@ export class ReactLoopAgent implements Agent {
+@@ -160,6 +160,14 @@ export class ReactLoopAgent implements Agent {
      if (wakeup) this.wakeDriver(wakingAfterAbort)
    }
  
@@ -27,13 +27,13 @@ index 06e1f51b57277ba296698b6c8b810f0e455e3695..86b460f2d9371e78931e513a5ca26d38
      this.send(input, 'next-turn', true)
    }
 diff --git a/packages/core/agent-loop/tests/cancel.spec.ts b/packages/core/agent-loop/tests/cancel.spec.ts
-index 2b1781083c5f9ba1875753caf713d726e0016109..2ba16ba25d7aa311b09e494913fd4646de6bf339 100644
+index add362835b44d0edc7663d94566654c47866b7a8..0ef61ff66a8f50dea630e924d9e93f8fcbfc7ca1 100644
 --- a/packages/core/agent-loop/tests/cancel.spec.ts
 +++ b/packages/core/agent-loop/tests/cancel.spec.ts
-@@ -57,6 +57,46 @@ function userTexts(agent: Agent): string[] {
- }
+@@ -144,6 +144,46 @@ describe('Agent.cancel()', () => {
+     expect(endings).toEqual([{ kind: 'aborted', reason: { kind: 'user' } }, { kind: 'completed' }])
+   })
  
- describe('Agent.cancel()', () => {
 +  it('wakePending latches the same pending identity across aborted-driver convergence', async () => {
 +    const adapter = new MockAdapter(['hang-slow', textResponse('recovered reply')])
 +    const ctx = await harness(adapter)
@@ -78,7 +78,7 @@ index 2b1781083c5f9ba1875753caf713d726e0016109..2ba16ba25d7aa311b09e494913fd4646
      const adapter = new MockAdapter([textResponse('reply')])
      const ctx = await harness(adapter)
 diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
-index 31338e8d8da6ccb2e99fd459abbe2238bf5c1736..df0111b90c6f4178ea140f119602c9d4ae3ffcfa 100644
+index 2118507b8cc617a920e7ceae9f98d06daa2d4780..717fe3416ef539780a7c359cdf92db06d18ccbe8 100644
 --- a/packages/core/agent/src/runtime-types.ts
 +++ b/packages/core/agent/src/runtime-types.ts
 @@ -190,6 +190,17 @@ declare module './types.ts' {

@@ -1,6 +1,6 @@
 # ADR 0009 — Preserve external Prompt contributions as literal text
 
-RC3 refresh (2026-09-23): see the [complete seam adjudication](../dsh/upstream-refresh-2026-09-23.md). Official rc.3 adds no runtime/public-seam behavior; the current registry preserves this decision and its removal condition. Historical evidence below remains bound to its original bytes.
+RC2 upgrade (2026-09-25): official 0.1.7-rc.2 supplies literal `PromptSection.interpolate`. Patch 0008 now carries only child persona semantics; patch 0012 carries the still-missing literal dynamic context behavior. Both default to upstream interpolation when the flag is omitted. The fixed source, patch order and evidence are recorded in [the seam registry](../dsh/seam-decisions-v1.json).
 
 Candidate disposition (2026-09-12, U15-W02): Rebase literal contributions while preserving official persona prefix/suffix ordering; descriptor versions 3 and 4 are refused. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
 
@@ -19,12 +19,12 @@ step or substitute an unrelated Runtime variable.
 
 ## Decision
 
-Add one optional `interpolate` flag to the public Prompt section/context inputs and carry it through
-assembly. Omission preserves current strict interpolation; `false` renders the resolved text
-literally. Thread the same choice through public child composition as `personaInterpolate`, persist it
-for continuable children, and read the current artifact's legacy descriptor version 3 with the original interpolated
-default. MyAgents sets literal mode for external bodies and leaves Runtime-owned templates on the
-default behavior.
+Use the stock optional `PromptSection.interpolate` flag and add the same optional flag to dynamic
+`PromptContext` assembly and rendering. Omission preserves strict interpolation; `false` renders
+the resolved text literally. Thread the same choice through public child composition as
+`personaInterpolate` and persist it for continuable children. Descriptor versions 3 and 4 are
+refused after the development reset. MyAgents sets literal mode for external bodies and leaves
+Runtime-owned templates on the default behavior.
 
 ## Consequences
 

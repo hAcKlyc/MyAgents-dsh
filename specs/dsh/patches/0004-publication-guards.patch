@@ -1,17 +1,22 @@
 diff --git a/docs/subsystems/core.i18n.yaml b/docs/subsystems/core.i18n.yaml
-index 07faf5ab836f5df5303d112196a860b3eacadc0c..021192298ba3de76e1956df9df01b7fda70434da 100644
+index c4c106c066488b9f923a6dfb389e908ea8d09a27..fb6009a483c3101a0ef85c09f0fc79a8bd206d9a 100644
 --- a/docs/subsystems/core.i18n.yaml
 +++ b/docs/subsystems/core.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write docs/subsystems/core.md
--core.md: 27ff30a9e63c86ffb54ccf57dea18ebf3fe39846
--core.zh.md: cedd113de5d5d551b8b558f9f33c7cacf6aa4953
-+core.md: fe6e00f080ac3b92a5d8cbc14948eadcc33c65d5
-+core.zh.md: 7154880ca4bd64b9f4140518447b87b28bbbf3e2
+@@ -35,3 +35,12 @@
+ /core/repo-wide-type-patterns/branded-ids:
+   en: 10f8ac0f97e7c54a
+   zh: 75cd2311aabfe464
++/core/repo-wide-type-patterns/preparedassistanttoolcall:
++  en: 2b0cca1a683465f6
++  zh: 2b0cca1a683465f6
++/core/repo-wide-type-patterns/preparedassistantcommit:
++  en: eb9459e970d8cb52
++  zh: eb9459e970d8cb52
++/core/repo-wide-type-patterns/agentpublicationguard:
++  en: 9280360ce0d2daf9
++  zh: 9280360ce0d2daf9
 diff --git a/docs/subsystems/core.md b/docs/subsystems/core.md
-index 27ff30a9e63c86ffb54ccf57dea18ebf3fe39846..fe6e00f080ac3b92a5d8cbc14948eadcc33c65d5 100644
+index 15c70ebca6a1469634ca75450c23097990e85037..d8800a67c9b6c88173572a6798efe90e7c86758c 100644
 --- a/docs/subsystems/core.md
 +++ b/docs/subsystems/core.md
 @@ -71,72 +71,74 @@ interface Agent {
@@ -178,7 +183,7 @@ index 27ff30a9e63c86ffb54ccf57dea18ebf3fe39846..fe6e00f080ac3b92a5d8cbc14948eadc
  <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
  
  <a id="cordis-surface"></a>
-@@ -796,6 +827,17 @@ withoutInitiator<T>(operation: () => T): T
+@@ -647,6 +678,17 @@ withoutInitiator<T>(operation: () => T): T
   */
  setFactory(factory: AgentFactory): () => void
  
@@ -196,7 +201,7 @@ index 27ff30a9e63c86ffb54ccf57dea18ebf3fe39846..fe6e00f080ac3b92a5d8cbc14948eadc
  /**
   * Create and publish a new agent through the registered factory.
   * Distinct from {@link register} (which records an already-constructed
-@@ -1060,6 +1102,29 @@ Types: [Scoped](scope.md) · [UserMessage](session.md)
+@@ -917,6 +959,29 @@ Types: [Scoped](scope.md) · [UserMessage](session.md)
  
  Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
  
@@ -227,7 +232,7 @@ index 27ff30a9e63c86ffb54ccf57dea18ebf3fe39846..fe6e00f080ac3b92a5d8cbc14948eadc
  
  #### `agent/pre-step` — waterfall
 diff --git a/docs/subsystems/core.zh.md b/docs/subsystems/core.zh.md
-index cedd113de5d5d551b8b558f9f33c7cacf6aa4953..7154880ca4bd64b9f4140518447b87b28bbbf3e2 100644
+index 03de9ddb7bb1eab82a60b6026c9864531f4bb1e1..4a18b2b47f7d5bf94ca8d40600f9691330ef048b 100644
 --- a/docs/subsystems/core.zh.md
 +++ b/docs/subsystems/core.zh.md
 @@ -75,72 +75,74 @@ interface Agent {
@@ -394,7 +399,7 @@ index cedd113de5d5d551b8b558f9f33c7cacf6aa4953..7154880ca4bd64b9f4140518447b87b2
  <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
  
  <a id="cordis-surface"></a>
-@@ -806,6 +837,17 @@ withoutInitiator<T>(operation: () => T): T
+@@ -657,6 +688,17 @@ withoutInitiator<T>(operation: () => T): T
   */
  setFactory(factory: AgentFactory): () => void
  
@@ -412,7 +417,7 @@ index cedd113de5d5d551b8b558f9f33c7cacf6aa4953..7154880ca4bd64b9f4140518447b87b2
  /**
   * Create and publish a new agent through the registered factory.
   * Distinct from {@link register} (which records an already-constructed
-@@ -1070,6 +1112,29 @@ Types: [Scoped](scope.zh.md) · [UserMessage](session.zh.md)
+@@ -927,6 +969,29 @@ Types: [Scoped](scope.zh.md) · [UserMessage](session.zh.md)
  
  Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
  
@@ -443,25 +448,24 @@ index cedd113de5d5d551b8b558f9f33c7cacf6aa4953..7154880ca4bd64b9f4140518447b87b2
  
  #### `agent/pre-step` — waterfall
 diff --git a/docs/subsystems/session.i18n.yaml b/docs/subsystems/session.i18n.yaml
-index c7296b9ca5f57d65ec44137c2f955d403b74a443..26bfe62749a592e1a56519bba835f57819f55a0f 100644
+index e4269bb273eb2b286387fc699a84ed05a2b8efd4..e969100891e3caff60b791672d48493a51e3619d 100644
 --- a/docs/subsystems/session.i18n.yaml
 +++ b/docs/subsystems/session.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write docs/subsystems/session.md
--session.md: 2b99ca8267d35978f245e6bdbf020226c976e363
--session.zh.md: e6cff2d239caf7cd99be13463b412479a6f6e79b
-+session.md: d8b153b96fa22440031f58d9cb546820d8d7a1c2
-+session.zh.md: 7cefaa037a3b7c0c75e7982dca2f31a6b4e8787a
+@@ -65,3 +65,6 @@
+ /sessions/remote-catalog-and-workspace-opening:
+   en: dd27307e0d7c893c
+   zh: b77d2a749b7b641c
++/sessions/remote-catalog-and-workspace-opening/sessionpublicationguard:
++  en: 51f7a1132deb7408
++  zh: 51f7a1132deb7408
 diff --git a/docs/subsystems/session.md b/docs/subsystems/session.md
-index 2b99ca8267d35978f245e6bdbf020226c976e363..d8b153b96fa22440031f58d9cb546820d8d7a1c2 100644
+index 415201d15987b8369b2f5bfced3dc18dbc89d1b3..488615e5f1a8abb69ef3cf2f6623a8576d01744d 100644
 --- a/docs/subsystems/session.md
 +++ b/docs/subsystems/session.md
-@@ -682,6 +682,18 @@ The backends that consume this contract are on [persistence.md](persistence.md).
- 
+@@ -765,6 +765,17 @@ The backends that consume this contract are on [persistence.md](persistence.md).
  `SessionOpenWorkspacePathRequest` carries an absolute or workspace-resolved `path`; optional `action: "reveal"` selects file-manager navigation instead of default-application opening. `SessionOpenWorkspacePathValue` confirms that the Host accepted the native handoff. A Session-aware Client resolves relative paths against its current Session cwd when known; the controller hands the path to the opener unchanged and reports invalid requests, cancellation, and opener failures through the Session Remote error vocabulary.
  
+ The optional `application` selects a registered file handler without changing the system default; `workspacePathApplications({ path })` returns current handlers, names, icons, and default selection after Host path verification.
 +### `SessionPublicationGuard`
 +
 +```ts type-equiv
@@ -473,14 +477,13 @@ index 2b99ca8267d35978f245e6bdbf020226c976e363..d8b153b96fa22440031f58d9cb546820
 + */
 +type SessionPublicationGuard = (session: Session) => void
 +```
-+
+ 
  <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
  
- <a id="cordis-surface"></a>
-@@ -850,6 +862,17 @@ In-memory session store (`ctx.sessions`).
- Persistence is intentionally not implemented here — the agent lifecycle attaches a session-log writer to each published session's write handle; a session published outside that lifecycle persists nothing.
+@@ -968,6 +979,17 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
+  */
+ registerMessageProjection(projection: SessionMessageProjection): () => Promise<void>
  
- ```ts cordis-catalog
 +/**
 + * Install the one process-wide Session publication guard. The guard runs at
 + * the authoritative {@link enter} boundary after collision/attachment checks
@@ -496,13 +499,13 @@ index 2b99ca8267d35978f245e6bdbf020226c976e363..d8b153b96fa22440031f58d9cb546820
   * Create a session owned by the calling fiber: disposing that fiber stops
   * event notification and removes the session from the store. `options.seed`
 diff --git a/docs/subsystems/session.zh.md b/docs/subsystems/session.zh.md
-index e6cff2d239caf7cd99be13463b412479a6f6e79b..7cefaa037a3b7c0c75e7982dca2f31a6b4e8787a 100644
+index e52c08e8199caddc6dd6761dddb0c3da82680aa1..dd8746621170cda7802e3b8e619acc4dbbc7b605 100644
 --- a/docs/subsystems/session.zh.md
 +++ b/docs/subsystems/session.zh.md
-@@ -686,6 +686,18 @@ interface TurnEndReasonMap {
- 
+@@ -769,6 +769,17 @@ interface TurnEndReasonMap {
  `SessionOpenWorkspacePathRequest` 携带绝对路径或已按 workspace 解析的 `path`。`SessionOpenWorkspacePathValue` 确认 Host 已接受原生交接。Session-aware Client 会在已知当前 Session cwd 时据此解析相对路径；controller 将路径原样交给打开器，并通过 Session Remote 错误词汇表报告无效请求、取消与打开器失败。 可选的 `action: "reveal"` 选择文件管理器导航；省略时使用默认应用打开。
  
+ 可选的 `application` 指定文件关联应用，不修改系统默认值；`workspacePathApplications({ path })` 在校验 Host 路径后返回当前关联应用、名称、图标和默认项。
 +### `SessionPublicationGuard`
 +
 +```ts type-equiv
@@ -514,14 +517,13 @@ index e6cff2d239caf7cd99be13463b412479a6f6e79b..7cefaa037a3b7c0c75e7982dca2f31a6
 + */
 +type SessionPublicationGuard = (session: Session) => void
 +```
-+
+ 
  <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
  
- <a id="cordis-surface"></a>
-@@ -854,6 +866,17 @@ In-memory session store (`ctx.sessions`).
- Persistence is intentionally not implemented here — the agent lifecycle attaches a session-log writer to each published session's write handle; a session published outside that lifecycle persists nothing.
+@@ -972,6 +983,17 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
+  */
+ registerMessageProjection(projection: SessionMessageProjection): () => Promise<void>
  
- ```ts cordis-catalog
 +/**
 + * Install the one process-wide Session publication guard. The guard runs at
 + * the authoritative {@link enter} boundary after collision/attachment checks
@@ -538,7 +540,7 @@ index e6cff2d239caf7cd99be13463b412479a6f6e79b..7cefaa037a3b7c0c75e7982dca2f31a6
   * event notification and removes the session from the store. `options.seed`
 diff --git a/packages/core/agent-loop/tests/publication-guards.spec.ts b/packages/core/agent-loop/tests/publication-guards.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..bd829ddb2b0851f16c901c22d886af98ff6731ac
+index 0000000000000000000000000000000000000000..62b3429429cd2cbd04311ed5188f92f7e2ef1edc
 --- /dev/null
 +++ b/packages/core/agent-loop/tests/publication-guards.spec.ts
 @@ -0,0 +1,77 @@
@@ -588,7 +590,7 @@ index 0000000000000000000000000000000000000000..bd829ddb2b0851f16c901c22d886af98
 +    })
 +    const disposeGuard = ctx.agents.setPublicationGuard(guard)
 +
-+    expect(() => ctx.agents.register(stubAgent('rogue-agent', Session.create(SessionId('rogue-agent')))))
++    expect(() => ctx.agents.enter(stubAgent('rogue-agent', Session.create(SessionId('rogue-agent'))), undefined))
 +      .toThrow('agent publication denied')
 +    expect(ctx.agents.list()).toEqual([])
 +    const detach = ctx.agents.enter(allowed, owner)
@@ -620,22 +622,25 @@ index 0000000000000000000000000000000000000000..bd829ddb2b0851f16c901c22d886af98
 +  })
 +})
 diff --git a/packages/core/agent/README.i18n.yaml b/packages/core/agent/README.i18n.yaml
-index 6b72fc7c6a4c7ababb4bb012b99be976993549ad..f0a285c266a13fcfd91163c4138685fbc2a6130d 100644
+index 19639a27c091ae2488627a595335aeec74e7ffd9..062021664f73c500ad238f55465d80f180ab4edf 100644
 --- a/packages/core/agent/README.i18n.yaml
 +++ b/packages/core/agent/README.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write packages/core/agent/README.md
--README.md: 82460df7492d470a55c37c4691af2a7d349144fe
--README.zh.md: ed5f236bea9f972199d2528c5a2a32cb7e044df1
-+README.md: 6646b09e7be9e935fe61018fb573999a1d73b709
-+README.zh.md: 3b8548161e24902c66dd5bd044013855d6b67127
+@@ -51,8 +51,8 @@
+   en: 3ca29c07144b36db
+   zh: 93580213b3de2004
+ /deepseek-ai-dsh-agent/understand-the-implementation/ownership-invariants:
+-  en: e48eae6c7de88cf8
+-  zh: 1f5b37bdb0e53788
++  en: 77d5a388dd6bc370
++  zh: 47c7efbafdd8c96b
+ /deepseek-ai-dsh-agent/further-exploration:
+   en: 4ef57cfafa344581
+   zh: 73575876bfdc7a18
 diff --git a/packages/core/agent/README.md b/packages/core/agent/README.md
-index 82460df7492d470a55c37c4691af2a7d349144fe..6646b09e7be9e935fe61018fb573999a1d73b709 100644
+index be003d7b899306b58c4ddc88e720c18dde9ce33b..80da687eccf894b23ca46fb060b414dbec82ed92 100644
 --- a/packages/core/agent/README.md
 +++ b/packages/core/agent/README.md
-@@ -114,6 +114,8 @@ Each driver runs its complete lifetime inside `ctx.agents.withInitiator(agent, .
+@@ -117,6 +117,8 @@ Each driver runs its complete lifetime inside `ctx.agents.withInitiator(agent, .
  
  The `AgentHandle` disposer is a capability: among consumers, only its holder can tear the agent down. The registered factory provider is a structural co-owner, because scoped agents depend on that provider's service API; provider unload stops and drains every live handle it made. `ctx.agents.get(id)` still returns a bare `Agent` — the handle is exposed only to the consumer that created it.
  
@@ -645,10 +650,10 @@ index 82460df7492d470a55c37c4691af2a7d349144fe..6646b09e7be9e935fe61018fb573999a
  
  -----
 diff --git a/packages/core/agent/README.zh.md b/packages/core/agent/README.zh.md
-index ed5f236bea9f972199d2528c5a2a32cb7e044df1..3b8548161e24902c66dd5bd044013855d6b67127 100644
+index e360ba975dddc381e25b69766b1df82f6e45b3b4..7b1cc426e60151f8ce328ee049b59d0de2eb5e09 100644
 --- a/packages/core/agent/README.zh.md
 +++ b/packages/core/agent/README.zh.md
-@@ -114,6 +114,8 @@ await handle.agent.whenIdle()
+@@ -117,6 +117,8 @@ await handle.agent.whenIdle()
  
  `AgentHandle` disposer 是一项能力：在消费方中，只有其持有者能拆除该 agent。已注册的工厂提供方是结构化共同拥有者，因为作用域 agent 依赖该提供方的服务 API；提供方卸载会停止并排空它创建的每个实时句柄。`ctx.agents.get(id)` 仍返回裸 `Agent`——句柄只暴露给创建它的消费方。
  
@@ -658,7 +663,7 @@ index ed5f236bea9f972199d2528c5a2a32cb7e044df1..3b8548161e24902c66dd5bd044013855
  
  -----
 diff --git a/packages/core/agent/src/index.ts b/packages/core/agent/src/index.ts
-index 21c95b5c600d393d3cfd2bf37f76f40fea22cb58..67ca40aa11d66e9fceba6614e763dfca525d5b93 100644
+index 54dd8a805dd7be26953b31cc97864900f7da3fc9..c0f2f8df4e7c74a70b845bac685950c9932bd859 100644
 --- a/packages/core/agent/src/index.ts
 +++ b/packages/core/agent/src/index.ts
 @@ -226,6 +226,9 @@ interface InitiatorRun {
@@ -679,7 +684,7 @@ index 21c95b5c600d393d3cfd2bf37f76f40fea22cb58..67ca40aa11d66e9fceba6614e763dfca
    private readonly initiators = new AsyncLocalStorage<Agent | undefined>()
    private readonly initiatorRuns = new AsyncLocalStorage<InitiatorRun>()
    private initiatorState: 'active' | 'closing' | 'disposed' = 'active'
-@@ -370,6 +374,28 @@ export class AgentRegistry extends Service {
+@@ -373,6 +377,28 @@ export class AgentRegistry extends Service {
      return dispose
    }
  
@@ -708,7 +713,7 @@ index 21c95b5c600d393d3cfd2bf37f76f40fea22cb58..67ca40aa11d66e9fceba6614e763dfca
    /** Return the active creation factory. */
    private requireFactory(): FactorySlot {
      if (this.factory === undefined) throw new Error(NO_FACTORY_MESSAGE)
-@@ -464,6 +490,7 @@ export class AgentRegistry extends Service {
+@@ -465,6 +491,7 @@ export class AgentRegistry extends Service {
      // This is the authoritative collision boundary. Concurrent create/resume
      // operations may both prepare, but only one exact entry can publish.
      if (this.store.has(id)) throw new Error(`agent "${id}" is already registered`)
@@ -717,17 +722,20 @@ index 21c95b5c600d393d3cfd2bf37f76f40fea22cb58..67ca40aa11d66e9fceba6614e763dfca
        id,
        agent,
 diff --git a/packages/core/scope/README.i18n.yaml b/packages/core/scope/README.i18n.yaml
-index 73a271b3a31be2b047a09d132de1f7e289b65b3d..ddeb57e426895fb15b9dbe0c8597dacdc13312b1 100644
+index 0b818aafe7a74388dc22986268de8604d3ff0460..2ec7edee55ffb1ff468a9a7fe4710ce2e3b68435 100644
 --- a/packages/core/scope/README.i18n.yaml
 +++ b/packages/core/scope/README.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write packages/core/scope/README.md
--README.md: 72c41e4c1a3b8f8a79940838ead7447f64781cc4
--README.zh.md: 066a5bef3ba4b396f3e5bc60324443e36df61352
-+README.md: 2e17d107b70715e9dd448e833b98219b255ff7b6
-+README.zh.md: ba2d5f8161b829cccd72eccef8b748b7b06894dc
+@@ -39,8 +39,8 @@
+   en: f0c433a9b0091de4
+   zh: 21cecb4194aff7d0
+ /deepseek-ai-dsh-scope/understand-the-implementation/event-filtering:
+-  en: 9ec9b8d491c7dfe7
+-  zh: da82e63bac268535
++  en: 16f11c1fb5451a2e
++  zh: d0d0e69813fae968
+ /deepseek-ai-dsh-scope/further-exploration:
+   en: f6f4e46a89785446
+   zh: ea130e3ffefe1139
 diff --git a/packages/core/scope/README.md b/packages/core/scope/README.md
 index 72c41e4c1a3b8f8a79940838ead7447f64781cc4..2e17d107b70715e9dd448e833b98219b255ff7b6 100644
 --- a/packages/core/scope/README.md
@@ -742,7 +750,7 @@ index 72c41e4c1a3b8f8a79940838ead7447f64781cc4..2e17d107b70715e9dd448e833b98219b
  
  -----
 diff --git a/packages/core/scope/README.zh.md b/packages/core/scope/README.zh.md
-index 066a5bef3ba4b396f3e5bc60324443e36df61352..ba2d5f8161b829cccd72eccef8b748b7b06894dc 100644
+index b48842570c564979f920d8e6f6fda87284f4bc65..c85c4e1ce59aa037bc8f8416613595a332d66ebe 100644
 --- a/packages/core/scope/README.zh.md
 +++ b/packages/core/scope/README.zh.md
 @@ -76,6 +76,8 @@ await scope.dispose()   // unwinds every registration made through scope.ctx
@@ -755,22 +763,25 @@ index 066a5bef3ba4b396f3e5bc60324443e36df61352..ba2d5f8161b829cccd72eccef8b748b7
  
  -----
 diff --git a/packages/core/session/README.i18n.yaml b/packages/core/session/README.i18n.yaml
-index 6b68ca2d743e3add673f7dd6ed4b2ec553c97329..4af99739b2a875e42aff50ce6c6b2d63323375b0 100644
+index 23cb191b5e3005d0513dedec838c5379fd186a7b..836b044df8920736a56cdd0bc7450be425807688 100644
 --- a/packages/core/session/README.i18n.yaml
 +++ b/packages/core/session/README.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write packages/core/session/README.md
--README.md: cdcab8ec4d2f6960bb651aff46745b20f91632e2
--README.zh.md: 745615f67084430475e0739b22afa35556b71ee6
-+README.md: dcac17a0f1918ffc2bdf55b0093dd008686ba8a7
-+README.zh.md: 7c7a44742744b70bf0a387273401c77452381f6c
+@@ -51,8 +51,8 @@
+   en: 0cc7a06f76bd7eca
+   zh: 1db25185b15cad23
+ /deepseek-ai-dsh-session/understand-the-implementation/the-request-header:
+-  en: 1349f47bea4dab00
+-  zh: 20cc03f2c87ec492
++  en: c2dfd84623236eae
++  zh: 4e0e8b95d4947b8b
+ /deepseek-ai-dsh-session/further-exploration:
+   en: e23d6c8b31295044
+   zh: 5105ac9ce8c5d90d
 diff --git a/packages/core/session/README.md b/packages/core/session/README.md
-index cdcab8ec4d2f6960bb651aff46745b20f91632e2..dcac17a0f1918ffc2bdf55b0093dd008686ba8a7 100644
+index 59c2e9c86a6bf53c07032162a18a2557b7da6c1b..13d5ff99a60687fb4d2042218672ae512846961d 100644
 --- a/packages/core/session/README.md
 +++ b/packages/core/session/README.md
-@@ -111,6 +111,8 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads,
+@@ -115,6 +115,8 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads,
  
  The loop logs a full canonical `request/header` snapshot (call config, adapter defaults, assembled tool schemas — the rendered system prompt is a `system/message` surface node, not header state) at each loop-instance boundary and on change; `foldRequestHeader(events)` reconstructs it by selecting the latest snapshot, making every conversation request a pure function of the log. Route metadata (`request/context`) is separate logged state appended only when the provider, model, capacity, or `systemPromptUpdate` mode differs; it records the actual prepared call's mode after prompt and user admission, rather than supplying that admission decision.
  
@@ -780,10 +791,10 @@ index cdcab8ec4d2f6960bb651aff46745b20f91632e2..dcac17a0f1918ffc2bdf55b0093dd008
  
  -----
 diff --git a/packages/core/session/README.zh.md b/packages/core/session/README.zh.md
-index 745615f67084430475e0739b22afa35556b71ee6..7c7a44742744b70bf0a387273401c77452381f6c 100644
+index 4291d690b7637df3b495addc196642496eea816d..83e14dcd865da6cdbb3b1f95673d74283329e050 100644
 --- a/packages/core/session/README.zh.md
 +++ b/packages/core/session/README.zh.md
-@@ -111,6 +111,8 @@ session.deriveMessages()         // the derived model history
+@@ -115,6 +115,8 @@ session.deriveMessages()         // the derived model history
  
  循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、组装后的工具 schema——渲染后的系统提示词是 `system/message` surface 节点，不是 header 状态）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型、容量或 `systemPromptUpdate` 模式变化时追加；它在提示词与用户消息准入之后记录实际已准备调用的模式，而非提供准入决策。
  
@@ -793,10 +804,10 @@ index 745615f67084430475e0739b22afa35556b71ee6..7c7a44742744b70bf0a387273401c774
  
  -----
 diff --git a/packages/core/session/src/index.ts b/packages/core/session/src/index.ts
-index 9db83274097372c2ad2e79e10b3add1ee63a3980..c3c7269b89749597ba8bfdd19c8d509f81aca6c9 100644
+index 6fd76bdd8677d764c02d0629a7b63b225045324d..8e87dc1e4e85effb73fbbb46a57b29d0dfd85d31 100644
 --- a/packages/core/session/src/index.ts
 +++ b/packages/core/session/src/index.ts
-@@ -859,6 +859,14 @@ export class Session {
+@@ -894,6 +894,14 @@ export class Session {
  /** A fork source: either the live session object or its live store id. */
  export type SessionForkSource = Session | SessionId
  
@@ -811,15 +822,15 @@ index 9db83274097372c2ad2e79e10b3add1ee63a3980..c3c7269b89749597ba8bfdd19c8d509f
  /**
   * Rejection codes for session forking: the fork source id is unknown to the
   * live store (`SESSION_NOT_FOUND`) or names a session object that is not the
-@@ -892,6 +900,7 @@ export class SessionForkError extends Error {
- export class SessionStore extends Service {
-   private store = new Map<SessionId, SessionEntry>()
-   private counter = 0
+@@ -948,6 +956,7 @@ export class SessionStore extends Service {
+       return () => { this.projections.splice(this.projections.indexOf(projection), 1) }
+     }, 'sessions.registerMessageProjection()')
+   }
 +  private publicationGuard: SessionPublicationGuard | undefined
  
    constructor(ctx: Context) {
      super(ctx, 'sessions')
-@@ -906,6 +915,28 @@ export class SessionStore extends Service {
+@@ -962,6 +971,28 @@ export class SessionStore extends Service {
      })
    }
  
@@ -848,7 +859,7 @@ index 9db83274097372c2ad2e79e10b3add1ee63a3980..c3c7269b89749597ba8bfdd19c8d509f
    /**
     * Create a session owned by the calling fiber: disposing that fiber stops
     * event notification and removes the session from the store. `options.seed`
-@@ -1032,6 +1063,7 @@ export class SessionStore extends Service {
+@@ -1089,6 +1120,7 @@ export class SessionStore extends Service {
      // preparation. Only one exact same-id transaction can publish.
      if (this.store.has(id)) throw new Error(`session "${id}" already exists`)
      if (attachments.has(session)) throw new Error(`session "${id}" is already attached to a store`)

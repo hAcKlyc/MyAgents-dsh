@@ -118,7 +118,7 @@ const parsePage = (value: unknown): HistoryPage => {
     "runtimeSessionId", "historyFormat", "durableHead", "records", "mutationBoundaries",
     "transcriptPostcondition", "nextCursor",
   ], "history page");
-  if (page.historyFormat !== "dsh-session-events-v1") throw new TypeError("history format is unsupported");
+  if (page.historyFormat !== "dsh-session-events-v2") throw new TypeError("history format is unsupported");
   const head = ownRecord(page.durableHead, "durable head");
   exactKeys(head, ["sequence", "stableBoundaryId"], "durable head");
   if (head.stableBoundaryId !== undefined) string(head.stableBoundaryId, "stable boundary id");

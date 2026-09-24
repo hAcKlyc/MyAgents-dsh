@@ -56,7 +56,7 @@ class BenchmarkAdapter extends LlmAdapter {
     if (this.firstRequestAt === 0) this.firstRequestAt = performance.now();
     this.requestMessages = options.messages.length;
     const last = options.messages.at(-1);
-    if (toolsPerTurn > 0 && last?.role === "user" && !last.content.some(block => block.type === "tool-result")) {
+    if (toolsPerTurn > 0 && last?.role === "user") {
       for (let index = 0; index < toolsPerTurn; index += 1) {
         const id = ToolCallId(`synthetic-${this.calls}-${index}`);
         yield { type: "block-start", index, blockType: "tool-call" };

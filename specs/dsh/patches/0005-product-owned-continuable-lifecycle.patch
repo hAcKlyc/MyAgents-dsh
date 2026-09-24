@@ -1,15 +1,18 @@
 diff --git a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml
-index 4fac92ed8cde9c4a37d5e4e6bfca973659a108f1..87633d0737f3c0aa7188dcaaefbe02399c2c76be 100644
+index c28606ddd1fb2bcdbb4773f37096581510fd4624..c9cb4eff9748ec89ae444c025217d1a2e2ff1804 100644
 --- a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml
 +++ b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md
--2026-08-31-explicit-agent-runtime-identity.md: f52b8ec116c312a27306fe73dc0bd5b99fcd9039
--2026-08-31-explicit-agent-runtime-identity.zh.md: 6b6fd2f2ea1f1645069264f09fd53c3f71e1d02f
-+2026-08-31-explicit-agent-runtime-identity.md: 7e880603ac061097867e25f6bc2a3b522a70e27d
-+2026-08-31-explicit-agent-runtime-identity.zh.md: ad0a4ec030a1e49c310fbbea563b27fd0ac54245
+@@ -9,8 +9,8 @@
+   en: 0b737a098e4e19ce
+   zh: 97b4254c4533114f
+ /agent-note-explicit-agent-identity-at-runtime-boundaries/decision:
+-  en: dfee8c7c574e0001
+-  zh: 3894ffa7beba4348
++  en: 974b55e39e61f8b5
++  zh: 98cc780f79a9a8bd
+ /agent-note-explicit-agent-identity-at-runtime-boundaries/verification:
+   en: 85130faaa171036b
+   zh: 06e5e9fab32dbfb4
 diff --git a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md
 index f52b8ec116c312a27306fe73dc0bd5b99fcd9039..7e880603ac061097867e25f6bc2a3b522a70e27d 100644
 --- a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md
@@ -230,7 +233,7 @@ index 0000000000000000000000000000000000000000..a1c0200fcc85b2af7feb601e65555128
 +
 +export default SubagentActivationSetupRegistry
 diff --git a/packages/subagent/subagent/src/continuation-activation.ts b/packages/subagent/subagent/src/continuation-activation.ts
-index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f69930b47 100644
+index d995e9f2b4adb13ec7ac9751f085cac7a2409a24..e2bb062426c01e28d10313043802479e5580e0c8 100644
 --- a/packages/subagent/subagent/src/continuation-activation.ts
 +++ b/packages/subagent/subagent/src/continuation-activation.ts
 @@ -13,6 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
@@ -241,7 +244,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
    AgentOptions,
    CreateAgentOptions,
  } from '@deepseek-ai/dsh-agent'
-@@ -54,6 +55,8 @@ export interface Activation {
+@@ -77,6 +78,8 @@ export interface Activation {
    readonly parentSession: SessionId
    /** The provider name recorded in the durable descriptor. */
    readonly provider: string
@@ -250,7 +253,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
    /** The retained live Agent handle, disposed exactly once at settlement. */
    readonly handle: AgentHandle
    /** The Activation-local admission and close wrapper around the handle's Agent inbox. */
-@@ -64,6 +67,8 @@ export interface Activation {
+@@ -87,6 +90,8 @@ export interface Activation {
     * ancestor leaving the registry without retaining that ancestor's runtime.
     */
    readonly ancestry: WeakSet<Agent>
@@ -259,7 +262,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
    /**
     * Session ids of the child Activations this one owns. Because one Session has
     * at most one live Activation, the id identifies the live child without
-@@ -72,6 +77,8 @@ export interface Activation {
+@@ -95,6 +100,8 @@ export interface Activation {
    readonly ownedChildren: Set<SessionId>
    /** The lifecycle observer that emits this epoch's start and terminal edges. */
    readonly observer: ActivationObserver
@@ -268,7 +271,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
    /**
     * Whether any delivery to this child was ever accepted. A materialization
     * rolled back before its first acceptance is a child the caller was told does
-@@ -86,6 +93,7 @@ export interface Activation {
+@@ -109,6 +116,7 @@ export interface Activation {
  export interface MaterializeInputs {
    childId: SessionId
    provider: string
@@ -276,7 +279,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
    parent: Agent
    /**
     * Creation inputs; absent for a cold resume, which loads the persisted
-@@ -105,6 +113,13 @@ export interface MaterializeInputs {
+@@ -128,6 +136,13 @@ export interface MaterializeInputs {
    agentOptions: AgentOptions
    composition: { persona?: string | undefined; toolFilter?: ToolRestriction | undefined }
    signal: AbortSignal
@@ -290,15 +293,15 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
  }
  
  /**
-@@ -180,6 +195,7 @@ export class ContinuableActivationRegistry {
-       childId: SessionId,
+@@ -206,6 +221,7 @@ export class ContinuableActivationRegistry {
        parent: Agent,
      ) => ActivationObserver,
+     private readonly maxActiveSubagents: () => number,
 +    private readonly applySetup: (childCtx: Context, child: Agent) => AgentSetupCommit,
    ) {
      // Ordinary Cordis owner effects unwind in reverse registration order, which
      // cannot express the dynamic child graph. Register the private scope's
-@@ -220,12 +236,11 @@ export class ContinuableActivationRegistry {
+@@ -246,12 +262,11 @@ export class ContinuableActivationRegistry {
    /**
     * Pre-register `childId` in a continuation-managed parent's owned set so the
     * parent cannot settle while a caller is still establishing or resuming that
@@ -314,7 +317,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
     */
    holdOwnership(parent: Agent, childId: SessionId): () => void {
      const parentActivation = this.resident.get(parent.id)
-@@ -236,16 +251,22 @@ export class ContinuableActivationRegistry {
+@@ -262,16 +277,22 @@ export class ContinuableActivationRegistry {
          'ACTIVATION_CLOSING',
        )
      }
@@ -339,7 +342,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
      }
    }
  
-@@ -351,7 +372,7 @@ export class ContinuableActivationRegistry {
+@@ -377,7 +398,7 @@ export class ContinuableActivationRegistry {
      for (const activation of this.resident.values()) {
        const lineage = this.liveLineage(activation.handle.agent)
        const owners = [...roots].filter(root => activation.handle.agent !== root
@@ -348,7 +351,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
        if (owners.length === 0) continue
        targets.push(activation)
        for (const owner of owners) {
-@@ -419,7 +440,12 @@ export class ContinuableActivationRegistry {
+@@ -445,7 +466,12 @@ export class ContinuableActivationRegistry {
     */
    assertAdmitting(agent: Agent): void {
      const closing = this.closingTeardownFor(agent)
@@ -362,7 +365,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
      throw new SubagentError(
        closing === 'manager'
          ? 'continuable subagents are draining; the operation was not admitted'
-@@ -494,6 +520,7 @@ export class ContinuableActivationRegistry {
+@@ -526,6 +552,7 @@ export class ContinuableActivationRegistry {
        activation.handle.agent.session.header.parentSession,
      )
      this.acquireOwnership(parent, activation.childId)
@@ -370,7 +373,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
      try {
        activation.inbox.deliver(message, delivery)
      } finally {
-@@ -505,11 +532,46 @@ export class ContinuableActivationRegistry {
+@@ -537,11 +564,46 @@ export class ContinuableActivationRegistry {
    /**
     * Stop and release one Activation through its memoized close transaction.
     * @param activation - exact residency epoch to close.
@@ -420,7 +423,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
    }
  
    /** Dispose independent roots and report every branch failure after all settle. */
-@@ -576,7 +638,7 @@ export class ContinuableActivationRegistry {
+@@ -620,7 +682,7 @@ export class ContinuableActivationRegistry {
    ): Promise<Activation> {
      const { childId, provider, parent, create } = inputs
      inputs.signal.throwIfAborted()
@@ -429,7 +432,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
        // Only fresh creation appends the descriptor and delegated policy after
        // the inherited marker; a cold resume replays those persisted events.
        if (create !== undefined) {
-@@ -584,6 +646,7 @@ export class ContinuableActivationRegistry {
+@@ -628,6 +690,7 @@ export class ContinuableActivationRegistry {
          appendDelegatedPolicyOverrides(child.session, create.delegatedPolicies)
        }
        applyChildComposition(childCtx, parent, inputs.composition)
@@ -437,7 +440,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
      }
      const observer = this.observeActivation(provider, childId, parent)
      const handle: AgentHandle = create === undefined
-@@ -609,11 +672,18 @@ export class ContinuableActivationRegistry {
+@@ -655,11 +718,18 @@ export class ContinuableActivationRegistry {
        childId,
        parentSession: parent.id,
        provider,
@@ -456,7 +459,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
        announced: false,
        poke: Promise.withResolvers<void>(),
      }
-@@ -625,7 +695,7 @@ export class ContinuableActivationRegistry {
+@@ -671,7 +741,7 @@ export class ContinuableActivationRegistry {
        const wakeOnInboxRemoval = (): void => { this.wake(activation) }
        handle.agent.ctx.on('agent/inbox/claimed', wakeOnInboxRemoval)
        handle.agent.ctx.on('agent/inbox/discarded', wakeOnInboxRemoval)
@@ -465,7 +468,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
      } catch (error: unknown) {
        /* v8 ignore next -- rollback failure must not mask the admission failure
         * that prevented this operation from returning an accepted message id. */
-@@ -692,7 +762,16 @@ export class ContinuableActivationRegistry {
+@@ -739,7 +809,16 @@ export class ContinuableActivationRegistry {
          }
  
          const finalSeq = activation.handle.agent.session.seq
@@ -483,7 +486,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
          const attempt = await this.locks.run<SettlementAttempt>(activation.childId, () => {
            const state = this.settlementState(activation, idleObservation)
            if (state !== 'ready') return Promise.resolve(state)
-@@ -703,7 +782,7 @@ export class ContinuableActivationRegistry {
+@@ -750,7 +829,7 @@ export class ContinuableActivationRegistry {
            let done!: Promise<void>
            try {
              void activation.handle.agent.runMaintenance(() => {
@@ -492,7 +495,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
                return Promise.resolve()
              })
            } catch {
-@@ -738,18 +817,20 @@ export class ContinuableActivationRegistry {
+@@ -785,18 +864,20 @@ export class ContinuableActivationRegistry {
    ): SettlementState {
      if (activation.inbox.closing !== undefined) return 'closed'
      if (activation.poke !== observation) return 'retry'
@@ -517,7 +520,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
        } catch (error: unknown) {
          failures.push(new SubagentError(
            `subagent "${childId}" activation teardown failed: ${errorChain(error)}`,
-@@ -760,7 +841,7 @@ export class ContinuableActivationRegistry {
+@@ -807,7 +888,7 @@ export class ContinuableActivationRegistry {
      } else {
        activation.handle.agent.cancel({ kind: 'parent' })
        const idle = activation.handle.agent.whenIdle()
@@ -526,7 +529,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
          .map(child => this.resident.get(child))
          .filter((child): child is Activation => child !== undefined)
        const childDisposals = children.map(child => this.dispose(child))
-@@ -782,7 +863,7 @@ export class ContinuableActivationRegistry {
+@@ -829,7 +910,7 @@ export class ContinuableActivationRegistry {
          }
          await idle
          await this.flushFinalState(activation)
@@ -535,10 +538,10 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
        } catch (error: unknown) {
          failures.push(new SubagentError(
            `subagent "${childId}" activation teardown failed: ${errorChain(error)}`,
-@@ -813,15 +894,15 @@ export class ContinuableActivationRegistry {
-       )
+@@ -861,15 +942,15 @@ export class ContinuableActivationRegistry {
      }
      this.resident.delete(childId)
+     activation.releaseSlot()
 -    this.notifySettlement(activation, activation.observer.terminal(failure))
 +    if (activation.observerStarted) this.notifySettlement(activation, activation.observer.terminal(failure))
      this.releaseOwnership(childId)
@@ -554,7 +557,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
      try {
        const parent = this.ctx.agents.get(activation.parentSession)
        if (parent === undefined) return
-@@ -843,8 +924,12 @@ export class ContinuableActivationRegistry {
+@@ -891,8 +972,12 @@ export class ContinuableActivationRegistry {
    private async flushFinalState(activation: Activation): Promise<void> {
      const child = activation.handle.agent
      try {
@@ -569,7 +572,7 @@ index df2b6da439776918aaf5d6f4cbad07e9c7ef6dab..ef291b70ce8716a9c5017c61c783ee3f
          `subagent "${activation.childId}" best-effort final session flush failed; `
          + `the persisted state may be unavailable or stale on resume: ${errorChain(error)}`,
 diff --git a/packages/subagent/subagent/src/continuation.ts b/packages/subagent/subagent/src/continuation.ts
-index b86d5cd836527d0f6d746297b32b0f584cd00db4..c411d60178efff66f07e856fc38633ad671fbfca 100644
+index 87fae7096a7dcaf05601f0c62f40ab28717005da..ff3364332f3b3084e7aa4b2f1016b039e0107ca2 100644
 --- a/packages/subagent/subagent/src/continuation.ts
 +++ b/packages/subagent/subagent/src/continuation.ts
 @@ -15,7 +15,7 @@
@@ -598,15 +601,15 @@ index b86d5cd836527d0f6d746297b32b0f584cd00db4..c411d60178efff66f07e856fc38633ad
    /** Resolve one provider's detached continuable-creation contribution. */
    prepareContinuable(name: string, request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>
    /** Build the lifecycle observer for one Activation residency epoch. */
-@@ -89,6 +92,7 @@ export class SubagentContinuationManager {
-     this.activations = new ContinuableActivationRegistry(
+@@ -91,6 +94,7 @@ export class SubagentContinuationManager {
        ctx,
        (provider, childId, parent) => host.observeActivation(provider, childId, parent),
+       maxActiveSubagents,
 +      (childCtx, child) => host.applySetup(childCtx, child),
      )
    }
  
-@@ -102,6 +106,10 @@ export class SubagentContinuationManager {
+@@ -104,6 +108,10 @@ export class SubagentContinuationManager {
    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart> {
      const request = spec.request
      const parent = request.parent
@@ -617,7 +620,7 @@ index b86d5cd836527d0f6d746297b32b0f584cd00db4..c411d60178efff66f07e856fc38633ad
      this.activations.assertAdmitting(parent)
      const persistence = this.requirePersistence()
      assertSubagentMaxDepth(request.maxDepth)
-@@ -118,6 +126,7 @@ export class SubagentContinuationManager {
+@@ -120,6 +128,7 @@ export class SubagentContinuationManager {
        mode: 'continuable',
        provider: spec.provider,
        label: spec.label,
@@ -625,7 +628,7 @@ index b86d5cd836527d0f6d746297b32b0f584cd00db4..c411d60178efff66f07e856fc38633ad
        ...agentProvider !== undefined ? { agentProvider } : {},
        ...agentModel !== undefined ? { agentModel } : {},
        ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
-@@ -159,6 +168,7 @@ export class SubagentContinuationManager {
+@@ -161,6 +170,7 @@ export class SubagentContinuationManager {
          const activation = await this.activations.materialize({
            childId,
            provider: spec.provider,
@@ -633,7 +636,7 @@ index b86d5cd836527d0f6d746297b32b0f584cd00db4..c411d60178efff66f07e856fc38633ad
            parent,
            create: {
              seed,
-@@ -183,9 +193,8 @@ export class SubagentContinuationManager {
+@@ -185,9 +195,8 @@ export class SubagentContinuationManager {
          )
        })
        return { childId, messageId }
@@ -644,7 +647,7 @@ index b86d5cd836527d0f6d746297b32b0f584cd00db4..c411d60178efff66f07e856fc38633ad
      }
    }
  
-@@ -280,9 +289,86 @@ export class SubagentContinuationManager {
+@@ -282,9 +291,86 @@ export class SubagentContinuationManager {
      const releaseHold = this.activations.holdOwnership(parent, childId)
      try {
        return await this.deliverFollowup(parent, childId, content, options)
@@ -733,7 +736,7 @@ index b86d5cd836527d0f6d746297b32b0f584cd00db4..c411d60178efff66f07e856fc38633ad
      }
    }
  
-@@ -407,14 +493,19 @@ export class SubagentContinuationManager {
+@@ -409,14 +495,19 @@ export class SubagentContinuationManager {
      content: ContentBlock[],
      options: ChildDeliveryOptions,
    ): Promise<MessageId> {
@@ -755,7 +758,7 @@ index b86d5cd836527d0f6d746297b32b0f584cd00db4..c411d60178efff66f07e856fc38633ad
        throw new SubagentError(`subagent "${childId}" is unavailable`, 'NOT_RESUMABLE', { cause: error })
      }
      using source = observation
-@@ -434,6 +525,8 @@ export class SubagentContinuationManager {
+@@ -436,6 +527,8 @@ export class SubagentContinuationManager {
        activation = await this.activations.materialize({
          childId,
          provider: descriptor.provider,
@@ -764,7 +767,7 @@ index b86d5cd836527d0f6d746297b32b0f584cd00db4..c411d60178efff66f07e856fc38633ad
          parent,
          agentOptions: {
            ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
-@@ -443,14 +536,14 @@ export class SubagentContinuationManager {
+@@ -445,14 +538,14 @@ export class SubagentContinuationManager {
              : {},
          },
          composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter },
@@ -849,10 +852,10 @@ index de9191cc50fff632e3a9ff1c61e14a534df961a8..2bce55dd24b5f55430926bcce44d4b8b
    const snapshot = snapshotJsonValue(candidate)
    if (snapshot === undefined) {
 diff --git a/packages/subagent/subagent/src/index.ts b/packages/subagent/subagent/src/index.ts
-index 8a91e06e56c63006d473d421113936ed2d0331ad..6b7be426277294ee05cf4ff15fb8e685f16eaecb 100644
+index 6654c1c0e5d056ed0f4c76a56ca2a9536b1ff24f..54108fe71ba62cf0f4046e1ef60cbc9c44651ec6 100644
 --- a/packages/subagent/subagent/src/index.ts
 +++ b/packages/subagent/subagent/src/index.ts
-@@ -62,6 +62,8 @@ import type {
+@@ -63,6 +63,8 @@ import type {
    SubagentRunEndInfo,
    SubagentRunInfo,
    SubagentSendMessageOptions,
@@ -861,7 +864,7 @@ index 8a91e06e56c63006d473d421113936ed2d0331ad..6b7be426277294ee05cf4ff15fb8e685
    SubagentStartRequest,
  } from './types.ts'
  import { SubagentError } from './error.ts'
-@@ -69,6 +71,8 @@ import { assertSubagentMaxDepth } from './depth.ts'
+@@ -70,6 +72,8 @@ import { assertSubagentMaxDepth } from './depth.ts'
  import { createActivationObserver, createLifecycleEmitter, observeRun } from './lifecycle.ts'
  import type { ActivationObserver, LifecycleEmitter } from './lifecycle.ts'
  import SubagentContinuationManager from './continuation.ts'
@@ -869,8 +872,8 @@ index 8a91e06e56c63006d473d421113936ed2d0331ad..6b7be426277294ee05cf4ff15fb8e685
 +export type { ContinuableSetupContribution } from './activation-setup-registry.ts'
  import type { SubagentDelivery } from './inbox.ts'
  import { listChildren as listSubagentChildren, listDescendants as listSubagentDescendants } from './list-children.ts'
- import type { SubagentDescendantListEntry, SubagentListEntry } from './list-children.ts'
-@@ -93,6 +97,8 @@ export type {
+ import type { SubagentDescendantListEntry } from './list-children.ts'
+@@ -96,6 +100,8 @@ export type {
    SubagentResult,
    SubagentRun,
    SubagentSendMessageOptions,
@@ -879,32 +882,33 @@ index 8a91e06e56c63006d473d421113936ed2d0331ad..6b7be426277294ee05cf4ff15fb8e685
    SubagentStartRequest,
    SubagentStopReason,
    SubagentStopReasonMap,
-@@ -129,6 +135,7 @@ export type * from './control-types.ts'
+@@ -133,6 +139,8 @@ export type * from './control-types.ts'
  export type { SubagentDescendantListEntry } from './list-children.ts'
  export type { SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
  export type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
 +export { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
++export type {} from './projection.ts'
  
  declare module '@deepseek-ai/cordis' {
    interface Context {
-@@ -186,6 +193,7 @@ interface BrowserPromptSource {
- 
- /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
- export class SubagentRuntime extends TypertRemoteService {
+@@ -202,6 +209,7 @@ export class SubagentRuntime extends TypertRemoteService {
+     maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(1).volatile(),
+     maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(8).volatile(),
+   })
 +  private readonly activationSetups = new SubagentActivationSetupRegistry()
    private providers = new Map<string, SubagentProvider>()
    private continuations: SubagentContinuationManager | undefined
    /**
-@@ -200,6 +208,7 @@ export class SubagentRuntime extends TypertRemoteService {
+@@ -216,6 +224,7 @@ export class SubagentRuntime extends TypertRemoteService {
      this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
      ctx.inject(['agents'], (childCtx: Context) => {
        const manager = new SubagentContinuationManager(childCtx, {
 +        applySetup: (childCtx, child) => this.activationSetups.apply(childCtx, child),
          prepareContinuable: (name, request) => this.prepareContinuable(name, request),
          observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
-       })
-@@ -216,6 +225,16 @@ export class SubagentRuntime extends TypertRemoteService {
-     })
+       }, () => this.config.maxActiveSubagents.get())
+@@ -249,6 +258,16 @@ export class SubagentRuntime extends TypertRemoteService {
+     return depth
    }
  
 +  /**
@@ -920,7 +924,7 @@ index 8a91e06e56c63006d473d421113936ed2d0331ad..6b7be426277294ee05cf4ff15fb8e685
    /**
     * Establish one durable continuable child and deliver its initial prompt.
     * Resolves when the child's inbox accepts that prompt, without waiting for the
-@@ -229,6 +248,52 @@ export class SubagentRuntime extends TypertRemoteService {
+@@ -262,6 +281,52 @@ export class SubagentRuntime extends TypertRemoteService {
      return this.requireContinuations().startContinuable(spec)
    }
  
@@ -974,7 +978,7 @@ index 8a91e06e56c63006d473d421113936ed2d0331ad..6b7be426277294ee05cf4ff15fb8e685
     * Steer one model-authored message to the sender's direct parent or direct
     * continuable child. A running target admits it at the nearest step boundary;
 diff --git a/packages/subagent/subagent/src/lifecycle.ts b/packages/subagent/subagent/src/lifecycle.ts
-index ba2db8e62c290f199e938acdae4a21f17f111c14..2da77e6de484044112503845cd17131178cd67de 100644
+index d0ccf55b301d4eb30fd6c822785fd6e87d312505..6565c7d8d05f44aadb5ff6a3e68a618d822568be 100644
 --- a/packages/subagent/subagent/src/lifecycle.ts
 +++ b/packages/subagent/subagent/src/lifecycle.ts
 @@ -155,7 +155,7 @@ export function observeRun(
@@ -986,7 +990,7 @@ index ba2db8e62c290f199e938acdae4a21f17f111c14..2da77e6de484044112503845cd171311
      },
    )
    emit('subagent/start', identity, parent)
-@@ -211,6 +211,7 @@ export function createActivationObserver(
+@@ -212,6 +212,7 @@ export function createActivationObserver(
        emit('subagent/end', {
          ...identity,
          stopReason,
@@ -995,7 +999,7 @@ index ba2db8e62c290f199e938acdae4a21f17f111c14..2da77e6de484044112503845cd171311
        }, parent)
      },
 diff --git a/packages/subagent/subagent/src/types.ts b/packages/subagent/subagent/src/types.ts
-index 1b9ce56c3f46f2a2e1bb53a1d8b3f03dd8581c13..1607a251e4b6d5e9aaeb2df3cb521f272bf978d4 100644
+index 48ac0df1e18a2ee74a4865de736a55b2e1451264..432bb7d3c13b7e2e7e94e11ce870db155421c9d6 100644
 --- a/packages/subagent/subagent/src/types.ts
 +++ b/packages/subagent/subagent/src/types.ts
 @@ -11,7 +11,7 @@
@@ -1228,10 +1232,10 @@ index 0000000000000000000000000000000000000000..76d231439cdd86fe5d5dbaee0959ccad
 +  })
 +})
 diff --git a/packages/subagent/subagent/tests/continuation.spec.ts b/packages/subagent/subagent/tests/continuation.spec.ts
-index f2bbd16ef5974f74b5affa6470c84547fec48821..99625e91ff3b8e7d5af7e7152788f272a38cad68 100644
+index 3078d28e71942a89f09c8a0b1f379bc25705c0b9..b79cf9d45d6ae7698ea942604088339d73a377fb 100644
 --- a/packages/subagent/subagent/tests/continuation.spec.ts
 +++ b/packages/subagent/subagent/tests/continuation.spec.ts
-@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
+@@ -7,7 +7,7 @@ import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
  import type { Agent } from '@deepseek-ai/dsh-agent'
  import AgentLoop from '@deepseek-ai/dsh-agent-loop'
  import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -1239,8 +1243,8 @@ index f2bbd16ef5974f74b5affa6470c84547fec48821..99625e91ff3b8e7d5af7e7152788f272
 +import { Session, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
  import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
  import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
- import * as toolSchedule from '@deepseek-ai/dsh-schedule'
-@@ -344,6 +344,7 @@ describe('SubagentRuntime.startContinuable', () => {
+ import ScheduleService from '@deepseek-ai/dsh-schedule'
+@@ -611,6 +611,7 @@ describe('SubagentRuntime.startContinuable', () => {
        version: SUBAGENT_DESCRIPTOR_VERSION,
        mode: 'continuable',
        provider: 'spawn',
@@ -1248,7 +1252,7 @@ index f2bbd16ef5974f74b5affa6470c84547fec48821..99625e91ff3b8e7d5af7e7152788f272
        label: 'child task',
        agentProvider: 'mock',
        agentModel: 'mock',
-@@ -535,6 +536,7 @@ describe('SubagentRuntime.startContinuable', () => {
+@@ -802,6 +803,7 @@ describe('SubagentRuntime.startContinuable', () => {
        version: SUBAGENT_DESCRIPTOR_VERSION,
        mode: 'continuable',
        provider: 'spawn',
@@ -1256,7 +1260,7 @@ index f2bbd16ef5974f74b5affa6470c84547fec48821..99625e91ff3b8e7d5af7e7152788f272
        label: 'child task',
      })
      await drainManager(ctx)
-@@ -569,6 +571,7 @@ describe('SubagentRuntime.startContinuable', () => {
+@@ -836,6 +838,7 @@ describe('SubagentRuntime.startContinuable', () => {
          version: SUBAGENT_DESCRIPTOR_VERSION,
          mode: 'continuable',
          provider: 'spawn',
@@ -1264,7 +1268,7 @@ index f2bbd16ef5974f74b5affa6470c84547fec48821..99625e91ff3b8e7d5af7e7152788f272
          label: 'child task',
          toolFilter: { deny: ['noop'] },
        })
-@@ -840,6 +843,61 @@ describe('direct-child Queue residency routing', () => {
+@@ -1107,6 +1110,61 @@ describe('direct-child Queue residency routing', () => {
      expect(loaded.events.filter(event => event.type === 'subagent/descriptor')).toHaveLength(1)
    })
  
@@ -1326,7 +1330,7 @@ index f2bbd16ef5974f74b5affa6470c84547fec48821..99625e91ff3b8e7d5af7e7152788f272
    it('cold-resumes after the initial provider unregisters', async () => {
      const { ctx, parent } = await setup([textResponse('first'), textResponse('after resume')])
      await ctx.plugin(InvariantRegistry)
-@@ -1127,6 +1185,54 @@ describe('continuable child ownership', () => {
+@@ -1394,6 +1452,54 @@ describe('continuable child ownership', () => {
  })
  
  describe('continuable durability and teardown', () => {
@@ -1381,7 +1385,7 @@ index f2bbd16ef5974f74b5affa6470c84547fec48821..99625e91ff3b8e7d5af7e7152788f272
    it('rechecks direct Agent inbox work accepted during the final flush', async () => {
      const releaseFirstTurn = Promise.withResolvers<undefined>()
      const adapter = new GatedAdapter([
-@@ -1351,6 +1457,43 @@ describe('continuable durability and teardown', () => {
+@@ -1618,6 +1724,43 @@ describe('continuable durability and teardown', () => {
      expect(ends.at(-1)?.stopReason).toBe('completed')
    })
  
@@ -1425,7 +1429,7 @@ index f2bbd16ef5974f74b5affa6470c84547fec48821..99625e91ff3b8e7d5af7e7152788f272
    it('logs a teardown failure reached through normal settlement', async () => {
      const hold = Promise.withResolvers<undefined>()
      const adapter = new GatedAdapter([{ chunks: textResponse('answer'), gate: hold.promise }])
-@@ -2475,7 +2618,225 @@ describe('continuable adjacent-Agent delivery', () => {
+@@ -2742,7 +2885,225 @@ describe('continuable adjacent-Agent delivery', () => {
    })
  })
  

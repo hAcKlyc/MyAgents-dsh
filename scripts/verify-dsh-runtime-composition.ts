@@ -219,7 +219,7 @@ const runtimePackageWorkspaces = [
   ["apps/runtime-server", "@myagents-dsh/runtime-server"],
 ] as const;
 const runtimeVendoredExternalPackages = ["typebox", "@earendil-works/pi-ai"] as const;
-const runtimeVendoredExternalRoots = ["typebox@1.3.7"] as const;
+const runtimeVendoredExternalRoots = ["typebox@1.3.7", "@modelcontextprotocol/sdk@1.30.0"] as const;
 const officialPiAiTypeboxVersion = "1.3.7" as const;
 const runtimeNodeTypesVersion = "24.13.3" as const;
 const officialPiAiAdapterPackage = "@deepseek-ai/dsh-llm-pi-ai" as const;
@@ -1475,7 +1475,7 @@ const main = (): void => {
         headChars: 4_096,
         tailChars: 1_024,
       })
-      || compactionEvidence.summaryMaxTokens !== 8_192
+      || compactionEvidence.summaryMaxTokens !== 65_536
       || compactionEvidence.summaryStreamCalls !== 1
       || JSON.stringify(compactionEvidence.telemetryKinds) !== JSON.stringify([
         "convergence",
@@ -1762,7 +1762,7 @@ const main = (): void => {
     const createFrames = frames.filter(({ result }) => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
       const candidate = result as Record<string, unknown>;
-      return candidate.historyFormat === "dsh-session-events-v1" && candidate.state === "ready";
+      return candidate.historyFormat === "dsh-session-events-v2" && candidate.state === "ready";
     });
     const initializeResult = exactObject(initializeFrame?.result, "observed initialize result");
     const runtimeEngine = exactObject(initializeResult.runtimeEngine, "observed Runtime engine");
@@ -1826,7 +1826,7 @@ const main = (): void => {
       exactObject(frame, `observed restart/resume RPC frame ${String(index)}`));
     const resumeBindingFrames = resumeFrames.filter(({ result }) => {
       if (result === null || typeof result !== "object" || Array.isArray(result)) return false;
-      return (result as Record<string, unknown>).historyFormat === "dsh-session-events-v1"
+      return (result as Record<string, unknown>).historyFormat === "dsh-session-events-v2"
         && Object.hasOwn(result, "state");
     });
     const sessionReadFrames = resumeFrames.filter(({ result }) => {
@@ -1869,7 +1869,7 @@ const main = (): void => {
       ])
       || resumedSession.state !== "ready"
       || resumedSession.runtimeSessionId !== "dsh-artifact-primary"
-      || resumedSession.historyFormat !== "dsh-session-events-v1"
+      || resumedSession.historyFormat !== "dsh-session-events-v2"
       || resumedSession.effectiveConfigRevision !== "artifact-config-v1"
       || !Number.isSafeInteger(resumedDurableHead.sequence)
       || resumedDurableHead.sequence !== persistenceEvidence.eventCount + 1) {

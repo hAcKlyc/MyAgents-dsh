@@ -863,9 +863,9 @@ describe("accepted DSH seam decision registry", () => {
       "candidate_patch_pending_product_validation",
       "candidate_patch_pending_product_validation",
       "candidate_retirement_pending_product_validation",
-      ...Array.from({ length: 5 }, () => "candidate_patch_pending_product_validation"),
+      ...Array.from({ length: 6 }, () => "candidate_patch_pending_product_validation"),
     ]);
-    expect(evidence.patchSeries).toHaveLength(9);
+    expect(evidence.patchSeries).toHaveLength(10);
     for (const patch of evidence.patchSeries) {
       const digest = createHash("sha256")
         .update(readFileSync(resolve(repositoryRoot, patch.path)))
@@ -874,7 +874,7 @@ describe("accepted DSH seam decision registry", () => {
     }
   });
 
-  it("pins the exact audited rc.3 source blobs without claiming registry source equivalence", () => {
+  it("pins the exact audited rc.2 source blobs without claiming registry source equivalence", () => {
     const evidence = JSON.parse(readFileSync(
       resolve(repositoryRoot, "specs/dsh/seam-decisions-v1.json"),
       "utf8",
@@ -886,10 +886,10 @@ describe("accepted DSH seam decision registry", () => {
         files: Array<{ blob: string; sha256: string }>;
       };
     };
-    expect(evidence.authority.commit).toBe("a4c74a91e06b00fe0b0937bde982170c526cc842");
-    expect(evidence.authority.declaredRelease).toBe("0.1.5-rc.3");
+    expect(evidence.authority.commit).toBe("477b4f420553e8a52c2fbccc464d7561b239c443");
+    expect(evidence.authority.declaredRelease).toBe("0.1.7-rc.2");
     expect(evidence.authority.executablePackageAssociation).toBe("unproven");
-    expect(evidence.authority.files).toHaveLength(146);
+    expect(evidence.authority.files).toHaveLength(155);
     expect(evidence.authority.files.every(({ blob, sha256 }) =>
       /^[0-9a-f]{40}$/u.test(blob) && /^[0-9a-f]{64}$/u.test(sha256))).toBe(true);
   });

@@ -1,4 +1,5 @@
 import type { MessageSource } from "@deepseek-ai/dsh-llm";
+import type {} from "@deepseek-ai/dsh-tool-jobs";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { validateTurnTerminal, type TurnTerminal } from "@myagents-dsh/protocol";
 import { isDeepStrictEqual, types as utilTypes } from "node:util";
@@ -1111,7 +1112,6 @@ export const findProductOperation = (
 /** The trusted stock Jobs plugin writes notices into the sole DSH Inbox. */
 export const ownsOfficialJobNotice = (
   events: readonly SessionEvent[], source: MessageSource | undefined, messageId: string,
-): boolean => source?.kind === "plugin" && source.plugin === "tool-jobs" && source.form === "notice"
+): boolean => source?.kind === "tool-jobs" && source.form === "notice"
   && events.some((event) => event.type === "agent/inbox/spliced" && event.data.inserted.some((message) =>
-    message.id === messageId && message.source.kind === "plugin"
-    && message.source.plugin === "tool-jobs" && message.source.form === "notice"));
+    message.id === messageId && message.source.kind === "tool-jobs" && message.source.form === "notice"));

@@ -23,13 +23,16 @@ const loadLockedPiAiPlugin = async (): Promise<Plugin> => {
   return plugin as unknown as Plugin;
 };
 
-const composeProviderSeamFixture = async (): Promise<Context> => {
+const composeProviderSeamFixture = async (): Promise<Context & { settings: HostSettingsProvider }> => {
   const root = new Context();
   try {
     await root.plugin(LlmRuntime);
     await root.plugin(HostSettingsProvider);
-    await root.plugin(await loadLockedPiAiPlugin(), Object.freeze({ providers: Object.freeze({}) }));
-    return root;
+    const piAiFiber = await root.plugin(await loadLockedPiAiPlugin(), Object.freeze({ providers: Object.freeze({}) }));
+    const mounted = root as Context & { settings: HostSettingsProvider };
+    if (!(mounted.settings instanceof HostSettingsProvider)) throw new Error("Host settings fixture failed to mount");
+    mounted.settings.bindPiAiFiber(piAiFiber);
+    return mounted;
   } catch (error) {
     await root.fiber.dispose();
     throw error;
@@ -139,7 +142,7 @@ describe("official Host-profiled Provider composition", () => {
       for await (const chunk of root.llm.stream({
         messages: [createUserMessage({
           content: [{ type: "text", text: "fixture" }],
-          source: { kind: "plugin", plugin: "provider-redaction-test" },
+          source: { kind: "user" },
         })],
         model: "fixture-model",
         provider: "fixture-provider",

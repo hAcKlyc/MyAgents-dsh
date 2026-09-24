@@ -44,6 +44,10 @@ class FixtureManagedSubprocess extends SubprocessRuntime {
   readonly methods: string[] = [];
   spawnSpec: SubprocessSpawnSpec | undefined;
 
+  terminalEnvironment(): Promise<{ platform: "posix" }> {
+    return Promise.resolve({ platform: "posix" });
+  }
+
   resolveExecutable(command: string): Promise<string> {
     return Promise.resolve(`/approved/${command}`);
   }
@@ -94,6 +98,7 @@ class FixtureManagedSubprocess extends SubprocessRuntime {
     stdin.on("finish", terminate);
     return Object.freeze({
       collected: Object.freeze({}),
+      control: undefined,
       done,
       pid: 123,
       stderr: undefined,

@@ -44,7 +44,7 @@ export interface AcceptedPatchedDshArtifactAuthority {
   readonly manifestSha256: string;
   readonly sha256SumsSha256: string;
   readonly consumerLockSha256: string;
-  readonly packageCount: 77;
+  readonly packageCount: 89;
   readonly runtimePackages: Readonly<Record<AcceptedDshRuntimePackageName, string>>;
   readonly requiredPatchedSeams: readonly [
     "agent.wakePending",
@@ -60,8 +60,8 @@ export interface AcceptedPatchedDshArtifactAuthority {
     "subagents.independentExternalSettlement",
     "subagents.withContinuableAncestors",
     "compaction.capacitySafeCheckpoint",
-    "systemPrompt.literalContributions",
     "subagents.literalPersona",
+    "systemPrompt.literalContext",
     "agentInstructions.firstCandidateSelection",
     "llm-pi-ai.providerContent",
     "tool-fs.definitionFactories",
@@ -101,9 +101,9 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "runtimePackages",
     "requiredPatchedSeams",
   ], "accepted patched DSH artifact authority");
-  if (authority.formatVersion !== 1 || authority.packageCount !== 77
+  if (authority.formatVersion !== 1 || authority.packageCount !== 89
     || typeof authority.artifactVersion !== "string"
-    || !/^0\.1\.5-rc\.3\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
+    || !/^0\.1\.7-rc\.2\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
     throw new TypeError("accepted patched DSH artifact identity is invalid");
   }
   const runtimeValue = authority.runtimePackages;
@@ -113,7 +113,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
   const runtimePackages = runtimeValue as Record<string, unknown>;
   exactKeys(runtimePackages, expectedRuntimePackageNames, "accepted patched DSH runtime package authority");
   for (const name of expectedRuntimePackageNames) {
-    const expectedVersion = name === "@deepseek-ai/cordis" ? "4.0.2" : authority.artifactVersion;
+    const expectedVersion = name === "@deepseek-ai/cordis" ? "4.0.4" : authority.artifactVersion;
     if (runtimePackages[name] !== expectedVersion) {
       throw new TypeError(`${name} differs from the accepted patched DSH artifact version`);
     }
@@ -133,8 +133,8 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "subagents.independentExternalSettlement",
     "subagents.withContinuableAncestors",
     "compaction.capacitySafeCheckpoint",
-    "systemPrompt.literalContributions",
     "subagents.literalPersona",
+    "systemPrompt.literalContext",
     "agentInstructions.firstCandidateSelection",
     "llm-pi-ai.providerContent",
     "tool-fs.definitionFactories",
@@ -156,7 +156,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     manifestSha256: exactSha256(authority.manifestSha256, "accepted patched DSH manifest"),
     sha256SumsSha256: exactSha256(authority.sha256SumsSha256, "accepted patched DSH SHA256SUMS"),
     consumerLockSha256: exactSha256(authority.consumerLockSha256, "accepted patched DSH consumer lock"),
-    packageCount: 77,
+    packageCount: 89,
     runtimePackages: frozenPackages,
     requiredPatchedSeams: Object.freeze(expectedSeams) as AcceptedPatchedDshArtifactAuthority["requiredPatchedSeams"],
   });

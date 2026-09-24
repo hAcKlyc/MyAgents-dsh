@@ -762,7 +762,7 @@ export const projectSessionEvent = (
         || (boundary.end !== undefined && source.seq >= boundary.end.seq)) {
         throw new TypeError("tool result is outside its owned DSH turn boundary");
       }
-      const result = source.data.message.content[0];
+      const result = source.data.message;
       const failed = source.data.error !== undefined || result.isError === true;
       const status = source.data.meta !== null && typeof source.data.meta === "object"
         && !Array.isArray(source.data.meta)

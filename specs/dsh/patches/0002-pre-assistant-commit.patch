@@ -1,31 +1,7 @@
-diff --git a/docs/architecture.i18n.yaml b/docs/architecture.i18n.yaml
-index d591a9fa3648e067852339bc9c16f2be5548356a..615d5126960f4284c4be6525e16a7f2eba7de3e3 100644
---- a/docs/architecture.i18n.yaml
-+++ b/docs/architecture.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write docs/architecture.md
--architecture.md: 688341582044e72e8548c8e6b1535450793ddce4
--architecture.zh.md: 6817986015a2aa90d6fcb094da3e972ccfe08483
-+architecture.md: 2f0a3d1b874c49e20a6931c01adbc0031145766f
-+architecture.zh.md: ada9da08eaa5a1510462276023fb94d4874da561
 diff --git a/docs/architecture.md b/docs/architecture.md
-index 688341582044e72e8548c8e6b1535450793ddce4..2f0a3d1b874c49e20a6931c01adbc0031145766f 100644
+index 0919d65a30d6c233e883df80d83482467e5e8082..e186991c054acfc0b041d7d656990e9465211845 100644
 --- a/docs/architecture.md
 +++ b/docs/architecture.md
-@@ -94,6 +94,7 @@ turn/start
-      derive and freeze model history from the log
-      stream the bound prepared call -> llm/stream -> agent/assistant-stream start
-        agent/assistant-stream chunk*
-+       agent/pre-assistant-commit (successful tool arguments only)
-        assistant/message | assistant/attempt -> agent/assistant-stream end
-      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
-      step/end
-diff --git a/docs/architecture.zh.md b/docs/architecture.zh.md
-index 6817986015a2aa90d6fcb094da3e972ccfe08483..ada9da08eaa5a1510462276023fb94d4874da561 100644
---- a/docs/architecture.zh.md
-+++ b/docs/architecture.zh.md
 @@ -98,6 +98,7 @@ turn/start
       derive and freeze model history from the log
       stream the bound prepared call -> llm/stream -> agent/assistant-stream start
@@ -34,23 +10,38 @@ index 6817986015a2aa90d6fcb094da3e972ccfe08483..ada9da08eaa5a1510462276023fb94d4
         assistant/message | assistant/attempt -> agent/assistant-stream end
       tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
       step/end
+diff --git a/docs/architecture.zh.md b/docs/architecture.zh.md
+index bf3fb3b649143ca532b216f9726250db037bdbb6..fa1bae26e4cca9acef6badcfe857ff9fb13d1ef8 100644
+--- a/docs/architecture.zh.md
++++ b/docs/architecture.zh.md
+@@ -102,6 +102,7 @@ turn/start
+      derive and freeze model history from the log
+      stream the bound prepared call -> llm/stream -> agent/assistant-stream start
+        agent/assistant-stream chunk*
++       agent/pre-assistant-commit (successful tool arguments only)
+        assistant/message | assistant/attempt -> agent/assistant-stream end
+      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
+      step/end
 diff --git a/packages/core/agent-loop/README.i18n.yaml b/packages/core/agent-loop/README.i18n.yaml
-index e724b8ae17807c487ab317de4580dd3068a9177a..f7bfdaf1ca5ed92ab64991a6ce2236e52ca6d507 100644
+index ae56c85e43097991101325219ce1598f3fbade1d..8c3a7f34976952b9c577a2fd0615ce1c2089dd13 100644
 --- a/packages/core/agent-loop/README.i18n.yaml
 +++ b/packages/core/agent-loop/README.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write packages/core/agent-loop/README.md
--README.md: 31316e4b9259362951824fc13375a820035ba849
--README.zh.md: 06ad80f32fd20d76aa367b8203700235e39072fb
-+README.md: 3d473d90afcba33aa63e46a268a61a74c95d1a98
-+README.zh.md: 5dba88f5bb07d0eee206720dfcdce6a4565348ff
+@@ -48,8 +48,8 @@
+   en: ed5137ef858b3424
+   zh: af2ff3bc15576456
+ /deepseek-ai-dsh-agent-loop/understand-the-implementation/failure-and-cancellation:
+-  en: 6bd69c9cf8790e14
+-  zh: e2812f6bb4c26f10
++  en: 394c86d04140e778
++  zh: 7d20306edfe4ee5f
+ /deepseek-ai-dsh-agent-loop/further-exploration:
+   en: 6c73cd2390e24b86
+   zh: ba042ca93cc0f595
 diff --git a/packages/core/agent-loop/README.md b/packages/core/agent-loop/README.md
-index 31316e4b9259362951824fc13375a820035ba849..3d473d90afcba33aa63e46a268a61a74c95d1a98 100644
+index 4726700ed2d966c8133a413b1f46538c38fbe503..c3d9a3e53d36cbe550ee53af27e98c51b9f13bf7 100644
 --- a/packages/core/agent-loop/README.md
 +++ b/packages/core/agent-loop/README.md
-@@ -124,6 +124,8 @@ Prompt admission uses the actual `prepareCall()` result, not the preceding `requ
+@@ -126,6 +126,8 @@ Prompt admission uses the actual `prepareCall()` result, not the preceding `requ
  
  Final adapter selection, dispatch, and iteration failures arrive as terminal finishes and enter `agent/request-error`; a handling listener returns `{ kind: 'retry' }` without calling `next()`, while an unhandled failure is terminal. Middleware, result-processing, tool, and other extension failures remain thrown and close the turn directly — plugin failure ends the turn, not the loop. Undispatched model tool calls after cancellation receive synthetic `tool/call` plus `ABORTED_BEFORE_DISPATCH` result pairs. The [explicit-cancellation decision](../../../.agents/notes/implemented/architecture/2026-07-16-explicit-turn-cancellation.md) owns the signal lifecycle.
  
@@ -60,12 +51,12 @@ index 31316e4b9259362951824fc13375a820035ba849..3d473d90afcba33aa63e46a268a61a74
  
  -----
 diff --git a/packages/core/agent-loop/README.zh.md b/packages/core/agent-loop/README.zh.md
-index 06ad80f32fd20d76aa367b8203700235e39072fb..5dba88f5bb07d0eee206720dfcdce6a4565348ff 100644
+index 060dc37f32f3732fc21f0c5733c8d5d02ed6d512..58c686219ce5ead3479aeff5d3c8e0be3b019471 100644
 --- a/packages/core/agent-loop/README.zh.md
 +++ b/packages/core/agent-loop/README.zh.md
-@@ -124,6 +124,8 @@ const handle = await ctx.agents.create({
+@@ -126,6 +126,8 @@ const handle = await ctx.agents.create({
  
- 最终适配器选择、分发与迭代失败以终止结束的形式到达并进入 `agent/request-error`；拥有恢复权的监听器返回 `{ kind: 'retry' }` 且不调用 `next()`，未被处理的失败则是终态。Middleware、结果处理、工具及其他扩展失败仍会抛出并直接关闭轮次——插件失败结束的是轮次，不是循环。取消后未分发的模型工具调用会收到合成的 `tool/call` 加 `ABORTED_BEFORE_DISPATCH` 结果对。[显式取消决策](../../../.agents/notes/implemented/architecture/2026-07-16-explicit-turn-cancellation.zh.md) 拥有信号生命周期。
+ 最终适配器选择、分发与迭代失败以终止结束的形式到达并进入 `agent/request-error`；处理该失败的监听器返回 `{ kind: 'retry' }` 且不调用 `next()`，未被处理的失败则是终态。Middleware、结果处理、工具及其他扩展失败仍会抛出并直接关闭轮次——插件失败结束的是轮次，不是循环。取消后未分发的模型工具调用会收到合成的 `tool/call` 加 `ABORTED_BEFORE_DISPATCH` 结果对。[显式取消决策](../../../.agents/notes/implemented/architecture/2026-07-16-explicit-turn-cancellation.zh.md)拥有信号生命周期。
  
 +`agent/pre-assistant-commit` waterfall 在结算之前处理完整的成功助手消息。它只能替换工具参数；循环验证无损 JSON，并保持消息、内容块和工具标识。持久化内容、权限与执行使用处理后的参数；内嵌流保留提供方原始响应。拒绝或取消时不提交处理后的消息。
 +
@@ -73,10 +64,10 @@ index 06ad80f32fd20d76aa367b8203700235e39072fb..5dba88f5bb07d0eee206720dfcdce6a4
  
  -----
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index 86b460f2d9371e78931e513a5ca26d386a33ba20..bf61f8641331402acfc76def7843487c160b539d 100644
+index f1b32adfeccefb62dd05748a916e8803d8aa1f97..ab27cecf6f3400aa33520147f8f2edf51a0c2b27 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
-@@ -12,18 +12,21 @@ import type {
+@@ -12,19 +12,22 @@ import type {
    AgentStatus,
    CancelOptions,
    InboxTarget,
@@ -91,16 +82,17 @@ index 86b460f2d9371e78931e513a5ca26d386a33ba20..bf61f8641331402acfc76def7843487c
  import {
    LlmError,
    createAssistantMessage,
+   createDeveloperMessage,
    errorChain,
 +  freezeMessage,
    markAgentLoopRequest,
  } from '@deepseek-ai/dsh-llm'
--import { deepFreeze } from '@deepseek-ai/dsh-util-values'
-+import { deepFreeze, isJsonValue, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
+-import { assertNever, deepFreeze } from '@deepseek-ai/dsh-util-values'
++import { assertNever, deepFreeze, isJsonValue, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
  import type { Scope } from '@deepseek-ai/dsh-scope'
  import { createScope } from '@deepseek-ai/dsh-scope'
- import type { EpochHeader, RequestContext, Session, SessionId, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
-@@ -59,6 +62,127 @@ type PreparedStep =
+ import type { EpochHeader, RequestContext, Session, SessionId, SessionSeq, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
+@@ -60,6 +63,127 @@ type PreparedStep =
      assembly: PromptAssembly
    }
  
@@ -228,7 +220,7 @@ index 86b460f2d9371e78931e513a5ca26d386a33ba20..bf61f8641331402acfc76def7843487c
  /** Remove adapter-derived values before plugins propose the next request config. */
  function requestProposal(header: EpochHeader): LlmCallConfig {
    if (header.adapterDefaults === undefined) return header.config
-@@ -471,7 +595,7 @@ export class ReactLoopAgent implements Agent {
+@@ -500,7 +624,7 @@ export class ReactLoopAgent implements Agent {
            continue
          }
  
@@ -237,7 +229,7 @@ index 86b460f2d9371e78931e513a5ca26d386a33ba20..bf61f8641331402acfc76def7843487c
            content: live.blocks(),
            source: {
              provider: request.provider,
-@@ -479,6 +603,20 @@ export class ReactLoopAgent implements Agent {
+@@ -508,6 +632,20 @@ export class ReactLoopAgent implements Agent {
              ...live.replayState !== undefined ? { replayState: live.replayState } : {},
            },
          })
@@ -258,7 +250,7 @@ index 86b460f2d9371e78931e513a5ca26d386a33ba20..bf61f8641331402acfc76def7843487c
          live.settle(
            'assistant/message',
            () => this.session.append('assistant/message', {
-@@ -491,10 +629,11 @@ export class ReactLoopAgent implements Agent {
+@@ -520,10 +658,11 @@ export class ReactLoopAgent implements Agent {
          )
          if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
  
@@ -600,7 +592,7 @@ index 0000000000000000000000000000000000000000..2cb749d337d1259f6e64ac942f14b09a
 +  })
 +})
 diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
-index df0111b90c6f4178ea140f119602c9d4ae3ffcfa..bf565a23eeedb12f7df04a34a9c01742139b66bc 100644
+index 717fe3416ef539780a7c359cdf92db06d18ccbe8..56b08ae41fdbb1066a10b0bc4b89521cdc17dfe5 100644
 --- a/packages/core/agent/src/runtime-types.ts
 +++ b/packages/core/agent/src/runtime-types.ts
 @@ -8,10 +8,11 @@
@@ -637,7 +629,7 @@ index df0111b90c6f4178ea140f119602c9d4ae3ffcfa..bf565a23eeedb12f7df04a34a9c01742
  /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
  export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
  
-@@ -356,6 +371,16 @@ declare module '@deepseek-ai/cordis' {
+@@ -346,6 +361,16 @@ declare module '@deepseek-ai/cordis' {
       * @mode waterfall
      */
      'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
@@ -655,7 +647,7 @@ index df0111b90c6f4178ea140f119602c9d4ae3ffcfa..bf565a23eeedb12f7df04a34a9c01742
       * Handle one failed model-request attempt before the loop retries or closes
       * its step. A listener returns `{ kind: 'retry' }` without calling `next()`
 diff --git a/packages/core/scope/src/scoped-events.generated.ts b/packages/core/scope/src/scoped-events.generated.ts
-index 8a35f59873b63cfb7a2ce3bb652dbf635fc9bde1..33b43becacbfb3707eda2ce555e03d6022b05688 100644
+index d0e4a9cb9727c492a551a8188454bb58820507e5..642efd3e251b1e2479438d70b7fce374a42a729b 100644
 --- a/packages/core/scope/src/scoped-events.generated.ts
 +++ b/packages/core/scope/src/scoped-events.generated.ts
 @@ -15,6 +15,7 @@ const scopedSubjectResolvers: Readonly<Record<string, ScopedSubjectResolver | nu
@@ -667,7 +659,7 @@ index 8a35f59873b63cfb7a2ce3bb652dbf635fc9bde1..33b43becacbfb3707eda2ce555e03d60
    'agent/request': args => (args[0] as Record<string, unknown>)['agent'],
    'agent/request-error': args => (args[0] as Record<string, unknown>)['agent'],
 diff --git a/packages/core/scope/tests/invariant.spec.ts b/packages/core/scope/tests/invariant.spec.ts
-index 57a4a6d091a9d412f392ec13d82f5754567fe2a6..3c4fe97735bbd8bd6c378e015038a51f0cd603e3 100644
+index 8e3e358a2743a6f84b2c40decbb338e208124c7a..301c73cbe57f495cd50c95d5bce20c11f162ff9f 100644
 --- a/packages/core/scope/tests/invariant.spec.ts
 +++ b/packages/core/scope/tests/invariant.spec.ts
 @@ -2,7 +2,7 @@ import { freezeMessage, MessageId } from '@deepseek-ai/dsh-llm'
@@ -687,8 +679,8 @@ index 57a4a6d091a9d412f392ec13d82f5754567fe2a6..3c4fe97735bbd8bd6c378e015038a51f
      const message = freezeMessage({
        id: MessageId('m'),
        role: 'user',
-@@ -54,6 +55,10 @@ describe('scoped-dispatch invariants', () => {
-       'agent/session-start': [{ agent, source: 'startup' }],
+@@ -53,6 +54,10 @@ describe('scoped-dispatch invariants', () => {
+       'agent/inbox/discarded': [{ agent, message }],
        'agent/pre-step': [{ agent, messages: [message], turn: 1, step: 1, signal }, () => Promise.resolve({ kind: 'enter', messages: [message] })],
        'agent/request': [{ agent, turn: 1, step: 1, signal }, () => Promise.resolve(config)],
 +      'agent/pre-assistant-commit': [

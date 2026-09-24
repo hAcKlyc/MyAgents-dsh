@@ -79,7 +79,7 @@ const fixture = (): CreateBatch1HandoffInput => {
     productProfileSha256: digest(11),
     canonicalToolsSha256: digest(12),
     eventsSha256: digest(13),
-    sessionFormat: "dsh-session-events-v1",
+    sessionFormat: "dsh-session-events-v2",
     persistenceFormat: "myagents-sqlite-session-v1",
     persistenceSchemaVersion: 7,
     checkpointFormat: "root-write-edit-v1",

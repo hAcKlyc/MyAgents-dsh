@@ -1,17 +1,20 @@
 diff --git a/packages/context/agent-instructions/README.i18n.yaml b/packages/context/agent-instructions/README.i18n.yaml
-index b371f2c966340675546634fd95017a84e5ab594d..b0c6d3453f6bdab6e008553d4998c8c07a894473 100644
+index 572468170f8bdf78421f726c5ffeb09512299ac1..9b4fdeefd9610a0c951fabf7dacbf53b91e6ec4b 100644
 --- a/packages/context/agent-instructions/README.i18n.yaml
 +++ b/packages/context/agent-instructions/README.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write packages/context/agent-instructions/README.md
--README.md: a6d19d97e87273e0f051d7b67cbc1a805125b43d
--README.zh.md: 63a6de3d0cc8438e3450d9879a125b206dfc746e
-+README.md: d0ec04a974cffcc23a9ff6cf3a2ded0ebeeccf24
-+README.zh.md: 586945fc9e0b19636e132422abc8cf28cf63d051
+@@ -39,8 +39,8 @@
+   en: d881b9055f823929
+   zh: 87b25f0bf8e204e9
+ /deepseek-ai-dsh-agent-instructions/understand-the-implementation/invariants:
+-  en: 7f6e9b5356da91fd
+-  zh: 7b99f255d23d982e
++  en: 8dea7f96cd6e4ee3
++  zh: 4188c7602cae5029
+ /deepseek-ai-dsh-agent-instructions/further-exploration:
+   en: b3e57c263575fa5f
+   zh: b67efbda908ac82c
 diff --git a/packages/context/agent-instructions/README.md b/packages/context/agent-instructions/README.md
-index a6d19d97e87273e0f051d7b67cbc1a805125b43d..d0ec04a974cffcc23a9ff6cf3a2ded0ebeeccf24 100644
+index 34feeb2ac5ba1f43c685321741b779bdb4d6d23a..9ff45887899148f29b2aee6b8ea824ad451846ad 100644
 --- a/packages/context/agent-instructions/README.md
 +++ b/packages/context/agent-instructions/README.md
 @@ -105,6 +105,8 @@ At the first eligible `agent/pre-step` of a session, the plugin composes the bas
@@ -24,7 +27,7 @@ index a6d19d97e87273e0f051d7b67cbc1a805125b43d..d0ec04a974cffcc23a9ff6cf3a2ded0e
  
  -----
 diff --git a/packages/context/agent-instructions/README.zh.md b/packages/context/agent-instructions/README.zh.md
-index 63a6de3d0cc8438e3450d9879a125b206dfc746e..586945fc9e0b19636e132422abc8cf28cf63d051 100644
+index 311d6f636f9662142e9a70d6f5002417d69a256e..a3107d3c10270c82d7c44b89100d329761fe69bf 100644
 --- a/packages/context/agent-instructions/README.zh.md
 +++ b/packages/context/agent-instructions/README.zh.md
 @@ -105,6 +105,8 @@ export interface Config {
@@ -118,7 +121,7 @@ index f9edc9d4b8d88f1141c8aebc9dfdf0494a87ee74..f75a022b248a2586cee70a08022dc87f
  }
  
 diff --git a/packages/context/agent-instructions/src/files.ts b/packages/context/agent-instructions/src/files.ts
-index b91cab12a1cd4a49cbddac486060e41717194437..9d20456d00d6b07693ffc98e14c3a9240eea2f2e 100644
+index fe1816dc74e37b63e5cf50a6fb7145b6a6c35ec4..6bb62c9eca8491e12b02a4fa24d846e4d4bc18b6 100644
 --- a/packages/context/agent-instructions/src/files.ts
 +++ b/packages/context/agent-instructions/src/files.ts
 @@ -52,6 +52,7 @@ interface DiscoverOptions {
@@ -224,10 +227,10 @@ index b91cab12a1cd4a49cbddac486060e41717194437..9d20456d00d6b07693ffc98e14c3a924
    }
    const deduped = dedupInstructionFilesByDirectory(loaded)
 diff --git a/packages/context/agent-instructions/src/index.ts b/packages/context/agent-instructions/src/index.ts
-index f614926241e2a4f74ade02e40f36551839e89c8e..cc010335efeff7ba8796b0295614b76a85318a7a 100644
+index 82cd0451f31eb26e46ff899f21f939aa91fb3622..4ff7347f6bf4160801a8fc8745f02251bd258e63 100644
 --- a/packages/context/agent-instructions/src/index.ts
 +++ b/packages/context/agent-instructions/src/index.ts
-@@ -70,10 +70,8 @@ function sameContextPayload(left: UserMessage, right: UserMessage): boolean {
+@@ -71,10 +71,8 @@ function sameContextPayload(left: UserMessage, right: UserMessage): boolean {
      && isDeepStrictEqual(left.source, right.source)
  }
  
@@ -240,7 +243,7 @@ index f614926241e2a4f74ade02e40f36551839e89c8e..cc010335efeff7ba8796b0295614b76a
    if (typeof exec.arguments !== 'object' || exec.arguments === null) return undefined
    if (!('file_path' in exec.arguments) || typeof exec.arguments.file_path !== 'string') return undefined
    const filePath = exec.arguments.file_path.trim()
-@@ -82,6 +80,7 @@ function filePathFromExecution(exec: ToolExecution): string | undefined {
+@@ -83,6 +81,7 @@ function filePathFromExecution(exec: ToolExecution): string | undefined {
  
  export function apply(ctx: Context, config: Config): void {
    const resolved: ResolvedConfig = resolveConfig(config)
@@ -248,7 +251,7 @@ index f614926241e2a4f74ade02e40f36551839e89c8e..cc010335efeff7ba8796b0295614b76a
    const instructionVersions: InstructionVersionCache = new WeakMap()
    const baselinePreparations = new WeakMap<Session, {
      identity: string
-@@ -144,6 +143,7 @@ export function apply(ctx: Context, config: Config): void {
+@@ -145,6 +144,7 @@ export function apply(ctx: Context, config: Config): void {
          maxSourceBytes: resolved.maxSourceBytes,
          instructionFileCandidates: resolved.instructionFileCandidates,
          localInstructionFileCandidates: resolved.localInstructionFileCandidates,
@@ -256,7 +259,7 @@ index f614926241e2a4f74ade02e40f36551839e89c8e..cc010335efeff7ba8796b0295614b76a
          projectRoot,
          replacePreviousBaseline,
          signal,
-@@ -342,7 +342,7 @@ export function apply(ctx: Context, config: Config): void {
+@@ -344,7 +344,7 @@ export function apply(ctx: Context, config: Config): void {
      const touches = executionTouches.get(exec.token) ?? []
      executionTouches.delete(exec.token)
      if (!result.isError && exec.agent !== undefined && !exec.signal.aborted) {
@@ -266,10 +269,10 @@ index f614926241e2a4f74ade02e40f36551839e89c8e..cc010335efeff7ba8796b0295614b76a
      }
      if (exec.parent !== undefined) {
 diff --git a/packages/context/agent-instructions/src/state.ts b/packages/context/agent-instructions/src/state.ts
-index fb25e262f93c470ac9d5c3def440f4c8f5d6327e..022663e332eec6c984c5d13602d773be96d2ea95 100644
+index 61d8fa4237e0ce94a08de20ae2cff65f1ae97645..d5ffe1fef114766753d64de6e044ec8fa9989a5f 100644
 --- a/packages/context/agent-instructions/src/state.ts
 +++ b/packages/context/agent-instructions/src/state.ts
-@@ -345,6 +345,106 @@ export async function reconcileInstructionContext(
+@@ -346,6 +346,106 @@ export async function reconcileInstructionContext(
      const versionUpdateStart = versionUpdates.length
      const addedAbsolutePaths: string[] = []
      const priorVersions = new Map(probedScopes.map(scope => [scope, versions.get(scope)]))
@@ -377,10 +380,10 @@ index fb25e262f93c470ac9d5c3def440f4c8f5d6327e..022663e332eec6c984c5d13602d773be
        const previous = effective.get(scope)
        const probe = await probeScopeInstruction(scope, projectRoot, resolved, fileSystem, options.signal)
 diff --git a/packages/context/agent-instructions/tests/agent-instructions.spec.ts b/packages/context/agent-instructions/tests/agent-instructions.spec.ts
-index d477cf666e74df187d3d580b0ff521ec6ad8043e..0a9655fc38783c086e24ce24525c1f7cbff882e4 100644
+index 533b443256983532fde8c03d0ff0b5b28a380464..06de53a0a2cde29fce5feb78f75b26430c9681e2 100644
 --- a/packages/context/agent-instructions/tests/agent-instructions.spec.ts
 +++ b/packages/context/agent-instructions/tests/agent-instructions.spec.ts
-@@ -592,6 +592,42 @@ describe('workspace context instruction discovery', () => {
+@@ -609,6 +609,42 @@ describe('workspace context instruction discovery', () => {
      }
    })
  
@@ -423,7 +426,7 @@ index d477cf666e74df187d3d580b0ff521ec6ad8043e..0a9655fc38783c086e24ce24525c1f7c
    it('ignores configured instruction candidates that are not same-directory file names', async () => {
      const root = await tempRepo()
      const home = await tempRepo()
-@@ -1020,6 +1056,28 @@ describe('workspace context rendering', () => {
+@@ -1037,6 +1073,28 @@ describe('workspace context rendering', () => {
  })
  
  describe('workspace context request injection', () => {
@@ -435,7 +438,7 @@ index d477cf666e74df187d3d580b0ff521ec6ad8043e..0a9655fc38783c086e24ce24525c1f7c
 +      await mkdir(join(root, '.git'))
 +      await write(join(root, 'CLAUDE.md'), 'selected baseline rule')
 +      await write(join(root, 'AGENTS.md'), 'lower priority baseline rule')
-+      await mountWorkspaceContext(ctx, {
++      await mountAgentInstructions(ctx, {
 +        dshHome: home, maxBytes: 65536, candidateSelection: 'first',
 +        instructionFileCandidates: ['CLAUDE.md', 'AGENTS.md'], localInstructionFileCandidates: [],
 +      })
@@ -452,7 +455,7 @@ index d477cf666e74df187d3d580b0ff521ec6ad8043e..0a9655fc38783c086e24ce24525c1f7c
    it('requires an explicit maxBytes configuration', async () => {
      const ctx = new Context()
  
-@@ -2608,6 +2666,56 @@ describe('workspace context request injection', () => {
+@@ -2625,6 +2683,56 @@ describe('workspace context request injection', () => {
  })
  
  describe('dynamic nested workspace context injection', () => {
@@ -464,7 +467,7 @@ index d477cf666e74df187d3d580b0ff521ec6ad8043e..0a9655fc38783c086e24ce24525c1f7c
 +      await mkdir(join(root, '.git'), { recursive: true })
 +      await write(join(root, 'pkg/CLAUDE.md'), 'claude nested rule')
 +      await write(join(root, 'pkg/AGENTS.md'), 'agents nested rule')
-+      await mountWorkspaceContext(ctx, {
++      await mountAgentInstructions(ctx, {
 +        dshHome: home,
 +        maxBytes: 65536,
 +        candidateSelection: 'first',
@@ -482,7 +485,7 @@ index d477cf666e74df187d3d580b0ff521ec6ad8043e..0a9655fc38783c086e24ce24525c1f7c
 +      }), { content: [{ type: 'text', text: 'ok' }], isError: false, value: null }) }
 +
 +      emitRead('canonical-read-first-winner')
-+      const first = await syncedWorkspaceContext(ctx, agent)
++      const first = await syncedAgentInstructions(ctx, agent)
 +      expect(first.source).toMatchObject({
 +        changes: [{ action: 'set', scope: sk('pkg', 'CLAUDE.md'), path: join('pkg', 'CLAUDE.md') }],
 +      })
@@ -491,7 +494,7 @@ index d477cf666e74df187d3d580b0ff521ec6ad8043e..0a9655fc38783c086e24ce24525c1f7c
 +
 +      await rm(join(root, 'pkg/CLAUDE.md'))
 +      emitRead('canonical-read-fallback-winner')
-+      const replacement = await syncedWorkspaceContext(ctx, agent)
++      const replacement = await syncedAgentInstructions(ctx, agent)
 +      expect(replacement.source).toMatchObject({
 +        changes: [
 +          { action: 'remove', scope: sk('pkg', 'CLAUDE.md'), path: join('pkg', 'CLAUDE.md') },

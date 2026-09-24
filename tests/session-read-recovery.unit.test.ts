@@ -3,7 +3,7 @@ import { ProtocolError, canonicalSessionReadData, readSessionSnapshot, type Meth
 
 type Page = MethodResult<"session/read">;
 const page = (text: string, nextCursor?: string): Page => ({
-  runtimeSessionId: "synthetic-session", historyFormat: "dsh-session-events-v1",
+  runtimeSessionId: "synthetic-session", historyFormat: "dsh-session-events-v2",
   durableHead: { sequence: nextCursor === undefined ? 1 : 2 },
   records: [{ kind: "event", sequence: 0, eventType: "synthetic", data: { text }, eventSha256: canonicalSessionReadData({ text }).sha256 }],
   ...(nextCursor === undefined ? {} : { nextCursor }),

@@ -8,7 +8,7 @@ const request = (overrides: Partial<GenerateOptions> = {}): GenerateOptions => (
   model: "fixture-model",
   messages: [createUserMessage({
     content: [{ type: "text", text: "original prompt" }],
-    source: { kind: "plugin", plugin: "myagents-dsh-testkit" },
+    source: { kind: "user" },
   })],
   ...overrides,
 });
@@ -31,7 +31,7 @@ describe("ScriptedFakeLlmAdapter", () => {
     const chunks = await collect(adapter, options);
     options.messages[0] = createUserMessage({
       content: [{ type: "text", text: "mutated after request" }],
-      source: { kind: "plugin", plugin: "myagents-dsh-testkit" },
+      source: { kind: "user" },
     });
 
     expect(chunks.at(-2)).toEqual({

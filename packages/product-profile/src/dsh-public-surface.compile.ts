@@ -48,7 +48,7 @@ import type {
 import { FileSystem, FsTargetKey, FsVersion } from "@deepseek-ai/dsh-fs";
 import type { FsEditRequest, FsWriteIntent } from "@deepseek-ai/dsh-fs";
 import { JobId, JobRegistry } from "@deepseek-ai/dsh-jobs";
-import type { JobSnapshot, JobStart } from "@deepseek-ai/dsh-jobs";
+import type { JobView, JobRead } from "@deepseek-ai/dsh-jobs";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import type { Config as LocalJobRegistryConfig } from "@deepseek-ai/dsh-jobs-local";
 import { LlmAdapter, LlmError, LlmRuntime, assertUsableApiKey, resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
@@ -64,8 +64,8 @@ import {
   DeepSeekAdapter,
   PUBLIC_BASE_URL,
 } from "@deepseek-ai/dsh-llm-deepseek";
-import { SettingsProvider } from "@deepseek-ai/dsh-settings";
-import type { SettingsNamespace, SettingsScope } from "@deepseek-ai/dsh-settings";
+import { SettingsForms } from "@deepseek-ai/dsh-settings";
+import type { SettingsNamespace, SettingsPathOp } from "@deepseek-ai/dsh-settings";
 import type { DeepSeekConnectionOptions, RequestDefaults } from "@deepseek-ai/dsh-llm-deepseek";
 import { apply as applyMcpClient } from "@deepseek-ai/dsh-mcp-client";
 import type { Config as McpConfig, McpResult } from "@deepseek-ai/dsh-mcp-client";
@@ -180,7 +180,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   TokenMeter,
   deriveTurnTokenUsage,
   ToolRuntime,
-  SettingsProvider,
+  SettingsForms,
   UserQuestionService,
   WebRuntime,
   applyMcpClient,
@@ -228,11 +228,11 @@ export interface DshPublicSurfaceTypes {
   credentials: [CredentialInfo, ResolvedCredential];
   filesystem: [FsEditRequest, FsWriteIntent];
   fsSearchHelpers: [GlobInput, GrepInput, RipgrepRun];
-  jobs: [JobSnapshot, JobStart];
+  jobs: [JobView, JobRead];
   jobsLocal: [LocalJobRegistryConfig];
   llm: [GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk];
   llmDeepSeek: [DeepSeekConnectionOptions, RequestDefaults];
-  settings: [SettingsNamespace, SettingsScope<unknown>];
+  settings: [SettingsNamespace, SettingsPathOp];
   mcp: [McpConfig, McpResult];
   persistence: [SessionHandle, SessionInspection, SessionPersistenceSnapshot];
   planMode: [PlanProjection];

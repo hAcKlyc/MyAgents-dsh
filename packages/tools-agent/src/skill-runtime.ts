@@ -735,6 +735,7 @@ const summaryMatches = (
   summary: SkillSummary,
   descriptor: StaticSkillDescriptor,
 ): boolean => summary.name === descriptor.name
+  && summary.path === descriptor.sourcePath
   && summary.description === descriptor.description
   && summary.whenToUse === descriptor.whenToUse
   && summary.provider === PRODUCT_STATIC_SKILL_PROVIDER
@@ -761,7 +762,7 @@ const normalizeObservedSkillCatalog = (
     const summary = exactObject(
       value,
       ["name", "description", "invocation", "source", "provider"],
-      ["whenToUse", "resourceBase"],
+      ["whenToUse", "resourceBase", "path"],
       `operation-visible Skill summary[${String(index)}]`,
     );
     const resource = summary.resourceBase === undefined
@@ -778,6 +779,11 @@ const normalizeObservedSkillCatalog = (
     const name = boundedIdentifier(summary.name, `operation-visible Skill summary[${String(index)}].name`);
     return Object.freeze({
       name,
+      ...(summary.path === undefined ? {} : { path: boundedText(
+        summary.path,
+        8_192,
+        `operation-visible Skill summary[${String(index)}].path`,
+      ) }),
       description: projectProductSkillDescription(summary.description, name),
       ...(summary.whenToUse === undefined ? {} : {
         whenToUse: projectSkillText(

@@ -6,7 +6,7 @@
     "packages/protocol/generated/protocol-meta.json",
     "packages/product-profile/manifests/batch-1-candidate-profile-v1.json"
   ],
-  "contractSha256": "da5724f9de16c91344037529dad379ef9716796a10ce2cdcb02116ef102a7323",
+  "contractSha256": "dbd2a9fbcec69b55759cf726497c2857125a8d358197e10063ceb57cda2d64f8",
   "generator": "scripts/generate-tool-contracts.ts",
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
@@ -20,13 +20,13 @@
     "stockModelDefinitionCount": 0
   },
   "outputs": {
-    "canonical-tool-contracts-v1.json": "da5724f9de16c91344037529dad379ef9716796a10ce2cdcb02116ef102a7323",
-    "canonical-tools-v1.md": "c30b58c24d12d3d24872bf4f386f1c7a8b743394ac5cb4d578b4bf6330061e2f",
-    "canonical-tools.generated.ts": "cb471b0aa669b6bc6bd7cb9e13d72506ce17b9d393b3b7ba986d29fb4bcafcec",
-    "catalog-fixtures-v1.json": "45a219b546858799a44454b01d2337d21f952a9c0f3d975466bcf2c119e27080",
-    "dsh-reuse-matrix-v1.json": "460b5d9f327a9cc22ed4d1a8d9f2d5f427d598d75493d05106bbb5b122b1e32c",
-    "tool-catalog.schema.json": "44a12ea0b731c5a0de7ecbb7ae2f7001aa9db733ec4743d58cef8393eae998b3",
-    "tool-contract-meta.json": "46d4a60c2463ba5fa5778763e259481900d787af1b79e41585b73107a3552665"
+    "canonical-tool-contracts-v1.json": "dbd2a9fbcec69b55759cf726497c2857125a8d358197e10063ceb57cda2d64f8",
+    "canonical-tools-v1.md": "bf3dc73b97045f877176802237e22a472d7d12cb81a6cba73bf68b68052cc536",
+    "canonical-tools.generated.ts": "f90dc00a80bbfe23d59998b57421e0f75e75b2ef63c4883f3fb5e723dadea641",
+    "catalog-fixtures-v1.json": "d2f248f2f9b68ea859f4f14425b07a4920e3a2544642ad18f681224b2408fd1f",
+    "dsh-reuse-matrix-v1.json": "e97b96b8ac05ccfcc82bf50e44f35c247336b185b8ac75337a2e67ef0b9416f4",
+    "tool-catalog.schema.json": "495da4c0e25ed19a5d0a3ef18c1c306c3103e52f329182db9ea3f38f1d1a3619",
+    "tool-contract-meta.json": "2f26bf99acd7925f0f4cff024b1afd699646f269fe28422ac7eb079266268e8f"
   },
   "profile": "canonical-agent-experience-v1",
   "source": {
@@ -63,11 +63,11 @@
     "WebFetch": "8b84a4c8b06ae5ca1cb6d49ff3c4f153c6f6eeb3c97711bc69f4df22f2d1e6ff",
     "WebSearch": "dacdda127727dd003fef8f324e0a7a0f63c502251d118bae9c30c8bfde0ec8ec",
     "Write": "37a52bdf6e5ffe62c4ef7f90deffb7f185d832ae5e431a103d0713608c9b35c7",
-    "bash": "94ffcd4ea5a0d3978ebeb1e660546342d74f7c338dabe0ee336574a21de11042",
-    "job_kill": "4b4575ebd38272690828238e7ba0b1279d536acc5b0ee7e4e61ef5a766df54ad",
+    "bash": "c26d519ed1c121c30e2f3f866a43632c0e15db9de422af0b683fc9b3cde33f9b",
+    "job_kill": "e1e214fab2e207dd17b9d52d598bb5e278430fcf19008a5dfe3c962d359922fe",
     "job_list": "ec08f4cacb906606ce3a6a79645c7699d7c41df58f214cc4fe40a66ac9181384",
-    "job_output": "512e3fe63f26a6a076cfcb94449bb22f2f2e152fce19c62ef508ee72b422b8e7",
+    "job_output": "3555a5a4e02ef43617d0ec8fa7452fa14e937c4189cd8784a75ca4723fe0d685",
     "ls": "98335fd6d8109cff2de7473a87a069cbf3ea86445a3b85aa9e2aa16a7a9bae32",
-    "pwsh": "8278cdb5d0054b52d15c7d7d24570582126406797855f7bec3693a4b6ba998e5"
+    "pwsh": "7b3a11441d5ee40cee18c45121beeba2626140b1eff45fdeed204f19fe284394"
   }
 }

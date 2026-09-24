@@ -1,17 +1,5 @@
-diff --git a/docs/subsystems/subagent.i18n.yaml b/docs/subsystems/subagent.i18n.yaml
-index 4750a413d5147a1f42030affb1197aa84c9d22ad..a7852bce1792a815a192e3e044b4e13f81cf141f 100644
---- a/docs/subsystems/subagent.i18n.yaml
-+++ b/docs/subsystems/subagent.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write docs/subsystems/subagent.md
--subagent.md: 5f927f4c0bef57c0fda0bcb39280a5ac2012343e
--subagent.zh.md: ce827f154989404825e322682c4af6ba83182253
-+subagent.md: 5c2f2208c4b95b217877b886d07f9062225d900c
-+subagent.zh.md: 12aad5e2dbf9282f5ca13182c4cdd924124d6d76
 diff --git a/docs/subsystems/subagent.md b/docs/subsystems/subagent.md
-index 5f927f4c0bef57c0fda0bcb39280a5ac2012343e..5c2f2208c4b95b217877b886d07f9062225d900c 100644
+index de96d7550904fb99e9109946c73eb1122dc4bdad..579828cbbda1bf9e94c9738582f520d142388a93 100644
 --- a/docs/subsystems/subagent.md
 +++ b/docs/subsystems/subagent.md
 @@ -103,6 +103,11 @@ interface SubagentStartRequest {
@@ -26,51 +14,10 @@ index 5f927f4c0bef57c0fda0bcb39280a5ac2012343e..5c2f2208c4b95b217877b886d07f9062
  }
  ```
  
-@@ -461,6 +466,40 @@ The spawn and fork backends create an ordinary one-shot agent through `parent.ct
- - **Delegation depth** is durable `SessionHeader.delegationDepth` plus the merge-extensible runtime field `AgentOptions.subagentDepth`; absence means top-level depth zero, and the greater present value is authoritative. The seam owns both fields — the loop neither sets nor reads them — so an in-process child persists parent depth + 1, cold resume cannot lower it, and every start rejects a derived depth outside the safe-integer domain or above a defined absolute `request.maxDepth` cap.
- - **Fork seeding** uses [`CreateAgentOptions.seed`](core.md#creation-and-ownership) (a `SessionEvent[]` prefix threaded through `AgentLoop.createAgent` → `ctx.sessions.prepare({ seed })`, the same primitive `ctx.agents.resume()` uses). The fork backend passes a *balanced completed-turn prefix* of the parent's log — the parent's events up to and including its last `turn/end` — so the seed is contiguous-from-0 and the [invariants](../../packages/runtime-diagnostics/invariants) replay accepts it (the in-flight, unbalanced turn is excluded).
+@@ -501,6 +506,13 @@ Named provider registry with one-shot runs, durable discovery, and continuable-c
+  */
+ resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined
  
-+### `ContinuableSetupContribution`
-+
-+```ts type-equiv
-+/**
-+ * One deployment capability installed into a continuable child's unpublished
-+ * creation context. It composes synchronously before publication and returns
-+ * the disposer for exactly that installation.
-+ * @param childCtx - the child's unpublished scoped context.
-+ * @param child - the exact unpublished Agent receiving the capability.
-+ * @returns the disposer revoking this installation.
-+ */
-+type ContinuableSetupContribution = (childCtx: Context, child: Agent) => () => void
-+```
-+
-+### `SubagentResumeOptions`
-+
-+```ts type-equiv
-+/** Options for waking an already-persisted child Inbox identity. */
-+interface SubagentResumeOptions {
-+  readonly signal: AbortSignal
-+}
-+```
-+
-+### `SubagentDeliveryOptions`
-+
-+```ts type-equiv
-+/** Trusted composition delivery with explicit scheduling and durable provenance. */
-+interface SubagentDeliveryOptions {
-+  readonly delivery: 'steer' | 'queue'
-+  readonly source: MessageSource
-+  readonly signal: AbortSignal
-+}
-+```
-+
- <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
- 
- <a id="cordis-surface"></a>
-@@ -492,6 +531,13 @@ Source: [`packages/subagent/tool-subagent/src/model-selection-settings.ts`](../.
- Named provider registry with one-shot runs, durable discovery, and continuable-child operations.
- 
- ```ts cordis-catalog
 +/**
 + * Install a trusted capability at unpublished fresh/cold child setup, revoked with its scope.
 + * @param contribution - trusted child-scope setup invoked with its explicit unpublished Agent.
@@ -81,7 +28,7 @@ index 5f927f4c0bef57c0fda0bcb39280a5ac2012343e..5c2f2208c4b95b217877b886d07f9062
  /**
   * Establish one durable continuable child and deliver its initial prompt.
   * Resolves when the child's inbox accepts that prompt, without waiting for the
-@@ -503,6 +549,36 @@ Named provider registry with one-shot runs, durable discovery, and continuable-c
+@@ -512,6 +524,36 @@ resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined
   */
  async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>
  
@@ -119,7 +66,7 @@ index 5f927f4c0bef57c0fda0bcb39280a5ac2012343e..5c2f2208c4b95b217877b886d07f9062
   * Steer one model-authored message to the sender's direct parent or direct
   * continuable child. A running target admits it at the nearest step boundary;
 diff --git a/docs/subsystems/subagent.zh.md b/docs/subsystems/subagent.zh.md
-index ce827f154989404825e322682c4af6ba83182253..12aad5e2dbf9282f5ca13182c4cdd924124d6d76 100644
+index 843f0e0cd7149e5ddbef9414632fa4464f58882c..1a543f0cd6441b13e7433946a923025d7e5b7d7a 100644
 --- a/docs/subsystems/subagent.zh.md
 +++ b/docs/subsystems/subagent.zh.md
 @@ -103,6 +103,11 @@ interface SubagentStartRequest {
@@ -134,51 +81,10 @@ index ce827f154989404825e322682c4af6ba83182253..12aad5e2dbf9282f5ca13182c4cdd924
  }
  ```
  
-@@ -465,6 +470,40 @@ spawn 和 fork 后端通过 `parent.ctx` 创建一个普通的单次 agent，将
- - **委派深度**由持久 `SessionHeader.delegationDepth` 与可合并扩展的运行时字段 `AgentOptions.subagentDepth` 共同表示；缺失表示顶层深度为零，存在的较大值具有权威性。两个字段都归该 seam 所有——循环既不设置也不读取它们——因此进程内子 agent 会持久保存 parent 深度 + 1，冷恢复无法降低深度，而且每次 start 都会拒绝超出安全整数域、或高于已定义绝对 `request.maxDepth` 上限的派生深度。
- - **Fork 种子注入**使用 [`CreateAgentOptions.seed`](core.zh.md#creation-and-ownership)（一个 `SessionEvent[]` 前缀，经由 `AgentLoop.createAgent` → `ctx.sessions.prepare({ seed })` 传递，与 `ctx.agents.resume()` 使用的原语相同）。fork 后端传入父级日志的一段*平衡的已完成轮次前缀*——父级事件直到并包括其最后一个 `turn/end`——因此种子从 0 连续，[invariants](../../packages/runtime-diagnostics/invariants) 回放可以接受它（进行中的、未平衡的轮次被排除在外）。
+@@ -505,6 +510,13 @@ Named provider registry with one-shot runs, durable discovery, and continuable-c
+  */
+ resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined
  
-+### `ContinuableSetupContribution`
-+
-+```ts type-equiv
-+/**
-+ * One deployment capability installed into a continuable child's unpublished
-+ * creation context. It composes synchronously before publication and returns
-+ * the disposer for exactly that installation.
-+ * @param childCtx - the child's unpublished scoped context.
-+ * @param child - the exact unpublished Agent receiving the capability.
-+ * @returns the disposer revoking this installation.
-+ */
-+type ContinuableSetupContribution = (childCtx: Context, child: Agent) => () => void
-+```
-+
-+### `SubagentResumeOptions`
-+
-+```ts type-equiv
-+/** Options for waking an already-persisted child Inbox identity. */
-+interface SubagentResumeOptions {
-+  readonly signal: AbortSignal
-+}
-+```
-+
-+### `SubagentDeliveryOptions`
-+
-+```ts type-equiv
-+/** Trusted composition delivery with explicit scheduling and durable provenance. */
-+interface SubagentDeliveryOptions {
-+  readonly delivery: 'steer' | 'queue'
-+  readonly source: MessageSource
-+  readonly signal: AbortSignal
-+}
-+```
-+
- <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
- 
- <a id="cordis-surface"></a>
-@@ -496,6 +535,13 @@ Source: [`packages/subagent/tool-subagent/src/model-selection-settings.ts`](../.
- Named provider registry with one-shot runs, durable discovery, and continuable-child operations.
- 
- ```ts cordis-catalog
 +/**
 + * Install a trusted capability at unpublished fresh/cold child setup, revoked with its scope.
 + * @param contribution - trusted child-scope setup invoked with its explicit unpublished Agent.
@@ -189,7 +95,7 @@ index ce827f154989404825e322682c4af6ba83182253..12aad5e2dbf9282f5ca13182c4cdd924
  /**
   * Establish one durable continuable child and deliver its initial prompt.
   * Resolves when the child's inbox accepts that prompt, without waiting for the
-@@ -507,6 +553,36 @@ Named provider registry with one-shot runs, durable discovery, and continuable-c
+@@ -516,6 +528,36 @@ resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined
   */
  async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>
  
@@ -226,79 +132,26 @@ index ce827f154989404825e322682c4af6ba83182253..12aad5e2dbf9282f5ca13182c4cdd924
  /**
   * Steer one model-authored message to the sender's direct parent or direct
   * continuable child. A running target admits it at the nearest step boundary;
-diff --git a/docs/subsystems/system-prompt.i18n.yaml b/docs/subsystems/system-prompt.i18n.yaml
-index 96577399bd5f5ad4d3bf3fa4b0d72e3ab3201987..fbc88bf588868d2896c067182bb2af5add8e6d92 100644
---- a/docs/subsystems/system-prompt.i18n.yaml
-+++ b/docs/subsystems/system-prompt.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write docs/subsystems/system-prompt.md
--system-prompt.md: 516e3347c06882bfd3ff42638d77a2acb3aca753
--system-prompt.zh.md: 611ea0e9bdd81585efd7106012edd3d17e7bdd8e
-+system-prompt.md: 2a0b03cd84966eac87ffabcecfb5a50e5c5d046a
-+system-prompt.zh.md: 29005aedf4a0b0991f4d232c7e2d5a7ebba37e17
-diff --git a/docs/subsystems/system-prompt.md b/docs/subsystems/system-prompt.md
-index 516e3347c06882bfd3ff42638d77a2acb3aca753..2a0b03cd84966eac87ffabcecfb5a50e5c5d046a 100644
---- a/docs/subsystems/system-prompt.md
-+++ b/docs/subsystems/system-prompt.md
-@@ -59,6 +59,8 @@ interface PromptSection {
-    * interpolated later, by {@link renderPrompt}.
-    */
-   readonly text: string | ((context: AssembleContext) => string)
-+  /** Whether strict `{{variable}}` interpolation applies after assembly (default true). */
-+  readonly interpolate?: boolean
-   /**
-    * Treat this contribution as the complete system prompt. Assembly still
-    * runs the cooperative waterfall so tools, contexts, and variables can be
-@@ -82,6 +84,8 @@ interface PromptContext {
-   readonly order: number
-   /** Static text or a provider evaluated for each assembly. Empty text contributes nothing. */
-   readonly text: string | ((context: AssembleContext) => string)
-+  /** Whether strict `{{variable}}` interpolation applies after assembly (default true). */
-+  readonly interpolate?: boolean
- }
- ```
- 
-diff --git a/docs/subsystems/system-prompt.zh.md b/docs/subsystems/system-prompt.zh.md
-index 611ea0e9bdd81585efd7106012edd3d17e7bdd8e..29005aedf4a0b0991f4d232c7e2d5a7ebba37e17 100644
---- a/docs/subsystems/system-prompt.zh.md
-+++ b/docs/subsystems/system-prompt.zh.md
-@@ -59,6 +59,8 @@ interface PromptSection {
-    * interpolated later, by {@link renderPrompt}.
-    */
-   readonly text: string | ((context: AssembleContext) => string)
-+  /** Whether strict `{{variable}}` interpolation applies after assembly (default true). */
-+  readonly interpolate?: boolean
-   /**
-    * Treat this contribution as the complete system prompt. Assembly still
-    * runs the cooperative waterfall so tools, contexts, and variables can be
-@@ -82,6 +84,8 @@ interface PromptContext {
-   readonly order: number
-   /** Static text or a provider evaluated for each assembly. Empty text contributes nothing. */
-   readonly text: string | ((context: AssembleContext) => string)
-+  /** Whether strict `{{variable}}` interpolation applies after assembly (default true). */
-+  readonly interpolate?: boolean
- }
- ```
- 
 diff --git a/packages/core/system-prompt/README.i18n.yaml b/packages/core/system-prompt/README.i18n.yaml
-index 4ea091a963ced434df769aafed00645254dd7876..a46730495797c14e729ea5e77ed409eae8a71a28 100644
+index d05e3b8c576f11b9d4f5e82f6e4ce1f6a73ccae6..7cd8fe7e2d0ca224cf228f65aa6830750601ac1b 100644
 --- a/packages/core/system-prompt/README.i18n.yaml
 +++ b/packages/core/system-prompt/README.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write packages/core/system-prompt/README.md
--README.md: 7e4826c4fb51873db02fd80eca632c3d1dd8d550
--README.zh.md: 55730f11fffdc6ca92ce83613c9af3b1331351b1
-+README.md: bf6cb89a94926e00628734efdeef21e4eea3f9ae
-+README.zh.md: 622ff7df9a8e3bd6bf08d00db5d184e677cdd274
+@@ -45,8 +45,8 @@
+   en: 54977e6c431f851e
+   zh: ef60007054b97ff0
+ /deepseek-ai-dsh-system-prompt/understand-the-implementation/scoping:
+-  en: 1100ab1dfe961631
+-  zh: c510275c893951b4
++  en: 7afaab7c1e853f3e
++  zh: 0bfd339cebac6743
+ /deepseek-ai-dsh-system-prompt/further-exploration:
+   en: 108d1b4cca466bc7
+   zh: e1275966f83c14f9
 diff --git a/packages/core/system-prompt/README.md b/packages/core/system-prompt/README.md
-index 7e4826c4fb51873db02fd80eca632c3d1dd8d550..bf6cb89a94926e00628734efdeef21e4eea3f9ae 100644
+index a76ae5c66f0801cb85cd8cf22d0c3ebbc68e65b8..ac1eafa821022d638c11ce9db5d412b3303f4f2a 100644
 --- a/packages/core/system-prompt/README.md
 +++ b/packages/core/system-prompt/README.md
-@@ -108,6 +108,8 @@ Assembly resolves and renders in two stages: `assemble()` returns sections with
+@@ -110,6 +110,8 @@ Assembly resolves and renders in two stages: `assemble()` returns sections with
  
  Scoped sections, variables, and tool providers shadow globals for one agent, and the assembly waterfall dispatches scope-filtered. Registry-change notifications (`system-prompt/change`) are deliberately unfiltered because a global change affects every scope.
  
@@ -308,10 +161,10 @@ index 7e4826c4fb51873db02fd80eca632c3d1dd8d550..bf6cb89a94926e00628734efdeef21e4
  
  -----
 diff --git a/packages/core/system-prompt/README.zh.md b/packages/core/system-prompt/README.zh.md
-index 55730f11fffdc6ca92ce83613c9af3b1331351b1..622ff7df9a8e3bd6bf08d00db5d184e677cdd274 100644
+index 98c6e733399c954c5bbc56b905aefcc6b080381d..ef4813176c7176b721768167ea24cf31936e2d48 100644
 --- a/packages/core/system-prompt/README.zh.md
 +++ b/packages/core/system-prompt/README.zh.md
-@@ -108,6 +108,8 @@ ctx.systemPrompt.variable('cwd', ({ agent }) => agent?.session.header.cwd)
+@@ -110,6 +110,8 @@ ctx.systemPrompt.variable('cwd', ({ agent }) => agent?.session.header.cwd)
  
  带作用域的段、变量与工具提供方会为单个 agent 遮蔽全局项，组装 waterfall 按作用域筛选分发。注册表变更通知（`system-prompt/change`）刻意不经过筛选，因为全局变更影响每个作用域。
  
@@ -320,157 +173,23 @@ index 55730f11fffdc6ca92ce83613c9af3b1331351b1..622ff7df9a8e3bd6bf08d00db5d184e6
  </details>
  
  -----
-diff --git a/packages/core/system-prompt/src/index.ts b/packages/core/system-prompt/src/index.ts
-index d83cc4d2160450d4fcf0e9b17a9682aaba7b100d..a648b8f6f3563b76ab8b1b1a1bf011662fdf1db1 100644
---- a/packages/core/system-prompt/src/index.ts
-+++ b/packages/core/system-prompt/src/index.ts
-@@ -64,6 +64,8 @@ export interface PromptSection {
-    * interpolated later, by {@link renderPrompt}.
-    */
-   readonly text: string | ((context: AssembleContext) => string)
-+  /** Whether strict `{{variable}}` interpolation applies after assembly (default true). */
-+  readonly interpolate?: boolean
-   /**
-    * Treat this contribution as the complete system prompt. Assembly still
-    * runs the cooperative waterfall so tools, contexts, and variables can be
-@@ -81,6 +83,8 @@ export interface PromptContext {
-   readonly order: number
-   /** Static text or a provider evaluated for each assembly. Empty text contributes nothing. */
-   readonly text: string | ((context: AssembleContext) => string)
-+  /** Whether strict `{{variable}}` interpolation applies after assembly (default true). */
-+  readonly interpolate?: boolean
- }
- 
- /** One section of an assembly: {@link PromptSection} with its text resolved. */
-@@ -89,6 +93,8 @@ export interface AssembledSection {
-   name: string
-   /** The resolved (but not yet interpolated) section text. */
-   text: string
-+  /** Whether rendering applies strict variable interpolation (default true). */
-+  interpolate?: boolean
- }
- 
- /** One resolved dynamic context contribution. */
-@@ -97,6 +103,8 @@ export interface AssembledContext {
-   name: string
-   /** The resolved text before variable interpolation. */
-   text: string
-+  /** Whether rendering applies strict variable interpolation (default true). */
-+  interpolate?: boolean
- }
- 
- /** Tool schemas visible in one assembly and their pre-restriction name set. */
-@@ -272,7 +280,9 @@ export interface Config {
-  */
- export function renderPrompt(assembly: PromptAssembly): string {
-   return assembly.sections
--    .map(section => interpolate(section, assembly.variables, 'section'))
-+    .map(section => section.interpolate === false
-+      ? section.text
-+      : interpolate(section, assembly.variables, 'section'))
-     .filter(text => text.length > 0)
-     .join('\n\n')
- }
-@@ -311,7 +321,12 @@ export function joinContextSections(sections: readonly ContextSnapshotSection[])
-  */
- export function renderContextSections(assembly: PromptAssembly): ContextSnapshotSection[] {
-   return assembly.contexts
--    .map(context => ({ name: context.name, text: interpolate(context, assembly.variables, 'context') }))
-+    .map(context => ({
-+      name: context.name,
-+      text: context.interpolate === false
-+        ? context.text
-+        : interpolate(context, assembly.variables, 'context'),
-+    }))
-     .filter(section => section.text.length > 0)
- }
- 
-@@ -597,6 +612,7 @@ export class SystemPrompt extends Service {
-         const assembled = {
-           name: section.name,
-           text: typeof section.text === 'function' ? section.text(context) : section.text,
-+          ...section.interpolate === undefined ? {} : { interpolate: section.interpolate },
-         }
-         if (section.complete === true) completeSection = { ...assembled }
-         return assembled
-@@ -610,6 +626,7 @@ export class SystemPrompt extends Service {
-           .map(entry => ({
-             name: entry.name,
-             text: typeof entry.text === 'function' ? entry.text(context) : entry.text,
-+            ...entry.interpolate === undefined ? {} : { interpolate: entry.interpolate },
-           })),
-       tools: orderTools(collected, this.toolOrder, knownNames),
-       variables,
-diff --git a/packages/core/system-prompt/tests/system-prompt.spec.ts b/packages/core/system-prompt/tests/system-prompt.spec.ts
-index 8e60ea2bec264bd8a7c73dadab13fc6071d66019..1227f96ed2079a01faeeb861b934775b5bd3af42 100644
---- a/packages/core/system-prompt/tests/system-prompt.spec.ts
-+++ b/packages/core/system-prompt/tests/system-prompt.spec.ts
-@@ -459,6 +459,25 @@ describe('SystemPrompt', () => {
-     })).toThrow('unknown prompt variable "{{missing}}" in context "policy"; registered variables: (none)')
-   })
- 
-+  it('keeps literal context braces without resolving prompt variables', async () => {
-+    const ctx = new Context()
-+    await ctx.plugin(SystemPrompt)
-+    ctx.systemPrompt.variable('name', () => 'resolved')
-+    ctx.systemPrompt.context({
-+      name: 'external-markdown',
-+      order: 0,
-+      text: 'Example: {{name}} and {{ malformed }}.',
-+      interpolate: false,
-+    })
-+    const assembly = await ctx.systemPrompt.assemble()
-+    expect(assembly.contexts).toEqual([{
-+      name: 'external-markdown',
-+      text: 'Example: {{name}} and {{ malformed }}.',
-+      interpolate: false,
-+    }])
-+    expect(renderContextSnapshot(assembly)).toContain('Example: {{name}} and {{ malformed }}.')
-+  })
-+
-   it('emits system-prompt/change when a tool provider is registered and disposed', async () => {
-     const ctx = new Context()
-     await ctx.plugin(SystemPrompt)
-@@ -579,6 +598,25 @@ describe('SystemPrompt', () => {
-       expect(renderPrompt(await ctx.systemPrompt.assemble())).toBe(`${IDENTITY}\n\nYou run on deepseek-v4 in /work.`)
-     })
- 
-+    it('keeps literal section braces without resolving prompt variables', async () => {
-+      const ctx = new Context()
-+      await ctx.plugin(SystemPrompt)
-+      ctx.systemPrompt.variable('name', () => 'resolved')
-+      ctx.systemPrompt.section({
-+        name: 'external-markdown',
-+        order: 1,
-+        text: 'Example: {{name}} and {{ malformed }}.',
-+        interpolate: false,
-+      })
-+      const assembly = await ctx.systemPrompt.assemble()
-+      expect(assembly.sections.find(section => section.name === 'external-markdown')).toEqual({
-+        name: 'external-markdown',
-+        text: 'Example: {{name}} and {{ malformed }}.',
-+        interpolate: false,
-+      })
-+      expect(renderPrompt(assembly)).toContain('Example: {{name}} and {{ malformed }}.')
-+    })
-+
-     it('lets a waterfall listener add or override variables before render', async () => {
-       const ctx = new Context()
-       await ctx.plugin(SystemPrompt)
 diff --git a/packages/subagent/subagent-in-process-driver/README.i18n.yaml b/packages/subagent/subagent-in-process-driver/README.i18n.yaml
-index 4583465661af91eb77644ebff785e3e06b814ed2..8d9e1da34648b3f47344b2f836aa45f48cd241f5 100644
+index 0652ba509c6d25fd8f8817781a954dc64b3ac82a..af073561da85936809bc3cda55d521e8e6e62421 100644
 --- a/packages/subagent/subagent-in-process-driver/README.i18n.yaml
 +++ b/packages/subagent/subagent-in-process-driver/README.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write packages/subagent/subagent-in-process-driver/README.md
--README.md: 03b72c2f9f02dc7ef2db29f57d4fdd1b5ce83027
--README.zh.md: a75347002a3d2d66e37461dd5e14d140c8f8fc45
-+README.md: c366c8faeb5d3f1f8bd045dfe58f205d69cb59ec
-+README.zh.md: de4f8dcaa50d14194e52703eb56c027fca9d4fb8
+@@ -39,8 +39,8 @@
+   en: 102689042efe8d9d
+   zh: 6e9e8ffe2d4200e1
+ /deepseek-ai-dsh-subagent-in-process-driver/understand-the-implementation/source-map:
+-  en: 1afa2487d2e7273f
+-  zh: 24ca22c87186d367
++  en: a7fb1610ad2969cf
++  zh: 0b62de764d12c2c2
+ /deepseek-ai-dsh-subagent-in-process-driver/further-exploration:
+   en: 092428bf90f2ed01
+   zh: b5979a2a7bcfd083
 diff --git a/packages/subagent/subagent-in-process-driver/README.md b/packages/subagent/subagent-in-process-driver/README.md
-index 03b72c2f9f02dc7ef2db29f57d4fdd1b5ce83027..c366c8faeb5d3f1f8bd045dfe58f205d69cb59ec 100644
+index fe9703a2bc735cfea81dbf921488edb786335f6f..c116ab0ae4c502e96ba27b708b206fb9c91e2dca 100644
 --- a/packages/subagent/subagent-in-process-driver/README.md
 +++ b/packages/subagent/subagent-in-process-driver/README.md
 @@ -75,6 +75,8 @@ The required request signal covers both startup and the live run. Before publica
@@ -483,7 +202,7 @@ index 03b72c2f9f02dc7ef2db29f57d4fdd1b5ce83027..c366c8faeb5d3f1f8bd045dfe58f205d
  
  -----
 diff --git a/packages/subagent/subagent-in-process-driver/README.zh.md b/packages/subagent/subagent-in-process-driver/README.zh.md
-index a75347002a3d2d66e37461dd5e14d140c8f8fc45..de4f8dcaa50d14194e52703eb56c027fca9d4fb8 100644
+index 5ee7447829985b71d7f2004bfaa94a98fc187ea1..6011334f4f4b02980be0b4d1ecd2977d0cf86c90 100644
 --- a/packages/subagent/subagent-in-process-driver/README.zh.md
 +++ b/packages/subagent/subagent-in-process-driver/README.zh.md
 @@ -75,6 +75,8 @@ kind: "package-library"
@@ -496,7 +215,7 @@ index a75347002a3d2d66e37461dd5e14d140c8f8fc45..de4f8dcaa50d14194e52703eb56c027f
  
  -----
 diff --git a/packages/subagent/subagent-in-process-driver/src/index.ts b/packages/subagent/subagent-in-process-driver/src/index.ts
-index c0886dc104e45b55022b4eb42e0837746d6137eb..a21b16adbc1cbdfd3f3ee5b65d0d97fbc5de2cfc 100644
+index dbaac326b10c444c6509dcb9f1aabc5f4f87df02..1d8684925614d7c16a03e5f9e6ef77c662b86f77 100644
 --- a/packages/subagent/subagent-in-process-driver/src/index.ts
 +++ b/packages/subagent/subagent-in-process-driver/src/index.ts
 @@ -123,6 +123,7 @@ export async function startInProcessRun(
@@ -508,17 +227,20 @@ index c0886dc104e45b55022b4eb42e0837746d6137eb..a21b16adbc1cbdfd3f3ee5b65d0d97fb
      })
      if (request.outputSchema !== undefined) {
 diff --git a/packages/subagent/subagent-spawn-in-process/README.i18n.yaml b/packages/subagent/subagent-spawn-in-process/README.i18n.yaml
-index 836e74aa993cb166e045dcced4ff5df5fd840147..a46df86781b405a5ac2690e89db2f285b0d6a401 100644
+index 252819dbfbe2dcbaa95b76fa77a3b15dd6697429..f3bdc6c36f7261fdb87493c7c74f33eec85e9ae2 100644
 --- a/packages/subagent/subagent-spawn-in-process/README.i18n.yaml
 +++ b/packages/subagent/subagent-spawn-in-process/README.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write packages/subagent/subagent-spawn-in-process/README.md
--README.md: ce3909934efa1b2f5cc57ff046b892e3ec129444
--README.zh.md: c50ab11cca89399ff40d16c6aa23aae456bed1d6
-+README.md: b761b64e57588fd4ede1d7b6cbadd3062c6ab0e7
-+README.zh.md: 05cb837b2376ce49aeef31d81c0c80f1cd4fbcc6
+@@ -39,8 +39,8 @@
+   en: 7b55a5649bc38155
+   zh: 51fe220c84ca759a
+ /deepseek-ai-dsh-subagent-spawn-in-process/understand-the-implementation/ownership-and-scope:
+-  en: 8af949dc29cb4a5c
+-  zh: f4e4f9f9f4a4b7c9
++  en: 48417f9e9c028433
++  zh: f592afbf15b0fae6
+ /deepseek-ai-dsh-subagent-spawn-in-process/further-exploration:
+   en: 742e34ea6c31adf9
+   zh: 599d993ba5a3c8f1
 diff --git a/packages/subagent/subagent-spawn-in-process/README.md b/packages/subagent/subagent-spawn-in-process/README.md
 index ce3909934efa1b2f5cc57ff046b892e3ec129444..b761b64e57588fd4ede1d7b6cbadd3062c6ab0e7 100644
 --- a/packages/subagent/subagent-spawn-in-process/README.md
@@ -533,7 +255,7 @@ index ce3909934efa1b2f5cc57ff046b892e3ec129444..b761b64e57588fd4ede1d7b6cbadd306
  
  -----
 diff --git a/packages/subagent/subagent-spawn-in-process/README.zh.md b/packages/subagent/subagent-spawn-in-process/README.zh.md
-index c50ab11cca89399ff40d16c6aa23aae456bed1d6..05cb837b2376ce49aeef31d81c0c80f1cd4fbcc6 100644
+index 998b90ff0827e3cccc3be787e1941ca49aaeec0e..eb2e94d751851db26c46e62167d1b87c282f8d3b 100644
 --- a/packages/subagent/subagent-spawn-in-process/README.zh.md
 +++ b/packages/subagent/subagent-spawn-in-process/README.zh.md
 @@ -82,6 +82,8 @@ kind: "package-reference"
@@ -546,10 +268,10 @@ index c50ab11cca89399ff40d16c6aa23aae456bed1d6..05cb837b2376ce49aeef31d81c0c80f1
  
  -----
 diff --git a/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts b/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
-index b678f5c26324167238090aacc9ab0c8194e5f6b8..a57d14dfe01a1d6399650bcede2e25ad8a611774 100644
+index e199b7c9aad008276348649cbb4d81a4421a9730..588ad1436ed71b23475a69422229cc771c941a55 100644
 --- a/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
 +++ b/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
-@@ -417,6 +417,19 @@ describe('dsh-subagent-spawn-in-process', () => {
+@@ -416,6 +416,19 @@ describe('dsh-subagent-spawn-in-process', () => {
        await run.dispose()
      })
  
@@ -570,66 +292,49 @@ index b678f5c26324167238090aacc9ab0c8194e5f6b8..a57d14dfe01a1d6399650bcede2e25ad
        const { ctx, parent, adapter } = await setup([
          // The child tries the denied tool anyway, then answers.
 diff --git a/packages/subagent/subagent/README.i18n.yaml b/packages/subagent/subagent/README.i18n.yaml
-index 9a6bff0b24ee03259f266ecda470da9d23fa1f76..5d04350e4582778625e730a9c3472b4bab872a0a 100644
+index 787865254c557c26392825f58559a6203938ac35..ddab5f889cc6842f2317330ba51ff6cc37cb4941 100644
 --- a/packages/subagent/subagent/README.i18n.yaml
 +++ b/packages/subagent/subagent/README.i18n.yaml
-@@ -2,5 +2,5 @@
- # side as of the last confirmed-consistent state. Both languages carry equal authority;
- # after editing either side, bring the other along and re-record with:
- #   pnpm run verify-translation-pairing --write packages/subagent/subagent/README.md
--README.md: 5f9668fd7a14cdfca33ab72a217c07372a24502f
--README.zh.md: 563ed06237088c4bc250ca3c4f5a863b6ffe8239
-+README.md: dd87824592f0b21a442fdfddee4ce5008f47c8ed
-+README.zh.md: 984d37b37fe1a71ddce6f9eed32de6f969e4dddb
+@@ -48,10 +48,10 @@
+   en: 9439bd15ee2129c9
+   zh: 6c275cf484efa0cf
+ /deepseek-ai-dsh-subagent/understand-the-implementation/continuable-flow:
+-  en: 9703c868342826cc
++  en: 74bb6e0a94bd2b86
+   zh: e300484cecf15835
+ /deepseek-ai-dsh-subagent/understand-the-implementation/ownership-and-invariants:
+-  en: 7384d01be46a2f0a
++  en: 27656f7ec0f83b55
+   zh: 83373486ad10d6d5
+ /deepseek-ai-dsh-subagent/further-exploration:
+   en: d1c1e87fc59ebfe5
 diff --git a/packages/subagent/subagent/README.md b/packages/subagent/subagent/README.md
-index 5f9668fd7a14cdfca33ab72a217c07372a24502f..dd87824592f0b21a442fdfddee4ce5008f47c8ed 100644
+index f962257a854893d94d5b9317c9605d952917b1b1..3782ffd5d06834ae5fd65f1ac03194c141ffe39c 100644
 --- a/packages/subagent/subagent/README.md
 +++ b/packages/subagent/subagent/README.md
-@@ -94,7 +94,7 @@ A request is validated against the provider's advertised capabilities, a durable
+@@ -108,7 +108,7 @@ A request is validated against the provider's advertised capabilities, a durable
  
  ### Continuable flow
  
 -The manager reserves a child identity, resolves the durable descriptor, creates (or cold-resumes) the child Agent, installs it in an Activation, and submits the prompt. Model-authored messages cross one parent/child edge through fixed Steer scheduling; browser human prompts choose Queue or best-effort Steer through an internal adapter, while other host protocols may retain Queue for distinct turns. A Session queue command admits a live subagent-owned Agent only from its own continuable descriptor. Settlement waits for Agent activity to finish, an empty Inbox, and no owned children, then flushes final Session state with admission open. Under the child lock, the manager revalidates the wake generation, Session sequence, Inbox, and owned children; the synchronous task entry of `Agent.runMaintenance()` claims the idle phase and closes the private subagent Inbox in the same JavaScript turn before handle disposal. An absent direct-child Activation cold-resumes from the persisted session. When a resident Activation settles, the manager tells the child's direct parent in the parent's own turn stream.
 +The manager reserves a child identity, resolves the durable descriptor, creates (or cold-resumes) the child Agent, installs it in an Activation, and submits the prompt. Model-authored messages cross one parent/child edge through fixed Steer scheduling; browser human prompts choose Queue or best-effort Steer through an internal adapter, while other host protocols may retain Queue for distinct turns. A Session queue command admits a live subagent-owned Agent only from its own continuable descriptor. Settlement waits for Agent activity to finish, an empty Inbox, and released admission holds; parent-delivery settlement additionally waits for owned children. It then flushes final Session state with admission open. Under the child lock, the manager revalidates the wake generation, Session sequence, Inbox, and owned children; the synchronous task entry of `Agent.runMaintenance()` claims the idle phase and closes the private subagent Inbox in the same JavaScript turn before handle disposal. An absent direct-child Activation cold-resumes from the persisted session. When a resident Activation using parent delivery settles, the manager tells the child's direct parent in the parent's own turn stream.
  
- Successful local child creation appends a `subagent/catalog` fact to the parent Session. One-shot creation records it after the provider returns; continuable creation records it after initial inbox admission and before returning the child id. Failure releases the child without publishing a compensating catalog event. A one-shot catalog append failure handles the run’s result rejection and preserves the catalog error; disposal failures are logged separately. The `subagentCatalog` projection excludes fork-inherited facts and exposes a direct-child list through `projections.values.subagentCatalog` in Session observations and client snapshots. Invalid own catalog payloads, including unsupported versions, reject projection restoration. Its immutable storage and checkpoint validation use [`dsh-chunked-list`](../../util/chunked-list/README.md). Its view preserves parent catalog event order in O(D) time for D facts. [The parent-catalog decision](../../../.agents/notes/implemented/architecture/2026-09-01-parent-owned-subagent-catalog.md) owns ordering, persistence costs, and alternatives.
+ Successful local child creation appends a `subagent/catalog` fact to the parent Session. One-shot creation records it after the provider returns; continuable creation records it after initial inbox admission and before returning the child id. Failure releases the child without publishing a compensating catalog event. A one-shot catalog append failure handles the run’s result rejection and preserves the catalog error; disposal failures are logged separately. The `subagentCatalog` projection excludes fork-inherited facts and exposes a direct-child list through `projections.values.subagentCatalog` in Session observations and client snapshots. Each child's `subagentTiming` projection accumulates post-descriptor duration and records whether its latest closed turn ended with `completed`, clearing that completion when another turn opens. Invalid own catalog payloads, including unsupported versions, reject projection restoration. Projection state-version changes refold cached rows from the durable log. The catalog view preserves parent event order in O(D) time for D facts, and its immutable storage and checkpoint validation use [`dsh-chunked-list`](../../util/chunked-list/README.md). [The parent-catalog decision](../../../.agents/notes/implemented/architecture/2026-09-01-parent-owned-subagent-catalog.md) owns ordering, persistence costs, and alternatives. Catalog payload v0 records known modes; v1 also accepts unknown mode. Readers support both versions. Historical migration appends a v1 `subagent/catalog` from a readable child header when its descriptor is unavailable; normal creation retains v0. Its `mode: 'unknown'` projection keeps the child visible without claiming continuation support; an existing complete entry remains authoritative.
  
-@@ -105,6 +105,8 @@ Successful local child creation appends a `subagent/catalog` fact to the parent
- - **Agent-message authority is exact adjacency** — `sendMessage()` requires the exact live sender; every sender may target a direct continuable child, while only a sender with a resident continuable Activation may target its direct parent.
+@@ -120,6 +120,8 @@ Successful local child creation appends a `subagent/catalog` fact to the parent
  - **The descriptor is log-only** — a session event absent from model history and retained across compaction; a continuable descriptor records the resolved child provider, model, and reasoning effort explicitly for cold resume.
+ - **This runtime answers archive admission for children** ([seam](../../workspace/workspace/README.md)) — `workspace/session-activity` reports the live subagent descendants inside a turn as the `subagent` family, found by the durable lineage this package records (`parentSession` with the subagent origin, any depth, never a fork) and labelled from each child's descriptor through a live Session observation when the Session query service is composed, otherwise by id; `workspace/session-stop` cancels each of them with the parent cause, one at a time, so one child refusing its cancel is logged while its siblings still stop. The parent's own turn, its jobs, and the archived-lineage step gate belong to the API Session Controller.
  
 +Trusted composition can retain a bounded path of actual direct-parent Agents, deliver sourced input through native Queue or Steer, and wake an exact durable pending identity. An ancestry hold schedules no synthetic turn. `settlementDelivery: external` persists the deployment settlement owner in descriptor version 5, suppresses the stock parent notice and allows descendants to remain active after their parent finishes. Admission holds still delay release. External settlement requires a successful final Session flush; a durability failure marks `infrastructureFailure` and rejects the owning drain. Versions 3 and 4 are not accepted by this distribution.
 +
  </details>
  
  -----
-diff --git a/packages/subagent/subagent/README.zh.md b/packages/subagent/subagent/README.zh.md
-index 563ed06237088c4bc250ca3c4f5a863b6ffe8239..984d37b37fe1a71ddce6f9eed32de6f969e4dddb 100644
---- a/packages/subagent/subagent/README.zh.md
-+++ b/packages/subagent/subagent/README.zh.md
-@@ -94,7 +94,7 @@ kind: "package-reference"
- 
- ### 可继续流程
- 
--管理器预留 child 身份、解析持久化描述符、创建（或冷恢复）child、把它安装进 Activation 并提交提示词。模型编写的消息通过固定 Steer 调度跨一条 parent/child 边；浏览器人类 prompt 通过内部适配器选择 Queue 或 best-effort Steer，其他 host 协议仍可保留 Queue 以创建独立轮次。Session queue command 仅根据 child 自身的 continuable descriptor 准入在线 subagent-owned Agent。Settlement 会等待 Agent 活动结束、Inbox 为空且没有所拥有子级，再在准入开放时 flush 最终 Session 状态。管理器随后在 child lock 内重新验证 wake generation、Session 序号、Inbox 与所拥有子级；`Agent.runMaintenance()` 的同步 task 入口会占用 idle 阶段，并在同一个 JavaScript turn 内关闭私有 subagent Inbox，然后才 dispose handle。直接 child 不存在 Activation 时会从持久化会话冷恢复。当驻留 Activation 结算时，管理器会在 parent 自身的轮次流中告知该 child 的直接 parent。
-+管理器预留 child 身份、解析持久化描述符、创建（或冷恢复）child、把它安装进 Activation 并提交提示词。模型编写的消息通过固定 Steer 调度跨一条 parent/child 边；浏览器人类 prompt 通过内部适配器选择 Queue 或 best-effort Steer，其他 host 协议仍可保留 Queue 以创建独立轮次。Session queue command 仅根据 child 自身的 continuable descriptor 准入在线 subagent-owned Agent。Settlement 会等待 Agent 活动结束、Inbox 为空且准入持有释放；父级投递结算还会等待所拥有子级。随后在准入开放时 flush 最终 Session 状态。管理器随后在 child lock 内重新验证 wake generation、Session 序号、Inbox 与所拥有子级；`Agent.runMaintenance()` 的同步 task 入口会占用 idle 阶段，并在同一个 JavaScript turn 内关闭私有 subagent Inbox，然后才 dispose handle。直接 child 不存在 Activation 时会从持久化会话冷恢复。当使用父级投递的驻留 Activation 结算时，管理器会在 parent 自身的轮次流中告知该 child 的直接 parent。
- 
- 本地子级创建成功时，父 Session 追加一条 `subagent/catalog` 事实。一次性创建在 provider 返回后记录；可继续创建在初始 inbox 准入后、返回子级 id 前记录。失败会释放子级，不发布补偿性目录事件。一次性目录追加失败时会处理 run 的结果拒绝，并保留目录错误；资源释放失败会单独记录。`subagentCatalog` projection 排除 fork 继承的事实，通过 Session 观察和客户端快照中的 `projections.values.subagentCatalog` 暴露直接子级列表。无效的自身 catalog payload（包括不支持的版本）会使 projection 恢复失败。其不可变存储和检查点校验使用 [`dsh-chunked-list`](../../util/chunked-list/README.zh.md)。其视图对 D 条事实以 O(D) 时间保留父目录事件顺序。[父目录决策](../../../.agents/notes/implemented/architecture/2026-09-01-parent-owned-subagent-catalog.zh.md) 说明排序、持久化成本和替代方案。
- 
-@@ -105,6 +105,8 @@ kind: "package-reference"
- - **Agent 消息权限基于确切相邻关系**——`sendMessage()` 要求确切在线 sender；每个 sender 都可以指定直接可继续 child，只有具备驻留可继续 Activation 的 sender 可以指定自己的直接 parent。
- - **描述符仅进日志**——它是会话事件，不进入模型历史，并跨压缩（compaction）保留；可继续描述符会显式记录解析后的子级提供方、模型与推理等级，用于冷恢复。
- 
-+可信组合可以持有一条有界的实际直接父级 Agent 路径，通过原生 Queue 或 Steer 投递带来源的输入，并唤醒精确的持久化待处理标识。祖先持有不会调度合成轮次。`settlementDelivery: external` 将部署侧结算所有者保存在版本 5 描述符中，抑制原生父级通知，并允许后代在父级结束后继续运行。准入持有仍会延迟释放。外部结算要求最终 Session 刷盘成功；持久化失败会标记 `infrastructureFailure` 并使所属排空操作失败。本发行版不接受版本 3 和 4。
-+
- </details>
- 
- -----
 diff --git a/packages/subagent/subagent/src/child-agent.ts b/packages/subagent/subagent/src/child-agent.ts
-index c00aa212ab7bb2e0d4104cf18faa7b5477986f76..b9024223803a895219bf404771630f69e44e6a50 100644
+index 0004567a30f5f9e50a91518c071ed87ce72ae671..aba4810614581e55fd7b8a90cad3be3cfaab239a 100644
 --- a/packages/subagent/subagent/src/child-agent.ts
 +++ b/packages/subagent/subagent/src/child-agent.ts
-@@ -159,6 +159,8 @@ export function childSessionMeta(
+@@ -160,6 +160,8 @@ export function childSessionMeta(
  export interface ChildComposition {
    /** Per-child persona shadowing the deployment persona. */
    readonly persona?: string | undefined
@@ -638,7 +343,7 @@ index c00aa212ab7bb2e0d4104cf18faa7b5477986f76..b9024223803a895219bf404771630f69
    /** Per-child tool scoping. */
    readonly toolFilter?: ToolRestriction | undefined
  }
-@@ -212,6 +214,7 @@ export function applyChildComposition(
+@@ -213,6 +215,7 @@ export function applyChildComposition(
        name: 'deployment:persona-prefix',
        order: childCtx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
        text: composition.persona,
@@ -647,7 +352,7 @@ index c00aa212ab7bb2e0d4104cf18faa7b5477986f76..b9024223803a895219bf404771630f69
    }
    if (composition.toolFilter !== undefined) childCtx.tools.restrict(composition.toolFilter)
 diff --git a/packages/subagent/subagent/src/continuation-activation.ts b/packages/subagent/subagent/src/continuation-activation.ts
-index ef291b70ce8716a9c5017c61c783ee3f69930b47..6be6a127b95681492b8d86e752e89f2342b46986 100644
+index e2bb062426c01e28d10313043802479e5580e0c8..25e847ef9cff52c31ae00b537e34e8ea533d95a1 100644
 --- a/packages/subagent/subagent/src/continuation-activation.ts
 +++ b/packages/subagent/subagent/src/continuation-activation.ts
 @@ -25,12 +25,11 @@ import type {
@@ -664,7 +369,7 @@ index ef291b70ce8716a9c5017c61c783ee3f69930b47..6be6a127b95681492b8d86e752e89f23
  import { createSettlementMessage } from './continuation-messages.ts'
  import type { SubagentDescriptorData } from './descriptor.ts'
  import { SubagentError } from './error.ts'
-@@ -111,7 +110,7 @@ export interface MaterializeInputs {
+@@ -134,7 +133,7 @@ export interface MaterializeInputs {
      descriptor: SubagentDescriptorData
    }
    agentOptions: AgentOptions
@@ -673,7 +378,7 @@ index ef291b70ce8716a9c5017c61c783ee3f69930b47..6be6a127b95681492b8d86e752e89f23
    signal: AbortSignal
    residencyOnly?: boolean
  }
-@@ -539,16 +538,23 @@ export class ContinuableActivationRegistry {
+@@ -571,16 +570,23 @@ export class ContinuableActivationRegistry {
      return activation.inbox.close(() => this.finishDisposal(activation, options))
    }
  
@@ -701,7 +406,7 @@ index ef291b70ce8716a9c5017c61c783ee3f69930b47..6be6a127b95681492b8d86e752e89f23
      if (resumed) {
        this.acquireOwnership(parent, activation.childId)
        activation.announced = true
-@@ -557,10 +563,17 @@ export class ContinuableActivationRegistry {
+@@ -589,10 +595,17 @@ export class ContinuableActivationRegistry {
      return resumed
    }
  
@@ -722,10 +427,10 @@ index ef291b70ce8716a9c5017c61c783ee3f69930b47..6be6a127b95681492b8d86e752e89f23
      activation.retainers -= 1
      this.wake(activation)
 diff --git a/packages/subagent/subagent/src/continuation.ts b/packages/subagent/subagent/src/continuation.ts
-index c411d60178efff66f07e856fc38633ad671fbfca..3eeca3effafc5a76afd4855d5a65f6033dbf85bb 100644
+index ff3364332f3b3084e7aa4b2f1016b039e0107ca2..e7116684cb8e93c0e1e1d4ad6d2a1ecca7bc2142 100644
 --- a/packages/subagent/subagent/src/continuation.ts
 +++ b/packages/subagent/subagent/src/continuation.ts
-@@ -106,7 +106,7 @@ export class SubagentContinuationManager {
+@@ -108,7 +108,7 @@ export class SubagentContinuationManager {
    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart> {
      const request = spec.request
      const parent = request.parent
@@ -734,7 +439,7 @@ index c411d60178efff66f07e856fc38633ad671fbfca..3eeca3effafc5a76afd4855d5a65f603
      if (settlementDelivery !== 'parent' && settlementDelivery !== 'external') {
        throw new TypeError('settlementDelivery must be "parent" or "external"')
      }
-@@ -131,6 +131,7 @@ export class SubagentContinuationManager {
+@@ -133,6 +133,7 @@ export class SubagentContinuationManager {
        ...agentModel !== undefined ? { agentModel } : {},
        ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
        ...request.persona !== undefined ? { persona: request.persona } : {},
@@ -742,7 +447,7 @@ index c411d60178efff66f07e856fc38633ad671fbfca..3eeca3effafc5a76afd4855d5a65f603
        ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
      })
      // Capture before the first await: a later parent switch belongs to the
-@@ -178,7 +179,7 @@ export class SubagentContinuationManager {
+@@ -180,7 +181,7 @@ export class SubagentContinuationManager {
              descriptor,
            },
            agentOptions,
@@ -751,7 +456,7 @@ index c411d60178efff66f07e856fc38633ad671fbfca..3eeca3effafc5a76afd4855d5a65f603
            signal: spec.signal,
          })
          const childHeader = activation.handle.agent.session.header
-@@ -294,12 +295,26 @@ export class SubagentContinuationManager {
+@@ -296,12 +297,26 @@ export class SubagentContinuationManager {
      }
    }
  
@@ -780,7 +485,7 @@ index c411d60178efff66f07e856fc38633ad671fbfca..3eeca3effafc5a76afd4855d5a65f603
    async resumePending(parent: Agent, childId: SessionId, messageId: MessageId, options: SubagentResumeOptions): Promise<boolean> {
      this.activations.assertAdmitting(parent)
      const releaseHold = this.activations.holdOwnership(parent, childId)
-@@ -326,8 +341,20 @@ export class SubagentContinuationManager {
+@@ -328,8 +343,20 @@ export class SubagentContinuationManager {
      } finally { releaseHold() }
    }
  
@@ -803,7 +508,7 @@ index c411d60178efff66f07e856fc38633ad671fbfca..3eeca3effafc5a76afd4855d5a65f603
      if (ancestors.length > 8 || new Set([root.id, ...ancestors]).size !== ancestors.length + 1) {
        throw new SubagentError('continuable ancestry must be a bounded acyclic path', 'UNAUTHORIZED')
      }
-@@ -535,7 +562,7 @@ export class SubagentContinuationManager {
+@@ -537,7 +564,7 @@ export class SubagentContinuationManager {
              ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
              : {},
          },
@@ -902,7 +607,7 @@ index 2bce55dd24b5f55430926bcce44d4b8b6ee8b785..1f41ebdd13982953029f3cd3bd56bdb3
        ...input.settlementDelivery !== undefined ? { settlementDelivery: input.settlementDelivery } : {},
      }
 diff --git a/packages/subagent/subagent/src/types.ts b/packages/subagent/subagent/src/types.ts
-index 1607a251e4b6d5e9aaeb2df3cb521f272bf978d4..4a72dfcd49a69942fbf8cc8b288e0e4a1cb69edc 100644
+index 432bb7d3c13b7e2e7e94e11ce870db155421c9d6..6157f116a43b08448f97cc8d74b3dd0f8bd10636 100644
 --- a/packages/subagent/subagent/src/types.ts
 +++ b/packages/subagent/subagent/src/types.ts
 @@ -218,6 +218,11 @@ export interface SubagentStartRequest {
@@ -918,10 +623,10 @@ index 1607a251e4b6d5e9aaeb2df3cb521f272bf978d4..4a72dfcd49a69942fbf8cc8b288e0e4a
  
  /**
 diff --git a/packages/subagent/subagent/tests/continuation.spec.ts b/packages/subagent/subagent/tests/continuation.spec.ts
-index 99625e91ff3b8e7d5af7e7152788f272a38cad68..c2f8dfb94d1b0153e2ecfd8913061acbdda78491 100644
+index b79cf9d45d6ae7698ea942604088339d73a377fb..3694109a95aedeed21057dced15859f3b242beed 100644
 --- a/packages/subagent/subagent/tests/continuation.spec.ts
 +++ b/packages/subagent/subagent/tests/continuation.spec.ts
-@@ -658,6 +658,33 @@ describe('SubagentRuntime.startContinuable', () => {
+@@ -925,6 +925,33 @@ describe('SubagentRuntime.startContinuable', () => {
      const resumed = await loadStoredSession(ctx.sessionPersistence, started.childId)
      expect(hasUserText(resumed.events, 'resume it')).toBe(true)
    })
@@ -955,7 +660,7 @@ index 99625e91ff3b8e7d5af7e7152788f272a38cad68..c2f8dfb94d1b0153e2ecfd8913061acb
  })
  
  describe('continuable image Queue prompts', () => {
-@@ -1222,7 +1249,7 @@ describe('continuable durability and teardown', () => {
+@@ -1489,7 +1516,7 @@ describe('continuable durability and teardown', () => {
      const started = await ctx.subagents.startContinuable({ ...startSpec(parent), settlementDelivery: 'external' })
      await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
      let finalFlushes = 0
@@ -964,7 +669,7 @@ index 99625e91ff3b8e7d5af7e7152788f272a38cad68..c2f8dfb94d1b0153e2ecfd8913061acb
        if (session.id === started.childId && ++finalFlushes === 1) throw new Error('transient final write failure')
      })
      hold.resolve(undefined)
-@@ -2655,8 +2682,8 @@ describe('composition-owned delivery and descendant settlement', () => {
+@@ -2922,8 +2949,8 @@ describe('composition-owned delivery and descendant settlement', () => {
      const { ctx, parent } = await setupWith(adapter)
      const starts: SessionId[] = []
      const ends: SessionId[] = []
@@ -976,7 +681,7 @@ index 99625e91ff3b8e7d5af7e7152788f272a38cad68..c2f8dfb94d1b0153e2ecfd8913061acb
      await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
      const nested = await ctx.subagents.startContinuable({ ...startSpec(ctx.agents.get(first.childId)!), settlementDelivery: 'external' })
 diff --git a/packages/subagent/subagent/tests/service.spec.ts b/packages/subagent/subagent/tests/service.spec.ts
-index f40fc11dff935e4b7b16e621e59cbfd680ab8c31..9d92bb00c21776874f6c61eae617ad5eeacd1e68 100644
+index 01a17cb591efeafc515b1a7c52cc6808b95ca874..acce158b4937fbb4ebd71ea35b7d04d8370c11fb 100644
 --- a/packages/subagent/subagent/tests/service.spec.ts
 +++ b/packages/subagent/subagent/tests/service.spec.ts
 @@ -412,6 +412,7 @@ describe('subagent descriptors', () => {

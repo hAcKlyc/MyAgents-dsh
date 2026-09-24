@@ -408,7 +408,7 @@ export class ProductToolRuntime extends Service {
           if (pending.context.agent.session !== session || pending.context.callId !== callId
             || pending.context.dshTurn !== event.data.turn) continue;
           this.pendingReadStatesValue.delete(key);
-          if (event.data.message.content[0].isError !== true && event.data.error === undefined) {
+          if (event.data.message.isError !== true && event.data.error === undefined) {
             if (pending.replace) this.replaceReadState(pending.context, pending.state);
             else this.rememberRead(pending.context, pending.state);
           }

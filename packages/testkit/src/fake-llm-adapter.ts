@@ -4,7 +4,7 @@ import type {
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
-  Message,
+  RequestMessage,
   StreamChunk,
   TokenUsage,
 } from "@deepseek-ai/dsh-llm";
@@ -41,7 +41,7 @@ export type FakeLlmScript = Readonly<{
 
 export interface FakeLlmRequestObservation {
   readonly maxTokens: number | undefined;
-  readonly messages: readonly Readonly<Message>[];
+  readonly messages: readonly Readonly<RequestMessage>[];
   readonly model: string;
   readonly provider: string;
   readonly sessionId: string | undefined;

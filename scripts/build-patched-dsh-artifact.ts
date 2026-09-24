@@ -295,11 +295,11 @@ const readWorkspacePackages = (
 const stageWorkspace = (
   worktree: string,
   packages: readonly DshWorkspacePackage[],
-  artifactVersion: string,
+  plan: PatchedDshArtifactPlan,
 ): void => {
-  const internalNames = new Set(packages.map(({ manifest }) => manifest.name));
-  for (const pkg of packages) {
-    const staged = stageDshWorkspaceManifest(pkg.manifest, internalNames, artifactVersion);
+  const internalNames = new Set(plan.packages.map(({ name }) => name));
+  for (const pkg of packages.filter(({ manifest }) => internalNames.has(manifest.name))) {
+    const staged = stageDshWorkspaceManifest(pkg.manifest, internalNames, plan.artifactVersion);
     writeFileSync(resolve(worktree, pkg.path, "package.json"), `${JSON.stringify(staged, null, 2)}\n`);
   }
 };
@@ -1183,7 +1183,7 @@ const main = (): void => {
       cwd: worktree,
       env: buildEnvironment,
     });
-    stageWorkspace(worktree, workspacePackages, plan.artifactVersion);
+    stageWorkspace(worktree, workspacePackages, plan);
     run("git", ["diff", "--check"], { cwd: worktree, env: buildEnvironment });
 
     packPass(worktree, bundleRoot, plan, buildEnvironment);

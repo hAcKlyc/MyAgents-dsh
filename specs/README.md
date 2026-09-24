@@ -27,6 +27,7 @@ This file is the canonical documentation-governance guide referenced by `AGENTS.
 | Pinned DSH source, public seams and patch series | [dsh/](./dsh/) |
 | Accepted DSH 0.1.2 upgrade scope and Host/Runtime capability decisions | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_2_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_2_upgrade.md); product scope and source-status ledger, not installed-version or artifact evidence |
 | Accepted DSH 0.1.5 upgrade, core benefits and development-data reset | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_5_upgrade.md); accepted scope/reset/proxy boundaries; implementation in progress on dev; [source research](./research/dsh-0.1.5-rc.2-upgrade-audit.md) is non-normative and does not change installed-version or acceptance facts |
+| DSH 0.1.7-rc.2 upgrade and V4 development baseline | [Upgrade PRD with focused design addendum](./prd/prd_0.3_myagents_dsh_0_1_7_upgrade.md); implementation target and acceptance, with exact executable identity owned by the current artifact and Host lock |
 | Source migration provenance | [migration/](./migration/) |
 | Non-normative comparative research | [research/](./research/) |
 

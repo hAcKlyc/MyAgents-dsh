@@ -4,7 +4,7 @@ import {
   type AttachmentErrorCode,
   type ImageAttachmentLimits,
   type ImageAttachmentRef,
-  type ImageRequestPolicy,
+  type ImageRequestTarget,
   type ImageMediaType,
   type RequestImageAttachment,
   type SaveImageAttachment,
@@ -573,12 +573,12 @@ export class HostAttachmentStore extends AttachmentStore {
 
   override readImageRequest(
     value: ImageAttachmentRef,
-    policy: ImageRequestPolicy,
+    target: ImageRequestTarget,
     signal?: AbortSignal,
   ): Promise<RequestImageAttachment> {
     const store = originalHostAttachmentStore(this);
     if (signal !== undefined) nativeSignal(signal);
-    return store.#track(store.#readImageRequest(normalizeReference(value), policy, signal));
+    return store.#track(store.#readImageRequest(normalizeReference(value), target, signal));
   }
 
   #bindLeaseLimit(value: number): void {
@@ -851,14 +851,14 @@ export class HostAttachmentStore extends AttachmentStore {
 
   async #readImageRequest(
     normalized: ReturnType<typeof normalizeReference>,
-    policy: ImageRequestPolicy,
+    target: ImageRequestTarget,
     callerSignal?: AbortSignal,
   ): Promise<RequestImageAttachment> {
     const { scope, signal } = this.#requireScope(callerSignal);
     const stored = await this.#readImage(normalized, signal);
     scope.assertCurrent();
     signal.throwIfAborted();
-    const projected = await readRequestImageFile(scope.stagingRoot, stored, policy, signal);
+    const projected = await readRequestImageFile(scope.stagingRoot, stored, target, signal);
     scope.assertCurrent();
     signal.throwIfAborted();
     return projected;

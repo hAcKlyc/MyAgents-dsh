@@ -15,6 +15,7 @@ import {
   validateConsumerLock,
 } from "../scripts/build-patched-dsh-artifact.js";
 import { expectedDshDependencies } from "../scripts/dsh-baseline-policy.js";
+import { DSH_SEAM_SOURCE } from "../scripts/dsh-seam-decisions.js";
 import {
   PATCHED_DSH_ARTIFACT_PACKAGE_COUNT,
   PATCHED_DSH_ACCEPTED_EXTERNAL_PACKAGES,
@@ -33,7 +34,7 @@ import {
   type PackedDshPackageEvidence,
 } from "../scripts/patched-dsh-artifact-policy.js";
 
-const sourceVersion = "0.1.5-rc.3";
+const sourceVersion = DSH_SEAM_SOURCE.declaredRelease;
 const rootNames = [...expectedDshDependencies.keys()]
   .filter((name) => name.startsWith("@deepseek-ai/dsh-"));
 const transitiveNames = Array.from(
@@ -83,10 +84,10 @@ describe("patched DSH artifact authority", () => {
 
     expect(first).toEqual(second);
     expect(first.artifactVersion).toMatch(
-      /^0\.1\.5-rc\.3\.myagents\.a4c74a91e06b\.[a-f0-9]{12}$/u,
+      /^0\.1\.7-rc\.2\.myagents\.477b4f420553\.[a-f0-9]{12}$/u,
     );
     expect(first.patchSeriesSha256).toMatch(/^[a-f0-9]{64}$/u);
-    expect(first.patches).toHaveLength(9);
+    expect(first.patches).toHaveLength(10);
     expect(first.toolchain).toEqual({
       node: "24.20.0",
       npm: "11.19.0",
@@ -171,6 +172,17 @@ describe("patched DSH package staging and packed evidence", () => {
     expect(staged.peerDependencies?.["@deepseek-ai/dsh-llm"]).toBe(authority.artifactVersion);
     expect(manifest.version).toBe(sourceVersion);
     expect(manifest.dependencies?.["@deepseek-ai/dsh-session"]).toBe("workspace:^");
+  });
+
+  it("omits an optional DSH peer outside the packaged runtime closure", () => {
+    const staged = stageDshWorkspaceManifest({
+      name: "@deepseek-ai/dsh-jobs",
+      version: sourceVersion,
+      peerDependencies: { "@deepseek-ai/dsh-workspace": "workspace:*" },
+      peerDependenciesMeta: { "@deepseek-ai/dsh-workspace": { optional: true } },
+    }, new Set(["@deepseek-ai/dsh-jobs"]), buildPatchedDshArtifactAuthority().artifactVersion);
+    expect(staged.peerDependencies).toEqual({});
+    expect(staged.peerDependenciesMeta).toEqual({});
   });
 
   it("rejects version drift, workspace ranges, omitted runtime dependencies, and source payloads", () => {

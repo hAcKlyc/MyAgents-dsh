@@ -9,13 +9,11 @@ import { Context } from "@deepseek-ai/cordis";
 import type { Plugin } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
-import type { Config as AgentLoopConfig } from "@deepseek-ai/dsh-agent-loop";
 import * as AgentInstructions from "@deepseek-ai/dsh-agent-instructions";
 import { BasicCompactionEngine } from "@deepseek-ai/dsh-compaction-basic";
 import { ToolResultPruner } from "@deepseek-ai/dsh-compaction-tool-result-pruner";
 import { CommandId, CommandRuntime } from "@deepseek-ai/dsh-commands";
 import { LlmAdapter, LlmRuntime, type ContentBlock } from "@deepseek-ai/dsh-llm";
-import { SettingsProvider } from "@deepseek-ai/dsh-settings";
 import { SqliteSessionQueryEngine } from "@deepseek-ai/dsh-session-query-sqlite";
 import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
@@ -209,7 +207,7 @@ export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
 
 export interface DshRootCompositionOptions {
   readonly adapter?: LlmAdapter;
-  readonly agentLoop?: Readonly<Pick<AgentLoopConfig, "maxParallelToolCalls">>;
+  readonly agentLoop?: Readonly<{ maxParallelToolCalls?: number }>;
   readonly operationBirthAuthority?: OperationBirthAuthority;
   readonly providers?: readonly string[];
   readonly systemPrompt?: Readonly<SystemPromptConfig>;
@@ -299,7 +297,7 @@ const optionalPositiveInteger = (value: unknown, description: string): number | 
 
 interface NormalizedDshRootCompositionOptions {
   readonly adapter?: LlmAdapter;
-  readonly agentLoop: Readonly<Pick<AgentLoopConfig, "maxParallelToolCalls">>;
+  readonly agentLoop: Readonly<{ maxParallelToolCalls?: number }>;
   readonly operationBirthAuthority: OperationBirthAuthority;
   readonly providers: readonly string[];
   readonly systemPrompt: Readonly<SystemPromptConfig>;
@@ -1493,7 +1491,8 @@ export const installCanonicalToolPlane = async (
     const shellEnvFiber = await root.plugin(ShellEnv, { dshHome: normalized.temporaryRoot });
     fibers.push(shellEnvFiber);
     authority.configureShellHome = async (runtimeHome) => {
-      await shellEnvFiber.update({ dshHome: runtimeHome });
+      shellEnvFiber.update({ dshHome: runtimeHome });
+      await shellEnvFiber.await();
       root.shellEnv.register({
         name: "myagents-platform",
         variables: {
@@ -1512,10 +1511,10 @@ export const installCanonicalToolPlane = async (
     });
     if (platform.shell.dialect === "pwsh") {
       fibers.push(await root.plugin(PwshLocalExecutor, { pwshPath: processConfig.executablePaths.shell }));
-      fibers.push(await root.plugin(ToolPwsh, { enableRunInBackground: true }));
+      fibers.push(await root.plugin(ToolPwsh, { enableRunInBackground: true, promoteOnTimeout: false }));
     } else {
       fibers.push(await root.plugin(LocalBashExecutor));
-      fibers.push(await root.plugin(ToolBash, { enableRunInBackground: true }));
+      fibers.push(await root.plugin(ToolBash, { enableRunInBackground: true, promoteOnTimeout: false }));
     }
     fibers.push(await root.plugin(ToolJobs, { completionDelivery: "quiet" }));
     let dynamicAgents: ProductDynamicAgentController | undefined;
@@ -2136,11 +2135,12 @@ export const installHostModelPlane = async (
       throw new Error("Host credential Provider did not register its private composition controller");
     }
     await root.plugin(HostSettingsProvider);
-    if (!(root.settings instanceof HostSettingsProvider)
-      || !(root.settings instanceof SettingsProvider)) {
+    const hostSettings = (root as Context & { settings: HostSettingsProvider }).settings;
+    if (!(hostSettings instanceof HostSettingsProvider)) {
       throw new Error("Host settings Provider did not install through the public DSH service seam");
     }
-    await root.plugin(await loadPiAiPlugin(), Object.freeze({ providers: Object.freeze({}) }));
+    const piAiFiber = await root.plugin(await loadPiAiPlugin(), Object.freeze({ providers: Object.freeze({}) }));
+    hostSettings.bindPiAiFiber(piAiFiber);
     const modelAuthority = new HostModelAuthority(root, credentialController, config, (input) => {
       // Model streams resolve durable images after the publishing tool scope has
       // ended. Reuse the same Store under this model request's current authority.

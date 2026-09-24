@@ -13,7 +13,7 @@ describe("Reference Web durable history assembler", () => {
     const assembler = new BrowserHistoryAssembler("web-session-1", 1);
     await assembler.accept({
       runtimeSessionId: "runtime-session-1",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 2 },
       mutationBoundaries: [{
         stableBoundaryId: "boundary-1",
@@ -38,7 +38,7 @@ describe("Reference Web durable history assembler", () => {
     expect(assembler.nextCursor).toBe("cursor-1");
     await assembler.accept({
       runtimeSessionId: "runtime-session-1",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 2 },
       records: [{
         kind: "event_chunk", sequence: 1, eventType: "assistant/message", eventSha256: hash(secondData),
@@ -60,7 +60,7 @@ describe("Reference Web durable history assembler", () => {
     const assembler = new BrowserHistoryAssembler("web-session-1");
     await expect(assembler.accept({
       runtimeSessionId: "runtime-session-1",
-      historyFormat: "dsh-session-events-v1",
+      historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [{
         kind: "event", sequence: 0, eventType: "warning", eventSha256: "0".repeat(64), data: { code: "bad" },

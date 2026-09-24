@@ -1,63 +1,65 @@
-import { symbols, type Context } from "@deepseek-ai/cordis";
-import {
-  SettingsProvider,
-  type SettingsNamespace,
-} from "@deepseek-ai/dsh-settings";
+import { Service, symbols, type Context, type Fiber } from "@deepseek-ai/cordis";
 
 /**
- * Process-local settings authority for the integrated Runtime profile.
- *
- * The Host sends the complete non-secret Provider profile through native RPC.
- * Keeping the DSH settings document in memory prevents a second user-editable
- * configuration source while still using the official plugin's public dynamic
- * settings seam.
+ * The Host owns the writable pi-ai route snapshot. The current DSH settings
+ * plugin edits a Loader profile and requires a separate configuration store,
+ * so this service projects the Host snapshot into the mounted plugin Fiber.
  */
-export class HostSettingsProvider extends SettingsProvider {
-  readonly writable = true;
+export class HostSettingsProvider extends Service {
+  readonly #documents = new Map<string, Record<string, unknown>>();
+  #piAiFiber: Fiber | undefined;
+  #pending: Promise<void> = Promise.resolve();
 
   constructor(ctx: Context) {
-    super(ctx);
+    super(ctx, "settings");
     if (ctx.fiber.parent !== ctx.root) {
       throw new Error("Host settings Provider must be installed directly on the Runtime root");
     }
-    hostSettingsDocuments.set(this, Object.create(null) as Record<string, unknown>);
   }
 
-  override get documentPath(): undefined { return undefined; }
-
-  override prepareDocument(): Promise<undefined> { return Promise.resolve(undefined); }
-
-  protected override load(): Promise<Record<string, unknown>> {
-    return Promise.resolve(structuredClone(hostSettingsDocument(this)));
+  bindPiAiFiber(fiber: Fiber): void {
+    const owner = originalHostSettingsProvider(this);
+    if (owner.#piAiFiber !== undefined) throw new Error("pi-ai configuration may bind exactly once");
+    owner.#piAiFiber = fiber;
   }
 
-  protected override persist(
-    namespace: SettingsNamespace,
-    section: Record<string, unknown>,
-  ): Promise<void> {
-    const owner = hostSettingsOwner(this);
-    hostSettingsDocuments.set(owner, Object.assign(
-      Object.create(null) as Record<string, unknown>,
-      hostSettingsDocument(owner),
-      {
-      [namespace]: structuredClone(section),
-      },
-    ));
-    return Promise.resolve();
+  /** The product does not expose a DSH settings form. */
+  configure(_presentation: { auto?: boolean }, _owner?: Fiber): () => void {
+    void _presentation;
+    void _owner;
+    return () => undefined;
+  }
+
+  describe(): readonly { ns: string }[] {
+    return Object.freeze([{ ns: "llm-pi-ai" }]);
+  }
+
+  replace(namespace: string, section: object): Promise<void> {
+    const owner = originalHostSettingsProvider(this);
+    if (namespace !== "llm-pi-ai") throw new Error("Host settings accepts only the pi-ai route namespace");
+    const fiber = owner.#piAiFiber;
+    if (fiber === undefined) throw new Error("pi-ai plugin is not mounted");
+    const next = structuredClone(section) as Record<string, unknown>;
+    const apply = async (): Promise<void> => {
+      const previous = owner.#documents.get(namespace) ?? { providers: {} };
+      try {
+        fiber.update(next, true);
+        await fiber.await();
+      } catch (error) {
+        fiber.update(previous, true);
+        await fiber.await();
+        throw error;
+      }
+      owner.#documents.set(namespace, next);
+    };
+    owner.#pending = owner.#pending.then(apply, apply);
+    return owner.#pending;
   }
 }
 
-const hostSettingsDocuments = new WeakMap<HostSettingsProvider, Record<string, unknown>>();
-
-const hostSettingsOwner = (service: HostSettingsProvider): HostSettingsProvider => {
+const originalHostSettingsProvider = (service: HostSettingsProvider): HostSettingsProvider => {
   const original = (service as unknown as Record<PropertyKey, unknown>)[symbols.original];
   return original instanceof HostSettingsProvider ? original : service;
-};
-
-const hostSettingsDocument = (service: HostSettingsProvider): Record<string, unknown> => {
-  const document = hostSettingsDocuments.get(hostSettingsOwner(service));
-  if (document === undefined) throw new Error("Host settings Provider lost its in-memory document authority");
-  return document;
 };
 
 Object.freeze(HostSettingsProvider.prototype);

@@ -242,7 +242,7 @@ const execute = async (family: ApiFamily, kind: ReplyKind = "text"): Promise<Rea
       maxTokens: 16,
       messages: [createUserMessage({
         content: [{ type: "text", text: "fixture prompt" }],
-        source: { kind: "plugin", plugin: "myagents-dsh-provider-conformance" },
+        source: { kind: "user" },
       })],
       model: "fixture-model",
       provider: route,

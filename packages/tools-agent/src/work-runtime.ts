@@ -1231,7 +1231,9 @@ export class ProductWorkService extends Service {
           }
           ready = entry.published.promise.then(() => entry);
         }
-        const parent = entry === undefined ? permit?.parent : this.ctx.agents.get(SessionId(entry.created.birth.parentSessionId));
+        const parent = entry === undefined ? permit?.parent
+          : this.ctx.agents.get(SessionId(entry.created.birth.parentSessionId))
+            ?? (permit?.parent.id === entry.created.birth.parentSessionId ? permit.parent : undefined);
         if (parent === undefined) throw new Error("continuable child lacks its primary parent authority");
         const cancelPublication = this.config.publication.prepare(child, parent);
         const depth = entry?.created.birth.depth ?? (this.byAgent.get(parent.id)?.created.birth.depth ?? 0) + 1;
@@ -2174,7 +2176,7 @@ export class ProductWorkService extends Service {
       const rejected = new Set<string>();
       for (const event of caller.events) {
         if (event.type !== "tool/result"
-          || (event.data.error === undefined && event.data.message.content[0].isError !== true)) continue;
+          || (event.data.error === undefined && event.data.message.isError !== true)) continue;
         rejected.add(`${String(event.data.turn)}\0${String(event.data.message.source.callId)}`);
       }
       for (const event of caller.events) {
@@ -2787,11 +2789,11 @@ export class ProductWorkService extends Service {
     } catch (error) {
       errors.push(error);
     }
-    const jobs = this.ctx.jobs.list(agent).filter((job) => job.status === "running" || job.status === "stopping");
+    const jobs = this.ctx.jobs.list(agent.session.id).filter((job) => job.status === "running" || job.status === "stopping");
     for (const job of jobs) {
       try {
-        this.ctx.jobs.kill(job.id, agent, "primary Session retirement");
-        await this.ctx.jobs.wait(job.id, 120_000, agent);
+        this.ctx.jobs.kill(job.id, agent.session.id, "primary Session retirement");
+        await this.ctx.jobs.wait(job.id, 120_000, agent.session.id);
       } catch (error) {
         errors.push(error);
       }

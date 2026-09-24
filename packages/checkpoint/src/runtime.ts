@@ -498,7 +498,7 @@ const checkpointId = (
 
 const successfulToolResult = (event: SessionEvent): boolean => {
   if (event.type !== "tool/result") return false;
-  return event.data.error === undefined && event.data.message.content[0].isError !== true;
+  return event.data.error === undefined && event.data.message.isError !== true;
 };
 
 export class ProductCheckpointService extends Service {

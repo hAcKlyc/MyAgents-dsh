@@ -793,13 +793,14 @@ class PrimaryRootPublicationFence {
         }
         this.#childPermits.delete(agent.session);
         this.#ownedChildren.set(agent.session, agent);
-        return;
+        return undefined;
       }
       if (this.#permit?.agent !== agent || this.#owned !== undefined) {
         throw new Error("root Agent publication lacks the primary Session admission authority");
       }
       this.#permit = undefined;
       this.#owned = agent;
+      return undefined;
     });
     context.on("session/disposed", (session) => {
       if (this.#owned?.session === session) this.#owned = undefined;

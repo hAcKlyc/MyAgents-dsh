@@ -32,7 +32,7 @@ import { createInMemoryPeerPair } from "@myagents-dsh/test-host";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const profile = Object.freeze({
-  api: "openai-completions" as const,
+  api: "anthropic-messages" as const,
   baseUrl: HOST_DEEPSEEK_BASE_URL,
   contextWindow: 8_192,
   credentialRef: "FIXTURE_PROVIDER_KEY",
@@ -87,6 +87,15 @@ type Harness = Readonly<{
 const roots: Context[] = [];
 const pairs: ReturnType<typeof createInMemoryPeerPair>[] = [];
 const originalFetch = globalThis.fetch;
+
+const messagesSse = (text: string, model: string = profile.modelId): string => [
+  { type: "message_start", message: { id: "fixture-message", model, usage: { input_tokens: 1, output_tokens: 0 } } },
+  { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+  { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } },
+  { type: "content_block_stop", index: 0 },
+  { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } },
+  { type: "message_stop" },
+].map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
 
 afterEach(async () => {
   globalThis.fetch = originalFetch;
@@ -204,11 +213,11 @@ describe("Host credential and model route", () => {
     const prepared = await root.llm.prepareCall({ provider: profile.providerRouteId, model: profile.modelId });
     expect(prepared.systemPromptUpdate).toBe(inHistory ? "in-history" : undefined);
     expect(prepared.inputModalities).toEqual(["text"]);
-    const wires: { messages: { role: string; content: unknown }[] }[] = [];
+    const wires: { messages: { role: string; content: unknown }[]; system?: string }[] = [];
     globalThis.fetch = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
       if (typeof init?.body !== "string") throw new Error("fixture needs JSON request bytes");
       wires.push(JSON.parse(init.body) as (typeof wires)[number]);
-      return Promise.resolve(new Response('data: {"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+      return Promise.resolve(new Response(messagesSse("answer"),
         { headers: { "content-type": "text/event-stream" } }));
     });
     const failures: unknown[] = [];
@@ -225,14 +234,17 @@ describe("Host credential and model route", () => {
     expect(wires).toHaveLength(2);
     const first = wires[0]?.messages ?? [];
     const second = wires[1]?.messages ?? [];
-    expect(first[0]).toEqual({ role: "system", content: "first system" });
+    expect(wires[0]?.system).toBe("first system");
+    expect(first[0]).toMatchObject({ role: "user" });
     if (inHistory) {
       expect(second.slice(0, first.length)).toEqual(first);
+      expect(wires[1]?.system).toBe("first system");
       expect(second.filter(({ role }) => role === "system")).toEqual([
-        { role: "system", content: "first system" }, { role: "system", content: "second system" },
+        { role: "system", content: [{ type: "text", text: "second system" }] },
       ]);
     } else {
-      expect(second.filter(({ role }) => role === "system")).toEqual([{ role: "system", content: "second system" }]);
+      expect(wires[1]?.system).toBe("second system");
+      expect(second.filter(({ role }) => role === "system")).toEqual([]);
     }
     remove();
     await handle.dispose();
@@ -318,10 +330,8 @@ describe("Host credential and model route", () => {
       expect(attachmentScope.getStore()).toBe("runtime-session-1");
       if (typeof init?.body !== "string") throw new Error("fixture expected a JSON request body");
       const body = JSON.parse(init.body) as { model: string; max_tokens: number };
-      observed.push({ authorization: new Headers(init.headers).get("authorization"), model: body.model, maxTokens: body.max_tokens });
-      return Promise.resolve(new Response([
-        'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}', "data: [DONE]", "",
-      ].join("\n\n"), { headers: { "content-type": "text/event-stream" } }));
+      observed.push({ authorization: new Headers(init.headers).get("x-api-key"), model: body.model, maxTokens: body.max_tokens });
+      return Promise.resolve(new Response(messagesSse("ok", body.model), { headers: { "content-type": "text/event-stream" } }));
     });
     const rootOptions = modelOptions();
     const childOptions = { ...modelOptions(), sessionId: SessionId("child-session"), model: childProfile.modelId, maxTokens: 128 };
@@ -332,8 +342,8 @@ describe("Host credential and model route", () => {
       expect(chunks).toEqual(expect.arrayContaining([expect.objectContaining({ type: "finish" })]));
     }));
     expect(observed).toEqual(expect.arrayContaining([
-      { authorization: `Bearer synthetic-${profile.revision}`, model: profile.modelId, maxTokens: 512 },
-      { authorization: `Bearer synthetic-${childProfile.revision}`, model: childProfile.modelId, maxTokens: 128 },
+      { authorization: `synthetic-${profile.revision}`, model: profile.modelId, maxTokens: 512 },
+      { authorization: `synthetic-${childProfile.revision}`, model: childProfile.modelId, maxTokens: 128 },
     ]));
     expect(childAuthority).toHaveBeenCalledWith(child, "config-v1", profile.revision);
     expect(attachmentScope.getStore()).toBeUndefined();
@@ -546,13 +556,8 @@ describe("Host credential and model route", () => {
     await authority.preflight(sessionRequest());
     const authorization: string[] = [];
     globalThis.fetch = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
-      authorization.push(new Headers(init?.headers).get("authorization") ?? "");
-      const sse = [
-        'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}',
-        'data: {"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}',
-        "data: [DONE]",
-        "",
-      ].join("\n\n");
+      authorization.push(new Headers(init?.headers).get("x-api-key") ?? "");
+      const sse = messagesSse("ok");
       return Promise.resolve(new Response(sse, {
         headers: { "content-type": "text/event-stream" },
         status: 200,
@@ -562,7 +567,7 @@ describe("Host credential and model route", () => {
     const prepared = await adapter.prepareCall(profile.providerRouteId, profile.modelId);
     for await (const chunk of prepared.stream(modelOptions())) chunks.push(chunk);
     expect(chunks.some((chunk) => chunk.type === "finish")).toBe(true);
-    expect(authorization).toEqual([`Bearer ${secret}`]);
+    expect(authorization).toEqual([secret]);
     expect(calls).toHaveLength(2);
     expect(calls[0]).toMatchObject({
       credentialRef: profile.credentialRef,
@@ -643,12 +648,7 @@ describe("Host credential and model route", () => {
       harness.credentialController,
     );
     await authority.preflight(sessionRequest());
-    globalThis.fetch = vi.fn(() => Promise.resolve(new Response([
-      'data: {"choices":[{"delta":{"content":"utility"},"finish_reason":"stop"}]}',
-      'data: {"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}',
-      "data: [DONE]",
-      "",
-    ].join("\n\n"), {
+    globalThis.fetch = vi.fn(() => Promise.resolve(new Response(messagesSse("utility"), {
       headers: { "content-type": "text/event-stream" },
       status: 200,
     })));
@@ -709,12 +709,7 @@ describe("Host credential and model route", () => {
       harness.credentialController,
     );
     await authority.preflight(sessionRequest());
-    globalThis.fetch = vi.fn(() => Promise.resolve(new Response([
-      'data: {"choices":[{"delta":{"content":"summary"},"finish_reason":"stop"}]}',
-      'data: {"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}',
-      "data: [DONE]",
-      "",
-    ].join("\n\n"), {
+    globalThis.fetch = vi.fn(() => Promise.resolve(new Response(messagesSse("summary"), {
       headers: { "content-type": "text/event-stream" },
       status: 200,
     })));

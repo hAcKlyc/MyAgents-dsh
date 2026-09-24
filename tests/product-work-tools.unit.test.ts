@@ -1219,7 +1219,7 @@ describe("canonical Agent Work projection", () => {
     expect(state.context.productWork.snapshot().find((work) => work.agentId === parentId)?.activation.state).toBe("running");
   });
 
-  it("cold-recovers a reserved descendant through its retained direct parent without reselecting either model", async () => {
+  it("cold-recovers a reserved descendant through its retained direct parent and settles a closed ancestor without reselecting either model", async () => {
     const limits = () => ({ maxDepth: 2, maxActiveChildren: 2, maxRetainedChildren: 4 });
     const source = await harness({ limits });
     const parentArgs = { description: "Cold parent", prompt: "Delegate and retain the parent identity." };
@@ -1253,7 +1253,7 @@ describe("canonical Agent Work projection", () => {
     const restoredEvents = recovered.context.sessions.get(parent.id)?.snapshotEvents() ?? [];
     expect(restoredEvents.slice(0, parentEvents.length)).toEqual(parentEvents);
     expect(restoredEvents.slice(parentEvents.length).every((event) => event.type === "session/end-seed")).toBe(true);
-    await vi.waitFor(() => expect(recovered.context.productWork.snapshot().map((work) => work.activation.state)).toEqual(["completed", "running"]));
+    await vi.waitFor(() => expect(recovered.context.productWork.snapshot().map((work) => work.activation.state)).toEqual(["completed", "aborted"]));
   });
 
   it("lets human waiting release capacity and requires fair readmission after the answer", async () => {
