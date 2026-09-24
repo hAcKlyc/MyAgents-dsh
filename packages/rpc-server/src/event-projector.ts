@@ -750,6 +750,9 @@ export const projectSessionEvent = (
       })]);
     }
     case "tool/result": {
+      // A surface replacement (for example Tool Result Pruner) changes model
+      // history; it is not a second execution of the same Tool call.
+      if (source.surfaceOp !== "append") return Object.freeze([]);
       const operation = operationForTurn(
         session,
         source.data.turn,

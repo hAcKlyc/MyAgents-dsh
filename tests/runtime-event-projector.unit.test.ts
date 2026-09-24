@@ -583,6 +583,17 @@ describe("Runtime event projection", () => {
         },
       },
     }]);
+    const prunedReplacement = session.append("tool/result", {
+      ...result.data,
+      message: {
+        ...result.data.message,
+        content: [{ type: "text", text: "12 [...] lines" }],
+      },
+    }, {
+      sourceEventSeqs: [result.seq],
+      surfaceOp: { op: "replace", startSeq: result.seq, endSeq: result.seq },
+    });
+    expect(projectSessionEvent(session, prunedReplacement)).toEqual([]);
   });
 
   it("bounds aggregate rich Tool results before native delivery", () => {
