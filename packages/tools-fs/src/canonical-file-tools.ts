@@ -845,7 +845,7 @@ export class CanonicalFileTools extends Service {
       if (!(ctx.fs instanceof LocalWorkspaceFileSystem)) {
         throw new ProductToolError("list_failed", "ls requires the composition-selected local filesystem Provider");
       }
-      let listing: Readonly<{ entries: readonly LocalDirectoryEntry[]; skippedOutside: number }>;
+      let listing: Readonly<{ entries: readonly LocalDirectoryEntry[]; skippedOutside: number; skippedDangling: number }>;
       try {
         listing = await ctx.fs.listDirectoryEntries({
           target: rootAuthority.root,
@@ -869,7 +869,7 @@ export class CanonicalFileTools extends Service {
         }
         retained.push(`${entry.name}${entry.type === "directory" ? "/" : ""}`);
       }
-      if (retained.length === 0 && listing.skippedOutside === 0) return "(empty directory)";
+      if (retained.length === 0 && listing.skippedOutside === 0 && listing.skippedDangling === 0) return "(empty directory)";
       const raw = retained.length === 0 ? "(empty directory)" : retained.join("\n");
       const truncated = truncateHeadCompleteLines(raw, 50 * 1_024);
       const notices: string[] = [];
@@ -878,6 +878,9 @@ export class CanonicalFileTools extends Service {
       }
       if (listing.skippedOutside > 0) {
         notices.push(`skipped ${listing.skippedOutside} ${listing.skippedOutside === 1 ? "entry" : "entries"} (outside allowed roots)`);
+      }
+      if (listing.skippedDangling > 0) {
+        notices.push(`skipped ${listing.skippedDangling} ${listing.skippedDangling === 1 ? "entry" : "entries"} (dangling symlink)`);
       }
       if (truncated.truncated) notices.push("50.0KB output limit reached. Use a more specific path to reduce the listing");
       const suffix = notices.length === 0 ? "" : `\n\n[${notices.join(". ")}]`;

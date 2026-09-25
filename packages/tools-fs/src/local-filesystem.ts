@@ -156,6 +156,7 @@ export interface LocalDirectoryEntry {
 export interface LocalDirectoryListing {
   readonly entries: readonly LocalDirectoryEntry[];
   readonly skippedOutside: number;
+  readonly skippedDangling: number;
 }
 
 export interface LocalDirectoryAuthority {
@@ -501,6 +502,7 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
     const result: LocalDirectoryEntry[] = [];
     let scanned = 0;
     let skippedOutside = 0;
+    let skippedDangling = 0;
     try {
       await this.assertDirectoryAuthority(authority, signal);
       for await (const entry of directory) {
@@ -522,14 +524,17 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
         }
         const info = await this.stat(child, signal);
         await this.assertDirectoryAuthority(authority, signal);
-        if (info === undefined) continue;
+        if (info === undefined) {
+          if (entry.isSymbolicLink()) skippedDangling += 1;
+          continue;
+        }
         result.push(Object.freeze({ name: entry.name, type: info.type }));
       }
       await this.assertDirectoryAuthority(authority, signal);
     } finally {
       await directory.close().catch(() => undefined);
     }
-    return Object.freeze({ entries: Object.freeze(result), skippedOutside });
+    return Object.freeze({ entries: Object.freeze(result), skippedOutside, skippedDangling });
   }
 
   private async assertDirectoryAuthority(

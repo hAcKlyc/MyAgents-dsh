@@ -44,8 +44,8 @@ those directories. See [ADR 0012](../../adr/0012-official-file-tool-composition.
 The official Runtime resolves and hashes the selected Shell at composition: `bash` from launcher `PATH` on POSIX or official `resolvePwshPath()` on Windows; Node is `process.execPath`, and ripgrep comes from `@vscode/ripgrep`. The Host constructs child environment values and derives its declaration from that object. During initialize, the trusted process adapter captures only those declared keys once, validates them, and freezes the generation's effective environment. Missing declared values fail initialization with key names only; they are configuration errors, not permission denials. MyAgents CLI routing variables and the App-owned `MYAGENTS_INTERNAL_CLI_TOKEN` are available to the official Shell so an internal Agent can run the full bundled CLI without user token setup. This exact key is the only credential-shaped environment exception; external CLI tokens and Provider/MCP credentials remain outside the Shell environment.
 
 Canonical `ls` enumerates entries under the authorized workspace root. A symbolic link resolving
-outside that root is omitted with a skipped-entry count; unrelated authorized entries remain
-visible. Other child escape conditions still fail the enumeration. Glob/Grep invalid pattern
+outside that root or pointing to a missing target is omitted with a reasoned skipped-entry count;
+unrelated authorized entries remain visible. Other child escape conditions still fail the enumeration. Glob/Grep invalid pattern
 errors are expressed as tool-level retry guidance, and truncated Glob results advise narrowing
 the pattern. New files published by the official filesystem tool retain its restrictive `0600`
 mode; shell output follows the caller's umask. The modes reflect different owners and protect

@@ -1473,6 +1473,20 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
+  it("reports omitted dangling symlinks while retaining readable ls entries", async () => {
+    const state = await harness();
+    const listed = join(state.workspace, "dangling-list");
+    await mkdir(listed);
+    await writeFile(join(listed, "visible.txt"), "visible");
+    await symlink(join(listed, "missing.txt"), join(listed, "missing-link"));
+    const result = await state.execute("ls", { path: listed });
+    expect(result).toMatchObject({ isError: false });
+    expect(result.value).toContain("visible.txt");
+    expect(result.value).toContain("skipped 1 entry (dangling symlink)");
+    expect(result.value).not.toContain("missing-link");
+    await state.context.fiber.dispose();
+  });
+
   it("applies the exact ls entry and complete-line byte notices within the 50KB result bound", async () => {
     const state = await harness();
     const countDirectory = join(state.workspace, "count-bound");
