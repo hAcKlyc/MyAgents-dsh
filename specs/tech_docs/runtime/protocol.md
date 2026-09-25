@@ -834,7 +834,7 @@ Host MUST branch on negotiated capability values, not runtime name or version gu
 - Runtime home, workspace roots, attachment staging, and persistence paths have non-overlapping explicit authorities.
 - Environment inheritance is sealed by allowlist.
 - Network providers enforce scheme, DNS/IP/private-range, redirect, response-size, timeout, and cancellation policy. Remote MCP HTTP/SSE uses a trusted composition-injected capability rather than ambient `fetch`: every request resolves and validates all address-family answers, rejects the whole result if any answer is non-public, and pins the selected public address through transport dispatch while preserving the declared Host name for HTTP/TLS.
-- Credentials are reverse-port-only and request/connection scoped.
+- Provider and MCP credentials are reverse-port-only and request/connection scoped. The App-owned internal CLI capability is admitted only as the exact `MYAGENTS_INTERNAL_CLI_TOKEN` process-environment key for an internal Agent Shell; its value is never carried in protocol snapshots, events, diagnostics, or persistence. External CLI tokens are not admitted.
 - Every Host response is fenced by generation and current operation/component revision.
 - Model-visible and event-visible text is bounded before serialization.
 - Extension descriptors cannot import or execute Host-supplied JavaScript.

@@ -23,7 +23,7 @@ Documentation governance starts at `specs/README.md`. That index owns document p
 - Model-visible tools execute through the single DSH `ctx.tools` pipeline. Product compatibility tools may replace DSH tool definitions but may not introduce another tool runtime.
 - Visibility and permission are separate. Workspace, revision, mode, origin, and hard-policy checks fail closed at execution time.
 - Extension input from an SDK or Host is declarative. Arbitrary plugin JavaScript is installed only by trusted runtime builders at build/composition time.
-- Secrets are request- or connection-scoped and are never persisted, logged, emitted, or placed in declarative snapshots.
+- Provider and MCP secrets are request- or connection-scoped and are never persisted, logged, emitted, or placed in declarative snapshots. The App-owned internal CLI capability is the sole process-environment exception for the internal Agent Shell; external CLI tokens remain forbidden.
 - File rollback claims must state their exact coverage. The initial target is root-origin governed `Write` and `Edit`, not shell, child-agent, or external changes.
 - DSH core changes are allowed only when an exact required semantic cannot be expressed through an existing public seam. Keep such changes minimal, tested, and proposed upstream.
 - DSH core patches are source-controlled here, verified against exact upstream blobs, applied only to an isolated build worktree, and consumed through a content-addressed artifact. Never edit the sibling upstream checkout, registry tarballs, or `node_modules` in place.

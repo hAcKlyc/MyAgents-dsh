@@ -131,12 +131,17 @@ const exactEnvironmentValues = (value: unknown): Readonly<Record<string, string>
   for (const key of Reflect.ownKeys(value).sort((left, right) => compareCodePoints(String(left), String(right)))) {
     if (typeof key !== "string") throw new TypeError("ProductProcessRuntime environment values are invalid");
     const descriptor = descriptors[key];
+    // The App's Session Sidecar grants this one internal CLI capability to
+    // its Agent Shell, as it does for the builtin Runtime. Provider and MCP
+    // credentials still use reverse ports; no other credential-shaped key
+    // can enter the governed process environment.
+    const internalCliCapability = key === "MYAGENTS_INTERNAL_CLI_TOKEN";
     if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)
       || !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u.test(key) || typeof descriptor.value !== "string"
       || descriptor.value.length > 32_768 || descriptor.value.includes("\0")
       || /^DSH_/iu.test(key)
-      || /(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTHORIZATION|PRIVATE_?KEY|ACCESS_?KEY|COOKIE)/iu
-        .test(key)) {
+      || (!internalCliCapability && /(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTHORIZATION|PRIVATE_?KEY|ACCESS_?KEY|COOKIE)/iu
+        .test(key))) {
       throw new TypeError("ProductProcessRuntime environment values are invalid");
     }
     environmentValues[key] = descriptor.value;

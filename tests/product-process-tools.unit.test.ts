@@ -488,6 +488,33 @@ describe("official Shell tools with product policy", () => {
     expect(() => missing.context.productProcesses.admitEnvironment(missing.environment)).toThrow("PATH");
   });
 
+  it("admits only the App-owned internal CLI capability among credential-shaped environment keys", async () => {
+    const state = await harness();
+    const environment = Object.freeze({
+      ...state.environment,
+      environment: Object.freeze({
+        ...state.environment.environment,
+        allowedKeys: Object.freeze(["PATH", "MYAGENTS_INTERNAL_CLI_TOKEN"]),
+      }),
+    });
+    const config = Object.freeze({
+      ...state.config,
+      environmentValues: Object.freeze({
+        PATH: "/usr/bin:/bin",
+        MYAGENTS_INTERNAL_CLI_TOKEN: "synthetic-app-capability",
+      }),
+    });
+    expect(resolveProductProcessAuthority(environment, config).env.MYAGENTS_INTERNAL_CLI_TOKEN)
+      .toBe("synthetic-app-capability");
+    for (const key of ["MYAGENTS_API_TOKEN", "ANTHROPIC_API_KEY", "OTHER_INTERNAL_CLI_TOKEN"]) {
+      expect(() => resolveProductProcessAuthority(environment, {
+        ...config,
+        environmentValues: { PATH: "/usr/bin:/bin", [key]: "synthetic-secret" },
+      })).toThrow("ProductProcessRuntime environment values are invalid");
+    }
+    await state.context.fiber.dispose();
+  });
+
   it("presents the full Bash command and actual working directory before execution", async () => {
     const state = await harness();
     state.setPermission("deny");
