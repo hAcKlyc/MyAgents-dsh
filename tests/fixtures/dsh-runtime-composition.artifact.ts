@@ -26,6 +26,7 @@ import {
   createUserMessage,
 } from "@deepseek-ai/dsh-llm";
 import { assembleContextFor, type Agent } from "@deepseek-ai/dsh-agent";
+import type {} from "@deepseek-ai/dsh-time-context";
 import { PERSONA_PREFIX_SECTION, renderPrompt, SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import {
@@ -2634,7 +2635,13 @@ const primarySystemMessage = {
   role: "system" as const,
   content: [{ type: "text" as const, text: renderPrompt(primaryPrompt) }],
 };
-assert.deepEqual(primaryAgent.session.deriveMessages().map(({ role, content }) => ({ role, content })), [
+const timeReadings = primaryAgent.session.deriveMessages().filter(({ source }) => source?.kind === "time-context");
+assert.ok(timeReadings.length >= 1, "official time context must enter durable model history");
+assert.ok(timeReadings.every(({ content }) => content.some((block) =>
+  block.type === "text" && block.text.startsWith("Time sampled while preparing turn "))));
+assert.deepEqual(primaryAgent.session.deriveMessages()
+  .filter(({ source }) => source?.kind !== "time-context")
+  .map(({ role, content }) => ({ role, content })), [
   primarySystemMessage,
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
   approvalContextMessage,
@@ -2642,12 +2649,16 @@ assert.deepEqual(primaryAgent.session.deriveMessages().map(({ role, content }) =
   { role: "user", content: [{ type: "text", text: "second prompt" }] },
   { role: "assistant", content: [{ type: "text", text: "second completion" }] },
 ]);
-assert.deepEqual(adapter.requests[0]?.messages.map(({ role, content }) => ({ role, content })), [
+assert.deepEqual(adapter.requests[0]?.messages
+  .filter(({ source }) => source?.kind !== "time-context")
+  .map(({ role, content }) => ({ role, content })), [
   primarySystemMessage,
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
   approvalContextMessage,
 ]);
-assert.deepEqual(adapter.requests[1]?.messages.map(({ role, content }) => ({ role, content })), [
+assert.deepEqual(adapter.requests[1]?.messages
+  .filter(({ source }) => source?.kind !== "time-context")
+  .map(({ role, content }) => ({ role, content })), [
   primarySystemMessage,
   { role: "user", content: [{ type: "text", text: "first prompt" }] },
   approvalContextMessage,

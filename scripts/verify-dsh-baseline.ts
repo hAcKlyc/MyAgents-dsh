@@ -58,6 +58,15 @@ if (Array.isArray(productionPackages)) {
     const name = entry.name;
     if (typeof name !== "string" || !name.startsWith("@deepseek-ai/")) continue;
     const installedPath = resolve(repositoryRoot, "node_modules", name);
+    // Platform-specific optional native add-ons remain in the lockfile closure,
+    // but npm installs only the variant matching this machine.
+    if (entry.optional === true) {
+      try {
+        await access(resolve(installedPath, "package.json"), constants.R_OK);
+      } catch {
+        continue;
+      }
+    }
     const installed = await readJson(resolve(installedPath, "package.json"));
     const acceptedPatchedVersion = typeof acceptedRuntimePackages === "object"
       && acceptedRuntimePackages !== null && !Array.isArray(acceptedRuntimePackages)
@@ -70,11 +79,14 @@ if (Array.isArray(productionPackages)) {
     );
     assert(installed.license === entry.license, `${name} installed license must match baseline evidence`);
     const repository = installed.repository;
+    const expectedRepository = name.startsWith("@deepseek-ai/node-addon-system")
+      ? "git+https://github.com/deepseek-harness/deepseek-harness.git"
+      : "git+https://github.com/deepseek-ai/deepseek-harness.git";
     assert(
       typeof repository === "object" && repository !== null && !Array.isArray(repository)
-        && (repository as JsonObject).url === "git+https://github.com/deepseek-ai/deepseek-harness.git"
+        && (repository as JsonObject).url === expectedRepository
         && typeof (repository as JsonObject).directory === "string",
-      `${name} must identify its deepseek-harness source directory`,
+      `${name} must identify its upstream source directory`,
     );
     try {
       await access(resolve(installedPath, "LICENSE"), constants.R_OK);

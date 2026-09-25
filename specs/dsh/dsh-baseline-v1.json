@@ -17,11 +17,81 @@
     "registry": "https://registry.npmjs.org",
     "dshRelease": "0.1.7-rc.2",
     "sourceAssociation": "unproven",
-    "directPackageCount": 62,
-    "productionPackageCount": 296
+    "directPackageCount": 73,
+    "productionPackageCount": 312
   },
   "publicCompileFixture": "packages/product-profile/src/dsh-public-surface.compile.ts",
   "publicSeams": [
+    {
+      "id": "session-checkpoint-policy",
+      "package": "@deepseek-ai/dsh-session-checkpoint-policy",
+      "importPath": "@deepseek-ai/dsh-session-checkpoint-policy",
+      "classification": "provider",
+      "batchUse": [
+        "UPG17-CAPABILITIES"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "session-stats",
+      "package": "@deepseek-ai/dsh-session-stats",
+      "importPath": "@deepseek-ai/dsh-session-stats",
+      "classification": "provider",
+      "batchUse": [
+        "UPG17-CAPABILITIES"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "session-turn-outline",
+      "package": "@deepseek-ai/dsh-session-turn-outline",
+      "importPath": "@deepseek-ai/dsh-session-turn-outline",
+      "classification": "provider",
+      "batchUse": [
+        "UPG17-CAPABILITIES"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "repeat-tool-reminder",
+      "package": "@deepseek-ai/dsh-repeat-tool-reminder",
+      "importPath": "@deepseek-ai/dsh-repeat-tool-reminder",
+      "classification": "provider",
+      "batchUse": [
+        "UPG17-CAPABILITIES"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "time-context",
+      "package": "@deepseek-ai/dsh-time-context",
+      "importPath": "@deepseek-ai/dsh-time-context",
+      "classification": "provider",
+      "batchUse": [
+        "UPG17-CAPABILITIES"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
     {
       "id": "http-proxy",
       "package": "@deepseek-ai/dsh-http-proxy",
@@ -1006,7 +1076,7 @@
     },
     {
       "license": "BSD-3-Clause",
-      "count": 13
+      "count": 18
     },
     {
       "license": "ISC",
@@ -1018,7 +1088,7 @@
     },
     {
       "license": "MIT",
-      "count": 201
+      "count": 212
     },
     {
       "license": "Python-2.0",
@@ -1507,6 +1577,16 @@
       "optional": false
     },
     {
+      "path": "node_modules/@deepseek-ai/dsh-bash-sandbox",
+      "name": "@deepseek-ai/dsh-bash-sandbox",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-bash-sandbox/-/dsh-bash-sandbox-0.1.7-rc.2.tgz",
+      "integrity": "sha512-M4laxtYLPkXlvbtMpLm4hTWKmBb1xJuNMma/eA+xYTNdjHtV/ZJPxiKMVe1crjBp/dKuMTJR42p8rizLM1vkNg==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
       "path": "node_modules/@deepseek-ai/dsh-brand",
       "name": "@deepseek-ai/dsh-brand",
       "version": "0.1.7-rc.2",
@@ -1807,6 +1887,26 @@
       "optional": false
     },
     {
+      "path": "node_modules/@deepseek-ai/dsh-pwsh-sandbox",
+      "name": "@deepseek-ai/dsh-pwsh-sandbox",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-pwsh-sandbox/-/dsh-pwsh-sandbox-0.1.7-rc.2.tgz",
+      "integrity": "sha512-c3kXLNhf8fNL7nt8NfJwcHU0jPvRiy6IPF+DHtT/Tp7+NhytHwj8vR3Ln7GIwsXGNU2hJbaD63S2IStjWLaylQ==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-repeat-tool-reminder",
+      "name": "@deepseek-ai/dsh-repeat-tool-reminder",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-repeat-tool-reminder/-/dsh-repeat-tool-reminder-0.1.7-rc.2.tgz",
+      "integrity": "sha512-tuG5xgqXth+CfNJiEMhsW+HTXfy14vMkuKx+J+47792P9AdxHr/a/Gi8qj6Err7TRU+Tz+d/VdzfsY+6+oWkkQ==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
       "path": "node_modules/@deepseek-ai/dsh-sandbox",
       "name": "@deepseek-ai/dsh-sandbox",
       "version": "0.1.7-rc.2",
@@ -1817,11 +1917,31 @@
       "optional": false
     },
     {
+      "path": "node_modules/@deepseek-ai/dsh-sandbox-local",
+      "name": "@deepseek-ai/dsh-sandbox-local",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-sandbox-local/-/dsh-sandbox-local-0.1.7-rc.2.tgz",
+      "integrity": "sha512-Xfyj+z5QZbbAU3nGU5JMpoJpL+mHkNCueMO8nzbBPiDvJBNeHvNefEvKmBRgtQmaxeHrpG9NRU6P/81KfqajlA==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
       "path": "node_modules/@deepseek-ai/dsh-sandbox-policy",
       "name": "@deepseek-ai/dsh-sandbox-policy",
       "version": "0.1.7-rc.2",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-sandbox-policy/-/dsh-sandbox-policy-0.1.7-rc.2.tgz",
       "integrity": "sha512-pIhCaOEqYjNoKy/c7dYYgYzK+zp8/FxnEeaBA5e6fTmNROb+/qSFsC4hY3Qu+PVU9IdbH/4fa6TbT2jnqoDPQw==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-sandbox-windows-acl",
+      "name": "@deepseek-ai/dsh-sandbox-windows-acl",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-sandbox-windows-acl/-/dsh-sandbox-windows-acl-0.1.7-rc.2.tgz",
+      "integrity": "sha512-QOi5DSTDdEXTI2qhfx/uRZ+2zo3ssDG+r8uHWCor8Hg3VK28JICO1nWNbl3SDevvHqcKsM2oxNdwr5XTSC14jg==",
       "license": "MIT",
       "direct": true,
       "optional": false
@@ -1842,6 +1962,16 @@
       "version": "0.1.7-rc.2",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-session/-/dsh-session-0.1.7-rc.2.tgz",
       "integrity": "sha512-0dXv1t4Zox/yHkZ4PfPNSBWJfIc72PDqOvjz43EMoHpbmoKTVpit2UpUI+yTtX01e4MVBbDMxBZ95oJW/Oydnw==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-session-checkpoint-policy",
+      "name": "@deepseek-ai/dsh-session-checkpoint-policy",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-session-checkpoint-policy/-/dsh-session-checkpoint-policy-0.1.7-rc.2.tgz",
+      "integrity": "sha512-2V+o25gPkQNeBXD2E9zSTCxZzEnIKmClnQwhXEMKFWwS6Ibm99GFc51DFjIvhdu/I0/YawOS637KsrPznHILpQ==",
       "license": "MIT",
       "direct": true,
       "optional": false
@@ -1957,6 +2087,16 @@
       "optional": false
     },
     {
+      "path": "node_modules/@deepseek-ai/dsh-session-stats",
+      "name": "@deepseek-ai/dsh-session-stats",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-session-stats/-/dsh-session-stats-0.1.7-rc.2.tgz",
+      "integrity": "sha512-BT3X9w6REGTkc5bRH5jLiQ6Hv+jkiqhxzSQnnwJKmskowthLwsigN9cn760IBBCPZNyPNGghixAMxm9pl0/yIQ==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
       "path": "node_modules/@deepseek-ai/dsh-session-title",
       "name": "@deepseek-ai/dsh-session-title",
       "version": "0.1.7-rc.2",
@@ -1964,6 +2104,16 @@
       "integrity": "sha512-UsbFH2ESc8lY2YgSb9OPsXOBryOc7qq0f57FYccb3yOAez27afERWwvcPGZY8D9YTJKZCf0Q3ae/NZMQU15AJA==",
       "license": "MIT",
       "direct": false,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-session-turn-outline",
+      "name": "@deepseek-ai/dsh-session-turn-outline",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-session-turn-outline/-/dsh-session-turn-outline-0.1.7-rc.2.tgz",
+      "integrity": "sha512-Ouag8143h3+exBd8Q7iQ4XI22VcR+0rfDgOjzsVC3WMq6ckHLeo3SrxLFLXMuLn+UpBTBnjy1b2q6uaLemQsIA==",
+      "license": "MIT",
+      "direct": true,
       "optional": false
     },
     {
@@ -2014,6 +2164,26 @@
       "integrity": "sha512-OV3T73WDjz9x8Zc/Qwfjui1I/bVWO7UVWNK4FjujZABJi/61PMyUYmrWMBjF22VGS4V1f2foSJ0TVzd/1mq+gQ==",
       "license": "MIT",
       "direct": false,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-spill-local",
+      "name": "@deepseek-ai/dsh-spill-local",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-spill-local/-/dsh-spill-local-0.1.7-rc.2.tgz",
+      "integrity": "sha512-ls6vTHb2GHUbi2Es2/sBdtS0A3k3Wrfyq2uVbMI5XNARoMnftezcIcxyGME+s/7cCtAof7Sy5LK6BnY2vOWuUQ==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-spill-policy",
+      "name": "@deepseek-ai/dsh-spill-policy",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-spill-policy/-/dsh-spill-policy-0.1.7-rc.2.tgz",
+      "integrity": "sha512-n4CrVMlS/kK4bQMHBlhrr9V9z3UuZdynwpXKKq1j+7Wl0GbqIyimGyzfVCVd0u5L84geVbI825ltleBqirwNFg==",
+      "license": "MIT",
+      "direct": true,
       "optional": false
     },
     {
@@ -2092,6 +2262,16 @@
       "version": "0.1.7-rc.2",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-system-prompt/-/dsh-system-prompt-0.1.7-rc.2.tgz",
       "integrity": "sha512-vxKcADh7XOuWJOfa0WeEOhvFiUbMOdoK4w6M7KVCI0S99c9ktxrgY4wKdmAxap+nQjwTEPme3QuOlY3Na+cz9w==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-time-context",
+      "name": "@deepseek-ai/dsh-time-context",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-time-context/-/dsh-time-context-0.1.7-rc.2.tgz",
+      "integrity": "sha512-YemKiNNbS+y7H80aHDSahYlgwlgQR1UU/8SabAbFLepWqrGH07O0HdSoZ8WVmXD3wBX+X+hAJyWw3zTT52jDMw==",
       "license": "MIT",
       "direct": true,
       "optional": false
@@ -2295,6 +2475,56 @@
       "license": "MIT",
       "direct": false,
       "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/node-addon-system",
+      "name": "@deepseek-ai/node-addon-system",
+      "version": "0.1.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/node-addon-system/-/node-addon-system-0.1.2.tgz",
+      "integrity": "sha512-EFn8K+mXIXiw6s3rxX+cgp2hZTEAQdVIsURhrXnBxycSXvtQ1EQpsSVzoNKtKAQI0I0VqkEcVEjHzS/PeaGsvw==",
+      "license": "BSD-3-Clause",
+      "direct": false,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/node-addon-system-darwin-arm64",
+      "name": "@deepseek-ai/node-addon-system-darwin-arm64",
+      "version": "0.1.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/node-addon-system-darwin-arm64/-/node-addon-system-darwin-arm64-0.1.2.tgz",
+      "integrity": "sha512-IR0cx8um19mLCZaJ+H5PLblKr6Eg3PWvVo8eTQBr/SwH2nh5tM9CD9/5fHweNS9Pjt15UdFlGqnvLSd/w+O6Rw==",
+      "license": "BSD-3-Clause",
+      "direct": false,
+      "optional": true
+    },
+    {
+      "path": "node_modules/@deepseek-ai/node-addon-system-darwin-x64",
+      "name": "@deepseek-ai/node-addon-system-darwin-x64",
+      "version": "0.1.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/node-addon-system-darwin-x64/-/node-addon-system-darwin-x64-0.1.2.tgz",
+      "integrity": "sha512-XDbmquNapk9aT28y4EKn9lbONVr9YNs1NM/GKH1Gi5gUhjOT9wgRaTv72FJdNaVIInbPAYbPoyn7/y+MzQMNNg==",
+      "license": "BSD-3-Clause",
+      "direct": false,
+      "optional": true
+    },
+    {
+      "path": "node_modules/@deepseek-ai/node-addon-system-linux-arm64",
+      "name": "@deepseek-ai/node-addon-system-linux-arm64",
+      "version": "0.1.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/node-addon-system-linux-arm64/-/node-addon-system-linux-arm64-0.1.2.tgz",
+      "integrity": "sha512-Z/DQtqgEYzjBzb2ocHGjMzx51W7xDILkJKKj89nyErr8gZMNiLs+JNL1uKzJqc3VLZB+vYCPaHGyQ3oX6EzEmA==",
+      "license": "BSD-3-Clause",
+      "direct": false,
+      "optional": true
+    },
+    {
+      "path": "node_modules/@deepseek-ai/node-addon-system-linux-x64",
+      "name": "@deepseek-ai/node-addon-system-linux-x64",
+      "version": "0.1.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/node-addon-system-linux-x64/-/node-addon-system-linux-x64-0.1.2.tgz",
+      "integrity": "sha512-S2aPVHvYCpNCppCFyNlooMYuTB7ucK5lvD9oXQQ42v5Z2s5AoaiCdjz9r2l+ED2rI5oS1x0cUZmKjJH2dxV0pg==",
+      "license": "BSD-3-Clause",
+      "direct": false,
+      "optional": true
     },
     {
       "path": "node_modules/@deepseek-ai/schemastery",

@@ -15,7 +15,12 @@ import { ToolResultPruner } from "@deepseek-ai/dsh-compaction-tool-result-pruner
 import { CommandId, CommandRuntime } from "@deepseek-ai/dsh-commands";
 import { LlmAdapter, LlmRuntime, type ContentBlock } from "@deepseek-ai/dsh-llm";
 import { SqliteSessionQueryEngine } from "@deepseek-ai/dsh-session-query-sqlite";
+import * as SessionCheckpointPolicy from "@deepseek-ai/dsh-session-checkpoint-policy";
+import * as SessionStats from "@deepseek-ai/dsh-session-stats";
+import * as SessionTurnOutline from "@deepseek-ai/dsh-session-turn-outline";
 import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
+import * as RepeatToolReminder from "@deepseek-ai/dsh-repeat-tool-reminder";
+import * as TimeContext from "@deepseek-ai/dsh-time-context";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
 import * as SubagentSpawnInProcess from "@deepseek-ai/dsh-subagent-spawn-in-process";
@@ -184,13 +189,25 @@ import {
   RUNTIME_OPERATING_CONTRACT_ORDER,
 } from "./system-context.js";
 
+// The published stats entry exposes its client view but omits the internal
+// fold-state augmentation from its declaration graph. Keep that state opaque.
+declare module "@deepseek-ai/dsh-session-projection/types" {
+  interface SessionProjectionStateMap {
+    sessionStats: unknown;
+  }
+}
 
 export type { HostBackedInteractionProviderConfig } from "./host-interaction.js";
 
 export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
   "session-store",
   "session-projection-registry",
+  "session-stats",
+  "session-turn-outline",
   "agent-registry",
+  "time-context",
+  "repeat-tool-reminder",
+  "session-checkpoint-policy",
   "llm-runtime",
   "system-prompt",
   "tool-runtime",
@@ -2307,6 +2324,11 @@ export const composeDshRootServices = async (
     });
     await root.plugin(await loadSessionProjectionRegistry());
     await root.plugin(AgentRegistry);
+    await root.plugin(SessionStats);
+    await root.plugin(SessionTurnOutline);
+    await root.plugin(TimeContext, {});
+    await root.plugin(RepeatToolReminder, {});
+    await root.plugin(SessionCheckpointPolicy);
     await root.plugin(LlmRuntime);
     await root.plugin(SystemPrompt, systemPrompt);
     root.systemPrompt.section({

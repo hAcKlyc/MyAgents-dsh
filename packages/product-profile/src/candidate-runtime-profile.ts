@@ -71,7 +71,12 @@ export const BATCH1_AVAILABLE_NOTIFICATIONS = Object.freeze([
 export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
   "@deepseek-ai/dsh-session:SessionStore",
   "@deepseek-ai/dsh-session-projection:SessionProjectionRegistry",
+  "@deepseek-ai/dsh-session-stats:session-stats",
+  "@deepseek-ai/dsh-session-turn-outline:session-turn-outline",
   "@deepseek-ai/dsh-agent:AgentRegistry",
+  "@deepseek-ai/dsh-time-context:time-context",
+  "@deepseek-ai/dsh-repeat-tool-reminder:repeat-tool-reminder",
+  "@deepseek-ai/dsh-session-checkpoint-policy:session-checkpoint-policy",
   "@deepseek-ai/dsh-llm:LlmRuntime",
   "@deepseek-ai/dsh-system-prompt:SystemPrompt",
   "@deepseek-ai/dsh-tools:ToolRuntime",

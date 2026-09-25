@@ -8,7 +8,7 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 - Source/design evidence is `deepseek-harness@477b4f420553e8a52c2fbccc464d7561b239c443` (tree `e3e63253d1d35ad07f785273235c40813cb6c8bd`), declaring `0.1.7-rc.2`.
 - Development dependency resolution is exact public npm `0.1.7-rc.2` plus Cordis `4.0.4`, independently pinned by package-lock tarball URLs and integrities.
-- Executable candidates are source-built with ten audited core patches. The separately patched pi-ai `0.85.1` remains an independent dependency authority. The accepted 89-package patched-artifact manifest is the exact package-byte authority; later Product/lock/builder changes require fresh verification and do not inherit prior acceptance.
+- Executable candidates are source-built with ten audited core patches. The separately patched pi-ai `0.85.1` remains an independent dependency authority. The accepted 100-package patched-artifact manifest is the exact package-byte authority; later Product/lock/builder changes require fresh verification and do not inherit prior acceptance.
 
 The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 
