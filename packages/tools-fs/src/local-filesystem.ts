@@ -153,6 +153,11 @@ export interface LocalDirectoryEntry {
   readonly type: "directory" | "file" | "other" | "symlink";
 }
 
+export interface LocalDirectoryListing {
+  readonly entries: readonly LocalDirectoryEntry[];
+  readonly skippedOutside: number;
+}
+
 export interface LocalDirectoryAuthority {
   readonly target: FsTarget;
   readonly version: string;
@@ -484,7 +489,7 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
     authority: LocalDirectoryAuthority,
     maxEntries: number,
     signal?: AbortSignal,
-  ): Promise<readonly LocalDirectoryEntry[]> {
+  ): Promise<LocalDirectoryListing> {
     if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > 100_001) {
       throw new TypeError("filesystem directory enumeration bound is invalid");
     }
@@ -495,6 +500,7 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
       fsError(error, "filesystem bounded directory listing failed"));
     const result: LocalDirectoryEntry[] = [];
     let scanned = 0;
+    let skippedOutside = 0;
     try {
       await this.assertDirectoryAuthority(authority, signal);
       for await (const entry of directory) {
@@ -508,6 +514,10 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
           signal === undefined ? {} : { signal });
         await this.assertDirectoryAuthority(authority, signal);
         if (!this.contains(authority.target, child)) {
+          if (entry.isSymbolicLink()) {
+            skippedOutside += 1;
+            continue;
+          }
           throw new FsError("filesystem directory child escaped its authorized root", "FS_SANDBOX_DENIED");
         }
         const info = await this.stat(child, signal);
@@ -519,7 +529,7 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
     } finally {
       await directory.close().catch(() => undefined);
     }
-    return Object.freeze(result);
+    return Object.freeze({ entries: Object.freeze(result), skippedOutside });
   }
 
   private async assertDirectoryAuthority(

@@ -407,8 +407,16 @@ export class CanonicalFileTools extends Service {
           product,
           CANONICAL_TOOL_CONTRACTS.Write.timeoutMs,
           async (product) => {
-        const executionRelease = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
+        // A new file may need checkpoint-owned parent directories. Serialize
+        // the complete publication and settlement for new files in this
+        // workspace so sibling Writes cannot plan the same missing parent
+        // before either directory receipt is durable.
+        const parentRelease = current === undefined
+          ? await ctx.productTools.locks.acquire(`write-parents:${product.environment.workspace.canonicalRoot}`, product.signal)
+          : () => undefined;
+        let executionRelease: () => void = () => undefined;
         try {
+        executionRelease = await ctx.productTools.locks.acquire(String(target.targetKey), product.signal);
         const content = args.content as string;
         const afterBytes = Buffer.from(content, "utf8");
         const afterSha256 = sha256(content);
@@ -472,6 +480,7 @@ export class CanonicalFileTools extends Service {
         }
         } finally {
           executionRelease();
+          parentRelease();
         }
           },
         );
@@ -503,7 +512,7 @@ export class CanonicalFileTools extends Service {
         const oldString = args.old_string as string;
         const newString = args.new_string as string;
         const replaceAll = args.replace_all === true;
-        const { replacements } = this.#editContent(before, oldString, newString, replaceAll);
+        const { replacements } = this.#editContent(before, oldString, newString, replaceAll, target.displayPath);
         release();
         release = () => undefined;
         await ctx.productTools.authorize(product, {
@@ -529,7 +538,7 @@ export class CanonicalFileTools extends Service {
         if (!Buffer.from(currentText, "utf8").equals(Buffer.from(currentBytes))) {
           throw new ProductToolError("unsupported_format", "Edit requires a valid UTF-8 text file");
         }
-        const currentEdit = this.#editContent(currentText, oldString, newString, replaceAll);
+        const currentEdit = this.#editContent(currentText, oldString, newString, replaceAll, target.displayPath);
         if (currentEdit.replacements !== replacements) {
           throw new ProductToolError("mutation_conflict", "Edit match count changed while awaiting execution; Read the file and retry Edit with the intended replacement range");
         }
@@ -596,10 +605,10 @@ export class CanonicalFileTools extends Service {
     });
   }
 
-  #editContent(before: string, oldString: string, newString: string, replaceAll: boolean): Readonly<{ next: string; replacements: number }> {
+  #editContent(before: string, oldString: string, newString: string, replaceAll: boolean, path: string): Readonly<{ next: string; replacements: number }> {
     let prepared: ReturnType<typeof prepareTextEdit>;
     try {
-      prepared = prepareTextEdit(before, { oldString, newString, replaceAll }, "Edit target");
+      prepared = prepareTextEdit(before, { oldString, newString, replaceAll }, path);
     } catch (error) {
       if (error instanceof FsError && error.code === "FS_EDIT_NOT_FOUND") throw new ProductToolError("match_not_found", `${error.message}. Read the current file and retry Edit.`, { cause: error });
       if (error instanceof FsError && error.code === "FS_AMBIGUOUS_EDIT") throw new ProductToolError("ambiguous_match", `${error.message}. Read the current file and include enough context to select the intended match.`, { cause: error });
@@ -663,7 +672,9 @@ export class CanonicalFileTools extends Service {
       if (result.exitCode !== 0 && result.exitCode !== 1) {
         throw new ProductToolError(
           searchReportsInvalidPattern(result.stderr) ? "invalid_pattern" : "search_failed",
-          searchDiagnostic(result.stderr, "Glob search failed"),
+          searchReportsInvalidPattern(result.stderr)
+            ? "Glob pattern is invalid. Check the glob syntax and try a simpler pattern."
+            : searchDiagnostic(result.stderr, "Glob search failed"),
         );
       }
       return Object.freeze({
@@ -671,6 +682,7 @@ export class CanonicalFileTools extends Service {
         filenames: Object.freeze(filenames),
         numFiles: filenames.length,
         truncated,
+        ...(truncated ? { hint: "Narrow the glob pattern or choose a more specific path to see omitted matches." } : {}),
       });
         },
       );
@@ -785,7 +797,9 @@ export class CanonicalFileTools extends Service {
       if (result.exitCode !== 0 && result.exitCode !== 1) {
         throw new ProductToolError(
           searchReportsInvalidPattern(result.stderr) ? "invalid_pattern" : "search_failed",
-          searchDiagnostic(result.stderr, "Grep search failed"),
+          searchReportsInvalidPattern(result.stderr)
+            ? "Grep expression or glob is invalid. Check its syntax and try a simpler pattern."
+            : searchDiagnostic(result.stderr, "Grep search failed"),
         );
       }
       return Object.freeze({
@@ -831,9 +845,9 @@ export class CanonicalFileTools extends Service {
       if (!(ctx.fs instanceof LocalWorkspaceFileSystem)) {
         throw new ProductToolError("list_failed", "ls requires the composition-selected local filesystem Provider");
       }
-      let entries: readonly LocalDirectoryEntry[];
+      let listing: Readonly<{ entries: readonly LocalDirectoryEntry[]; skippedOutside: number }>;
       try {
-        entries = await ctx.fs.listDirectoryEntries({
+        listing = await ctx.fs.listDirectoryEntries({
           target: rootAuthority.root,
           version: String(info.version),
         }, 100_001, product.signal);
@@ -841,7 +855,7 @@ export class CanonicalFileTools extends Service {
         throwIfProductToolAborted(product.signal);
         throw new ProductToolError("list_failed", "bounded directory enumeration failed", { cause: error });
       }
-      const ordered = [...entries].sort((left, right) => {
+      const ordered = [...listing.entries].sort((left, right) => {
         return left.name.toLowerCase().localeCompare(right.name.toLowerCase());
       });
       const requested = (args.limit as number | undefined) ?? 500;
@@ -855,12 +869,15 @@ export class CanonicalFileTools extends Service {
         }
         retained.push(`${entry.name}${entry.type === "directory" ? "/" : ""}`);
       }
-      if (retained.length === 0) return "(empty directory)";
-      const raw = retained.join("\n");
+      if (retained.length === 0 && listing.skippedOutside === 0) return "(empty directory)";
+      const raw = retained.length === 0 ? "(empty directory)" : retained.join("\n");
       const truncated = truncateHeadCompleteLines(raw, 50 * 1_024);
       const notices: string[] = [];
       if (entryLimitReached) {
         notices.push(`${effectiveLimit} entries limit reached. Increase limit to see more entries, or use a more specific path`);
+      }
+      if (listing.skippedOutside > 0) {
+        notices.push(`skipped ${listing.skippedOutside} ${listing.skippedOutside === 1 ? "entry" : "entries"} (outside allowed roots)`);
       }
       if (truncated.truncated) notices.push("50.0KB output limit reached. Use a more specific path to reduce the listing");
       const suffix = notices.length === 0 ? "" : `\n\n[${notices.join(". ")}]`;
@@ -882,7 +899,7 @@ export class CanonicalFileTools extends Service {
     if (pathInfo === undefined) {
       throw new ProductToolError(
         tool === "Grep" ? "path_denied" : "directory_not_found",
-        tool === "Grep" ? "Grep path does not exist" : `${tool} root does not exist`,
+        tool === "Grep" ? `Grep path does not exist: ${JSON.stringify(input)}` : `${tool} root does not exist: ${JSON.stringify(input)}`,
       );
     }
     const target = await ctx.fs.resolve(input, {
@@ -1009,8 +1026,8 @@ export class CanonicalFileTools extends Service {
 
   async #regularFile(ctx: Context, target: FsTarget, signal: AbortSignal): Promise<FsInfo> {
     const info = await ctx.fs.stat(target, signal);
-    if (info === undefined) throw new ProductToolError("file_not_found", "file target does not exist");
-    if (info.type !== "file") throw new ProductToolError("file_not_found", "file target is not a regular file");
+    if (info === undefined) throw new ProductToolError("file_not_found", `file target does not exist: ${target.displayPath}`);
+    if (info.type !== "file") throw new ProductToolError("file_not_found", `file target is not a regular file: ${target.displayPath}`);
     if ((info.size ?? 0) > 20 * 1_024 * 1_024) {
       throw new ProductToolError("read_limit_exceeded", "file target exceeds the declared bound");
     }

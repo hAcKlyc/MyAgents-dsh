@@ -43,6 +43,14 @@ those directories. See [ADR 0012](../../adr/0012-official-file-tool-composition.
 
 The official Runtime resolves and hashes the selected Shell at composition: `bash` from launcher `PATH` on POSIX or official `resolvePwshPath()` on Windows; Node is `process.execPath`, and ripgrep comes from `@vscode/ripgrep`. The Host constructs child environment values and derives its declaration from that object. During initialize, the trusted process adapter captures only those declared keys once, validates them, and freezes the generation's effective environment. Missing declared values fail initialization with key names only; they are configuration errors, not permission denials. MyAgents CLI routing variables and the App-owned `MYAGENTS_INTERNAL_CLI_TOKEN` are available to the official Shell so an internal Agent can run the full bundled CLI without user token setup. This exact key is the only credential-shaped environment exception; external CLI tokens and Provider/MCP credentials remain outside the Shell environment.
 
+Canonical `ls` enumerates entries under the authorized workspace root. A symbolic link resolving
+outside that root is omitted with a skipped-entry count; unrelated authorized entries remain
+visible. Other child escape conditions still fail the enumeration. Glob/Grep invalid pattern
+errors are expressed as tool-level retry guidance, and truncated Glob results advise narrowing
+the pattern. New files published by the official filesystem tool retain its restrictive `0600`
+mode; shell output follows the caller's umask. The modes reflect different owners and protect
+new agent-written content from other local users.
+
 Tools reuse the admitted environment by revision/digest. After permission waits, Shell checks the current operation and workspace, then verifies only the executable it will launch once. Search verifies ripgrep when used. A Shell command does not rehash Node or ripgrep, and array order does not change an executable-reference set. These checks preserve mutable execution boundaries without treating a frozen configuration as new input on every call.
 
 Official `LocalBashExecutor`/`PwshLocalExecutor` own command argv, encoding, deadlines, collection and cancellation. The selected official `tool-bash` or `tool-pwsh` definition is mounted unchanged. Only one Shell is visible on a platform. The product guard checks permission, Plan/origin/catalog and operation revision, captures the requested workspace before permission, and revalidates its identity and executable before admission. A thin subprocess policy supplies the verified executable, governed cwd and sealed environment to the stock Provider; it does not implement another executor.

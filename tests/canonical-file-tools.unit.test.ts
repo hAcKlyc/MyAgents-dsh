@@ -36,7 +36,7 @@ import type {
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const temporaryRoots: string[] = [];
@@ -558,9 +558,12 @@ describe("canonical filesystem tools", () => {
     const list = await state.execute("ls", { path: "missing-root" });
     expect(list).toMatchObject({
       isError: true,
-      error: { info: { code: "directory_not_found" } },
+      error: { message: 'ls root does not exist: "missing-root"', info: { code: "directory_not_found" } },
     });
-    expect(JSON.stringify(list)).toContain("ls root does not exist");
+    const missingFile = join(state.workspace, "absent.txt");
+    const read = await state.execute("Read", { file_path: missingFile });
+    expect(read).toMatchObject({ isError: true, error: { info: { code: "file_not_found" } } });
+    expect(JSON.stringify(read)).toContain(missingFile);
     await state.context.fiber.dispose();
   });
 
@@ -691,6 +694,38 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
+  it("serializes new-file Writes through checkpoint preparation and publication in one workspace", async () => {
+    const state = await harness();
+    const firstPrepared = Promise.withResolvers<void>();
+    const releaseFirst = Promise.withResolvers<void>();
+    let active = 0;
+    let maximumActive = 0;
+    state.setCheckpointPrepareHook(async (request) => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      if (active === 1) {
+        firstPrepared.resolve();
+        await releaseFirst.promise;
+      }
+      await mkdir(dirname(request.path), { recursive: true });
+      active -= 1;
+    });
+    const writes = [
+      state.execute("Write", { file_path: join(state.workspace, "race", "x", "one.txt"), content: "one" }),
+      state.execute("Write", { file_path: join(state.workspace, "race", "y", "z", "two.txt"), content: "two" }),
+    ];
+    try {
+      await firstPrepared.promise;
+    } finally {
+      releaseFirst.resolve();
+    }
+    const results = await Promise.all(writes);
+    expect(results.every((result) => !result.isError)).toBe(true);
+    expect(maximumActive).toBe(1);
+    expect(state.context.productTools.locks.size).toBe(0);
+    await state.context.fiber.dispose();
+  });
+
   it.each([false, true])("preserves newer bytes when Edit matches conflict (replaceAll=%s)", async (replaceAll) => {
     const state = await harness();
     const path = join(state.workspace, "conflict.txt");
@@ -722,11 +757,13 @@ describe("canonical filesystem tools", () => {
       new_string: "y",
     })).resolves.toMatchObject({ isError: true, error: { info: { code: "read_required" } } });
     await state.execute("Read", { file_path: path });
-    await expect(state.execute("Edit", {
+    const ambiguous = await state.execute("Edit", {
       file_path: path,
       old_string: "x",
       new_string: "y",
-    })).resolves.toMatchObject({ isError: true, error: { info: { code: "ambiguous_match" } } });
+    });
+    expect(ambiguous).toMatchObject({ isError: true, error: { info: { code: "ambiguous_match" } } });
+    expect(JSON.stringify(ambiguous)).toContain(path);
     await writeFile(path, "added x x");
     const edited = await state.execute("Edit", {
       file_path: path,
@@ -999,6 +1036,22 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
+  it("explains how to narrow a truncated Glob result", async () => {
+    const state = await harness();
+    const names = Array.from({ length: 101 }, (_, index) => `file-${index}.txt`);
+    await Promise.all(names.map((name) => writeFile(join(state.workspace, name), "")));
+    state.setSearchResult(Object.freeze({
+      durationMs: 1, exitCode: 0, stderr: "",
+      stdout: names.map((name) => `./${name}\0`).join(""),
+    }));
+    const result = await state.execute("Glob", { pattern: "*.txt" });
+    expect(result).toMatchObject({
+      isError: false,
+      value: { numFiles: 100, truncated: true, hint: expect.stringContaining("Narrow the glob pattern") },
+    });
+    await state.context.fiber.dispose();
+  });
+
   it("paginates beyond twenty thousand records without retaining the raw search response", async () => {
     const state = await harness();
     await writeFile(join(state.workspace, "broad.txt"), "fixture\n");
@@ -1141,20 +1194,26 @@ describe("canonical filesystem tools", () => {
       stderr: "regex parse error: unclosed group",
       stdout: "",
     }));
-    await expect(state.execute("Grep", { pattern: "(" })).resolves.toMatchObject({
+    const invalidGrep = await state.execute("Grep", { pattern: "(" });
+    expect(invalidGrep).toMatchObject({
       isError: true,
       error: { info: { code: "invalid_pattern" } },
     });
+    expect(JSON.stringify(invalidGrep)).toContain("Check its syntax");
+    expect(JSON.stringify(invalidGrep)).not.toContain("regex parse error");
     state.setSearchResult(Object.freeze({
       durationMs: 1,
       exitCode: 2,
       stderr: "rg: error parsing glob '[': unclosed character class",
       stdout: "",
     }));
-    await expect(state.execute("Glob", { pattern: "[" })).resolves.toMatchObject({
+    const invalidGlob = await state.execute("Glob", { pattern: "[" });
+    expect(invalidGlob).toMatchObject({
       isError: true,
       error: { info: { code: "invalid_pattern" } },
     });
+    expect(JSON.stringify(invalidGlob)).toContain("Check the glob syntax");
+    expect(JSON.stringify(invalidGlob)).not.toContain("error parsing glob");
     await expect(state.execute("Grep", { glob: "[", pattern: "fixture" })).resolves.toMatchObject({
       isError: true,
       error: { info: { code: "invalid_pattern" } },
@@ -1395,6 +1454,22 @@ describe("canonical filesystem tools", () => {
       isError: true,
       error: { info: { code: "path_denied" } },
     });
+    await state.context.fiber.dispose();
+  });
+
+  it("lists readable entries when a sibling symlink points outside the allowed roots", async () => {
+    const state = await harness();
+    const listed = join(state.workspace, "listed");
+    await mkdir(listed);
+    await writeFile(join(listed, "visible.txt"), "visible");
+    const outside = join(state.root, "outside.txt");
+    await writeFile(outside, "private");
+    await symlink(outside, join(listed, "outside-link"));
+    const result = await state.execute("ls", { path: listed });
+    expect(result).toMatchObject({ isError: false });
+    expect(result.value).toContain("visible.txt");
+    expect(result.value).toContain("skipped 1 entry (outside allowed roots)");
+    expect(result.value).not.toContain("outside-link");
     await state.context.fiber.dispose();
   });
 

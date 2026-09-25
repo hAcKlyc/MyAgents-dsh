@@ -928,6 +928,48 @@ describe("canonical Agent Work projection", () => {
     }
   });
 
+  it("omits unavailable interaction and plan-exit tools from a background general child", async () => {
+    const state = await harness();
+    const disposers = ["AskUserQuestion", "ExitPlanMode", "Read"].map((name) =>
+      state.context.tools.register(Object.freeze({
+        name,
+        description: `${name} fixture definition`,
+        parameters: Object.freeze({ type: "object" as const, properties: Object.freeze({}), additionalProperties: false }),
+        output: Object.freeze({
+          schema: Object.freeze({ type: "object" as const, properties: Object.freeze({}), additionalProperties: false }),
+          render: () => [],
+        }),
+        execute: () => Promise.resolve(Object.freeze({})),
+      })));
+    try {
+      const started = await state.execute("Agent", { description: "Inspect tools", prompt: "Inspect the available tools." });
+      expect(started).toMatchObject({ isError: false });
+      const child = state.subagents.childAgent((started as { value: { agentId: string } }).value.agentId);
+      if (child === undefined) throw new Error("general fixture child was not published");
+      const descriptor = foldSubagentDescriptor(Array.from(
+        { length: child.session.seq }, (_, seq) => child.session.eventAt(SessionSeq(seq)),
+      ).filter((event) => event !== undefined));
+      if (descriptor?.mode !== "continuable") throw new Error("general fixture descriptor is not continuable");
+      expect(descriptor.toolFilter?.allow).toContain("Read");
+      expect(descriptor.toolFilter?.allow).not.toEqual(expect.arrayContaining(["AskUserQuestion", "ExitPlanMode"]));
+    } finally {
+      for (const dispose of disposers.reverse()) dispose();
+    }
+  });
+
+  it("reports a Host-rejected child model without exposing unrelated admission failures", async () => {
+    const error = Object.assign(new Error("Use an authorized profile revision; the model name is absent or ambiguous"), {
+      name: "ProtocolError", code: "child_model_unauthorized",
+    });
+    const state = await harness({ models: { selectModel: () => { throw error; }, assertModel: () => undefined } });
+    const result = await state.execute("Agent", {
+      description: "Inspect model", prompt: "Inspect the model route.", model: "zzz-bogus-model",
+    });
+    expect(result).toMatchObject({ isError: true, error: { info: { code: "agent_unavailable" } } });
+    expect(JSON.stringify(result)).toContain("authorized profile revision");
+    expect(JSON.stringify(result)).not.toContain("supervised child Agent execution failed");
+  });
+
   it("makes the built-in general descriptor recoverable after an unknown type", async () => {
     const state = await harness();
     const result = await state.execute("Agent", {

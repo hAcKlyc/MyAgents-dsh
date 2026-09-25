@@ -415,6 +415,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
       numFiles: nonNegativeInteger,
       filenames: Type.Array(boundedPath, { maxItems: 100, uniqueItems: true }),
       truncated: Type.Boolean(),
+      hint: Type.Optional(Type.String({ maxLength: 160 })),
     }),
     concurrency: "parallel",
     sideEffect: "read",

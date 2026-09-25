@@ -118,6 +118,10 @@ checkpoint preimages; it does not infer ownership from the current workspace.
 
 The plan is persisted before mkdir; an inode receipt is persisted before the next mkdir or file
 publication. Cleanup uses non-recursive rmdir only for a recorded, unchanged, empty directory.
+New-file canonical Writes take a workspace-scoped publication lock before checkpoint preparation
+and hold it through settlement. This prevents two same-message Writes from planning overlapping
+missing parents before the first directory creation receipt is durable. Existing-file Writes keep
+their per-target lock.
 External files keep their containing directories intact. Replaced directories are retained. A crash
 or storage failure after mkdir but before its inode receipt can leave an empty planned directory:
 its ownership is unproven, so recovery retains it and never adopts its identity to authorize file

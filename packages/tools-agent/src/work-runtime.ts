@@ -3472,9 +3472,19 @@ export class ProductWorkService extends Service {
     requested?: string,
   ): ProductChildModelBinding {
     if (this.config.selectModel !== undefined) {
-      const selected = normalizeCanonicalJson(this.config.selectModel(
-        authority.agent, template.type, requested, template.modelProfileRef,
-      ));
+      let selected: unknown;
+      try {
+        selected = normalizeCanonicalJson(this.config.selectModel(
+          authority.agent, template.type, requested, template.modelProfileRef,
+        ));
+      } catch (error) {
+        const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+        if (error instanceof Error && error.name === "ProtocolError"
+          && typeof code === "string" && code.startsWith("child_model_")) {
+          throw new ProductToolError("agent_unavailable", `Child model selection failed: ${error.message}`, { cause: error });
+        }
+        throw error;
+      }
       const schema = strictObject({
         model: eventIdentifier, provider: eventIdentifier, profileRevision: eventIdentifier,
         selection: Type.Union([Type.Literal("inherit"), Type.Literal("fixed"), Type.Literal("agent")]),
@@ -3507,9 +3517,15 @@ export class ProductWorkService extends Service {
       throw new ProductToolError("agent_unavailable", "parent model route is absent");
     }
     const type = (args.subagent_type as string | undefined) ?? "general";
-    const template = this.resolveAgentTemplate(authority, type);
-    const selectedModel = this.selectChildModel(authority, template, requestedModel);
     const background = args.run_in_background !== false;
+    const baseTemplate = this.resolveAgentTemplate(authority, type);
+    const template = background ? Object.freeze({
+      ...baseTemplate,
+      allowedTools: Object.freeze(baseTemplate.allowedTools.filter((name) =>
+        !CANONICAL_TOOL_NAMES.includes(name as (typeof CANONICAL_TOOL_NAMES)[number])
+        || CANONICAL_TOOL_CONTRACTS[name as keyof typeof CANONICAL_TOOL_CONTRACTS].originPolicy.mode !== "no-background-child")),
+    }) : baseTemplate;
+    const selectedModel = this.selectChildModel(authority, template, requestedModel);
     let output: ProductRetainedOutputFile | undefined;
     let admittedEntry: WorkEntry | undefined;
     let creationPermit: NativeDeferred<WorkEntry> | undefined;
