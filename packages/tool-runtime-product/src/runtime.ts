@@ -14,6 +14,7 @@ import {
 import type { PermissionOperation } from "@myagents-dsh/protocol";
 import { types as utilTypes } from "node:util";
 import { isDeepStrictEqual } from "node:util";
+import { canonicalToolForModelName } from "@myagents-dsh/protocol";
 
 import { ProductKeyedLocks } from "./keyed-locks.js";
 
@@ -108,6 +109,8 @@ export interface ProductToolContext {
   /** Primary Product Session owner. Present on every production context. */
   readonly rootAgent?: Agent;
   readonly rootCallId: string;
+  /** Exact model-facing name; Product policy uses its canonical capability. */
+  readonly modelToolName?: string;
   readonly signal: AbortSignal;
 }
 
@@ -459,11 +462,14 @@ export class ProductToolRuntime extends Service {
     const catalog = this.catalog();
     if (operation.birth.toolCatalogRevision !== catalog.revision
       || operation.birth.toolCatalogDigest !== catalog.digest
-      || !catalog.effectiveTools.includes(exec.name as CanonicalToolName)
+      || !catalog.effectiveTools.includes(exec.name as typeof catalog.effectiveTools[number])
       || (authority.allowedTools !== undefined && !authority.allowedTools.includes(exec.name))) {
       throw new ProductToolError("tool_catalog_stale", "tool call is absent from its operation-frozen effective catalog");
     }
-    const originPolicy = CANONICAL_TOOL_CONTRACTS[exec.name as CanonicalToolName].originPolicy;
+    const canonical = canonicalToolForModelName(exec.name) as CanonicalToolName;
+    const contract = (CANONICAL_TOOL_CONTRACTS as Readonly<Record<string, typeof CANONICAL_TOOL_CONTRACTS[CanonicalToolName] | undefined>>)[canonical];
+    if (contract === undefined) throw new ProductToolError("tool_catalog_stale", "tool lacks a canonical Product policy");
+    const originPolicy = contract.originPolicy;
     if ((originPolicy.mode === "root-only" && origin !== "root")
       || (originPolicy.mode === "no-background-child" && origin === "background_child")) {
       throw new ProductToolError(
@@ -483,9 +489,10 @@ export class ProductToolRuntime extends Service {
       productTurnId: operation.productTurnId,
       rootAgent,
       rootCallId: String(exec.rootCallId),
+      modelToolName: exec.name,
       signal: exec.signal,
     });
-    this.configValue.plan.assert(context, exec.name as CanonicalToolName);
+    this.configValue.plan.assert(context, canonical);
     return context;
   }
 
@@ -592,13 +599,17 @@ export class ProductToolRuntime extends Service {
   }
 
   assertCurrent(context: ProductToolContext, tool: CanonicalToolName): void {
+    const modelToolName = context.modelToolName ?? tool;
+    if (canonicalToolForModelName(modelToolName) !== tool) {
+      throw new ProductToolError("tool_operation_denied", "tool capability differs from its model-facing definition");
+    }
     const authority = this.configValue.resolveOperation(context.agent);
     const { dshTurn, operation } = authority;
     const origin = authority.origin ?? "root";
     const rootAgent = authority.rootAgent ?? context.agent;
     if (this.configValue.requireAgent() !== productRootAgent(context)
       || rootAgent !== productRootAgent(context) || origin !== context.origin
-      || (authority.allowedTools !== undefined && !authority.allowedTools.includes(tool))
+      || (authority.allowedTools !== undefined && !authority.allowedTools.includes(modelToolName))
       || (context.origin === "root" && operation.state !== "active")
       || dshTurn !== context.dshTurn
       || operation.clientOperationId !== context.clientOperationId
@@ -616,7 +627,7 @@ export class ProductToolRuntime extends Service {
     if (context.catalog.revision !== catalog.revision || context.catalog.digest !== catalog.digest
       || operation.birth.toolCatalogRevision !== catalog.revision
       || operation.birth.toolCatalogDigest !== catalog.digest
-      || !catalog.effectiveTools.includes(tool)) {
+      || !catalog.effectiveTools.includes(modelToolName as typeof catalog.effectiveTools[number])) {
       throw new ProductToolError("tool_catalog_stale", "tool catalog authority changed during permission review");
     }
     const originPolicy = CANONICAL_TOOL_CONTRACTS[tool].originPolicy;

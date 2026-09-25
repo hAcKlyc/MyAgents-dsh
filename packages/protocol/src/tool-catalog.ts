@@ -7,6 +7,7 @@ import {
   CANONICAL_TOOL_NAMES,
   type CanonicalToolName,
 } from "../generated/canonical-tools.generated.js";
+import { modelToolNamesForStrategy, type DshFirstToolName } from "./tool-strategy.js";
 import { buildToolCatalogSchema } from "./tool-catalog-schema.js";
 
 export { buildToolCatalogSchema } from "./tool-catalog-schema.js";
@@ -14,17 +15,20 @@ export { buildToolCatalogSchema } from "./tool-catalog-schema.js";
 export const ToolCatalogSchema = buildToolCatalogSchema(
   CANONICAL_TOOL_NAMES,
   CANONICAL_TOOL_CONTRACT_SHA256,
+  modelToolNamesForStrategy(CANONICAL_TOOL_NAMES, "dsh_first"),
 );
+
+export type ModelToolName = CanonicalToolName | DshFirstToolName;
 
 export interface EffectiveToolCatalogSnapshot {
   readonly formatVersion: 1;
   readonly contractSha256: string;
-  readonly implementationCatalog: readonly CanonicalToolName[];
-  readonly effectiveTools: readonly CanonicalToolName[];
+  readonly implementationCatalog: readonly ModelToolName[];
+  readonly effectiveTools: readonly ModelToolName[];
   readonly revision: string;
   readonly digest: string;
   readonly diagnostics: readonly Readonly<{
-    tool: CanonicalToolName;
+    tool: ModelToolName;
     available: boolean;
     reasonCode?: string;
   }>[];
@@ -69,12 +73,18 @@ export const validateNormalizedEffectiveToolCatalog = (
     return fail(first?.message ?? "does not satisfy ToolCatalogSchema");
   }
   const normalized = value as EffectiveToolCatalogSnapshot;
-  const canonicalIndex = new Map(CANONICAL_TOOL_NAMES.map((name, index) => [name, index]));
+  const dshFirstNames = modelToolNamesForStrategy(CANONICAL_TOOL_NAMES, "dsh_first");
+  const catalogNames = JSON.stringify(normalized.implementationCatalog) === JSON.stringify(CANONICAL_TOOL_NAMES)
+    ? CANONICAL_TOOL_NAMES
+    : JSON.stringify(normalized.implementationCatalog) === JSON.stringify(dshFirstNames)
+      ? dshFirstNames
+      : fail("implementationCatalog does not match a build-owned strategy");
+  const canonicalIndex = new Map<ModelToolName, number>(catalogNames.map((name, index) => [name, index]));
   let previousIndex = -1;
   for (const tool of normalized.effectiveTools) {
     const index = canonicalIndex.get(tool);
     if (index === undefined || index <= previousIndex) {
-      return fail("effectiveTools must be a unique canonical-order subset");
+      return fail("effectiveTools must be a unique build-order subset");
     }
     previousIndex = index;
   }
@@ -87,7 +97,7 @@ export const validateNormalizedEffectiveToolCatalog = (
   const catalogWithoutDigest = Object.freeze({
     formatVersion: 1 as const,
     contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
-    implementationCatalog: CANONICAL_TOOL_NAMES,
+    implementationCatalog: catalogNames,
     effectiveTools: Object.freeze([...normalized.effectiveTools]),
     revision: normalized.revision,
     diagnostics: Object.freeze(normalized.diagnostics.map((entry) => Object.freeze({ ...entry }))),

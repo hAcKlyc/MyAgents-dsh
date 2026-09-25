@@ -7,7 +7,10 @@ import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId, createToolResultMessage } from "@deepseek-ai/dsh-llm";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
+import * as ToolFsSearch from "@deepseek-ai/dsh-tool-fs-search";
+import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import { modelToolNamesForStrategy } from "@myagents-dsh/protocol";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import type { ProductOperationRecord } from "@myagents-dsh/operation-runtime";
 import {
@@ -65,7 +68,24 @@ const catalog = Object.freeze({
   digest: effectiveToolCatalogDigest(catalogWithoutDigest),
 });
 
-const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageInput?: boolean }> = {}) => {
+const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageInput?: boolean; toolStrategy?: "ma_first" | "dsh_first" }> = {}) => {
+  const native = options.toolStrategy === "dsh_first";
+  const activeNames = native ? modelToolNamesForStrategy(CANONICAL_TOOL_NAMES, "dsh_first") : CANONICAL_TOOL_NAMES;
+  const activeTools = native ? ["read", "read_image", "write", "edit", "glob", "grep", "ls"] as const : ["Read", "Write", "Edit", "Glob", "Grep", "ls"] as const;
+  const activeToolSet: ReadonlySet<string> = new Set(activeTools);
+  const activeCatalogWithoutDigest = native ? Object.freeze({
+    ...catalogWithoutDigest,
+    implementationCatalog: activeNames,
+    effectiveTools: Object.freeze(activeTools),
+    revision: "file-tools-dsh-first-v1",
+    diagnostics: Object.freeze(activeNames.map((tool) => Object.freeze(activeToolSet.has(tool)
+      ? { tool, available: true as const }
+      : { tool, available: false as const, reasonCode: "not-yet-installed" }))),
+  }) : catalogWithoutDigest;
+  const activeCatalog = native ? Object.freeze({
+    ...activeCatalogWithoutDigest,
+    digest: effectiveToolCatalogDigest(activeCatalogWithoutDigest),
+  }) : catalog;
   const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-file-tools-")));
   temporaryRoots.push(root);
   const workspace = join(root, "workspace");
@@ -145,8 +165,8 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
       originRevision: "origin-v1",
       permissionRevision: "permission-v1",
       planRevision: "plan-v1",
-      toolCatalogDigest: catalog.digest,
-      toolCatalogRevision: catalog.revision,
+      toolCatalogDigest: activeCatalog.digest,
+      toolCatalogRevision: activeCatalog.revision,
     }),
     clientOperationId: "operation-v1",
     dshTurns: Object.freeze([1]),
@@ -171,7 +191,8 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
   const searchWorkdirs: string[] = [];
   await context.plugin(SystemPrompt);
   await context.plugin(ToolRuntime, { mode: "native" });
-  await context.plugin(ToolCallTimeoutPolicy);
+  if (!native) await context.plugin(ToolCallTimeoutPolicy);
+  if (native) await context.plugin(LocalSubprocessRuntime);
   await context.plugin(LocalWorkspaceFileSystem, {
     platform: selectPlatformAdapter(environment.platformTarget),
   });
@@ -182,7 +203,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
     },
   } as never);
   await context.plugin(ProductToolRuntime, {
-    catalog: () => catalog,
+    catalog: () => activeCatalog as typeof catalog,
     checkpoint: Object.freeze({
       prepare: async (_product: ProductToolContext, request: ProductToolCheckpointRequest) => {
         if (checkpointFailure !== undefined) throw checkpointFailure;
@@ -218,6 +239,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
   });
   context.provide("productProcesses", {
     resolveRetainedOutput: () => Promise.resolve(undefined),
+    runWithNativeSearch: <T>(_product: ProductToolContext, _tool: "Glob" | "Grep", action: () => Promise<T>) => action(),
     runSearch: async (
       _product: ProductToolContext,
       workdir: ProductProcessWorkspaceAuthority,
@@ -246,15 +268,17 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
   const saveImage = vi.fn(async (input: SaveImageAttachment) => (await prepareImageFile(input, imageLimits, { maxPixels: 1_000_000, maxDimension: 2_048, maxBytes: 4_000_000 })).ref);
   context.provide("attachments", { imageLimits, saveImage } as never);
   await context.plugin(CanonicalFileTools, {
+    ...(native ? { toolStrategy: "dsh_first" as const } : {}),
     attachments: Object.freeze({ run: async <T>(_product: ProductToolContext, action: () => Promise<T>) => {
       await beforeImageRead?.();
       return action();
     } }),
   });
+  if (native) await context.plugin(ToolFsSearch, { sampleOverCapGlobResults: false });
   let call = 0;
   let durableSequence = 0;
   const executeUncommitted = async (
-    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls",
+    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls" | "read" | "read_image" | "write" | "edit" | "glob" | "grep",
     args: unknown,
     signal = new AbortController().signal,
   ) => {
@@ -288,7 +312,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
     }));
   };
   const execute = async (
-    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls",
+    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls" | "read" | "read_image" | "write" | "edit" | "glob" | "grep",
     args: unknown,
     signal = new AbortController().signal,
   ) => {
@@ -298,7 +322,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
     return result;
   };
   const executeAsChild = async (
-    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls",
+    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls" | "read" | "read_image" | "write" | "edit" | "glob" | "grep",
     args: unknown,
   ) => {
     call += 1;
@@ -360,6 +384,39 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
 };
 
 describe("canonical filesystem tools", () => {
+  it("uses DSH read/write/edit definitions while retaining product permission and checkpoint gates", async () => {
+    const state = await harness({ toolStrategy: "dsh_first" });
+    const path = join(state.workspace, "native.txt");
+    await writeFile(path, "alpha\n");
+    expect(state.context.tools.schemas().map(({ name }) => name))
+      .toEqual(["read", "read_image", "write", "edit", "ls", "glob", "grep"]);
+    const read = await state.execute("read", { file_path: path });
+    expect(read).toMatchObject({ isError: false, value: { path, offset: 1 } });
+    const write = await state.execute("write", { file_path: path, content: "beta\n" });
+    expect(write).toMatchObject({ isError: false, value: { path, operation: "update" } });
+    expect(await readFile(path, "utf8")).toBe("beta\n");
+    expect(state.checkpoints).toEqual([`prepare:Write:${path}`, "commit"]);
+    expect(state.permissions).toEqual([`Read:${path}`, `Write:${path}`]);
+    const edit = await state.execute("edit", { file_path: path, old_string: "beta", new_string: "gamma" });
+    expect(edit.isError).toBe(false);
+    expect(await readFile(path, "utf8")).toBe("gamma\n");
+    expect(state.checkpoints).toEqual([`prepare:Write:${path}`, "commit", `prepare:Edit:${path}`, "commit"]);
+    await state.context.fiber.dispose();
+  });
+
+  it("gates DSH glob/grep on product search permission before subprocess spawn", async () => {
+    const state = await harness({ toolStrategy: "dsh_first" });
+    const spawn = vi.spyOn(state.context.subprocess, "spawn");
+    state.setPermissionDecision("deny");
+    const glob = await state.execute("glob", { pattern: "*.txt" });
+    expect(glob.isError).toBe(true);
+    const grep = await state.execute("grep", { pattern: "rare needle" });
+    expect(grep.isError).toBe(true);
+    expect(state.permissions).toEqual([`Glob:${state.workspace}`, `Grep:${state.workspace}`]);
+    expect(spawn).not.toHaveBeenCalled();
+    await state.context.fiber.dispose();
+  });
+
   it("rejects a target retargeted during stock Read resolution before publishing image bytes", async () => {
     const state = await harness();
     const path = join(state.workspace, "approved.png");

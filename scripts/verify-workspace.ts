@@ -117,6 +117,7 @@ const expectedWorkspaceFiles = new Map([
     "src/official-composition.ts",
     "src/process.ts",
     "src/self-check.ts",
+    "src/tool-strategy.build.ts",
   ]],
   ["packages/artifact-verifier", [
     "src/artifact-policy.ts",
@@ -209,6 +210,7 @@ const expectedWorkspaceFiles = new Map([
     "src/session-read.ts",
     "src/tool-catalog-schema.ts",
     "src/tool-catalog.ts",
+    "src/tool-strategy.ts",
     "src/validation.ts",
     "generated/host-client.generated.ts",
     "generated/public-contract.generated.ts",

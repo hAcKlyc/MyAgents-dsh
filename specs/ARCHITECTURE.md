@@ -272,7 +272,7 @@ At startup, the invariant plugin fails closed unless:
 - the runtime and generated client share an accepted protocol schema digest;
 - every installed plugin belongs to the content-addressed locked composition manifest.
 
-The official compatibility profile enables the selected stock DSH Shell tool and official Jobs tools; it excludes the other stock DSH model-visible tool suites, the local credential Provider, DSH Agent Presets as a Host extension mechanism, and the DSH SDK JSON-RPC server. Equivalent lower-level DSH services may still be part of the locked profile.
+The official compatibility profile enables the selected stock DSH Shell and Jobs tools. Its build-time tool strategy is fixed in `apps/runtime-server/src/tool-strategy.build.ts`: `ma_first` keeps the Product model interface; `dsh_first` exposes the selected stock DSH file, search, and Web definitions while the Product filesystem, process, permission, checkpoint, and network services still govern execution. Unselected stock suites, the local credential Provider, DSH Agent Presets as a Host extension mechanism, and the DSH SDK JSON-RPC server remain excluded. The chosen catalog and digest are frozen in the Runtime artifact and Host handoff.
 
 Ordinary SDK or Host input may configure declared component instances, but may not change the installed plugin package set.
 

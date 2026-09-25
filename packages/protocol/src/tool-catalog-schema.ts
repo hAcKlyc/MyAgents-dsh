@@ -38,15 +38,21 @@ const deepFreezeSchema = <T>(value: T, seen = new WeakSet<object>()): T => {
 export const buildToolCatalogSchema = (
   canonicalNames: readonly string[],
   contractSha256: string,
+  alternativeNames?: readonly string[],
 ) => {
   const names = Object.freeze([...canonicalNames]);
+  const alternative = alternativeNames === undefined ? undefined : Object.freeze([...alternativeNames]);
   if (names.length === 0 || new Set(names).size !== names.length
     || names.some((name) => typeof name !== "string" || name.length === 0
       || hasAsciiControl(name))
+    || (alternative !== undefined && (alternative.length === 0
+      || new Set(alternative).size !== alternative.length
+      || alternative.some((name) => typeof name !== "string" || name.length === 0 || hasAsciiControl(name))))
     || !/^[a-f0-9]{64}$/u.test(contractSha256)) {
     throw new TypeError("tool catalog schema authority is invalid");
   }
-  const toolLiteral = Type.Union(names.map((name) => Type.Literal(name)));
+  const toolNames = [...new Set([...names, ...(alternative ?? [])])];
+  const toolLiteral = Type.Union(toolNames.map((name) => Type.Literal(name)));
   const diagnostic = (tool: string) => Type.Union([
     strictObject({ tool: Type.Literal(tool), available: Type.Literal(true) }),
     strictObject({
@@ -58,13 +64,20 @@ export const buildToolCatalogSchema = (
   return deepFreezeSchema(strictObject({
     formatVersion: Type.Literal(1),
     contractSha256: Type.Literal(contractSha256),
-    implementationCatalog: Type.Tuple(names.map((name) => Type.Literal(name))),
+    implementationCatalog: alternative === undefined
+      ? Type.Tuple(names.map((name) => Type.Literal(name)))
+      : Type.Union([
+          Type.Tuple(names.map((name) => Type.Literal(name))),
+          Type.Tuple(alternative.map((name) => Type.Literal(name))),
+        ]),
     effectiveTools: Type.Array(toolLiteral, {
-      maxItems: names.length,
+      maxItems: Math.max(names.length, alternative?.length ?? 0),
       uniqueItems: true,
     }),
     revision: catalogIdentifier,
     digest: sha256,
-    diagnostics: Type.Tuple(names.map(diagnostic)),
+    diagnostics: alternative === undefined
+      ? Type.Tuple(names.map(diagnostic))
+      : Type.Union([Type.Tuple(names.map(diagnostic)), Type.Tuple(alternative.map(diagnostic))]),
   }));
 };

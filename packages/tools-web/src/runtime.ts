@@ -5,6 +5,8 @@ import { isProxy } from "node:util/types";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
+import { applyWebFetchTool, applyWebSearchTool, DEFAULT_FETCH_MAX_OUTPUT_CHARS, DEFAULT_WEB_TOOL_TIMEOUT_MS, WEB_SEARCH_MAX_QUERIES, WEB_SEARCH_MAX_RESULTS } from "@deepseek-ai/dsh-tool-web";
+import type { DshToolStrategy } from "@myagents-dsh/protocol";
 import type {
   WebFetchProvider,
   WebFetchRequest,
@@ -146,6 +148,7 @@ export interface CanonicalWebSearchToolsConfig {
 export interface CanonicalWebToolsConfig {
   readonly fetch?: CanonicalWebFetchToolsConfig;
   readonly search?: CanonicalWebSearchToolsConfig;
+  readonly toolStrategy?: DshToolStrategy;
 }
 
 type FetchExecutionStore = {
@@ -218,7 +221,10 @@ const exactOwnDataObject = (
 };
 
 export const validateCanonicalWebToolsConfig = (value: unknown): CanonicalWebToolsConfig => {
-  const candidate = exactOwnDataObject(value, [], ["fetch", "search"], "canonical Web tools config");
+  const candidate = exactOwnDataObject(value, [], ["fetch", "search", "toolStrategy"], "canonical Web tools config");
+  if (candidate.toolStrategy !== undefined && candidate.toolStrategy !== "ma_first" && candidate.toolStrategy !== "dsh_first") {
+    throw new TypeError("canonical Web tool strategy is invalid");
+  }
   if (!Object.hasOwn(candidate, "fetch") && !Object.hasOwn(candidate, "search")) {
     throw new TypeError("canonical Web tools config must enable WebFetch or WebSearch");
   }
@@ -240,6 +246,7 @@ export const validateCanonicalWebToolsConfig = (value: unknown): CanonicalWebToo
     );
   }
   return Object.freeze({
+    ...(candidate.toolStrategy === undefined ? {} : { toolStrategy: candidate.toolStrategy }),
     ...(fetch === undefined ? {} : { fetch: Object.freeze({
       client: fetch.client as ProductSafeHttpClient,
       content: fetch.content as CanonicalWebFetchToolsConfig["content"],
@@ -480,28 +487,33 @@ class ProductSearchProvider implements WebSearchProvider {
 
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
     const store = this.storage.getStore();
-    if (store === undefined || signal !== store.context.signal || !this.available()
+    if (store === undefined || (signal !== undefined && !(signal instanceof AbortSignal)) || !this.available()
       || store.context.environment.network.mode !== "host-policy"
       || store.context.environment.network.policyRef !== this.policyRef) {
       throw new ProductToolError("web_search_unavailable", "WebSearch Provider is unavailable");
     }
-    const release = await this.#acquire(store.context.signal);
+    // The stock search tool composes a sibling-cancellation signal for batched
+    // queries. Preserve that cancellation as well as the Product deadline.
+    const context = signal === undefined || signal === store.context.signal
+      ? store.context
+      : Object.freeze({ ...store.context, signal: AbortSignal.any([store.context.signal, signal]) });
+    const release = await this.#acquire(context.signal);
     let detail: ProductSearchDetail;
     try {
       const pending = this.runSearch(Object.freeze({
         ...(store.allowedDomains === undefined ? {} : { allowedDomains: store.allowedDomains }),
         ...(store.blockedDomains === undefined ? {} : { blockedDomains: store.blockedDomains }),
-        context: store.context,
+        context,
         credentialRef: this.credentialRef,
         providerId: this.id,
         query: request.query,
-        signal: store.context.signal,
+        signal: context.signal,
       }));
       detail = normalizeCanonicalJson(
         await Promise.resolve<unknown>(pending),
         "WebSearch Provider result",
       ) as ProductSearchDetail;
-      throwIfProductToolAborted(store.context.signal);
+      throwIfProductToolAborted(context.signal);
       const detailKeys = ["citations", "durationMs", "results", "searchCount", "truncated"];
       if (detailKeys.some((key) => !Object.hasOwn(detail, key))
         || Reflect.ownKeys(detail).some((key) => typeof key !== "string"
@@ -537,7 +549,7 @@ class ProductSearchProvider implements WebSearchProvider {
       assertSearchDomainPolicy(checked.citations, store.allowedDomains, store.blockedDomains, "WebSearch citation");
       assertSearchDomainPolicy(results, store.allowedDomains, store.blockedDomains, "WebSearch result");
     } catch (error) {
-      if (store.context.signal.aborted) throw store.context.signal.reason;
+      if (context.signal.aborted) throw context.signal.reason;
       if (error instanceof ProductToolError) throw error;
       throw new ProductToolError("provider_search_failed", "WebSearch Provider returned an invalid result", { cause: error });
     } finally {
@@ -599,7 +611,7 @@ class ProductSearchProvider implements WebSearchProvider {
 }
 
 export class CanonicalWebTools extends Service {
-  static inject = ["productTools", "tools", "web"];
+  static inject = ["productTools", "tools", "web", "systemPrompt"];
   readonly #fetchStorage = new AsyncLocalStorage<FetchExecutionStore>();
   readonly #searchStorage = new AsyncLocalStorage<SearchExecutionStore>();
   readonly #utility: ((request: ProductWebUtilityRequest) => Promise<unknown>) | undefined;
@@ -688,8 +700,45 @@ export class CanonicalWebTools extends Service {
       }
     }
     this.#searchConfigured = searchProvider !== undefined;
-    if (fetch !== undefined) disposers.push(ctx.tools.register(this.#fetchDefinition(ctx)));
-    if (searchProvider !== undefined) disposers.push(ctx.tools.register(this.#searchDefinition(ctx, searchProvider)));
+    if (normalized.toolStrategy === "dsh_first") {
+      if (fetch !== undefined) applyWebFetchTool(ctx, DEFAULT_WEB_TOOL_TIMEOUT_MS, DEFAULT_FETCH_MAX_OUTPUT_CHARS);
+      if (searchProvider !== undefined) applyWebSearchTool(ctx, WEB_SEARCH_MAX_RESULTS, WEB_SEARCH_MAX_QUERIES, DEFAULT_WEB_TOOL_TIMEOUT_MS, fetch !== undefined);
+      ctx.on("tools/execute", async (exec, next) => {
+        if (exec.name !== "web_fetch" && exec.name !== "web_search") return next();
+        const product = ctx.productTools.resolve(exec);
+        if (product.environment.network.mode !== "host-policy") {
+          throw new ProductToolError("network_policy_denied", "operation-frozen network policy denies Web tools");
+        }
+        if (exec.name === "web_fetch") {
+          return this.#fetchStorage.run({ context: product, prompt: "" }, next);
+        }
+        if (product.environment.network.policyRef !== searchProvider?.policyRef) {
+          throw new ProductToolError("web_search_unavailable", "operation-frozen Provider has no approved WebSearch adapter");
+        }
+        const args = asObject(exec.arguments, "web_search input");
+        const queries = args.queries;
+        if (!Array.isArray(queries) || queries.length === 0 || queries.length > WEB_SEARCH_MAX_QUERIES
+          || queries.some((query) => typeof query !== "string")) {
+          throw new ProductToolError("invalid_tool_input", "web_search queries are invalid");
+        }
+        await ctx.productTools.authorize(product, {
+          permissionClass: CANONICAL_TOOL_CONTRACTS.WebSearch.permissionClass,
+          target: `provider:${searchProvider.id}`,
+          tool: "WebSearch",
+          review: { kind: "web_search", query: queries.join("\n"), provider: searchProvider.id },
+        });
+        return runWithProductToolExecutionDeadline(product, CANONICAL_TOOL_CONTRACTS.WebSearch.timeoutMs,
+          async (execution) => {
+            const upstream = exec.signal;
+            exec.signal = execution.signal;
+            try { return await this.#searchStorage.run({ context: execution }, next); }
+            finally { exec.signal = upstream; }
+          });
+      });
+    } else {
+      if (fetch !== undefined) disposers.push(ctx.tools.register(this.#fetchDefinition(ctx)));
+      if (searchProvider !== undefined) disposers.push(ctx.tools.register(this.#searchDefinition(ctx, searchProvider)));
+    }
     ctx.effect(() => () => { for (const dispose of disposers.reverse()) dispose(); }, "canonical-web-tools");
   }
 

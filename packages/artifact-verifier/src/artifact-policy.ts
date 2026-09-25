@@ -45,6 +45,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/official-composition.ts",
       "src/process.ts",
       "src/self-check.ts",
+      "src/tool-strategy.build.ts",
     ],
   },
   {
@@ -196,6 +197,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/session-read.ts",
       "src/tool-catalog-schema.ts",
       "src/tool-catalog.ts",
+      "src/tool-strategy.ts",
       "src/validation.ts",
     ],
   },

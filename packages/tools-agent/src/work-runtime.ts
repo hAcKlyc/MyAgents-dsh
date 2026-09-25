@@ -46,6 +46,7 @@ import {
   validateCanonicalToolInput,
   validateCanonicalToolOutput,
 } from "@myagents-dsh/tool-contracts";
+import { canonicalToolForModelName } from "@myagents-dsh/protocol";
 import {
   ProductToolError,
   runWithProductToolExecutionDeadline,
@@ -1425,8 +1426,11 @@ export class ProductWorkService extends Service {
     const canNest = this.lineageFor(authority.agent.id).length + 1 < this.executionLimits().maxDepth;
     const inherited = this.ctx.tools.schemas(authority.agent).map(({ name }) => name)
       .filter((name) => name !== "Agent" || canNest)
-      .filter((name) => !CANONICAL_TOOL_NAMES.includes(name as (typeof CANONICAL_TOOL_NAMES)[number])
-        || CANONICAL_TOOL_CONTRACTS[name as keyof typeof CANONICAL_TOOL_CONTRACTS].originPolicy.mode !== "root-only");
+      .filter((name) => {
+        const canonical = canonicalToolForModelName(name);
+        return !CANONICAL_TOOL_NAMES.includes(canonical as (typeof CANONICAL_TOOL_NAMES)[number])
+          || CANONICAL_TOOL_CONTRACTS[canonical as keyof typeof CANONICAL_TOOL_CONTRACTS].originPolicy.mode !== "root-only";
+      });
     if (type === "general") return Object.freeze({
       allowedTools: Object.freeze(inherited),
       maxTurns: 10_000,
@@ -1434,7 +1438,8 @@ export class ProductWorkService extends Service {
       type,
     });
     if (type === "Explore" || type === "Plan") return Object.freeze({
-      allowedTools: Object.freeze(EXPLORE_CHILD_TOOLS.filter((name) => inherited.includes(name))),
+      allowedTools: Object.freeze(inherited.filter((name) =>
+        EXPLORE_CHILD_TOOLS.includes(canonicalToolForModelName(name) as (typeof EXPLORE_CHILD_TOOLS)[number]))),
       maxTurns: 10_000,
       persona: type === "Explore" ? EXPLORE_CHILD_PERSONA : PLAN_CHILD_PERSONA,
       type,
@@ -3522,8 +3527,8 @@ export class ProductWorkService extends Service {
     const template = background ? Object.freeze({
       ...baseTemplate,
       allowedTools: Object.freeze(baseTemplate.allowedTools.filter((name) =>
-        !CANONICAL_TOOL_NAMES.includes(name as (typeof CANONICAL_TOOL_NAMES)[number])
-        || CANONICAL_TOOL_CONTRACTS[name as keyof typeof CANONICAL_TOOL_CONTRACTS].originPolicy.mode !== "no-background-child")),
+        !CANONICAL_TOOL_NAMES.includes(canonicalToolForModelName(name) as (typeof CANONICAL_TOOL_NAMES)[number])
+        || CANONICAL_TOOL_CONTRACTS[canonicalToolForModelName(name) as keyof typeof CANONICAL_TOOL_CONTRACTS].originPolicy.mode !== "no-background-child")),
     }) : baseTemplate;
     const selectedModel = this.selectChildModel(authority, template, requestedModel);
     let output: ProductRetainedOutputFile | undefined;

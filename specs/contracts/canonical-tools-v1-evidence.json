@@ -11,7 +11,8 @@
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
     "scripts/tool-contract-generation.ts",
-    "packages/protocol/src/tool-catalog-schema.ts"
+    "packages/protocol/src/tool-catalog-schema.ts",
+    "packages/protocol/src/tool-strategy.ts"
   ],
   "inventory": {
     "behaviorFixtureCount": 122,
@@ -25,8 +26,8 @@
     "canonical-tools.generated.ts": "d856fad259c45d07c1f5a0c5bf8390061696dae5e225931d51908adb8ae3d158",
     "catalog-fixtures-v1.json": "4c2c068c8ce36f6de1b1c654266c7ae0612194b27cbfe571fdcc29ca8a8b1cd1",
     "dsh-reuse-matrix-v1.json": "92cc6b6cafbea29b767c2bb7732981bc364a0d115471ca18b903f54e1aa842ee",
-    "tool-catalog.schema.json": "1fcaf462d9da39c01d092bb5fa56a0a14b21f9bb148e099b6462557132d72879",
-    "tool-contract-meta.json": "df9158ae8a99df73aa790cc1a4b2927cf30b646cd1e409cb880e8a6a5cfd13fa"
+    "tool-catalog.schema.json": "dec6d5338959299742666e6b823a18c2c47825bd3428285c61f8a31d3d102879",
+    "tool-contract-meta.json": "f6a967f55e5c4c13069b7d98b0ec09766459b836c25146a0684a2406f5bc4b2b"
   },
   "profile": "canonical-agent-experience-v1",
   "source": {

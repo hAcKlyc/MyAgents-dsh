@@ -3,7 +3,7 @@
   "authority": "packages/tool-contracts/src/contract-source.ts",
   "behaviorFixtureCount": 122,
   "canonicalToolCount": 24,
-  "catalogSchemaSha256": "1fcaf462d9da39c01d092bb5fa56a0a14b21f9bb148e099b6462557132d72879",
+  "catalogSchemaSha256": "dec6d5338959299742666e6b823a18c2c47825bd3428285c61f8a31d3d102879",
   "contractSha256": "846de41bd872fd0996e20dd9f15884ba49892a7270fa6f498cae00418ce7f8e7",
   "documentationSha256": "fdb7e58fbeba71baf44c1228ed20ba77da20fc03fc36e08e04036456fad5314a",
   "fixturesSha256": "4c2c068c8ce36f6de1b1c654266c7ae0612194b27cbfe571fdcc29ca8a8b1cd1",
@@ -11,7 +11,8 @@
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
     "scripts/tool-contract-generation.ts",
-    "packages/protocol/src/tool-catalog-schema.ts"
+    "packages/protocol/src/tool-catalog-schema.ts",
+    "packages/protocol/src/tool-strategy.ts"
   ],
   "profile": "canonical-agent-experience-v1",
   "reuseMatrixSha256": "92cc6b6cafbea29b767c2bb7732981bc364a0d115471ca18b903f54e1aa842ee",

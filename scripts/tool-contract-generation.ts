@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { Value } from "typebox/value";
 import { buildToolCatalogSchema } from "../packages/protocol/src/tool-catalog-schema.js";
+import { modelToolNamesForStrategy } from "../packages/protocol/src/tool-strategy.js";
 
 import {
   CANONICAL_TOOL_CONTRACTS,
@@ -24,6 +25,7 @@ const TOOL_CONTRACT_GENERATOR_SOURCES = [
   "scripts/generate-tool-contracts.ts",
   "scripts/tool-contract-generation.ts",
   "packages/protocol/src/tool-catalog-schema.ts",
+  "packages/protocol/src/tool-strategy.ts",
 ] as const;
 
 const sha256 = (bytes: string | Uint8Array): string =>
@@ -123,7 +125,8 @@ export const buildToolContractArtifacts = (): ToolContractArtifacts => {
   const catalogSchema = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     title: "MyAgents DSH effective canonical tool catalog",
-    ...buildToolCatalogSchema(CANONICAL_TOOL_NAMES, contractSha256),
+    ...buildToolCatalogSchema(CANONICAL_TOOL_NAMES, contractSha256,
+      modelToolNamesForStrategy(CANONICAL_TOOL_NAMES, "dsh_first")),
   };
   const catalogSchemaBytes = stableJson(catalogSchema);
   const toolDigests = Object.fromEntries(CANONICAL_TOOL_NAMES.map((name) => [

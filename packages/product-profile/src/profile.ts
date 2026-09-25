@@ -22,7 +22,7 @@ export const EXCLUDED_STOCK_CONTRIBUTIONS = Object.freeze([
   "dsh-agent-presets-as-host-extension",
   "dsh-sdk-json-rpc-server",
   "dsh-local-credential-provider",
-  "dsh-stock-model-visible-tool-suites",
+  "dsh-unselected-stock-model-visible-tool-suites",
   "dsh-stock-mcp-live-config",
 ] as const);
 

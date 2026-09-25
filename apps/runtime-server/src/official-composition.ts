@@ -1,6 +1,7 @@
 import { resolvePwshPath } from "@deepseek-ai/dsh-pwsh-local";
 import {
   CANONICAL_TOOL_NAMES,
+  modelToolNamesForStrategy,
   CANONICAL_TOOL_CONTRACT_SHA256,
   DEEPSEEK_WEB_SEARCH_POLICY_REF,
   effectiveToolCatalogDigest,
@@ -9,6 +10,7 @@ import {
   type EffectiveToolCatalogSnapshot,
   type MethodParams,
 } from "@myagents-dsh/protocol";
+import { BUILD_TOOL_STRATEGY } from "./tool-strategy.build.js";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   resolveRuntimePlatformTarget,
@@ -42,20 +44,21 @@ import { delimiter, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 export const OFFICIAL_HOST_INTERACTION_REVISION = "host-interaction-v1" as const;
-export const OFFICIAL_TOOL_CATALOG_REVISION = "official-canonical-tools-v4" as const;
+export const OFFICIAL_TOOL_CATALOG_REVISION = `official-canonical-tools-v5-${BUILD_TOOL_STRATEGY}` as const;
 export const OFFICIAL_EXTENSION_REVISION = "official-empty-extensions-v1" as const;
 export const OFFICIAL_PLAN_REVISION = "official-plan-v1" as const;
 export const OFFICIAL_ORIGIN_REVISION = "official-root-origin-v1" as const;
 
 const unavailableShellTools = new Set<string>([selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)).shell.dialect === "pwsh" ? "bash" : "pwsh"]);
-const effectiveTools = Object.freeze(CANONICAL_TOOL_NAMES.filter((tool) => !unavailableShellTools.has(tool)));
+const implementationTools = modelToolNamesForStrategy(CANONICAL_TOOL_NAMES, BUILD_TOOL_STRATEGY);
+const effectiveTools = Object.freeze(implementationTools.filter((tool) => !unavailableShellTools.has(tool)));
 const toolCatalogAuthority = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
-  implementationCatalog: CANONICAL_TOOL_NAMES,
+  implementationCatalog: implementationTools,
   effectiveTools,
   revision: OFFICIAL_TOOL_CATALOG_REVISION,
-  diagnostics: Object.freeze(CANONICAL_TOOL_NAMES.map((tool) => Object.freeze(
+  diagnostics: Object.freeze(implementationTools.map((tool) => Object.freeze(
     unavailableShellTools.has(tool)
       ? { tool, available: false as const, reasonCode: "shell-not-selected-for-platform" }
       : { tool, available: true as const },
@@ -206,6 +209,7 @@ export const composeOfficialRuntimeServices = async (
     }));
     await installCanonicalToolPlane(configured, Object.freeze({
       catalog: () => OFFICIAL_TOOL_CATALOG,
+      toolStrategy: BUILD_TOOL_STRATEGY,
       permission: Object.freeze({
         autoAllowTools: Object.freeze([]),
         interaction,

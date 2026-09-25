@@ -14,7 +14,9 @@ implementation_decisions:
 
 ## 1. Purpose and authority
 
-This module owns the canonical Agent experience exposed by the official Runtime: tool definitions, visibility, policy, permissions, execution, output, plan/task state, and child/background work. Exact tool schemas and behavior fixtures come from `packages/tool-contracts/src/contract-source.ts` and generated artifacts.
+This module owns the Agent tool experience exposed by the official Runtime: tool definitions, visibility, policy, permissions, execution, output, plan/task state, and child/background work. The Product policy contracts come from `packages/tool-contracts/src/contract-source.ts`; the `dsh_first` model schemas and result renderers come from the installed DSH tool packages.
+
+The build chooses `ma_first` or `dsh_first` in `apps/runtime-server/src/tool-strategy.build.ts`. The selection is compiled into one tool catalog and immutable artifact, never changed by a Session or Host setting. `dsh_first` is the current source selection. It replaces `Read`, `Write`, `Edit`, `Glob`, `Grep`, `WebFetch`, and `WebSearch` with DSH `read`, `write`, `edit`, `glob`, `grep`, `web_fetch`, and `web_search`, and exposes DSH `read_image`. Product `ExitPlanMode` remains; DSH `exit_plan_mode` is not installed.
 
 ### 1.1 Relationships
 
@@ -47,16 +49,16 @@ visible definition + frozen operation scope
 
 Visibility and permission remain separate. Hiding a tool does not authorize execution, and a visible definition still revalidates workspace, revision, mode, origin, and hard policy at the delayed execution boundary.
 
-Human waiting is not execution time. Permissionable definitions do not publish a DSH outer timeout that would begin before authorization. Their implementation enters the bounded executor only after the exact permission decision settles. Transport registration/response, network/provider calls, MCP calls, process work and cleanup retain their own bounded owners.
+Human waiting is not execution time. In `dsh_first`, the selected stock definitions declare timeouts, but the composition excludes those names from the outer DSH timeout policy and starts Product execution deadlines after permission. Unchanged tools retain the DSH timeout policy. Transport registration/response, network/provider calls, MCP calls, process work and cleanup retain their own bounded owners.
 
 The four permission modes, durable exact-rule lifecycle, blocking interaction path and Host-controlled Plan transition are specified in [Permissions and interactions](./permissions-interactions-and-plan.md). This guide owns their placement in the tool pipeline; that guide owns their detailed policy semantics.
 
 ## 3. Canonical catalog and owners
 
-The official catalog contains exactly twenty definitions:
+The Product contract catalog has twenty-four slots. The selected model catalog contains twenty-five implementation names under `dsh_first` because `read_image` is an additional official definition; one Shell dialect is unavailable on each platform, leaving twenty-four effective names. Under `ma_first`, the twenty-four contract names remain the implementation catalog, with twenty-three effective names per platform.
 
 ```text
-Read, Write, Edit, Glob, Grep, Bash, ls,
+Read, Write, Edit, Glob, Grep, bash, pwsh, job_output, job_list, job_kill, ls,
 WebFetch, WebSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode,
 Skill, Agent, TaskStop, SendMessage,
 TaskCreate, TaskGet, TaskList, TaskUpdate
@@ -73,7 +75,7 @@ TaskCreate, TaskGet, TaskList, TaskUpdate
 | Skills, agents and background work tools | `packages/tools-agent/` |
 | Durable task graph | `packages/task-graph/` |
 
-The generated `specs/contracts/canonical-tools-v1.md` is a readable projection, not a handwritten authority.
+The generated `specs/contracts/canonical-tools-v1.md` describes the Product policy contracts, including the canonical names used for permission, checkpoint, and Plan decisions. `packages/protocol/src/tool-strategy.ts` maps those names to the selected model definitions. The build-specific effective catalog is the model visibility authority.
 
 TaskUpdate can omit model-input `owner` when entering `in_progress`. The root-Session TaskGraph serializes the transition and records the registered caller as owner only when the task is unassigned. New durable events bind `actorId` to the exact root/child origin; legacy events retain their historical fold and revision. Root or the current owner may explicitly transfer a nonterminal task to root or a registered child of that same root. A competing claimant, foreign/unregistered caller or target cannot publish a transition. This source change is covered by `tests/product-task-graph.unit.test.ts`; it does not change the current Write directory/checkpoint coverage.
 
@@ -117,6 +119,8 @@ The same official edit preparation algorithm supplies permission match counts an
 checkpoint bytes, including CRLF and UTF-8 BOM decoding. Actual publication remains in official
 `LocalFileSystem`; the product pre-publication guard rechecks identity/version after staging. Its
 `createParents: false` setting leaves all directory creation in the checkpoint journal.
+
+Under `dsh_first`, the wrappers register the official `read`, `read_image`, `write`, and `edit` schemas and renderers, then call their public executors inside the same Product path/permission/checkpoint guards. Stock `glob` and `grep` run through a Product search-root check and a sealed ripgrep subprocess authority; they cannot launch a command before approval. Stock `web_fetch` and `web_search` use the Product safe HTTP and approved Host search providers. Their interfaces intentionally differ from `WebFetch` and `WebSearch`: fetch returns page text without the utility-model `prompt` answer, while search accepts `queries` and merges official source results. The Host reverse ports and permission labels remain Product-owned.
 
 An out-of-root `Read` may resolve an Agent-owned retained output. The optional resolver returns
 `undefined` only for an unregistered path; the file tool then reports its ordinary allowed-root error.

@@ -6,6 +6,7 @@ import { createReadTool, createReadImageTool, createWriteTool, createEditTool } 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
+import type { DshToolStrategy } from "@myagents-dsh/protocol";
 import { buildGlobCommand, buildGrepCommand, parseGlobArgs, parseGrepArgs } from "@deepseek-ai/dsh-tool-fs-search";
 import {
   CANONICAL_TOOL_CONTRACTS,
@@ -34,6 +35,7 @@ import {
 } from "./local-filesystem.js";
 
 export interface CanonicalFileToolsConfig {
+  readonly toolStrategy?: DshToolStrategy;
   readonly attachments: Readonly<{
     run<T>(context: ProductToolContext, action: () => Promise<T>): Promise<T>;
   }>;
@@ -204,15 +206,21 @@ export class CanonicalFileTools extends Service {
   readonly #intents = new AsyncLocalStorage<Readonly<{ target: FsTarget; intent: FsWriteIntent }>>();
   readonly #attachments: CanonicalFileToolsConfig["attachments"];
   readonly #retainedOutput: CanonicalFileToolsConfig["retainedOutput"];
+  readonly #toolStrategy: DshToolStrategy;
 
   constructor(ctx: Context, config: CanonicalFileToolsConfig) {
     super(ctx, "canonicalFileTools");
     const candidate: unknown = config;
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
-      || Reflect.ownKeys(candidate).length < 1 || Reflect.ownKeys(candidate).length > 2
-      || Reflect.ownKeys(candidate).some((key) => key !== "attachments" && key !== "retainedOutput")) {
+      || Reflect.ownKeys(candidate).length < 1 || Reflect.ownKeys(candidate).length > 3
+      || Reflect.ownKeys(candidate).some((key) => key !== "attachments" && key !== "retainedOutput" && key !== "toolStrategy")) {
       throw new TypeError("CanonicalFileTools requires one attachment publication authority");
     }
+    const configuredStrategy: unknown = config.toolStrategy;
+    if (configuredStrategy !== undefined && configuredStrategy !== "ma_first" && configuredStrategy !== "dsh_first") {
+      throw new TypeError("CanonicalFileTools tool strategy is invalid");
+    }
+    this.#toolStrategy = configuredStrategy ?? "ma_first";
     const attachmentsDescriptor = Object.getOwnPropertyDescriptor(candidate, "attachments");
     const attachments: unknown = attachmentsDescriptor !== undefined && "value" in attachmentsDescriptor
       ? attachmentsDescriptor.value as unknown
@@ -267,7 +275,14 @@ export class CanonicalFileTools extends Service {
       });
     }
     ctx.effect(() => {
-      const disposers = [
+      const native = this.#toolStrategy === "dsh_first";
+      const disposers = native ? [
+        ctx.tools.register(this.#readDefinition(ctx, true)),
+        ctx.tools.register(this.#readImageDefinition(ctx)),
+        ctx.tools.register(this.#writeDefinition(ctx, true)),
+        ctx.tools.register(this.#editDefinition(ctx, true)),
+        ctx.tools.register(this.#lsDefinition(ctx)),
+      ] : [
         ctx.tools.register(this.#readDefinition(ctx)),
         ctx.tools.register(this.#writeDefinition(ctx)),
         ctx.tools.register(this.#editDefinition(ctx)),
@@ -277,13 +292,43 @@ export class CanonicalFileTools extends Service {
       ];
       return () => { for (const dispose of disposers.reverse()) dispose(); };
     }, "canonical-file-tools");
+    if (this.#toolStrategy === "dsh_first") {
+      ctx.on("tools/execute", async (exec, next) => {
+        if (exec.name !== "glob" && exec.name !== "grep") return next();
+        const tool = exec.name === "glob" ? "Glob" : "Grep";
+        const args = asObject(exec.arguments, `${exec.name} input`);
+        const path = args.path as string | undefined;
+        const product = ctx.productTools.resolve(exec);
+        const before = await this.#searchRoot(ctx, product, tool, path);
+        await ctx.productTools.authorize(product, {
+          permissionClass: CANONICAL_TOOL_CONTRACTS[tool].permissionClass,
+          target: before.authorizationTarget.displayPath,
+          tool,
+        });
+        await this.#revalidateSearchRoot(ctx, product, tool, path, before);
+        const result = await runWithProductToolExecutionDeadline(product, CANONICAL_TOOL_CONTRACTS[tool].timeoutMs,
+          async (execution) => {
+            const upstream = exec.signal;
+            exec.signal = execution.signal;
+            try { return await ctx.productProcesses.runWithNativeSearch(execution, tool, next); }
+            finally { exec.signal = upstream; }
+          });
+        await this.#revalidateSearchRoot(ctx, product, tool, path, before);
+        return result;
+      });
+    }
   }
 
   #definition(
     name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls",
     render: (args: unknown, value: unknown) => ContentBlock[],
     execute: (args: JsonObject, exec: ToolRunContext) => Promise<unknown>,
+    native?: ToolDefinition,
   ): ToolDefinition {
+    if (native !== undefined) {
+      return Object.freeze({ ...native, execute: async (value: unknown, exec: ToolRunContext) =>
+        execute(asObject(value, `${native.name} input`), exec) });
+    }
     const contract = CANONICAL_TOOL_CONTRACTS[name];
     return Object.freeze({
       description: contract.description,
@@ -301,7 +346,7 @@ export class CanonicalFileTools extends Service {
     });
   }
 
-  #readDefinition(ctx: Context): ToolDefinition {
+  #readDefinition(ctx: Context, native = false): ToolDefinition {
     const textTool: ToolDefinition = createReadTool(ctx, { limit: 2_000, maxLineLength: 2_000, maxBytes: 240_000, streamMinSize: 1024 * 1024 });
     const imageTool: ToolDefinition = createReadImageTool(ctx);
     return this.#definition("Read", (args, value) => {
@@ -325,7 +370,7 @@ export class CanonicalFileTools extends Service {
         if (extension === ".pdf" || args.pages !== undefined) {
           throw new ProductToolError("unsupported_format", "Read does not extract PDF pages. Convert the PDF to text/Markdown with MyAgents document processing, then Read the converted file. In MyAgents, use the myagents-anydoc skill or `myagents anydoc convert --file <path> --wait --json`. Publishing a PDF attachment does not expose its contents to the model.");
         }
-        let image = [".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(extension);
+        let image = !native && [".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(extension);
         const info = await this.#regularFile(ctx, target, product.signal);
         const input = { ...args, file_path: target.displayPath };
         const run = { ...exec, signal: product.signal };
@@ -340,7 +385,7 @@ export class CanonicalFileTools extends Service {
         } catch (error) {
           // Normalized attachment paths may have no suffix. Let the stock image
           // reader sniff them only after the stock text reader rejects binary data.
-          if (image || extension !== "" || !(error instanceof FsError) || error.code !== "FS_NOT_TEXT") throw error;
+          if (native || image || extension !== "" || !(error instanceof FsError) || error.code !== "FS_NOT_TEXT") throw error;
           image = true;
           tool = imageTool;
           value = asObject(await execute(), "official Read output");
@@ -357,15 +402,43 @@ export class CanonicalFileTools extends Service {
         if (bytes !== undefined) ctx.productTools.stageRead(exec, product, {
           complete, sha256: sha256(bytes), targetKey: String(target.targetKey), version: String(info.version),
         });
+        if (native) return value;
         if (image) return { path: target.displayPath, kind: "image", image: value.image };
         const content = tool.output.render(input, value as JsonValue).filter((block) => block.type === "text").map((block) => block.text).join("\n");
         return { path: target.displayPath, kind: "text", mimeType: "text/plain", offset: value.offset,
           lineCount: lines.length, truncated: !complete, content };
       });
-    });
+    }, native ? textTool : undefined);
   }
 
-  #writeDefinition(ctx: Context): ToolDefinition {
+  #readImageDefinition(ctx: Context): ToolDefinition {
+    const official = createReadImageTool(ctx);
+    return Object.freeze({ ...official, execute: async (raw: unknown, exec: ToolRunContext) => {
+      const args = asObject(raw, "read_image input");
+      const product = ctx.productTools.resolve(exec);
+      const path = args.file_path as string;
+      const { target } = await this.#authorizedTarget(ctx, product, "Read", path, "read");
+      await ctx.productTools.authorize(product, {
+        permissionClass: CANONICAL_TOOL_CONTRACTS.Read.permissionClass, target: target.displayPath, tool: "Read",
+      });
+      return runWithProductToolExecutionDeadline(product, CANONICAL_TOOL_CONTRACTS.Read.timeoutMs, async (execution) => {
+        const refreshed = await this.#authorizedTarget(ctx, execution, "Read", path, "read");
+        if (refreshed.target.targetKey !== target.targetKey) {
+          throw new ProductToolError("path_denied", "Image target changed while awaiting authorization");
+        }
+        const info = await this.#regularFile(ctx, target, execution.signal);
+        const input = { ...args, file_path: target.displayPath };
+        const value = await this.#attachments.run(execution, () =>
+          requireLocalWorkspaceFileSystem(ctx.fs).runWithAuthorizedTarget(target,
+            () => Promise.resolve(official.execute(input, { ...exec, signal: execution.signal }))));
+        const settled = await ctx.fs.stat(target, execution.signal);
+        if (settled?.version !== info.version) throw new ProductToolError("stale_read", "Image changed during read");
+        return value;
+      });
+    } });
+  }
+
+  #writeDefinition(ctx: Context, native = false): ToolDefinition {
     const official: ToolDefinition = createWriteTool(ctx);
     return this.#definition("Write", (args, value) => {
       const output = asObject(value, "Write output");
@@ -455,6 +528,7 @@ export class CanonicalFileTools extends Service {
             targetKey: String(target.targetKey),
             version: String((await this.#regularFile(ctx, target, product.signal)).version),
           });
+          if (native) return outcome;
           return Object.freeze({
             bytes: Buffer.byteLength(content, "utf8"),
             ...(checkpoint === undefined || !authority.checkpointEligible ? {} : { checkpointReceipt: checkpoint.receipt }),
@@ -487,10 +561,10 @@ export class CanonicalFileTools extends Service {
       } finally {
         release();
       }
-    });
+    }, native ? official : undefined);
   }
 
-  #editDefinition(ctx: Context): ToolDefinition {
+  #editDefinition(ctx: Context, native = false): ToolDefinition {
     const official: ToolDefinition = createEditTool(ctx);
     return this.#definition("Edit", (args, value) => official.output.render(args, value as JsonValue), async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
@@ -559,7 +633,7 @@ export class CanonicalFileTools extends Service {
         let published = false;
         const settlement: CheckpointSettlement = {};
         try {
-          await this.#intents.run({ target, intent: { kind: "replaceIfVersion", version: currentInfo.version } },
+          const officialValue = await this.#intents.run({ target, intent: { kind: "replaceIfVersion", version: currentInfo.version } },
             () => requireLocalWorkspaceFileSystem(ctx.fs).runWithAuthorizedTarget(target,
               () => Promise.resolve(official.execute({ ...args, file_path: target.displayPath }, { ...exec, signal: product.signal }))));
           published = true;
@@ -570,6 +644,7 @@ export class CanonicalFileTools extends Service {
             targetKey: String(target.targetKey),
             version: String((await this.#regularFile(ctx, target, product.signal)).version),
           });
+          if (native) return officialValue;
           return Object.freeze({
             ...(checkpoint === undefined ? {} : { checkpointReceipt: checkpoint.receipt }),
             externalChangesRetained,
@@ -602,7 +677,7 @@ export class CanonicalFileTools extends Service {
       } finally {
         release();
       }
-    });
+    }, native ? official : undefined);
   }
 
   #editContent(before: string, oldString: string, newString: string, replaceAll: boolean, path: string): Readonly<{ next: string; replacements: number }> {

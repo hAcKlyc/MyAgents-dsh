@@ -10,6 +10,7 @@ import { ProductToolError, type ProductToolContext, type ProductToolExecutionEnv
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isProxy } from "node:util/types";
 import { isAbsolute, relative, resolve } from "node:path";
+import { realpathSync } from "node:fs";
 
 declare module "@deepseek-ai/cordis" { interface Context { productProcesses: ProductProcessRuntime } }
 type JsonObject = Record<string, unknown>;
@@ -258,6 +259,7 @@ export class ShellPresentationToolRuntime extends ToolRuntime {
 export class ProductSubprocessRuntime extends LocalSubprocessRuntime {
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     return this.ctx.get("productProcesses")?.spawnShell(spec, (governed) => super.spawn(governed))
+      ?? this.ctx.get("productProcesses")?.spawnNativeSearch(spec, (governed) => super.spawn(governed))
       ?? super.spawn(spec);
   }
 }
@@ -268,7 +270,7 @@ export class ProductProcessRuntime extends Service {
   private admitted: Readonly<{ revision: string; digest: string; authority: ResolvedProductProcessAuthority }> | undefined;
   private readonly io: ProductProcessIoAuthority;
   private readonly runtimeContext: Context;
-  private readonly calls = new AsyncLocalStorage<Readonly<{ product: ProductToolContext; cwd: string; shell: boolean }>>();
+  private readonly calls = new AsyncLocalStorage<Readonly<{ product: ProductToolContext; cwd: string; shell: boolean; search?: "Glob" | "Grep" }>>();
   private readonly live = new Set<SubprocessHandle>();
   private reservations = 0;
   private readonly outputs = new WeakMap<Agent, Map<string, FsTarget>>();
@@ -367,6 +369,32 @@ export class ProductProcessRuntime extends Service {
       cwd: call.cwd,
       env: { ...authority.env, ...spec.env },
     });
+    this.live.add(handle);
+    const release = () => { this.live.delete(handle); };
+    void handle.done.then(release, release);
+    return handle;
+  }
+
+  async runWithNativeSearch<T>(product: ProductToolContext, tool: "Glob" | "Grep", action: () => Promise<T>): Promise<T> {
+    this.runtimeContext.productTools.assertCurrent(product, tool);
+    await this.resolveRipgrep(product);
+    const authority = this.authorityFor(product);
+    return this.calls.run({ product, cwd: authority.cwd, shell: false, search: tool }, action);
+  }
+
+  spawnNativeSearch(spec: SubprocessSpawnSpec, spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle): SubprocessHandle | undefined {
+    const call = this.calls.getStore();
+    if (call?.search === undefined) return undefined;
+    this.runtimeContext.productTools.assertCurrent(call.product, call.search);
+    const authority = this.authorityFor(call.product);
+    if (spec.cwd !== authority.cwd || spec.argv[1] !== "--no-config"
+      || realpathSync(spec.argv[0] ?? "") !== authority.ripgrepPath) {
+      throw new ProductToolError("search_failed", "official search command differs from sealed ripgrep authority");
+    }
+    if (this.live.size + this.reservations >= authority.maxChildren) {
+      throw new ProductToolError("search_failed", "search process quota is exhausted");
+    }
+    const handle = spawn({ ...spec, argv: [authority.ripgrepPath, ...spec.argv.slice(1)], cwd: authority.cwd, env: authority.env });
     this.live.add(handle);
     const release = () => { this.live.delete(handle); };
     void handle.done.then(release, release);

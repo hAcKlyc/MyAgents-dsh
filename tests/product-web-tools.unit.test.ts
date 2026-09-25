@@ -144,6 +144,7 @@ const createWebHarness = async (options: Readonly<{
   product?: ProductToolContext;
   search?: CanonicalWebToolsConfig["search"];
   transport?: ProductHttpTransport;
+  toolStrategy?: "ma_first" | "dsh_first";
   utility?: NonNullable<CanonicalWebToolsConfig["fetch"]>["utility"];
 }> = {}) => {
   const context = new Context();
@@ -154,12 +155,13 @@ const createWebHarness = async (options: Readonly<{
   } as never);
   await context.plugin(SystemPrompt);
   await context.plugin(ToolRuntime, { mode: "native" });
-  await context.plugin(ToolCallTimeoutPolicy);
+  if (options.toolStrategy !== "dsh_first") await context.plugin(ToolCallTimeoutPolicy);
   await context.plugin(WebRuntime, {
     fetchProvider: "myagents-safe-fetch",
     ...(options.search === undefined ? {} : { searchProvider: options.search.providerId }),
   });
   await context.plugin(CanonicalWebTools, {
+    ...(options.toolStrategy === "dsh_first" ? { toolStrategy: "dsh_first" as const } : {}),
     fetch: Object.freeze({
       client: new ProductSafeHttpClient(policy, {
         lookup: () => Promise.resolve([{ address: "93.184.216.34", family: 4 }]),
@@ -176,7 +178,7 @@ const createWebHarness = async (options: Readonly<{
   let call = 0;
   return Object.freeze({
     context,
-    execute: (name: "WebFetch" | "WebSearch", args: unknown, signal = currentProduct.signal) => {
+    execute: (name: "WebFetch" | "WebSearch" | "web_fetch" | "web_search", args: unknown, signal = currentProduct.signal) => {
       call += 1;
       return context.tools.execute({
         agent: currentProduct.agent,
@@ -191,6 +193,35 @@ const createWebHarness = async (options: Readonly<{
 };
 
 describe("safe Web Providers and canonical Web tools", () => {
+  it("uses DSH web tool schemas and output through the product network and permission provider", async () => {
+    const authorize = vi.fn(() => Promise.resolve());
+    const harness = await createWebHarness({
+      authorize,
+      toolStrategy: "dsh_first",
+      search: Object.freeze({
+        available: () => true,
+        credentialRef: "credential-ref-v1",
+        policyRef: policy.policyRef,
+        providerId: "approved-search",
+        run: (request: ProductWebSearchRequest) => Promise.resolve(Object.freeze({
+          citations: Object.freeze([{ title: "Source", url: "https://example.com/result" }]),
+          durationMs: 1,
+          results: Object.freeze([{ title: "Source", url: "https://example.com/result", snippet: request.query }]),
+          searchCount: 1,
+          truncated: false,
+        })),
+      }),
+    });
+    expect(harness.context.tools.schemas().map(({ name }) => name)).toEqual(["web_fetch", "web_search"]);
+    const fetch = await harness.execute("web_fetch", { url: "https://example.com/page" });
+    expect(fetch).toMatchObject({ isError: false, value: { url: "https://example.com/page", statusCode: 200, body: { content: "fixture" } } });
+    const search = await harness.execute("web_search", { queries: ["current topic"] });
+    if (search.isError) throw new Error(JSON.stringify(search));
+    expect(search).toMatchObject({ isError: false, value: { sources: [{ url: "https://example.com/result" }] } });
+    expect(authorize).toHaveBeenCalledTimes(2);
+    await harness.context.fiber.dispose();
+  });
+
   it.each(["local-fetch", "host-fetch", "search"] as const)("preserves a valid %s result without optional usage", async (route) => {
     const harness = await createWebHarness({
       utility: { run: () => Promise.resolve({ answer: "Useful answer", citations: [], truncated: false }) },

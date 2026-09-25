@@ -2,6 +2,7 @@ import { installProductNetworkTransport, type ProductNetworkTransport } from "./
 import * as ToolBash from "@deepseek-ai/dsh-tool-bash";
 import * as ToolPwsh from "@deepseek-ai/dsh-tool-pwsh";
 import * as ToolJobs from "@deepseek-ai/dsh-tool-jobs";
+import * as ToolFsSearch from "@deepseek-ai/dsh-tool-fs-search";
 import * as ShellEnv from "@deepseek-ai/dsh-shell-env";
 import { isDeepStrictEqual } from "node:util";
 import { AgentCollaborationPolicy } from "./collaboration-policy.js";
@@ -30,10 +31,12 @@ import { SkillRegistry } from "@deepseek-ai/dsh-skill";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
+import { deadline, timeoutOf } from "@deepseek-ai/dsh-timeout";
 import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 import { ApprovalService, setApprovalPolicy } from "@deepseek-ai/dsh-user-approval";
 import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
 import { WebRuntime } from "@deepseek-ai/dsh-web";
+import type { DshToolStrategy } from "@myagents-dsh/protocol";
 import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
 import { isProxy } from "node:util/types";
 import { createHash } from "node:crypto";
@@ -1180,6 +1183,7 @@ export class DshRootComposition {
 
 export interface CanonicalToolPlaneConfig {
   readonly catalog: ProductToolRuntimeConfig["catalog"];
+  readonly toolStrategy?: DshToolStrategy;
   readonly permission: ProductPermissionPlaneConfig;
   readonly plan: ProductPlanPlaneConfig;
   readonly platformTarget: PlatformTarget;
@@ -1207,8 +1211,8 @@ export const installCanonicalToolPlane = async (
   if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
     || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
     || Reflect.ownKeys(candidate).some((key) => typeof key !== "string"
-      || !["catalog", "permission", "plan", "platformTarget", "process", "skills", "temporaryRoot", "web"].includes(key))
-    || (Reflect.ownKeys(candidate).length !== 7 && Reflect.ownKeys(candidate).length !== 8)
+      || !["catalog", "permission", "plan", "platformTarget", "process", "skills", "temporaryRoot", "web", "toolStrategy"].includes(key))
+    || Reflect.ownKeys(candidate).length < 7 || Reflect.ownKeys(candidate).length > 9
     || Reflect.ownKeys(candidate).some((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
       return descriptor === undefined || !descriptor.enumerable || !("value" in descriptor);
@@ -1216,6 +1220,8 @@ export const installCanonicalToolPlane = async (
     throw new TypeError("canonical tool plane config has an invalid exact shape");
   }
   const normalized = candidate as CanonicalToolPlaneConfig;
+  const toolStrategy: unknown = normalized.toolStrategy ?? "ma_first";
+  if (toolStrategy !== "ma_first" && toolStrategy !== "dsh_first") throw new TypeError("tool strategy is invalid");
   const processConfig = validateProductProcessRuntimeConfig(normalized.process);
   const permissionConfig = validateProductPermissionPlaneConfig(normalized.permission);
   if (normalized.permission.interaction !== authority.hostInteractionProvider
@@ -1245,7 +1251,7 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
     fibers.push(await root.plugin(AgentInstructions, {
       candidateSelection: "first",
-      fileTouchToolNames: ["Read", "Write", "Edit"],
+      fileTouchToolNames: toolStrategy === "dsh_first" ? ["read", "read_image", "write", "edit"] : ["Read", "Write", "Edit"],
       instructionFileCandidates: ["CLAUDE.md", "AGENTS.override.md", "AGENTS.md"],
       localInstructionFileCandidates: [],
       maxBytes: 512 * 1024,
@@ -1277,7 +1283,31 @@ export const installCanonicalToolPlane = async (
       throw new Error("Host attachment Store did not install through the public DSH service seam");
     }
     const installedAttachmentController = attachmentController;
-    fibers.push(await root.plugin(ToolCallTimeoutPolicy));
+    if (toolStrategy === "ma_first") fibers.push(await root.plugin(ToolCallTimeoutPolicy));
+    else root.on("tools/execute", async (exec, next) => {
+      // Native file/search/web tools perform Product authorization first and
+      // start their own bounded execution deadlines afterwards. Retain the
+      // stock timeout policy for every unchanged DSH and dynamic tool.
+      if (["read", "read_image", "write", "edit", "glob", "grep", "web_fetch", "web_search"].includes(exec.name)) {
+        return next();
+      }
+      const timeoutMs = root.tools.get(exec.name, exec.agent)?.timeoutMs;
+      if (timeoutMs === undefined) return next();
+      const timer = deadline(exec.signal, timeoutMs, ToolCallTimeoutPolicy.TOOL_TIMEOUT);
+      const upstream = exec.signal;
+      exec.signal = timer.signal;
+      try {
+        const result = await next();
+        if (timeoutOf(timer.signal, ToolCallTimeoutPolicy.TOOL_TIMEOUT) === undefined) return result;
+        const message = `tool call timed out after ${timeoutMs}ms`;
+        return { isError: true, content: [{ type: "text", text: `Error: ${message}` }], error: {
+          message, info: { name: "ToolTimeoutError", code: ToolCallTimeoutPolicy.TOOL_TIMEOUT },
+        } };
+      } finally {
+        exec.signal = upstream;
+        timer[Symbol.dispose]();
+      }
+    });
     fibers.push(await root.plugin(SubagentRuntime));
     fibers.push(await root.plugin(SubagentSpawnInProcess, { providerName: "myagents-spawn" }));
     fibers.push(await root.plugin(SkillRegistry));
@@ -1656,6 +1686,7 @@ export const installCanonicalToolPlane = async (
       runtimeHome: () => root.productSession.requireExecutionEnvironment().runtimeHome,
     }));
     fibers.push(await root.plugin(CanonicalFileTools, {
+      toolStrategy,
       attachments: Object.freeze({
         run: async <T>(context: ProductToolContext, action: () => Promise<T>): Promise<T> => {
           const session = root.productSession.snapshot();
@@ -1689,6 +1720,9 @@ export const installCanonicalToolPlane = async (
         },
       }),
     }));
+    if (toolStrategy === "dsh_first") {
+      fibers.push(await root.plugin(ToolFsSearch, { sampleOverCapGlobResults: false }));
+    }
     if (webConfig !== undefined) {
       fibers.push(await root.plugin(WebRuntime, {
         fetchProvider: webConfig.fetch === undefined
@@ -1696,7 +1730,7 @@ export const installCanonicalToolPlane = async (
           : "myagents-safe-fetch",
         searchProvider: webConfig.search?.providerId ?? DISABLED_WEB_SEARCH_PROVIDER_ID,
       }));
-      fibers.push(await root.plugin(CanonicalWebTools, webConfig));
+      fibers.push(await root.plugin(CanonicalWebTools, { ...webConfig, toolStrategy }));
     }
     if (dynamicSkills === undefined || dynamicAgents === undefined || dynamicCommands === undefined) {
       throw new Error(`canonical component controllers did not register exactly once: ${JSON.stringify({
