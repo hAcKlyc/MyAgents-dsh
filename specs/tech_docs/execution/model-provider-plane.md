@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: model-provider-plane
-updated: 2026-09-12
+updated: 2026-09-25
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_integration.md
@@ -33,10 +33,9 @@ The official composition registers two deliberately different routes behind DSH 
 | Route | Active implementation | API behavior |
 | --- | --- | --- |
 | `deepseek-official` | MyAgents `HostDeepSeekLlmAdapter` wrapping the official DSH DeepSeek adapter | fixed official DeepSeek route using its accepted `openai-completions` profile, DeepSeek-native streaming and Files/attachments |
-| Host-declared ordinary API route | `@deepseek-ai/dsh-llm-pi-ai@0.1.5-rc.2.myagents.fb2c4b9e698e.13b108f38d68` using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `0.85.1` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
+| Host-declared ordinary API route | the pinned `@deepseek-ai/dsh-llm-pi-ai` adapter using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `0.85.1` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
 
-These are UPG15 source/package candidates; the Host lock still selects the previous accepted
-handoff. DeepSeek's resolved model metadata passes explicit `systemPromptUpdate: in-history`
+The Host lock selects the accepted Runtime and adapter bytes. DeepSeek's resolved model metadata passes explicit `systemPromptUpdate: in-history`
 through `prepareCall` to the native AgentLoop. With that declaration, changed system instructions
 append in history; without it, the native loop updates the leading system message. Model capability
 is never inferred from the Provider name, and undeclared input modalities default to text only.
@@ -47,7 +46,7 @@ The configured API family is preserved. Anthropic-compatible profiles use Anthro
 
 The installed pi-ai package catalog is advisory and dormant until a Host profile is admitted. An enabled ordinary API Provider becomes eligible when the Host maps its declared protocol to one of the three installed families; no Runtime catalog or Provider/model whitelist participates. The minimal pi-ai and DSH adapter patches preserve Provider-owned Anthropic content through the same message stream and exact matching-route replay; they do not add a transport or model loop.
 
-The UPG source candidate admits a bounded Host model set in addition to the primary profile.
+The accepted Runtime admits a bounded Host model set in addition to the primary profile.
 `AgentCollaborationPolicy` validates profile revision/Provider/model uniqueness and resolves
 inheritance, fixed Session/role constraints, or opt-in selection. Profile revisions disambiguate
 identically named models from different Providers; component and Host role constraints may not
@@ -132,7 +131,7 @@ Prefer an installed DSH/public adapter that natively supports the Host-selected 
 | Product route evidence | Host policy/conformance plus representative packed/native/live Provider campaigns |
 
 
-UPG15 Provider requests may receive `providerNetwork` with credential material. The existing
+Provider requests may receive `providerNetwork` with credential material. The existing
 credential AsyncLocalStorage scope freezes that Host-selected policy, gates access on resolved and
 current authority, and releases request-owned proxy pools when the model iterator exits. Scope
 revocation prevents later network admission. Main, child and utility requests use their existing

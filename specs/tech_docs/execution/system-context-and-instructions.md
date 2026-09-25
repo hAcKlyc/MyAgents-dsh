@@ -1,7 +1,7 @@
 ---
 type: technical-architecture
 status: implemented
-updated: 2026-09-12
+updated: 2026-09-25
 module: system-context-and-instructions
 product_scope: ../../prd/prd_0.3_myagents_dsh_system_context.md
 ---
@@ -40,7 +40,7 @@ optional generic harness-identity contribution.
 
 ## 3. Host contract and normalization
 
-Source-candidate protocol `5.0.0` retains the optional `SystemContextSnapshot` added in
+The accepted protocol retains the optional `SystemContextSnapshot` introduced in
 `2.2.0` for `session/create`, `session/resume` and
 `config/apply`. A snapshot contains up to 32 ordered sections and 32 ordered contexts. Every entry
 has a Host id, numeric order, `global` or `root` scope, and literal UTF-8 Markdown text. Context text

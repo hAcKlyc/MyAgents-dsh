@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: permissions-interactions-and-plan
-updated: 2026-09-05
+updated: 2026-09-25
 product_scope:
   - ../../prd/prd_0.1_agent_runtime.md
   - ../../prd/prd_0.3_myagents_integration.md
@@ -123,7 +123,7 @@ Plan is not a fifth permission mode. `ProductPlanService` owns one durable `norm
 
 Plan keeps the platform's ordinary `bash` or `pwsh` tool available for research, matching the Explore role's prompt-guided read-only use. The Plan prompt permits inspection and forbids file changes, dependency installation, builds, configuration changes and other Shell side effects. The Runtime does not classify command text or claim a read-only process sandbox. Shell calls still traverse the existing permission, Hook, operation-revision, workspace-cwd and executable checks; Plan itself grants no Shell approval. Governed `Write`/`Edit` remain limited to the managed plan file, and submitting the plan still requires explicit review.
 
-Current source-candidate protocol `2.5.0` retains `plan/apply` unchanged so a first-party Host can
+The accepted protocol retains `plan/apply` so a first-party Host can
 apply the product's Plan selector at a quiescent boundary. The request carries a client operation
 identity, expected Plan revision and desired mode. Entering `plan` prepares the managed artifact;
 exiting does not prepare or read it. A real transition appends adjacent product ownership plus public

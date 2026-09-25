@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented_pending-product-acceptance
 module: reference-web-host
-updated: 2026-09-02
+updated: 2026-09-25
 product_scope: ../../prd/prd_0.1_reference_web.md
 implementation_decision: ../../prd/tech_rfc_0.1_reference_web.md
 ---
@@ -93,7 +93,7 @@ Protocol coverage is not proof that this profile exercises every reverse capabil
 ## 6. Current delivery caveat
 
 The historical verified Web artifact and its Runtime form an old, self-consistent protocol
-`2.0.0-draft.1` combination. Current source generates source-candidate protocol `2.5.0`, while its default configured
+`2.0.0-draft.1` combination. Current source generates the accepted native protocol, while its default configured
 Runtime digest still names that historical Runtime; `ReferenceWebHostApplication.open` requires exact
 protocol/schema equality and will reject the old Runtime even if its bytes are restored. Current
 `HEAD` therefore has no re-bound, directly startable Reference Web/Runtime combination with fresh

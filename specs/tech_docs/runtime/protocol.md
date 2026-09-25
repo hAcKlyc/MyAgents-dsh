@@ -1,9 +1,9 @@
 ---
 type: protocol-specification
-status: source-candidate
+status: implemented
 module: runtime-protocol
-version: 5.0.0
-updated: 2026-09-12
+version: 6.0.0
+updated: 2026-09-25
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
@@ -17,7 +17,7 @@ This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protoc
 
 Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
 
-Protocol `5.0.0` is the DSH 0.1.5-rc.2 upgrade source candidate. It transports native V3
+The accepted protocol `6.0.0` transports native V4
 Session history and separates live assistant observations from durable assistant messages.
 An `assistant_stream` start opens a generation/primary-Agent-scoped stream; text/reasoning deltas
 carry that stream identity and native frame position. The end names either an abandoned attempt
@@ -30,14 +30,13 @@ end. It does not replay compact streams as live deltas on cold recovery. Host fi
 successful turns still reconcile from `session/read` plus independent `turn/get` facts. Provider
 blocks remain observations, separate from canonical tool execution.
 
-The model profile can explicitly declare native `in-history` system-prompt updates. Omission does
-not infer the capability from a Provider brand. Session grants retain protocol 4.0.0's Session-lifetime
-semantics. The [UPG15 PRD](../../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md) owns acceptance;
-old Runtime/handoff bytes do not establish acceptance for this source.
+The model profile can explicitly declare native `in-history` system-prompt updates and
+`addition-only` or `in-history` tool updates. Omission does not infer either capability from a Provider brand. Session grants retain protocol 4.0.0's Session-lifetime
+semantics. The [Host lock](../../../../MyAgents-integration-myagents-dsh/src/shared/integrated-runtimes/dsh-lock.json) identifies the accepted handoff; old Runtime/handoff bytes do not establish acceptance for current source.
 
 ### 1.1 Compatibility versioning
 
-The active source implements exactly `5.0.0`. Initialization accepts a Host range only when it
+The active source implements exactly `6.0.0`. Initialization accepts a Host range only when it
 contains this version; it does not emulate a predecessor. The changed native history and required
 stream identity fields require matching generated Host contracts. The TypeBox source, generated
 digests and executable tests own exact wire shapes; a version increment is not artifact acceptance.
@@ -767,7 +766,7 @@ When a root Session reaches ready, Runtime sends a bounded baseline in the order
 `context? -> task_graph -> work* -> plan` before returning the create/resume result. Subsequent
 status changes are incremental snapshots. The baseline is not transcript replay and its Runtime
 sequence is not a durable DSH sequence. Exact mapping, currently missing runtime evidence and known
-source-candidate bounds are documented in
+implementation bounds are documented in
 [Event projection and Host reconciliation](./event-projection-and-reconciliation.md).
 
 ## 16. Cancellation

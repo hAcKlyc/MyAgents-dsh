@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: compaction
-updated: 2026-09-02
+updated: 2026-09-25
 product_scope: ../../prd/prd_0.1_context_compaction.md
 implementation_decision: ../../prd/tech_rfc_0.1_context_compaction.md
 upstream_seam: DSH-SEAM-008
@@ -329,6 +329,6 @@ The patch file is source-controlled in this repository. Build tooling verifies t
 
 The Runtime consumes only the recorded patched artifact. The complete ten-patch inventory and per-patch retirement rules live in [`seam-decisions-v1.json`](../../dsh/seam-decisions-v1.json) and the upstream-maintenance skill's [patch inventory](../../../.agents/skills/dsh-upstream-maintenance/references/patch-inventory.md). Compaction maintainers must review patch 0007 in the context of that complete ordered series because any patch change also changes the executable artifact identity.
 
-### 2026-09-23 source refresh
+### Source identity
 
-The current source pin is DSH `0.1.5-rc.3`; patch 0007 remains byte-identical to the rc.2 baseline. No upstream compaction behavior or public contract changed. See the [RC3 seam review](../../dsh/upstream-refresh-2026-09-23.md) and generated seam registry for source identity; the historical measurements above do not certify the new artifact.
+The current DSH source and patch 0007 identity come from the [source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json). The [RC3 seam review](../../dsh/upstream-refresh-2026-09-23.md) is historical; its measurements do not certify the current artifact.

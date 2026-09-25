@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: sessions-persistence-and-recovery
-updated: 2026-09-12
+updated: 2026-09-25
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_session_persistence_mutations.md
 decisions:
@@ -27,15 +27,14 @@ This guide explains the one-primary-Session product boundary, the production DSH
 
 One Runtime generation owns at most one primary root DSH Session and its exact Agent. Active product Sessions in a multi-Session Host therefore map to separate Runtime processes. Cold Sessions are durable storage plus Host routing metadata, not resident Agents in a daemon.
 
-The dev implementation targets DSH `0.1.5-rc.2`: `ProductSqliteSessionPersistence`
+The current implementation uses the pinned DSH distribution: `ProductSqliteSessionPersistence`
 implements public `SessionPersistence.create/open/flush/stat/list`. Each create/open returns a
 native-contract `SessionHandle`; the removed PersistenceCoordinator/Backend is not reproduced.
-The [UPG15 ledger](../../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md) owns integration and release
-acceptance; these source changes do not promote a new Runtime or Host handoff.
+The accepted Runtime and Host handoff are identified by the Host lock; platform and release claims remain byte-specific.
 
 One active locator points to one immutable-generation identity. Appends advance its sequence,
 revision/count and head hash; rewind replaces the active locator under the existing Product
-mutation companion. SQLite schema **10** admits native **V3** headers and events only. The
+mutation companion. SQLite schema **10** admits native **V4** headers and events only. The
 physical SQLite format remains `myagents-sqlite-session-v1`, with exact `inherited_event_count`
 separate from the immutable header. Schemas 1–9 are refused; no header/event migration or
 `seedLength` translation runs. The approved one-time development reset is a separate Host-owned

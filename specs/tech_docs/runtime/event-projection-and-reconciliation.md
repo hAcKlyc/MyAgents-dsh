@@ -1,8 +1,8 @@
 ---
 type: technical-architecture
-status: source-candidate
+status: implemented
 module: event-projection-and-reconciliation
-updated: 2026-09-12
+updated: 2026-09-25
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
 ---
@@ -27,7 +27,7 @@ admission/terminal and Product state events—live in the DSH Session sequence. 
 also have separate durable SQLite authority. Runtime notifications are a bounded carrier whitelist,
 not a projection of every durable fact or every schema event kind.
 
-The `5.0.0` source maps durable/live facts to `turn_admitted`, `queued_message`, `turn_started`,
+The current projector maps durable/live facts to `turn_admitted`, `queued_message`, `turn_started`,
 assistant/thinking deltas, assistant `message_event`, structured Tool start/end, usage,
 `turn_terminal`, compaction start/end and full Product status snapshots for context, TaskGraph, work
 and Plan. It also maps generic Provider-owned call/result blocks to the distinct `provider_tool`
@@ -107,7 +107,7 @@ assigns a fresh wire stream id and keeps at most one active attempt plus a bound
 Live start/delta/end observations are anchored after the preceding durable sequence and drained by
 the same ordered writer. Text/reasoning may reach the Host before a durable assistant event.
 A committed end verifies the exact Session event, native turn/step and chunk count, then crosses a
-persistence barrier. Abandoned attempts carry no message identity. Cold recovery reads native V3
+persistence barrier. Abandoned attempts carry no message identity. Cold recovery reads native V4
 `assistant/message` / `assistant/attempt` compact streams; it does not re-emit historical deltas.
 Provider observations come from committed native block-end chunks, while ordinary final message
 content remains the authority for Host history. Context/usage read native summaries and the last
@@ -141,16 +141,14 @@ a new baseline. It fails closed rather than continue an ambiguous stream.
 
 Diagnostics may report sanitized event types, identities and revisions. They must not log credentials, attachment bytes, private prompt content or raw upstream failures.
 
-## 7. Current source-candidate acceptance boundary
+## 7. Verification boundary
 
-UPG15 protocol `5.0.0` and native V3 projection are source candidates. Runtime tests cover
+The accepted protocol and native V4 projection are covered by Runtime tests for
 pre-commit visibility, abandoned attempts, committed event identity, frame revision/position failures,
 ready status, lifecycle replacement, Provider-content correlation, usage and tool/status snapshots.
 Host source tests validate stream/turn identity and preserve final native-history reconciliation.
 
-The prior protocol 4.0.0 Host resource remains historical delivery evidence. UPG15 still requires
-exact-source Runtime/platform/handoff builds, official Host ingestion and the staged live/cold
-journeys. Source tests and package reproduction do not replace those acceptance gates.
+Prior protocol resources remain historical delivery evidence. The current Host handoff is identified by its lock file; native platform claims and release acceptance still require evidence for those exact bytes. Source tests and package reproduction alone do not establish those claims.
 
 ## 8. Architecture-correct change path
 

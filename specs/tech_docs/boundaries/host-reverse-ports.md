@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: host-reverse-ports
-updated: 2026-09-12
+updated: 2026-09-25
 product_scope: ../../prd/prd_0.1_agent_runtime.md
 implementation_decision: ../../prd/tech_rfc_0.1_host_ports_components.md
 ---
@@ -71,7 +71,7 @@ The Host registration acknowledgement for an interaction is not the user's answe
 
 ## 5. Secret and data boundary
 
-Credential references may be durable non-secret identifiers; credential values are not. Values exist only in the active Provider request or MCP connection scope and are excluded from Session events, settings persistence, declarative snapshots, logs and artifacts. Protocol 5.0.0 optionally returns bounded `providerNetwork` alongside model credential material through the same resolve port. Its proxy endpoint may contain credentials and has the same request-only lifetime. The existing Provider scope owns transport disposal; no new reverse method or durable network configuration is introduced. See [Web/network](./web-and-network.md).
+Credential references may be durable non-secret identifiers; credential values are not. Values exist only in the active Provider request or MCP connection scope and are excluded from Session events, settings persistence, declarative snapshots, logs and artifacts. The accepted protocol optionally returns bounded `providerNetwork` alongside model credential material through the same resolve port. Its proxy endpoint may contain credentials and has the same request-only lifetime. The existing Provider scope owns transport disposal; no new reverse method or durable network configuration is introduced. See [Web/network](./web-and-network.md).
 
 Attachment metadata crosses the wire before bytes are trusted. Acquire verifies identity, MIME, size and digest and returns a read-only staging path owned by the generation lease. Host-local source paths are never projected to the model or durable conversation.
 
