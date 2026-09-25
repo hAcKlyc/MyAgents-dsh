@@ -9,6 +9,7 @@ import type {
   ProductWebUtilityRequest,
 } from "@myagents-dsh/tools-web";
 import { describe, expect, it, vi } from "vitest";
+import { projectUndiciHttpHeaders } from "../packages/runtime-product/src/network-transport.js";
 
 const contentRequest = (
   contentType: string,
@@ -59,6 +60,32 @@ const utilityRequest = (): ProductWebUtilityRequest => Object.freeze({
 });
 
 describe("Host WebFetch production adapters", () => {
+  it("accepts HTTPS proxy responses after removing Undici's symbol-keyed TLS metadata", async () => {
+    const sensitiveHeaders = Symbol("sensitiveHeaders");
+    const headers = projectUndiciHttpHeaders({
+      "content-type": "text/plain",
+      "set-cookie": ["session=test"],
+      [sensitiveHeaders]: ["set-cookie"],
+    });
+    expect(Reflect.ownKeys(headers)).toEqual(["content-type", "set-cookie"]);
+    const config = createHostDeepSeekWebFetchConfig({} as Context, "network-policy-v1", {
+      proxyTransportFor: () => ({ dispatch: () => Promise.resolve({
+        body: Readable.from([Buffer.from("HTTPS content")]),
+        headers,
+        statusCode: 200,
+        dispose: () => Promise.resolve(),
+      }) }),
+    });
+    const opened = await config.client.open("https://example.com/article", {
+      headers: {}, method: "GET", policyRef: "network-policy-v1", signal: AbortSignal.timeout(1_000),
+    });
+    try {
+      const chunks: Buffer[] = [];
+      for await (const chunk of opened.body) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks).toString()).toBe("HTTPS content");
+    } finally { await opened.dispose(); }
+  });
+
   it("uses the composition-selected proxy for native WebFetch without local DNS", async () => {
     const dispatch = vi.fn(() => Promise.resolve(Object.freeze({
       body: Readable.from([Buffer.from("proxied content")]),
