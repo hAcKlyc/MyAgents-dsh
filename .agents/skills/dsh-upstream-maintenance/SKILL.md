@@ -1,11 +1,19 @@
 ---
 name: dsh-upstream-maintenance
-description: Audit or integrate a new official DeepSeek Harness revision into MyAgents-dsh while retiring, reducing, or rebasing every recorded DSH seam patch and rebuilding exact evidence. Use when checking or updating DSH tags, commits, releases, public seams, patch applicability, or patched artifacts; do not use for ordinary product feature work.
+description: Audit or integrate a new official DeepSeek Harness revision into MyAgents-dsh, decide which upstream capabilities to adopt or use to replace product code, adjudicate every recorded seam patch, and rebuild exact evidence. Use for DSH version, capability, public-seam, patch, or artifact updates; do not use for ordinary product feature work.
 ---
 
 # DSH upstream maintenance
 
-Maintain the pinned DSH source and patched distribution without creating a long-lived fork, editing installed dependencies, or inheriting evidence from old bytes.
+Maintain the pinned DSH source and patched distribution while using official, maintained capabilities wherever they serve the accepted MyAgents product. Do not create a long-lived fork, edit installed dependencies, or inherit evidence from old bytes.
+
+## Product and capability decisions
+
+- MyAgents owns harness composition and integration, product state, permissions, credentials, cross-runtime behavior, and the user experience. DSH owns its native AgentLoop, execution services, tools, and durable runtime conversation. Define the owner for the specific fact and lifecycle phase before replacing code; do not create a second writer or a parallel model-facing path.
+- Prefer official DSH implementations for capability and experience improvements. Compare the actual public interface and executable behavior with the current product path. Adopt an official package when it provides a real user benefit and can satisfy the complete product contract; remove superseded local behavior and retain meaningful contract regressions when that contract is proven. Package presence in the build is not an activated, usable feature.
+- When official behavior covers only part of the contract, keep the missing product-specific policy in the smallest adapter over public seams. Add a DSH core patch only for an exact required semantic unavailable through public composition. Do not preserve a local implementation merely for historical compatibility when the accepted prelaunch scope explicitly allows removing its old logic and development data; never infer permission to discard released or user data.
+- A capability is complete only when its permissions, dependencies, recovery, platform behavior, and user-facing result work together. Security and durability failures must be explicit; do not silently run an unconfined fallback or advertise a feature whose resources are absent.
+- Apply accepted product principles and PRD decisions to ordinary engineering tradeoffs. Ask for a product decision only when the candidate would materially change user-visible behavior or authority and no existing decision settles it. Keep such questions separate from code adaptation choices.
 
 ## Architecture truth
 
@@ -19,7 +27,7 @@ Clean patch application is not acceptance. Never fuzzy-apply a patch, edit `node
 
 ## Choose the operating mode
 
-- For an audit, version check, or review request: perform read-only discovery and produce the comparison/disposition matrix. Do not update pins, patches, manifests, or artifacts.
+- For an audit, version check, or review request: perform read-only discovery and produce the capability and seam comparison/disposition matrices. Do not update pins, patches, manifests, or artifacts.
 - For an explicit update request: perform the full workflow and update all affected authorities and evidence.
 
 Do not broaden an audit into a repository mutation.
@@ -60,6 +68,8 @@ Record:
 
 Compare behavior and public contracts, not only version strings or file diffs.
 
+For newly available or changed official capabilities relevant to MyAgents, record the product benefit, current implementation, state owner, required adaptation, and decision: **adopt**, **replace local implementation**, **defer for an explicit product capability**, or **exclude**. Distinguish an implementation task from an unsettled product choice; do not leave a technical compatibility question as an open product decision. Include the capabilities needed by the accepted upgrade scope without treating every upstream workspace package as a product plugin.
+
 ### 3. Build the mandatory seam matrix
 
 Create one row for every registry entry, including the patchless `DSH-SEAM-004`. Each row must contain:
@@ -85,7 +95,7 @@ Use these rules:
 - **Rebase** only after proving no public service, event, guard, registration, or replacement Provider can express the requirement. Recreate the patch against exact candidate blobs; do not resolve it by fuzzy context.
 - **Keep public composition** when the existing product Provider/plugin composition remains sufficient; do not invent a patch for symmetry.
 
-If upstream behavior changes product semantics rather than merely supplying the accepted seam, stop and request the owning product decision before implementation.
+If upstream behavior materially changes product semantics rather than merely supplying an accepted seam, first check the user's accepted principles and the active PRD. Request the owning product decision before implementation only when neither settles the change.
 
 ### 5. Update the authority chain atomically
 
@@ -127,6 +137,7 @@ Native evidence is identity-bound. If Windows or Linux machines are unavailable,
 The final maintenance report must include:
 
 - old and new release/commit/tree identities;
+- official capabilities adopted, excluded, or used to replace local code, with the owner and complete-delivery rationale;
 - one disposition and rationale for every seam/patch;
 - patch count and ordered patch-series digest before and after;
 - public API and product-composition changes;
@@ -144,8 +155,7 @@ Stop rather than guessing when:
 - upstream source/package association is unknown and a claim depends on it;
 - a required public seam is ambiguous or only package-private;
 - user changes overlap a patch or authority file and cannot be preserved safely;
-- official behavior creates a new product-policy decision;
+- official behavior creates a new product-policy decision not settled by the user or active PRD;
 - real-route credentials or a required native machine are unavailable for a release claim.
 
 Unavailable evidence is pending, not passing.
-
