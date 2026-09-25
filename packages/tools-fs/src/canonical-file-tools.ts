@@ -991,6 +991,9 @@ export class CanonicalFileTools extends Service {
       if (ctx.fs.contains(allowed, target)) contained = true;
     }
     if (!contained) throw new ProductToolError("path_denied", `${tool} root is outside allowed read roots`);
+    if (tool === "ls" && pathInfo.type === "file") {
+      throw new ProductToolError("directory_not_found", `ls root is a file, not a directory: ${JSON.stringify(input)}`);
+    }
     const local = requireLocalWorkspaceFileSystem(ctx.fs);
     try {
       const authority = await local.captureSearchTarget(target, tool === "Grep", product.signal);

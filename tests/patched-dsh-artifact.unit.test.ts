@@ -109,8 +109,8 @@ describe("patched DSH artifact authority", () => {
       npmUserAgent: "npm/11.13.0 node/v24.17.0 darwin arm64",
       pnpmVersion: "11.8.0",
     })).toEqual([
-      "Node must be 24.20.0; received v24.17.0",
       "npm must be 11.19.0; received 11.13.0",
+      "Runtime artifact build requires Node 24.20.0; received v24.17.0",
       "pnpm must be 11.7.0; received 11.8.0",
     ]);
   });

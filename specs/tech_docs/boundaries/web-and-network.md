@@ -50,6 +50,8 @@ uses the complete existing Host WebFetch seam. No arbitrary HTTP reverse port is
 
 For Runtime-owned HTTP fetch, `ProductSafeHttpClient` validates HTTP(S) URL syntax, forbids credentials, applies allow/deny host and port policy, resolves DNS, rejects non-public and embedded/translated private addresses, dispatches to the selected address, and repeats validation at every redirect. It bounds redirects, compressed/decompressed bytes, concurrency, queue depth and deadline and always disposes the response body. An explicit composition-owned proxy retains URL, hostname, literal-address, redirect, permission, size and deadline checks; the trusted proxy owns remote DNS for names. Local DNS pinning/private-answer defense is a direct-route guarantee, not a claim about the proxy's resolver. Proxy failure never retries directly.
 
+The official composition passes its installed general network transport into the native `web_fetch` client's proxy selector. This is required for the build-time `dsh_first` tool strategy: a Host canonical `WebFetch` proxy setting alone does not affect the DSH-native fetch client. The same generation-owned transport already serves managed remote MCP; Provider model request scopes remain separate.
+
 Fetched content is converted through the selected content service and a bounded utility model step
 where configured. The canonical result validates and projects controlled URL provenance rather than
 preserving arbitrary upstream URLs: Runtime-local output strips userinfo/query/fragment from its

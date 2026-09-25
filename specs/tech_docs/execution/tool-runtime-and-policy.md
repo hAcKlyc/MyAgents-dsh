@@ -124,6 +124,8 @@ Under `dsh_first`, the wrappers register the official `read`, `read_image`, `wri
 
 An out-of-root `Read` may resolve an Agent-owned retained output. The optional resolver returns
 `undefined` only for an unregistered path; the file tool then reports its ordinary allowed-root error.
+
+`ls` reports a missing root separately from an existing regular file passed where a directory is required. The file case keeps the `directory_not_found` tool code while saying that the target is a file; unreadable or changed targets continue through the governed filesystem authority checks.
 Registered-output identity/IO errors remain errors from that owner. No second output registry exists.
 
 Root `Write` and `Edit` participate in managed-file rewind. New-file child `Write` uses internal checkpoint

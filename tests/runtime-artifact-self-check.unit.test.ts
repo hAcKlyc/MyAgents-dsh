@@ -168,6 +168,7 @@ describe("Runtime artifact self-check", () => {
 
   it("fails closed on wrong toolchain, target, tampering, Proxy, and accessor input", () => {
     expect(assertRuntimeNodeVersion("24.20.0")).toBe("24.20.0");
+    expect(() => assertRuntimeNodeVersion("24.15.0")).toThrow("requires Node 24.20.0");
     expect(() => assertRuntimeNodeVersion("24.13.2")).toThrow("requires Node 24.20.0");
     expect(() => assertRuntimeNodeVersion(new String("24.20.0")))
       .toThrow("must be exact semver");
@@ -260,7 +261,7 @@ describe("Runtime artifact self-check", () => {
     rmSync(rootAliasTarget.root, { force: true, recursive: true });
   });
 
-  it("allows only --self-check and emits exactly one authority line without Runtime startup", async () => {
+  it.skipIf(process.versions.node !== "24.20.0")("allows only --self-check and emits exactly one authority line without Runtime startup", async () => {
     const valid = outputCollector();
     const report = await runRuntimeArtifactSelfCheck(
       ["--self-check"],

@@ -17,6 +17,8 @@ implementation_decisions:
 
 The release system turns exact source, dependencies, DSH patches, generated contracts, Runtime bytes, platform evidence, and compatibility claims into independently verifiable immutable deliveries. A passing source checkout is not itself a Runtime artifact, and an artifact for old bytes cannot authorize new bytes.
 
+Local development and tests accept Node `>=24.15.0 <25` with the pinned npm version. Artifact builders still require exact Node `24.20.0`, matching the current bundled Runtime and recorded build provenance. Separate policy checks enforce these scopes so a developer can run tests on 24.15 without accidentally creating a Runtime artifact that claims 24.20 bytes.
+
 ## 2. Relationships
 
 - **Owns:** content-addressed build/verification chain, clean-input policy, artifact inventories, evidence binding, immutable integration handoff and transfer verification.

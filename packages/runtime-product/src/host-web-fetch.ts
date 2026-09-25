@@ -9,6 +9,7 @@ import {
   type ProductWebUtilityRequest,
 } from "@myagents-dsh/tools-web";
 import TurndownService from "turndown";
+import type { ProductNetworkTransport } from "./network-transport.js";
 
 const HOST_WEB_FETCH_MAX_RESPONSE_BYTES = 8 * 1_024 * 1_024;
 const HOST_WEB_FETCH_MAX_CONVERTED_BYTES = 200_000;
@@ -196,6 +197,7 @@ const runHostWebFetchUtility = async (
 export const createHostDeepSeekWebFetchConfig = (
   context: Context,
   policyRef: string,
+  network: Pick<ProductNetworkTransport, "proxyTransportFor">,
 ): CanonicalWebFetchToolsConfig => {
   const policy = Object.freeze({
     allowedHosts: Object.freeze([]),
@@ -211,7 +213,7 @@ export const createHostDeepSeekWebFetchConfig = (
     timeoutMs: 120_000,
   }) satisfies ProductNetworkPolicy;
   return Object.freeze({
-    client: new ProductSafeHttpClient(policy),
+    client: new ProductSafeHttpClient(policy, { proxyTransportFor: network.proxyTransportFor }),
     content: Object.freeze({ convert: convertHostWebContent }),
     utility: Object.freeze({
       run: (request: ProductWebUtilityRequest) => runHostWebFetchUtility(context, request),

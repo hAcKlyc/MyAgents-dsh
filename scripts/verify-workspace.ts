@@ -315,14 +315,14 @@ assert(rootPackage.private === true, "root package must remain private");
 assert(rootPackage.packageManager === "npm@11.19.0", "packageManager must be npm@11.19.0");
 
 const engines = rootPackage.engines as JsonObject | undefined;
-assert(engines?.node === "24.20.0", "Node engine must be exactly 24.20.0");
+assert(engines?.node === ">=24.15.0 <25", "Node engine must admit supported Node 24 releases from 24.15.0");
 assert(engines?.npm === "11.19.0", "npm engine must be exactly 11.19.0");
 
 const devEngines = rootPackage.devEngines as JsonObject | undefined;
 assert(
   JSON.stringify(devEngines?.runtime) ===
-    JSON.stringify({ name: "node", version: "24.20.0", onFail: "error" }),
-  "devEngines.runtime must fail on any Node version other than 24.20.0",
+    JSON.stringify({ name: "node", version: ">=24.15.0 <25", onFail: "error" }),
+  "devEngines.runtime must admit supported Node 24 releases from 24.15.0",
 );
 assert(
   JSON.stringify(devEngines?.packageManager) ===
@@ -347,7 +347,7 @@ for (const [dependency, version] of expectedDevelopmentDependencies) {
     `${dependency} must remain exactly pinned to ${version}`,
   );
 }
-assert((await readFile(resolve(repositoryRoot, ".nvmrc"), "utf8")).trim() === "24.20.0", ".nvmrc must match the Node engine");
+assert((await readFile(resolve(repositoryRoot, ".nvmrc"), "utf8")).trim() === "24.15.0", ".nvmrc must select the minimum development Node");
 
 const npmrc = await readFile(resolve(repositoryRoot, ".npmrc"), "utf8");
 for (const setting of ["engine-strict=true", "save-exact=true"]) {

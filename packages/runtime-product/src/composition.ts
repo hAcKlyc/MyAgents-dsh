@@ -2308,7 +2308,11 @@ export const createHostProviderWebFetchPlaneConfig = (
   }
   composition.snapshot();
   const modelAuthority = authority.hostModelAuthority;
-  const native = createHostDeepSeekWebFetchConfig(root, policyRef);
+  const network = authority.networkTransport;
+  if (network === undefined) throw new Error("Host Provider WebFetch requires the installed network plane");
+  const native = createHostDeepSeekWebFetchConfig(root, policyRef, {
+    proxyTransportFor: network.proxyTransportFor,
+  });
   return Object.freeze({
     ...native,
     host: Object.freeze({

@@ -617,6 +617,12 @@ describe("canonical filesystem tools", () => {
       isError: true,
       error: { message: 'ls root does not exist: "missing-root"', info: { code: "directory_not_found" } },
     });
+    await writeFile(join(state.workspace, "regular.txt"), "content");
+    const fileList = await state.execute("ls", { path: "regular.txt" });
+    expect(fileList).toMatchObject({
+      isError: true,
+      error: { message: 'ls root is a file, not a directory: "regular.txt"', info: { code: "directory_not_found" } },
+    });
     const missingFile = join(state.workspace, "absent.txt");
     const read = await state.execute("Read", { file_path: missingFile });
     expect(read).toMatchObject({ isError: true, error: { info: { code: "file_not_found" } } });

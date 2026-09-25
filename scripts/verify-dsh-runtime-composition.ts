@@ -50,7 +50,7 @@ import {
 import { readDshSeamPatchSet } from "./dsh-seam-decisions.js";
 import { PI_AI_SOURCE, verifyPiAiSource } from "./pi-ai-seam.js";
 import { materializeRuntimeArtifactFileLinks } from "./runtime-artifact-packaging.js";
-import { evaluateToolchain } from "./toolchain-policy.mjs";
+import { evaluateArtifactToolchain } from "./toolchain-policy.mjs";
 
 type JsonObject = Record<string, unknown>;
 
@@ -1086,7 +1086,7 @@ const main = (): void => {
       "runtime-artifact-out": { type: "string" },
     },
   });
-  const failures = evaluateToolchain({
+  const failures = evaluateArtifactToolchain({
     nodeVersion: process.version,
     npmUserAgent: process.env.npm_config_user_agent,
   });

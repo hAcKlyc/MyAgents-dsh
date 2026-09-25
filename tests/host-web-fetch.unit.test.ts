@@ -1,4 +1,5 @@
 import type { Context } from "@deepseek-ai/cordis";
+import { Readable } from "node:stream";
 import {
   convertHostWebContent,
   createHostDeepSeekWebFetchConfig,
@@ -58,6 +59,29 @@ const utilityRequest = (): ProductWebUtilityRequest => Object.freeze({
 });
 
 describe("Host WebFetch production adapters", () => {
+  it("uses the composition-selected proxy for native WebFetch without local DNS", async () => {
+    const dispatch = vi.fn(() => Promise.resolve(Object.freeze({
+      body: Readable.from([Buffer.from("proxied content")]),
+      headers: Object.freeze({ "content-type": "text/plain" }),
+      statusCode: 200,
+      dispose: () => Promise.resolve(),
+    })));
+    const proxyTransportFor = vi.fn(() => Object.freeze({ dispatch }));
+    const config = createHostDeepSeekWebFetchConfig({} as Context, "network-policy-v1", { proxyTransportFor });
+    const opened = await config.client.open("https://example.com/article", {
+      headers: {}, method: "GET", policyRef: "network-policy-v1", signal: AbortSignal.timeout(1_000),
+    });
+    try {
+      const chunks: Buffer[] = [];
+      for await (const chunk of opened.body) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks).toString()).toBe("proxied content");
+      expect(proxyTransportFor).toHaveBeenCalledOnce();
+      expect(dispatch).toHaveBeenCalledOnce();
+    } finally {
+      await opened.dispose();
+    }
+  });
+
   it("converts bounded HTML to markdown and removes active-content elements", async () => {
     const result = await convertHostWebContent(contentRequest(
       "text/html",
@@ -116,7 +140,7 @@ describe("Host WebFetch production adapters", () => {
     run.mockResolvedValue(successfulUtility);
     const config = createHostDeepSeekWebFetchConfig(Object.freeze({
       productUtility: Object.freeze({ run }),
-    }) as unknown as Context, "network-policy-v1");
+    }) as unknown as Context, "network-policy-v1", { proxyTransportFor: () => undefined });
     const request = utilityRequest();
     await expect(config.utility.run(request)).resolves.toEqual({
       answer: "受治理的摘要",
@@ -148,7 +172,7 @@ describe("Host WebFetch production adapters", () => {
       productUtility: Object.freeze({
         run: vi.fn().mockResolvedValue(Object.freeze({ state: "failed", code: "provider_error" })),
       }),
-    }) as unknown as Context, "network-policy-v1");
+    }) as unknown as Context, "network-policy-v1", { proxyTransportFor: () => undefined });
     await expect(config.utility.run(utilityRequest())).rejects.toMatchObject({
       code: "utility_model_failed",
     });

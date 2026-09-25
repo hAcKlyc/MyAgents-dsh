@@ -9,7 +9,7 @@ import {
   DSH_SEAM_SOURCE,
 } from "./dsh-seam-decisions.js";
 import {
-  evaluateToolchain,
+  evaluateArtifactToolchain,
   requiredNodeVersion,
   requiredNpmVersion,
 } from "./toolchain-policy.mjs";
@@ -263,7 +263,7 @@ export const evaluatePatchedDshArtifactToolchain = (input: {
   readonly npmUserAgent: string | undefined;
   readonly pnpmVersion?: string;
 }): readonly string[] => Object.freeze([
-  ...evaluateToolchain(input),
+  ...evaluateArtifactToolchain(input),
   ...(input.pnpmVersion === undefined || input.pnpmVersion === patchedDshPnpmVersion
     ? []
     : [`pnpm must be ${patchedDshPnpmVersion}; received ${input.pnpmVersion}`]),
