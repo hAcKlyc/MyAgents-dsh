@@ -728,20 +728,7 @@ export class ProductSafeHttpClient {
       if (!isPromise(dispatched) || isProxy(dispatched)) {
         throw new ProductToolError("unsafe_destination", "safe HTTP transport must return a native Promise");
       }
-      const rawResponse = await dispatched;
-      try {
-        response = this.#validateResponse(rawResponse);
-      } catch (error) {
-        const cleanupError = await this.#disposeInvalidResponse(rawResponse);
-        if (cleanupError !== undefined) {
-          throw new AggregateError(
-            [error, cleanupError],
-            "safe HTTP response validation and cleanup failed",
-            { cause: error },
-          );
-        }
-        throw error;
-      }
+      response = await dispatched;
       if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
         throw new ProductToolError("unsafe_destination", "safe HTTP request rejected a redirect");
       }
@@ -805,21 +792,7 @@ export class ProductSafeHttpClient {
           if (!isPromise(dispatched) || isProxy(dispatched)) {
             throw new ProductToolError("unsafe_destination", "WebFetch transport must return a native Promise");
           }
-          const rawResponse = await dispatched;
-          let response: ProductHttpResponse;
-          try {
-            response = this.#validateResponse(rawResponse);
-          } catch (error) {
-            const cleanupError = await this.#disposeInvalidResponse(rawResponse);
-            if (cleanupError !== undefined) {
-              throw new AggregateError(
-                [error, cleanupError],
-                "WebFetch response validation and cleanup failed",
-                { cause: error },
-              );
-            }
-            throw error;
-          }
+          const response = await dispatched;
           try {
             signal.throwIfAborted();
             if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
@@ -961,107 +934,6 @@ export class ProductSafeHttpClient {
       throw new ProductToolError("unsafe_destination", "WebFetch DNS result is invalid");
     }
     return Object.freeze(result);
-  }
-
-  #validateResponse(value: unknown): ProductHttpResponse {
-    if (value === null || typeof value !== "object" || Array.isArray(value) || isProxy(value)) {
-      throw new ProductToolError("unsafe_destination", "WebFetch transport returned an invalid response");
-    }
-    const response = value as Record<string | symbol, unknown>;
-    const keys = ["body", "dispose", "headers", "statusCode"];
-    const descriptors = Object.getOwnPropertyDescriptors(response);
-    if (Reflect.ownKeys(response).length !== keys.length || !keys.every((key) => {
-      const descriptor = descriptors[key];
-      return descriptor !== undefined && descriptor.enumerable && "value" in descriptor;
-    }) || !Number.isSafeInteger(response.statusCode) || (response.statusCode as number) < 100
-      || (response.statusCode as number) > 599 || typeof response.dispose !== "function"
-      || isProxy(response.dispose)
-      || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)
-      || response.body === null || typeof response.body !== "object" || isProxy(response.body)
-      || response.headers === null || typeof response.headers !== "object" || Array.isArray(response.headers)
-      || isProxy(response.headers)
-      || (Object.getPrototypeOf(response.headers) !== Object.prototype
-        && Object.getPrototypeOf(response.headers) !== null)) {
-      throw new ProductToolError("unsafe_destination", "WebFetch transport returned an invalid response");
-    }
-    const headerDescriptors = Object.getOwnPropertyDescriptors(response.headers);
-    const headers: Record<string, string | readonly string[] | undefined> = {};
-    for (const key of Reflect.ownKeys(response.headers)) {
-      const descriptor = headerDescriptors[key as keyof typeof headerDescriptors];
-      const candidate: unknown = descriptor?.value;
-      if (typeof key !== "string" || descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)
-        || (candidate !== undefined && typeof candidate !== "string" && !Array.isArray(candidate))) {
-        throw new ProductToolError("unsafe_destination", "WebFetch transport returned invalid headers");
-      }
-      let normalized: string | readonly string[] | undefined = candidate as string | undefined;
-      if (Array.isArray(candidate)) {
-        if (isProxy(candidate)) {
-          throw new ProductToolError("unsafe_destination", "WebFetch transport returned invalid headers");
-        }
-        const items = Object.getOwnPropertyDescriptors(candidate);
-        const values: string[] = [];
-        for (let index = 0; index < candidate.length; index += 1) {
-          const item = items[String(index)];
-          if (item === undefined || !item.enumerable || !("value" in item) || typeof item.value !== "string") {
-            throw new ProductToolError("unsafe_destination", "WebFetch transport returned invalid headers");
-          }
-          values.push(item.value);
-        }
-        if (Reflect.ownKeys(candidate).length !== candidate.length + 1) {
-          throw new ProductToolError("unsafe_destination", "WebFetch transport returned invalid headers");
-        }
-        normalized = Object.freeze(values);
-      }
-      const normalizedKey = key.toLowerCase();
-      if (Object.hasOwn(headers, normalizedKey)
-        || (["content-encoding", "content-length", "content-type", "location"].includes(normalizedKey)
-          && Array.isArray(normalized) && normalized.length !== 1)) {
-        throw new ProductToolError("unsafe_destination", "WebFetch transport returned ambiguous headers");
-      }
-      headers[normalizedKey] = normalized;
-    }
-    const iterator = dataMethodInPrototypeChain(
-      response.body,
-      Symbol.asyncIterator,
-      "WebFetch transport body iterator",
-    );
-    const dispose = response.dispose as () => unknown;
-    const normalizedBody: AsyncIterable<Uint8Array> = Object.freeze({
-      [Symbol.asyncIterator]: (): AsyncIterator<Uint8Array> => {
-        const candidate: unknown = Reflect.apply(iterator, response.body, []);
-        return candidate as AsyncIterator<Uint8Array>;
-      },
-    });
-    return Object.freeze({
-      body: normalizedBody,
-      dispose: async () => {
-        const outcome = Reflect.apply(dispose, value, []);
-        if (!isPromise(outcome) || isProxy(outcome)) {
-          throw new ProductToolError("unsafe_destination", "WebFetch response disposer must return a native Promise");
-        }
-        await outcome;
-      },
-      headers: Object.freeze(headers),
-      statusCode: response.statusCode as number,
-    });
-  }
-
-  async #disposeInvalidResponse(value: unknown): Promise<unknown> {
-    if (value === null || typeof value !== "object" || isProxy(value)) return undefined;
-    const descriptor = Object.getOwnPropertyDescriptor(value, "dispose");
-    if (descriptor === undefined || !("value" in descriptor) || typeof descriptor.value !== "function"
-      || isProxy(descriptor.value)) return undefined;
-    try {
-      const disposer = descriptor.value as (this: object) => unknown;
-      const outcome: unknown = Reflect.apply(disposer, value, []);
-      if (!isPromise(outcome) || isProxy(outcome)) {
-        return new ProductToolError("unsafe_destination", "WebFetch invalid response disposer must return a native Promise");
-      }
-      await outcome;
-      return undefined;
-    } catch (error) {
-      return error;
-    }
   }
 
   async #readBody(body: AsyncIterable<Uint8Array>, signal: AbortSignal): Promise<Buffer> {

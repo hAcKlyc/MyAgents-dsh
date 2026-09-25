@@ -9,7 +9,6 @@ import type {
   ProductWebUtilityRequest,
 } from "@myagents-dsh/tools-web";
 import { describe, expect, it, vi } from "vitest";
-import { projectUndiciHttpHeaders } from "../packages/runtime-product/src/network-transport.js";
 
 const contentRequest = (
   contentType: string,
@@ -60,14 +59,13 @@ const utilityRequest = (): ProductWebUtilityRequest => Object.freeze({
 });
 
 describe("Host WebFetch production adapters", () => {
-  it("accepts HTTPS proxy responses after removing Undici's symbol-keyed TLS metadata", async () => {
+  it("accepts HTTPS proxy responses with Undici's symbol-keyed TLS metadata", async () => {
     const sensitiveHeaders = Symbol("sensitiveHeaders");
-    const headers = projectUndiciHttpHeaders({
+    const headers = {
       "content-type": "text/plain",
       "set-cookie": ["session=test"],
       [sensitiveHeaders]: ["set-cookie"],
-    });
-    expect(Reflect.ownKeys(headers)).toEqual(["content-type", "set-cookie"]);
+    };
     const config = createHostDeepSeekWebFetchConfig({} as Context, "network-policy-v1", {
       proxyTransportFor: () => ({ dispatch: () => Promise.resolve({
         body: Readable.from([Buffer.from("HTTPS content")]),

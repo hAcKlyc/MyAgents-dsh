@@ -52,7 +52,7 @@ For Runtime-owned HTTP fetch, `ProductSafeHttpClient` validates HTTP(S) URL synt
 
 The official composition passes its installed general network transport into the native `web_fetch` client's proxy selector. This is required for the build-time `dsh_first` tool strategy: a Host canonical `WebFetch` proxy setting alone does not affect the DSH-native fetch client. The same generation-owned transport already serves managed remote MCP; Provider model request scopes remain separate.
 
-Undici may attach symbol-keyed TLS metadata to proxied HTTPS response headers. The trusted network adapter projects only HTTP string-name headers into a new plain object before passing the response to `ProductSafeHttpClient`; the safe client's exact response validation remains strict. Passing Undici's raw header object through would reject a successful HTTPS response as invalid headers.
+The trusted transport passes Undici's response headers directly to `ProductSafeHttpClient`. Undici may attach symbol-keyed TLS metadata to proxied HTTPS headers; WebFetch reads the HTTP header names it needs and does not impose an exact object-shape validator on the trusted response. URL, address, redirect, deadline and body-size policy remain enforced by the client.
 `ProductSafeHttpClient` also supplies the same bounded default Accept, compression, and User-Agent headers to both direct and proxied WebFetch requests; a proxy route must not silently omit them and change a target's response.
 
 Fetched content is converted through the selected content service and a bounded utility model step

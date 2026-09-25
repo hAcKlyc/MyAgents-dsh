@@ -3,12 +3,7 @@ import { Agent, Dispatcher, EnvHttpProxyAgent, getGlobalDispatcher, request, set
 import { finished } from "node:stream/promises";
 import type { HostProviderNetworkScope } from "@myagents-dsh/host-ports";
 import { ProtocolError, type ProviderNetworkPolicy } from "@myagents-dsh/protocol";
-import type { ProductHttpProxyTransport, ProductHttpResponse } from "@myagents-dsh/tools-web";
-
-/** Undici can attach symbol-keyed TLS metadata; only wire header names cross into safe HTTP. */
-export const projectUndiciHttpHeaders = (
-  headers: Awaited<ReturnType<typeof request>>["headers"],
-): ProductHttpResponse["headers"] => Object.freeze(Object.fromEntries(Object.entries(headers)));
+import type { ProductHttpProxyTransport } from "@myagents-dsh/tools-web";
 
 const firstNonEmpty = (...values: readonly (string | undefined)[]): string | undefined =>
   values.find(value => value !== undefined && value !== "");
@@ -140,7 +135,7 @@ export const installProductNetworkTransport = async (
             ...(input?.headers === undefined ? {} : { headers: { ...input.headers } }),
             ...(input?.body === undefined ? {} : { body: Buffer.from(input.body) }),
           });
-          return { body: response.body, headers: projectUndiciHttpHeaders(response.headers), statusCode: response.statusCode,
+          return { body: response.body, headers: response.headers, statusCode: response.statusCode,
             dispose: async () => {
               const closed = finished(response.body, { cleanup: true }).catch(() => undefined);
               controller.abort();

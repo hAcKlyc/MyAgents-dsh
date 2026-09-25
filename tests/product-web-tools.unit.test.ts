@@ -507,7 +507,7 @@ describe("safe Web Providers and canonical Web tools", () => {
       .resolves.toMatchObject({ statusCode: 200 });
   });
 
-  it("rejects Proxy DNS/transport values without executing traps", async () => {
+  it("rejects Proxy DNS values without executing traps", async () => {
     let policyTraps = 0;
     const proxiedPorts = new Proxy([443], {
       get() { policyTraps += 1; return undefined; },
@@ -518,7 +518,6 @@ describe("safe Web Providers and canonical Web tools", () => {
       .toThrow("allowed network ports must be a bounded array");
     expect(policyTraps).toBe(0);
     let dnsTraps = 0;
-    let responseTraps = 0;
     const proxyAnswer = new Proxy({ address: "93.184.216.34", family: 4 as const }, {
       get() { dnsTraps += 1; return undefined; },
       ownKeys() { dnsTraps += 1; return []; },
@@ -530,20 +529,6 @@ describe("safe Web Providers and canonical Web tools", () => {
     await expect(dnsClient.fetch("https://example.com", productContext(), () => Promise.resolve()))
       .rejects.toMatchObject({ code: "unsafe_destination" });
     expect(dnsTraps).toBe(0);
-    const responseProxy = new Proxy(response(200, {}, []), {
-      get(_target: ProductHttpResponse, key: string | symbol): unknown {
-        if (key !== "then") responseTraps += 1;
-        return undefined;
-      },
-      ownKeys() { responseTraps += 1; return []; },
-    });
-    const transportClient = new ProductSafeHttpClient(policy, {
-      lookup: () => Promise.resolve([{ address: "93.184.216.34", family: 4 }]),
-      transport: { dispatch: () => Promise.resolve(responseProxy) },
-    });
-    await expect(transportClient.fetch("https://example.com", productContext(), () => Promise.resolve()))
-      .rejects.toMatchObject({ code: "unsafe_destination" });
-    expect(responseTraps).toBe(0);
   });
 
   it("settles cancellation only after the transport response is disposed", async () => {
