@@ -4,7 +4,7 @@
   "id": "compaction-continuity",
   "title": "Preserve the latest task truth across repeated automatic compaction",
   "fixture": "compaction-continuity",
-  "platforms": ["darwin-arm64", "win32-x64", "linux-x64"],
+  "platforms": ["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"],
   "prompts": [
     "Start a continuity audit. The current goal is finish-compaction-continuity-audit. Confirm only the current goal.",
     "Record working path specs/continuity-target.md and identifier COMPACTION_SENTINEL_42. Confirm both exactly.",

@@ -4,7 +4,7 @@
   "id": "coding-workspace",
   "title": "Discover, repair, and verify a synthetic workspace",
   "fixture": "coding-workspace",
-  "platforms": ["darwin-arm64", "win32-x64", "linux-x64"],
+  "platforms": ["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"],
   "prompts": ["Inspect this small project, find why its greeting test fails, make the smallest safe repair, and verify the result. Explain what changed without exposing machine paths."],
   "experienceFocus": ["Outcome-oriented discovery", "Safe mutation and verification", "Readable bounded results"],
   "capabilityCoverage": ["Read", "Write", "Edit", "Glob", "Grep", "bash", "pwsh", "job_output", "job_list", "job_kill", "ls", "checkpoint", "permission"],

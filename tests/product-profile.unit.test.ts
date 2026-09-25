@@ -206,12 +206,13 @@ describe("official product profile authority", () => {
 });
 
 describe("composition-selected platform adapter contracts", () => {
-  it("owns exactly three targets and a non-overclaiming evidence vocabulary", () => {
-    expect(PLATFORM_TARGETS).toEqual(["darwin-arm64", "win32-x64", "linux-x64"]);
+  it("owns four targets and a non-overclaiming evidence vocabulary", () => {
+    expect(PLATFORM_TARGETS).toEqual(["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"]);
     expect(PLATFORM_EVIDENCE_STATES).toContain("implementation-complete_pending-native-validation");
     expect(platformContractManifest.targets.map(({ evidenceState }) => evidenceState))
       .toEqual([
         "contract_defined",
+        "implementation-complete_pending-native-validation",
         "implementation-complete_pending-native-validation",
         "implementation-complete_pending-native-validation",
       ]);
@@ -259,7 +260,7 @@ describe("composition-selected platform adapter contracts", () => {
     expect(sqlite.parentDirectoryFlush).toBe(adapter.sqlite.parentDirectoryFlush);
   });
 
-  it.each(["darwin-arm64", "linux-x64"] as const)("conforms for %s POSIX paths and publication", (target) => {
+  it.each(["darwin-arm64", "darwin-x64", "linux-x64"] as const)("conforms for %s POSIX paths and publication", (target) => {
     const adapter = selectPlatformAdapter(target);
     expect(adapter.normalizeAbsolutePath("/fixture/workspace/one/../two")).toBe("/fixture/workspace/two");
     expect(adapter.samePath("/fixture/workspace", "/fixture//workspace")).toBe(true);

@@ -35,6 +35,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const generatedClientSha256 = "f".repeat(64);
 const platformEvidenceBytes = Object.freeze({
   "darwin-arm64": '{"claim":"implementation-complete_pending-native-validation","target":"darwin-arm64"}\n',
+  "darwin-x64": '{"claim":"implementation-complete_pending-native-validation","target":"darwin-x64"}\n',
   "linux-x64": '{"claim":"implementation-complete_pending-native-validation","target":"linux-x64"}\n',
   "win32-x64": '{"claim":"implementation-complete_pending-native-validation","target":"win32-x64"}\n',
 });
@@ -42,6 +43,7 @@ const platformEvidenceDigest = (target: keyof typeof platformEvidenceBytes): str
   createHash("sha256").update(platformEvidenceBytes[target]).digest("hex");
 const platforms = Object.freeze([
   { target: "darwin-arm64", claim: "implementation-complete_pending-native-validation", evidenceSha256: [platformEvidenceDigest("darwin-arm64")] },
+  { target: "darwin-x64", claim: "implementation-complete_pending-native-validation", evidenceSha256: [platformEvidenceDigest("darwin-x64")] },
   { target: "linux-x64", claim: "implementation-complete_pending-native-validation", evidenceSha256: [platformEvidenceDigest("linux-x64")] },
   { target: "win32-x64", claim: "implementation-complete_pending-native-validation", evidenceSha256: [platformEvidenceDigest("win32-x64")] },
 ] as const satisfies readonly IntegrationPlatformEvidence[]);
@@ -81,7 +83,7 @@ beforeAll(() => {
 afterAll(() => { rmSync(root, { force: true, recursive: true }); });
 
 describe("MyAgents-dsh integration compatibility manifest", () => {
-  it("binds the exact artifact, three API families, 24 tools, methods, ports, and honest platforms", () => {
+  it("binds the exact artifact, three API families, 24 tools, methods, ports, and four honest platforms", () => {
     const artifact = verifyInstalledRuntimeArtifact(root);
     const manifest = createMyAgentsDshCompatibilityManifest(artifact, generatedClientSha256, platforms);
     expect(manifest.runtime.artifactSha256).toBe(artifact.manifestSha256);

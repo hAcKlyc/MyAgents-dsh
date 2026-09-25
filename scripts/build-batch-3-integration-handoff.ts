@@ -62,8 +62,8 @@ const parsePlatforms = (path: string): readonly IntegrationPlatformEvidence[] =>
     || input.schemaVersion !== 1 || !Array.isArray(input.platforms)) {
     throw new TypeError("Batch 3 platform input must declare schemaVersion 1 and platforms");
   }
-  if (input.platforms.length !== 3) {
-    throw new TypeError("Batch 3 platform input must declare exactly three targets");
+  if (input.platforms.length !== 4) {
+    throw new TypeError("Batch 3 platform input must declare exactly four targets");
   }
   const targets = new Set<string>();
   for (const value of input.platforms) {
@@ -74,7 +74,7 @@ const parsePlatforms = (path: string): readonly IntegrationPlatformEvidence[] =>
     if (JSON.stringify(Object.keys(claim).sort())
         !== JSON.stringify(["claim", "evidenceSha256", "target"])
       || typeof claim.target !== "string"
-      || !["darwin-arm64", "linux-x64", "win32-x64"].includes(claim.target)
+      || !["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"].includes(claim.target)
       || typeof claim.claim !== "string"
       || !["verified", "implementation-complete_pending-native-validation"].includes(claim.claim)
       || !Array.isArray(claim.evidenceSha256) || claim.evidenceSha256.length < 1
@@ -88,7 +88,7 @@ const parsePlatforms = (path: string): readonly IntegrationPlatformEvidence[] =>
     }
     targets.add(claim.target);
   }
-  if (targets.size !== 3) throw new TypeError("Batch 3 platform targets must be unique");
+  if (targets.size !== 4) throw new TypeError("Batch 3 platform targets must be unique");
   return input.platforms as readonly IntegrationPlatformEvidence[];
 };
 

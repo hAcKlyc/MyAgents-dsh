@@ -17,7 +17,7 @@ import type { VerifiedRuntimeArtifact } from "./runtime-artifact.js";
 export const MYAGENTS_DSH_COMPATIBILITY_FILENAME =
   "myagents-dsh-compatibility-v1.json" as const;
 
-export type IntegrationPlatformTarget = "darwin-arm64" | "linux-x64" | "win32-x64";
+export type IntegrationPlatformTarget = "darwin-arm64" | "darwin-x64" | "linux-x64" | "win32-x64";
 export type IntegrationPlatformClaim = "verified" | "implementation-complete_pending-native-validation";
 
 export interface IntegrationPlatformEvidence {
@@ -91,8 +91,8 @@ const deepFreeze = <Value>(value: Value): Value => {
 const normalizePlatforms = (
   value: unknown,
 ): readonly IntegrationPlatformEvidence[] => {
-  if (!Array.isArray(value) || value.length !== 3) {
-    throw new TypeError("integration compatibility requires exactly three platform claims");
+  if (!Array.isArray(value) || (value.length !== 3 && value.length !== 4)) {
+    throw new TypeError("integration compatibility requires the legacy three or current four platform claims");
   }
   const result = value.map((item) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
@@ -102,7 +102,7 @@ const normalizePlatforms = (
     if (JSON.stringify(Object.keys(candidate).sort())
         !== JSON.stringify(["claim", "evidenceSha256", "target"])
       || typeof candidate.target !== "string"
-      || !(["darwin-arm64", "linux-x64", "win32-x64"] as readonly string[])
+      || !(["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"] as readonly string[])
         .includes(candidate.target)
       || typeof candidate.claim !== "string"
       || !(["verified", "implementation-complete_pending-native-validation"] as readonly string[])
@@ -127,7 +127,9 @@ const normalizePlatforms = (
       evidenceSha256,
     };
   }).sort((left, right) => compare(left.target, right.target));
-  if (new Set(result.map(({ target }) => target)).size !== 3) {
+  const targets = result.map(({ target }) => target);
+  if (JSON.stringify(targets) !== JSON.stringify(["darwin-arm64", "linux-x64", "win32-x64"])
+    && JSON.stringify(targets) !== JSON.stringify(["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"])) {
     throw new TypeError("integration platform targets must be complete and unique");
   }
   return result;

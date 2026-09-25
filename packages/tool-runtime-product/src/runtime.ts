@@ -49,7 +49,7 @@ export interface ProductToolExecutionEnvironment {
     readonly pathPolicy: "sealed";
     readonly ripgrepRef: string;
   }>;
-  readonly platformTarget: "darwin-arm64" | "win32-x64" | "linux-x64";
+  readonly platformTarget: "darwin-arm64" | "darwin-x64" | "win32-x64" | "linux-x64";
   readonly network: Readonly<
     | { readonly mode: "deny" }
     | { readonly mode: "host-policy"; readonly policyRef: string }

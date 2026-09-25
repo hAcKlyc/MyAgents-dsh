@@ -4,7 +4,7 @@
   "id": "degraded-host",
   "title": "Remain truthful under unavailable Host and Provider capabilities",
   "fixture": "degraded-host",
-  "platforms": ["darwin-arm64", "win32-x64", "linux-x64"],
+  "platforms": ["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"],
   "prompts": ["Complete as much of the synthetic task as the available capabilities safely permit. A required Provider, Host reply, or component may be unavailable; do not invent success or leak fallback state."],
   "experienceFocus": ["Degraded usability", "Truthful failure taxonomy", "Recovery guidance"],
   "capabilityCoverage": ["provider-unavailable", "host-timeout", "mcp-failure", "attachment-failure", "recovery-required", "cleanup"],

@@ -4,7 +4,7 @@
   "id": "interaction-plan",
   "title": "Clarify ambiguity, revise a plan, and execute after approval",
   "fixture": "interaction-plan",
-  "platforms": ["darwin-arm64", "win32-x64", "linux-x64"],
+  "platforms": ["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"],
   "prompts": ["This turn is planning-only. In the current workspace, inspect migration-request.md and selection.txt, ask for any decision you truly need, and stop after presenting a safe proposed migration plan. Do not modify either fixture file in this turn.", "Use the answer I provided and submit the revised plan for formal approval. A normal clarification answer is not approval. Only after formal approval, implement the selection.txt migration and verify it."],
   "experienceFocus": ["Natural clarification", "Plan approval and revision", "Resumed work after interaction"],
   "capabilityCoverage": ["AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "interaction", "plan", "followUp"],

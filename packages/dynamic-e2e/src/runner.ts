@@ -168,9 +168,9 @@ export const createScriptedQuestionAnswer = (
   });
 };
 
-const platformTarget = (): "darwin-arm64" | "win32-x64" | "linux-x64" => {
+const platformTarget = (): "darwin-arm64" | "darwin-x64" | "win32-x64" | "linux-x64" => {
   const identity = `${process.platform}-${process.arch}`;
-  if (identity === "darwin-arm64" || identity === "win32-x64" || identity === "linux-x64") return identity;
+  if (identity === "darwin-arm64" || identity === "darwin-x64" || identity === "win32-x64" || identity === "linux-x64") return identity;
   throw new Error(`dynamic E2E is not implemented for ${identity}`);
 };
 

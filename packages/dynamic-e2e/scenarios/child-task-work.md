@@ -4,7 +4,7 @@
   "id": "child-task-work",
   "title": "Coordinate dependent tasks and useful child work",
   "fixture": "child-task-work",
-  "platforms": ["darwin-arm64", "win32-x64", "linux-x64"],
+  "platforms": ["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"],
   "prompts": ["Audit the three independent fixture areas, track dependencies explicitly, delegate where useful, combine the findings, and stop any work that is no longer needed."],
   "experienceFocus": ["Discoverable delegation", "Dependency-aware progress", "Bounded child cleanup"],
   "capabilityCoverage": ["Agent", "SendMessage", "TaskStop", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "child", "mailbox", "jobs"],

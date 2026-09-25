@@ -120,7 +120,7 @@ afterAll(() => { rmSync(artifactFixture.root, { force: true, recursive: true });
 
 describe("Runtime artifact self-check", () => {
   it("builds one frozen exact authority for every declared platform target", () => {
-    for (const target of ["darwin-arm64", "win32-x64", "linux-x64"] as const) {
+    for (const target of ["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"] as const) {
       const report = createRuntimeArtifactSelfCheckReport(target, artifactFixture.integrity, "24.20.0");
       expect(report.platform.target).toBe(target);
       expect(report.runtime).toMatchObject({

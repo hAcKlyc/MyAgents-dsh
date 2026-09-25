@@ -4,6 +4,7 @@ export const PLATFORM_CONTRACT_VERSION = "platform-adapters-v1" as const;
 
 export const PLATFORM_TARGETS = Object.freeze([
   "darwin-arm64",
+  "darwin-x64",
   "win32-x64",
   "linux-x64",
 ] as const);
@@ -18,6 +19,7 @@ export const resolveRuntimePlatformTarget = (
     throw new TypeError("Runtime platform and architecture must be primitive strings");
   }
   if (platform === "darwin" && architecture === "arm64") return "darwin-arm64";
+  if (platform === "darwin" && architecture === "x64") return "darwin-x64";
   if (platform === "win32" && architecture === "x64") return "win32-x64";
   if (platform === "linux" && architecture === "x64") return "linux-x64";
   throw new Error(`unsupported Runtime platform target: ${platform}-${architecture}`);
@@ -145,10 +147,10 @@ const normalizeRoots = (
 };
 
 const posixAdapter = (
-  target: "darwin-arm64" | "linux-x64",
+  target: "darwin-arm64" | "darwin-x64" | "linux-x64",
 ): PlatformAdapterContract => Object.freeze({
   target,
-  evidenceState: target === "linux-x64"
+  evidenceState: target === "linux-x64" || target === "darwin-x64"
     ? "implementation-complete_pending-native-validation"
     : "contract_defined",
   pathFlavor: "posix",
@@ -269,6 +271,7 @@ const windowsAdapter = (): PlatformAdapterContract => Object.freeze({
 
 const adapters: Readonly<Record<PlatformTarget, PlatformAdapterContract>> = Object.freeze({
   "darwin-arm64": posixAdapter("darwin-arm64"),
+  "darwin-x64": posixAdapter("darwin-x64"),
   "linux-x64": posixAdapter("linux-x64"),
   "win32-x64": windowsAdapter(),
 });

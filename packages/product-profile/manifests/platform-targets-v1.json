@@ -44,6 +44,40 @@
     },
     {
       "artifact": {
+        "archive": "tar.gz",
+        "executableSuffix": "",
+        "targetTriple": "darwin-x64"
+      },
+      "directories": {
+        "attachmentStagingOwner": "host-explicit",
+        "runtimeHomeOwner": "host-explicit",
+        "temporaryOwner": "platform-adapter"
+      },
+      "evidenceState": "implementation-complete_pending-native-validation",
+      "pathFlavor": "posix",
+      "processTree": {
+        "forceSignal": "SIGKILL",
+        "gracefulSignal": "SIGTERM",
+        "owner": "dsh-local-subprocess"
+      },
+      "shell": {
+        "dialect": "bash",
+        "executableRef": "runtime-shell"
+      },
+      "sqlite": {
+        "journalMode": "wal",
+        "parentDirectoryFlush": "required",
+        "synchronous": "full"
+      },
+      "stdio": {
+        "framing": "ndjson-utf8",
+        "newline": "lf",
+        "stdoutUse": "protocol-only"
+      },
+      "target": "darwin-x64"
+    },
+    {
+      "artifact": {
         "archive": "zip",
         "executableSuffix": ".exe",
         "targetTriple": "win32-x64"

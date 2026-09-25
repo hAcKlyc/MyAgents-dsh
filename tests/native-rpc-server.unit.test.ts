@@ -447,6 +447,8 @@ const initializeParamsForTarget = (target: PlatformTarget): InitializeParams => 
   if (target === "linux-x64") {
     params.host.platform = "linux";
     params.host.arch = "x64";
+  } else if (target === "darwin-x64") {
+    params.host.arch = "x64";
   } else if (target === "win32-x64") {
     params.host.platform = "win32";
     params.host.arch = "x64";
@@ -1344,7 +1346,7 @@ describe("native RPC Cordis service", () => {
     }
   });
 
-  it.each(["darwin-arm64", "win32-x64", "linux-x64"] as const)(
+  it.each(["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"] as const)(
     "accepts canonical initialization for the composition-selected %s provider",
     async (target) => {
       const harness = await createHarness(target);

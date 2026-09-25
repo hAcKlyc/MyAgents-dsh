@@ -4,7 +4,7 @@
   "id": "web-components",
   "title": "Research through governed web and declarative components",
   "fixture": "web-components",
-  "platforms": ["darwin-arm64", "win32-x64", "linux-x64"],
+  "platforms": ["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"],
   "prompts": ["Research the synthetic release notes, compare the two versions with citations, use the available release-audit Skill and component tools where helpful, and write a concise recommendation."],
   "experienceFocus": ["Citation quality", "Component discoverability", "Credential and attachment boundaries"],
   "capabilityCoverage": ["WebSearch", "WebFetch", "Skill", "MCP", "HostTool", "Hook", "credential", "attachment", "component"],

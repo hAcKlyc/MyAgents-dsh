@@ -25,7 +25,7 @@ export interface DynamicScenario {
   readonly id: string;
   readonly title: string;
   readonly fixture: string;
-  readonly platforms: readonly ("darwin-arm64" | "win32-x64" | "linux-x64")[];
+  readonly platforms: readonly ("darwin-arm64" | "darwin-x64" | "win32-x64" | "linux-x64")[];
   readonly prompts: readonly string[];
   readonly experienceFocus: readonly string[];
   readonly capabilityCoverage: readonly string[];
@@ -119,8 +119,8 @@ export const parseDynamicScenario = (bytes: Uint8Array, sourcePath: string): Dyn
   if (object.schemaVersion !== 1) throw new TypeError("dynamic scenario schema version must be 1");
   const id = identifier(object.id, "dynamic scenario id");
   if (basename(sourcePath) !== `${id}.md`) throw new TypeError("dynamic scenario filename must match its id");
-  const platforms = stringArray(object.platforms, "dynamic scenario platforms", 3, 32);
-  const acceptedPlatforms = new Set(["darwin-arm64", "win32-x64", "linux-x64"]);
+  const platforms = stringArray(object.platforms, "dynamic scenario platforms", 4, 32);
+  const acceptedPlatforms = new Set(["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"]);
   if (platforms.some((platform) => !acceptedPlatforms.has(platform))) {
     throw new TypeError("dynamic scenario contains an unsupported platform");
   }

@@ -4,22 +4,23 @@
   "batch1Candidate": {
     "activationState": "workstream-evidence-only",
     "installedPluginCount": 27,
-    "profileDigest": "f6ea00ac31bfde66ded49b5d0a0f30df726a5c3b3183f92a23b972f44614fd2d"
+    "profileDigest": "6cd18b82524ff683ad7de786fa666665c158ffdbe513ad3b772283b427a88667"
   },
   "formatVersion": 1,
   "generator": "scripts/generate-product-profile.ts",
   "installedPluginCount": 0,
   "outputs": {
-    "batch-1-candidate-profile-v1.json": "f6ea00ac31bfde66ded49b5d0a0f30df726a5c3b3183f92a23b972f44614fd2d",
-    "official-product-profile-v1.json": "af9893cfa0cbfc8bc8a4361cff9e40273ae34dc1649e554302cdb75c670f81ef",
-    "official-profile-authority.generated.ts": "c1f6725ff700e34f9bfa8bc6bbef73273873d9955bddcee4229473ef165a16c8",
-    "platform-targets-v1.json": "bf12748335ac18ae37ed1dabd5eea543817cee68d3a6afb3a4c209507dc1f8e9"
+    "batch-1-candidate-profile-v1.json": "6cd18b82524ff683ad7de786fa666665c158ffdbe513ad3b772283b427a88667",
+    "official-product-profile-v1.json": "78f203189718e91baefae69119cbc1d472967253bcda61ec46c4f915d7a5edfb",
+    "official-profile-authority.generated.ts": "9bfa9c4677fc72099afa5f7db2c422a36d80015f386406668b1261057f71fa89",
+    "platform-targets-v1.json": "5dbf166f30dc93d1383bcee9980917bb710503eb0ce668f23880116196b43453"
   },
   "platformEvidenceStates": {
     "darwin-arm64": "contract_defined",
+    "darwin-x64": "implementation-complete_pending-native-validation",
     "linux-x64": "implementation-complete_pending-native-validation",
     "win32-x64": "implementation-complete_pending-native-validation"
   },
-  "profileDigest": "af9893cfa0cbfc8bc8a4361cff9e40273ae34dc1649e554302cdb75c670f81ef",
+  "profileDigest": "78f203189718e91baefae69119cbc1d472967253bcda61ec46c4f915d7a5edfb",
   "profileId": "myagents-dsh-official-v1"
 }

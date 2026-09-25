@@ -109,6 +109,7 @@
     "contractVersion": "platform-adapters-v1",
     "targets": [
       "darwin-arm64",
+      "darwin-x64",
       "win32-x64",
       "linux-x64"
     ]
