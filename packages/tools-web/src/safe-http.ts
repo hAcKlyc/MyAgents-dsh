@@ -65,6 +65,15 @@ export interface ProductHttpRequest {
   readonly method: "DELETE" | "GET" | "POST";
 }
 
+const DEFAULT_WEB_FETCH_REQUEST: ProductHttpRequest = Object.freeze({
+  headers: Object.freeze({
+    accept: "text/html, text/plain, application/json, application/pdf;q=0.9, */*;q=0.1",
+    "accept-encoding": "gzip, deflate, br",
+    "user-agent": "MyAgents-DSH/0.1",
+  }),
+  method: "GET",
+});
+
 export interface ProductHttpTransport {
   /** Reject only after abort has made the owned request/response work quiescent. */
   dispatch(
@@ -515,11 +524,7 @@ class NodeProductHttpTransport implements ProductHttpTransport {
     const response = await new Promise<IncomingMessage>((resolve, reject) => {
       outgoing = request(url, {
         agent: false,
-        headers: requestOptions?.headers ?? {
-          accept: "text/html, text/plain, application/json, application/pdf;q=0.9, */*;q=0.1",
-          "accept-encoding": "gzip, deflate, br",
-          "user-agent": "MyAgents-DSH/0.1",
-        },
+        headers: requestOptions?.headers ?? DEFAULT_WEB_FETCH_REQUEST.headers,
         lookup,
         method: requestOptions?.method ?? "GET",
         signal,
@@ -874,6 +879,7 @@ export class ProductSafeHttpClient {
 
   async #dispatch(url: URL, signal: AbortSignal, request?: ProductHttpRequest): Promise<ProductHttpResponse> {
     signal.throwIfAborted();
+    const outgoingRequest = request ?? DEFAULT_WEB_FETCH_REQUEST;
     // Public-address checks also apply to explicit proxy routes; the proxy only
     // owns DNS for non-literal names, never permission to reach a private literal.
     const literal = lookupHostname(url.hostname);
@@ -884,7 +890,7 @@ export class ProductSafeHttpClient {
     if (proxy === undefined) {
       const resolved = await this.#resolve(url.hostname, signal);
       signal.throwIfAborted();
-      dispatched = this.#transport.dispatch(url, selectPublicAddress(resolved.addresses, resolved.pref64s), signal, request);
+      dispatched = this.#transport.dispatch(url, selectPublicAddress(resolved.addresses, resolved.pref64s), signal, outgoingRequest);
     } else {
       // An explicitly selected proxy owns remote DNS. The caller has already
       // applied URL/hostname/literal-address policy; a proxy failure never falls back.
@@ -896,7 +902,7 @@ export class ProductSafeHttpClient {
         || isProxy(dispatch.value) || Reflect.ownKeys(proxy).length !== 1) {
         throw new TypeError("safe HTTP proxy transport must expose one own-data dispatch method");
       }
-      dispatched = Reflect.apply(dispatch.value as ProductHttpProxyTransport["dispatch"], proxy, [url, signal, request]);
+      dispatched = Reflect.apply(dispatch.value as ProductHttpProxyTransport["dispatch"], proxy, [url, signal, outgoingRequest]);
     }
     if (!isPromise(dispatched) || isProxy(dispatched)) {
       throw new ProductToolError("unsafe_destination", "safe HTTP transport must return a native Promise");

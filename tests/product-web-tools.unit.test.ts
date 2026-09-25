@@ -21,6 +21,7 @@ import {
   type ProductHostWebFetchRequest,
   type ProductDnsAnswer,
   type ProductHttpResponse,
+  type ProductHttpRequest,
   type ProductHttpTransport,
   type ProductHttpProxyTransport,
   type ProductNetworkPolicy,
@@ -364,6 +365,30 @@ describe("safe Web Providers and canonical Web tools", () => {
       .rejects.toMatchObject({ code: "network_policy_denied" });
     expect(lookup).not.toHaveBeenCalled();
     expect(direct).not.toHaveBeenCalled();
+  });
+
+  it("sends the same bounded WebFetch request headers through a proxy", async () => {
+    const requests: ProductHttpRequest[] = [];
+    const client = new ProductSafeHttpClient(policy, {
+      lookup: () => Promise.reject(new Error("proxied WebFetch must not resolve locally")),
+      proxyTransportFor: () => ({
+        dispatch: (_url, _signal, request) => {
+          if (request !== undefined) requests.push(request);
+          return Promise.resolve(response(200, { "content-type": "text/plain" }, ["proxied"]));
+        },
+      }),
+    });
+    const result = await client.fetch("https://example.com/article", productContext(), () => Promise.resolve());
+    expect(Buffer.from(result.bytes).toString()).toBe("proxied");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.headers.accept).toContain("text/html");
+    expect(requests[0]).toMatchObject({
+      method: "GET",
+      headers: {
+        "accept-encoding": "gzip, deflate, br",
+        "user-agent": "MyAgents-DSH/0.1",
+      },
+    });
   });
 
   it("denies private literals and forbidden proxied redirects before selecting transport", async () => {
