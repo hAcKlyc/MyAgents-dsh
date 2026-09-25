@@ -6,8 +6,16 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import { assetName, hasTargetNativeAddon, packageBatch3Release } from "./package-batch-3-release.mjs";
+import { configuredReleaseTag, resolveReleaseTag } from "./release-version.mjs";
 
 const sha = (data) => createHash("sha256").update(data).digest("hex");
+
+test("release tag comes from the root package version", () => {
+  assert.equal(configuredReleaseTag(), "v0.1.0");
+  assert.equal(resolveReleaseTag(), "v0.1.0");
+  assert.equal(resolveReleaseTag("v0.1.0"), "v0.1.0");
+  assert.throws(() => resolveReleaseTag("v0.2.0"), /differs from package.json version/);
+});
 
 test("target native check recognizes Intel macOS and Windows package names", () => {
   const files = [
@@ -49,6 +57,8 @@ test("release archive has a stable target name, handoff layout and pinned digest
   assert.equal(result.archiveSha256, sha(readFileSync(result.archivePath)));
   assert.equal(result.handoffSha256, sha(outer));
   assert.equal(JSON.parse(readFileSync(result.manifestPath)).archiveSha256, result.archiveSha256);
+  assert.throws(() => packageBatch3Release({ handoff, handoffSha256: sha(outer), tag: "v0.2.0",
+    target: "darwin-arm64", out, sourceCommit: "commit" }), /differs from package.json version/);
   assert.throws(() => packageBatch3Release({ handoff, handoffSha256: sha(outer), tag: "v0.1.0",
     target: "darwin-arm64", out, sourceCommit: "different" }), /differs from release commit/);
   assert.throws(() => assetName("latest", "darwin-arm64"));

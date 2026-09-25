@@ -8,6 +8,7 @@ import { isAbsolute, resolve } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { resolveReleaseTag } from "./release-version.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const supportedTargets = new Set(["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"]);
@@ -47,6 +48,7 @@ export function assetName(tag, target) {
 }
 
 export function packageBatch3Release({ handoff, handoffSha256, tag, target, out, node = process.execPath, sourceCommit }) {
+  tag = resolveReleaseTag(tag);
   const input = exactDirectory(handoff, "--handoff");
   const output = exactDirectory(out, "--out");
   if (!/^[a-f0-9]{64}$/.test(handoffSha256)) throw new Error("--handoff-sha256 must be an exact SHA-256");
@@ -106,14 +108,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       handoff: { type: "string" }, "handoff-sha256": { type: "string" },
       tag: { type: "string" }, target: { type: "string" }, out: { type: "string" }, node: { type: "string" },
     } });
-    assetName(values.tag, values.target);
+    const tag = resolveReleaseTag(values.tag);
+    assetName(tag, values.target);
     const dirty = execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], { cwd: repositoryRoot, encoding: "utf8" }).trim();
     if (dirty) throw new Error("Release packaging requires a clean source checkout");
     const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot, encoding: "utf8" }).trim();
-    const tagHead = execFileSync("git", ["rev-list", "-n", "1", values.tag], { cwd: repositoryRoot, encoding: "utf8" }).trim();
-    if (tagHead !== head) throw new Error(`Release tag ${values.tag} does not identify current HEAD`);
+    const tagHead = execFileSync("git", ["rev-list", "-n", "1", tag], { cwd: repositoryRoot, encoding: "utf8" }).trim();
+    if (tagHead !== head) throw new Error(`Release tag ${tag} does not identify current HEAD`);
     const result = packageBatch3Release({ handoff: values.handoff, handoffSha256: values["handoff-sha256"],
-      tag: values.tag, target: values.target, out: values.out, node: values.node ?? process.execPath,
+      tag, target: values.target, out: values.out, node: values.node ?? process.execPath,
       sourceCommit: head });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {

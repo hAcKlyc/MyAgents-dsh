@@ -5,13 +5,14 @@ import {
   CANONICAL_TOOL_NAMES,
 } from "../generated/canonical-tools.generated.js";
 import { ToolCatalogSchema } from "./tool-catalog.js";
+import { RUNTIME_VERSION } from "./runtime-version.generated.js";
 
 export { CANONICAL_TOOL_CONTRACT_SHA256, CANONICAL_TOOL_NAMES };
 export { ToolCatalogSchema } from "./tool-catalog.js";
+export { RUNTIME_VERSION } from "./runtime-version.generated.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
 export const PROTOCOL_VERSION = "6.0.0" as const;
-export const RUNTIME_VERSION = "0.0.0" as const;
 export const DSH_ENGINE_VERSION = "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e" as const;
 export const SESSION_FORMAT = "dsh-session-events-v2" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;

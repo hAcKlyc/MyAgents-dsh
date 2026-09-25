@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import { assetName, hasTargetNativeAddon } from "./package-batch-3-release.mjs";
+import { resolveReleaseTag } from "./release-version.mjs";
 
 const targets = ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"];
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -17,6 +18,7 @@ const archiveFile = (archive, path) => execFileSync("tar", ["-xOzf", archive, `h
   { maxBuffer: 64 * 1024 * 1024 });
 
 export function validateReleaseSet({ tag, directory, sourceCommit }) {
+  tag = resolveReleaseTag(tag);
   if (!isAbsolute(directory) || !existsSync(directory) || !statSync(directory).isDirectory()) {
     throw new Error("Release directory must be an existing absolute directory");
   }
@@ -69,25 +71,26 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const { values } = parseArgs({ options: {
       tag: { type: "string" }, dir: { type: "string" }, publish: { type: "boolean" },
     } });
+    const tag = resolveReleaseTag(values.tag);
     const dirty = execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"],
       { cwd: repositoryRoot, encoding: "utf8" }).trim();
     if (dirty) throw new Error("Release publishing requires a clean source checkout");
     const sourceCommit = execFileSync("git", ["rev-parse", "HEAD"],
       { cwd: repositoryRoot, encoding: "utf8" }).trim();
-    const tagCommit = execFileSync("git", ["rev-list", "-n", "1", values.tag],
+    const tagCommit = execFileSync("git", ["rev-list", "-n", "1", tag],
       { cwd: repositoryRoot, encoding: "utf8" }).trim();
     if (tagCommit !== sourceCommit) throw new Error("Release tag does not identify current HEAD");
-    const result = validateReleaseSet({ tag: values.tag, directory: values.dir, sourceCommit });
+    const result = validateReleaseSet({ tag, directory: values.dir, sourceCommit });
     if (values.publish) {
       const remoteRefs = execFileSync("git", ["ls-remote", "--tags", "origin",
-        `refs/tags/${values.tag}`, `refs/tags/${values.tag}^{}`],
+        `refs/tags/${tag}`, `refs/tags/${tag}^{}`],
       { cwd: repositoryRoot, encoding: "utf8" }).trim().split("\n");
       const remoteCommit = remoteRefs.map((line) => line.split("\t"))
-        .find(([, ref]) => ref === `refs/tags/${values.tag}^{}`)?.[0]
+        .find(([, ref]) => ref === `refs/tags/${tag}^{}`)?.[0]
         ?? remoteRefs.map((line) => line.split("\t"))
-          .find(([, ref]) => ref === `refs/tags/${values.tag}`)?.[0];
+          .find(([, ref]) => ref === `refs/tags/${tag}`)?.[0];
       if (remoteCommit !== sourceCommit) throw new Error("Remote Release tag differs from current HEAD");
-      execFileSync("gh", ["release", "create", values.tag, ...result.assets,
+      execFileSync("gh", ["release", "create", tag, ...result.assets,
         "--repo", "hAcKlyc/MyAgents-dsh", "--verify-tag", "--generate-notes"],
       { cwd: repositoryRoot, stdio: "inherit" });
     }

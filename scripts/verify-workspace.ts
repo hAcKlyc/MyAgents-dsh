@@ -207,6 +207,7 @@ const expectedWorkspaceFiles = new Map([
     "src/errors.ts",
     "src/index.ts",
     "src/peer.ts",
+    "src/runtime-version.generated.ts",
     "src/session-read.ts",
     "src/tool-catalog-schema.ts",
     "src/tool-catalog.ts",

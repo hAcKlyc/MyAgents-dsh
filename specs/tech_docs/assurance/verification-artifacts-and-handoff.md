@@ -95,7 +95,9 @@ prove evidence it does not inventory.
 | Batch 3 handoff | `scripts/build-batch-3-integration-handoff.ts` |
 | GitHub Release target archive and full-set publication | `scripts/package-batch-3-release.mjs`, `scripts/publish-batch-3-release.mjs`; [Release delivery PRD](../../prd/prd_0.3_release_delivery.md) and [RFC](../../prd/tech_rfc_0.3_release_delivery.md) |
 
-The release packager accepts one clean-commit official handoff, trusted outer digest and target. It requires a `verified` claim and that target's native addon, verifies the source and an extracted copy, then emits `myagents-dsh-<tag>-<target>.tar.gz` plus exact archive/Runtime/compatibility metadata. The separate publisher validates all four target pairs from one source before a single GitHub Release creation; its default mode only prints the exact MyAgents lock entry, while `--publish` performs the external action. The current handoff claims remain pending, so packaging them as public target assets is blocked. A tag-triggered workflow must wait for the existing full assurance and native gates; the current foundation CI alone is not a release workflow.
+After changing the root version, run `generate:protocol` to refresh its typed Runtime version, protocol fixtures and schema, then `generate:profile` for the dependent profile. Both are generated projections; maintainers edit only the root package version and matching npm lock metadata.
+
+The root `package.json` `version` is the single MyAgents-dsh distribution version (`0.1.0` for the first planned release). Release commands derive `v<version>` from it; an explicit `--tag` must match. Workspace package `0.0.0` versions and the pinned upstream DSH engine version are separate identities. The release packager accepts one clean-commit official handoff, trusted outer digest and target. It requires a `verified` claim and that target's native addon, verifies the source and an extracted copy, then emits `myagents-dsh-<tag>-<target>.tar.gz` plus exact archive/Runtime/compatibility metadata. The separate publisher validates all four target pairs from one source before a single GitHub Release creation; its default mode only prints the exact MyAgents lock entry, while `--publish` performs the external action. The current handoff claims remain pending, so packaging them as public target assets is blocked. A tag-triggered workflow must wait for the existing full assurance and native gates; the current foundation CI alone is not a release workflow.
 
 After those gates pass and the version tag points at the accepted clean commit, package each target with:
 
@@ -103,14 +105,14 @@ After those gates pass and the version tag points at the accepted clean commit, 
 npm run package:batch-3-release -- \
   --handoff /absolute/path/to/official-handoff \
   --handoff-sha256 <TRUSTED_OUTER_SHA256> \
-  --tag vX.Y.Z --target darwin-arm64 \
+  --target darwin-arm64 \
   --out /absolute/path/to/empty-release-output \
   --node /absolute/path/to/node-24.20.0
 ```
 
 The other supported target values are `darwin-x64`, `linux-x64` and `win32-x64`. Their archives must come from target-specific native campaigns and be packaged on those targets. In particular, Intel macOS needs an x64 Node process and x64 native dependencies; the arm64 handoff cannot be renamed. Publish the four archives and companion JSON files only after review; then copy each archive digest and size into the MyAgents release lock. The fixed download URL is `https://github.com/hAcKlyc/MyAgents-dsh/releases/download/<tag>/<asset-name>`.
 
-After placing all eight files in one external directory, run `npm run publish:batch-3-release -- --tag vX.Y.Z --dir /absolute/path/to/release-set` to validate and print the MyAgents `release` lock entry. Once the release gates and review pass, repeat with `--publish`; the remote tag must already point at the current commit. The command refuses a partial target set and does not create a tag. No current handoff meets the `verified` gate.
+After placing all eight files in one external directory, run `npm run publish:batch-3-release -- --dir /absolute/path/to/release-set` to validate and print the MyAgents `release` lock entry. Once the release gates and review pass, repeat with `--publish`; the remote `v<version>` tag must already point at the current commit. The command refuses a partial target set and does not create a tag. No current handoff meets the `verified` gate.
 
 The official builder nests the complete Runtime artifact and verifier, its selected generated
 protocol/client/tool/profile contracts, compatibility manifest, platform evidence, notices, an outer

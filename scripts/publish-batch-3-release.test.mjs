@@ -47,6 +47,9 @@ test("publisher requires four complete verified target archives from one source"
   }
   const accepted = validateReleaseSet({ tag: "v0.1.0", directory, sourceCommit });
   assert.equal(accepted.assets.length, 8);
+  assert.equal(validateReleaseSet({ directory, sourceCommit }).tag, "v0.1.0");
+  assert.throws(() => validateReleaseSet({ tag: "v0.2.0", directory, sourceCommit }),
+    /differs from package.json version/);
   assert.notEqual(accepted.lock.assets["darwin-arm64"].handoffSha256,
     accepted.lock.assets["darwin-x64"].handoffSha256);
   const intelManifest = resolve(directory, "myagents-dsh-v0.1.0-darwin-x64.json");

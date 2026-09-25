@@ -177,7 +177,7 @@
       "host/attachment/acquire",
       "host/attachment/release"
     ],
-    "schemaSha256": "ba11072548c34005ee4dad3809804b8cb24f1fe5e99b33680f012f378edcc1bd",
+    "schemaSha256": "ed080dba2f192b4ebe59aabbc6593a5ee675753f1f5a28b22e1121de68a097ff",
     "version": "6.0.0"
   },
   "runtimeActivation": "workstream-evidence-only",

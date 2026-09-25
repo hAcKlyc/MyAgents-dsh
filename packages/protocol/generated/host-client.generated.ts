@@ -2,7 +2,7 @@
 import { ProtocolError, type JsonRpcPeer, type MethodParams, type MethodResult, type NotificationParams, type RequestContext } from "../src/index.js";
 
 export const GENERATED_PROTOCOL_VERSION = "6.0.0" as const;
-export const GENERATED_SCHEMA_SHA256 = "ba11072548c34005ee4dad3809804b8cb24f1fe5e99b33680f012f378edcc1bd" as const;
+export const GENERATED_SCHEMA_SHA256 = "ed080dba2f192b4ebe59aabbc6593a5ee675753f1f5a28b22e1121de68a097ff" as const;
 export const GENERATED_CAPABILITY_PROFILE_DIGEST = "ee13c2ba6852498a4d7a3c2f26ef6026dd8fa9697b442f3f7b878f1a3988d809" as const;
 
 export type GeneratedHostRequestHandlers = {

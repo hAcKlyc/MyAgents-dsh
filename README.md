@@ -21,6 +21,8 @@ The latest Runtime includes the accepted automatic-compaction P0 work. The curre
 
 The candidate remains a development/integration artifact, not a public release. Package names, license, compatibility promises, and release channels remain provisional until their owning Batches are accepted.
 
+The root `package.json` is the single distribution-version setting, currently `0.1.0`. Release packaging and publication derive `v0.1.0` from it and reject any different explicit tag. Workspace package `0.0.0` versions and the pinned upstream DSH engine version are independent. The version setting does not mean a GitHub Release has been published; four target-specific verified handoffs are still required.
+
 ## Architecture
 
 ```text
