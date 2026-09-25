@@ -42,6 +42,7 @@ import {
 } from "@myagents-dsh/tool-runtime-product";
 import {
   ProductProcessRuntime,
+  anchorGlobToSearchRoot,
   ShellPresentationToolRuntime,
   resolveProductProcessAuthority,
   type ProductProcessRuntimeConfig,
@@ -428,6 +429,15 @@ const harness = async (options: Readonly<{
 };
 
 describe("official Shell tools with product policy", () => {
+  it("anchors slash Glob patterns to the selected search path while preserving basename patterns", () => {
+    const cwd = "/workspace";
+    const root = "/workspace/.claude";
+    expect(anchorGlobToSearchRoot(["--no-config", "--files", "--glob=rules/*.md", "--glob=!**/.git/**"], cwd, root))
+      .toEqual(["--no-config", "--files", "--glob=.claude/rules/*.md", "--glob=!**/.git/**"]);
+    expect(anchorGlobToSearchRoot(["--glob=*.md"], cwd, root)).toEqual(["--glob=*.md"]);
+    expect(anchorGlobToSearchRoot(["--glob=deep/a/b/*.txt"], cwd, "/workspace/workspace/round11"))
+      .toEqual(["--glob=workspace/round11/deep/a/b/*.txt"]);
+  });
   it.each([
     ["bash", false], ["pwsh", false], ["bash", true], ["pwsh", true],
   ] as const)("uses real permission admission for %s with plan=%s in the workspace and a subdirectory", async (dialect, planMode) => {

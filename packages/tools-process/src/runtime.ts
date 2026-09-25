@@ -15,6 +15,24 @@ import { realpathSync } from "node:fs";
 declare module "@deepseek-ai/cordis" { interface Context { productProcesses: ProductProcessRuntime } }
 type JsonObject = Record<string, unknown>;
 type ExecutableSet = Readonly<{ shell: string; bundledNode: string; ripgrep: string }>;
+
+export function anchorGlobToSearchRoot(argv: readonly string[], cwd: string, searchRoot: string): string[] {
+  const rootPrefix = relative(cwd, searchRoot).replaceAll("\\", "/");
+  const anchoredPrefix = rootPrefix !== "" && rootPrefix !== ".." && !rootPrefix.startsWith("../") && !isAbsolute(rootPrefix)
+    ? `${rootPrefix}/` : "";
+  let rewrittenModelGlob = false;
+  return argv.map((argument) => {
+    if (rewrittenModelGlob || !anchoredPrefix || !argument.startsWith("--glob=")) return argument;
+    rewrittenModelGlob = true;
+    const pattern = argument.slice("--glob=".length);
+    // DSH invokes rg from cwd even when path selects a child directory.
+    // Slash patterns are scoped to path; basename patterns match every depth.
+    if (!pattern.includes("/")) return argument;
+    const negated = pattern.startsWith("!");
+    const body = negated ? pattern.slice(1) : pattern;
+    return `--glob=${negated ? "!" : ""}${anchoredPrefix}${body}`;
+  });
+}
 export interface ProductProcessRuntimeConfig {
   readonly allowedCommandRefs: readonly string[];
   readonly executableSha256: ExecutableSet;
@@ -270,7 +288,7 @@ export class ProductProcessRuntime extends Service {
   private admitted: Readonly<{ revision: string; digest: string; authority: ResolvedProductProcessAuthority }> | undefined;
   private readonly io: ProductProcessIoAuthority;
   private readonly runtimeContext: Context;
-  private readonly calls = new AsyncLocalStorage<Readonly<{ product: ProductToolContext; cwd: string; shell: boolean; search?: "Glob" | "Grep" }>>();
+  private readonly calls = new AsyncLocalStorage<Readonly<{ product: ProductToolContext; cwd: string; shell: boolean; search?: "Glob" | "Grep"; searchRoot?: string }>>();
   private readonly live = new Set<SubprocessHandle>();
   private reservations = 0;
   private readonly outputs = new WeakMap<Agent, Map<string, FsTarget>>();
@@ -375,11 +393,12 @@ export class ProductProcessRuntime extends Service {
     return handle;
   }
 
-  async runWithNativeSearch<T>(product: ProductToolContext, tool: "Glob" | "Grep", action: () => Promise<T>): Promise<T> {
+  async runWithNativeSearch<T>(product: ProductToolContext, tool: "Glob" | "Grep", action: () => Promise<T>, searchRoot?: string): Promise<T> {
     this.runtimeContext.productTools.assertCurrent(product, tool);
     await this.resolveRipgrep(product);
     const authority = this.authorityFor(product);
-    return this.calls.run({ product, cwd: authority.cwd, shell: false, search: tool }, action);
+    return this.calls.run({ product, cwd: authority.cwd, shell: false, search: tool,
+      ...(searchRoot === undefined ? {} : { searchRoot }) }, action);
   }
 
   spawnNativeSearch(spec: SubprocessSpawnSpec, spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle): SubprocessHandle | undefined {
@@ -394,7 +413,10 @@ export class ProductProcessRuntime extends Service {
     if (this.live.size + this.reservations >= authority.maxChildren) {
       throw new ProductToolError("search_failed", "search process quota is exhausted");
     }
-    const handle = spawn({ ...spec, argv: [authority.ripgrepPath, ...spec.argv.slice(1)], cwd: authority.cwd, env: authority.env });
+    const searchRoot = call.search === "Glob" ? call.searchRoot : undefined;
+    const argv = searchRoot === undefined ? spec.argv.slice(1)
+      : anchorGlobToSearchRoot(spec.argv.slice(1), authority.cwd, searchRoot);
+    const handle = spawn({ ...spec, argv: [authority.ripgrepPath, ...argv], cwd: authority.cwd, env: authority.env });
     this.live.add(handle);
     const release = () => { this.live.delete(handle); };
     void handle.done.then(release, release);

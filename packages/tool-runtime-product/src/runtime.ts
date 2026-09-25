@@ -727,8 +727,15 @@ export class ProductToolRuntime extends Service {
 
   rememberRead(context: ProductToolContext, state: ProductReadState): void {
     const key = readStateKey(context, state.targetKey);
+    const previous = this.readStatesValue.get(key);
+    // A later excerpt does not revoke a complete read of the same bytes.
+    // A changed version/content still replaces the receipt and requires a
+    // fresh complete Read before mutation.
+    const current = previous?.complete === true && !state.complete
+      && previous.version === state.version && previous.sha256 === state.sha256
+      ? previous : Object.freeze({ ...state });
     this.readStatesValue.delete(key);
-    this.readStatesValue.set(key, Object.freeze({ ...state }));
+    this.readStatesValue.set(key, current);
     while (this.readStatesValue.size > 512) {
       const oldest = this.readStatesValue.keys().next().value;
       if (oldest === undefined) break;

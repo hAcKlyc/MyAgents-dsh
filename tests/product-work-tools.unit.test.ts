@@ -895,7 +895,7 @@ describe("canonical Agent Work projection", () => {
     expect(state.subagents.childIds()).toEqual([]);
   });
 
-  it("gives Explore the Claude Code-style read/search/Bash surface while hiding mutations and child spawn", async () => {
+  it("keeps Explore Shell available while hiding dedicated mutations and child spawn", async () => {
     const state = await harness();
     const disposers = ["Read", "Write", "bash", "TaskCreate", "AskUserQuestion", "EnterPlanMode"].map((name) =>
       state.context.tools.register(Object.freeze({

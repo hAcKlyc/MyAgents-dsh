@@ -655,6 +655,21 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
+  it("keeps a complete Read receipt after an excerpt of unchanged content", async () => {
+    const state = await harness();
+    const path = join(state.workspace, "excerpt-after-complete.txt");
+    await writeFile(path, "one\ntwo\nthree\n");
+    await state.execute("Read", { file_path: path });
+    await state.execute("Read", { file_path: path, offset: 2, limit: 1 });
+
+    const edit = await state.execute("Edit", {
+      file_path: path, old_string: "two", new_string: "TWO",
+    });
+    expect(edit.isError).toBe(false);
+    expect(await readFile(path, "utf8")).toBe("one\nTWO\nthree\n");
+    await state.context.fiber.dispose();
+  });
+
   it("preserves a registered retained-output resolver failure instead of reporting an ordinary path miss", async () => {
     const state = await harness();
     const path = join(state.root, "retained.txt");

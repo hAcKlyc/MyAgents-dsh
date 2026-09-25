@@ -35,11 +35,11 @@ The Host-configured maximum depth defaults to one (root depth zero) and supports
 | Role | Tool surface | Intended behavior |
 | --- | --- | --- |
 | `general` | eligible operation-frozen catalog minus hard child exclusions | delegated implementation or general work under normal Product permission/policy |
-| `Explore` | `Read`, `Glob`, `Grep`, `ls`, `Bash`, `WebFetch`, `WebSearch`, `Skill`, `TaskGet`, `TaskList`, `SendMessage`, `TaskStop` when those tools are available | read-only research, with a literal persona that restricts Bash to inspection commands |
-| `Plan` | the same bounded research tool surface as `Explore` | read-only analysis and an actionable implementation/verification plan |
+| `Explore` | `Read`, `Glob`, `Grep`, `ls`, `bash`/`pwsh`, `job_output`, `job_list`, `job_kill`, `WebFetch`, `WebSearch`, `Skill`, `TaskGet`, `TaskList`, `SendMessage`, `TaskStop` when those tools are available | codebase research; Shell remains available under ordinary Product permissions and is capable of mutation |
+| `Plan` | the same bounded research tool surface as `Explore` | analysis and an actionable implementation/verification plan |
 | dynamic Agent role | deterministic intersection of its declared `tools`/`disallowedTools` and the effective operation catalog | component-owned persona, optional Skills and bounded `maxTurns`; an optional `modelProfileRef` participates in Host-authorized model selection before the child birth is persisted |
 
-General and eligible dynamic roles may delegate below the configured maximum depth; their tool surface omits `Agent` at the limit. Explore and Plan retain their fixed non-delegating research surface. The Explore restriction intentionally aligns with Claude Code's useful research surface: Bash is present, while the role prompt and ordinary Product policy constrain its use. It is not an OS-level read-only sandbox; the security guide states the consequence explicitly.
+General and eligible dynamic roles may delegate below the configured maximum depth; their tool surface omits `Agent` at the limit. Explore and Plan retain fixed non-delegating research surfaces. Explore has Shell and does not claim an OS-level read-only sandbox; its persona states this explicitly.
 
 The effective catalog can expose Web tools to a child. Provider and reverse-request identity now
 bind to the root Agent, while call identity and policy remain those of the executing child; see

@@ -310,7 +310,7 @@ export class CanonicalFileTools extends Service {
           async (execution) => {
             const upstream = exec.signal;
             exec.signal = execution.signal;
-            try { return await ctx.productProcesses.runWithNativeSearch(execution, tool, next); }
+            try { return await ctx.productProcesses.runWithNativeSearch(execution, tool, next, before.root.displayPath); }
             finally { exec.signal = upstream; }
           });
         await this.#revalidateSearchRoot(ctx, product, tool, path, before);
