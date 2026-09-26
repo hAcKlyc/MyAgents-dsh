@@ -3082,7 +3082,14 @@ await waitUntil(
   "bounded process/search operation terminal",
 );
 stopJobDeliveryBarrier();
-assert.ok(lateJobNoticeAdapter.requests.length >= 1, `the real late Job notice must execute an additional model step: ${JSON.stringify({
+const processSearchModelRequests = [...adapter.requests, ...lateJobNoticeAdapter.requests].filter(({ messages }) => {
+  const source = messages.findLast(({ role, source }) => role === "user" && source?.kind === "myagents-operation")?.source;
+  return source?.kind === "myagents-operation" && source.clientOperationId === "artifact-process-search-operation";
+});
+const modeledJobNoticeIds = new Set(processSearchModelRequests.flatMap(({ messages }) =>
+  messages.filter(({ source }) => source?.kind === "tool-jobs" && source.form === "notice").map(({ id }) => id)));
+assert.equal(modeledJobNoticeIds.size, 2, `both real Job notices must reach the model: ${JSON.stringify({
+  modeledIds: [...modeledJobNoticeIds],
   routes: routedAdapter.routeFacts.slice(-8),
 })}`);
 assert.ok(lateJobNoticeAdapter.requests.every(({ messages }) => {
@@ -5062,7 +5069,8 @@ process.stdout.write(`${JSON.stringify({
   snapshotPreflightFailureDisposed: true,
   startupFailureDisposed: true,
   contexts: adapter.requests.slice(0, 2).map(({ messages }) => messages.length),
-  lateJobNoticeRequests: lateJobNoticeAdapter.requests.length,
+  jobNoticeModelRequests: processSearchModelRequests.filter(({ messages }) =>
+    messages.some(({ source }) => source?.kind === "tool-jobs" && source.form === "notice")).length,
   nativeRpcEngineVersion: rpcInitialization.runtimeEngine.version,
   nativeRpcInitialized: rpcStatus.initialized,
   nativeRpcProfileDigest: rpcInitialization.profileDigest,
