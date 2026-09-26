@@ -9,12 +9,14 @@ import { assetName, hasTargetNativeAddon, packageBatch3Release } from "./package
 import { configuredReleaseTag, resolveReleaseTag } from "./release-version.mjs";
 
 const sha = (data) => createHash("sha256").update(data).digest("hex");
+const releaseTag = configuredReleaseTag();
+const otherTag = releaseTag.replace(/\d+$/, (patch) => String(Number(patch) + 1));
 
 test("release tag comes from the root package version", () => {
-  assert.equal(configuredReleaseTag(), "v0.1.0");
-  assert.equal(resolveReleaseTag(), "v0.1.0");
-  assert.equal(resolveReleaseTag("v0.1.0"), "v0.1.0");
-  assert.throws(() => resolveReleaseTag("v0.2.0"), /differs from package.json version/);
+  assert.match(releaseTag, /^v\d+\.\d+\.\d+$/);
+  assert.equal(resolveReleaseTag(), releaseTag);
+  assert.equal(resolveReleaseTag(releaseTag), releaseTag);
+  assert.throws(() => resolveReleaseTag(otherTag), /differs from package.json version/);
 });
 
 test("target native check recognizes Intel macOS and Windows package names", () => {
@@ -25,7 +27,7 @@ test("target native check recognizes Intel macOS and Windows package names", () 
   assert.equal(hasTargetNativeAddon(files, "darwin-x64"), true);
   assert.equal(hasTargetNativeAddon(files, "win32-x64"), true);
   assert.equal(hasTargetNativeAddon(files, "darwin-arm64"), false);
-  assert.equal(assetName("v0.1.0", "darwin-x64"), "myagents-dsh-v0.1.0-darwin-x64.tar.gz");
+  assert.equal(assetName(releaseTag, "darwin-x64"), `myagents-dsh-${releaseTag}-darwin-x64.tar.gz`);
 });
 
 test("release archive has a stable target name, handoff layout and pinned digest", (t) => {
@@ -51,15 +53,15 @@ test("release archive has a stable target name, handoff layout and pinned digest
     platforms: [{ target: "darwin-arm64", claim: "verified", evidenceSha256: ["evidence"] }],
   });
   writeFileSync(resolve(handoff, "batch-3-integration-handoff-v1.json"), outer);
-  const result = packageBatch3Release({ handoff, handoffSha256: sha(outer), tag: "v0.1.0",
+  const result = packageBatch3Release({ handoff, handoffSha256: sha(outer), tag: releaseTag,
     target: "darwin-arm64", out, sourceCommit: "commit" });
-  assert.equal(result.asset, "myagents-dsh-v0.1.0-darwin-arm64.tar.gz");
+  assert.equal(result.asset, `myagents-dsh-${releaseTag}-darwin-arm64.tar.gz`);
   assert.equal(result.archiveSha256, sha(readFileSync(result.archivePath)));
   assert.equal(result.handoffSha256, sha(outer));
   assert.equal(JSON.parse(readFileSync(result.manifestPath)).archiveSha256, result.archiveSha256);
-  assert.throws(() => packageBatch3Release({ handoff, handoffSha256: sha(outer), tag: "v0.2.0",
+  assert.throws(() => packageBatch3Release({ handoff, handoffSha256: sha(outer), tag: otherTag,
     target: "darwin-arm64", out, sourceCommit: "commit" }), /differs from package.json version/);
-  assert.throws(() => packageBatch3Release({ handoff, handoffSha256: sha(outer), tag: "v0.1.0",
+  assert.throws(() => packageBatch3Release({ handoff, handoffSha256: sha(outer), tag: releaseTag,
     target: "darwin-arm64", out, sourceCommit: "different" }), /differs from release commit/);
   assert.throws(() => assetName("latest", "darwin-arm64"));
 });

@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import { assetName, hasTargetNativeAddon } from "./package-batch-3-release.mjs";
-import { resolveReleaseTag } from "./release-version.mjs";
+import { assertReleaseNotesHeading, releaseNotesPath, resolveReleaseTag } from "./release-version.mjs";
 
 const targets = ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"];
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -116,11 +116,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       try {
         const manifestPath = resolve(staging, "manifest.json");
         writeFileSync(manifestPath, serializeReleaseManifest(result.manifest), { flag: "wx" });
-        const notesPath = resolve(repositoryRoot, "RELEASE_NOTES.md");
-        if (!existsSync(notesPath)
-          || readFileSync(notesPath, "utf8").split(/\r?\n/, 1)[0] !== `# MyAgents-dsh ${tag.slice(1)}`) {
-          throw new Error("RELEASE_NOTES.md heading must match the Release version");
-        }
+        const notesPath = releaseNotesPath(tag);
+        if (!existsSync(notesPath)) throw new Error(`Release notes file is missing: release-notes/${tag}.md`);
+        assertReleaseNotesHeading(tag, readFileSync(notesPath, "utf8"));
         execFileSync("gh", ["release", "create", tag, ...result.assets, manifestPath,
           "--repo", "hAcKlyc/MyAgents-dsh", "--verify-tag", "--draft",
           "--title", `MyAgents-dsh ${tag}`, "--notes-file", notesPath],

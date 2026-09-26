@@ -18,3 +18,14 @@ export function resolveReleaseTag(requestedTag) {
   }
   return configuredTag;
 }
+
+export function releaseNotesPath(requestedTag) {
+  const tag = resolveReleaseTag(requestedTag);
+  return resolve(import.meta.dirname, "../release-notes", `${tag}.md`);
+}
+
+export function assertReleaseNotesHeading(tag, notes) {
+  if (notes.split(/\r?\n/, 1)[0] !== `# MyAgents-dsh ${tag.slice(1)}`) {
+    throw new Error(`release-notes/${tag}.md heading must match the Release version`);
+  }
+}

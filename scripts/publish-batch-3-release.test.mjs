@@ -9,10 +9,13 @@ import test from "node:test";
 
 import { assetName } from "./package-batch-3-release.mjs";
 import { serializeReleaseManifest, validateReleaseSet } from "./publish-batch-3-release.mjs";
+import { configuredReleaseTag } from "./release-version.mjs";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const targets = ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"];
 const sourceCommit = "a".repeat(40);
+const releaseTag = configuredReleaseTag();
+const otherTag = releaseTag.replace(/\d+$/, (patch) => String(Number(patch) + 1));
 
 test("publisher requires four complete verified target archives from one source", (t) => {
   const directory = mkdtempSync(resolve(tmpdir(), "myagents-dsh-release-set-"));
@@ -20,7 +23,7 @@ test("publisher requires four complete verified target archives from one source"
   const assets = resolve(directory, "assets");
   mkdirSync(assets);
   for (const target of targets) {
-    const name = assetName("v0.1.0", target);
+    const name = assetName(releaseTag, target);
     const handoff = resolve(directory, `fixture-${target}/handoff`);
     mkdirSync(resolve(handoff, "runtime-artifact"), { recursive: true });
     mkdirSync(resolve(handoff, "contracts"));
@@ -39,35 +42,35 @@ test("publisher requires four complete verified target archives from one source"
     execFileSync("tar", ["-czf", resolve(assets, name), "-C", resolve(directory, `fixture-${target}`), "handoff"]);
     const archive = readFileSync(resolve(assets, name));
     writeFileSync(resolve(assets, name.replace(/\.tar\.gz$/, ".json")), JSON.stringify({
-      schemaVersion: 1, repository: "hAcKlyc/MyAgents-dsh", tag: "v0.1.0", sourceCommit,
+      schemaVersion: 1, repository: "hAcKlyc/MyAgents-dsh", tag: releaseTag, sourceCommit,
       target, asset: name, archiveSha256: digest(archive), archiveSize: archive.length,
       handoffSha256: digest(outer), runtimeManifestSha256: digest(runtime),
       compatibilitySha256: digest(compatibility),
       platform: { target, claim: "verified" },
     }));
   }
-  const accepted = validateReleaseSet({ tag: "v0.1.0", directory: assets, sourceCommit });
+  const accepted = validateReleaseSet({ tag: releaseTag, directory: assets, sourceCommit });
   assert.equal(accepted.assets.length, 8);
-  assert.equal(validateReleaseSet({ directory: assets, sourceCommit }).tag, "v0.1.0");
-  assert.throws(() => validateReleaseSet({ tag: "v0.2.0", directory: assets, sourceCommit }),
+  assert.equal(validateReleaseSet({ directory: assets, sourceCommit }).tag, releaseTag);
+  assert.throws(() => validateReleaseSet({ tag: otherTag, directory: assets, sourceCommit }),
     /differs from package.json version/);
   assert.notEqual(accepted.manifest.assets["darwin-arm64"].handoffSha256,
     accepted.manifest.assets["darwin-x64"].handoffSha256);
-  assert.equal(accepted.manifest.version, "0.1.0");
+  assert.equal(accepted.manifest.version, releaseTag.slice(1));
   assert.equal(accepted.manifest.repository, "hAcKlyc/MyAgents-dsh");
   assert.deepEqual(Object.keys(accepted.manifest.assets), targets);
   assert.equal(accepted.manifest.assets["darwin-x64"].claim, "verified");
   assert.equal(JSON.parse(serializeReleaseManifest(accepted.manifest)).sourceCommit, sourceCommit);
   writeFileSync(resolve(assets, "manifest.json"), serializeReleaseManifest(accepted.manifest));
-  assert.equal(validateReleaseSet({ tag: "v0.1.0", directory: assets, sourceCommit }).tag, "v0.1.0");
+  assert.equal(validateReleaseSet({ tag: releaseTag, directory: assets, sourceCommit }).tag, releaseTag);
   writeFileSync(resolve(assets, "manifest.json"), "{}");
-  assert.throws(() => validateReleaseSet({ tag: "v0.1.0", directory: assets, sourceCommit }),
+  assert.throws(() => validateReleaseSet({ tag: releaseTag, directory: assets, sourceCommit }),
     /Release manifest differs/);
   rmSync(resolve(assets, "manifest.json"));
-  const intelManifest = resolve(assets, "myagents-dsh-v0.1.0-darwin-x64.json");
+  const intelManifest = resolve(assets, `myagents-dsh-${releaseTag}-darwin-x64.json`);
   const altered = JSON.parse(readFileSync(intelManifest, "utf8"));
   altered.platform.claim = "implementation-complete_pending-native-validation";
   writeFileSync(intelManifest, JSON.stringify(altered));
-  assert.throws(() => validateReleaseSet({ tag: "v0.1.0", directory: assets, sourceCommit }),
+  assert.throws(() => validateReleaseSet({ tag: releaseTag, directory: assets, sourceCommit }),
     /darwin-x64 Release metadata/);
 });

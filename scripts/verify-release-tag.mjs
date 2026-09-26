@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
-import { configuredReleaseTag } from "./release-version.mjs";
+import { assertReleaseNotesHeading, configuredReleaseTag, releaseNotesPath } from "./release-version.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -18,9 +18,7 @@ export function verifyReleaseTag(tag, head, mainHead, notes) {
   if (!/^[a-f0-9]{40}$/.test(head) || !/^[a-f0-9]{40}$/.test(mainHead)) {
     throw new Error("Release source and main must be full Git SHAs");
   }
-  if (notes.split(/\r?\n/, 1)[0] !== `# MyAgents-dsh ${tag.slice(1)}`) {
-    throw new Error("RELEASE_NOTES.md heading must match the Release version");
-  }
+  assertReleaseNotesHeading(tag, notes);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
@@ -28,7 +26,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const preflight = process.env.RELEASE_PREFLIGHT === "true";
     const tag = preflight ? configuredReleaseTag() : process.env.GITHUB_REF_NAME ?? process.argv[2];
     if (!tag) throw new Error("Release tag is required");
-    const notes = readFileSync(resolve(root, "RELEASE_NOTES.md"), "utf8");
+    const notes = readFileSync(releaseNotesPath(tag), "utf8");
     const head = git("rev-parse", "HEAD");
     const mainHead = git("rev-parse", "origin/main");
     verifyReleaseTag(tag, head, mainHead, notes);
