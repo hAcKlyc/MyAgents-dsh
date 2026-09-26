@@ -112,6 +112,7 @@ const packageManifest = (
 ): string => `${JSON.stringify({
   name,
   version: "0.0.0",
+  license: "Apache-2.0",
   private: true,
   type: "module",
   exports,
@@ -120,7 +121,7 @@ const packageManifest = (
 
 const trackedInputs = (): readonly Readonly<{ path: string; sha256: string }>[] => {
   const output = runGit([
-    "ls-files", "-z", "--", "package-lock.json", "package.json", "scripts/build-reference-web-artifact.ts",
+    "ls-files", "-z", "--", "LICENSE", "package-lock.json", "package.json", "scripts/build-reference-web-artifact.ts",
     "scripts/run-reference-web-host.ts", "apps/reference-web", "packages/web-host", "packages/web-host-contract",
     "packages/protocol", "packages/artifact-verifier", "specs/contracts/reference-web-host-acceptance-v1.json",
     "specs/contracts/reference-web-host-ui-provenance-v1.json",
@@ -277,6 +278,7 @@ const main = (): void => {
     "specs/contracts/reference-web-host-ui-provenance-v1.json",
   ] as const;
   for (const path of provenanceSources) copy(outputRoot, path, resolve(repositoryRoot, path));
+  copy(outputRoot, "LICENSE", resolve(repositoryRoot, "LICENSE"));
   const dependencies = ["marked", "react", "react-dom", "typebox"] as const;
   const thirdParty = dependencies.map((name) => {
     const sourcePackage = readJson(resolve(repositoryRoot, `node_modules/${name}/package.json`), `${name} package`);

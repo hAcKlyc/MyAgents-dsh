@@ -47,6 +47,10 @@ forbidden-content scanner; repository/workspace-pack release gates provide that 
 outer verifier also does not reject outer hardlinks or semantically validate every copied
 contract/evidence document.
 
+New Runtime artifacts, Reference Web artifacts and Batch 3 handoffs carry the repository's
+Apache-2.0 `LICENSE` alongside their MyAgents-dsh code. Patched DSH packages retain their MIT
+licenses; the handoff also includes its existing third-party dependency and obligation inventory.
+
 Three current chain gaps must not be hidden by the diagram:
 
 - the Runtime builder records `repositoryHead` and hashes selected working-tree inputs but does not

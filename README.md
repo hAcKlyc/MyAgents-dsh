@@ -1,141 +1,89 @@
 # MyAgents-dsh
 
-`MyAgents-dsh` is a production-oriented Agent Harness distribution built on [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness) (DSH). DSH remains the only AgentLoop and durable model-conversation authority; MyAgents behavior is composed as DSH/Cordis services, plugins, scopes, and event seams.
+**基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Agent Runtime，为 [MyAgents](https://github.com/hAcKlyc/MyAgents) 客户端提供官方集成，也为其他应用提供可复用的 Host 接口。**
 
-This repository currently delivers the standalone Runtime, its bidirectional native protocol, the canonical 20-tool product profile, and a local Reference Web Host. Native MyAgents integration and the standalone Agent SDK are separate follow-on Batches; neither is implemented by the current repository state.
+[中文](#chinese) · [English](#english) · [架构文档](./specs/ARCHITECTURE.md) · [协议文档](./specs/tech_docs/runtime/protocol.md) · [Apache-2.0 许可](./LICENSE)
 
-## Current delivery truth
+<a id="chinese"></a>
 
-Status as of 2026-08-30:
+## 它是什么
 
-| Surface | State | Current authority |
-| --- | --- | --- |
-| Standalone Runtime | Frozen protocol `2.0.0` artifact built and independently verified; ready for Batch 3 Host integration | Runtime manifest `d9d8c5706365dc5b3443f278779225e22115202af752dfe986112957825a8036` |
-| MyAgents integration handoff | Formal `2.0.0` package built and independently verified | Handoff manifest `437dd66cbdfa224d225dffa0aafe485c08a6da8663c1c2a61279aee6d6a74e66` |
-| Reference Web Host | W5 A1–A4 implementation exists; usable-product revalidation, fresh independent reviews, final distribution handoff, and explicit acceptance remain open | Web artifact `48c7f09cf76bb81d21a7ca5452ce2758135a176052f8f63231c558cfb70e5bd3`, frozen to the older Runtime `ddd6052efbceb0a323bf0942ba709aa78885a98ea49c03186d79751da224cdb1` |
-| Standalone Agent SDK | Not started | Batch 2 PRD only; there is no `@myagents-dsh/agent-sdk` package yet |
-| Native MyAgents Host | Not started in the sibling repository | Batch 3 PRD/RFC; it must consume the immutable `2.0.0` handoff above |
-| Platform support | macOS arm64, Windows x64 and Linux x64 implementation-complete pending native validation | Exact content-bound pending claims are carried by the formal handoff; no target is currently advertised as verified |
+MyAgents-dsh 将 DSH 的 Agent 执行能力组装为一个独立进程中的 Runtime。它为桌面客户端提供完整的 Agent 能力，同时把应用自己的配置、密钥、权限交互和系统资源留在 Host 一侧。
 
-The latest Runtime includes the accepted automatic-compaction P0 work. The current Reference Web artifact predates that Runtime and must not be used as evidence that the latest compaction artifact has been exercised through the browser product.
+[MyAgents 客户端](https://github.com/hAcKlyc/MyAgents)通过这套接口正式集成 MyAgents-dsh。接口本身不依赖 MyAgents 的 UI：其他桌面应用或可信 Host 也可以实现同一协议，使用相同的 Runtime。仓库还提供一个本地 Reference Web Host，展示如何在应用与 Runtime 之间建立这条边界。
 
-The candidate remains a development/integration artifact, not a public release. Package names, license, compatibility promises, and release channels remain provisional until their owning Batches are accepted.
-
-The root `package.json` is the single distribution-version setting, currently `0.1.0`. Release packaging and publication derive `v0.1.0` from it and reject any different explicit tag. Workspace package `0.0.0` versions and the pinned upstream DSH engine version are independent. The version setting does not mean a GitHub Release has been published; four target-specific verified handoffs are still required.
-
-## Architecture
+## 架构
 
 ```text
-Implemented now
-
-Reference Web browser
-        |
-loopback Web Host
-        |
-generated native client
-        |
-bidirectional stdio JSON-RPC
-        |
-MyAgents-dsh Runtime
-        |
-verified DSH product profile
-        |
-DSH session / agent loop / tools / llm / compaction
-
-Planned consumers of the same Runtime contract
-
-MyAgents native Host (Batch 3)     Agent SDK facade (Batch 2)
+MyAgents 客户端       其他 Host         Reference Web Host
+      │                  │                    │
+      └──────────────────┴────────────────────┘
+                         │
+              版本化双向 stdio JSON-RPC
+                         │
+                 MyAgents-dsh Runtime
+                  ├─ 产品能力与执行策略
+                  ├─ Host 反向接口
+                  └─ DSH / Cordis
+                     ├─ Session 与 AgentLoop
+                     ├─ 模型、工具与扩展
+                     └─ 持久化与上下文压缩
 ```
 
-The Web Host is a Host and browser carrier, not another runtime or transcript. One active primary Session maps to one Runtime process; DSH Session events remain the durable model-conversation truth. The future Agent SDK will likewise be a Host facade and process manager, not a second AgentLoop.
+**DSH 负责 Agent 执行。** Session、AgentLoop、工具流水线和对话事件由 DSH 管理。MyAgents-dsh 通过 DSH/Cordis 的服务、插件与作用域加入产品能力，不另外运行一套 AgentLoop。
 
-The implemented Runtime provides:
+**Host 负责应用资源。** 模型凭证、网络代理策略、用户交互、Host 工具、Hooks 和附件通过明确的反向接口提供。Runtime 在请求所需的作用域内使用这些能力；应用仍然决定它们从哪里来、如何配置和何时释放。
 
-- exact pinned DSH composition with seven minimal, source-controlled core patches;
-- frozen protocol `2.0.0` (40 Host requests, seven reverse requests, four notifications), generated schema/client/fixtures, reverse Host ports, exact permission/Plan control, and strict operation settlement;
-- the canonical 20-tool experience, permission and interaction flows, Hooks, MCP, Skills, agents, TaskGraph, and child/background work;
-- Host-owned provider routes and request-scoped credentials, including native DeepSeek plus the official `dsh-llm-pi-ai` adapter for declared Anthropic/OpenAI API families;
-- SQLite durable Sessions, crash recovery, root `Write`/`Edit` managed checkpoints, and transactional Session mutations;
-- DSH-owned automatic compaction using routed model context metadata, pressure preflight, output-budget clamping, tool-result pruning, durable summaries, and one overflow retry;
-- content-addressed artifacts, compatibility contracts, dynamic/native evidence, and a fail-closed Batch 3 handoff.
+**进程边界清晰。** Host 通过标准输入输出与 Runtime 通信。一个 Runtime 进程对应一个运行代际，最多承载一个活跃的主 Session；拥有多个会话的应用自行管理对应进程与恢复流程。
 
-See [Architecture](./specs/ARCHITECTURE.md) for ownership and data flow, and [Compaction module architecture](./specs/tech_docs/execution/compaction.md) for the complete compaction strategy and patch boundary.
+## 能提供什么
 
-## Use the Reference Web Host on macOS
+- **完整的 Agent 工作流：** 文件、搜索、Shell、Web 等工具，与权限确认、计划、Skills、MCP、Hooks、子 Agent、后台任务和任务图共同工作。
+- **可配置的模型入口：** 保留 DSH 原生 DeepSeek 路径，也可通过 DSH 的模型适配器接入 Host 声明的 Anthropic Messages、OpenAI Chat Completions 与 OpenAI Responses 路由。
+- **持久会话：** DSH 保存对话事件；Runtime 提供会话读取、恢复、取消、分叉、回退及受管理文件修改的检查点能力。
+- **统一的执行策略：** 工具经过同一条 DSH 执行流水线，并在实际执行时校验工作区、权限和当前操作状态。构建时可选择产品工具定义或 DSH 原生定义，Host 对接边界保持一致。
+- **可验证的交付：** Runtime、协议、兼容声明和平台证据可以一起打包、校验并由 Host 固定到具体版本。
 
-The Reference Web Host is useful for the W5 browser product, but it currently runs the older frozen Runtime recorded in the status table. It is not the Batch 3 integration artifact.
+具体能力以所选版本的[兼容声明](./specs/tech_docs/assurance/compatibility-and-capability-truth.md)和协议协商结果为准。
 
-Use exact Node `24.20.0` and npm `11.19.0`, install dependencies, put `DEEPSEEK_API_KEY` in the ignored repository-local `.env`, and run:
+## 在其他应用中集成
 
-```bash
-npm ci
-./start-web.sh
-```
+公开接口是[版本化的双向协议](./specs/tech_docs/runtime/protocol.md)：Host 启动 Runtime 进程，完成初始化与能力协商，创建或恢复 Session，然后发起 Turn、接收事件并处理 Runtime 的反向请求。仓库提供协议 Schema、生成的 TypeScript Host 客户端和 [Reference Web Host](./specs/tech_docs/hosts/reference-web-host.md) 实现，可作为接入起点。
 
-The script builds the production browser assets, verifies the frozen Web/Runtime identities, starts an authenticated loopback Host on an ephemeral port, and opens the browser. `start-web-preview.sh` is an alias to the same real Host; `npm run preview:web` is only a synthetic visual fixture and never calls DSH or DeepSeek.
+| Host 提供 | Runtime 提供 |
+| --- | --- |
+| 进程管理、应用 UI、工作区与会话路由 | DSH AgentLoop、工具执行与会话事件 |
+| 模型配置、凭证和网络策略 | 模型调用与上下文管理 |
+| 权限交互、Host 工具、Hooks、附件 | 工具策略、扩展协调和结果投影 |
+| 版本选择与交付校验 | 协议协商、运行状态和能力声明 |
 
-The development checkout expects its frozen Runtime artifact in a MyAgents-dsh cache. Override it with `MYAGENTS_DSH_RUNTIME_ARTIFACT=/absolute/path`, pass `--runtime /absolute/path`, or set `MYAGENTS_DSH_NODE=/absolute/path/to/node`. Use `--workspace /absolute/path` to choose a workspace and `--no-open` to print the one-use URL.
+这套接口独立于 DSH 官方 SDK 协议。第三方目前通过原生协议及生成客户端接入；本仓库尚未提供可直接安装的独立 Agent SDK。需要自定义 Runtime 插件时，由可信的构建方在组装阶段安装，普通 Host 请求只传递声明式配置。
 
-Startup prints the diagnostic-log path. The bounded `0600` JSONL log records lifecycle, command, error, Session/Turn identity, and timestamps, but never credentials, prompts, model text, tool arguments, or interaction values.
+## 进一步了解
 
-## Fresh-machine handoff
+- [整体架构](./specs/ARCHITECTURE.md)：所有权、进程边界与数据流。
+- [协议与生命周期](./specs/tech_docs/runtime/protocol.md)：接入方法、事件及版本协商。
+- [Host 反向接口](./specs/tech_docs/boundaries/host-reverse-ports.md)：凭证、交互、工具、Hooks 与附件。
+- [工具与执行策略](./specs/tech_docs/execution/tool-runtime-and-policy.md)：模型可见工具及执行约束。
+- [交付与验证](./specs/tech_docs/assurance/verification-artifacts-and-handoff.md)：版本绑定、构建产物和校验。
+- [项目文档索引](./specs/README.md)：产品需求、设计决策与模块文档。
 
-Git contains source, generated contracts, patch definitions, specifications, and deterministic builders. It intentionally does **not** contain credentials, `node_modules`, Runtime caches, user Session state, or the large accepted Runtime/handoff directories.
+## 开源许可
 
-Before leaving the current machine:
+MyAgents-dsh 自有代码采用 [Apache License 2.0](./LICENSE)。所依赖的 DeepSeek Harness 采用 [MIT License](./specs/dsh/UPSTREAM_LICENSE)；其他依赖及发行产物中的第三方内容保留各自的许可和声明。MyAgents 客户端是独立仓库，适用其自己的许可证。
 
-1. make the merged commit reachable from an approved remote or transfer the Git repository by another trusted method;
-2. preserve the exact Runtime `d9d8c570…` and Batch 3 handoff `437dd66c…` in durable storage, or plan to rebuild and re-run their evidence campaign from clean source commit `e9fbd6e…`;
-3. preserve any local user data separately only if needed—never commit `.env`, Runtime homes, Web catalog state, transcripts, or workspaces;
-4. do not treat a copied cache path or `/private/tmp` directory as release authority; verify every transferred artifact by its nested manifest.
+<a id="english"></a>
 
-On the new machine:
+## English
 
-1. obtain the exact Git commit and install Node `24.20.0` / npm `11.19.0`;
-2. run `npm ci` and the four repository gates below;
-3. verify the transferred Batch 3 handoff byte-for-byte with expected digest `437dd66c…`, then read its generated root `README.md` as the semantic entrypoint before MyAgents integration;
-4. recreate `.env` locally only when using a real provider;
-5. if continuing Reference Web work, provide its separately frozen `ddd6052ef…` Runtime and resume W5 A5/revalidation—do not silently substitute the newer Runtime without rebuilding Web evidence.
+**MyAgents-dsh is a DeepSeek Harness based Agent Runtime. It is officially integrated into the [MyAgents desktop client](https://github.com/hAcKlyc/MyAgents) and exposes the same versioned interface to other trusted Hosts.**
 
-## Remaining work
+DSH owns the AgentLoop, Session events, tool pipeline, model execution, and compaction. MyAgents-dsh composes product capabilities as DSH/Cordis services and plugins. The application Host retains ownership of credentials, network policy, user interactions, Host tools, Hooks, attachments, and process lifecycle.
 
-- Batch 1 Runtime work, including compaction P0, is complete for the current identity.
-- Batch 1 Reference Web still needs W5 A5 usable-product revalidation, fresh `B1-R2` reviews, the final combined distribution handoff, and explicit user acceptance.
-- Batch 2 Agent SDK has not started.
-- Batch 3 Runtime delivery is ready; implementation in the sibling `MyAgents/` repository and joint J1–J18 acceptance have not started.
-- macOS arm64, Windows x64 and Linux x64 still require a complete native artifact campaign against the exact frozen Runtime before a verified-support claim.
+Hosts communicate with the Runtime over bidirectional stdio JSON-RPC. The repository provides the [protocol](./specs/tech_docs/runtime/protocol.md), generated TypeScript Host client and Schema, plus a [Reference Web Host](./specs/tech_docs/hosts/reference-web-host.md). One Runtime process admits at most one active primary Session; a Host manages multiple Sessions as separate Runtime processes. The native protocol is independent of the upstream DSH SDK protocol. A separately installable Agent SDK is not currently provided.
 
-## Delivery Batches
+The distribution adds governed coding and Web tools, permissions and interactions, MCP, Skills, Hooks, child and background work, durable Session operations, and verifiable versioned artifacts. Exact availability is determined by the selected artifact's compatibility manifest and negotiated capabilities.
 
-- **Batch 1:** standalone Runtime, native protocol, and Reference Web Host. Runtime delivery is ready; Web product acceptance remains open.
-- **Batch 2:** independently installable Agent SDK-compatible facade over the exact Runtime. Not started.
-- **Batch 3:** native MyAgents integration against the immutable Runtime handoff. Runtime-side input is ready; Host implementation is not started.
+See the [architecture](./specs/ARCHITECTURE.md), [Host reverse ports](./specs/tech_docs/boundaries/host-reverse-ports.md), [tool policy](./specs/tech_docs/execution/tool-runtime-and-policy.md), and [delivery model](./specs/tech_docs/assurance/verification-artifacts-and-handoff.md) for the implementation boundaries.
 
-## Specifications
-
-- [Architecture](./specs/ARCHITECTURE.md)
-- [Runtime RPC protocol intent](./specs/tech_docs/runtime/protocol.md)
-- [Development plan and current status](./specs/prd/plan.md)
-- [Versioned PRDs and technical RFCs](./specs/prd/README.md)
-- [Core-module technical guides](./specs/tech_docs/README.md)
-- [DSH source and patch evidence](./specs/dsh/README.md)
-- [Architecture decisions](./specs/adr/README.md)
-
-## Development and verification
-
-[AGENTS.md](./AGENTS.md) is the development authority; `CLAUDE.md` is a symbolic link to it. Work on `dev` or a feature branch, read the active PRD and relevant architecture section before changing ownership or lifecycle, and use the repository maintenance skill before integrating a new DSH upstream revision.
-
-Run the repository-wide gates under the exact pinned toolchain:
-
-```bash
-npm run typecheck
-npm run lint
-npm test
-npm run build
-```
-
-Default tests use fake providers, fake Host ports, temporary homes/workspaces, and no real credentials or network.
-
-## Security
-
-Never commit credentials, tokens, private prompts, transcripts, user files, local homes, or copied proprietary fixtures. Host-owned secret material is request- or connection-scoped and must never enter Runtime persistence, events, logs, declarative extension snapshots, or artifact evidence.
+Original MyAgents-dsh code is licensed under [Apache-2.0](./LICENSE). DeepSeek Harness retains its [MIT license](./specs/dsh/UPSTREAM_LICENSE), and other third-party components retain their respective licenses. The MyAgents desktop client is licensed separately.

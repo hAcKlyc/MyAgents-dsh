@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -569,6 +570,7 @@ const stageBuiltPackage = (
   writeFileSync(resolve(destination, "package.json"), `${JSON.stringify({
     name: packageName,
     version: "0.0.0",
+    license: "Apache-2.0",
     private: true,
     type: "module",
     exports: packageExports,
@@ -754,6 +756,7 @@ export const projectRuntimeConsumerOverrides = (value: unknown): Record<string, 
 
 const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
   ...runtimeCompositionSourcePaths,
+  "LICENSE",
   "package.json",
   "package-lock.json",
   "tsconfig.base.json",
@@ -957,12 +960,14 @@ const buildInstalledRuntimeCandidate = (
   writeFileSync(resolve(candidateRoot, "package.json"), `${JSON.stringify({
     name: "@myagents-dsh/w1-runtime-candidate",
     version: protocolMetaJson.runtimeVersion,
+    license: "Apache-2.0",
     private: true,
     type: "module",
     engines: { node: "24.20.0", npm: "11.19.0" },
     dependencies: orderedDependencies,
     overrides: orderedOverrides,
   }, null, 2)}\n`);
+  copyFileSync(resolve(repositoryRoot, "LICENSE"), resolve(candidateRoot, "LICENSE"));
   cpSync(
     resolve(buildRoot, "tests/fixtures/runtime-server-process.artifact.js"),
     resolve(candidateRoot, "runtime-server-process.artifact.mjs"),

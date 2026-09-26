@@ -162,6 +162,7 @@ const main = (): void => {
   mkdirSync(outputRoot, { mode: 0o700 });
   mkdirSync(resolve(outputRoot, "contracts"), { mode: 0o700 });
   mkdirSync(resolve(outputRoot, "notices"), { mode: 0o700 });
+  copyFileSync(resolve(repositoryRoot, "LICENSE"), resolve(outputRoot, "LICENSE"));
   copyPlatformEvidence(
     required(values["platform-evidence-dir"], "platform-evidence-dir"),
     platforms,

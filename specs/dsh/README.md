@@ -1,5 +1,7 @@
 # DSH dependency and public-surface baseline
 
+DeepSeek Harness retains its [MIT license](./UPSTREAM_LICENSE), including for upstream source represented in the patch series. This repository's original code uses the root Apache-2.0 license.
+
 `dsh-baseline-v1.json` is the generated, versioned evidence for the DSH dependency authority selected by Pre-Batch `PRE-A5`. Regenerate it with `npm run snapshot:dsh-baseline`; `npm run check:dsh` rejects drift.
 
 When the fixed upstream checkout is available at the documented sibling path, `npm run check:dsh-source` independently verifies the commit object, tree, declared release, and license bytes. This source-only check is recorded during foundation acceptance but is not part of the clean-checkout default gate.
