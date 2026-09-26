@@ -114,7 +114,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: diagnostic-${{ matrix.target }}
-          path: ${{ runner.temp }}/myagents-dsh-release/patched-dsh-artifact/*
+          path: |
+            ${{ runner.temp }}/myagents-dsh-release/patched-dsh-artifact/*
+            ${{ runner.temp }}/myagents-dsh-release/pre-artifact-gate/raw/*.json
           if-no-files-found: ignore
           retention-days: 2
       - name: Transfer only the verified target pair
