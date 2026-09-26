@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -15,7 +15,8 @@ import {
   validateConsumerLock,
 } from "../scripts/build-patched-dsh-artifact.js";
 import { expectedDshDependencies } from "../scripts/dsh-baseline-policy.js";
-import { DSH_SEAM_SOURCE } from "../scripts/dsh-seam-decisions.js";
+import { DSH_SEAM_PATCHES, DSH_SEAM_SOURCE } from "../scripts/dsh-seam-decisions.js";
+import { PI_AI_PATCH } from "../scripts/pi-ai-seam.js";
 import {
   PATCHED_DSH_ARTIFACT_PACKAGE_COUNT,
   PATCHED_DSH_ACCEPTED_EXTERNAL_PACKAGES,
@@ -77,6 +78,16 @@ const completeEvidence = (
 }));
 
 describe("patched DSH artifact authority", () => {
+  it("keeps exact patch bytes LF on Windows checkouts", () => {
+    const repositoryRoot = resolve(import.meta.dirname, "..");
+    const patches = [...DSH_SEAM_PATCHES, PI_AI_PATCH];
+    expect(readFileSync(resolve(repositoryRoot, ".gitattributes"), "utf8"))
+      .toContain("*.patch text eol=lf");
+    for (const path of patches) {
+      expect(readFileSync(resolve(repositoryRoot, path)).includes(Buffer.from("\r\n"))).toBe(false);
+    }
+  });
+
   it("derives one deterministic content version and the exact official-profile closure", () => {
     const first = buildPatchedDshArtifactAuthority();
     const second = buildPatchedDshArtifactAuthority();

@@ -1141,7 +1141,7 @@ export function serializeDshSeamDecisions(): string {
 }
 
 function git(sourceRoot: string, args: string[], env?: NodeJS.ProcessEnv, input?: Buffer): Buffer {
-  return execFileSync("git", ["-C", sourceRoot, ...args], {
+  return execFileSync("git", ["-c", "core.autocrlf=false", "-C", sourceRoot, ...args], {
     encoding: "buffer",
     env: env ?? process.env,
     input,
@@ -1199,9 +1199,9 @@ export function verifyDshSeamSource(
   const worktreeParent = mkdtempSync(join(tmpdir(), "myagents-dsh-patched-source-"));
   const worktree = join(worktreeParent, "deepseek-harness");
   try {
-    run("git", ["-C", root, "worktree", "add", "--detach", worktree, DSH_SEAM_SOURCE.commit], root);
+    run("git", ["-c", "core.autocrlf=false", "-C", root, "worktree", "add", "--detach", worktree, DSH_SEAM_SOURCE.commit], root);
     for (const patch of patchSet) {
-      run("git", ["apply", "-"], worktree, patch.bytes);
+      run("git", ["-c", "core.autocrlf=false", "apply", "-"], worktree, patch.bytes);
     }
     run("git", ["diff", "--check"], worktree);
     run("corepack", [

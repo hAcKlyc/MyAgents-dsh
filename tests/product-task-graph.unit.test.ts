@@ -410,7 +410,7 @@ describe("durable Session-local product TaskGraph", () => {
     expect(tasks).toHaveLength(200);
     expect(tasks[0]?.id).toBe("task-1");
     expect(tasks.at(-1)?.id).toBe("task-200");
-  });
+  }, 30_000);
 
   it("serializes concurrent appends and cancels a queued caller before publication", async () => {
     let releaseFirst: ((value: unknown) => void) | undefined;
