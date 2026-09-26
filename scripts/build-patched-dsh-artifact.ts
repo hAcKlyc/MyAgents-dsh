@@ -1143,6 +1143,7 @@ const main = (): void => {
   const buildEnvironment = safeEnvironment(corepackHome, isolationRoot, isolatedHome);
   let worktreeRegistered = false;
   let buildError: unknown;
+  let cleanupError: Error | undefined;
   try {
     const actualPnpm = run("corepack", ["pnpm", "--version"], {
       capture: true,
@@ -1240,13 +1241,14 @@ const main = (): void => {
         });
       }
     } catch (error) {
-      if (buildError === undefined) throw error;
-      console.error("artifact worktree cleanup failed after a build error:", error);
+      cleanupError = error instanceof Error ? error : new Error(String(error));
+      if (buildError !== undefined) console.error("artifact worktree cleanup failed after a build error:", error);
     } finally {
       rmSync(worktreeParent, { recursive: true, force: true });
       rmSync(stagingRoot, { recursive: true, force: true });
     }
   }
+  if (cleanupError !== undefined) throw cleanupError;
 };
 
 if (resolve(process.argv[1] ?? "") === resolve(fileURLToPath(import.meta.url))) main();

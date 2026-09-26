@@ -3084,7 +3084,6 @@ await waitUntil(
 stopJobDeliveryBarrier();
 assert.ok(lateJobNoticeAdapter.requests.length >= 1, `the real late Job notice must execute an additional model step: ${JSON.stringify({
   routes: routedAdapter.routeFacts.slice(-8),
-  recentEvents: primaryAgent.session.snapshotEvents().slice(-12).map(({ type }) => type),
 })}`);
 assert.ok(lateJobNoticeAdapter.requests.every(({ messages }) => {
   const source = messages.findLast(({ role, source }) => role === "user" && source?.kind === "myagents-operation")?.source;
@@ -3130,10 +3129,6 @@ const durableToolText = (callId: string, expectedContentLength = 1): string => {
     && String(candidate.data.message.source.callId) === callId);
   assert.ok(event?.type === "tool/result", `missing ${callId}: ${JSON.stringify({
     routes: routedAdapter.routeFacts.slice(-8),
-    recentEvents: primaryAgent.session.snapshotEvents().slice(-20).map((candidate) => ({
-      type: candidate.type,
-      callId: candidate.type === "tool/result" ? String(candidate.data.message.source.callId) : undefined,
-    })),
     adapterRequests: adapter.requests.length,
   })}`);
   const resultBlock = event.data.message;
