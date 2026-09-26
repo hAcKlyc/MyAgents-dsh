@@ -5,6 +5,10 @@ import { join, resolve } from "node:path";
 
 import { childCli } from "./child-cli.mjs";
 import { DSH_SEAM_SOURCE } from "./dsh-seam-decisions.js";
+import {
+  PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
+  PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
+} from "./patched-dsh-artifact-policy.js";
 
 const sourceFlag = process.argv.indexOf("--source");
 const sourceArgument = process.argv[sourceFlag + 1];
@@ -56,22 +60,29 @@ try {
   for (const specifier of nativePackages) {
     run("corepack", ["pnpm", "add", "--ignore-scripts", "--save-exact", specifier], nativeProject);
   }
-  // npm ci primes tarballs from the root lock, but its offline peer resolver also
-  // needs registry metadata for peers declared by the patched DSH packages.
+  // npm ci primes tarballs, but offline resolution also needs registry metadata
+  // for the complete external graph of the isolated artifact consumer.
   const rootLock = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package-lock.json"), "utf8")) as {
-    packages: Record<string, { version?: string; peerDependencies?: Record<string, string> }>;
+    packages: Record<string, { version?: string; os?: string[]; cpu?: string[] }>;
   };
-  const peerNames = new Set<string>();
-  for (const [path, entry] of Object.entries(rootLock.packages)) {
-    if (!path.startsWith("node_modules/@deepseek-ai/dsh")) continue;
-    for (const name of Object.keys(entry.peerDependencies ?? {})) {
-      if (!name.startsWith("@deepseek-ai/dsh")) peerNames.add(name);
-    }
+  const npmSpecifiers = new Set<string>();
+  for (const authority of [
+    ...PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
+    ...PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
+  ]) {
+    const locked = rootLock.packages[authority.path];
+    if (locked?.version !== authority.version) throw new Error(`root lock drift: ${authority.path}`);
+    if (locked.os && !locked.os.includes(process.platform)) continue;
+    if (locked.cpu && !locked.cpu.includes(process.arch)) continue;
+    npmSpecifiers.add(`${authority.name}@${authority.version}`);
   }
-  for (const name of [...peerNames].sort()) {
-    const version = rootLock.packages[`node_modules/${name}`]?.version;
-    if (!version) throw new Error(`root lock lacks external DSH peer ${name}`);
-    run("npm", ["cache", "add", `${name}@${version}`], source);
+  let cached = 0;
+  for (const specifier of [...npmSpecifiers].sort()) {
+    run("npm", ["cache", "add", specifier], source);
+    cached += 1;
+    if (cached % 25 === 0 || cached === npmSpecifiers.size) {
+      process.stdout.write(`Primed npm metadata ${cached}/${npmSpecifiers.size}\n`);
+    }
   }
   process.stdout.write(`Primed historical DSH dependency store at ${DSH_SEAM_SOURCE.commit}\n`);
 } finally {
