@@ -156,7 +156,7 @@ export const verifyPiAiSource = (
   try {
     const environment = { ...process.env, GIT_INDEX_FILE: join(indexRoot, "index") };
     git(root, ["read-tree", PI_AI_SOURCE.commit], environment);
-    execFileSync("git", ["-C", root, "apply", "--cached", "--check", "-"], {
+    execFileSync("git", ["-c", "core.autocrlf=false", "-C", root, "apply", "--cached", "--check", "-"], {
       env: environment,
       input: patchBytes(),
       stdio: ["pipe", "inherit", "inherit"],
@@ -172,8 +172,8 @@ export const verifyPiAiSource = (
   const worktreeParent = mkdtempSync(join(tmpdir(), "myagents-pi-ai-patched-source-"));
   const worktree = join(worktreeParent, "pi");
   try {
-    run("git", ["-C", root, "worktree", "add", "--detach", worktree, PI_AI_SOURCE.commit], root, process.env);
-    run("git", ["apply", resolve(repositoryRoot, PI_AI_PATCH)], worktree, process.env);
+    run("git", ["-c", "core.autocrlf=false", "-C", root, "worktree", "add", "--detach", worktree, PI_AI_SOURCE.commit], root, process.env);
+    run("git", ["-c", "core.autocrlf=false", "apply", resolve(repositoryRoot, PI_AI_PATCH)], worktree, process.env);
     const environment = {
       ...process.env,
       CI: "1",
@@ -186,13 +186,11 @@ export const verifyPiAiSource = (
     }
     const tarballPath = join(worktreeParent, "pi-ai-registry-authority.tgz");
     cpSync(cachedTarballPath, tarballPath);
-    run("npm", [
-      "install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund",
-      "--prefix", hydrationRoot, "--package-lock=false",
-      tarballPath,
-    ], worktreeParent, environment);
+    mkdirSync(hydrationRoot);
+    run("tar", ["-xzf", tarballPath, "-C", hydrationRoot,
+      "package/dist/providers/data"], worktreeParent, environment);
     cpSync(
-      join(hydrationRoot, "node_modules", ...PI_AI_SOURCE.packageName.split("/"), "dist/providers/data"),
+      join(hydrationRoot, "package/dist/providers/data"),
       join(worktree, "packages/ai/src/providers/data"),
       { recursive: true },
     );
