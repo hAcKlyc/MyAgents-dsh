@@ -58,6 +58,7 @@ jobs:
       RELEASE_PREFLIGHT: ${{ github.event_name == 'workflow_dispatch' }}
       DSH_BASELINE_DIR: ${{ github.workspace }}/deepseek-harness
       PI_AI_SOURCE_DIR: ${{ github.workspace }}/pi
+      COREPACK_HOME: ${{ runner.temp }}/myagents-dsh-corepack
     steps:
       - name: Checkout exact release source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

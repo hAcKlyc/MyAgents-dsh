@@ -456,11 +456,11 @@ class ArtifactRoutingLlmAdapter extends LlmAdapter {
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const selected = options.sessionId === "dsh-artifact-primary" ? adapter : childAdapter;
     const input = options.messages.findLast(({ role, source }) => role === "user" && source?.kind === "myagents-operation");
-    const tail = options.messages.at(-1);
     // Real background Jobs can report after the scripted final answer. That
     // legitimate extra step must not consume the next user scenario's script.
-    if (selected === adapter && input?.id !== undefined && this.completedInputs.has(input.id)
-      && tail?.role === "user" && tail.source?.kind === "tool-jobs" && tail.source.form === "notice") {
+    // The latest model message need not be the Job notice: DSH may append
+    // another context message after splicing the Inbox before requesting work.
+    if (selected === adapter && input?.id !== undefined && this.completedInputs.has(input.id)) {
       lateJobNoticeAdapter.enqueue({ kind: "complete", text: "Background job completion observed." });
       yield* lateJobNoticeAdapter.stream(options);
       return;
