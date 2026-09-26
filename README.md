@@ -76,14 +76,70 @@ MyAgents-dsh 自有代码采用 [Apache License 2.0](./LICENSE)。所依赖的 D
 
 ## English
 
-**MyAgents-dsh is a DeepSeek Harness based Agent Runtime. It is officially integrated into the [MyAgents desktop client](https://github.com/hAcKlyc/MyAgents) and exposes the same versioned interface to other trusted Hosts.**
+**An Agent Runtime built on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), officially integrated into the [MyAgents](https://github.com/hAcKlyc/MyAgents) desktop client and offering a reusable Host interface for other applications.**
 
-DSH owns the AgentLoop, Session events, tool pipeline, model execution, and compaction. MyAgents-dsh composes product capabilities as DSH/Cordis services and plugins. The application Host retains ownership of credentials, network policy, user interactions, Host tools, Hooks, attachments, and process lifecycle.
+### What it is
 
-Hosts communicate with the Runtime over bidirectional stdio JSON-RPC. The repository provides the [protocol](./specs/tech_docs/runtime/protocol.md), generated TypeScript Host client and Schema, plus a [Reference Web Host](./specs/tech_docs/hosts/reference-web-host.md). One Runtime process admits at most one active primary Session; a Host manages multiple Sessions as separate Runtime processes. The native protocol is independent of the upstream DSH SDK protocol. A separately installable Agent SDK is not currently provided.
+MyAgents-dsh assembles DSH's Agent execution capabilities into a Runtime that runs in its own process. It gives desktop clients a complete Agent experience while keeping application configuration, credentials, permission interactions, and system resources on the Host side.
 
-The distribution adds governed coding and Web tools, permissions and interactions, MCP, Skills, Hooks, child and background work, durable Session operations, and verifiable versioned artifacts. Exact availability is determined by the selected artifact's compatibility manifest and negotiated capabilities.
+The [MyAgents desktop client](https://github.com/hAcKlyc/MyAgents) officially integrates MyAgents-dsh through this interface. The interface does not depend on the MyAgents UI: other desktop applications or trusted Hosts can implement the same protocol and use the same Runtime. This repository also provides a local Reference Web Host that demonstrates the boundary between an application and the Runtime.
 
-See the [architecture](./specs/ARCHITECTURE.md), [Host reverse ports](./specs/tech_docs/boundaries/host-reverse-ports.md), [tool policy](./specs/tech_docs/execution/tool-runtime-and-policy.md), and [delivery model](./specs/tech_docs/assurance/verification-artifacts-and-handoff.md) for the implementation boundaries.
+### Architecture
+
+```text
+MyAgents client        Other Hosts        Reference Web Host
+       │                   │                     │
+       └───────────────────┴─────────────────────┘
+                           │
+            Versioned bidirectional stdio JSON-RPC
+                           │
+                  MyAgents-dsh Runtime
+                   ├─ Product capabilities and execution policy
+                   ├─ Host reverse ports
+                   └─ DSH / Cordis
+                      ├─ Session and AgentLoop
+                      ├─ Models, tools, and extensions
+                      └─ Persistence and compaction
+```
+
+**DSH owns Agent execution.** DSH manages Sessions, the AgentLoop, the tool pipeline, and conversation events. MyAgents-dsh adds product capabilities through DSH/Cordis services, plugins, and scopes. It does not run a second AgentLoop.
+
+**The Host owns application resources.** Model credentials, network proxy policy, user interactions, Host tools, Hooks, and attachments are supplied through explicit reverse ports. The Runtime uses these capabilities within the scope of the request that needs them; the application decides where they come from, how they are configured, and when they are released.
+
+**The process boundary is explicit.** The Host communicates with the Runtime over standard input and output. One Runtime process represents one generation and admits at most one active primary Session. An application with multiple Sessions manages their processes and recovery.
+
+### What it provides
+
+- **A complete Agent workflow:** File, search, Shell, and Web tools work with permission approvals, plans, Skills, MCP, Hooks, child Agents, background work, and a task graph.
+- **Configurable model routes:** The native DSH DeepSeek route remains available. DSH model adapters can also handle Host-declared Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses routes.
+- **Durable Sessions:** DSH stores conversation events. The Runtime provides Session reads, recovery, cancellation, forks, rewinds, and checkpoints for governed file changes.
+- **One execution policy:** Tools run through the same DSH pipeline and recheck workspace, permission, and current operation state at execution time. The build can select product tool definitions or native DSH definitions while keeping the Host interface consistent.
+- **Verifiable delivery:** The Runtime, protocol, compatibility declaration, and platform evidence can be packaged and verified together, then pinned to an exact version by the Host.
+
+Exact capabilities depend on the selected version's [compatibility declaration](./specs/tech_docs/assurance/compatibility-and-capability-truth.md) and the negotiated protocol capabilities.
+
+### Integrating another application
+
+The public interface is a [versioned bidirectional protocol](./specs/tech_docs/runtime/protocol.md): the Host starts a Runtime process, initializes it and negotiates capabilities, creates or resumes a Session, starts Turns, receives events, and handles reverse requests from the Runtime. The repository provides a protocol Schema, a generated TypeScript Host client, and a [Reference Web Host](./specs/tech_docs/hosts/reference-web-host.md) implementation as integration starting points.
+
+| Host provides | Runtime provides |
+| --- | --- |
+| Process management, application UI, workspace and Session routing | DSH AgentLoop, tool execution, and Session events |
+| Model configuration, credentials, and network policy | Model calls and context management |
+| Permission interactions, Host tools, Hooks, and attachments | Tool policy, extension coordination, and result projection |
+| Version selection and delivery verification | Protocol negotiation, runtime status, and capability declarations |
+
+This interface is independent of the official DSH SDK protocol. Third parties currently integrate through the native protocol and generated client; this repository does not yet offer a separately installable Agent SDK. Custom Runtime plugins are installed by trusted builders at composition time. Ordinary Host requests carry declarative configuration only.
+
+### Learn more
+
+- [Architecture](./specs/ARCHITECTURE.md): Ownership, process boundaries, and data flow.
+- [Protocol and lifecycle](./specs/tech_docs/runtime/protocol.md): Integration methods, events, and version negotiation.
+- [Host reverse ports](./specs/tech_docs/boundaries/host-reverse-ports.md): Credentials, interactions, tools, Hooks, and attachments.
+- [Tools and execution policy](./specs/tech_docs/execution/tool-runtime-and-policy.md): Model-visible tools and execution constraints.
+- [Delivery and verification](./specs/tech_docs/assurance/verification-artifacts-and-handoff.md): Version binding, artifacts, and verification.
+- [Documentation index](./specs/README.md): Product requirements, design decisions, and module documentation.
+
+### Open-source license
 
 Original MyAgents-dsh code is licensed under [Apache-2.0](./LICENSE). DeepSeek Harness retains its [MIT license](./specs/dsh/UPSTREAM_LICENSE), and other third-party components retain their respective licenses. The MyAgents desktop client is licensed separately.
