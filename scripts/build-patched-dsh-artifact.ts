@@ -1135,8 +1135,11 @@ const main = (): void => {
   const stagingRoot = mkdtempSync(resolve(dirname(outputRoot), ".myagents-dsh-artifact-"));
   const bundleRoot = resolve(stagingRoot, "bundle");
   const reproducibleRoot = resolve(stagingRoot, "reproducible");
-  const worktreeParent = mkdtempSync(join(tmpdir(), "myagents-dsh-artifact-source-"));
-  const worktree = resolve(worktreeParent, "deepseek-harness");
+  const worktreeBase = process.platform === "win32" && process.env.RUNNER_TEMP
+    ? process.env.RUNNER_TEMP
+    : tmpdir();
+  const worktreeParent = mkdtempSync(join(worktreeBase, "dsh-"));
+  const worktree = resolve(worktreeParent, "s");
   const isolationRoot = resolve(worktreeParent, "isolation");
   mkdirSync(isolationRoot);
   const isolatedHome = createIsolation(isolationRoot);

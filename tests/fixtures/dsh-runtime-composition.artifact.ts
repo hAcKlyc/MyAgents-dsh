@@ -3090,6 +3090,13 @@ const modeledJobNoticeIds = new Set(processSearchModelRequests.flatMap(({ messag
   messages.filter(({ source }) => source?.kind === "tool-jobs" && source.form === "notice").map(({ id }) => id)));
 assert.equal(modeledJobNoticeIds.size, 2, `both real Job notices must reach the model: ${JSON.stringify({
   modeledIds: [...modeledJobNoticeIds],
+  modelRequestSources: processSearchModelRequests.map(({ messages }) => messages.slice(-6).map(({ source }) => source)),
+  durableNotices: primaryAgent.session.deriveMessages().filter(({ source }) => source.kind === "tool-jobs")
+    .map(({ id, source }) => ({ id, source })),
+  pendingStepSources: primaryAgent.inbox.nextStep.map(({ source }) => source),
+  agentStatus: primaryAgent.status,
+  terminal: composition.context.sdkOperations.lookup("artifact-process-search-operation")?.terminal,
+  hostFatalErrors: hostFatalErrors.map(({ message }) => message),
   routes: routedAdapter.routeFacts.slice(-8),
 })}`);
 assert.ok(lateJobNoticeAdapter.requests.every(({ messages }) => {
