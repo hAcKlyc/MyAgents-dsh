@@ -51,7 +51,7 @@ jobs:
         run: |
           npm run build:dsh-artifact -- --source "$GITHUB_WORKSPACE/deepseek-harness" \
             --out "$RUNNER_TEMP/ci-patched-dsh-artifact" \
-            --pnpm-store "$(cd ../deepseek-harness && pnpm store path)" \
+            --pnpm-store "$(cd ../deepseek-harness && corepack pnpm store path)" \
             --npm-cache "$(npm config get cache)"
           npm run install:verified-dsh-checks -- --artifact "$RUNNER_TEMP/ci-patched-dsh-artifact"
       - name: Typecheck

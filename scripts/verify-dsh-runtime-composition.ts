@@ -135,6 +135,7 @@ const runtimeCompositionSourcePaths = [
   "packages/protocol/src/errors.ts",
   "packages/protocol/src/index.ts",
   "packages/protocol/src/peer.ts",
+  "packages/protocol/src/runtime-version.generated.ts",
   "packages/protocol/src/session-read.ts",
   "packages/protocol/src/tool-catalog-schema.ts",
   "packages/protocol/src/tool-catalog.ts",

@@ -69,7 +69,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const source = requiredPath("DSH_BASELINE_DIR");
     const piAiSource = requiredPath("PI_AI_SOURCE_DIR");
     const npmCache = realpathSync(capture("npm", ["config", "get", "cache"]));
-    const pnpmStore = realpathSync(capture("pnpm", ["store", "path"], source));
+    const pnpmStore = realpathSync(capture("corepack", ["pnpm", "store", "path"], source));
     const expected = JSON.parse(readFileSync(resolve(root,
       "packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json"), "utf8")).manifestSha256;
     const artifact = resolve(work, "patched-dsh-artifact");

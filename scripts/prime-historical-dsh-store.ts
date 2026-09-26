@@ -26,13 +26,27 @@ const run = (command: string, args: readonly string[], cwd: string): void => {
     throw result.error ?? new Error(`${command} ${args.join(" ")} exited ${String(result.status)}`);
   }
 };
+const capture = (command: string, args: readonly string[], cwd: string): string => {
+  const env = { ...process.env, CI: "1" };
+  const invocation = childCli(command, args, env);
+  const result = spawnSync(invocation.command, invocation.args, { cwd, env, encoding: "utf8" });
+  if (result.error || result.status !== 0) {
+    throw result.error ?? new Error(`${command} ${args.join(" ")} exited ${String(result.status)}: ${result.stderr}`);
+  }
+  return result.stdout.trim();
+};
 let registered = false;
 try {
+  // pnpm's default store can be drive-relative on Windows. The historical
+  // worktree is under the runner's temp drive, while the release source is on
+  // the checkout drive. Prime the store that the artifact builder will read.
+  const pnpmStore = capture("corepack", ["pnpm", "store", "path"], source);
+  mkdirSync(pnpmStore, { recursive: true });
   run("git", ["worktree", "add", "--detach", worktree, DSH_SEAM_SOURCE.commit], source);
   registered = true;
   // Prime every required lockfile tarball while omitting unrelated optional Office engines.
   run("corepack", ["pnpm", "install", "--frozen-lockfile", "--trust-lockfile",
-    "--ignore-scripts", "--no-optional", "--reporter=append-only"], worktree);
+    "--ignore-scripts", "--no-optional", "--reporter=append-only", "--store-dir", pnpmStore], worktree);
   // Prime platform-native packages from the historical lock. A full optional
   // install also pulls unrelated Office engines, which this artifact never uses.
   const platform = `${process.platform}-${process.arch}`;
@@ -58,7 +72,7 @@ try {
   mkdirSync(nativeProject);
   writeFileSync(join(nativeProject, "package.json"), JSON.stringify({ private: true, name: "dsh-native-prime", version: "0.0.0" }));
   for (const specifier of nativePackages) {
-    run("corepack", ["pnpm", "add", "--ignore-scripts", "--save-exact", specifier], nativeProject);
+    run("corepack", ["pnpm", "add", "--ignore-scripts", "--save-exact", "--store-dir", pnpmStore, specifier], nativeProject);
   }
   // npm ci primes tarballs, but offline resolution also needs registry metadata
   // for the complete external graph of the isolated artifact consumer.
