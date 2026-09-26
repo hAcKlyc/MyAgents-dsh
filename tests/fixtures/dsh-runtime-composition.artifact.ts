@@ -340,6 +340,8 @@ assert.throws(() => validateEffectiveToolCatalog({
 
 const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "myagents-dsh-w2-a2-artifact-")));
 const fixtureWorkspace = join(fixtureRoot, "workspace");
+const jobReleasePath = join(fixtureWorkspace, ".artifact-job-release");
+const shellLiteral = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 const fixtureRuntimeHome = join(fixtureRoot, "runtime-home");
 const fixtureForkRuntimeHome = join(fixtureRoot, "fork-runtime-home");
 const fixtureAbortedForkRuntimeHome = join(fixtureRoot, "fork-aborted-runtime-home");
@@ -411,13 +413,13 @@ const staticSkillCatalog = validateStaticSkillCatalog(Object.freeze({
   digest: staticSkillCatalogDigest(staticSkillCatalogAuthority),
 }));
 
-const waitUntil = async (predicate: () => boolean, description: string): Promise<void> => {
+const waitUntil = async (predicate: () => boolean, description: string | (() => string)): Promise<void> => {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await delay(10);
   }
-  throw new Error(`timed out waiting for ${description}`);
+  throw new Error(`timed out waiting for ${typeof description === "string" ? description : description()}`);
 };
 
 // The accumulated composition campaign intentionally keeps every prior tool,
@@ -826,7 +828,7 @@ adapter.enqueue({
       name: "bash",
       arguments: JSON.stringify({
         description: "Artifact large output check",
-        command: `while [ ! -f .artifact-job-release ]; do /bin/sleep 0.01; done; ${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(200004))'`,
+        command: `while [ ! -f ${shellLiteral(jobReleasePath)} ]; do /bin/sleep 0.01; done; ${shellLiteral(process.execPath)} -e 'process.stdout.write("x".repeat(200004))'`,
         run_in_background: true,
       }),
     },
@@ -3065,10 +3067,13 @@ let backgroundJobsReleased = false;
 const stopJobDeliveryBarrier = composition.context.on("agent/turn-stopping", async ({ agent }) => {
   if (agent !== primaryAgent || backgroundJobsReleased) return;
   backgroundJobsReleased = true;
-  await writeFile(join(fixtureWorkspace, ".artifact-job-release"), "synthetic job barrier\n");
+  await writeFile(jobReleasePath, "synthetic job barrier\n");
   await waitUntil(() => agent.session.snapshotEvents().filter((event) => event.type === "agent/inbox/spliced"
     && event.data.inserted.some(({ source }) => source.kind === "tool-jobs"
-      && source.form === "notice")).length === 2, "both real Jobs publish their native completion notices");
+      && source.form === "notice")).length === 2, () => `both real Jobs publish their native completion notices: ${JSON.stringify({
+    jobs: composition.context.jobs.list(agent.session.id).map(({ id, status, detail }) => ({ id, status, detail })),
+    pendingStepSources: agent.inbox.nextStep.map(({ source }) => source),
+  })}`);
 });
 await composition.context.sdkOperations.start({
   ...turnStartParams,
