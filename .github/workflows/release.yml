@@ -97,7 +97,7 @@ jobs:
           corepack prepare pnpm@11.7.0 --activate
       - name: Prime historical patched-source dependency store
         working-directory: myagents-dsh
-        run: node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
+        run: npm exec -- node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
       - name: Build, validate and package this native target
         working-directory: myagents-dsh
         env:

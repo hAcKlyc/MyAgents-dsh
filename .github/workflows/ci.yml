@@ -45,7 +45,7 @@ jobs:
           corepack prepare pnpm@11.7.0 --activate
           npm cache add @earendil-works/pi-ai@0.85.1
       - name: Prime historical patched-source dependency store
-        run: node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
+        run: npm exec -- node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
       - name: Build and install accepted patched DSH for repository checks
         shell: bash
         run: |
@@ -100,7 +100,7 @@ jobs:
           corepack prepare pnpm@11.7.0 --activate
       - name: Prime historical patched-source dependency store
         working-directory: myagents-dsh
-        run: node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
+        run: npm exec -- node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
       - name: Compile and test the exact patched DSH source
         working-directory: myagents-dsh
         run: npx tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test

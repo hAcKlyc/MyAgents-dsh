@@ -56,6 +56,23 @@ try {
   for (const specifier of nativePackages) {
     run("corepack", ["pnpm", "add", "--ignore-scripts", "--save-exact", specifier], nativeProject);
   }
+  // npm ci primes tarballs from the root lock, but its offline peer resolver also
+  // needs registry metadata for peers declared by the patched DSH packages.
+  const rootLock = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package-lock.json"), "utf8")) as {
+    packages: Record<string, { version?: string; peerDependencies?: Record<string, string> }>;
+  };
+  const peerNames = new Set<string>();
+  for (const [path, entry] of Object.entries(rootLock.packages)) {
+    if (!path.startsWith("node_modules/@deepseek-ai/dsh")) continue;
+    for (const name of Object.keys(entry.peerDependencies ?? {})) {
+      if (!name.startsWith("@deepseek-ai/dsh")) peerNames.add(name);
+    }
+  }
+  for (const name of [...peerNames].sort()) {
+    const version = rootLock.packages[`node_modules/${name}`]?.version;
+    if (!version) throw new Error(`root lock lacks external DSH peer ${name}`);
+    run("npm", ["cache", "add", `${name}@${version}`], source);
+  }
   process.stdout.write(`Primed historical DSH dependency store at ${DSH_SEAM_SOURCE.commit}\n`);
 } finally {
   try {
