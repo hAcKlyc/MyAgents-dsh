@@ -1224,6 +1224,12 @@ export function verifyDshSeamSource(
   }
 
   if (!compileAndTest) return;
+  const storeInvocation = childCli("corepack", ["pnpm", "store", "path"]);
+  const pnpmStore = execFileSync(storeInvocation.command, storeInvocation.args, {
+    cwd: root,
+    encoding: "utf8",
+    env: process.env,
+  }).trim();
   const worktreeParent = mkdtempSync(join(tmpdir(), "myagents-dsh-patched-source-"));
   const worktree = join(worktreeParent, "deepseek-harness");
   try {
@@ -1234,7 +1240,7 @@ export function verifyDshSeamSource(
     run("git", ["diff", "--check"], worktree);
     run("corepack", [
       "pnpm", "install", "--offline", "--frozen-lockfile", "--ignore-scripts",
-      "--reporter=append-only", ...DSH_SEAM_INSTALL_FILTERS,
+      "--reporter=append-only", "--store-dir", pnpmStore, ...DSH_SEAM_INSTALL_FILTERS,
     ], worktree);
     run("corepack", [
       "pnpm", "exec", "tsc", "-b",
