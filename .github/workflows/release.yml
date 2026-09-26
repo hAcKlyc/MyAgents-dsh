@@ -86,6 +86,9 @@ jobs:
           node-version: 24.20.0
           cache: npm
           cache-dependency-path: myagents-dsh/package-lock.json
+      - name: Enable long Git paths on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.longpaths true
       - name: Prime exact dependencies
         shell: bash
         run: |
