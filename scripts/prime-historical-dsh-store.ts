@@ -41,9 +41,12 @@ try {
   const selectedMarkers = markers[platform];
   if (!selectedMarkers) throw new Error(`unsupported release platform: ${platform}`);
   const lock = readFileSync(join(worktree, "pnpm-lock.yaml"), "utf8");
-  const nativePackages = [...new Set(lock.split("\n")
-    .filter((line) => line.startsWith("  '") && line.endsWith("':"))
-    .map((line) => line.slice(3, -2))
+  const packageSection = lock.split("\npackages:\n")[1]?.split("\nsnapshots:\n")[0];
+  if (!packageSection) throw new Error("historical pnpm lock has no packages section");
+  const nativePackages = [...new Set(packageSection.split("\n")
+    .filter((line) => line.startsWith("  ") && !line.startsWith("    ") && line.endsWith(":"))
+    .map((line) => line.trim().slice(0, -1).replace(/^'|'$/g, ""))
+    .filter((specifier) => /@\d/.test(specifier))
     .filter((specifier) => selectedMarkers.some((marker) => specifier.includes(marker)))
     .filter((specifier) => !specifier.includes("libreoffice-kit")))];
   if (nativePackages.length === 0) throw new Error(`no locked native binaries for ${platform}`);
