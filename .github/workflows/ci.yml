@@ -62,7 +62,7 @@ jobs:
           PI_AI_SOURCE_DIR: ${{ github.workspace }}/pi
           RUNTIME_ARTIFACT_OUT: ${{ runner.temp }}/myagents-dsh-runtime-composition
         run: |
-          npm ci --prefix "$PI_AI_SOURCE_DIR"
+          npm ci --prefix "$PI_AI_SOURCE_DIR" --ignore-scripts --no-audit --no-fund --workspace @earendil-works/pi-ai --include-workspace-root
           npm cache add @earendil-works/pi-ai@0.85.1
           artifact_digest=$(node -p "require('./packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json').manifestSha256")
           npm_cache=$(npm config get cache)

@@ -95,7 +95,7 @@ jobs:
         run: |
           npm install --global npm@11.19.0
           npm ci --prefix myagents-dsh
-          npm ci --prefix pi
+          npm ci --prefix pi --ignore-scripts --no-audit --no-fund --workspace @earendil-works/pi-ai --include-workspace-root
           npm cache add @earendil-works/pi-ai@0.85.1
           corepack enable
           corepack prepare pnpm@11.7.0 --activate
