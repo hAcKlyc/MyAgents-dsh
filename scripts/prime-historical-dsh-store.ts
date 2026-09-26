@@ -63,20 +63,27 @@ try {
   // npm ci primes tarballs, but offline resolution also needs registry metadata
   // for the complete external graph of the isolated artifact consumer.
   const rootLock = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package-lock.json"), "utf8")) as {
-    packages: Record<string, { version?: string }>;
+    packages: Record<string, { version?: string; os?: string[]; cpu?: string[] }>;
   };
-  const npmSpecifiers = new Set<string>();
+  const npmSpecifiers = new Map<string, boolean>();
   for (const authority of [
     ...PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
     ...PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
   ]) {
     const locked = rootLock.packages[authority.path];
     if (locked?.version !== authority.version) throw new Error(`root lock drift: ${authority.path}`);
-    npmSpecifiers.add(`${authority.name}@${authority.version}`);
+    const currentPlatform = (!locked.os || locked.os.includes(process.platform))
+      && (!locked.cpu || locked.cpu.includes(process.arch));
+    const specifier = `${authority.name}@${authority.version}`;
+    npmSpecifiers.set(specifier, (npmSpecifiers.get(specifier) ?? false) || currentPlatform);
   }
   let cached = 0;
-  for (const specifier of [...npmSpecifiers].sort()) {
-    run("npm", ["cache", "add", specifier], source);
+  for (const [specifier, currentPlatform] of [...npmSpecifiers].sort(([left], [right]) => left.localeCompare(right))) {
+    // Other-platform optionals need packument metadata for the lock, but their
+    // large native tarballs are not installed on this runner.
+    run("npm", currentPlatform
+      ? ["cache", "add", specifier]
+      : ["view", specifier, "version", "--json"], source);
     cached += 1;
     if (cached % 25 === 0 || cached === npmSpecifiers.size) {
       process.stdout.write(`Primed npm metadata ${cached}/${npmSpecifiers.size}\n`);
@@ -85,7 +92,7 @@ try {
   process.stdout.write(`Primed historical DSH dependency store at ${DSH_SEAM_SOURCE.commit}\n`);
 } finally {
   try {
-    if (registered) run("git", ["worktree", "remove", "--force", worktree], source);
+    if (registered) run("git", ["-c", "core.longpaths=true", "worktree", "remove", "--force", worktree], source);
   } finally {
     rmSync(parent, { recursive: true, force: true });
   }

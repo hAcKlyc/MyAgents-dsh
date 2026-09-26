@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import process from "node:process";
 
 import { childCli } from "./child-cli.mjs";
+import { packageForVerifiedDshInstall } from "./verified-dsh-install-policy.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const artifactFlag = process.argv.indexOf("--artifact");
@@ -27,13 +28,14 @@ const packageBytes = readFileSync(packagePath);
 const lockPath = resolve(root, "package-lock.json");
 const lockBytes = readFileSync(lockPath);
 try {
-  // npm rejects a local tarball for a direct dependency while the root still pins its
-  // official registry override. The checkout manifest is restored before any gate runs.
-  const temporaryPackage = JSON.parse(packageBytes.toString("utf8"));
-  delete temporaryPackage.overrides;
+  // Every workspace must resolve the same patched package. Merely installing
+  // tarballs at the root leaves registry DSH copies nested under workspaces.
+  const temporaryPackage = packageForVerifiedDshInstall(
+    JSON.parse(packageBytes.toString("utf8")), manifest.packages, artifact,
+  );
   writeFileSync(packagePath, `${JSON.stringify(temporaryPackage, null, 2)}\n`);
   const install = childCli("npm", ["install", "--no-save", "--package-lock=false", "--ignore-scripts",
-    "--no-audit", "--no-fund", ...manifest.packages.map(({ tarball }) => resolve(artifact, tarball))]);
+    "--no-audit", "--no-fund"]);
   execFileSync(install.command, install.args, { cwd: root, stdio: "inherit" });
 } finally {
   writeFileSync(packagePath, packageBytes);
