@@ -407,6 +407,9 @@ for (const relativePath of workspacePackages.keys()) {
 const claudeAuthority = await realpath(resolve(repositoryRoot, "CLAUDE.md"));
 const agentsAuthority = await realpath(resolve(repositoryRoot, "AGENTS.md"));
 assert(claudeAuthority === agentsAuthority, "CLAUDE.md must remain a symlink to AGENTS.md");
+const claudeSkills = await realpath(resolve(repositoryRoot, ".claude/skills"));
+const agentsSkills = await realpath(resolve(repositoryRoot, ".agents/skills"));
+assert(claudeSkills === agentsSkills, ".claude/skills must resolve to .agents/skills");
 
 if (failures.length > 0) {
   for (const failure of failures) console.error(`workspace invariant: ${failure}`);

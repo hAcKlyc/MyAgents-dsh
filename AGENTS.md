@@ -40,6 +40,7 @@ Documentation governance starts at `specs/README.md`. That index owns document p
 - Read the relevant architecture section before changing an owner, process, Session, lifecycle, persistence, security, or protocol boundary.
 - Pin the exact DSH version/commit. Imports from package-private `src/*` or `dist/*` paths are forbidden.
 - Before auditing or integrating an official DSH update, use `.agents/skills/dsh-upstream-maintenance/SKILL.md`; read its complete patch inventory and every affected ADR/module guide.
+- Repository skills live in `.agents/skills/`; `.claude/skills` points to that directory. For merge or versioned release work, use `.agents/skills/merge-release/SKILL.md`.
 - Default tests use fake model adapters, fake Host ports, temporary homes/workspaces, and no real network or credentials.
 - Use explicit `git add <files...>` and Conventional Commits with a non-empty body.
 

@@ -116,7 +116,9 @@ for (const relativePath of repositoryPaths) {
   const entry = await lstat(absolutePath);
   if (entry.isSymbolicLink()) {
     const target = await readlink(absolutePath);
-    if (relativePath !== "CLAUDE.md" || target !== "AGENTS.md") {
+    const approvedAlias = (relativePath === "CLAUDE.md" && target === "AGENTS.md")
+      || (relativePath === ".claude/skills" && target === "../.agents/skills");
+    if (!approvedAlias) {
       failures.push(`repository ${relativePath} must be a regular file, not a symlink`);
     }
     continue;
