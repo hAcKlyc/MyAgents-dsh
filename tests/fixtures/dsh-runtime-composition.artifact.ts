@@ -3072,6 +3072,12 @@ const stopJobDeliveryBarrier = composition.context.on("agent/turn-stopping", asy
     && event.data.inserted.some(({ source }) => source.kind === "tool-jobs"
       && source.form === "notice")).length === 2, () => `both real Jobs publish their native completion notices: ${JSON.stringify({
     jobs: composition.context.jobs.list(agent.session.id).map(({ id, status, detail }) => ({ id, status, detail })),
+    backgroundToolResults: agent.session.deriveMessages().filter(({ role, source }) => role === "tool"
+      && ["artifact-background-bash-call", "artifact-background-flood-call"]
+        .includes(String(source.callId))).map(({ source, content }) => ({
+      source,
+      content: content.map((block) => block.type === "text" ? block.text.slice(0, 300) : block.type),
+    })),
     pendingStepSources: agent.inbox.nextStep.map(({ source }) => source),
   })}`);
 });

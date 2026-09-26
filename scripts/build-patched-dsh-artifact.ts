@@ -362,12 +362,12 @@ const readPackedMembers = (
     capture: true,
     cwd,
     env: environment,
-  }).split("\n").filter(Boolean);
+  }).split(/\r?\n/u).filter(Boolean);
   const verbose = run("tar", ["-tvzf", artifactPath], {
     capture: true,
     cwd,
     env: environment,
-  }).split("\n").filter(Boolean);
+  }).split(/\r?\n/u).filter(Boolean);
   if (listed.length !== verbose.length || verbose.some((line) => !line.startsWith("-"))) {
     throw new Error(`${artifactPath} must contain regular files only`);
   }

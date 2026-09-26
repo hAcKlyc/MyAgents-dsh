@@ -60,7 +60,7 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "5df5bb0c6c338c496d4c1ea0f6607424456a127316fd87ff414cf0c9b02f92a2",
+    "artifactManifestSha256": "32b10628f317d52c7f7d373a68ab6cc21b2686743127e9821de1077db3753393",
     "artifactVersion": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.4",
