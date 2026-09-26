@@ -21,8 +21,8 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
-          cache: npm
       - name: Install pinned npm
+        working-directory: ${{ runner.temp }}
         run: npm install --global npm@11.19.0
       - name: Install exact dependency graph
         run: npm ci
@@ -56,10 +56,12 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: myagents-dsh/.nvmrc
+      - name: Install pinned npm
+        working-directory: ${{ runner.temp }}
+        run: npm install --global npm@11.19.0
       - name: Install exact MyAgents toolchain
         working-directory: myagents-dsh
         run: |
-          npm install --global npm@11.19.0
           npm ci
       - name: Prime exact DSH dependency store
         working-directory: deepseek-harness
