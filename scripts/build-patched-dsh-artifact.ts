@@ -807,7 +807,8 @@ const verifyArtifactCompile = (
     },
     files: fixturePaths,
   }, null, 2)}\n`);
-  const resolutionTrace = run(resolve(compileRoot, "node_modules/.bin/tsc"), [
+  const resolutionTrace = run(process.execPath, [
+    resolve(compileRoot, "node_modules/typescript/bin/tsc"),
     "-p",
     tsconfigPath,
     "--pretty",

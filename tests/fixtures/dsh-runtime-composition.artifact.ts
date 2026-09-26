@@ -1057,8 +1057,11 @@ let preAssistantCommitTransformHits = 0;
 const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
 const artifactRipgrepPath = await resolveRgPath();
+const artifactShellPath = await realpath(process.platform === "win32"
+  ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe")
+  : "/bin/bash");
 const executableSha256 = Object.freeze({
-  shell: createHash("sha256").update(await readFile("/bin/bash")).digest("hex"),
+  shell: createHash("sha256").update(await readFile(artifactShellPath)).digest("hex"),
   bundledNode: createHash("sha256").update(await readFile(process.execPath)).digest("hex"),
   ripgrep: createHash("sha256").update(await readFile(artifactRipgrepPath)).digest("hex"),
 });
@@ -1125,7 +1128,7 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
     environmentValues: Object.freeze({}),
     executableSha256,
     executablePaths: Object.freeze({
-      shell: "/bin/bash",
+      shell: artifactShellPath,
       bundledNode: process.execPath,
       ripgrep: artifactRipgrepPath,
     }),
@@ -2637,7 +2640,7 @@ const approvalRuntimeContext = "Current runtime context. This snapshot supersede
   + `${fixtureWorkspace}\n\n`
   + "Use this exact absolute path for file and search tools that require one. The available Shell tool runs in this workspace. "
   + "Do not infer access outside it.\n\n"
-  + "Runtime platform: darwin-arm64. Available Shell tool: bash. Executable: /bin/bash. "
+  + `Runtime platform: darwin-arm64. Available Shell tool: bash. Executable: ${artifactShellPath}. `
   + "Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. "
   + "Query the executable's version before relying on version-specific features. "
   + "Execution uses the local user's OS permissions; no OS file sandbox is active. "
