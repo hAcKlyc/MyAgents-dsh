@@ -95,13 +95,15 @@ jobs:
           npm cache add @earendil-works/pi-ai@0.85.1
           corepack enable
           corepack prepare pnpm@11.7.0 --activate
-          cd deepseek-harness
-          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Prime historical patched-source dependency store
+        working-directory: myagents-dsh
+        run: node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
       - name: Build, validate and package this native target
         working-directory: myagents-dsh
         env:
           RELEASE_WORK_DIR: ${{ runner.temp }}/myagents-dsh-release
           DSH_RELEASE_PROVIDER_KEY: ${{ secrets.DSH_RELEASE_PROVIDER_KEY }}
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm run release:target
       - name: Transfer only the verified target pair
         uses: actions/upload-artifact@v4

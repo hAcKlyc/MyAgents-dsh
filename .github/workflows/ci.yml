@@ -38,14 +38,14 @@ jobs:
         run: npm install --global npm@11.19.0
       - name: Install exact dependency graph
         run: npm ci
-      - name: Prime pinned DSH dependency store
+      - name: Install pinned pnpm and cache pi-ai
         shell: bash
         run: |
           corepack enable
           corepack prepare pnpm@11.7.0 --activate
           npm cache add @earendil-works/pi-ai@0.85.1
-          cd ../deepseek-harness
-          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Prime historical patched-source dependency store
+        run: node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
       - name: Build and install accepted patched DSH for repository checks
         shell: bash
         run: |
@@ -57,6 +57,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm run lint
       - name: Test without credentials or network
         run: npm test
@@ -91,12 +93,14 @@ jobs:
         working-directory: myagents-dsh
         run: |
           npm ci
-      - name: Prime exact DSH dependency store
-        working-directory: deepseek-harness
+      - name: Install pinned pnpm
+        working-directory: myagents-dsh
         run: |
           corepack enable
           corepack prepare pnpm@11.7.0 --activate
-          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Prime historical patched-source dependency store
+        working-directory: myagents-dsh
+        run: node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
       - name: Compile and test the exact patched DSH source
         working-directory: myagents-dsh
         run: npx tsx scripts/verify-dsh-seams.ts --check-source ../deepseek-harness --compile-test
