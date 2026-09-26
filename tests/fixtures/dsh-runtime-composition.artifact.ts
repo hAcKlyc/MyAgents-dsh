@@ -439,8 +439,12 @@ const childAdapter = new ScriptedFakeLlmAdapter({
 const lateJobNoticeAdapter = new ScriptedFakeLlmAdapter({
   provider: "fixture", model: "fixture-model", contextWindow: artifactContextWindow,
 });
+const backgroundAgentReportAdapter = new ScriptedFakeLlmAdapter({
+  provider: "fixture", model: "fixture-model", contextWindow: artifactContextWindow,
+});
 class ArtifactRoutingLlmAdapter extends LlmAdapter {
   readonly completedInputs = new Set<string>();
+  readonly routeFacts: Array<Record<string, unknown>> = [];
   override providerInfo(provider: string): LlmProviderInfo {
     return adapter.providerInfo(provider);
   }
@@ -456,6 +460,21 @@ class ArtifactRoutingLlmAdapter extends LlmAdapter {
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const selected = options.sessionId === "dsh-artifact-primary" ? adapter : childAdapter;
     const input = options.messages.findLast(({ role, source }) => role === "user" && source?.kind === "myagents-operation");
+    this.routeFacts.push({
+      selected: selected === adapter,
+      inputId: input?.id,
+      operationId: input?.source?.kind === "myagents-operation" ? input.source.clientOperationId : undefined,
+      completed: input?.id === undefined ? false : this.completedInputs.has(input.id),
+      tailSource: options.messages.at(-1)?.source,
+    });
+    const tail = options.messages.at(-1);
+    if (selected === adapter && input?.source?.kind === "myagents-operation"
+      && input.source.clientOperationId === "artifact-background-agent-operation"
+      && tail?.role === "user" && tail.source?.kind === "agent-message") {
+      backgroundAgentReportAdapter.enqueue({ kind: "complete", text: "background Agent report reconciled" });
+      yield* backgroundAgentReportAdapter.stream(options);
+      return;
+    }
     // Real background Jobs can report after the scripted final answer. That
     // legitimate extra step must not consume the next user scenario's script.
     // The latest model message need not be the Job notice: DSH may append
@@ -3063,7 +3082,10 @@ await waitUntil(
   "bounded process/search operation terminal",
 );
 stopJobDeliveryBarrier();
-assert.ok(lateJobNoticeAdapter.requests.length >= 1, "the real late Job notice must execute an additional model step");
+assert.ok(lateJobNoticeAdapter.requests.length >= 1, `the real late Job notice must execute an additional model step: ${JSON.stringify({
+  routes: routedAdapter.routeFacts.slice(-8),
+  recentEvents: primaryAgent.session.snapshotEvents().slice(-12).map(({ type }) => type),
+})}`);
 assert.ok(lateJobNoticeAdapter.requests.every(({ messages }) => {
   const source = messages.findLast(({ role, source }) => role === "user" && source?.kind === "myagents-operation")?.source;
   return source?.kind === "myagents-operation" && source.clientOperationId === "artifact-process-search-operation";
@@ -3106,7 +3128,14 @@ const processSearchText = (callId: string): string => {
 const durableToolText = (callId: string, expectedContentLength = 1): string => {
   const event = primaryAgent.session.snapshotEvents().findLast((candidate) => candidate.type === "tool/result"
     && String(candidate.data.message.source.callId) === callId);
-  assert.ok(event?.type === "tool/result");
+  assert.ok(event?.type === "tool/result", `missing ${callId}: ${JSON.stringify({
+    routes: routedAdapter.routeFacts.slice(-8),
+    recentEvents: primaryAgent.session.snapshotEvents().slice(-20).map((candidate) => ({
+      type: candidate.type,
+      callId: candidate.type === "tool/result" ? String(candidate.data.message.source.callId) : undefined,
+    })),
+    adapterRequests: adapter.requests.length,
+  })}`);
   const resultBlock = event.data.message;
   assert.equal(resultBlock.role, "tool");
   let productWorkDiagnostic: unknown;
@@ -3562,7 +3591,6 @@ childAdapter.enqueue({
 });
 childAdapter.enqueue({ kind: "await-abort" });
 adapter.enqueue({ kind: "complete", text: "background Agent admitted" });
-adapter.enqueue({ kind: "complete", text: "background Agent report reconciled" });
 await composition.context.sdkOperations.start({
   ...turnStartParams,
   clientOperationId: "artifact-background-agent-operation",

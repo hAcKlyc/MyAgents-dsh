@@ -50,6 +50,28 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      - name: Checkout pinned pi-ai source for Runtime composition
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: earendil-works/pi
+          ref: d981de1229ef899957bbe968bc8dcda02a21f477
+          path: pi
+          persist-credentials: false
+      - name: Validate installed Runtime composition
+        env:
+          PI_AI_SOURCE_DIR: ${{ github.workspace }}/pi
+          RUNTIME_ARTIFACT_OUT: ${{ runner.temp }}/myagents-dsh-runtime-composition
+        run: |
+          npm ci --prefix "$PI_AI_SOURCE_DIR"
+          npm cache add @earendil-works/pi-ai@0.85.1
+          artifact_digest=$(node -p "require('./packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json').manifestSha256")
+          npm_cache=$(npm config get cache)
+          npm run check:dsh-runtime-composition -- \
+            --artifact "tmp/setup/artifacts/$artifact_digest" \
+            --expected-manifest-sha256 "$artifact_digest" \
+            --npm-cache "$npm_cache" \
+            --pi-ai-source "$PI_AI_SOURCE_DIR" \
+            --runtime-artifact-out "$RUNTIME_ARTIFACT_OUT"
 
   patched-dsh-seams:
     runs-on: ubuntu-24.04
