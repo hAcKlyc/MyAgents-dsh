@@ -9,6 +9,8 @@ This directory contains the public, maintained description of the checked-in sys
 3. [Architecture decisions](./adr/README.md) — durable decisions, including the current disposition of DSH seams.
 4. Exact code, generated contracts, manifests and tests for shapes, versions and build claims.
 
+For first-time setup and the local MyAgents Dev handoff path, use [Development setup and local integration](./tech_docs/assurance/development-and-local-integration.md). Formal four-platform publication follows [Verification, artifacts and handoff](./tech_docs/assurance/verification-artifacts-and-handoff.md).
+
 ## Other maintained inputs
 
 | Directory | Purpose |

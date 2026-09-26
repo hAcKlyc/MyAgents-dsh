@@ -61,6 +61,7 @@ MyAgents 客户端       其他 Host         Reference Web Host
 
 ## 进一步了解
 
+- [开发环境与本地集成](./specs/tech_docs/assurance/development-and-local-integration.md)：新电脑初始化、生成本机 handoff，并用它构建 MyAgents 开发版。
 - [整体架构](./specs/ARCHITECTURE.md)：所有权、进程边界与数据流。
 - [协议与生命周期](./specs/tech_docs/runtime/protocol.md)：接入方法、事件及版本协商。
 - [Host 反向接口](./specs/tech_docs/boundaries/host-reverse-ports.md)：凭证、交互、工具、Hooks 与附件。
@@ -133,6 +134,7 @@ This interface is independent of the official DSH SDK protocol. Third parties cu
 
 ### Learn more
 
+- [Development setup and local integration](./specs/tech_docs/assurance/development-and-local-integration.md): Prepare a new machine, build a native handoff, and package a MyAgents Dev build with it.
 - [Architecture](./specs/ARCHITECTURE.md): Ownership, process boundaries, and data flow.
 - [Protocol and lifecycle](./specs/tech_docs/runtime/protocol.md): Integration methods, events, and version negotiation.
 - [Host reverse ports](./specs/tech_docs/boundaries/host-reverse-ports.md): Credentials, interactions, tools, Hooks, and attachments.

@@ -48,7 +48,7 @@ plan 之外的新成稿先以 `status: draft` 交给用户核对；尚未收敛�
 
 PRD 里的技术陈述必须来自当前代码和可靠证据。动笔前：
 
-- 先读 `specs/prd/plan.md` 确认项目阶段、仓库 owner、文档权威与依赖，再按路由读取 `specs/ARCHITECTURE.md`、相关 PRD/RFC、协议、代码、类型、测试、日志和 git 历史。
+- 本地若有适用的 `specs/prd/plan.md`，先读它确认项目阶段与依赖；无论是否有 plan，都以已跟踪的 `specs/ARCHITECTURE.md`、相关模块指南、协议、代码、类型、测试、日志和 git 历史确认当前事实。干净检出不得依赖 ignored 的本地 plan。
 - 需求涉及现有 Runtime 功能时，以 `myagents-runtime` 的已实现代码和测试为行为/迁移蓝本；优先复制或提取 engine-neutral 实现，不把 Pi AgentLoop、Session、事件或工具注册路径包装进新架构。
 - DSH 或外部 SDK/协议以当前锁定版本的公共导出、精确源码和官方一手资料为准；禁止用 package-private `src/*` 或 `dist/*` 路径规避公共 seam 决策。
 - 先搜索再引用文件和符号；使用真实名称，不写易漂移的行号。
@@ -97,7 +97,7 @@ PRD 必须定义所有会影响产品行为或长期复杂度的结构性选择�
 
 ## 产出物:放哪、长什么样
 
-**落盘**：先核对 `specs/prd/README.md` 与 `specs/prd/plan.md` 的 milestone/Batch 文档地图。现有 milestone/Batch 的需求写回其既有 PRD；真正独立的新原子交付才新建 `specs/prd/prd_<milestone>_<slug>.md`。`milestone` 是文档计划中的产品交付版本，不自动等同于 npm 包版本；必须沿用索引/plan 已定义的版本，不能从当前分支或 `package.json` 凭空推断。配套技术方案放在同一目录并命名为 `specs/prd/tech_rfc_<milestone>_<slug>.md`。PRD 和 technical RFC 必须在 frontmatter 与正文中双向引用；已实现后再共同指向对应 `specs/tech_docs/` 模块文档。未被需求吸收的比较研究才放 `specs/research/`，研究永远不是实现权威。
+**落盘**：本地若有 `specs/prd/README.md` 与 `specs/prd/plan.md`，先核对其 milestone/Batch 文档地图，现有 milestone/Batch 的需求写回既有 PRD；独立新需求才新建本地 PRD。`milestone` 是产品交付版本，不自动等同于 npm 包版本；有本地索引/plan 时沿用其定义，无 plan 时按用户确认的需求命名，不从当前分支或 `package.json` 凭空推断。配套技术方案放在同一 ignored 目录，PRD 与 technical RFC 双向引用；已实现的当前事实写入对应已跟踪 `specs/tech_docs/` 模块文档。未被需求吸收的比较研究才放 `specs/research/`，研究永远不是实现权威。
 
 **frontmatter**(成稿先进入待用户接受态):
 ```yaml
@@ -124,7 +124,7 @@ review: "pending user acceptance（产品 / 架构岔路已关闭；等待用户
 
 **正文开头必须有一段「执行须知(给空 session 的你)」**——这是让 PRD 能自举的关键。它要告诉一个零上下文的 AI：
 
-- 先读哪些文件（`AGENTS.md` / `CLAUDE.md` 自动加载之外，必须先读 `specs/prd/plan.md`，再主动读本 PRD 引用的 ARCHITECTURE / RFC / 协议 / 研究报告）；
+- 先读哪些文件（`AGENTS.md` / `CLAUDE.md` 自动加载之外，存在且适用的本地 plan、已跟踪的 ARCHITECTURE / 模块指南，以及本 PRD 引用的 RFC / 协议 / 研究报告）；
 - 本 PRD 是一个原子交付单元，开发批次只用于实现 / 验证 / review / commit，全部完成后统一上线；
 - 哪些实现内验证是发布硬门槛；
 - 引用为什么给符号名而非行号。

@@ -36,24 +36,10 @@ jobs:
       - name: Install pinned npm
         working-directory: ${{ runner.temp }}
         run: npm install --global npm@11.19.0
-      - name: Install exact dependency graph
-        run: npm ci
-      - name: Install pinned pnpm and cache pi-ai
-        shell: bash
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.7.0 --activate
-          npm cache add @earendil-works/pi-ai@0.85.1
-      - name: Prime historical patched-source dependency store
-        run: npm exec -- node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
-      - name: Build and install accepted patched DSH for repository checks
-        shell: bash
-        run: |
-          npm run build:dsh-artifact -- --source "$GITHUB_WORKSPACE/deepseek-harness" \
-            --out "$RUNNER_TEMP/ci-patched-dsh-artifact" \
-            --pnpm-store "$(cd ../deepseek-harness && corepack pnpm store path)" \
-            --npm-cache "$(npm config get cache)"
-          npm run install:verified-dsh-checks -- --artifact "$RUNNER_TEMP/ci-patched-dsh-artifact"
+      - name: Prepare exact dependencies and verified DSH for repository checks
+        env:
+          DSH_SOURCE: ${{ github.workspace }}/deepseek-harness
+        run: npm exec -- node scripts/setup.mjs --checks-only --dsh-source "$DSH_SOURCE"
       - name: Typecheck
         run: npm run typecheck
       - name: Lint

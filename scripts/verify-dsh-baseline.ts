@@ -124,6 +124,7 @@ const collectCodeFiles = async (directory: string): Promise<string[]> => {
   const files: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && excludedDirectories.has(entry.name)) continue;
+    if (directory === repositoryRoot && entry.isDirectory() && entry.name === "tmp") continue;
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) files.push(...await collectCodeFiles(path));
     else if (entry.isFile() && codeExtensions.has(extname(entry.name))) files.push(path);

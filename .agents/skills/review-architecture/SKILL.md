@@ -14,7 +14,7 @@ The review is fresh-context and read-only. The main Agent owns all edits.
 ## Sources and Scope
 
 1. Read the current project instructions and relevant sections of `specs/ARCHITECTURE.md`.
-2. Read `specs/prd/plan.md`, then follow its routing to the active Batch PRD, focused RFC, protocol, and owning ledger.
+2. Read the requirement source and owning tracked architecture/module guides. If a local `specs/prd/plan.md` exists and applies, follow its routing to the active PRD, RFC, protocol, and ledger; a clean checkout must not require ignored local planning drafts.
 3. Treat the Review Contract's baseline, file list, guarantees, non-goals, definition of in-scope defects, and allowed architecture changes as authoritative.
 4. When supplied in staged review, also read the earlier reports and the main Agent's finding decisions.
 

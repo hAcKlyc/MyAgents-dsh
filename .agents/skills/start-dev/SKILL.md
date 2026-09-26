@@ -1,6 +1,6 @@
 ---
 name: start-dev
-description: "Full MyAgents-dsh workflow from the plan and an active Stage/Batch PRD or settled conversation through DSH-native implementation, source migration, verification, cross-review, commits, and acceptance summary. One Stage/Batch PRD is one atomic delivery; internal workstreams only organize implementation/review/commit. Use for /start-dev, 'start dev', '开始开发', '按 PRD 开发', or equivalent end-to-end implementation requests; small conversational requirements use the same workflow through a devplan."
+description: "Develop a MyAgents-dsh requirement from an available PRD or settled conversation through implementation, verification, review, commits, and acceptance summary. Use for /start-dev, 'start dev', '开始开发', '按 PRD 开发', or equivalent end-to-end implementation requests."
 ---
 
 # MyAgents-dsh 需求开发全流程
@@ -9,26 +9,26 @@ description: "Full MyAgents-dsh workflow from the plan and an active Stage/Batch
 
 ## 项目入口与迁移基线
 
-任何实现动作前，先完整读取 `AGENTS.md`、`specs/prd/plan.md`、当前 Stage/Batch PRD、相关 RFC 和 owning ledger。`plan.md` 是开发入口和唯一 Stage/Batch 状态/依赖/切换权威：Pre-Batch 未通过时不得偷跑 Batch 1；Batch 1 未验收时不得把缺失 Runtime 能力塞进 Batch 2 facade；Batch 3 的产品代码归 `MyAgents/` 仓库，不在这里越权实现。
+任何实现动作前，先读 `AGENTS.md`、相关的已跟踪架构与模块文档、代码和测试。只有本地确实存在且属于本次需求时才读 `specs/prd/plan.md`、PRD、RFC 或 owning ledger；这些本地草稿被 Git 忽略，干净检出必须能独立开发。若本地 plan 定义了正在执行的 Stage/Batch 状态与依赖，按它推进该本地计划。MyAgents 客户端产品代码归其独立仓库，不在这里越权实现。
 
 `myagents-runtime` 是已经实现的 Pi 版本，也是功能、代码和测试迁移蓝本。默认动作是先审计并复制/提取 engine-neutral 合同、工具体、状态机、fixtures 和测试，再把 Pi 集成 seam 改造成 DSH/Cordis service、Provider、plugin、scope、event 与 `ctx.tools` 接入。禁止把它加成运行时依赖，也禁止搬入 Pi AgentLoop、Session/entry 模型、事件名、工具注册层或修复 wrapper。
 
-DSH 是唯一 AgentLoop、持久模型对话与 ToolRuntime 权威。使用 DSH 前必须核对 plan 锁定的精确 revision、已安装类型/源码和公共导出；禁止导入 package-private `src/*` 或 `dist/*`。若现有公共 seam 无法表达已批准语义，先完成可复现证据并按 RFC/ADR 设计最小 upstream-ready 改动，不得在外层另造兼容 kernel。
+DSH 是唯一 AgentLoop、持久模型对话与 ToolRuntime 权威。使用 DSH 前必须核对仓库当前锁定的精确 revision、已安装类型/源码和公共导出；禁止导入 package-private `src/*` 或 `dist/*`。若现有公共 seam 无法表达已批准语义，先完成可复现证据并按相关架构文档/ADR 设计最小 upstream-ready 改动，不得在外层另造兼容 kernel。
 
 ## Step 0: 定位需求源，建立执行台账
 
 先判断需求来源，进入对应模式：
 
 **模式 A：有 PRD**（`specs/prd/` 下的文档，或用户指明的路径）
-- 先读 `specs/prd/plan.md`，再完整读 PRD 和 owning ledger；按其引用主动 Read 相关 ARCHITECTURE / RFC / 协议 / 研究报告。
-- readiness 由 plan 与 active PRD 共同决定，状态枚举遵守 plan 的 `not_started | in_progress | blocked | complete`。Pre-Batch 可在 `in_progress` 且台账有效时续跑；后续 Batch 从 `not_started` 进入开发前，必须确认依赖已 `complete`、用户已明确确认该 Batch scope，并在 plan/PRD/ledger 同步切换为 `in_progress`。`blocked` 只有阻塞决策已解决且契约同步后才能恢复；`complete` 不重复开发。
+- 若本地有 `specs/prd/plan.md`，先读它；无论是否有 plan，都完整读用户指定的 PRD 和 owning ledger，并按引用读取相关架构、协议和研究材料。
+- 若本地 plan 存在，readiness 由 plan 与 active PRD 共同决定，状态枚举遵守 plan 的 `not_started | in_progress | blocked | complete`。Pre-Batch 可在 `in_progress` 且台账有效时续跑；后续 Batch 从 `not_started` 进入开发前，必须确认依赖已 `complete`、用户已明确确认该 Batch scope，并在 plan/PRD/ledger 同步切换为 `in_progress`。无 plan 时以用户给出的需求、PRD 状态和当前实现为准；`blocked` 只有阻塞决策已解决且契约同步后才能恢复，`complete` 不重复开发。
 - plan 之外的新独立 PRD 若采用 `draft | ready-for-development | in-progress | implemented` 状态，则只有 `ready-for-development` 可首次启动，`in-progress` 可在台账有效且无未决产品/架构岔路时续跑；显式 `draft` 必须退回 `prd-writer` / `prd-discuss`。
 - 旧式、缺失或部分交付状态不能直接执行。先提炼已上线基线、剩余原子范围、反向边界、真实外部兼容责任和全部发布门槛；这会重定义交付契约，必须先由 `prd-writer` 形成 draft 并获得用户确认。
 - 把 active PRD 已有的 `Action ledger` / `Batch gate ledger` 作为唯一 owning ledger，直接续用，不另建一份平行行动清单。若它还缺开发契约、当前 review baseline、待决策或进展日志，就在该 ledger 附近补齐下方字段；任何零上下文 session 拿到 PRD 就应同时拿到范围和进展。
 - readiness 通过且台账建立后、动第一行代码前，立即把 active PRD、plan 对应状态行/程序台账更新为一致的 `in_progress` 并刷新 `updated`；plan 之外的独立 PRD 沿用自身 `in-progress` 枚举。不要让长任务执行期间仍显示成尚未启动，诱发另一个 session 重复开发。
 
 **模式 B：无 PRD**（需求在对话里聊清楚了，通常较小）
-- 新建 `specs/prd/devplan_<YYMMDD>_<slug>.md`，frontmatter 直接写 `status: in-progress`：第一节用几句话把需求钉住（目标、必赢场景、明确不做什么），写到零上下文 session 也能接手的程度；然后同样建 `## 执行台账`。
+- 在 ignored 的 `specs/prd/` 新建本地 `devplan_<YYMMDD>_<slug>.md`，记录简短范围、验收标准和执行台账；它从当前需求创建，不要求干净检出原先自带 `plan.md`。
 - 需求再小也走完整流程（自验证、cross-review、提交）；台账按规模精简，契约和清单不省。
 
 ### 原子交付契约
@@ -97,7 +97,7 @@ DSH 是唯一 AgentLoop、持久模型对话与 ToolRuntime 权威。使用 DSH 
 
 ## Step 1: 实现需求
 
-遵循需求目标、`AGENTS.md`（`CLAUDE.md` 是其软链）、`specs/prd/plan.md`、相关架构/RFC 与项目现有代码模式。方案定型前做归零自检：
+遵循需求目标、`AGENTS.md`（`CLAUDE.md` 是其软链）、相关已跟踪架构/模块文档、存在且适用的本地 PRD/RFC，以及项目现有代码模式。方案定型前做归零自检：
 
 - (a) 引入了几个新概念？趋向零——若需要新的 enum、优先级体系或注册协议，视为设计异味，项目中几乎必然存在同构结构尚未被识别。
 - (b) 仅用已有原语的最简实现是什么？
@@ -159,7 +159,7 @@ npm run build
 - 功能点是否完整覆盖？边界情况和细节是否处理？
 - 有没有引入需求范围之外的行为（scope creep）？
 - 是否还有验收标准未被任何验证覆盖？
-- 本次变更是否让 `AGENTS.md`、`specs/prd/plan.md`、ARCHITECTURE、PRD、RFC、协议或 migration inventory 陈述失真，或新增了必须教给后续开发者的承重抽象？有则在本次开发内更新，不留给周期性文档审计。
+- 本次变更是否让 `AGENTS.md`、ARCHITECTURE、模块指南、协议或 migration inventory 陈述失真，或新增了必须教给后续开发者的承重抽象？有则在本次开发内更新；适用的本地 PRD/plan 可同步更新，但不能成为干净检出的依赖。
 
 Step 2 验证「代码能不能跑」，这一步验证「跑出来的对不对」。检查完同步勾选台账行动清单。
 
@@ -213,7 +213,7 @@ Step 2 验证「代码能不能跑」，这一步验证「跑出来的对不对�
 
 收尾动作：模式 A 的 Stage/Batch PRD 与模式 B 的 devplan 使用同一终态门禁——只有全部必做范围、实现内验证、发布硬门槛真机验收与 Step 5.5 整体门禁完成，才把 plan-connected Stage/Batch 写成 `complete`（独立 PRD/devplan 写成 `implemented`）；任何一项未完成都保持 `in_progress` / `in-progress`，在台账说明剩余项，并明确**不得把部分完成当成可发布交付**；`updated` 更新为当天。
 
-状态与最终台账不能只留在工作树：显式 stage tracked 的需求源、ledger 和 `specs/prd/plan.md` 状态更新，并创建只承载交付状态/最终证据的收尾 commit；不得 force-add ignored material。Windows/Linux mandatory 原生验收若安排在后续真机 campaign，当前状态必须保持 plan/RFC 规定的 pending-native-validation，并在真机确认后更新证据和平台 claim，不能提前宣称全平台 verified。
+将本次实现所需的当前事实写进已跟踪的架构/模块文档；显式 stage 属于本次交付的已跟踪文件并提交。ignored 的本地 PRD、plan、ledger 只在本地更新，不得 force-add，也不能成为下一位开发者理解当前实现的唯一依据。Windows/Linux mandatory 原生验收若安排在后续真机 campaign，当前状态必须保持适用契约规定的 pending-native-validation，并在真机确认后更新证据和平台 claim，不能提前宣称全平台 verified。
 
 然后输出产品导向的摘要。不要以逐文件变更清单或测试命令清单开头——那是工程记录，不是用户的验收框架。只有 plan-connected Stage/Batch 为 `complete`（或独立 PRD 为 `implemented`）才使用“开发完成”；若仍是 `in_progress` / `in-progress`，标题必须是“开发进展（未完成，不可发布）”，置顶说明缺失的必做范围，不能用完成态措辞制造部分交付已经成立的印象。结构：
 
