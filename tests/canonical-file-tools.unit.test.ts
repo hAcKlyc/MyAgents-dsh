@@ -774,15 +774,15 @@ describe("canonical filesystem tools", () => {
 
   it("serializes new-file Writes through checkpoint preparation and publication in one workspace", async () => {
     const state = await harness();
-    const firstPrepared = Promise.withResolvers<void>();
-    const releaseFirst = Promise.withResolvers<void>();
+    const firstPrepared = Promise.withResolvers<undefined>();
+    const releaseFirst = Promise.withResolvers<undefined>();
     let active = 0;
     let maximumActive = 0;
     state.setCheckpointPrepareHook(async (request) => {
       active += 1;
       maximumActive = Math.max(maximumActive, active);
       if (active === 1) {
-        firstPrepared.resolve();
+        firstPrepared.resolve(undefined);
         await releaseFirst.promise;
       }
       await mkdir(dirname(request.path), { recursive: true });
@@ -795,7 +795,7 @@ describe("canonical filesystem tools", () => {
     try {
       await firstPrepared.promise;
     } finally {
-      releaseFirst.resolve();
+      releaseFirst.resolve(undefined);
     }
     const results = await Promise.all(writes);
     expect(results.every((result) => !result.isError)).toBe(true);
@@ -1125,8 +1125,9 @@ describe("canonical filesystem tools", () => {
     const result = await state.execute("Glob", { pattern: "*.txt" });
     expect(result).toMatchObject({
       isError: false,
-      value: { numFiles: 100, truncated: true, hint: expect.stringContaining("Narrow the glob pattern") },
+      value: { numFiles: 100, truncated: true },
     });
+    expect(JSON.stringify(result)).toContain("Narrow the glob pattern");
     await state.context.fiber.dispose();
   });
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -34,15 +33,6 @@ const requiredPath = (name) => {
   if (!statSync(canonical).isDirectory()) throw new Error(`${name} must name a directory`);
   return canonical;
 };
-const route = (name, path) => {
-  const encoded = process.env[name];
-  if (!encoded) throw new Error(`${name} is required for the credentialed native release gate`);
-  const bytes = Buffer.from(encoded, "base64");
-  if (bytes.length < 2 || bytes.length > 64 * 1024) throw new Error(`${name} must be a bounded route JSON`);
-  JSON.parse(bytes.toString("utf8"));
-  writeFileSync(path, bytes, { flag: "wx", mode: 0o600 });
-};
-
 export function nativeReleaseTarget(platform = process.platform, arch = process.arch) {
   const target = `${platform}-${arch}`;
   if (!["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"].includes(target)) {
@@ -55,8 +45,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     const tag = configuredReleaseTag();
     const target = nativeReleaseTarget();
-    if (process.env.GITHUB_REF_NAME !== tag || process.env.RELEASE_TARGET !== target) {
+    const preflight = process.env.RELEASE_PREFLIGHT === "true";
+    if ((!preflight && process.env.GITHUB_REF_NAME !== tag) || process.env.RELEASE_TARGET !== target) {
       throw new Error("Release tag or target differs from this native runner");
+    }
+    if (preflight) {
+      const head = capture("git", ["rev-parse", "HEAD"]);
+      const existing = spawnSync("git", ["rev-list", "-n", "1", tag], { cwd: root, encoding: "utf8" });
+      if (existing.status === 0 && existing.stdout.trim() !== head) {
+        throw new Error("Preflight tag already identifies another commit");
+      }
+      if (existing.status !== 0) run("git", ["tag", tag]);
     }
     if (!process.env.DSH_RELEASE_PROVIDER_KEY) {
       throw new Error("DSH_RELEASE_PROVIDER_KEY is required for the credentialed native release gate");
@@ -76,8 +75,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const handoff = resolve(work, "handoff");
     const output = resolve(work, "release-assets");
     mkdirSync(output);
-    route("DSH_RELEASE_ROUTE_CONFIG_B64", resolve(work, "route.json"));
-    route("DSH_RELEASE_COMPACTION_ROUTE_CONFIG_B64", resolve(work, "compaction-route.json"));
+    const route = resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash.json");
+    const compactionRoute = resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash-compaction.json");
     run("npm", ["run", "check:pre-artifact", "--", "--dsh-source", source,
       "--output", resolve(work, "pre-artifact-gate")]);
     run("npm", ["run", "build:dsh-artifact", "--", "--source", source, "--out", artifact,
@@ -90,8 +89,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const runtimeSha = sha256(readFileSync(resolve(runtime, "runtime-artifact-v1.json")));
     run("npm", ["run", "e2e:native", "--", "--artifact", runtime,
       "--expected-manifest-sha256", runtimeSha,
-      "--route-config", resolve(work, "route.json"),
-      "--compaction-route-config", resolve(work, "compaction-route.json"),
+      "--route-config", route,
+      "--compaction-route-config", compactionRoute,
       "--credential-env", "DSH_RELEASE_PROVIDER_KEY", "--npm-cache", npmCache,
       "--out", campaign]);
     const report = readFileSync(resolve(campaign, "native-campaign.json"));

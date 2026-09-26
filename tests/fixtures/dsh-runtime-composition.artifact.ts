@@ -2635,12 +2635,12 @@ const primarySystemMessage = {
   role: "system" as const,
   content: [{ type: "text" as const, text: renderPrompt(primaryPrompt) }],
 };
-const timeReadings = primaryAgent.session.deriveMessages().filter(({ source }) => source?.kind === "time-context");
+const timeReadings = primaryAgent.session.deriveMessages().filter(({ source }) => source.kind === "time-context");
 assert.ok(timeReadings.length >= 1, "official time context must enter durable model history");
 assert.ok(timeReadings.every(({ content }) => content.some((block) =>
   block.type === "text" && block.text.startsWith("Time sampled while preparing turn "))));
 assert.deepEqual(primaryAgent.session.deriveMessages()
-  .filter(({ source }) => source?.kind !== "time-context")
+  .filter(({ source }) => source.kind !== "time-context")
   .map(({ role, content }) => ({ role, content })), [
   primarySystemMessage,
   { role: "user", content: [{ type: "text", text: "first prompt" }] },

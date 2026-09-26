@@ -3,6 +3,7 @@ name: release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,6 +25,8 @@ jobs:
         with:
           node-version: 24.20.0
       - name: Check exact version, tag, main ancestry and release notes
+        env:
+          RELEASE_PREFLIGHT: ${{ github.event_name == 'workflow_dispatch' }}
         run: node scripts/verify-release-tag.mjs
       - name: Reject an existing release
         env:
@@ -52,7 +55,7 @@ jobs:
     timeout-minutes: 180
     env:
       RELEASE_TARGET: ${{ matrix.target }}
-      RELEASE_WORK_DIR: ${{ runner.temp }}/myagents-dsh-release
+      RELEASE_PREFLIGHT: ${{ github.event_name == 'workflow_dispatch' }}
       DSH_BASELINE_DIR: ${{ github.workspace }}/deepseek-harness
       PI_AI_SOURCE_DIR: ${{ github.workspace }}/pi
     steps:
@@ -68,6 +71,7 @@ jobs:
           repository: deepseek-ai/deepseek-harness
           ref: 47f943859bef60e4160492346772ded9b24f765a
           path: deepseek-harness
+          fetch-depth: 0
           persist-credentials: false
       - name: Checkout pinned pi-ai source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -96,9 +100,8 @@ jobs:
       - name: Build, validate and package this native target
         working-directory: myagents-dsh
         env:
+          RELEASE_WORK_DIR: ${{ runner.temp }}/myagents-dsh-release
           DSH_RELEASE_PROVIDER_KEY: ${{ secrets.DSH_RELEASE_PROVIDER_KEY }}
-          DSH_RELEASE_ROUTE_CONFIG_B64: ${{ secrets.DSH_RELEASE_ROUTE_CONFIG_B64 }}
-          DSH_RELEASE_COMPACTION_ROUTE_CONFIG_B64: ${{ secrets.DSH_RELEASE_COMPACTION_ROUTE_CONFIG_B64 }}
         run: npm run release:target
       - name: Transfer only the verified target pair
         uses: actions/upload-artifact@v4
@@ -109,6 +112,7 @@ jobs:
           retention-days: 14
 
   publish:
+    if: github.event_name == 'push'
     needs: [version, native]
     runs-on: ubuntu-24.04
     timeout-minutes: 30

@@ -50,6 +50,7 @@ jobs:
           repository: deepseek-ai/deepseek-harness
           ref: 47f943859bef60e4160492346772ded9b24f765a
           path: deepseek-harness
+          fetch-depth: 0
           persist-credentials: false
       - name: Install pinned Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

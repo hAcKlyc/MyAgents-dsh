@@ -25,13 +25,18 @@ export function verifyReleaseTag(tag, head, mainHead, notes) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    const tag = process.env.GITHUB_REF_NAME ?? process.argv[2];
+    const preflight = process.env.RELEASE_PREFLIGHT === "true";
+    const tag = preflight ? configuredReleaseTag() : process.env.GITHUB_REF_NAME ?? process.argv[2];
     if (!tag) throw new Error("Release tag is required");
     const notes = readFileSync(resolve(root, "RELEASE_NOTES.md"), "utf8");
     const head = git("rev-parse", "HEAD");
-    const tagHead = git("rev-list", "-n", "1", tag);
     const mainHead = git("rev-parse", "origin/main");
     verifyReleaseTag(tag, head, mainHead, notes);
+    if (preflight) {
+      process.stdout.write(`Release preflight ${tag} accepts source commit ${head}\n`);
+      process.exit(0);
+    }
+    const tagHead = git("rev-list", "-n", "1", tag);
     if (tagHead !== head) throw new Error("Release tag does not identify the checked-out commit");
     execFileSync("git", ["merge-base", "--is-ancestor", head, mainHead], { cwd: root });
     if (existsSync(resolve(root, ".git/shallow"))) {

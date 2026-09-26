@@ -727,7 +727,7 @@ export class CanonicalFileTools extends Service {
       if (separator < 0) command.push("--null");
       else command.splice(separator, 0, "--null");
       const filenames: string[] = [];
-      let truncated = false;
+      const truncation = { value: false };
       let bytes = 2;
       const result = await ctx.productProcesses.runSearch(
         product,
@@ -736,10 +736,10 @@ export class CanonicalFileTools extends Service {
         command,
         async (stdout) => consumeSearchRecords(stdout, ["\0"], async ([value]) => {
           if (!value) return;
-          if (filenames.length >= 100 || truncated) { truncated = true; return; }
+          if (filenames.length >= 100 || truncation.value) { truncation.value = true; return; }
           const path = await this.#searchResultPath(ctx, product, root.root, value);
           const size = Buffer.byteLength(JSON.stringify(path), "utf8") + (filenames.length > 0 ? 1 : 0);
-          if (bytes + size > 60_000) { truncated = true; return; }
+          if (bytes + size > 60_000) { truncation.value = true; return; }
           filenames.push(path);
           bytes += size;
         }),
@@ -756,8 +756,8 @@ export class CanonicalFileTools extends Service {
         durationMs: result.durationMs,
         filenames: Object.freeze(filenames),
         numFiles: filenames.length,
-        truncated,
-        ...(truncated ? { hint: "Narrow the glob pattern or choose a more specific path to see omitted matches." } : {}),
+        truncated: truncation.value,
+        ...(truncation.value ? { hint: "Narrow the glob pattern or choose a more specific path to see omitted matches." } : {}),
       });
         },
       );

@@ -82,7 +82,7 @@
     "check:pi-ai-seam-source": "tsx scripts/verify-pi-ai-seam.ts",
     "check:pre-artifact": "tsx scripts/run-batch-1-pre-artifact-gate.ts",
     "typecheck": "npm run check:foundation && tsc -b --pretty false",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "node scripts/lint-repository.mjs",
     "test": "npm run check:foundation && vitest run --maxWorkers=1 --no-file-parallelism",
     "test:web-host-process": "vitest run --config vitest.web-host-process.config.ts --maxWorkers=1 --no-file-parallelism",
     "build:web": "npm run build --workspace @myagents-dsh/reference-web",

@@ -1,0 +1,2270 @@
+[
+  {
+    "path": "packages/checkpoint/src/runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "for (const event of session.snapshotEvents()) {",
+    "count": 1
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "&& !agent.session.snapshotEvents().some((event) =>",
+    "count": 2
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "agent.session.snapshotEvents(),",
+    "count": 2
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const accrued = deriveOperationAccruedCostUsd(agent.session.snapshotEvents(), operation);",
+    "count": 2
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const contextEvent = agent.session.snapshotEvents().findLast((candidate) =>",
+    "count": 1
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const derived = deriveOperationTerminal(agent.id, agent.session.snapshotEvents(), operation);",
+    "count": 1
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const fold = foldProductOperationsForLiveClaim(agent.session.snapshotEvents(), {",
+    "count": 1
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const fold = foldProductOperationsForLiveDiscard(agent.session.snapshotEvents(), {",
+    "count": 1
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const incomplete = incompleteRecoveryWakes(agent.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const matchingStarts = agent.session.snapshotEvents().filter(",
+    "count": 1
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const stoppingTurnEnded = stoppingTurn !== undefined && agent.session.snapshotEvents().some(",
+    "count": 1
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "for (const event of agent.session.snapshotEvents()) {",
+    "count": 1
+  },
+  {
+    "path": "packages/operation-runtime/src/service.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "if (matchingStarts.length !== 1 || agent.session.snapshotEvents().some(",
+    "count": 1
+  },
+  {
+    "path": "packages/rpc-server/src/event-projector.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const boundary = operationTurnBoundary(session.snapshotEvents(), operation, frame.turn);",
+    "count": 1
+  },
+  {
+    "path": "packages/rpc-server/src/event-projector.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const currentRoute = latestRequestContext(session.snapshotEvents(), throughSequence);",
+    "count": 1
+  },
+  {
+    "path": "packages/rpc-server/src/event-projector.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const events = session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "packages/rpc-server/src/event-projector.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const sample = session.snapshotEvents()[sequence];",
+    "count": 1
+  },
+  {
+    "path": "packages/rpc-server/src/event-projector.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const sampleRoute = latestRequestContext(session.snapshotEvents(), sample.seq);",
+    "count": 1
+  },
+  {
+    "path": "packages/rpc-server/src/event-projector.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const source = session.snapshotEvents()[frame.outcome.seq];",
+    "count": 1
+  },
+  {
+    "path": "packages/rpc-server/src/event-projector.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const source = session.snapshotEvents()[this.#nextSourceSequence];",
+    "count": 1
+  },
+  {
+    "path": "packages/rpc-server/src/event-projector.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "for (let sequence = Math.min(throughSequence, session.snapshotEvents().length - 1); sequence >= 0; sequence -= 1) {",
+    "count": 1
+  },
+  {
+    "path": "packages/rpc-server/src/event-projector.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "session.snapshotEvents().slice(0, throughSequence + 1),",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/composition.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const captured = session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/composition.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "foldProductCompactions(agent.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/primary-session.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const durable = foldProductCompactions(agent.session.snapshotEvents()).get(clientOperationId);",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/primary-session.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const ends = agent.session.snapshotEvents().filter((event) => event.type === \"compaction/end\"",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/primary-session.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const existing = foldProductCompactions(agent.session.snapshotEvents()).get(clientOperationId);",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/primary-session.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const known = foldProductCompactions(agent.session.snapshotEvents()).get(params.clientOperationId);",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/primary-session.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const receiptSeq = agent.session.snapshotEvents().length;",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/primary-session.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const replacement = agent.session.snapshotEvents().find((event) => event.seq === summary.seq + 1);",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/primary-session.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const sourceEventCount = agent.session.snapshotEvents().length;",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/primary-session.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const starts = agent.session.snapshotEvents().filter((event) => event.type === \"compaction/start\"",
+    "count": 1
+  },
+  {
+    "path": "packages/runtime-product/src/primary-session.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const summaries = agent.session.snapshotEvents().filter((event) => event.type === \"compaction/summary\"",
+    "count": 1
+  },
+  {
+    "path": "packages/task-graph/src/runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "Object.freeze([...rootAgent.session.snapshotEvents(), synthetic]),",
+    "count": 1
+  },
+  {
+    "path": "packages/task-graph/src/runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "return foldProductTaskGraph(agent.session.snapshotEvents(), String(agent.session.id));",
+    "count": 2
+  },
+  {
+    "path": "packages/tool-runtime-product/src/permission.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "agent.session.snapshotEvents(),",
+    "count": 1
+  },
+  {
+    "path": "packages/tool-runtime-product/src/permission.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "session.snapshotEvents(),",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "...correlatedInboxMessages(root.session.snapshotEvents(), root.id, \"subagent-report\"),",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "? entry.root.session.snapshotEvents()[activated.eventSeq] ?? createdSource : createdSource;",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await this.reportCompletedEpoch(entry, epoch, ended.observation.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "candidate = Object.freeze({ events: child.snapshotEvents(), meta: child.header });",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "candidates.set(session.id, Object.freeze({ events: session.snapshotEvents(), meta: session.header }));",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const callers = [{ id: String(root.id), events: root.session.snapshotEvents() },",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const createdSource = entry.root.session.snapshotEvents()[entry.created.eventSeq];",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const creations = session.snapshotEvents().flatMap((event) => {",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const deliveries = session.snapshotEvents().flatMap((event) => {",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const descriptor = foldSubagentDescriptor(child.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const events = session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const finishedSource = activationCompleted ? entry.root.session.snapshotEvents()[epoch.eventSeq] : settledSource;",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const insertions = correlatedInboxMessages(session.snapshotEvents(), session.id, \"subagent-report\")",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const intents = session.snapshotEvents().flatMap((event) => {",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const output = accumulatedLiveOutput(session.snapshotEvents(), liveEntry, observation.startSeq);",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const previous = root.session.snapshotEvents().find((event) => event.type === \"myagents/work/reopened\" && event.data.clientRequestId === clientRequestId);",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const settledSource = settlement === undefined ? undefined : entry.root.session.snapshotEvents()[settlement.eventSeq];",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const turns = agent.session.snapshotEvents().slice(entry.created.initialChildEventSeq ?? 0).filter((event) => event.type === \"turn/start\").length;",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "endSeq: observation.session.snapshotEvents().length,",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "entry.latestOutput = accumulatedEpochOutput(ended.observation.session.snapshotEvents(), entry);",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "events = child.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "events = root.session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "for (const event of agent.session.snapshotEvents()) {",
+    "count": 2
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "if (ended !== undefined) return usageFrom(ended.observation.session.snapshotEvents().slice(entry.created.initialChildEventSeq ?? ended.observation.session.inheritedEventCount));",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "if (entry !== undefined) this.queueActivation(entry, session.snapshotEvents().length);",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "if (entry?.root.session.snapshotEvents()[source.seq] !== source",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "if (live !== undefined) candidate = { events: live.snapshotEvents(), meta: live.header };",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "if (ownsOfficialJobNotice(session.snapshotEvents(), source, messageId)) return true;",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "if (retainedLive !== undefined) return usageFrom(retainedLive.session.snapshotEvents().slice(entry.created.initialChildEventSeq ?? retainedLive.session.inheritedEventCount));",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "initialEpoch.session.snapshotEvents(),",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "inspection = Object.freeze({ events: child.snapshotEvents(), meta: child.header });",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "primary.session.snapshotEvents(),",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "root.session.snapshotEvents(), root.id,",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "rootAgent.session.snapshotEvents(),",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "startSeq: session.snapshotEvents().length,",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "this.completeFirstActivation(entry, epoch, ended.observation.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "|| agent.session.snapshotEvents().slice(0, event.seq).some((prior) => prior.type === \"myagents/work/reopened\" && prior.data.clientRequestId === reopened.clientRequestId)) {",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-agent/src/work-runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "}, ended.observation.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-interaction/src/runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "agent.session.snapshotEvents(),",
+    "count": 1
+  },
+  {
+    "path": "packages/tools-interaction/src/runtime.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "return foldProductPlan(agent.session.snapshotEvents(), sessionId, this.configValue.revision, path);",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": ".toEqual(source.snapshotEvents().slice(0, boundary)",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await harness.publishRewind(harness.currentRevision(), source.snapshotEvents().length);",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const before = foldConsumedWork(session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const beforeWake = session.snapshotEvents().length;",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const boundary = source.snapshotEvents().length;",
+    "count": 2
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const durableCalls = session.snapshotEvents()",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const expected = Session.create(SessionId(\"generation-expected\"), source.snapshotEvents().slice(0, boundary));",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const harness = new SharedGenerationMutationHarness(source.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const harness = new SharedGenerationMutationHarness(source.snapshotEvents(), \"delete-source\");",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(cold).toEqual(source.snapshotEvents().slice(0, boundary));",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(foldConsumedWork(session.snapshotEvents())).toEqual(before);",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(foldConsumedWork(session.snapshotEvents()).droppedUnrun).toBe(true);",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(loaded?.events).toEqual(source.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(rewound.snapshotEvents().slice(0, boundary)).toEqual(source.snapshotEvents().slice(0, boundary));",
+    "count": 2
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(rewound.snapshotEvents().some((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(session.snapshotEvents()).toHaveLength(0);",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(session.snapshotEvents()).toHaveLength(beforeWake);",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(source.snapshotEvents()).toHaveLength(boundary + 2);",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(unsupportedRequiredEvents(session.snapshotEvents(), (type) => KNOWN_SESSION_EVENT_TYPES.has(type))).toEqual([",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(unsupportedRequiredEvents(session.snapshotEvents(), productKnownEventType)).toEqual([]);",
+    "count": 1
+  },
+  {
+    "path": "tests/dsh-seam-spikes.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "seq: SessionSeq(source.snapshotEvents().length),",
+    "count": 2
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "() => primaryAgent.session.snapshotEvents().some((event) => event.type === \"agent/inbox/spliced\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "() => primaryAgent.session.snapshotEvents().some((event) => event.type === \"myagents/checkpoint/state\"",
+    "count": 2
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "JSON.stringify(resumedAgent.session.snapshotEvents().slice(0, persistedPrimary.events.length)),",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.deepEqual(primaryAgent.session.snapshotEvents()",
+    "count": 2
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.deepEqual(primaryAgent.session.snapshotEvents(), rewindTargetEvents);",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.deepEqual(resumedAgent.session.snapshotEvents().at(-1), {",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(JSON.stringify(primaryAgent.session.snapshotEvents()).includes(untransformedWriteContent), false);",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(compactionReceipt.data.resultEventCount, resumedAgent.session.snapshotEvents().length);",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(forkRestored.snapshotEvents().at(-1)?.type, \"session/end-seed\");",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(forkRestored.snapshotEvents().some((event) => event.type === \"myagents/session/fork\"), true);",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(primaryAgent.session.snapshotEvents().some((event) => event.type === \"agent/inbox/spliced\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(resumedAgent.session.snapshotEvents().length, persistedPrimary.events.length + 1);",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(rewoundAgent.session.snapshotEvents().at(-1)?.type, \"session/end-seed\");",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(rewoundAgent.session.snapshotEvents().at(-2)?.type, \"myagents/session/rewind\");",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(sessionReadEvents.length, resumedAgent.session.snapshotEvents().length);",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.ok(primaryAgent.session.snapshotEvents().some(({ type }) => type === \"turn/end\"));",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await waitUntil(() => agent.session.snapshotEvents().filter((event) => event.type === \"agent/inbox/spliced\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const automaticPressureDurableEventCount = resumedAgent.session.snapshotEvents().length",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const binaryReadResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === \"tool/result\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const canonicalToolCalls = primaryAgent.session.snapshotEvents().filter((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const canonicalToolResultIds = new Set(primaryAgent.session.snapshotEvents().flatMap((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const compactionEvents = resumedAgent.session.snapshotEvents().slice(preCompactionEventCount);",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const cycleResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === \"tool/result\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const dynamicAgentCreated = primaryAgent.session.snapshotEvents().find((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const event = primaryAgent.session.snapshotEvents().findLast((candidate) => candidate.type === \"tool/result\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const failedTurn = primaryAgent.session.snapshotEvents().findLast(({ type }) => type === \"turn/end\");",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const firstAssistant = primaryAgent.session.snapshotEvents().find(({ type }) => type === \"assistant/message\");",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const governedEditReadResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === \"tool/result\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const governedEditResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === \"tool/result\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const governedToolResults = primaryAgent.session.snapshotEvents().filter((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const hostModelMcpResult = hostModelComposition.context.productSession.requireAgent().session.snapshotEvents().findLast(",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const hostToolResult = primaryAgent.session.snapshotEvents().findLast((event) => event.type === \"tool/result\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const interruptedAssistantPrefix = primaryAgent.session.snapshotEvents().findLast((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const longSessionTurnCount = resumedAgent.session.snapshotEvents().filter(({ type }) => type === \"turn/end\").length;",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const permissionAskedEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === \"approval/asked\");",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const permissionDecidedEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === \"approval/decided\");",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const permissionRuleEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === \"myagents/permission/rule\");",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const permissionRuleRevokedEvents = primaryAgent.session.snapshotEvents()",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const planBash = primaryAgent.session.snapshotEvents().findLast((event) => event.type === \"tool/result\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const preAutomaticPressureEventCount = resumedAgent.session.snapshotEvents().length;",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const preCompactionEventCount = resumedAgent.session.snapshotEvents().length;",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const processSearchResults = primaryAgent.session.snapshotEvents().filter((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const prunedVisibleResultEvent = pruneOnlySession.snapshotEvents().findLast((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const recentEvents = primaryAgent.session.snapshotEvents().slice(-12).map((event) => ({",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const retainedOutputResults = primaryAgent.session.snapshotEvents().filter((event) => event.type === \"tool/result\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const rewindSourceEvents = structuredClone(primaryAgent.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const rewindTargetEvents = structuredClone(primaryAgent.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const shutdownTerminal = primaryAgent.session.snapshotEvents().findLast((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const transformedWriteAssistant = primaryAgent.session.snapshotEvents().findLast((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const transformedWriteCall = primaryAgent.session.snapshotEvents().findLast((event) => event.type === \"tool/call\"",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const workEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type.startsWith(\"myagents/work/\"));",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "durableOperationEvents = structuredClone(session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "editPhases: primaryAgent.session.snapshotEvents()",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "eventTypes: primaryAgent.session.snapshotEvents().map(({ type }) => type),",
+    "count": 2
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "events: session.snapshotEvents(),",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "for (const [index, event] of resumedAgent.session.snapshotEvents().entries()) {",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "primaryAgent.session.snapshotEvents().filter(({ type }) => type === \"myagents/permission/rule\").length,",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "primaryAgent.session.snapshotEvents().filter(({ type }) => type === \"myagents/task/created\").length,",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "primaryAgent.session.snapshotEvents().filter(({ type }) => type === \"myagents/task/updated\").length,",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "primaryAgent.session.snapshotEvents().flatMap((event) => event.type === \"plan/mode\" ? [event.data.active] : []),",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "recentAssistantEvents: primaryAgent.session.snapshotEvents().filter((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "resumedAgent.session.snapshotEvents().slice(0, persistedPrimary.events.length),",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "tail: primaryAgent.session.snapshotEvents().slice(-50).map(({ type, seq, data }) => ({ type, seq, data })),",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "throw new Error(`governed file-tool operation failed: ${JSON.stringify(primaryAgent.session.snapshotEvents().slice(-12))}`);",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "time: resumedAgent.session.snapshotEvents().at(-1)?.time,",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "workEvents: primaryAgent.session.snapshotEvents().filter(({ type }) => type.startsWith(\"myagents/work/\")),",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-runtime-composition.artifact.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "writePhases: primaryAgent.session.snapshotEvents()",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-upgrade-performance.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(agent.session.snapshotEvents().at(-1)?.type, \"turn/end\");",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/dsh-upgrade-performance.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "assert.equal(events.length, agent.session.snapshotEvents().length);",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/inbox-events.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "for (const event of this.session.snapshotEvents()) {",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/session-persistence-process.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await writer.append(session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/fixtures/session-persistence-process.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await writer.append(session.snapshotEvents().slice(2));",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "&& agent.session.snapshotEvents().some((event) => event.type === \"agent/inbox/spliced\"",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "&& agent.session.snapshotEvents().some((event) => event.type === \"agent/inbox/spliced\" && event.data.inserted.some((message) => message.id === id)));",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "acceptanceObservedAtCommit = accepted.agent.session.snapshotEvents().some(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await vi.waitFor(() => expect(fixture.agent.session.snapshotEvents().some(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const accepted = fixture.agent.session.snapshotEvents().find(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const anchors = fixture.agent.session.snapshotEvents().filter(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const cancellation = fixture.agent.session.snapshotEvents().find(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const eventCount = fixture.agent.session.snapshotEvents().length;",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const events = fixture.agent.session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const hasAnchor = (): boolean => fixture.agent.session.snapshotEvents().some(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const inherited = fixture.agent.session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const inserted = structuredClone(fixture.agent.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const invalid = structuredClone(fixture.agent.session.snapshotEvents()).map((event): SessionEvent =>",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const legacy = fixture.agent.session.snapshotEvents().filter((event) => event.type !== \"myagents/operation/terminal\")",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const newAcceptanceIndex = restored.agent.session.snapshotEvents().findIndex(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const operation = findProductOperation(foldProductOperations(fixture.agent.session.snapshotEvents(), fixture.agent.id), \"operation-1\");",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const seed = appendEvent(original.agent.session.snapshotEvents(), \"myagents/operation/recovery-wake\", {",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const seed = structuredClone(original.agent.session.snapshotEvents()).filter(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const seed = structuredClone(original.agent.session.snapshotEvents());",
+    "count": 4
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const terminal = fixture.agent.session.snapshotEvents().find(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const terminalIndex = restored.agent.session.snapshotEvents().findIndex(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const valid = structuredClone(fixture.agent.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const wakes = restored.agent.session.snapshotEvents().filter(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(() => foldProductOperations(fixture.agent.session.snapshotEvents(), fixture.agent.id))",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(() => foldProductOperations(fixture.agent.session.snapshotEvents(), fixture.agent.id)).not.toThrow();",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(() => foldProductOperations(restored.agent.session.snapshotEvents(), restored.agent.id)).not.toThrow();",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(fixture.agent.session.snapshotEvents()).toEqual([]);",
+    "count": 4
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(fixture.agent.session.snapshotEvents()).toHaveLength(0);",
+    "count": 2
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(fixture.agent.session.snapshotEvents()).toHaveLength(eventCount);",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(fixture.agent.session.snapshotEvents().at(-1)?.type).toBe(\"myagents/operation/terminal\");",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(fixture.agent.session.snapshotEvents().filter(",
+    "count": 6
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(fixture.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/operation/accepted\")).toHaveLength(1);",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(fixture.agent.session.snapshotEvents().filter((event) => event.type === \"turn/start\"))",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(fixture.agent.session.snapshotEvents().some(",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(restored.agent.session.snapshotEvents().filter(",
+    "count": 3
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "fixture.agent.session.snapshotEvents().filter((event) => event.type === \"assistant/message\")",
+    "count": 1
+  },
+  {
+    "path": "tests/operation-runtime.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "foldProductOperations(fixture.agent.session.snapshotEvents(), fixture.agent.id),",
+    "count": 9
+  },
+  {
+    "path": "tests/primary-session-admission.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(source.handle.agent.session.snapshotEvents()).toEqual([",
+    "count": 1
+  },
+  {
+    "path": "tests/product-checkpoint.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const source = state.session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "tests/product-checkpoint.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const sourceEvents = [...state.session.snapshotEvents()];",
+    "count": 1
+  },
+  {
+    "path": "tests/product-checkpoint.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().filter((event) => event.type === \"myagents/checkpoint/state\")",
+    "count": 1
+  },
+  {
+    "path": "tests/product-interaction-plan.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(retryable.session.snapshotEvents().filter(({ type }) => type === \"plan/mode\")).toHaveLength(0);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-interaction-plan.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().filter(({ type }) => type === \"plan/mode\")).toHaveLength(1);",
+    "count": 2
+  },
+  {
+    "path": "tests/product-interaction-plan.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(truthyNonBoolean.session.snapshotEvents().filter(({ type }) => type === \"plan/mode\"))",
+    "count": 1
+  },
+  {
+    "path": "tests/product-interaction-plan.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(uncertain.session.snapshotEvents().filter(({ type }) => type === \"plan/mode\"))",
+    "count": 1
+  },
+  {
+    "path": "tests/product-interaction-plan.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "structuredClone(state.session.snapshotEvents()),",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const audit = state.session.snapshotEvents().filter(({ type }) => type.startsWith(\"approval/\"));",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const before = JSON.stringify(state.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const beforeEventCount = resumed.session.snapshotEvents().length;",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const eventProxy = new Proxy(state.session.snapshotEvents(), {",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const mismatched = structuredClone(state.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const original = required(state.session.snapshotEvents().find(event => event.type === \"myagents/permission/rule\"));",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const persistedPermissionEvents = source.session.snapshotEvents().filter(({ type }) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(JSON.stringify(state.session.snapshotEvents())).not.toContain(\"printf first\");",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(JSON.stringify(state.session.snapshotEvents())).not.toContain('\"review\"');",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(JSON.stringify(state.session.snapshotEvents())).toBe(before);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(childSession.snapshotEvents().some(({ type }) => type === \"myagents/permission/rule\")).toBe(false);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(resumed.session.snapshotEvents()).toHaveLength(beforeEventCount);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().at(-1)).toMatchObject({",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({ outcome: \"cancelled\" });",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().at(-1)?.data).toMatchObject({ outcome: \"unavailable\" });",
+    "count": 3
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().at(-1)?.type).toBe(\"myagents/permission/rule/revoked\");",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().filter(({ type }) => type === \"myagents/permission/rule\")).toHaveLength(1);",
+    "count": 2
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().filter(({ type }) => type.startsWith(\"approval/\"))).toEqual([]);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().some(({ type }) => type === \"myagents/permission/rule\")).toBe(true);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "for (const event of state.session.snapshotEvents()) {",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "state.session.snapshotEvents(),",
+    "count": 1
+  },
+  {
+    "path": "tests/product-permission-interaction.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "structuredClone(state.session.snapshotEvents()),",
+    "count": 3
+  },
+  {
+    "path": "tests/product-session-handle.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await expect(writer.append(session.snapshotEvents())).rejects.toThrow(/seq/);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-session-handle.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await writer.append(parent.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/product-session-handle.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await writer.append(session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/product-session-handle.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const batch = structuredClone(session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/product-task-graph.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "Object.freeze([...state.session.snapshotEvents(), event]),",
+    "count": 1
+  },
+  {
+    "path": "tests/product-task-graph.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const created = state.session.snapshotEvents().find(({ type }) => type === \"myagents/task/created\");",
+    "count": 1
+  },
+  {
+    "path": "tests/product-task-graph.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const firstTaskEvent = state.session.snapshotEvents().find(({ type }) => type === \"myagents/task/created\");",
+    "count": 1
+  },
+  {
+    "path": "tests/product-task-graph.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(falseFlush.session.snapshotEvents().filter(({ type }) => type === \"myagents/task/created\")).toHaveLength(1);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-task-graph.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(foldProductTaskGraph(structuredClone(state.session.snapshotEvents()), String(state.agent.id)))",
+    "count": 1
+  },
+  {
+    "path": "tests/product-task-graph.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(stale.session.snapshotEvents().filter(({ type }) => type === \"myagents/task/created\")).toHaveLength(0);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-task-graph.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().filter(({ type }) => type === \"myagents/task/created\")).toHaveLength(1);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-task-graph.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().filter(({ type }) => type === \"myagents/task/updated\")).toHaveLength(0);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-task-graph.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "structuredClone(state.session.snapshotEvents()),",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`eventAt` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "{ length: child.session.seq }, (_, seq) => child.session.eventAt(SessionSeq(seq)),",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await vi.waitFor(() => expect(recovered.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/started\")).toHaveLength(1));",
+    "count": 2
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await vi.waitFor(() => expect(recovered.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/started\")).toHaveLength(2));",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "await vi.waitFor(() => expect(state.agent.session.snapshotEvents().some((event) => event.type === \"myagents/work/message\")).toBe(true));",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const birth = source.agent.session.snapshotEvents().find((event) => event.type === \"myagents/work/created\" && event.data.birth.depth === 2);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const birth = state.agent.session.snapshotEvents().find((event) => event.type === \"myagents/work/created\");",
+    "count": 2
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const births = state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/created\");",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const call = session.snapshotEvents().findLast((event) => event.type === \"tool/call\"",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const delivery = state.agent.session.snapshotEvents().find((event) => event.type === \"myagents/work/message\");",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const descriptor = foldSubagentDescriptor(child.session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const descriptor = foldSubagentDescriptor(session.snapshotEvents());",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const epoch = state.agent.session.snapshotEvents().find((event) => event.type === \"myagents/work/epoch\");",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const epochs = state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/epoch\");",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const events = session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const events = source.agent.session.snapshotEvents().filter((event) => event.type !== \"myagents/work/started\").map((event, index) => Object.freeze({",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const events = state.agent.session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const initialChildEventSeq = child.snapshotEvents().length;",
+    "count": 2
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const insertions = () => state.subagents.childAgent(childId)?.session.snapshotEvents().filter((event) => event.type === \"agent/inbox/spliced\"",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const messages = state.agent.session.snapshotEvents().flatMap((event) => event.type === \"agent/inbox/spliced\"",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const parentEvents = parent.session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const replay = context.sessions.prepare(child.id, { seed: child.snapshotEvents(), meta: child.header });",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const report = state.agent.session.snapshotEvents().find((event) => event.type === \"myagents/work/message\" && event.data.sender === childId);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const reportIntents = recovered.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/message-intent\");",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const reportReceipts = recovered.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/message\");",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const reports = () => state.agent.session.snapshotEvents().filter((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const reports = recovered.agent.session.snapshotEvents().flatMap((event) => event.type === \"agent/inbox/spliced\"",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const reports = state.agent.session.snapshotEvents().flatMap(event => event.type === \"agent/inbox/spliced\"",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const restoredEvents = recovered.context.sessions.get(parent.id)?.snapshotEvents() ?? [];",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const rootBefore = state.agent.session.snapshotEvents();",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(recovered.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/created\")).toHaveLength(1);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(recovered.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/started\")).toHaveLength(1);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents()).toEqual(rootBefore);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/created\")).toEqual([]);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/created\")).toHaveLength(1);",
+    "count": 3
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/epoch\")).toEqual([]);",
+    "count": 2
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/message\")",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/message-canceled\")).toHaveLength(1);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/reopened\")).toHaveLength(1);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/settled\")).toEqual([]);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/settled\")).toHaveLength(1);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/started\")).toHaveLength(1);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/started\")).toHaveLength(2);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type === \"myagents/work/stopping\")).toEqual([]);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type.startsWith(\"myagents/work/\"))",
+    "count": 3
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().filter((event) => event.type.startsWith(\"myagents/work/message\"))",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().find((event) => event.type === \"myagents/work/message-intent\")?.data).toMatchObject({ deliveryTiming: initial });",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().flatMap((event) => event.type === \"agent/inbox/spliced\" ? event.data.inserted : []).filter((message) => message.source.kind === \"agent-message\" && message.source.senderSessionId === childId)).toHaveLength(0);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.agent.session.snapshotEvents().some(event => event.type === \"myagents/work/epoch\")).toBe(true);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.subagents.childAgent(parentId)?.session.snapshotEvents().some((event) => event.type === \"myagents/work/created\")).toBe(false);",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "if (session?.header.parentSession === parent.id && foldSubagentDescriptor(session.snapshotEvents())?.mode === \"continuable\") {",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "rootEvents: source.agent.session.snapshotEvents().slice(0, birth.seq + 1),",
+    "count": 1
+  },
+  {
+    "path": "tests/product-work-tools.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "rootEvents: state.agent.session.snapshotEvents().slice(0, birth.seq + 1), models: { selectModel, assertModel },",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const accepted = session.snapshotEvents().find((event) => event.type === \"myagents/operation/accepted\");",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const assistant = session.snapshotEvents().find((event) => event.type === \"assistant/message\");",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const claimed = session.snapshotEvents().find((event) => event.type === \"myagents/operation/claimed\");",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const last = incomplete.snapshotEvents().at(-1);",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const receipts = session.snapshotEvents().filter((event) =>",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const requestContext = session.snapshotEvents().find(",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const terminal = session.snapshotEvents().find((event) => event.type === \"myagents/operation/terminal\");",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(session.snapshotEvents().some((event) => event.type === \"tool/call\" || event.type === \"tool/result\")).toBe(false);",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().some(({ type }) => type === \"assistant/message\" || type === \"assistant/attempt\")).toBe(false);",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(state.session.snapshotEvents().some(({ type }) => type === \"assistant/message\")).toBe(false);",
+    "count": 1
+  },
+  {
+    "path": "tests/runtime-event-projector.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "for (const event of session.snapshotEvents().slice(0, first.seq + 1)) incomplete.append(event.type, event.data);",
+    "count": 1
+  },
+  {
+    "path": "tests/spikes/seam-fixtures.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "const prefix = source.snapshotEvents().slice(0, boundary);",
+    "count": 1
+  },
+  {
+    "path": "tests/spikes/seam-fixtures.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "if (!Number.isSafeInteger(boundary) || boundary < 0 || boundary > source.snapshotEvents().length) {",
+    "count": 1
+  },
+  {
+    "path": "tests/token-accounting.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(deriveAccruedTurnTokenUsage(session.snapshotEvents())?.totalTokens).toBe(16);",
+    "count": 1
+  },
+  {
+    "path": "tests/token-accounting.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(deriveAccruedTurnTokenUsage(session.snapshotEvents())?.totalTokens).toBe(5);",
+    "count": 2
+  },
+  {
+    "path": "tests/token-accounting.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(deriveCompletedSessionTokenUsage(session.snapshotEvents())).toBeUndefined();",
+    "count": 1
+  },
+  {
+    "path": "tests/token-accounting.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(deriveCompletedSessionTokenUsage(session.snapshotEvents())).toEqual(expected);",
+    "count": 1
+  },
+  {
+    "path": "tests/token-accounting.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(deriveCompletedTurnTokenUsage(retry.snapshotEvents())).toBeUndefined();",
+    "count": 1
+  },
+  {
+    "path": "tests/token-accounting.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(deriveCompletedTurnTokenUsage(session.snapshotEvents())).toEqual(expected);",
+    "count": 1
+  },
+  {
+    "path": "tests/token-accounting.unit.test.ts",
+    "ruleId": "@typescript-eslint/no-deprecated",
+    "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
+    "lineText": "expect(deriveCompletedTurnTokenUsage(unknown.snapshotEvents())).toBeUndefined();",
+    "count": 1
+  }
+]
