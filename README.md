@@ -66,7 +66,7 @@ MyAgents 客户端       其他 Host         Reference Web Host
 - [Host 反向接口](./specs/tech_docs/boundaries/host-reverse-ports.md)：凭证、交互、工具、Hooks 与附件。
 - [工具与执行策略](./specs/tech_docs/execution/tool-runtime-and-policy.md)：模型可见工具及执行约束。
 - [交付与验证](./specs/tech_docs/assurance/verification-artifacts-and-handoff.md)：版本绑定、构建产物和校验。
-- [项目文档索引](./specs/README.md)：产品需求、设计决策与模块文档。
+- [项目文档索引](./specs/README.md)：架构、设计决策与模块文档。
 
 ## 开源许可
 
@@ -138,7 +138,7 @@ This interface is independent of the official DSH SDK protocol. Third parties cu
 - [Host reverse ports](./specs/tech_docs/boundaries/host-reverse-ports.md): Credentials, interactions, tools, Hooks, and attachments.
 - [Tools and execution policy](./specs/tech_docs/execution/tool-runtime-and-policy.md): Model-visible tools and execution constraints.
 - [Delivery and verification](./specs/tech_docs/assurance/verification-artifacts-and-handoff.md): Version binding, artifacts, and verification.
-- [Documentation index](./specs/README.md): Product requirements, design decisions, and module documentation.
+- [Documentation index](./specs/README.md): Architecture, design decisions, and module documentation.
 
 ### Open-source license
 

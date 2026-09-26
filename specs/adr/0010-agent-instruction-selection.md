@@ -1,8 +1,6 @@
 # ADR 0010 — Reuse DSH for mutually exclusive project instructions
 
-RC3 refresh (2026-09-23): see the [complete seam adjudication](../dsh/upstream-refresh-2026-09-23.md). Official rc.3 adds no runtime/public-seam behavior; the current registry preserves this decision and its removal condition. Historical evidence below remains bound to its original bytes.
-
-Candidate disposition (2026-09-12, U15-W02): Rebase candidate selection and fix propagation into the initial baseline scan, so first-selection applies from the first prompt. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
+Current DSH `0.1.7-rc.2` disposition: retained as patch 0009; first-candidate selection and guidance propagation remain required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 - Status: accepted
 - Date: 2026-09-01

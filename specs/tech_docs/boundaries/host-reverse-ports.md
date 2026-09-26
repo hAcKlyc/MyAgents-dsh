@@ -3,8 +3,6 @@ type: technical-architecture
 status: implemented
 module: host-reverse-ports
 updated: 2026-09-25
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decision: ../../prd/tech_rfc_0.1_host_ports_components.md
 ---
 
 # Host reverse ports
@@ -120,4 +118,4 @@ Add a reverse method only for authority that must remain Host-owned. Define the 
 
 ## Permission review transport
 
-Protocol 3.1 adds typed permission review and actual call/rootCall attribution to the existing interaction registration flow. The negotiated peer frame limit selects inline review or an `application/json` publication through the existing attachment store; cancellation uses the same operation scope. The Host owns rendering and its large-value route, while Runtime owns authorization, rule lifetime and settlement. No second interaction broker or transcript is introduced. [Permissions and interactions](../execution/permissions-interactions-and-plan.md) explains review semantics.
+The current protocol carries typed permission review and actual call/rootCall attribution in the interaction registration flow. The negotiated peer frame limit selects inline review or an `application/json` publication through the existing attachment store; cancellation uses the same operation scope. The Host owns rendering and its large-value route, while Runtime owns authorization, rule lifetime and settlement. No second interaction broker or transcript is introduced. [Permissions and interactions](../execution/permissions-interactions-and-plan.md) explains review semantics.

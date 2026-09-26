@@ -3,8 +3,6 @@ type: technical-architecture
 status: implemented
 module: event-projection-and-reconciliation
 updated: 2026-09-25
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
 ---
 
 # Event projection and Host reconciliation

@@ -39,14 +39,7 @@ The source gate verifies every exact upstream blob, applies the ordered series o
 worktree and runs the selected source regressions. The patchless seam 004 still requires fresh
 Product and native ownership proof. The affected ADRs preserve each semantic and removal condition.
 
-The [UPG17 PRD](../prd/prd_0.3_myagents_dsh_0_1_7_upgrade.md) owns the current Product, Runtime,
-native and Host acceptance. Historical rc.3 evidence remains bound to its original source and package
-bytes. Later lock/builder/source changes require fresh artifacts; clean patch application and old
-handoffs cannot establish acceptance for new bytes.
-
-The [2026-09-25 seam review](./upstream-refresh-2026-09-25.md) records the current
-source-level decisions and the proof required before final Host acceptance.
-
-## Historical RC3 maintenance refresh
-
-[2026-09-23 source and seam review](./upstream-refresh-2026-09-23.md) records the prior rc.3 maintenance comparison. It is retained for history and does not define the current rc.2 upgrade target.
+The [current source review](./upstream-refresh-2026-09-25.md) records the 0.1.7 semantic decisions.
+The accepted artifact manifest and MyAgents Host lock own their respective executable identities;
+current native and Host acceptance requires matching evidence. Later lock/builder/source changes
+require fresh artifacts; clean patch application and old handoffs cannot establish acceptance for new bytes.

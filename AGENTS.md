@@ -9,7 +9,7 @@ Documentation governance starts at `specs/README.md`. That index owns document p
 1. Exact installed APIs, versions, scripts, and executable constraints: code, tests, `package.json`, and the lockfile.
 2. Current owners, process boundaries, lifecycle placement, and data flow: `specs/ARCHITECTURE.md`.
 3. Exact wire behavior: `packages/protocol/src/contract-source.ts`, with generated schema/client/fixtures as deterministic projections. `specs/tech_docs/runtime/protocol.md` records protocol intent and ownership, not competing exact shapes.
-4. Development entry, repository/migration relationships, milestone/Batch scope, status, and acceptance: `specs/prd/README.md`, `specs/prd/plan.md`, and the active `prd_<milestone>_*.md`. Paired `tech_rfc_<milestone>_*.md` files preserve implementation decisions but do not create independent product gates.
+4. Development entry and maintained technical documentation: `specs/README.md`, `specs/ARCHITECTURE.md`, and the relevant `specs/tech_docs/` guide. Local `specs/prd/` and `specs/research/` drafts are optional, ignored by Git, and cannot be required for a clean checkout or release gate.
 5. Compatibility claims: versioned compatibility manifests and executable fixtures, never README prose alone.
 6. Implemented core-module maintenance guides: `specs/tech_docs/`; compaction architecture and evolution: `specs/tech_docs/execution/compaction.md`.
 
@@ -35,8 +35,8 @@ Documentation governance starts at `specs/README.md`. That index owns document p
 ## Development workflow
 
 - Work on `dev` or a feature branch; do not commit implementation directly to `main` after repository bootstrap.
-- Read `specs/prd/plan.md` plus the active Batch and internal workstream ledger before changing code. Update the owning ledger after each accepted action item.
-- Keep product PRDs and their technical RFCs together under `specs/prd/` with bidirectional links. When implemented module behavior changes, update the corresponding `specs/tech_docs/` guide and the module link in `specs/ARCHITECTURE.md` in the same change.
+- Read the relevant Architecture and module-guide sections before changing code. Local planning drafts may inform the work, but the tracked guides and exact code must stand on their own.
+- When implemented module behavior changes, update the corresponding `specs/tech_docs/` guide and the module link in `specs/ARCHITECTURE.md` in the same change.
 - Read the relevant architecture section before changing an owner, process, Session, lifecycle, persistence, security, or protocol boundary.
 - Pin the exact DSH version/commit. Imports from package-private `src/*` or `dist/*` paths are forbidden.
 - Before auditing or integrating an official DSH update, use `.agents/skills/dsh-upstream-maintenance/SKILL.md`; read its complete patch inventory and every affected ADR/module guide.
@@ -58,7 +58,7 @@ The root `package.json` and lockfile own the exact command definitions and toolc
 
 ## Batch 3 integration handoff generation
 
-When asked to generate, refresh, or package the MyAgents integration delivery, use the official builder; do not hand-write a delivery README or assemble selected files manually. Read `specs/prd/prd_0.3_myagents_integration.md` and `specs/prd/tech_rfc_0.3_myagents_dsh_integration.md` first.
+When asked to generate, refresh, or package the MyAgents integration delivery, use the official builder; do not hand-write a delivery README or assemble selected files manually. Read `specs/tech_docs/assurance/verification-artifacts-and-handoff.md` and `specs/tech_docs/runtime/protocol.md` first.
 
 The builder requires a clean checkout, an already verified Runtime artifact whose `repositoryHead` equals the current Git `HEAD`, a four-platform claim file, and the exact content-addressed platform evidence named by that file. Old Runtime or platform evidence cannot be relabeled for a newer source commit. If those inputs do not exist on the current machine, rebuild and re-run the affected Runtime/native evidence campaign before generating the handoff.
 
@@ -77,4 +77,4 @@ The command generates the root `README.md` automatically from verified Runtime a
 node /absolute/path/to/handoff/verify.mjs <HANDOFF_MANIFEST_SHA256>
 ```
 
-Never modify an accepted handoff in place. A later source, Runtime, protocol, profile, compatibility, patch, or platform-evidence change produces a new immutable handoff and new digest; update the owning PRD/RFC/plan status only after the new artifact and required evidence are accepted.
+Never modify an accepted handoff in place. A later source, Runtime, protocol, profile, compatibility, patch, or platform-evidence change produces a new immutable handoff and new digest; update the maintained technical documentation and external acceptance record only after the new artifact and required evidence are accepted.

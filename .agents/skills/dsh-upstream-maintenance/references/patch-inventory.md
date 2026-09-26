@@ -53,6 +53,6 @@ Patch filenames retain historical numbers; patch order is the registry's dense o
 | Seam decisions / exact registry | `scripts/dsh-seam-decisions.ts`, `specs/dsh/seam-decisions-v1.json`, ADRs 0001–0012 |
 | DSH baseline / patches | `specs/dsh/dsh-baseline-v1.json`, `specs/dsh/README.md`, `specs/dsh/patches/` |
 | pi-ai seam | `specs/pi-ai/seam-evidence-v1.json`, `specs/pi-ai/README.md` |
-| Workstream / acceptance | `specs/prd/prd_0.3_myagents_dsh_0_1_7_upgrade.md` and its governing Runtime/Host RFCs |
+| Runtime/Host acceptance | `specs/tech_docs/assurance/verification-artifacts-and-handoff.md`, exact artifact manifests and the trusted Host release record |
 | Source and seam verification | `check:dsh-source`, `check:dsh-seams`, `check:dsh-seams-source` |
 | Artifact and Product composition | `build:dsh-artifact`, `verify:dsh-artifact`, `check:dsh-runtime-composition` |

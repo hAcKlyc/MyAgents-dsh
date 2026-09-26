@@ -37,12 +37,13 @@ Do not broaden an audit into a repository mutation.
 Read these complete authorities in order:
 
 1. repository `AGENTS.md` (also exposed as `CLAUDE.md`);
-2. `specs/prd/plan.md`, the active Batch PRD, and its internal workstream ledger;
-3. `specs/ARCHITECTURE.md`, especially DSH foundation and extension policy;
-4. `specs/dsh/README.md` and `specs/dsh/seam-decisions-v1.json`;
-5. all ADRs referenced by the seam registry;
-6. any module guide affected by upstream changes, including `specs/tech_docs/execution/compaction.md`;
-7. [references/patch-inventory.md](references/patch-inventory.md).
+2. `specs/ARCHITECTURE.md`, especially DSH foundation and extension policy;
+3. `specs/dsh/README.md` and `specs/dsh/seam-decisions-v1.json`;
+4. all ADRs referenced by the seam registry;
+5. any module guide affected by upstream changes, including `specs/tech_docs/execution/compaction.md`;
+6. [references/patch-inventory.md](references/patch-inventory.md).
+
+Local ignored planning drafts may add context, but a clean checkout and release gate cannot depend on them.
 
 Treat code, tests, package manifests, the lockfile, generated registries, and artifact manifests as the exact-byte authority.
 

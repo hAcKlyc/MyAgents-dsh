@@ -3,8 +3,6 @@ type: technical-architecture
 status: implemented
 module: platform-and-local-execution
 updated: 2026-09-12
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decision: ../../prd/tech_rfc_0.1_runtime_architecture.md
 ---
 
 # Platform and local execution
@@ -110,4 +108,4 @@ cancellation and native process-tree cleanup on the target OS before promoting s
 | SQLite path/durability | `packages/persistence-product/src/provider.ts`, `sqlite-store.ts` |
 | Native claims | artifact-bound platform reports and `packages/artifact-verifier/` |
 
-The accepted change and delivery gates are [UPG-W10](../../prd/prd_0.3_myagents_dsh_0_1_2_upgrade.md#7-工作包与内部台账). Protocol 3.0.0 uses `shellRef`/`shellDialect`; Hosts must use the generated matching contract. Historic `Bash` transcript records remain readable, but the old executor is not installed.
+The current protocol uses `shellRef`/`shellDialect`; Hosts must use the generated matching contract. Historic `Bash` transcript records remain readable, but the old executor is not installed. The [protocol source](../../../packages/protocol/src/contract-source.ts) owns the exact current version and shapes.

@@ -3,8 +3,6 @@ type: technical-architecture
 status: implemented
 module: mutations-and-checkpoints
 updated: 2026-09-02
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decision: ../../prd/tech_rfc_0.1_session_persistence_mutations.md
 decision: ../../adr/0004-shared-backend-lock-and-immutable-rewind-generation.md
 ---
 

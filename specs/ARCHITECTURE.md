@@ -13,17 +13,17 @@ project: MyAgents-dsh
 
 The project does not wrap DSH with the existing Pi runtime. The runtime process itself is a DSH/Cordis application, DSH owns the only concrete AgentLoop, and all product runtime behavior is implemented through DSH services, plugins, scopes, and durable session events.
 
-The compatibility target is the versioned MyAgents Agent experience admitted by the exact product profile and artifact-bound compatibility manifest, not every feature of an upstream SDK or DSH package. Historical Pi migration and early DSH baselines remain attributable in `specs/migration/`, the Foundation PRD, and DSH refresh records; they are not current architecture.
+The compatibility target is the versioned MyAgents Agent experience admitted by the exact product profile and artifact-bound compatibility manifest, not every feature of an upstream SDK or DSH package. The fixed source migration inventory records historical Pi provenance; it is not current architecture.
 
 ### 1.1 Current implementation and acceptance state
 
-This table records the current source boundaries. The active PRDs own acceptance; the generated Host lock and immutable handoff own installed byte identities.
+This table records the current source boundaries. Exact artifact evidence and the trusted release record own acceptance; the generated Host lock and immutable handoff own installed byte identities.
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
 | DSH source distribution | Fixed official source plus required isolated patches | The [source baseline](./dsh/dsh-baseline-v1.json) pins DSH `0.1.7-rc.2` at `477b4f420553e8a52c2fbccc464d7561b239c443`; the [seam registry](./dsh/seam-decisions-v1.json) lists ten ordered core patches. pi-ai is separately pinned and patched. |
 | Standalone Runtime and native RPC | Accepted protocol `6.0.0` | Native V4 durable Session events, explicit live assistant-stream boundaries and declared per-model system-prompt/tool-update capabilities. Exact vocabulary and shapes come from the generated contract. |
-| Batch 3 integration handoff | Ingested by the MyAgents Host | The current [MyAgents lock](../../MyAgents-integration-myagents-dsh/src/shared/integrated-runtimes/dsh-lock.json) selects the accepted Runtime, contracts and platform evidence; its digest and claims are the installed-byte authority. [Release delivery](./tech_docs/assurance/verification-artifacts-and-handoff.md) packages accepted target handoffs under fixed asset names; publication remains gated. |
+| Batch 3 integration handoff | Ingested by the MyAgents Host | The MyAgents Host lock at `src/shared/integrated-runtimes/dsh-lock.json` selects the accepted Runtime, contracts and platform evidence; its digest and claims are the installed-byte authority. [Release delivery](./tech_docs/assurance/verification-artifacts-and-handoff.md) packages accepted target handoffs under fixed asset names; publication remains gated. |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Its older frozen web artifact does not prove the current Runtime source. |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet. |
 | Platforms | Four source targets; native claims are artifact-specific | macOS arm64 and x64, Windows x64 and Linux x64 share official DSH subprocess semantics. Intel macOS has source support but still needs its own x64 Runtime and native campaign. New bytes require new native evidence; Windows/Linux remain pending until their native campaigns pass. |
@@ -507,7 +507,7 @@ MyAgents is the first-party native Host. It owns Product Session identity, the p
 
 Each Product Session sidecar owns one runtime generation. Renderer code never parses the runtime wire directly; an application-owned adapter uses the generated native client and projects events into product state. The Rust shell or unrelated processes do not become alternate protocol authorities.
 
-MyAgents consumes the standalone Batch 3 integration handoff rather than repository source. The [Host lock](../../MyAgents-integration-myagents-dsh/src/shared/integrated-runtimes/dsh-lock.json) pins its exact Runtime, protocol, generated client/schema/fixtures, canonical tool/profile contracts, notices and platform evidence. Earlier handoffs remain historical and must not be consumed as current development input. The current three platform claims are `implementation-complete_pending-native-validation`; `verified` is accepted only when an inventoried native report passes against the exact Runtime manifest. The Reference Web artifact and future Agent SDK facade are not dependencies of this integration path.
+MyAgents consumes the standalone Batch 3 integration handoff rather than repository source. Its Host lock at `src/shared/integrated-runtimes/dsh-lock.json` pins the exact Runtime, protocol, generated client/schema/fixtures, canonical tool/profile contracts, notices and platform evidence. Earlier handoffs remain historical and must not be consumed as current development input. Platform claims belong to that lock and the matching handoff; `verified` is accepted only when an inventoried native report passes against the exact Runtime manifest. The Reference Web artifact and future Agent SDK facade are not dependencies of this integration path.
 
 ## 16. DSH extension and fork policy
 
@@ -515,7 +515,7 @@ Capability behavior should be implemented as a plugin when a public DSH seam can
 
 A DSH core change is justified only when:
 
-1. the required behavior is part of an accepted PRD;
+1. the required behavior is part of the maintained product contract and current architecture;
 2. no public service/event/guard/registration seam can express it without conflicting logs or authority;
 3. the change is minimal and independently tested;
 4. the project records the pinned upstream commit and patch inventory;
@@ -548,7 +548,7 @@ The native Host collaboration controls are owned by [ProductWork](./tech_docs/ex
 
 The [operation module](./tech_docs/runtime/operations-messages-and-turns.md) versions new native-attempt token accounting while preserving unmarked historical terminal derivation. Unknown billing data is independent of successful answer completion; [compaction](./tech_docs/execution/compaction.md) owns summary/repair receipts and the [child module](./tech_docs/execution/child-agents-and-background-work.md) excludes inherited usage.
 
-### Runtime/Host boundary correction (UPG-W11)
+### Runtime/Host boundary
 
 The Host constructs ordinary process environment and choices; Runtime initialize owns admission of the generation snapshot. [Platform and local execution](./tech_docs/boundaries/platform-and-local-execution.md#4-sealed-process-environment) documents this single input boundary. [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md#5-blocking-interactions) owns typed review, executing-Agent attribution and settlement, while existing reverse attachments carry oversized review. [Protocol](./tech_docs/runtime/protocol.md) owns generated public type consumption and fixed capability reporting. [Tool Runtime](./tech_docs/execution/tool-runtime-and-policy.md) documents trusted callback semantics; [Verification and handoff](./tech_docs/assurance/verification-artifacts-and-handoff.md#host-startup-verification) documents the single combined installation scan. DSH remains the sole execution and durable conversation authority.
 
@@ -556,7 +556,7 @@ The Runtime permission owner implements Auto (`acceptEdits`) defaults for both W
 
 Inline permission progression is validated by the permission service against the durable operation chain; the Host bridge forwards that validated card revision and checks only its own operation/Session scope. It must not compare a progressed card to the frozen birth revision. See [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md). Actionable Read and HTTP errors remain owned by [Tool Runtime](./tech_docs/execution/tool-runtime-and-policy.md) and [Web/network](./tech_docs/boundaries/web-and-network.md).
 
-UPG-W13 Action defaults and Session-tree grants remain owned by [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md). Basic built-in work avoids permission cards; Shell and external tools retain approval, questions and plan review retain their actual interaction. [Child publication](./tech_docs/execution/child-agents-and-background-work.md) configures official DSH ask policy and matching scoped context before execution, including cold materialization. Plan prompt/errors identify the Write-before-submit workflow; Shell context states local-user execution with no OS sandbox.
+Action defaults and Session-tree grants remain owned by [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md). Basic built-in work avoids permission cards; Shell and external tools retain approval, questions and plan review retain their actual interaction. [Child publication](./tech_docs/execution/child-agents-and-background-work.md) configures official DSH ask policy and matching scoped context before execution, including cold materialization. Plan prompt/errors identify the Write-before-submit workflow; Shell context states local-user execution with no OS sandbox.
 
 Round 6 child identity and first foreground result delivery use the existing ProductWork/SystemPrompt and durable epoch owners; see [child work](./tech_docs/execution/child-agents-and-background-work.md) and [system context](./tech_docs/execution/system-context-and-instructions.md). No new execution or persistence owner is introduced.
 

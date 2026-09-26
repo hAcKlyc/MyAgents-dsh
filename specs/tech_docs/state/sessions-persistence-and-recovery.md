@@ -3,8 +3,6 @@ type: technical-architecture
 status: implemented
 module: sessions-persistence-and-recovery
 updated: 2026-09-25
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decision: ../../prd/tech_rfc_0.1_session_persistence_mutations.md
 decisions:
   - ../../adr/0003-product-session-event-predicate.md
   - ../../adr/0004-shared-backend-lock-and-immutable-rewind-generation.md
@@ -50,7 +48,7 @@ A read handle refuses a generation change or a shorter prefix than it previously
 The composition also mounts the official SQLite SessionQuery engine with a process-local
 in-memory derived index, opened on first search. It uses the same public persistence and
 Session providers; the index is disposable and never replaces the product SQLite log or
-its mutation locks. Cold-list/tree performance acceptance remains in UPG-W06.
+its mutation locks. Cold-list/tree performance claims require a campaign against the exact installed Runtime.
 
 ```text
 Session identity
@@ -158,7 +156,7 @@ Handle/session/service flush drains acknowledged events; failed background batch
 order and pause automatic retries until an explicit barrier. Close drains, releases ownership and
 reports failure; service flush/disposal sweeps every handle and aggregates errors. Provider teardown
 waits for in-flight admission before closing handles and finally SQLite. No second Session log or
-recovery coordinator is installed. Full Runtime lifecycle/fault evidence remains in U15-W03–W07.
+recovery coordinator is installed. Full Runtime lifecycle/fault acceptance requires matching native and artifact evidence.
 
 Current hard bounds include 4,096 Sessions, 1,000,000 events per generation, 2 MiB per event,
 64 KiB header data, a 4 GiB database, JSON depth 64 / 65,536 nodes, 64 pending mutations per Session

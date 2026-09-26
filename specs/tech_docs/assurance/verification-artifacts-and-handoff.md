@@ -3,12 +3,6 @@ type: technical-architecture
 status: implemented-runtime-delivery
 module: verification-artifacts-and-handoff
 updated: 2026-09-02
-product_scope:
-  - ../../prd/prd_0.1_agent_runtime.md
-  - ../../prd/prd_0.3_myagents_integration.md
-implementation_decisions:
-  - ../../prd/tech_rfc_0.1_verification_release.md
-  - ../../prd/tech_rfc_0.3_myagents_dsh_integration.md
 ---
 
 # Verification, artifacts, and integration handoff
@@ -82,7 +76,7 @@ Verification is deliberately layered:
 `packages/dynamic-e2e` is test-only. Fresh external Tester Agents operate its CLI and evaluate observable scenarios; the packed DSH Root Agent is the system under test. Test rubrics, expected tool order and credential fixtures are never installed into the Runtime artifact.
 
 The handoff ships the named platform JSON evidence. Pre-artifact reports, full dynamic/soak
-campaigns, independent reviews and signing/notarization evidence remain in PRD ledgers or trusted
+campaigns, independent reviews and signing/notarization evidence remain in trusted
 out-of-band release records unless explicitly added to a future manifest. The outer digest cannot
 prove evidence it does not inventory.
 
@@ -97,13 +91,13 @@ prove evidence it does not inventory.
 | Runtime composition verification and artifact construction | `scripts/verify-dsh-runtime-composition.ts` |
 | Native campaign | `scripts/run-batch-1-native-campaign.ts` |
 | Batch 3 handoff | `scripts/build-batch-3-integration-handoff.ts` |
-| GitHub Release target archive and full-set publication | `scripts/package-batch-3-release.mjs`, `scripts/publish-batch-3-release.mjs`; [Release delivery PRD](../../prd/prd_0.3_release_delivery.md) and [RFC](../../prd/tech_rfc_0.3_release_delivery.md) |
+| GitHub Release target archive and full-set publication | `scripts/package-batch-3-release.mjs`, `scripts/publish-batch-3-release.mjs` |
 
 After changing the root version, run `generate:protocol` to refresh its typed Runtime version, protocol fixtures and schema, then `generate:profile` for the dependent profile. Both are generated projections; maintainers edit only the root package version and matching npm lock metadata.
 
 The root `package.json` `version` is the single MyAgents-dsh distribution version (`0.1.0` for the first planned release). Release commands derive `v<version>` from it; an explicit `--tag` must match. Workspace package `0.0.0` versions and the pinned upstream DSH engine version are separate identities. The release packager accepts one clean-commit official handoff, trusted outer digest and target. It requires a single `verified` native target claim and that target's native addon, verifies the source and an extracted copy, then emits `myagents-dsh-<tag>-<target>.tar.gz` plus companion JSON. The publisher validates all four pairs from one source, creates `manifest.json`, uploads nine assets as a draft Release, downloads and compares the remote bytes, then makes the Release public. Without `--publish` it only prints the producer-owned manifest. Existing checked-in handoffs have pending claims and cannot be used as release input.
 
-The `.github/workflows/release.yml` runs the same builders on macOS ARM, macOS Intel, Linux x64 and Windows x64. `workflow_dispatch` runs a four-platform preflight on main without publishing; pushing the matching tag runs publication. The credentialed native campaign reads the checked-in approved route files and requires one repository Secret, `DSH_RELEASE_PROVIDER_KEY`. Missing credentials fail the native job. The repository has immutable releases enabled. A new stable version is published only by merging accepted code to `main` and pushing its matching tag; CI does not create the tag. As of 2026-09-26, the Secret is configured, but a successful real four-platform run and public `v0.1.0` Release are still pending. Existing DSH Session `snapshotEvents` / `eventAt` reads use the upstream grandfathering allowance: `specs/lint/existing-deprecated-session-reads.json` records each exact lint diagnostic and its maximum count. `npm run lint` rejects new diagnostics or additional uses; migration can remove entries as those reads are replaced. The [PRD](../../prd/prd_0.3_release_delivery.md) and [RFC](../../prd/tech_rfc_0.3_release_delivery.md) define the full acceptance boundary.
+The `.github/workflows/release.yml` runs the same builders on macOS ARM, macOS Intel, Linux x64 and Windows x64. `workflow_dispatch` runs a four-platform preflight on main without publishing; pushing the matching tag runs publication. The credentialed native campaign reads the checked-in approved route files and requires one repository Secret, `DSH_RELEASE_PROVIDER_KEY`. Missing credentials fail the native job. The repository has immutable releases enabled. A new stable version is published only by merging accepted code to `main` and pushing its matching tag; CI does not create the tag. Existing DSH Session `snapshotEvents` / `eventAt` reads use the upstream grandfathering allowance: `specs/lint/existing-deprecated-session-reads.json` records each exact lint diagnostic and its maximum count. `npm run lint` rejects new diagnostics or additional uses; migration can remove entries as those reads are replaced. Release status belongs to GitHub Release and its exact native/artifact evidence, not this guide.
 
 After those gates pass and the version tag points at the accepted clean commit, package each target with:
 
@@ -135,15 +129,15 @@ manifest. A complete adapter whose native campaign has not run is labeled
 Runtime-bound or schema-validated. It is a limitation label, not proof of a native campaign.
 MyAgents may advertise only claims accepted by the release authority beyond these structural checks.
 
-## Node 24.20 toolchain refresh
+## Toolchain identity
 
-The current build policy pins Node `24.20.0` and npm `11.19.0`, matching MyAgents `0.4.15`'s official bundled distribution. Root engines/devEngines, CI, launchers, protocol fixtures, Runtime self-check and artifact construction share that exact requirement. The official DSH source and patch series stay fixed; rebuilding their artifact changes the build provenance and accepted manifest digest. Earlier Node `24.14.0` / npm `11.15.0` deliveries remain immutable historical evidence.
+Development and tests accept Node `>=24.15.0 <25` with npm `11.19.0`. Artifact builders and the official Runtime distribution require exact Node `24.20.0` and npm `11.19.0`; CI, launchers, protocol fixtures and Runtime self-check enforce the applicable identity. Rebuilding the fixed DSH source and patch series under a different toolchain changes build provenance and the resulting artifact digest.
 
 Source validation must consume the accepted patched DSH packages through the package installer; an untouched registry install does not contain the session-projection and other public-seam patches used by this Runtime. The accepted artifact manifest and offline consumer lock provide those package bytes; never edit installed package source to emulate the patches.
 
 On a clean CI or release runner, first prime the package store from the exact historical DSH source commit through its frozen lockfile, then build and verify the patched DSH artifact before repository typecheck, lint, tests, and build. `scripts/prime-historical-dsh-store.ts` owns that temporary worktree, primes the exact external npm metadata needed for offline resolution, and removes the worktree after priming; the artifact builder and source compiler then use the primed stores offline. `npm run install:verified-dsh-checks -- --artifact <directory>` installs the artifact's verified package tarballs through npm for those checks and temporarily points every workspace DSH resolution at those tarballs, preventing nested registry copies. It restores the checkout's `package.json` byte-for-byte after npm resolves the local tarballs and leaves `package-lock.json` unchanged; the release gate then checks the clean repository. The patched DSH source test uses a narrow set of pinned workspace dependencies so it does not fetch unrelated document engines. The release scripts launch npm, pnpm, and Corepack through the selected Node's JavaScript entrypoints, including on Windows where their shell shims cannot be started as ordinary executables.
 
-The subsequent Runtime/native/handoff receipts belong to the Host integration ledger and external release record. Windows/Linux remain pending native validation until campaigns run on those platforms.
+The subsequent Runtime/native/handoff receipts belong to the Host lock and trusted external release record. Windows/Linux remain pending native validation until campaigns run on those platforms.
 
 ## 7. Rebuild and update rule
 
@@ -172,7 +166,7 @@ Temporary paths and caches are never release authority.
 
 ## 9. Architecture-correct maintenance path
 
-1. Read the active PRD/RFC and this module guide.
+1. Read this module guide, the whole-system Architecture and the applicable build scripts.
 2. Run the repository gates under the exact toolchain.
 3. Prove the checkout clean both before and after Runtime construction, and retain/compare its input
    digests; build into a new external directory.
@@ -181,7 +175,7 @@ Temporary paths and caches are never release authority.
 6. Verify a transferred clean-directory copy while supplying the trusted outer digest. The current
    `verify.mjs` argument is optional, so callers must treat a missing expected digest as unauthenticated
    internal-consistency checking, not release identity verification.
-7. Update PRD/plan status only after exact evidence is accepted.
+7. Record acceptance against the exact artifact and release identity only after its evidence is accepted.
 
 Before stronger self-contained claims, make all platform evidence Runtime-bound/schema-checked,
 add Runtime and Batch 3 end-of-window cleanliness checks, derive notices from the final dependency
@@ -197,4 +191,4 @@ The pre-artifact campaign accepts `--dsh-source /absolute/path/to/official-check
 The official handoff verifier returns its already verified nested Runtime together with a self-check report derived from that inventory and the executing Node/platform. MyAgents performs this combined scan once per Sidecar installation identity, then retains the existing actual-process initialize/status handshake. It no longer starts a second full Runtime self-check scan or a separate Node version subprocess. Standalone `--self-check` remains available. This reuses one verification result rather than adding a cache with a new trust model. The public standalone protocol contract is an inventoried handoff output generated by the official builder.
 
 
-UPG15 Runtime construction resolves the pi-ai package/version from the fixed pi-ai seam source authority, and compatibility generation declares 0.85.1. A regression ties that declaration back to the fixed source to catch drift that adapter-only tests cannot reach. These are candidate build facts; current-byte Runtime/native/Host evidence remains required before acceptance.
+Runtime construction resolves the pi-ai package/version from the fixed pi-ai seam source authority, and compatibility generation declares 0.85.1. A regression ties that declaration back to the fixed source to catch drift that adapter-only tests cannot reach. Current-byte Runtime/native/Host evidence remains required before acceptance.

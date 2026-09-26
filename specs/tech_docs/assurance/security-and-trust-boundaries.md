@@ -3,8 +3,6 @@ type: technical-architecture
 status: implemented
 module: security-and-trust-boundaries
 updated: 2026-09-02
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decision: ../../prd/tech_rfc_0.1_verification_release.md
 ---
 
 # Security and trust boundaries

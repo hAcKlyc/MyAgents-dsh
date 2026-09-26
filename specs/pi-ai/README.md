@@ -18,7 +18,7 @@ npm run check:pi-ai-seam-source -- \
 
 The verifier uses a detached temporary worktree, applies the patch there, performs an offline workspace install, builds `@earendil-works/pi-ai`, and runs the Anthropic SSE regression. It never edits the upstream checkout or an installed `node_modules` tree. The patched package becomes executable authority only when its built bytes are installed into and content-addressed by a new Runtime artifact.
 
-UPG15 rebases the same Provider-content semantic onto exact pi-ai 0.85.1. The candidate preserves
-the current Anthropic beta Messages transport, requested/response model distinctions and native
-text-helper types. Its isolated build and 46 focused tests pass; final Product/Runtime/Host proof
-remains in the UPG15 ledger. The preceding 0.84.2 reports remain historical.
+The current seam pins pi-ai 0.85.1 and preserves Anthropic Messages transport,
+requested/response model distinctions and native text-helper types. Exact executable
+identity and acceptance belong to the current Runtime artifact and Host handoff,
+not the older 0.84.2 or 0.1.5 upgrade reports.

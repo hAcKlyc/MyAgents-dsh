@@ -3,10 +3,6 @@ type: technical-architecture
 status: implemented
 module: operations-messages-and-turns
 updated: 2026-09-12
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decisions:
-  - ../../prd/tech_rfc_0.1_runtime_architecture.md
-  - ../../prd/tech_rfc_0.1_runtime_rpc.md
 ---
 
 # Operations, messages and turns
@@ -19,8 +15,8 @@ The rc.2 dev adaptation reads usage from `assistant/message` and `assistant/atte
 streams. Completed-turn accounting remains the official TokenMeter fold; Product's pre-request
 budget observation reads settled attempts without adding durable chunk events. The same
 operation payload validators are exposed to the Product persistence admission boundary, while
-operation relationships stay owned by the operation fold. Full upgrade regressions remain in
-[UPG15](../../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md).
+operation relationships stay owned by the operation fold. The current source and tests own
+their executable behavior.
 
 ## 2. Relationships
 

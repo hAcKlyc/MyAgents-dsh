@@ -1,8 +1,6 @@
 # ADR 0004 — Shared backend lock and immutable rewind generation
 
-RC3 refresh (2026-09-23): see the [complete seam adjudication](../dsh/upstream-refresh-2026-09-23.md). Official rc.3 adds no runtime/public-seam behavior; the current registry preserves this decision and its removal condition. Historical evidence below remains bound to its original bytes.
-
-Candidate disposition (2026-09-12, U15-W02): Keep public Provider composition, now through SessionPersistence/SessionHandle. Cross-process writer ownership, immutable generation mutations and cold restoration still require product evidence. The isolated source and package checks pass; final product acceptance remains pending in [the upgrade PRD](../prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md). Earlier evidence below applies to its original bytes.
+Current DSH `0.1.7-rc.2` disposition: implemented through public persistence composition; no DSH core patch. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Status: accepted on 2026-08-16 as the Batch 1 persistence composition
 

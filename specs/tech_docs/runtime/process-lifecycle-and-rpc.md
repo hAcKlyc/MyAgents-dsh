@@ -3,10 +3,6 @@ type: technical-architecture
 status: implemented
 module: process-lifecycle-and-rpc
 updated: 2026-09-06
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decisions:
-  - ../../prd/tech_rfc_0.1_runtime_architecture.md
-  - ../../prd/tech_rfc_0.1_runtime_rpc.md
 protocol: ./protocol.md
 ---
 
@@ -14,7 +10,7 @@ protocol: ./protocol.md
 
 ## 1. Purpose and authority
 
-This document explains the current process, composition, lifecycle, operation, and native-RPC architecture. Exact wire shapes live in `packages/protocol/src/contract-source.ts` and its generated projections. The PRD owns product scope; the two linked technical RFCs preserve the accepted design path.
+This document explains the current process, composition, lifecycle, operation, and native-RPC architecture. Exact wire shapes live in `packages/protocol/src/contract-source.ts` and its generated projections. Architecture and the affected module guides own the maintained product boundary.
 
 ### 1.1 Relationships
 
@@ -84,8 +80,8 @@ The peer is symmetric: Host-to-Runtime methods drive lifecycle and work, while R
 - Do not add a TCP listener, implicit multi-Session daemon, second operation scheduler, or second AgentLoop.
 - Add exact wire behavior in the canonical TypeBox source and regenerate schema/client/fixtures.
 - Bind new asynchronous work to generation, Session, operation, cancellation, and cleanup authority.
-- Update this module guide when current ownership or lifecycle changes; update the RFC only when an accepted implementation decision changes.
+- Update this module guide and the whole-system Architecture when ownership or lifecycle changes.
 
 ## 8. Verification
 
-Protocol generation, strict-peer tests, operation/fold recovery tests, process campaigns, installed-artifact self-check, dynamic E2E, and Host conformance collectively verify this module. Release identity belongs to generated manifests and the active PRD ledger, not prose here.
+Protocol generation, strict-peer tests, operation/fold recovery tests, process campaigns, installed-artifact self-check, dynamic E2E, and Host conformance collectively verify this module. Release identity belongs to generated manifests and the trusted release record, not prose here.

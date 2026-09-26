@@ -3,11 +3,6 @@ type: technical-architecture
 status: implemented
 module: tool-runtime-and-policy
 updated: 2026-09-04
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decisions:
-  - ../../prd/tech_rfc_0.1_agent_experience.md
-  - ../../prd/tech_rfc_0.1_dsh_capability_map.md
-  - ../../prd/tech_rfc_0.3_myagents_dsh_runtime_capability_closure.md
 ---
 
 # Tool runtime and policy

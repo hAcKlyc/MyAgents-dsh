@@ -1,8 +1,8 @@
 # Architecture decision records
 
-ADRs explain accepted durable choices that cannot be reconstructed safely from code alone. Product scope lives in `specs/prd/`, current running architecture in `specs/ARCHITECTURE.md` and `specs/tech_docs/`, and exact patch identity/order/removal conditions in `specs/dsh/seam-decisions-v1.json`.
+ADRs explain durable choices that cannot be reconstructed safely from code alone. Current running architecture lives in `specs/ARCHITECTURE.md` and `specs/tech_docs/`; exact patch identity, order and removal conditions live in `specs/dsh/seam-decisions-v1.json`. Dated evidence within an ADR remains historical.
 
-The current DSH `0.1.7-rc.2` registry records thirteen seams: ten retained patches, two retired patches and one public persistence composition. The [UPG17 PRD](../prd/prd_0.3_myagents_dsh_0_1_7_upgrade.md) and [current seam registry](../dsh/seam-decisions-v1.json) own this upgrade; the [RC3 refresh](../dsh/upstream-refresh-2026-09-23.md) remains historical.
+The current DSH `0.1.7-rc.2` [seam registry](../dsh/seam-decisions-v1.json) records thirteen seams: ten retained patches, two retired patches and one public persistence composition. The [current source review](../dsh/upstream-refresh-2026-09-25.md) explains their 0.1.7 disposition.
 
 | Decision | Current disposition | Executable seam |
 | --- | --- | --- |

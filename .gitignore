@@ -10,3 +10,5 @@ coverage/
 .myagents/
 tmp/
 .claude/plans/myagents/
+/specs/prd/
+/specs/research/

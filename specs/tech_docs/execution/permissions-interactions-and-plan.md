@@ -3,9 +3,6 @@ type: technical-architecture
 status: implemented
 module: permissions-interactions-and-plan
 updated: 2026-09-25
-product_scope:
-  - ../../prd/prd_0.1_agent_runtime.md
-  - ../../prd/prd_0.3_myagents_integration.md
 wire_authority: ../../../packages/protocol/src/contract-source.ts
 ---
 
@@ -101,7 +98,7 @@ Target granularity depends on the tool contract. File rules bind the canonical d
 
 ## 5. Blocking interactions
 
-Protocol 3.1 carries typed ephemeral `review` independently of the authorization `schema`: command/dialect/actual cwd, search query/provider/domain filters, fetch URL/prompt, file changes, or generic arguments. Runtime supplies executing Agent/origin and the actual tool/class/target rule scope and lifetime. Matching and durable rules never consume display data. Shell review accepts both official dialects and governed subdirectories without adding execution restrictions.
+The current protocol carries typed ephemeral `review` independently of the authorization `schema`: command/dialect/actual cwd, search query/provider/domain filters, fetch URL/prompt, file changes, or generic arguments. Runtime supplies executing Agent/origin and the actual tool/class/target rule scope and lifetime. Matching and durable rules never consume display data. Shell review accepts both official dialects and governed subdirectories without adding execution restrictions.
 
 The entire review travels inline when it fits the negotiated frame budget, otherwise as an existing JSON attachment reference. MyAgents consumes that reference and uses its existing `/refs` route for large UI payloads, retains full details until settlement/cancellation, and enables approval after successful loading. Failed loading or response delivery stays on the same request with retry; unknown presentation variants use full generic detail. Actual call/rootCall IDs accompany the interaction, while its settlement ID includes the executing Agent to distinguish reused provider call IDs. Input validation precedes settlement ownership: an invalid response returns interaction_response_invalid and leaves the same card correctable or cancellable. Concurrent valid responses share one pending effect; retries preserve actual effect failures instead of reporting them as applied. An accepted cancellation acknowledges applied while rejecting the waiting question with interaction_cancelled. Host question answers retain selected labels and custom text independently; comma-containing labels and free text are not parsed as an option list.
 
@@ -148,7 +145,7 @@ The first MyAgents integration keeps its existing universal product vocabulary:
 
 `default` and `dontAsk` remain available Runtime modes but are not required as ordinary MyAgents desktop choices. A future headless/enterprise policy surface may expose `dontAsk` with `permission/rules/*`; it must not reinterpret `disallowedTools` as a permission-rule blacklist.
 
-MyAgents must implement the generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics listed in the Batch 3 PRD/RFC. Exact current Runtime/handoff identity belongs to the [verification and handoff guide](../assurance/verification-artifacts-and-handoff.md) and active release ledger, not this policy chapter.
+MyAgents owns generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics. Exact current Runtime/handoff identity belongs to the [verification and handoff guide](../assurance/verification-artifacts-and-handoff.md) and Host lock, not this policy chapter.
 
 ## 8. Security and platform boundary
 

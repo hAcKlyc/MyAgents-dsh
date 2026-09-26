@@ -3,8 +3,6 @@ type: technical-architecture
 status: implemented
 module: compaction
 updated: 2026-09-25
-product_scope: ../../prd/prd_0.1_context_compaction.md
-implementation_decision: ../../prd/tech_rfc_0.1_context_compaction.md
 upstream_seam: DSH-SEAM-008
 ---
 
@@ -16,8 +14,7 @@ This document is the canonical maintenance guide for context compaction in MyAge
 
 Use the following authorities together:
 
-- the [P0 compaction PRD](../../prd/prd_0.1_context_compaction.md) owns product behavior and acceptance;
-- the [P0 compaction RFC](../../prd/tech_rfc_0.1_context_compaction.md) owns the accepted implementation decision;
+- this module guide owns the maintained Runtime behavior and its limits;
 - [ADR 0008](../../adr/0008-capacity-safe-compaction.md) owns the decision to patch the official engine instead of creating a product engine;
 - [`seam-decisions-v1.json`](../../dsh/seam-decisions-v1.json) owns the exact patch order, hashes, source authority, evidence, and removal condition;
 - code, tests, package manifests, locks, and artifact manifests own the exact installed and executable bytes.
@@ -266,11 +263,9 @@ credential-backed evidence.
 | Overflow recovery makes no durable surface progress | preserve original Provider error; do not retry |
 | Explicit operation finds partial/conflicting durable facts | `session_recovery_required`, not success |
 
-## 12. Current acceptance evidence
+## 12. Verification
 
-Historical source authority for the evidence in this section is official DSH `0.1.1-rc.2` at commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, tree `53915efe4e2126cc7779b73dfc8a3bcec5318c44`. Patch 0007 participates in the ten-patch artifact `0.1.1-rc.2.myagents.b150a551b8d4.398a736e065a`.
-
-The exact accepted DSH artifact, Runtime, native campaign, dynamic campaign, and Batch 3 handoff identities are recorded in the [implemented compaction RFC](../../prd/tech_rfc_0.1_context_compaction.md#10-implemented-evidence), [project plan](../../prd/plan.md), release ledgers, and generated manifests. Do not copy those identities into a new release without rebuilding them.
+The [current DSH source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json) own the 0.1.7-rc.2 source and patch 0007 identity. Exact accepted Runtime, native campaign, dynamic campaign and Host handoff identities belong to their generated manifests and trusted delivery record. Old-byte evidence cannot be copied into a new release.
 
 Current executable coverage includes:
 
@@ -279,7 +274,7 @@ Current executable coverage includes:
 - public package-root composition and packaged dependency-closure checks;
 - repeated compaction, restart equality, overflow, crash-boundary, concurrency, and secret-canary campaigns;
 - credential-backed native continuity journeys whose exact counts and identities are owned by
-  their release ledgers and immutable evidence.
+  their trusted release records and immutable evidence.
 
 Windows and Linux remain `implementation-complete_pending-native-validation` until their exact native artifact campaigns pass.
 
@@ -331,4 +326,4 @@ The Runtime consumes only the recorded patched artifact. The complete ten-patch 
 
 ### Source identity
 
-The current DSH source and patch 0007 identity come from the [source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json). The [RC3 seam review](../../dsh/upstream-refresh-2026-09-23.md) is historical; its measurements do not certify the current artifact.
+The current DSH source and patch 0007 identity come from the [source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json). The [0.1.7 source review](../../dsh/upstream-refresh-2026-09-25.md) records the latest semantic decision; exact artifact evidence certifies the installed bytes.

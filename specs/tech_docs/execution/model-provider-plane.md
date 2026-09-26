@@ -3,14 +3,6 @@ type: technical-architecture
 status: implemented
 module: model-provider-plane
 updated: 2026-09-25
-product_scope:
-  - ../../prd/prd_0.1_agent_runtime.md
-  - ../../prd/prd_0.3_myagents_integration.md
-  - ../../prd/prd_0.3_myagents_dsh_provider_server_tools.md
-  - ../../prd/prd_0.3_myagents_dsh_api_family_provider_portability.md
-implementation_decisions:
-  - ../../prd/tech_rfc_0.1_runtime_architecture.md
-  - ../../adr/0011-provider-owned-content-preservation.md
 ---
 
 # Model Provider plane

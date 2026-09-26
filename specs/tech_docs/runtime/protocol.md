@@ -5,8 +5,6 @@ module: runtime-protocol
 version: 6.0.0
 updated: 2026-09-25
 supersedes_for_dsh: myagents-runtime protocol 1.1.0
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
 ---
 
 # Runtime protocol intent and ownership
@@ -15,7 +13,7 @@ implementation_decision: ../../prd/tech_rfc_0.1_runtime_rpc.md
 
 This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protocol. It preserves the proven operation, transaction, reverse-port, event, and transport model from `myagents-runtime` protocol 1.1.0 while replacing Pi-specific engine and session representations with DSH-native durable Session semantics.
 
-Optimization and migration of the existing Pi Runtime's protocol 1.1 implementation are owned by the `myagents-runtime` 0.2 PRD. This document owns only the DSH distribution's target wire semantics and must not silently change the legacy Runtime or its frozen 1.1 artifacts.
+This document owns only this distribution's wire semantics. The fixed migration inventory records the earlier Pi source snapshot; the legacy Runtime and its frozen artifacts are separate.
 
 The accepted protocol `6.0.0` transports native V4
 Session history and separates live assistant observations from durable assistant messages.
@@ -32,7 +30,7 @@ blocks remain observations, separate from canonical tool execution.
 
 The model profile can explicitly declare native `in-history` system-prompt updates and
 `addition-only` or `in-history` tool updates. Omission does not infer either capability from a Provider brand. Session grants retain protocol 4.0.0's Session-lifetime
-semantics. The [Host lock](../../../../MyAgents-integration-myagents-dsh/src/shared/integrated-runtimes/dsh-lock.json) identifies the accepted handoff; old Runtime/handoff bytes do not establish acceptance for current source.
+semantics. The MyAgents Host lock at `src/shared/integrated-runtimes/dsh-lock.json` identifies the accepted handoff; old Runtime/handoff bytes do not establish acceptance for current source.
 
 ### 1.1 Compatibility versioning
 
@@ -667,7 +665,7 @@ Every request carries product session, runtime generation, credential reference,
 
 Register-then-respond prevents an RPC response timeout from being treated as a user decision.
 
-Protocol 3.1 separates typed permission `review` from the existing policy `schema`. Full operation details, Agent attribution and rule scope travel inline or through the existing JSON attachment port as `reviewRef`; large content is never truncated into an apparently complete approval. The response still settles one `interactionId`. See [Permissions and interactions](../execution/permissions-interactions-and-plan.md#5-blocking-interactions).
+The current protocol separates typed permission `review` from the policy `schema`. Full operation details, Agent attribution and rule scope travel inline or through the existing JSON attachment port as `reviewRef`; large content is never truncated into an apparently complete approval. The response still settles one `interactionId`. See [Permissions and interactions](../execution/permissions-interactions-and-plan.md#5-blocking-interactions).
 
 ### 14.3 Host tools and Hooks
 
@@ -849,7 +847,7 @@ protocol-meta.json
 protocol-fixtures.json
 host-client.generated.ts
 public-contract.generated.ts
-specs/contracts/protocol-3.1.0-evidence.json
+specs/contracts/protocol-6.0.0-evidence.json
 ```
 
 `canonical-tools.generated.ts` belongs to the separate Tool-contract generator and is consumed by
@@ -868,24 +866,23 @@ Conformance tests must prove:
 - terminal delivery remains possible under event pressure;
 - no fixture or diagnostic includes a secret.
 
-The current static generator, candidate Profile, focused projector/native-RPC tests and isolated
-artifact-consuming Runtime composition gate pass, including the patched DSH/pi-ai dependency graph.
-That does not yet constitute release acceptance: a commit-bound Runtime artifact, platform evidence,
-immutable handoff and exact Host ingestion remain required. Accepted `2.4.x` bytes cannot be
-relabeled.
+The static generator, focused projector/native-RPC tests and isolated artifact-consuming Runtime
+composition gate verify the source and patched DSH/pi-ai dependency graph. Release acceptance
+still requires a commit-bound Runtime artifact, platform evidence, immutable handoff and exact
+Host ingestion for those bytes.
 
-### Collaboration source semantics in 2.7.0
+### Current collaboration semantics
 
-Runtime defaults identified follow-up delivery to realtime at a DSH model/tool step boundary; explicit turn delivery remains selectable and frozen per accepted message. Autonomous collaboration root admissions carry a distinct origin. Work controls act only on the published primary root tree and carry stable message/resume identities or the exact handle revision; model tools cannot implicitly reopen closed nodes. Work list cursors stay within that tree, obey negotiated frame limits and expose bounded previews. The Host can read native usage/context projections without waking Agent execution. The upgrade PRD owns final client, artifact and platform acceptance.
+Runtime defaults identified follow-up delivery to realtime at a DSH model/tool step boundary; explicit turn delivery remains selectable and frozen per accepted message. Autonomous collaboration root admissions carry a distinct origin. Work controls act only on the published primary root tree and carry stable message/resume identities or the exact handle revision; model tools cannot implicitly reopen closed nodes. Work list cursors stay within that tree, obey negotiated frame limits and expose bounded previews. The Host can read native usage/context projections without waking Agent execution. Exact client, artifact and platform acceptance belongs to the corresponding generated contracts and handoff evidence.
 
-### Official Shell migration (protocol 3.0.0)
+### Official Shell contract
 
-Initialize executable authority now uses `shellRef` and `shellDialect` (`bash` or `pwsh`), removing `bashRef`/`bashDialect` and the custom Windows supervisor/prelude references. The generated canonical catalog contains both official Shell definitions and the three Jobs definitions, while each platform exposes its selected Shell. Foreground timeout ends execution; explicit background output and cancellation use Jobs. Tool schemas and descriptions come directly from the pinned official plugins. This is a breaking contract revision; use the newly generated client and immutable Runtime together. Legacy `Bash` records remain history, not active tool aliases. Exact shapes remain in `packages/protocol/src/contract-source.ts`.
+Initialize executable authority uses `shellRef` and `shellDialect` (`bash` or `pwsh`). The generated canonical catalog contains both official Shell definitions and the three Jobs definitions, while each platform exposes its selected Shell. Foreground timeout ends execution; explicit background output and cancellation use Jobs. Tool schemas and descriptions come directly from the pinned official plugins. Legacy `Bash` records remain history, not active tool aliases. Exact shapes remain in `packages/protocol/src/contract-source.ts`.
 
-### Runtime/Host boundary correction (protocol 3.1.0)
+### Runtime/Host contract projection
 
-The canonical generator now emits a dependency-free `public-contract.generated.ts` alongside schema/client/fixtures. MyAgents imports its method tables, exact request/result types and capability facts; it does not recreate that protocol map. Fixed process/checkpoint/path/credential-channel facts are reported in Runtime capabilities. Their old initialize literals are optional compatibility inputs, while the Host supplies actual choices, references and workspace/environment declarations. Runtime initializes one admitted execution snapshot before tools can run. The contract source remains exact shape authority.
+The canonical generator emits a dependency-free `public-contract.generated.ts` alongside schema/client/fixtures. MyAgents imports its method tables, exact request/result types and capability facts; it does not recreate that protocol map. Fixed process/checkpoint/path/credential-channel facts are reported in Runtime capabilities. Historical initialize literals are optional compatibility inputs, while the Host supplies actual choices, references and workspace/environment declarations. Runtime initializes one admitted execution snapshot before tools can run. The contract source remains exact shape authority.
 
-### Session-lifetime permissions (protocol 4.0.0)
+### Session-lifetime permissions
 
-The nullable `expiresAt` on permission rules and `lifetimeMs` on interaction review scope express Session-lifetime grants with `null`. Numeric historical projections remain structurally valid, but the official Runtime emits `null` for both new grants and validated surviving legacy grants. This changes reply value domains, so the exact handshake advances to 4.0.0; older generated peers must not be paired with the new Runtime. Attachment expiry and interaction registration/execution deadlines are unchanged. See [Permissions and interactions](../execution/permissions-interactions-and-plan.md#4-durable-exact-rules) for durable recovery and revocation ownership.
+The nullable `expiresAt` on permission rules and `lifetimeMs` on interaction review scope express Session-lifetime grants with `null`. Numeric historical projections remain structurally valid, but the official Runtime emits `null` for both new grants and validated surviving legacy grants. Host and Runtime must use generated contracts from the same handoff. Attachment expiry and interaction registration/execution deadlines are unchanged. See [Permissions and interactions](../execution/permissions-interactions-and-plan.md#4-durable-exact-rules) for durable recovery and revocation ownership.

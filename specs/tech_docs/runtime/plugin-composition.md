@@ -3,9 +3,6 @@ type: technical-architecture
 status: implemented
 module: runtime-plugin-composition
 updated: 2026-09-25
-product_scope:
-  - ../../prd/prd_0.1_agent_runtime.md
-  - ../../prd/prd_0.3_myagents_integration.md
 patch_authority: ../../dsh/seam-decisions-v1.json
 ---
 
@@ -45,7 +42,7 @@ The following rules keep that count distinct from adjacent inventories:
 5. Do not count MCP, Skill, Agent, Command, Hook or Host Tool descriptors as executable Cordis plugins. They are declarative components compiled inside one `ProductComponentService` generation.
 6. Do not count ordinary helper objects, Provider profiles, generated contracts, package dependencies or the DSH artifact package inventory as plugin instances.
 
-Exact plugin installation order and counts come from `packages/runtime-product/src/composition.ts` and the packed composition fixture. The role inventory below is a maintenance map, not an alternative numeric composition authority. UPG-W10 adds the stock Shell executor, Shell tool, `shell-env` and `tool-jobs`; it removes the custom executor and Windows supervisor. Declarative tools are not plugin instances.
+Exact plugin installation order and counts come from `packages/runtime-product/src/composition.ts` and the packed composition fixture. The role inventory below is a maintenance map, not an alternative numeric composition authority. The current composition installs the stock Shell executor, Shell tool, `shell-env` and `tool-jobs`; it does not install the former custom executor or Windows supervisor. Declarative tools are not plugin instances.
 
 ## 3. Relationship vocabulary
 
@@ -155,7 +152,7 @@ Therefore:
 - a future maintenance change must either make the allowlist exhaustive or rename and define it as a deliberately partial release-identity set;
 - a plugin-management feature must distinguish immutable build-time services from declarative Session components instead of presenting these owners as user-swappable.
 
-The allowlist remains partial. Current source and exact packed composition, rather than historical plugin counts or old artifact reports, own the installed graph. The [Host lock](../../../../MyAgents-integration-myagents-dsh/src/shared/integrated-runtimes/dsh-lock.json) owns accepted installed-byte identity.
+The allowlist remains partial. Current source and exact packed composition, rather than historical plugin counts or old artifact reports, own the installed graph. The MyAgents Host lock at `src/shared/integrated-runtimes/dsh-lock.json` owns accepted installed-byte identity.
 
 ## 9. Current patch relationship
 

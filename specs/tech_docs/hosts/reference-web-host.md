@@ -3,8 +3,6 @@ type: technical-architecture
 status: implemented_pending-product-acceptance
 module: reference-web-host
 updated: 2026-09-25
-product_scope: ../../prd/prd_0.1_reference_web.md
-implementation_decision: ../../prd/tech_rfc_0.1_reference_web.md
 ---
 
 # Reference Web Host
@@ -83,7 +81,7 @@ The UI exposes workspace/Session navigation, full assistant Turns, thinking/text
 This Reference profile is intentionally narrow, not a MyAgents policy template: it fixes one
 `deepseek-official` / OpenAI-completions / `deepseek-v4-flash` route, starter Skills, high/max
 reasoning and a sealed execution environment. Startup currently requires `DEEPSEEK_API_KEY` before
-the page opens, so the PRD's desired in-page actionable missing-credential state remains unaccepted.
+the page opens, so an actionable in-page missing-credential state remains unimplemented.
 
 The reverse registry implements all seven protocol methods, but the production composition only
 installs the DeepSeek credential resolver, interaction broker and attachment ports. It does not pass

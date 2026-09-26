@@ -3,10 +3,6 @@ type: technical-architecture
 status: implemented
 module: declarative-components
 updated: 2026-09-02
-product_scope:
-  - ../../prd/prd_0.1_agent_runtime.md
-  - ../../prd/prd_0.3_myagents_integration.md
-implementation_decision: ../../prd/tech_rfc_0.1_host_ports_components.md
 ---
 
 # Declarative components
@@ -89,7 +85,7 @@ operation-frozen allowed read root, not only the Workspace root. The snapshot ca
 Skill source, not a recursive directory serialization; referenced resources are opened on demand
 through ordinary governed tools.
 
-The MyAgents Host now owns shared Skill/Command/Agent declaration types and discovery under `runtimes/product-extensions/`; Managed Codex applies its own Skill admission after discovery, while DSH receives complete source identities and metadata. DSH preserves authored `allowed-tools` guidance without creating permission grants, honors invocation flags, and isolates unsupported `context`/`agent` semantics per Skill. Runtime dynamic Skill preparation independently rejects unsupported execution-context metadata. Nonconforming command names retain their original spelling and receive a precise rename instruction; no implicit lowercase merge is performed. Unified installed/enabled/admitted/model-invocable/generation UI remains tracked in SELF and the accepted 0.1.2 upgrade.
+The MyAgents Host owns shared Skill/Command/Agent declaration types and discovery under `runtimes/product-extensions/`; Managed Codex applies its own Skill admission after discovery, while DSH receives complete source identities and metadata. DSH preserves authored `allowed-tools` guidance without creating permission grants, honors invocation flags, and isolates unsupported `context`/`agent` semantics per Skill. Runtime dynamic Skill preparation independently rejects unsupported execution-context metadata. Nonconforming command names retain their original spelling and receive a precise rename instruction; no implicit lowercase merge is performed.
 
 ## 6. MCP boundary
 

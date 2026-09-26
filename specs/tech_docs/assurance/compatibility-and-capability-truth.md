@@ -3,11 +3,6 @@ type: technical-architecture
 status: implemented
 module: compatibility-and-capability-truth
 updated: 2026-09-04
-product_scope:
-  - ../../prd/prd_0.1_agent_runtime.md
-  - ../../prd/prd_0.3_myagents_integration.md
-  - ../../prd/prd_0.3_myagents_dsh_api_family_provider_portability.md
-implementation_decision: ../../prd/tech_rfc_0.1_verification_release.md
 ---
 
 # Compatibility and capability truth
@@ -103,8 +98,8 @@ may be substituted for the other.
 
 When adding a capability, first implement it in the owning module and official composition, then
 update generated profile/protocol contracts if necessary, declare the narrowest family or optional
-route capability, run the required representative campaigns and let the active PRD ledger promote
-it. Remove or downgrade a claim whenever any required identity/evidence no longer matches.
+route capability, run the required representative campaigns and record exact acceptance with the
+matching artifact. Remove or downgrade a claim whenever any required identity/evidence no longer matches.
 
 ## 8. Verification and implementation map
 
@@ -116,4 +111,4 @@ it. Remove or downgrade a claim whenever any required identity/evidence no longe
 | Exact protocol/tool contracts | `packages/protocol/`, `packages/tool-contracts/` |
 | Effective Session extension truth | `packages/component-runtime/src/descriptors.ts`, component status RPC |
 | Artifact/platform binding | `packages/artifact-verifier/src/runtime-artifact.ts`, `integration-handoff.ts`, native reports |
-| Acceptance state | active PRD/workstream ledgers, never this guide alone |
+| Acceptance state | artifact-bound campaign evidence and trusted release record, never this guide alone |

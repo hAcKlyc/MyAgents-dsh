@@ -3,8 +3,8 @@
 These guides explain how the checked-in MyAgents-dsh system works now, including explicit
 implementation gaps and source candidates that have not yet earned artifact acceptance. They sit
 below the whole-system [Architecture](../ARCHITECTURE.md) and above exact code, generated contracts,
-manifests and tests. PRDs own product scope and acceptance; RFCs/ADRs preserve decisions; this tree
-owns task-oriented current subsystem explanation.
+manifests and tests. ADRs preserve durable decisions; exact artifacts and trusted release records
+own acceptance. This tree owns task-oriented current subsystem explanation.
 
 ## Choose a reading path
 
@@ -36,4 +36,4 @@ Each module guide identifies purpose and exact authorities; `Owns`, `Depends on`
 
 The guides intentionally avoid copying exhaustive schemas, error lists, digests or implementation logs. If prose conflicts with code/generated facts, repair the prose. If behavior changes, update the affected module guide and its link/whole-system boundary in [Architecture](../ARCHITECTURE.md) in the same change.
 
-The structure and its independent code-review status are maintained in the [implemented architecture documentation workstream](../prd/plan_tech_docs_architecture.md).
+The indexes above are navigation only; the current behavior is maintained in the module guides and their cited code.

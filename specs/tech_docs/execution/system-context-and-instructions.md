@@ -3,7 +3,6 @@ type: technical-architecture
 status: implemented
 updated: 2026-09-25
 module: system-context-and-instructions
-product_scope: ../../prd/prd_0.3_myagents_dsh_system_context.md
 ---
 
 # System context and instructions
@@ -58,8 +57,8 @@ has a 512 KiB aggregate Runtime bound in addition to the generated per-field bou
   Native persona suffix contributions remain independently owned and preserved.
 
 The generic schema deliberately has no required `product`, `persona`, `session` or `workspace`
-field. A Host may evolve its product composition without a Runtime release. The focused PRD records
-the recommended MyAgents profile, but it is not a Runtime schema.
+field. A Host may evolve its product composition without a Runtime release. The Host profile
+is a product choice, not a Runtime schema.
 
 ## 4. Scope and lifecycle owners
 

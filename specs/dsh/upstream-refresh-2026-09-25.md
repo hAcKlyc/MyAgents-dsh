@@ -34,5 +34,5 @@ The ordered ten-patch chain must apply to the exact source with no ambiguous
 offset, compile, and pass the selected source regressions. Product acceptance
 then requires two byte-identical patched-package builds, an isolated Runtime
 composition and installed-artifact test, platform evidence with truthful pending
-claims, and the Host lock/handoff verifier. The [UPG17 PRD](../prd/prd_0.3_myagents_dsh_0_1_7_upgrade.md)
-owns remaining native, credentialed and desktop acceptance.
+claims, and the Host lock/handoff verifier. [Verification and handoff](../tech_docs/assurance/verification-artifacts-and-handoff.md)
+records the current release gates; exact acceptance belongs to artifact and Host evidence.

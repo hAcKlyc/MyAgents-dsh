@@ -3,11 +3,6 @@ type: technical-architecture
 status: implemented
 module: web-and-network
 updated: 2026-09-26
-product_scope:
-  - ../../prd/prd_0.1_agent_runtime.md
-  - ../../prd/prd_0.3_myagents_dsh_provider_server_tools.md
-  - ../../prd/prd_0.3_myagents_dsh_api_family_provider_portability.md
-implementation_decision: ../../prd/tech_rfc_0.1_runtime_architecture.md
 ---
 
 # Web and network
@@ -76,9 +71,8 @@ usable sources and text. If domain filters were requested, retained unverified t
 `unverified_domain_filter`. Plain service text never creates verified citations. Explicit server-tool
 errors still fail, even in HTTP 200 responses or alongside earlier hits. The complete result is bounded
 including JSON escaping and source/citation duplication; capacity trimming sets `truncated`.
-Provider prose alone is not evidence of search completion. SDK comparison and the
-remaining real-provider acceptance boundary are recorded in the
-[self-test workstream](../../prd/prd_0.3_myagents_dsh_selftest_reliability.md#13-claude-agent-sdk-websearch-对照2026-09-05-补查).
+Provider prose alone is not evidence of search completion. Real-provider acceptance
+requires an artifact-bound campaign on the selected route.
 
 ## 6. MCP networking
 
@@ -130,7 +124,7 @@ Add a backend behind the canonical web Provider/Host capability, not as a second
 HTTP status failures report the actual status code in both Runtime-owned and Host-owned WebFetch. The Host connection error text includes its already-classified system code (for example `ECONNRESET`); raw proxy URLs, credentials and upstream exception messages remain outside model-visible errors.
 
 
-## UPG15 request-scoped network composition
+## Request-scoped network composition
 
 The trusted Runtime composition installs the public `dsh-http-proxy` launch policy once per
 generation. A single undici dispatcher delegates ordinary traffic to that captured general policy

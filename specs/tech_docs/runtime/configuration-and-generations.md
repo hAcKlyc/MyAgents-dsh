@@ -3,10 +3,6 @@ type: technical-architecture
 status: implemented
 module: configuration-and-generations
 updated: 2026-09-02
-product_scope: ../../prd/prd_0.1_agent_runtime.md
-implementation_decisions:
-  - ../../prd/tech_rfc_0.1_runtime_architecture.md
-  - ../../prd/tech_rfc_0.1_host_ports_components.md
 ---
 
 # Configuration and generations
