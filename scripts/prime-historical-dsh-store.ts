@@ -29,29 +29,29 @@ try {
   // Prime every required lockfile tarball while omitting unrelated optional Office engines.
   run("corepack", ["pnpm", "install", "--frozen-lockfile", "--trust-lockfile",
     "--ignore-scripts", "--no-optional", "--reporter=append-only"], worktree);
-  // Prime only the native build binaries for this runner. A full optional install
-  // pulls the unrelated LibreOffice engine, which is not used by this artifact.
+  // Prime platform-native packages from the historical lock. A full optional
+  // install also pulls unrelated Office engines, which this artifact never uses.
   const platform = `${process.platform}-${process.arch}`;
-  const nativeNames: Record<string, readonly string[]> = {
-    "darwin-arm64": ["@esbuild/darwin-arm64", "@rollup/rollup-darwin-arm64"],
-    "darwin-x64": ["@esbuild/darwin-x64", "@rollup/rollup-darwin-x64"],
-    "linux-x64": ["@esbuild/linux-x64", "@rollup/rollup-linux-x64-gnu"],
-    "win32-x64": ["@esbuild/win32-x64", "@rollup/rollup-win32-x64-msvc"],
+  const markers: Record<string, readonly string[]> = {
+    "darwin-arm64": ["darwin-arm64"],
+    "darwin-x64": ["darwin-x64"],
+    "linux-x64": ["linux-x64"],
+    "win32-x64": ["win32-x64"],
   };
-  const names = nativeNames[platform];
-  if (!names) throw new Error(`unsupported release platform: ${platform}`);
+  const selectedMarkers = markers[platform];
+  if (!selectedMarkers) throw new Error(`unsupported release platform: ${platform}`);
   const lock = readFileSync(join(worktree, "pnpm-lock.yaml"), "utf8");
+  const nativePackages = [...new Set(lock.split("\n")
+    .filter((line) => line.startsWith("  '") && line.endsWith("':"))
+    .map((line) => line.slice(3, -2))
+    .filter((specifier) => selectedMarkers.some((marker) => specifier.includes(marker)))
+    .filter((specifier) => !specifier.includes("libreoffice-kit")))];
+  if (nativePackages.length === 0) throw new Error(`no locked native binaries for ${platform}`);
   const nativeProject = join(parent, "native-binaries");
   mkdirSync(nativeProject);
   writeFileSync(join(nativeProject, "package.json"), JSON.stringify({ private: true, name: "dsh-native-prime", version: "0.0.0" }));
-  for (const name of names) {
-    const prefix = `  '${name}@`;
-    const versions = lock.split("\n").filter((line) => line.startsWith(prefix))
-      .map((line) => line.slice(prefix.length, line.indexOf("':", prefix.length)));
-    if (versions.length === 0) throw new Error(`no locked native binaries for ${name}`);
-    for (const version of versions) {
-      run("corepack", ["pnpm", "add", "--ignore-scripts", "--save-exact", `${name}@${version}`], nativeProject);
-    }
+  for (const specifier of nativePackages) {
+    run("corepack", ["pnpm", "add", "--ignore-scripts", "--save-exact", specifier], nativeProject);
   }
   process.stdout.write(`Primed historical DSH dependency store at ${DSH_SEAM_SOURCE.commit}\n`);
 } finally {
