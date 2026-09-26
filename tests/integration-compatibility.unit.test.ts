@@ -138,6 +138,17 @@ describe("MyAgents-dsh integration compatibility manifest", () => {
     )).toThrow("differs from the compatibility contract");
   });
 
+  it("accepts one target-bound platform claim for a native Release handoff", () => {
+    const artifact = verifyInstalledRuntimeArtifact(root);
+    const manifest = createMyAgentsDshCompatibilityManifest(
+      artifact, generatedClientSha256, [platforms[0]],
+    );
+    expect(manifest.platforms).toEqual([platforms[0]]);
+    expect(() => assertMyAgentsDshCompatibilityManifest(
+      structuredClone(manifest), artifact, generatedClientSha256, [platforms[0]],
+    )).not.toThrow();
+  });
+
   it("verifies a clean-source handoff through nested artifact and complete contract inventory", () => {
     const handoffRoot = realpathSync(mkdtempSync(resolve(tmpdir(), "myagents-dsh-handoff-unit-")));
     chmodSync(handoffRoot, 0o755);

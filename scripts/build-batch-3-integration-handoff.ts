@@ -29,6 +29,7 @@ import {
 } from "@myagents-dsh/artifact-verifier/integration-handoff";
 import { verifyInstalledRuntimeArtifact } from "@myagents-dsh/artifact-verifier/runtime-artifact";
 import { PROTOCOL_VERSION } from "@myagents-dsh/protocol";
+import { resolveRuntimePlatformTarget } from "@myagents-dsh/product-profile";
 
 import { resolveExternalOutputRoot } from "./run-batch-1-pre-artifact-gate.js";
 
@@ -62,8 +63,8 @@ const parsePlatforms = (path: string): readonly IntegrationPlatformEvidence[] =>
     || input.schemaVersion !== 1 || !Array.isArray(input.platforms)) {
     throw new TypeError("Batch 3 platform input must declare schemaVersion 1 and platforms");
   }
-  if (input.platforms.length !== 4) {
-    throw new TypeError("Batch 3 platform input must declare exactly four targets");
+  if (input.platforms.length !== 1 && input.platforms.length !== 4) {
+    throw new TypeError("Batch 3 platform input must declare one native target or four historical targets");
   }
   const targets = new Set<string>();
   for (const value of input.platforms) {
@@ -88,7 +89,11 @@ const parsePlatforms = (path: string): readonly IntegrationPlatformEvidence[] =>
     }
     targets.add(claim.target);
   }
-  if (targets.size !== 4) throw new TypeError("Batch 3 platform targets must be unique");
+  if (targets.size !== input.platforms.length) throw new TypeError("Batch 3 platform targets must be unique");
+  if (input.platforms.length === 1
+    && [...targets][0] !== resolveRuntimePlatformTarget(process.platform, process.arch)) {
+    throw new TypeError("Single-target handoff must be built on its native target");
+  }
   return input.platforms as readonly IntegrationPlatformEvidence[];
 };
 

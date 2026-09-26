@@ -58,6 +58,7 @@ const expectedScripts = new Map([
   ["build:batch-1-handoff", "tsx scripts/build-batch-1-handoff.ts"],
   ["build:batch-1-distribution-handoff", "tsx scripts/build-batch-1-distribution-handoff.ts"],
   ["build:batch-3-integration-handoff", "tsx scripts/build-batch-3-integration-handoff.ts"],
+  ["release:target", "node scripts/build-release-target.mjs"],
   ["build:web-artifact", "npm run build && tsx scripts/build-reference-web-artifact.ts"],
   ["generate:official-shell-tools", "tsx scripts/generate-official-shell-tools.ts"],
   ["check:official-shell-tools", "tsx scripts/generate-official-shell-tools.ts --check"],

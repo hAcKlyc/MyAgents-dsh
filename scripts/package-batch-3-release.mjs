@@ -63,8 +63,8 @@ export function packageBatch3Release({ handoff, handoffSha256, tag, target, out,
   }
   const outer = JSON.parse(readFileSync(resolve(input, outerName), "utf8"));
   const platformClaim = outer.platforms.find((platform) => platform.target === target);
-  if (!platformClaim || platformClaim.claim !== "verified") {
-    throw new Error(`Handoff has no verified ${target} platform claim`);
+  if (outer.platforms.length !== 1 || !platformClaim || platformClaim.claim !== "verified") {
+    throw new Error(`Release handoff must contain only its verified ${target} platform claim`);
   }
   const staging = mkdtempSync(resolve(tmpdir(), "myagents-dsh-package-"));
   try {

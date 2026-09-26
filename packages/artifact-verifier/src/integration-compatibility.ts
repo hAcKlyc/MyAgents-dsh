@@ -91,8 +91,8 @@ const deepFreeze = <Value>(value: Value): Value => {
 const normalizePlatforms = (
   value: unknown,
 ): readonly IntegrationPlatformEvidence[] => {
-  if (!Array.isArray(value) || (value.length !== 3 && value.length !== 4)) {
-    throw new TypeError("integration compatibility requires the legacy three or current four platform claims");
+  if (!Array.isArray(value) || ![1, 3, 4].includes(value.length)) {
+    throw new TypeError("integration compatibility requires one target claim or the legacy three/four platform claims");
   }
   const result = value.map((item) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
@@ -128,7 +128,8 @@ const normalizePlatforms = (
     };
   }).sort((left, right) => compare(left.target, right.target));
   const targets = result.map(({ target }) => target);
-  if (JSON.stringify(targets) !== JSON.stringify(["darwin-arm64", "linux-x64", "win32-x64"])
+  if (targets.length !== 1
+    && JSON.stringify(targets) !== JSON.stringify(["darwin-arm64", "linux-x64", "win32-x64"])
     && JSON.stringify(targets) !== JSON.stringify(["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"])) {
     throw new TypeError("integration platform targets must be complete and unique");
   }

@@ -1,0 +1,137 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: myagents-dsh-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.20.0
+      - name: Check exact version, tag, main ancestry and release notes
+        run: node scripts/verify-release-tag.mjs
+      - name: Reject an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "This version already has a GitHub Release" >&2
+            exit 1
+          fi
+
+  native:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: win32-x64
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      RELEASE_TARGET: ${{ matrix.target }}
+      RELEASE_WORK_DIR: ${{ runner.temp }}/myagents-dsh-release
+      DSH_BASELINE_DIR: ${{ github.workspace }}/deepseek-harness
+      PI_AI_SOURCE_DIR: ${{ github.workspace }}/pi
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: myagents-dsh
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout pinned DSH baseline
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: 47f943859bef60e4160492346772ded9b24f765a
+          path: deepseek-harness
+          persist-credentials: false
+      - name: Checkout pinned pi-ai source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: earendil-works/pi
+          ref: d981de1229ef899957bbe968bc8dcda02a21f477
+          path: pi
+          persist-credentials: false
+      - name: Install artifact toolchain
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.20.0
+          cache: npm
+          cache-dependency-path: myagents-dsh/package-lock.json
+      - name: Prime exact dependencies
+        shell: bash
+        run: |
+          npm install --global npm@11.19.0
+          npm ci --prefix myagents-dsh
+          npm ci --prefix pi
+          npm cache add @earendil-works/pi-ai@0.85.1
+          corepack enable
+          corepack prepare pnpm@11.7.0 --activate
+          cd deepseek-harness
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build, validate and package this native target
+        working-directory: myagents-dsh
+        env:
+          DSH_RELEASE_PROVIDER_KEY: ${{ secrets.DSH_RELEASE_PROVIDER_KEY }}
+          DSH_RELEASE_ROUTE_CONFIG_B64: ${{ secrets.DSH_RELEASE_ROUTE_CONFIG_B64 }}
+          DSH_RELEASE_COMPACTION_ROUTE_CONFIG_B64: ${{ secrets.DSH_RELEASE_COMPACTION_ROUTE_CONFIG_B64 }}
+        run: npm run release:target
+      - name: Transfer only the verified target pair
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: ${{ runner.temp }}/myagents-dsh-release/release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [version, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.20.0
+      - name: Download all four native pairs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/myagents-dsh-release-set
+      - name: Publish verified nine-asset set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SET_DIR: ${{ runner.temp }}/myagents-dsh-release-set
+        run: |
+          node scripts/verify-release-tag.mjs
+          node scripts/publish-batch-3-release.mjs --tag "$GITHUB_REF_NAME" --dir "$RELEASE_SET_DIR" --publish
