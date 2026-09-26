@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { childCli } from "./child-cli.mjs";
-import { DSH_SEAM_SOURCE } from "./dsh-seam-decisions.js";
+import { DSH_SEAM_INSTALL_FILTERS, DSH_SEAM_SOURCE } from "./dsh-seam-decisions.js";
 import {
   PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
   PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
@@ -51,6 +51,11 @@ try {
   // must contain the same platform-selected graph before network isolation.
   run("corepack", ["pnpm", "install", "--frozen-lockfile", "--trust-lockfile",
     "--ignore-scripts", "--reporter=append-only", "--store-dir", pnpmStore], worktree);
+  // The seam compile uses a narrower workspace selection with dependencies
+  // omitted by the full install on some platforms. Warm that exact closure.
+  run("corepack", ["pnpm", "install", "--frozen-lockfile", "--trust-lockfile",
+    "--ignore-scripts", "--reporter=append-only", "--store-dir", pnpmStore,
+    ...DSH_SEAM_INSTALL_FILTERS], worktree);
   // Prime platform-native packages from the historical lock even when an
   // optional dependency is not selected by the workspace's own install.
   const platform = `${process.platform}-${process.arch}`;
