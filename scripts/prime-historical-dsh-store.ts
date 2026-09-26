@@ -63,7 +63,7 @@ try {
   // npm ci primes tarballs, but offline resolution also needs registry metadata
   // for the complete external graph of the isolated artifact consumer.
   const rootLock = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package-lock.json"), "utf8")) as {
-    packages: Record<string, { version?: string; os?: string[]; cpu?: string[] }>;
+    packages: Record<string, { version?: string }>;
   };
   const npmSpecifiers = new Set<string>();
   for (const authority of [
@@ -72,8 +72,6 @@ try {
   ]) {
     const locked = rootLock.packages[authority.path];
     if (locked?.version !== authority.version) throw new Error(`root lock drift: ${authority.path}`);
-    if (locked.os && !locked.os.includes(process.platform)) continue;
-    if (locked.cpu && !locked.cpu.includes(process.arch)) continue;
     npmSpecifiers.add(`${authority.name}@${authority.version}`);
   }
   let cached = 0;
