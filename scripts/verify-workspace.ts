@@ -51,6 +51,7 @@ const expectedScripts = new Map([
   ["check:dsh-seams", "tsx scripts/verify-dsh-seams.ts"],
   ["build:dsh-artifact", "tsx scripts/build-patched-dsh-artifact.ts"],
   ["verify:dsh-artifact", "tsx scripts/build-patched-dsh-artifact.ts"],
+  ["install:verified-dsh-checks", "node scripts/install-verified-dsh-for-checks.mjs"],
   ["check:dsh-runtime-composition", "tsx scripts/verify-dsh-runtime-composition.ts"],
   ["e2e:dynamic", "tsx packages/dynamic-e2e/src/cli.ts"],
   ["e2e:native", "tsx scripts/run-batch-1-native-campaign.ts"],

@@ -4,6 +4,8 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { childCli } from "./child-cli.mjs";
+
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
 export const PI_AI_SOURCE = Object.freeze({
@@ -124,7 +126,8 @@ const git = (sourceRoot: string, args: readonly string[], environment?: NodeJS.P
   });
 
 const run = (command: string, args: readonly string[], cwd: string, environment: NodeJS.ProcessEnv): void => {
-  execFileSync(command, [...args], { cwd, env: environment, stdio: "inherit" });
+  const invocation = childCli(command, args, environment);
+  execFileSync(invocation.command, [...invocation.args], { cwd, env: environment, stdio: "inherit" });
 };
 
 export const verifyPiAiSource = (
@@ -208,9 +211,10 @@ export const verifyPiAiSource = (
       const destination = resolve(options.packageTarballTo);
       const packRoot = join(worktreeParent, "packed");
       mkdirSync(packRoot);
-      const packOutput = JSON.parse(execFileSync("npm", [
+      const pack = childCli("npm", [
         "pack", "--json", "--ignore-scripts", "--pack-destination", packRoot,
-      ], {
+      ], environment);
+      const packOutput = JSON.parse(execFileSync(pack.command, [...pack.args], {
         cwd: join(worktree, "packages/ai"),
         encoding: "utf8",
         env: environment,

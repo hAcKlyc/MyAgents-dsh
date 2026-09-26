@@ -51,6 +51,7 @@ import { readDshSeamPatchSet } from "./dsh-seam-decisions.js";
 import { PI_AI_SOURCE, verifyPiAiSource } from "./pi-ai-seam.js";
 import { materializeRuntimeArtifactFileLinks } from "./runtime-artifact-packaging.js";
 import { evaluateArtifactToolchain } from "./toolchain-policy.mjs";
+import { childCli } from "./child-cli.mjs";
 
 type JsonObject = Record<string, unknown>;
 
@@ -234,7 +235,8 @@ const run = (
   cwd: string,
   env: NodeJS.ProcessEnv,
 ): string => {
-  const result = spawnSync(command, args, {
+  const invocation = childCli(command, args, env);
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd,
     encoding: "utf8",
     env,

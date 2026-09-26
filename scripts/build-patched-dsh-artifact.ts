@@ -21,6 +21,8 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
+import { childCli } from "./child-cli.mjs";
+
 import {
   readRegularFileNoFollowSnapshotSync,
   type RegularFileIdentity,
@@ -76,7 +78,8 @@ const run = (
   args: readonly string[],
   options: RunOptions,
 ): string => {
-  const result = spawnSync(command, args, {
+  const invocation = childCli(command, args, options.env);
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd: options.cwd,
     encoding: "utf8",
     env: options.env,

@@ -13,6 +13,7 @@ import {
 import { resolveRuntimePlatformTarget } from "@myagents-dsh/product-profile";
 
 import { resolveExternalOutputRoot } from "./run-batch-1-pre-artifact-gate.js";
+import { childCli } from "./child-cli.mjs";
 
 type JsonObject = Record<string, unknown>;
 
@@ -42,7 +43,8 @@ const run = (
   timeoutMs: number,
   acceptedStatuses: readonly number[] = [0],
 ): CommandResult => {
-  const result = spawnSync(command, args, {
+  const invocation = childCli(command, args);
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd: repositoryRoot,
     encoding: "utf8",
     env: process.env,

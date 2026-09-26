@@ -24,6 +24,7 @@ This file is the canonical documentation-governance guide referenced by `AGENTS.
 | Protocol intent, lifecycle and ownership | [tech_docs/runtime/protocol.md](./tech_docs/runtime/protocol.md) |
 | Durable architectural decisions | [adr/](./adr/) |
 | Canonical generated/acceptance contracts | [contracts/](./contracts/) |
+| Exact grandfathered lint diagnostics | [lint/existing-deprecated-session-reads.json](./lint/existing-deprecated-session-reads.json), consumed by `scripts/lint-repository.mjs`; new diagnostics remain failures |
 | Pinned DSH source, public seams and patch series | [dsh/](./dsh/) |
 | Accepted DSH 0.1.2 upgrade scope and Host/Runtime capability decisions | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_2_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_2_upgrade.md); product scope and source-status ledger, not installed-version or artifact evidence |
 | Accepted DSH 0.1.5 upgrade, core benefits and development-data reset | [Upgrade PRD](./prd/prd_0.3_myagents_dsh_0_1_5_upgrade.md) and [paired RFC](./prd/tech_rfc_0.3_myagents_dsh_0_1_5_upgrade.md); accepted scope/reset/proxy boundaries; implementation in progress on dev; [source research](./research/dsh-0.1.5-rc.2-upgrade-audit.md) is non-normative and does not change installed-version or acceptance facts |

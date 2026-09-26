@@ -14,6 +14,8 @@ import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
+import { childCli } from "./child-cli.mjs";
+
 type JsonObject = Record<string, unknown>;
 
 export const BATCH_1_PRE_ARTIFACT_GATE_VERSION = 1 as const;
@@ -201,7 +203,8 @@ export const createGatePlan = (outputRoot: string, dshSource?: string): readonly
 };
 
 const runText = (command: string, args: readonly string[], timeoutMs: number): string => {
-  const result = spawnSync(command, args, {
+  const invocation = childCli(command, args);
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd: repositoryRoot,
     encoding: "utf8",
     env: process.env,

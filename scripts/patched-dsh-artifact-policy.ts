@@ -25,6 +25,8 @@ const builderAuthorityPaths = Object.freeze([
   "scripts/patched-dsh-artifact-policy.ts",
   "scripts/dsh-baseline-policy.ts",
   "scripts/dsh-seam-decisions.ts",
+  "scripts/child-cli.mjs",
+  "scripts/child-cli.d.mts",
   "scripts/toolchain-policy.mjs",
   "packages/artifact-verifier/src/artifact-policy.ts",
   "packages/artifact-verifier/src/forbidden-content.ts",

@@ -137,6 +137,8 @@ The current build policy pins Node `24.20.0` and npm `11.19.0`, matching MyAgent
 
 Source validation must consume the accepted patched DSH packages through the package installer; an untouched registry install does not contain the session-projection and other public-seam patches used by this Runtime. The accepted artifact manifest and offline consumer lock provide those package bytes; never edit installed package source to emulate the patches.
 
+On a clean CI or release runner, build and verify the patched DSH artifact before repository typecheck, lint, tests, and build. `npm run install:verified-dsh-checks -- --artifact <directory>` installs the artifact's verified package tarballs through npm for those checks. It restores the checkout's `package.json` byte-for-byte after npm resolves the local tarballs and leaves `package-lock.json` unchanged; the release gate then checks the clean repository. The patched DSH source test uses a narrow set of pinned workspace dependencies so it does not fetch unrelated document engines. The release scripts launch npm, pnpm, and Corepack through the selected Node's JavaScript entrypoints, including on Windows where their shell shims cannot be started as ordinary executables.
+
 The subsequent Runtime/native/handoff receipts belong to the Host integration ledger and external release record. Windows/Linux remain pending native validation until campaigns run on those platforms.
 
 ## 7. Rebuild and update rule

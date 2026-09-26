@@ -11,21 +11,49 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: myagents-dsh
     steps:
       - name: Checkout exact revision
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          path: myagents-dsh
+          persist-credentials: false
+      - name: Checkout pinned DSH baseline
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: 47f943859bef60e4160492346772ded9b24f765a
+          path: deepseek-harness
+          fetch-depth: 0
           persist-credentials: false
       - name: Install pinned Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version-file: .nvmrc
+          node-version: 24.20.0
       - name: Install pinned npm
         working-directory: ${{ runner.temp }}
         run: npm install --global npm@11.19.0
       - name: Install exact dependency graph
         run: npm ci
+      - name: Prime pinned DSH dependency store
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.7.0 --activate
+          npm cache add @earendil-works/pi-ai@0.85.1
+          cd ../deepseek-harness
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build and install accepted patched DSH for repository checks
+        shell: bash
+        run: |
+          npm run build:dsh-artifact -- --source "$GITHUB_WORKSPACE/deepseek-harness" \
+            --out "$RUNNER_TEMP/ci-patched-dsh-artifact" \
+            --pnpm-store "$(cd ../deepseek-harness && pnpm store path)" \
+            --npm-cache "$(npm config get cache)"
+          npm run install:verified-dsh-checks -- --artifact "$RUNNER_TEMP/ci-patched-dsh-artifact"
       - name: Typecheck
         run: npm run typecheck
       - name: Lint

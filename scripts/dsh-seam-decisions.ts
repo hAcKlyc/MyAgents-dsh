@@ -4,6 +4,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { childCli } from "./child-cli.mjs";
+
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
 export const DSH_SEAM_SOURCE = Object.freeze({
@@ -1148,7 +1150,8 @@ function git(sourceRoot: string, args: string[], env?: NodeJS.ProcessEnv, input?
 }
 
 const run = (command: string, args: string[], cwd: string, input?: Buffer): void => {
-  execFileSync(command, args, {
+  const invocation = childCli(command, args);
+  execFileSync(invocation.command, [...invocation.args], {
     cwd,
     env: process.env,
     input,
@@ -1207,7 +1210,7 @@ export function verifyDshSeamSource(
       "--offline",
       "--frozen-lockfile",
       "--ignore-scripts",
-      "--reporter=silent",
+      "--reporter=append-only",
       "--filter", "@deepseek-ai/dsh-system-prompt...",
       "--filter", "@deepseek-ai/dsh-agent-instructions...",
       "--filter", "@deepseek-ai/dsh-agent-loop...",
@@ -1215,10 +1218,18 @@ export function verifyDshSeamSource(
       "--filter", "@deepseek-ai/dsh-session-persistence-jsonl...",
       "--filter", "@deepseek-ai/dsh-fs-local...",
       "--filter", "@deepseek-ai/dsh-tool-fs...",
-      "--filter", "@deepseek-ai/dsh-subagent...",
-      "--filter", "@deepseek-ai/dsh-subagent-in-process-driver...",
-      "--filter", "@deepseek-ai/dsh-subagent-spawn-in-process...",
-      "--filter", "@deepseek-ai/dsh-subagent-fork-in-process...",
+      // The subagent workspace dependency closure reaches unrelated document/office packages.
+      // These four packages are compiled below; the other filters provide their shared build inputs.
+      "--filter", "@deepseek-ai/dsh-subagent",
+      "--filter", "@deepseek-ai/dsh-subagent-in-process-driver",
+      "--filter", "@deepseek-ai/dsh-subagent-spawn-in-process",
+      "--filter", "@deepseek-ai/dsh-subagent-fork-in-process",
+      "--filter", "@deepseek-ai/dsh-session-title",
+      "--filter", "@deepseek-ai/dsh-tool-todo",
+      "--filter", "@deepseek-ai/dsh-session-projection-cache",
+      "--filter", "@deepseek-ai/dsh-permission-presets",
+      "--filter", "@deepseek-ai/dsh-chunked-list",
+      "--filter", "@deepseek-ai/dsh-schedule",
       "--filter", "@deepseek-ai/dsh-llm-deepseek...",
       "--filter", "@deepseek-ai/dsh-llm-deepseek-api-key...",
       "--filter", "@deepseek-ai/dsh-llm-pi-ai...",

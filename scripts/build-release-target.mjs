@@ -8,18 +8,21 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 
 import { assetName } from "./package-batch-3-release.mjs";
+import { childCli } from "./child-cli.mjs";
 import { configuredReleaseTag } from "./release-version.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const run = (command, args, cwd = root) => {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8", stdio: "inherit" });
+  const invocation = childCli(command, args);
+  const result = spawnSync(invocation.command, invocation.args, { cwd, encoding: "utf8", stdio: "inherit" });
   if (result.error || result.status !== 0) {
     throw result.error ?? new Error(`${command} ${args.join(" ")} failed with ${result.status}`);
   }
 };
 const capture = (command, args, cwd = root) => {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8" });
+  const invocation = childCli(command, args);
+  const result = spawnSync(invocation.command, invocation.args, { cwd, encoding: "utf8" });
   if (result.error || result.status !== 0) {
     throw result.error ?? new Error(`${command} ${args.join(" ")} failed with ${result.status}: ${result.stderr}`);
   }
@@ -77,12 +80,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     mkdirSync(output);
     const route = resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash.json");
     const compactionRoute = resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash-compaction.json");
-    run("npm", ["run", "check:pre-artifact", "--", "--dsh-source", source,
-      "--output", resolve(work, "pre-artifact-gate")]);
     run("npm", ["run", "build:dsh-artifact", "--", "--source", source, "--out", artifact,
       "--pnpm-store", pnpmStore, "--npm-cache", npmCache]);
     const observed = sha256(readFileSync(resolve(artifact, "patched-dsh-artifact-v1.json")));
     if (observed !== expected) throw new Error("Built DSH artifact differs from the accepted profile digest");
+    run("npm", ["run", "install:verified-dsh-checks", "--", "--artifact", artifact]);
+    run("npm", ["run", "check:pre-artifact", "--", "--dsh-source", source,
+      "--output", resolve(work, "pre-artifact-gate")]);
     run("npm", ["run", "check:dsh-runtime-composition", "--", "--artifact", artifact,
       "--expected-manifest-sha256", expected, "--npm-cache", npmCache,
       "--pi-ai-source", piAiSource, "--runtime-artifact-out", runtime]);
