@@ -79,10 +79,10 @@ yet wired as one universal production writer. `LocalWorkspaceFileSystem` actuall
 same-directory temporary file, flushes it, then uses `link` plus unlink for create or one `rename`
 for update; it does not sync the parent directory or consume the declared Windows retry.
 
-SQLite uses WAL and `synchronous=FULL`. The Windows contract says parent-directory durability is
-`record-unavailable`, yet the new-database path currently still attempts directory sync and does
-not persist an "unavailable" report. This is an unverified implementation/contract gap until a
-Windows native campaign and correction establish the real behavior. Runtime shutdown and tool
+SQLite uses WAL and `synchronous=FULL`. POSIX flushes the parent directory during database
+initialization. The Windows adapter declares parent-directory flush `record-unavailable`; the
+database file is flushed, but initialization skips the unsupported directory sync. This limitation
+is recorded in the platform contract, not as a separate Session event. Runtime shutdown and tool
 cancellation otherwise delegate process-tree termination and settlement to official DSH subprocess/Jobs owners.
 
 ## 7. Architecture-correct change path
