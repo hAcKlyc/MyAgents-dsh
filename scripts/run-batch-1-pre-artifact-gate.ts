@@ -192,7 +192,8 @@ export const createGatePlan = (outputRoot: string, dshSource?: string): readonly
     plan.push(vitest(`bounded-soak-${String(iteration)}`, soakFiles, 180_000));
   }
   plan.push(
-    npm("typecheck", ["run", "typecheck"], 600_000),
+    // macOS Intel native runs exceeded ten minutes while still progressing through check:foundation.
+    npm("typecheck", ["run", "typecheck"], 1_200_000),
     npm("lint", ["run", "lint"], 300_000),
     // The repository test script already owns the frozen single-worker policy.
     // Repeating a valued Vitest flag after `--` makes current Vitest reject the run.
