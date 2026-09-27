@@ -137,6 +137,9 @@ The Host supplies `runtimeHome`, Workspace and execution-environment roots durin
 RPC canonicalizes and identity-checks them; the persistence Provider then fixes SQLite at
 `<runtimeHome>/persistence/sessions-v1.sqlite`. `persistenceRef` is a Host routing identity, not a
 filesystem locator. Checkpoint write roots come from the validated execution environment.
+The Store compares resolved filesystem paths through the selected platform adapter: Windows
+letter casing is equivalent, while a directory alias or symlink that resolves elsewhere remains
+invalid. File identities are still checked before and after opening the database.
 
 Concurrency follows one order: kernel ownership admission, per-Session serialization, then a
 short SQLite transaction. The composition-selected ownership Provider uses nonblocking POSIX

@@ -1465,6 +1465,14 @@ describe("ProductSqliteSessionPersistence", () => {
     await expect(mount(runtimeHome)).rejects.toThrow(/singly-linked regular file/u);
   });
 
+  it.skipIf(process.platform !== "win32")("accepts Windows path casing for a real Runtime home", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const differentlyCasedHome = runtimeHome.toUpperCase();
+    expect(differentlyCasedHome).not.toBe(runtimeHome);
+    const context = await mount(differentlyCasedHome);
+    await context.fiber.dispose();
+  });
+
   it("validates plugin configuration without executing nested accessors", async () => {
     const runtimeHome = await makeRuntimeHome();
     const platform = nativePlatform();
