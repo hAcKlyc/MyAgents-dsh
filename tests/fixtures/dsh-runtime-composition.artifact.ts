@@ -340,6 +340,9 @@ assert.throws(() => validateEffectiveToolCatalog({
 }), /effective tool catalog/u);
 
 const fixturePlatformTarget = resolveRuntimePlatformTarget(process.platform, process.arch);
+const fixtureHostPlatform = fixturePlatformTarget.startsWith("darwin") ? "darwin"
+  : fixturePlatformTarget === "linux-x64" ? "linux" : "win32";
+const fixtureHostArch = fixturePlatformTarget === "darwin-arm64" ? "arm64" : "x64";
 const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "myagents-dsh-w2-a2-artifact-")));
 const fixtureWorkspace = join(fixtureRoot, "workspace");
 const jobReleasePath = join(fixtureWorkspace, ".artifact-job-release");
@@ -1654,8 +1657,8 @@ const initializeRequest: InitializeParams = {
   host: {
     name: "artifact-standard-test-host",
     version: "0.1.0",
-    platform: "darwin",
-    arch: "arm64",
+    platform: fixtureHostPlatform,
+    arch: fixtureHostArch,
     nodeVersion: "24.20.0",
   },
   productSessionId: "artifact-product-session",

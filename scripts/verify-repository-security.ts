@@ -115,7 +115,8 @@ for (const relativePath of repositoryPaths) {
   const absolutePath = resolve(repositoryRoot, relativePath);
   const entry = await lstat(absolutePath);
   if (entry.isSymbolicLink()) {
-    const target = await readlink(absolutePath);
+    // Windows resolves Git symlink targets with backslashes even when the index stores POSIX paths.
+    const target = (await readlink(absolutePath)).replaceAll("\\", "/");
     const approvedAlias = (relativePath === "CLAUDE.md" && target === "AGENTS.md")
       || (relativePath === ".claude/skills" && target === "../.agents/skills");
     if (!approvedAlias) {
