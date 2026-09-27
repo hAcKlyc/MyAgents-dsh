@@ -225,15 +225,18 @@ assert.equal(preStartSignal.stderr, "");
 transportClosures.preStartSignal = assertTransportClosed(preStartSignal, "pre-start-signal");
 await preStartSignal.close();
 
-const signalResults: Array<Readonly<{ signal: "SIGINT" | "SIGTERM"; code: number }>> = [];
+const signalResults: Array<Readonly<{ signal: "SIGINT" | "SIGTERM"; code: number | null }>> = [];
 for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
   const runtime = launch();
   await runtime.client.initialize(initializeParams());
   runtime.signal(signal);
-  assert.deepEqual(await waitForExit(runtime, signal), { code, signal: null });
+  const exit = await waitForExit(runtime, signal);
+  assert.deepEqual(exit, process.platform === "win32"
+    ? { code: null, signal }
+    : { code, signal: null });
   assert.equal(runtime.stderr, "");
   transportClosures[signal] = assertTransportClosed(runtime, signal);
-  signalResults.push(Object.freeze({ signal, code }));
+  signalResults.push(Object.freeze({ signal, code: exit.code }));
   await runtime.close();
 }
 

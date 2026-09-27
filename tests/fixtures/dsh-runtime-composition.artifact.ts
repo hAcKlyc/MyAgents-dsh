@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { PassThrough } from "node:stream";
 import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers/promises";
 import { DatabaseSync } from "node:sqlite";
@@ -137,8 +137,11 @@ assert.equal(Object.isFrozen(CANONICAL_TOOL_NAMES), true);
 assert.equal(CANONICAL_TOOL_NAMES.length, 24);
 assert.equal(toolContractMetaJson.contractSha256, CANONICAL_TOOL_CONTRACT_SHA256);
 assert.equal(toolContractMetaJson.canonicalToolCount, 24);
+const fixtureShellDialect = process.platform === "win32" ? "pwsh" : "bash";
+const fixtureShellTool = fixtureShellDialect;
+const fixtureShellRef = "runtime-shell";
 const artifactEffectiveTools = Object.freeze([
-  "Read", "Write", "Edit", "Glob", "Grep", "bash", "job_output", "job_list", "job_kill", "ls", "WebFetch", "WebSearch",
+  "Read", "Write", "Edit", "Glob", "Grep", fixtureShellTool, "job_output", "job_list", "job_kill", "ls", "WebFetch", "WebSearch",
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "Skill", "Agent", "TaskStop", "SendMessage",
   "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
 ] as const);
@@ -346,7 +349,9 @@ const fixtureHostArch = fixturePlatformTarget === "darwin-arm64" ? "arm64" : "x6
 const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "myagents-dsh-w2-a2-artifact-")));
 const fixtureWorkspace = join(fixtureRoot, "workspace");
 const jobReleasePath = join(fixtureWorkspace, ".artifact-job-release");
-const shellLiteral = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+const shellLiteral = (value: string): string => process.platform === "win32"
+  ? `'${value.replaceAll("'", "''")}'`
+  : `'${value.replaceAll("'", "'\\''")}'`;
 const fixtureRuntimeHome = join(fixtureRoot, "runtime-home");
 const fixtureForkRuntimeHome = join(fixtureRoot, "fork-runtime-home");
 const fixtureAbortedForkRuntimeHome = join(fixtureRoot, "fork-aborted-runtime-home");
@@ -813,27 +818,30 @@ adapter.enqueue({
     { id: "artifact-grep-long-submatch", name: "Grep", arguments: JSON.stringify({ pattern: "x+", path: join(fixtureSearchRoot, "long.fixture"), output_mode: "content", "-o": true }) },
     { id: "artifact-glob-broad", name: "Glob", arguments: JSON.stringify({ pattern: "*.fixture", path: join(fixtureSearchRoot, "many") }) },
     { id: "artifact-ls-call", name: "ls", arguments: JSON.stringify({}) },
-    { id: "artifact-bash-call", name: "bash", arguments: JSON.stringify({ description: "Artifact Shell check", command: "printf artifact-bash" }) },
+    { id: "artifact-bash-call", name: fixtureShellTool, arguments: JSON.stringify({ description: "Artifact Shell check", command: process.platform === "win32" ? "[Console]::Out.Write('artifact-bash')" : "printf artifact-bash" }) },
     {
       id: "artifact-foreground-spill-call",
-      name: "bash",
+      name: fixtureShellTool,
       arguments: JSON.stringify({
         description: "Retain real foreground stdout and stderr through platform temporary paths",
-        command: "'" + process.execPath.replaceAll("'", "'\\''")
-          + "' -e 'process.stdout.write(\"x\".repeat(81000)); process.stderr.write(\"e\".repeat(64001))'",
+        command: process.platform === "win32"
+          ? "[Console]::Out.Write('x' * 81000); [Console]::Error.Write('e' * 64001)"
+          : `${shellLiteral(process.execPath)} -e 'process.stdout.write("x".repeat(81000)); process.stderr.write("e".repeat(64001))'`,
       }),
     },
     {
       id: "artifact-background-bash-call",
-      name: "bash",
-      arguments: JSON.stringify({ description: "Artifact Shell check", command: "/bin/sleep 0.05; printf artifact-background", run_in_background: true }),
+      name: fixtureShellTool,
+      arguments: JSON.stringify({ description: "Artifact Shell check", command: process.platform === "win32" ? "Start-Sleep -Milliseconds 50; [Console]::Out.Write('artifact-background')" : "/bin/sleep 0.05; printf artifact-background", run_in_background: true }),
     },
     {
       id: "artifact-background-flood-call",
-      name: "bash",
+      name: fixtureShellTool,
       arguments: JSON.stringify({
         description: "Artifact large output check",
-        command: `while [ ! -f ${shellLiteral(jobReleasePath)} ]; do /bin/sleep 0.01; done; ${shellLiteral(process.execPath)} -e 'process.stdout.write("x".repeat(200004))'`,
+        command: process.platform === "win32"
+          ? `while (-not (Test-Path -LiteralPath ${shellLiteral(jobReleasePath)})) { Start-Sleep -Milliseconds 10 }; [Console]::Out.Write('x' * 200004)`
+          : `while [ ! -f ${shellLiteral(jobReleasePath)} ]; do /bin/sleep 0.01; done; ${shellLiteral(process.execPath)} -e 'process.stdout.write("x".repeat(200004))'`,
         run_in_background: true,
       }),
     },
@@ -899,7 +907,7 @@ adapter.enqueue({
 adapter.enqueue({
   calls: [
     { id: "artifact-plan-read-call", name: "Read", arguments: JSON.stringify({ file_path: fixturePlanPath }) },
-    { id: "artifact-plan-bash-research-call", name: "bash", arguments: JSON.stringify({ description: "Inspect during planning", command: "printf plan-shell-research" }) },
+    { id: "artifact-plan-bash-research-call", name: fixtureShellTool, arguments: JSON.stringify({ description: "Inspect during planning", command: process.platform === "win32" ? "[Console]::Out.Write('plan-shell-research')" : "printf plan-shell-research" }) },
   ],
   kind: "tool-calls",
 });
@@ -1065,7 +1073,7 @@ const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
 const artifactRipgrepPath = await resolveRgPath();
 const artifactShellPath = await realpath(process.platform === "win32"
-  ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe")
+  ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
   : "/bin/bash");
 const executableSha256 = Object.freeze({
   shell: createHash("sha256").update(await readFile(artifactShellPath)).digest("hex"),
@@ -1130,9 +1138,11 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
   plan: Object.freeze({ revision: "artifact-plan-v1" }),
   platformTarget: fixturePlatformTarget,
   process: Object.freeze({
-    shellDialect: "bash",
-    allowedCommandRefs: Object.freeze(["bundled-bash", "bundled-node", "bundled-ripgrep"]),
-    environmentValues: Object.freeze({}),
+    shellDialect: fixtureShellDialect,
+    allowedCommandRefs: Object.freeze([fixtureShellRef, "bundled-node", "bundled-ripgrep"]),
+    environmentValues: Object.freeze(process.platform === "win32"
+      ? { SystemRoot: process.env.SystemRoot ?? "C:\\Windows" }
+      : {}),
     executableSha256,
     executablePaths: Object.freeze({
       shell: artifactShellPath,
@@ -1140,7 +1150,7 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
       ripgrep: artifactRipgrepPath,
     }),
     executableRefs: Object.freeze({
-      shell: "bundled-bash",
+      shell: fixtureShellRef,
       bundledNode: "bundled-node",
       ripgrep: "bundled-ripgrep",
     }),
@@ -1434,7 +1444,7 @@ const hostAttachmentLeases = new Map<string, string>();
 let hostAttachmentLeaseSequence = 0;
 let hostInteractionOrderingProbed = false;
 hostPeer.registerRequestHandler("host/attachment/put", async (params) => {
-  assert.ok(params.stagingPath.startsWith(`${fixtureAttachmentStaging}/`));
+  assert.ok(params.stagingPath.startsWith(`${fixtureAttachmentStaging}${sep}`));
   const bytes = await readFile(params.stagingPath);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   assert.equal(bytes.byteLength, params.sizeBytes);
@@ -1512,13 +1522,13 @@ hostPeer.registerRequestHandler("host/interaction/request", (params, context) =>
     assert.equal(typeof schema.permissionClass, "string");
     assert.equal(typeof schema.target, "string");
     assert.equal(typeof schema.tool, "string");
-    if (schema.tool === "bash") {
+    if (schema.tool === fixtureShellTool) {
       assert.ok(params.review?.operation.kind === "command");
       const review = params.review.operation;
       assert.equal(typeof review.command, "string");
       assert.equal(review.cwd, schema.target);
-      if (review.command === "printf artifact-bash") {
-        assert.deepEqual(review, { kind: "command", dialect: "bash", command: "printf artifact-bash", cwd: schema.target, description: "Artifact Shell check" });
+      if (review.command === (process.platform === "win32" ? "[Console]::Out.Write('artifact-bash')" : "printf artifact-bash")) {
+        assert.deepEqual(review, { kind: "command", dialect: fixtureShellDialect, command: review.command, cwd: schema.target, description: "Artifact Shell check" });
       }
     }
     if (schema.tool !== "Agent" || schema.target !== "Verify child model lineage") {
@@ -1677,13 +1687,13 @@ const initializeRequest: InitializeParams = {
     },
     executables: {
       bundledNodeRef: "bundled-node",
-      shellRef: "bundled-bash",
+      shellRef: fixtureShellRef,
       ripgrepRef: "bundled-ripgrep",
-      shellDialect: "bash",
-      allowedCommandRefs: ["bundled-bash", "bundled-node", "bundled-ripgrep"],
+      shellDialect: fixtureShellDialect,
+      allowedCommandRefs: [fixtureShellRef, "bundled-node", "bundled-ripgrep"],
       pathPolicy: "sealed",
     },
-    environment: { allowedKeys: [], inheritedKeys: [], secretValues: "reverse-port-only" },
+    environment: { allowedKeys: process.platform === "win32" ? ["SystemRoot"] : [], inheritedKeys: [], secretValues: "reverse-port-only" },
     network: { mode: "host-policy", policyRef: artifactNetworkPolicy.policyRef },
     process: { backgroundRetention: "allow", maxChildren: 8, killTreeOnAbort: true },
     checkpoint: {
@@ -1854,7 +1864,7 @@ hostModelPeer.registerRequestHandler("host/credential/resolve", (params) => {
       };
 });
 hostModelPeer.registerRequestHandler("host/attachment/put", async (params) => {
-  assert.ok(params.stagingPath.startsWith(`${fixtureAttachmentStaging}/`));
+  assert.ok(params.stagingPath.startsWith(`${fixtureAttachmentStaging}${sep}`));
   const bytes = await readFile(params.stagingPath);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   assert.equal(bytes.byteLength, params.sizeBytes);
@@ -2545,7 +2555,7 @@ assert.equal(
 for (const name of artifactEffectiveTools) {
   assert.ok(composition.context.tools.get(name, primaryAgent), `missing canonical tool ${name}`);
 }
-for (const stockName of ["read_file", "write_file", "edit_file", "pwsh", "glob", "grep", "todo_write"]) {
+for (const stockName of ["read_file", "write_file", "edit_file", fixtureShellTool === "pwsh" ? "bash" : "pwsh", "glob", "grep", "todo_write"]) {
   assert.equal(composition.context.tools.get(stockName, primaryAgent), undefined, `stock tool ${stockName} must be absent`);
 }
 assert.equal(
@@ -2647,7 +2657,7 @@ const approvalRuntimeContext = "Current runtime context. This snapshot supersede
   + `${fixtureWorkspace}\n\n`
   + "Use this exact absolute path for file and search tools that require one. The available Shell tool runs in this workspace. "
   + "Do not infer access outside it.\n\n"
-  + `Runtime platform: ${fixturePlatformTarget}. Available Shell tool: bash. Executable: ${artifactShellPath}. `
+  + `Runtime platform: ${fixturePlatformTarget}. Available Shell tool: ${fixtureShellTool}. Executable: ${artifactShellPath}. `
   + "Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. "
   + "Query the executable's version before relying on version-specific features. "
   + "Execution uses the local user's OS permissions; no OS file sandbox is active. "
@@ -3255,7 +3265,7 @@ const backgroundRecord = { jobId: shellMeta("artifact-background-bash-call").job
 const backgroundFloodRecord = { jobId: shellMeta("artifact-background-flood-call").jobId };
 assert.equal(typeof backgroundRecord.jobId, "string");
 assert.equal(typeof backgroundFloodRecord.jobId, "string");
-assert.ok(fileToolEvidence.some((entry) => entry.startsWith("permission:bash:")));
+assert.ok(fileToolEvidence.some((entry) => entry.startsWith(`permission:${fixtureShellTool}:`)));
 for (const safeTool of ["Read", "Glob", "Grep", "ls"]) {
   assert.equal(fileToolEvidence.some((entry) => entry.startsWith(`permission:${safeTool}:`)), false);
 }
@@ -4002,8 +4012,8 @@ assert.equal(hostInteractionResponses.at(-1)?.state, "expired");
 adapter.enqueue({
   calls: [{
     id: "artifact-aborted-bash-call",
-    name: "bash",
-    arguments: JSON.stringify({ description: "Artifact Shell check", command: "/bin/sleep 30" }),
+    name: fixtureShellTool,
+    arguments: JSON.stringify({ description: "Artifact Shell check", command: process.platform === "win32" ? "Start-Sleep -Seconds 30" : "/bin/sleep 30" }),
   }],
   kind: "tool-calls",
 });
@@ -4258,7 +4268,7 @@ assert.deepEqual(componentCatalog.skills, [{
   disableModelInvocation: false,
   name: "release-audit",
 }]);
-assert.deepEqual(componentCatalog.tools, [...artifactEffectiveTools.toSorted(), artifactHostToolName]);
+assert.deepEqual(componentCatalog.tools, [...artifactEffectiveTools, artifactHostToolName].toSorted());
 const componentPublicationVerified = snapshot.componentPlane === "installed"
   && snapshot.componentEffectiveRevision === artifactDeclarativeExtensionSnapshot.revision
   && componentCatalog.revision === artifactDeclarativeExtensionSnapshot.revision;

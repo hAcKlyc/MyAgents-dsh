@@ -471,7 +471,7 @@ export const validateProductExecutionEnvironment = (
     "execution environment executable authority",
   );
   if (executableAuthority.shellDialect !== adapter.shell.dialect || executableAuthority.pathPolicy !== "sealed") {
-    throw new TypeError("execution environment executable authority must select sealed Bash");
+    throw new TypeError("execution environment executable authority must select the sealed platform shell");
   }
   const allowedCommandRefs = exactIdentifierArray(
     executableAuthority.allowedCommandRefs,
