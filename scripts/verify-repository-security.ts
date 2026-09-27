@@ -252,7 +252,7 @@ try {
       env: packEnvironment,
       maxBuffer: 16 * 1024 * 1024,
     });
-    const archivePaths = listed.stdout.split("\n").filter((path) => path.length > 0);
+    const archivePaths = listed.stdout.split(/\r?\n/u).filter((path) => path.length > 0);
     const actualPaths: string[] = [];
     for (const archivePathname of archivePaths) {
       if (!archivePathname.startsWith("package/")) {
