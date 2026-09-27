@@ -26,6 +26,7 @@ import {
   createUserMessage,
 } from "@deepseek-ai/dsh-llm";
 import { assembleContextFor, type Agent } from "@deepseek-ai/dsh-agent";
+import { resolvePwshPath } from "@deepseek-ai/dsh-pwsh-local";
 import type {} from "@deepseek-ai/dsh-time-context";
 import { PERSONA_PREFIX_SECTION, renderPrompt, SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
@@ -1073,7 +1074,7 @@ const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
 const artifactRipgrepPath = await resolveRgPath();
 const artifactShellPath = await realpath(process.platform === "win32"
-  ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+  ? resolvePwshPath()
   : "/bin/bash");
 const executableSha256 = Object.freeze({
   shell: createHash("sha256").update(await readFile(artifactShellPath)).digest("hex"),
