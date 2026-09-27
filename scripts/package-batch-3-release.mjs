@@ -72,11 +72,11 @@ export function packageBatch3Release({ handoff, handoffSha256, tag, target, out,
     const payload = resolve(staging, "payload");
     mkdirSync(payload);
     cpSync(input, resolve(payload, "handoff"), { recursive: true });
-    execFileSync("tar", ["-czf", temporaryArchive, "-C", payload, "handoff"], { stdio: "pipe" });
+    execFileSync("tar", ["-czf", name, "-C", "payload", "handoff"], { cwd: staging, stdio: "pipe" });
     const archiveBytes = readFileSync(temporaryArchive);
     const unpack = resolve(staging, "unpack");
     mkdirSync(unpack);
-    execFileSync("tar", ["-xzf", temporaryArchive, "-C", unpack], { stdio: "pipe" });
+    execFileSync("tar", ["-xzf", name, "-C", "unpack"], { cwd: staging, stdio: "pipe" });
     const unpacked = resolve(unpack, "handoff");
     verifyHandoff(unpacked, handoffSha256, node);
     const manifest = {

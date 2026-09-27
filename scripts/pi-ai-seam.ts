@@ -187,7 +187,7 @@ export const verifyPiAiSource = (
     const tarballPath = join(worktreeParent, "pi-ai-registry-authority.tgz");
     cpSync(cachedTarballPath, tarballPath);
     mkdirSync(hydrationRoot);
-    run("tar", ["-xzf", tarballPath, "-C", hydrationRoot,
+    run("tar", ["-xzf", "pi-ai-registry-authority.tgz", "-C", "registry-pi-ai",
       "package/dist/providers/data"], worktreeParent, environment);
     cpSync(
       join(hydrationRoot, "package/dist/providers/data"),
