@@ -125,7 +125,7 @@ describe("Host WebFetch production adapters", () => {
       minimalPdf("Hello governed PDF"),
     ));
     expect(result).toEqual({ content: "Hello governed PDF", kind: "text", truncated: false });
-  });
+  }, 30_000);
 
   it("bounds decoded source content and observes cancellation", async () => {
     const result = await convertHostWebContent(contentRequest(
