@@ -14,6 +14,8 @@ import { arch, platform, release, tmpdir } from "node:os";
 import tls from "node:tls";
 import workerThreads from "node:worker_threads";
 
+import { supportsFileSymlinks } from "./symlink-capability.js";
+
 const originalSymlinkSync = fs.symlinkSync.bind(fs);
 
 export class DefaultNetworkIsolationError extends Error {
@@ -347,12 +349,14 @@ export const probeDefaultNetworkBlocks = async (): Promise<void> => {
         if (!(error instanceof DefaultNetworkIsolationError)) throw error;
       }
     }
-    originalSymlinkSync(credentialSource, aliasPath);
-    try {
-      fs.readFileSync(aliasPath);
-      throw new Error("environment-file realpath alias canary unexpectedly passed");
-    } catch (error) {
-      if (!(error instanceof DefaultNetworkIsolationError)) throw error;
+    if (supportsFileSymlinks) {
+      originalSymlinkSync(credentialSource, aliasPath);
+      try {
+        fs.readFileSync(aliasPath);
+        throw new Error("environment-file realpath alias canary unexpectedly passed");
+      } catch (error) {
+        if (!(error instanceof DefaultNetworkIsolationError)) throw error;
+      }
     }
   } finally {
     fs.rmSync(aliasRoot, { force: true, recursive: true });

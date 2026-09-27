@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import { supportsDirectorySymlinks } from "./setup/symlink-capability.js";
 
 import {
   PRODUCT_PERSISTENCE_FORMAT,
@@ -1448,7 +1449,7 @@ describe("ProductSqliteSessionPersistence", () => {
     probe.close();
   });
 
-  it("rejects aliased Runtime homes and linked database files", async () => {
+  it.skipIf(!supportsDirectorySymlinks)("rejects aliased Runtime homes and linked database files", async () => {
     const runtimeHome = await makeRuntimeHome();
     const root = join(runtimeHome, "..");
     const alias = join(root, "runtime-home-alias");

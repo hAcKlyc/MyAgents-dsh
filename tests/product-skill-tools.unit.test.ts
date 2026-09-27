@@ -24,6 +24,7 @@ import {
 import { LocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 import { ProductPermissionError, type ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { afterEach, describe, expect, it } from "vitest";
+import { supportsFileSymlinks } from "./setup/symlink-capability.js";
 
 import { readAtMostFromHandle } from "../packages/tools-fs/src/local-filesystem.js";
 
@@ -412,7 +413,7 @@ describe("static declarative Skill tool", () => {
     expect(outside.permissions).toHaveLength(0);
   });
 
-  it("fails closed on source drift, symbolic sources, and executable frontmatter", async () => {
+  it.skipIf(!supportsFileSymlinks)("fails closed on source drift, symbolic sources, and executable frontmatter", async () => {
     const drifted = await mounted();
     const driftedSource = drifted.sourcePaths.get("winner");
     if (driftedSource === undefined) throw new Error("drift fixture source is missing");

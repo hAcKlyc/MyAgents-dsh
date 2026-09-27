@@ -4,7 +4,9 @@ This is the maintained entry for a clean checkout that will modify MyAgents-dsh 
 
 ## Prepare a machine
 
-Use Node `24.20.0` and npm `11.19.0` for the full setup and Runtime builder. `.nvmrc` records the minimum ordinary development Node, `24.15.0`; ordinary source tests admit Node `>=24.15.0 <25`, but this setup builds an artifact and requires the exact build version. Git, Corepack, and platform-native build tools must be available. On Windows, check out the repository with Git symlink support so `.claude/skills` is a link to `.agents/skills`.
+Use Node `24.20.0` and npm `11.19.0` for the full setup and Runtime builder. `.nvmrc` records the minimum ordinary development Node, `24.15.0`; ordinary source tests admit Node `>=24.15.0 <25`, but this setup builds an artifact and requires the exact build version. Git, Corepack, and platform-native build tools must be available. On Windows, Git symlink support is preferred; when the checkout cannot create symlinks, setup and workspace checks also accept the exact Git text pointers in `CLAUDE.md` and `.claude/skills`.
+
+Tests that create real filesystem symlinks run only when the local OS account can create them. An unprivileged Windows run reports those cases as skipped; use a symlink-capable runner for their security coverage.
 
 ```bash
 ./setup.sh

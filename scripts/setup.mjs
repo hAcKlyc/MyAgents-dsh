@@ -77,7 +77,8 @@ const primePiAiCache = (repository, authority) => {
     run("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", worktree]);
   } finally {
     if (existsSync(worktree)) {
-      run("git", ["-C", repository, "worktree", "remove", "--force", worktree]);
+      rmSync(worktree, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      run("git", ["-C", repository, "worktree", "prune", "--expire=now"]);
     }
     rmSync(temporary, { recursive: true, force: true });
   }
@@ -93,9 +94,14 @@ const main = () => {
   if (failures.length) {
     throw new Error(`Full setup builds a Runtime artifact and needs Node 24.20.0 with npm 11.19.0:\n${failures.join("\n")}`);
   }
-  if (!lstatSync(resolve(root, ".claude/skills")).isSymbolicLink()
-    || readlinkSync(resolve(root, ".claude/skills")).replaceAll("\\", "/") !== "../.agents/skills") {
-    throw new Error(".claude/skills must be checked out as a symlink; enable Git symlink support and restore this path");
+  const skillsPath = resolve(root, ".claude/skills");
+  const skillsEntry = lstatSync(skillsPath);
+  const linkedSkills = skillsEntry.isSymbolicLink()
+    && readlinkSync(skillsPath).replaceAll("\\", "/") === "../.agents/skills";
+  const windowsTextPointer = process.platform === "win32" && skillsEntry.isFile()
+    && readFileSync(skillsPath, "utf8").trim() === "../.agents/skills";
+  if (!linkedSkills && !windowsTextPointer) {
+    throw new Error(".claude/skills must point exactly to ../.agents/skills");
   }
   capture("git", ["--version"]);
   run("npm", ["ci"]);
@@ -116,7 +122,7 @@ const main = () => {
   const npmCache = capture("npm", ["config", "get", "cache"]);
   const pnpmStore = capture("corepack", ["pnpm", "store", "path"], dshSource);
   if (!existsSync(artifact)) {
-    run("npm", ["exec", "--", "node", "--import", "tsx", "scripts/prime-historical-dsh-store.ts",
+    run(process.execPath, ["--import", "tsx", "scripts/prime-historical-dsh-store.ts",
       "--source", dshSource]);
     mkdirSync(dirname(artifact), { recursive: true });
     const temporary = `${artifact}.partial-${process.pid}`;

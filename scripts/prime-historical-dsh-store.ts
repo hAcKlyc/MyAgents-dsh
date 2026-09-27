@@ -115,7 +115,10 @@ try {
   process.stdout.write(`Primed historical DSH dependency store at ${DSH_SEAM_SOURCE.commit}\n`);
 } finally {
   try {
-    if (registered) run("git", ["-c", "core.longpaths=true", "worktree", "remove", "--force", worktree], source);
+    if (registered) {
+      rmSync(worktree, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      run("git", ["worktree", "prune", "--expire=now"], source);
+    }
   } finally {
     rmSync(parent, { recursive: true, force: true });
   }

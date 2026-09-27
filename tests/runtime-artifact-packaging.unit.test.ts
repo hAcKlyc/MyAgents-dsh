@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { supportsFileSymlinks } from "./setup/symlink-capability.js";
 
 import { materializeRuntimeArtifactFileLinks } from "../scripts/runtime-artifact-packaging.js";
 
@@ -28,7 +29,7 @@ describe("Runtime artifact packaging", () => {
     for (const value of roots.splice(0)) rmSync(value, { force: true, recursive: true });
   });
 
-  it("materializes contained file links with exact bytes and canonical mode", () => {
+  it.skipIf(!supportsFileSymlinks)("materializes contained file links with exact bytes and canonical mode", () => {
     const artifact = root();
     const packageRoot = resolve(artifact, "node_modules/example");
     const binRoot = resolve(artifact, "node_modules/.bin");
@@ -48,7 +49,7 @@ describe("Runtime artifact packaging", () => {
     expect(materializeRuntimeArtifactFileLinks(artifact)).toBe(0);
   });
 
-  it("rejects dangling, escaping, and directory links", () => {
+  it.skipIf(!supportsFileSymlinks)("rejects dangling, escaping, and directory links", () => {
     const danglingArtifact = root();
     symlinkSync("missing", resolve(danglingArtifact, "dangling"), "file");
     expect(() => materializeRuntimeArtifactFileLinks(danglingArtifact)).toThrow("dangling");

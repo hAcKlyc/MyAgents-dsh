@@ -41,6 +41,7 @@ import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, utimes, writeF
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { supportsFileSymlinks, supportsDirectorySymlinks } from "./setup/symlink-capability.js";
 
 const temporaryRoots: string[] = [];
 const noOverride = Symbol("no-override");
@@ -417,7 +418,7 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("rejects a target retargeted during stock Read resolution before publishing image bytes", async () => {
+  it.skipIf(!supportsFileSymlinks)("rejects a target retargeted during stock Read resolution before publishing image bytes", async () => {
     const state = await harness();
     const path = join(state.workspace, "approved.png");
     const outside = join(state.root, "outside.png");
@@ -630,7 +631,7 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("fails closed on partial/stale reads, traversal, denial, and cancellation", async () => {
+  it.skipIf(!supportsFileSymlinks)("fails closed on partial/stale reads, traversal, denial, and cancellation", async () => {
     const state = await harness();
     const path = join(state.workspace, "guarded.txt");
     await writeFile(path, "one\ntwo\nthree\n");
@@ -690,7 +691,7 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("resolves directory aliases for file and search tools without extending allowed roots", async () => {
+  it.skipIf(!supportsFileSymlinks || !supportsDirectorySymlinks)("resolves directory aliases for file and search tools without extending allowed roots", async () => {
     const state = await harness();
     const alias = join(state.root, "workspace-alias");
     await symlink(state.workspace, alias, "dir");
@@ -721,7 +722,7 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it.each(["Read", "Write", "Edit", "ls", "Glob", "Grep"] as const)("rechecks original %s aliases after permission waiting", async (tool) => {
+  it.skipIf(!supportsDirectorySymlinks).each(["Read", "Write", "Edit", "ls", "Glob", "Grep"] as const)("rechecks original %s aliases after permission waiting", async (tool) => {
     const state = await harness();
     const first = join(state.workspace, "first");
     const second = join(state.workspace, "second");
@@ -1536,7 +1537,7 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("lists readable entries when a sibling symlink points outside the allowed roots", async () => {
+  it.skipIf(!supportsFileSymlinks)("lists readable entries when a sibling symlink points outside the allowed roots", async () => {
     const state = await harness();
     const listed = join(state.workspace, "listed");
     await mkdir(listed);
@@ -1552,7 +1553,7 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("reports omitted dangling symlinks while retaining readable ls entries", async () => {
+  it.skipIf(!supportsFileSymlinks)("reports omitted dangling symlinks while retaining readable ls entries", async () => {
     const state = await harness();
     const listed = join(state.workspace, "dangling-list");
     await mkdir(listed);
@@ -1595,7 +1596,7 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("rejects substituted directory authorities and counts skipped entries against the traversal bound", async () => {
+  it.skipIf(!supportsDirectorySymlinks)("rejects substituted directory authorities and counts skipped entries against the traversal bound", async () => {
     const state = await harness();
     const local = state.context.fs as LocalWorkspaceFileSystem;
     const listed = join(state.workspace, "listed");

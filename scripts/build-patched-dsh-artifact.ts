@@ -1240,7 +1240,8 @@ const main = (): void => {
   } finally {
     try {
       if (worktreeRegistered) {
-        run("git", ["-C", sourceRoot, "worktree", "remove", "--force", worktree], {
+        rmSync(worktree, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+        run("git", ["-C", sourceRoot, "worktree", "prune", "--expire=now"], {
           cwd: repositoryRoot,
           env: buildEnvironment,
         });

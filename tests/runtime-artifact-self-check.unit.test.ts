@@ -44,6 +44,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { Writable } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { supportsFileSymlinks } from "./setup/symlink-capability.js";
 
 vi.mock("@myagents-dsh/product-profile", async (importOriginal) => {
   const actual = await importOriginal<typeof ProductProfileExports>();
@@ -166,7 +167,7 @@ describe("Runtime artifact self-check", () => {
     }
   });
 
-  it("fails closed on wrong toolchain, target, tampering, Proxy, and accessor input", () => {
+  it.skipIf(!supportsFileSymlinks)("fails closed on wrong toolchain, target, tampering, Proxy, and accessor input", () => {
     expect(assertRuntimeNodeVersion("24.20.0")).toBe("24.20.0");
     expect(() => assertRuntimeNodeVersion("24.15.0")).toThrow("requires Node 24.20.0");
     expect(() => assertRuntimeNodeVersion("24.13.2")).toThrow("requires Node 24.20.0");
