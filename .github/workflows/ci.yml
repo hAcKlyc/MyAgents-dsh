@@ -31,6 +31,13 @@ jobs:
           path: deepseek-harness
           fetch-depth: 0
           persist-credentials: false
+      - name: Checkout pinned pi-ai source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: earendil-works/pi
+          ref: d981de1229ef899957bbe968bc8dcda02a21f477
+          path: pi
+          persist-credentials: false
       - name: Install pinned Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -47,6 +54,22 @@ jobs:
         run: npm run setup -- --checks-only --dsh-source "$DSH_SOURCE"
       - name: Test Windows without credentials or network
         run: npm test
+      - name: Validate Windows Runtime composition
+        shell: bash
+        env:
+          PI_AI_SOURCE_DIR: ${{ github.workspace }}/pi
+          RUNTIME_ARTIFACT_OUT: ${{ runner.temp }}/myagents-dsh-runtime-composition
+        run: |
+          npm ci --prefix "$PI_AI_SOURCE_DIR" --ignore-scripts --no-audit --no-fund --workspace @earendil-works/pi-ai --include-workspace-root
+          npm cache add @earendil-works/pi-ai@0.85.1
+          artifact_digest=$(node -p "require('./packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json').manifestSha256")
+          npm_cache=$(npm config get cache)
+          npm run check:dsh-runtime-composition -- \
+            --artifact "tmp/setup/artifacts/$artifact_digest" \
+            --expected-manifest-sha256 "$artifact_digest" \
+            --npm-cache "$npm_cache" \
+            --pi-ai-source "$PI_AI_SOURCE_DIR" \
+            --runtime-artifact-out "$RUNTIME_ARTIFACT_OUT"
       - name: Preserve failed patched DSH manifest
         if: failure()
         uses: actions/upload-artifact@v4

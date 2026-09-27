@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -653,6 +653,9 @@ const cleanBuildRuntimeComposition = (
     "false",
     "--traceResolution",
   ], repositoryRoot, environment);
+  const resolvedModules = [...resolutionTrace.matchAll(
+    /Module name '([^']+)' was successfully resolved to '([^']+)'/gu,
+  )].map((match) => ({ specifier: match[1], path: match[2] }));
   for (const [specifier, expectedPath] of [
     ["@myagents-dsh/tool-contracts", resolve(
       repositoryRoot,
@@ -667,9 +670,11 @@ const cleanBuildRuntimeComposition = (
       "packages/components-mcp/src/sdk-connection.ts",
     )],
   ] as const) {
-    if (!resolutionTrace.includes(
-      `Module name '${specifier}' was successfully resolved to '${expectedPath}'`,
-    )) {
+    const expectedCanonical = realpathSync(expectedPath);
+    if (!resolvedModules.some((entry) => entry.specifier === specifier
+      && entry.path !== undefined
+      && existsSync(entry.path)
+      && relative(expectedCanonical, realpathSync(entry.path)) === "")) {
       throw new Error(`${specifier} did not resolve to its exact clean-build source authority`);
     }
   }
@@ -1338,7 +1343,10 @@ const main = (): void => {
     );
     const runner = resolve(consumerRoot, "dsh-runtime-composition.artifact.mjs");
     cpSync(runnerSource, runner);
-    const output = run(process.execPath, [runner], consumerRoot, environment);
+    const output = run(process.execPath, [runner], consumerRoot, {
+      ...environment,
+      MYAGENTS_DSH_COMPOSITION_DIAGNOSTICS: "1",
+    });
     const evidence = exactObject(JSON.parse(output) as unknown, "runtime composition evidence");
     if (evidence.artifactManifestSha256 !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
       || evidence.artifactVersion !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
@@ -1485,7 +1493,7 @@ const main = (): void => {
         headChars: 4_096,
         tailChars: 1_024,
       })
-      || compactionEvidence.summaryMaxTokens !== 65_536
+      || compactionEvidence.summaryMaxTokens !== 4096
       || compactionEvidence.summaryStreamCalls !== 1
       || JSON.stringify(compactionEvidence.telemetryKinds) !== JSON.stringify([
         "convergence",

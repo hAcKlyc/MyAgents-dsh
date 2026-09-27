@@ -1043,6 +1043,8 @@ assert.equal(
   true,
   "the production DSH composition must register automatic pressure and overflow compaction",
 );
+assert.equal((composition.context.compaction as BasicCompactionEngine).config.headroomTokens, 1024);
+assert.equal((composition.context.compaction as BasicCompactionEngine).config.maxTokens, 4096);
 assert.equal(
   composition.context.toolResultPruner instanceof ToolResultPruner,
   true,
@@ -4649,7 +4651,7 @@ assert.equal(compactionReceipt.data.startSeq, compactionStart.seq);
 assert.equal(compactionReceipt.data.summarySeq, compactionSummary.seq);
 assert.equal(compactionReceipt.data.endSeq, compactionEnd.seq);
 assert.equal(compactionReceipt.data.resultEventCount, resumedAgent.session.snapshotEvents().length);
-assert.equal(resumeAdapter.requests[0]?.maxTokens, 65_536);
+assert.equal(resumeAdapter.requests[0]?.maxTokens, 4096);
 assert.match(
   resumeAdapter.requests[0].messages.at(-1)?.content
     .filter((block) => block.type === "text")

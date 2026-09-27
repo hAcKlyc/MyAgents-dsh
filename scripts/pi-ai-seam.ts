@@ -187,7 +187,7 @@ export const verifyPiAiSource = (
     const tarballPath = join(worktreeParent, "pi-ai-registry-authority.tgz");
     cpSync(cachedTarballPath, tarballPath);
     mkdirSync(hydrationRoot);
-    run("tar", ["-xzf", tarballPath, "-C", hydrationRoot,
+    run("tar", ["-xzf", "pi-ai-registry-authority.tgz", "-C", "registry-pi-ai",
       "package/dist/providers/data"], worktreeParent, environment);
     cpSync(
       join(hydrationRoot, "package/dist/providers/data"),
@@ -195,7 +195,7 @@ export const verifyPiAiSource = (
       { recursive: true },
     );
     run("npm", [
-      "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund",
+      "ci", "--prefer-offline", "--ignore-scripts", "--no-audit", "--no-fund",
       "--workspace", PI_AI_SOURCE.packageName, "--include-workspace-root",
     ], worktree, environment);
     run("npm", ["run", "build", "--workspace", "@earendil-works/pi-telemetry"], worktree, environment);

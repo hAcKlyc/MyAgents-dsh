@@ -2383,7 +2383,11 @@ export const composeDshRootServices = async (
     if (adapter !== undefined) await root.plugin(adapterPlugin(providers, adapter));
     await root.plugin(TokenMeter);
     await root.plugin(ToolResultPruner);
-    await root.plugin(BasicCompactionEngine, { auto: true });
+    await root.plugin(BasicCompactionEngine, {
+      auto: true,
+      headroomTokens: 1024,
+      maxTokens: 4096,
+    });
     await root.plugin(AgentLoop, {
       ...agentLoop,
       agents: [],

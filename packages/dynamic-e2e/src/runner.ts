@@ -89,6 +89,32 @@ const messageText = (data: unknown): string => {
   }).join("\n");
 };
 
+export const interactionPlanHostOrderVerified = (calls: readonly unknown[]): boolean => {
+  let clarified = false;
+  let approved = false;
+  let selectionWrittenAfterApproval = false;
+  for (const call of calls) {
+    if (call === null || typeof call !== "object" || Array.isArray(call)) continue;
+    const params = (call as { params?: unknown }).params;
+    if (params === null || typeof params !== "object" || Array.isArray(params)) continue;
+    const request = params as {
+      kind?: unknown;
+      permissionAction?: unknown;
+      review?: { operation?: { path?: unknown } };
+    };
+    if (request.kind === "ask_user") clarified = true;
+    if (request.kind === "plan_approval") approved = clarified;
+    if (request.kind === "permission" && request.permissionAction === "workspace.write") {
+      const path = request.review?.operation?.path;
+      if (typeof path === "string" && /(?:^|[/\\])selection\.txt$/u.test(path)) {
+        if (!approved) return false;
+        selectionWrittenAfterApproval = true;
+      }
+    }
+  }
+  return clarified && approved && selectionWrittenAfterApproval;
+};
+
 export const countAutomaticPressureCompactions = (
   events: readonly Readonly<{ eventType: string; data: unknown }>[],
 ): number => {
@@ -595,44 +621,8 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
         ...overriddenHostCalls,
         ...runtimes.flatMap((candidate) => candidate.standardHost.calls),
       ];
-      const toolCalls = durableEvents.flatMap(({ sequence, eventType, data }) => {
-        if (eventType !== "tool/call" || data === null || typeof data !== "object" || Array.isArray(data)) {
-          return [];
-        }
-        const call = data as { arguments?: unknown; name?: unknown };
-        if (typeof call.name !== "string") return [];
-        let target: string | undefined;
-        if (typeof call.arguments === "string") {
-          try {
-            const value: unknown = JSON.parse(call.arguments);
-            if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-              const record = value as { file_path?: unknown; path?: unknown };
-              const candidate = typeof record.file_path === "string" ? record.file_path : record.path;
-              if (typeof candidate === "string") target = candidate;
-            }
-          } catch {
-            // Invalid tool arguments cannot prove a governed fixture mutation.
-          }
-        }
-        return [{ name: call.name, sequence, ...(target === undefined ? {} : { target }) }];
-      });
-      const enterPlan = toolCalls.find(({ name }) => name === "EnterPlanMode");
-      const exitPlan = toolCalls.find(({ name }) => name === "ExitPlanMode");
-      const selectionMutation = toolCalls.find(({ name, target }) =>
-        (name === "Write" || name === "Edit")
-        && (target === "selection.txt" || target?.endsWith("/selection.txt") === true));
       const interactionPlanVerified = input.scenario.id !== "interaction-plan"
-        || toolCalls.some(({ name }) => name === "AskUserQuestion")
-          && enterPlan !== undefined
-          && exitPlan !== undefined
-          && hostCalls.some((call) => {
-            if (call === null || typeof call !== "object" || Array.isArray(call)) return false;
-            const params = (call as { params?: unknown }).params;
-            return params !== null && typeof params === "object" && !Array.isArray(params)
-              && (params as { kind?: unknown }).kind === "plan_approval";
-          })
-          && selectionMutation !== undefined
-          && selectionMutation.sequence > exitPlan.sequence;
+        || interactionPlanHostOrderVerified(hostCalls);
       const completedCompactions = durableEvents.filter(({ eventType, data }) => {
         if (eventType !== "compaction/end" || data === null || typeof data !== "object" || Array.isArray(data)) {
           return false;
