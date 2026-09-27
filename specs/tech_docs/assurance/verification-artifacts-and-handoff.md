@@ -40,6 +40,10 @@ the Runtime subtree to that verifier. Neither the Runtime nor outer verifier inv
 forbidden-content scanner; repository/workspace-pack release gates provide that separate check. The
 outer verifier also does not reject outer hardlinks or semantically validate every copied
 contract/evidence document.
+POSIX runners verify exact directory and file mode bits. Windows does not report POSIX executable
+bits, so its Runtime inventory records a stable logical regular-file mode and still verifies file
+type, identity and bytes; the Reference Web inventory reserves logical executable mode for its
+declared POSIX launcher.
 
 New Runtime artifacts, Reference Web artifacts and Batch 3 handoffs carry the repository's
 Apache-2.0 `LICENSE` alongside their MyAgents-dsh code. Patched DSH packages retain their MIT

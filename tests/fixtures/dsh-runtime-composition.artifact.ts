@@ -63,6 +63,7 @@ import {
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_CANDIDATE_PROFILE_SHA256,
+  resolveRuntimePlatformTarget,
   selectPlatformAdapter,
 } from "@myagents-dsh/product-profile";
 import {
@@ -338,6 +339,7 @@ assert.throws(() => validateEffectiveToolCatalog({
   effectiveTools: ["StockWrongTool"],
 }), /effective tool catalog/u);
 
+const fixturePlatformTarget = resolveRuntimePlatformTarget(process.platform, process.arch);
 const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "myagents-dsh-w2-a2-artifact-")));
 const fixtureWorkspace = join(fixtureRoot, "workspace");
 const jobReleasePath = join(fixtureWorkspace, ".artifact-job-release");
@@ -507,7 +509,7 @@ await assert.rejects(startNativeRpcLifecycle(startupFailureComposition, {
   input: closedStartupInput,
   output: openStartupOutput,
   runtimeGeneration: "startup-failure-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }), /must be open before plugin installation/u);
 assert.throws(() => startupFailureComposition.snapshot(), /disposing or disposed/u);
 openStartupOutput.destroy();
@@ -526,7 +528,7 @@ await assert.rejects(startNativeRpcLifecycle(snapshotFailureComposition, {
   input: snapshotFailureInput,
   output: snapshotFailureOutput,
   runtimeGeneration: "snapshot-failure-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }), /provider registry differs from its authority/u);
 assert.throws(() => snapshotFailureComposition.snapshot(), /disposing or disposed/u);
 snapshotFailureInput.destroy();
@@ -552,7 +554,7 @@ for (const childContext of [
     input: childInput,
     output: childOutput,
     runtimeGeneration: "child-scope-generation",
-    platformTarget: "darwin-arm64",
+    platformTarget: fixturePlatformTarget,
   })), /direct-root RuntimeProcessLifecycle authority/u);
   childInput.destroy();
   childOutput.destroy();
@@ -1121,7 +1123,7 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
     mode: "default",
   }),
   plan: Object.freeze({ revision: "artifact-plan-v1" }),
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
   process: Object.freeze({
     shellDialect: "bash",
     allowedCommandRefs: Object.freeze(["bundled-bash", "bundled-node", "bundled-ripgrep"]),
@@ -1310,7 +1312,7 @@ await assert.rejects(Promise.resolve(mismatchedPlatformComposition.context.plugi
   input: mismatchedPlatformInput,
   output: mismatchedPlatformOutput,
   runtimeGeneration: "mismatched-platform-generation",
-  platformTarget: "linux-x64",
+  platformTarget: fixturePlatformTarget === "linux-x64" ? "darwin-arm64" : "linux-x64",
 })), /direct-root RuntimeProcessLifecycle authority/u);
 await mismatchedPlatformComposition.dispose();
 mismatchedPlatformInput.destroy();
@@ -1346,7 +1348,7 @@ await assert.rejects(Promise.resolve(bareContext.plugin(NativeRpcServer, {
   input: bareInput,
   output: bareOutput,
   runtimeGeneration: "bare-accepted-context",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 })), /direct-root RuntimeProcessLifecycle authority/u);
 await bareContext.fiber.dispose();
 bareInput.destroy();
@@ -1386,7 +1388,7 @@ const runtimeLifecycle = await startNativeRpcLifecycle(composition, {
   input: runtimeInput,
   output: runtimeOutput,
   runtimeGeneration: "artifact-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }, {
   processBoundary: {
     subscribe: (listener) => {
@@ -1872,7 +1874,7 @@ await hostModelComposition.context.plugin(NativeRpcServer, {
   input: hostModelInput,
   output: hostModelOutput,
   runtimeGeneration: "artifact-host-model-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 });
 const hostModelServer = hostModelComposition.context.nativeRpc;
 const hostModelClient = new GeneratedHostClient(hostModelPeer);
@@ -2175,7 +2177,7 @@ await directRootComposition.context.plugin(NativeRpcServer, {
   input: directRootInput,
   output: directRootOutput,
   runtimeGeneration: "direct-root-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 });
 await assert.rejects(
   installCanonicalToolPlane(directRootComposition, canonicalToolPlaneConfig),
@@ -2366,7 +2368,7 @@ configurationMismatchComposition.context.productSession.bindExecutionEnvironment
   environment: initializeRequest.executionEnvironment.environment,
   executables: initializeRequest.executionEnvironment.executables,
   network: initializeRequest.executionEnvironment.network,
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
   process: initializeRequest.executionEnvironment.process,
   revision: initializeRequest.executionEnvironment.revision,
   runtimeHome: initializeRequest.runtimeHome,
@@ -2375,7 +2377,7 @@ configurationMismatchComposition.context.productSession.bindExecutionEnvironment
 configurationMismatchComposition.context.productSession.bindWorkspace({
   identity: initializeRequest.workspace.identity,
   path: initializeRequest.workspace.path,
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 });
 await assert.rejects(
   configurationMismatchComposition.context.productSession.bindCreate({
@@ -2640,7 +2642,7 @@ const approvalRuntimeContext = "Current runtime context. This snapshot supersede
   + `${fixtureWorkspace}\n\n`
   + "Use this exact absolute path for file and search tools that require one. The available Shell tool runs in this workspace. "
   + "Do not infer access outside it.\n\n"
-  + `Runtime platform: darwin-arm64. Available Shell tool: bash. Executable: ${artifactShellPath}. `
+  + `Runtime platform: ${fixturePlatformTarget}. Available Shell tool: bash. Executable: ${artifactShellPath}. `
   + "Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. "
   + "Query the executable's version before relying on version-specific features. "
   + "Execution uses the local user's OS permissions; no OS file sandbox is active. "
@@ -2819,7 +2821,7 @@ assert.deepEqual(await hostClient.sessionForkCommit({
 }), forkCommitted);
 assert.deepEqual(primaryAgent.session.snapshotEvents(), rewindTargetEvents);
 const forkDatabase = new DatabaseSync(productSessionDatabasePath(
-  selectPlatformAdapter("darwin-arm64"),
+  selectPlatformAdapter(fixturePlatformTarget),
   fixtureForkRuntimeHome,
 ), { readOnly: true });
 const forkSession = forkDatabase.prepare(`
@@ -2879,7 +2881,7 @@ assert.deepEqual(forkTailEvent, {
 forkDatabase.close();
 const forkReloadContext = new Context();
 await forkReloadContext.plugin(SessionStore);
-const forkPlatform = selectPlatformAdapter("darwin-arm64");
+const forkPlatform = selectPlatformAdapter(fixturePlatformTarget);
 await forkReloadContext.plugin(ProductSqliteSessionPersistence, {
   durability: forkPlatform.sqliteDurabilityPlan(productSessionDatabasePath(
     forkPlatform,
@@ -2916,7 +2918,7 @@ assert.deepEqual(await hostClient.sessionForkAbort({
   token: forkAbortPrepared.token,
 }), forkAborted);
 const abortedForkDatabase = new DatabaseSync(productSessionDatabasePath(
-  selectPlatformAdapter("darwin-arm64"),
+  selectPlatformAdapter(fixturePlatformTarget),
   fixtureAbortedForkRuntimeHome,
 ), { readOnly: true });
 assert.equal(
@@ -4291,7 +4293,7 @@ assert.equal(processSignalListener, undefined);
 assert.equal(adapter.activeStreamCount, 0);
 assert.equal(nativeRpc.phase, "disposed");
 assert.equal(hostAttachmentLeases.size, 0);
-const persistencePlatform = selectPlatformAdapter("darwin-arm64");
+const persistencePlatform = selectPlatformAdapter(fixturePlatformTarget);
 const persistencePath = productSessionDatabasePath(persistencePlatform, fixtureRuntimeHome);
 const persistenceProbe = new DatabaseSync(persistencePath, { readOnly: true });
 const persistenceMeta = persistenceProbe.prepare(
@@ -4377,7 +4379,7 @@ const failedResumeLifecycle = await startNativeRpcLifecycle(failedResumeComposit
   input: failedResumeInput,
   output: failedResumeOutput,
   runtimeGeneration: "artifact-failed-resume-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }, {
   processBoundary: {
     subscribe: () => () => undefined,
@@ -4506,7 +4508,7 @@ const resumedLifecycle = await startNativeRpcLifecycle(resumedComposition, {
   input: resumeRuntimeInput,
   output: resumeRuntimeOutput,
   runtimeGeneration: "artifact-resume-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }, {
   processBoundary: {
     subscribe: () => () => undefined,
@@ -4969,7 +4971,7 @@ const purgeLifecycle = await startNativeRpcLifecycle(purgeComposition, {
   input: purgeRuntimeInput,
   output: purgeRuntimeOutput,
   runtimeGeneration: "artifact-purge-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }, {
   processBoundary: {
     subscribe: () => () => undefined,
