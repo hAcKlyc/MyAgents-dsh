@@ -195,7 +195,7 @@ export const verifyPiAiSource = (
       { recursive: true },
     );
     run("npm", [
-      "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund",
+      "ci", "--prefer-offline", "--ignore-scripts", "--no-audit", "--no-fund",
       "--workspace", PI_AI_SOURCE.packageName, "--include-workspace-root",
     ], worktree, environment);
     run("npm", ["run", "build", "--workspace", "@earendil-works/pi-telemetry"], worktree, environment);
