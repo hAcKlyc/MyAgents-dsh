@@ -1,2 +1,2 @@
 // Generated from root package.json by scripts/generate-protocol.ts.
-export const RUNTIME_VERSION = "0.1.4" as const;
+export const RUNTIME_VERSION = "0.1.5" as const;
