@@ -80,7 +80,11 @@ The official root composition installs the relevant services in this order:
 ```ts
 await root.plugin(TokenMeter);
 await root.plugin(ToolResultPruner);
-await root.plugin(BasicCompactionEngine, { auto: true });
+await root.plugin(BasicCompactionEngine, {
+  auto: true,
+  headroomTokens: 1024,
+  maxTokens: 4096,
+});
 ```
 
 `TokenMeter` must exist before the pruner because the pruner records the shadowed token price. Both must exist before `BasicCompactionEngine`, which consumes them during pressure and overflow handling.
@@ -96,11 +100,11 @@ The services live in the one Cordis root scope for the one production Runtime ge
 With `auto: true`, `BasicCompactionEngine` checks pressure at DSH `agent/pre-step`, after a Turn is admitted but before its next model request. It resolves the latest durable provider/model request header, asks that adapter for the actual model profile, and derives:
 
 ```text
-pressureThreshold = floor(contextWindow * 0.80)
+pressureThreshold = floor(min(contextWindow * 0.80, contextWindow - reservedCompletionTokens - 1024))
 verbatimTailTarget = floor(contextWindow * 0.16)
 ```
 
-The current default policy is model-aware per request. Switching to another admitted provider/model therefore changes the context window and the compaction threshold without a Host-side table or Runtime restart.
+MyAgents-dsh sets a 1,024-token pressure headroom and a 4,096-token summary output cap so the official engine can also serve admitted models with smaller context windows. The policy remains model-aware per request. Switching to another admitted provider/model therefore changes the context window and the compaction threshold without a Host-side table or Runtime restart.
 
 If pressure is below threshold, the engine does nothing. If pressure qualifies, it may prune tool output, remeasure, and summarize only when still necessary.
 
