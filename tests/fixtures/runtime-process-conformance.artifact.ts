@@ -35,7 +35,6 @@ const cleanupProcessTestRoot = (): void => rmSync(processTestRoot, { force: true
 process.once("exit", cleanupProcessTestRoot);
 
 const environment = Object.freeze({
-  MYAGENTS_DSH_TEST_PERSISTENCE_DIAGNOSTICS: "1",
   ...(process.platform === "win32" ? { SystemRoot: process.env.SystemRoot ?? "C:\\Windows" } : {}),
   ...Object.fromEntries([
     "LANG",
@@ -99,8 +98,7 @@ const initializeParams = (): InitializeParams => {
   params.executionEnvironment.workspace.allowedReadRoots = [workspace];
   params.executionEnvironment.workspace.allowedWriteRoots = [workspace];
   params.executionEnvironment.attachmentStagingRoot = attachmentStagingRoot;
-  params.executionEnvironment.environment.allowedKeys = Object.keys(environment)
-    .filter((name) => name !== "MYAGENTS_DSH_TEST_PERSISTENCE_DIAGNOSTICS").sort();
+  params.executionEnvironment.environment.allowedKeys = Object.keys(environment).sort();
   params.executionEnvironment.executables = {
     shellRef: "runtime-shell", bundledNodeRef: "bundled-node", ripgrepRef: "bundled-ripgrep",
     shellDialect: process.platform === "win32" ? "pwsh" : "bash", pathPolicy: "sealed",
@@ -149,14 +147,6 @@ const launch = (): ArtifactRuntimeProcess => {
   });
 };
 
-const initializeRuntime = async (runtime: ArtifactRuntimeProcess, scenario: string) => {
-  try {
-    return await runtime.client.initialize(initializeParams());
-  } catch (error) {
-    throw new Error(`${scenario} initialization failed: ${runtime.stderr}`, { cause: error });
-  }
-};
-
 const invalidCli = runArtifactCli({
   nodeExecutable: process.execPath,
   artifactEntrypoint: entrypoint,
@@ -169,7 +159,7 @@ assert.equal(invalidCli.stdout, "");
 assert.match(invalidCli.stderr, /allows only --self-check/u);
 
 const normal = launch();
-const initialized = await initializeRuntime(normal, "normal");
+const initialized = await normal.client.initialize(initializeParams());
 assert.equal(initialized.protocolVersion, PROTOCOL_VERSION);
 assert.equal(initialized.profileDigest, selfCheckReport.profile.digest);
 assert.equal(initialized.schemaSha256, selfCheckReport.protocol.schemaSha256);
@@ -239,7 +229,7 @@ await preStartSignal.close();
 const signalResults: Array<Readonly<{ signal: "SIGINT" | "SIGTERM"; code: number | null }>> = [];
 for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
   const runtime = launch();
-  await initializeRuntime(runtime, signal);
+  await runtime.client.initialize(initializeParams());
   runtime.signal(signal);
   const exit = await waitForExit(runtime, signal);
   assert.deepEqual(exit, process.platform === "win32"
@@ -252,7 +242,7 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
 }
 
 const forcedKill = launch();
-await initializeRuntime(forcedKill, "forced-kill");
+await forcedKill.client.initialize(initializeParams());
 forcedKill.signal("SIGKILL");
 assert.deepEqual(await waitForExit(forcedKill, "forced-kill"), { code: null, signal: "SIGKILL" });
 assert.equal(forcedKill.stderr, "");
@@ -260,7 +250,7 @@ transportClosures.forcedKill = assertTransportClosed(forcedKill, "forced-kill");
 await forcedKill.close();
 
 const restarted = launch();
-const restartedInitialize = await initializeRuntime(restarted, "restart-after-force-kill");
+const restartedInitialize = await restarted.client.initialize(initializeParams());
 assert.equal(restartedInitialize.profileDigest, selfCheckReport.profile.digest);
 await restarted.client.initialized();
 assert.deepEqual(await restarted.client.runtimeShutdown({ reason: "restart-conformance" }), { ok: true });

@@ -796,9 +796,6 @@ export class NativeRpcServer extends Service {
     try {
       await compositionCapabilitiesOf(this).installPersistence(params.runtimeHome);
     } catch (error) {
-      if (process.env.MYAGENTS_DSH_TEST_PERSISTENCE_DIAGNOSTICS === "1") {
-        process.stderr.write(`Runtime persistence initialization cause: ${error instanceof Error ? error.stack : String(error)}\n`);
-      }
       const request = Object.freeze({
         kind: "runtime_fatal" as const,
         code: "persistence_initialization_failed",

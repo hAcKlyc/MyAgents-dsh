@@ -15,9 +15,10 @@ import {
   type SessionHeader,
 } from "@deepseek-ai/dsh-session";
 import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { chmod, link, mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { supportsDirectorySymlinks } from "./setup/symlink-capability.js";
@@ -1470,6 +1471,15 @@ describe("ProductSqliteSessionPersistence", () => {
     const differentlyCasedHome = runtimeHome.toUpperCase();
     expect(differentlyCasedHome).not.toBe(runtimeHome);
     const context = await mount(differentlyCasedHome);
+    await context.fiber.dispose();
+  });
+
+  it.skipIf(process.platform !== "win32")("accepts a Windows short path returned by synchronous realpath", async () => {
+    const root = realpathSync(mkdtempSync(resolve(tmpdir(), "myagents-persistence-short-path-")));
+    roots.push(root);
+    const runtimeHome = join(root, "runtime-home");
+    mkdirSync(runtimeHome);
+    const context = await mount(runtimeHome);
     await context.fiber.dispose();
   });
 

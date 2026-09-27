@@ -9,29 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  diagnose-windows-runtime-home:
-    runs-on: windows-2025
-    steps:
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 24.20.0
-      - name: Inspect Windows temporary path identity
-        shell: pwsh
-        run: |
-          @'
-          import { mkdtempSync, mkdirSync, realpathSync, lstatSync } from 'node:fs';
-          import { realpath } from 'node:fs/promises';
-          import { tmpdir } from 'node:os';
-          import { resolve, win32 } from 'node:path';
-          const root = realpathSync(mkdtempSync(resolve(tmpdir(), 'myagents-dsh-process-conformance-')));
-          const path = resolve(root, 'runtime-home');
-          mkdirSync(path);
-          const resolvedPath = await realpath(path);
-          console.log(JSON.stringify({ root, path, resolvedPath, syncPath: realpathSync(path),
-            isDirectory: lstatSync(path).isDirectory(), isSymbolicLink: lstatSync(path).isSymbolicLink(),
-            samePath: win32.normalize(path).toLowerCase() === win32.normalize(resolvedPath).toLowerCase() }, null, 2));
-          '@ | Set-Content -Path "$env:RUNNER_TEMP\path-diagnostic.mjs"
-          node "$env:RUNNER_TEMP\path-diagnostic.mjs"
   verify-windows:
     runs-on: windows-2025
     timeout-minutes: 90

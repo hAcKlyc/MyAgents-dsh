@@ -3841,13 +3841,9 @@ export class ProductSqliteStore implements ProductCheckpointStore,
 
   async #validateDirectory(path: string, description: string): Promise<FileIdentity> {
     const info = await lstat(path, { bigint: true });
-    const resolvedPath = await realpath(path);
     if (!info.isDirectory() || info.isSymbolicLink()
-      || !this.#options.platform.samePath(resolvedPath, path)) {
-      const diagnostics = process.env.MYAGENTS_DSH_TEST_PERSISTENCE_DIAGNOSTICS === "1"
-        ? `: ${JSON.stringify({ path, resolvedPath, isDirectory: info.isDirectory(), isSymbolicLink: info.isSymbolicLink(), samePath: this.#options.platform.samePath(resolvedPath, path) })}`
-        : "";
-      throw new Error(`${description} must be a canonical real directory${diagnostics}`);
+      || !this.#options.platform.samePath(realpathSync(path), path)) {
+      throw new Error(`${description} must be a canonical real directory`);
     }
     const uid = process.getuid?.();
     if (uid !== undefined && (info.uid !== BigInt(uid) || (info.mode & 0o022n) !== 0n)) {
@@ -3873,7 +3869,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     const named = await lstat(path, { bigint: true });
     if (!named.isFile() || named.isSymbolicLink() || named.nlink !== 1n
       || named.size > BigInt(PRODUCT_PERSISTENCE_LIMITS.maxDatabaseBytes)
-      || !this.#options.platform.samePath(await realpath(path), path)) {
+      || !this.#options.platform.samePath(realpathSync(path), path)) {
       throw new Error("product SQLite database must be one canonical singly-linked regular file");
     }
     const uid = process.getuid?.();
