@@ -1210,7 +1210,7 @@ const main = (): void => {
     progress("pi-ai source verified");
     run("npm", [
       "install",
-      "--offline",
+      "--prefer-offline",
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
@@ -2183,9 +2183,13 @@ const main = (): void => {
     );
     progress("composition evidence emitted");
   } finally {
-    progress("temporary cleanup started");
-    rmSync(temporaryRoot, { recursive: true, force: true });
-    progress("temporary cleanup finished");
+    // GitHub-hosted runners discard their filesystem after the job. Deleting the
+    // large temporary dependency tree here can outlast the verified build itself.
+    if (process.env.GITHUB_ACTIONS !== "true") {
+      progress("temporary cleanup started");
+      rmSync(temporaryRoot, { recursive: true, force: true });
+      progress("temporary cleanup finished");
+    }
   }
 };
 
