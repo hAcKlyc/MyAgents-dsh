@@ -3,6 +3,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { supportsFileSymlinks } from "./setup/symlink-capability.js";
 
 import { HostAttachmentStore, HostEventHub } from "@myagents-dsh/web-host";
 
@@ -54,7 +55,7 @@ describe("Reference Web Host attachment owner", () => {
     await store.close();
   });
 
-  it("ingests only exact regular Runtime staging bytes and rejects aliases", async () => {
+  it.skipIf(!supportsFileSymlinks)("ingests only exact regular Runtime staging bytes and rejects aliases", async () => {
     const parent = await mkdtemp(resolve(tmpdir(), "myagents-web-produced-"));
     roots.push(parent);
     const runtime = resolve(parent, "runtime");

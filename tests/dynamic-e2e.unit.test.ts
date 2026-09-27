@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { supportsDirectorySymlinks } from "./setup/symlink-capability.js";
 import type { MethodParams } from "@myagents-dsh/protocol";
 import { validateHostDeepSeekProfile } from "@myagents-dsh/runtime-product";
 
@@ -502,7 +503,7 @@ describe("dynamic E2E harness", () => {
     await expect(verifySealedDynamicEvidence(root, sealed.manifestSha256)).rejects.toThrow(/identity|bytes/u);
   });
 
-  it("refuses source-controlled output and seals a fake-driver run against an exact artifact", async () => {
+  it.skipIf(!supportsDirectorySymlinks)("refuses source-controlled output and seals a fake-driver run against an exact artifact", async () => {
     await expect(validateDynamicOutputRoot(resolve(repositoryRoot, "dynamic-evidence"), repositoryRoot))
       .rejects.toThrow(/tmp\/dynamic-e2e/u);
     const output = await temporaryRoot("myagents-dynamic-runs-");

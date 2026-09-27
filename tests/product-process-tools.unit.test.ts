@@ -55,6 +55,7 @@ import { chmod, link, mkdtemp, mkdir, readFile, realpath, rename, rm, symlink, w
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { supportsFileSymlinks, supportsDirectorySymlinks } from "./setup/symlink-capability.js";
 
 const temporaryRoots: string[] = [];
 
@@ -841,7 +842,7 @@ describe("official Shell tools with product policy", () => {
     await state.context.fiber.dispose();
   });
 
-  it.each(["bash", "pwsh"] as const)("registers %s output through a directory alias under its canonical Read identity", async (dialect) => {
+  it.skipIf(!supportsDirectorySymlinks).each(["bash", "pwsh"] as const)("registers %s output through a directory alias under its canonical Read identity", async (dialect) => {
     const state = await harness({ dialect });
     const directory = join(state.root, "spill");
     const alias = join(state.root, "spill-alias");
@@ -893,7 +894,9 @@ describe("official Shell tools with product policy", () => {
     await state.context.fiber.dispose();
   });
 
-  it.each(["missing", "symlink", "hardlink"] as const)("keeps command output and exit status when a spill is %s without granting Read", async (failure) => {
+  it.each(supportsFileSymlinks
+    ? ["missing", "symlink", "hardlink"] as const
+    : ["missing", "hardlink"] as const)("keeps command output and exit status when a spill is %s without granting Read", async (failure) => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const state = await harness();
     const output = join(state.root, "unavailable-output.log");

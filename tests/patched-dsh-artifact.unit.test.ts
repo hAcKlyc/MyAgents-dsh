@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { supportsFileSymlinks } from "./setup/symlink-capability.js";
 
 import {
   canonicalPackedMember,
@@ -352,7 +353,7 @@ describe("patched DSH artifact build hardening", () => {
     }
   });
 
-  it("accepts npm bin links within a canonicalized consumer and rejects escaping links", () => {
+  it.skipIf(!supportsFileSymlinks)("accepts npm bin links within a canonicalized consumer and rejects escaping links", () => {
     const root = mkdtempSync(join(tmpdir(), "myagents-dsh-consumer-link-test-"));
     const consumer = resolve(root, "consumer");
     const alias = resolve(root, "consumer-alias");
@@ -383,7 +384,7 @@ describe("patched DSH artifact build hardening", () => {
     writeFileSync(replacement, "stable bytes\n");
     renameSync(replacement, entry);
     try {
-      expect(() => guard.verify()).toThrow("changed identity");
+      expect(() => guard.verify()).toThrow(/changed (?:identity|during verification)/u);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

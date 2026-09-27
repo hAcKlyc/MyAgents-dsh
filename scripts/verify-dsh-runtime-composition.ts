@@ -1077,7 +1077,10 @@ const assertRuntimeProcessEvidence = (
       ? processFaults.detachedDescendantCleanup !== "not-applicable"
       : processFaults.detachedDescendantCleanup !== true)
     || !transportEvidenceValid
-    || JSON.stringify(processFaults.signals) !== JSON.stringify([
+    || JSON.stringify(processFaults.signals) !== JSON.stringify(process.platform === "win32" ? [
+      { signal: "SIGINT", code: null },
+      { signal: "SIGTERM", code: null },
+    ] : [
       { signal: "SIGINT", code: 130 },
       { signal: "SIGTERM", code: 143 },
     ])) {
@@ -1681,7 +1684,8 @@ const main = (): void => {
       evidence.canonicalTwentyToolPipeline,
       "canonical tool pipeline evidence",
     );
-    const expectedModelTools = [...CANONICAL_TOOL_NAMES.filter((name) => name !== "pwsh"), "mcp__artifact_host__release_check"].toSorted();
+    const unavailableShell = process.platform === "win32" ? "bash" : "pwsh";
+    const expectedModelTools = [...CANONICAL_TOOL_NAMES.filter((name) => name !== unavailableShell), "mcp__artifact_host__release_check"].toSorted();
     const expectedCanonicalCallCount = 43;
     if (canonicalToolPipeline.callCount !== expectedCanonicalCallCount
       || JSON.stringify(canonicalToolPipeline.names) !== JSON.stringify(CANONICAL_TOOL_NAMES)

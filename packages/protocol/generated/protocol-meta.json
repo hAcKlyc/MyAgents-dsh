@@ -30,9 +30,9 @@
   "capabilityProfileDigest": "ee13c2ba6852498a4d7a3c2f26ef6026dd8fa9697b442f3f7b878f1a3988d809",
   "contractSourceSha256": "ebcebb9162e2b3679899f767447ec3d5f03f5a3c03fb95df8d776bd660bbb2f2",
   "developmentDshVersion": "0.1.7-rc.2",
-  "dshArtifactManifestSha256": "2b94e12adf27f332c0cb93d4730445fbcc7a8c614840dde532f4575a94577a5e",
+  "dshArtifactManifestSha256": "76f92ffa9405bdcdaa00b7ddfc63335685eeeb844622c2300c826a1457c83f7a",
   "dshEngineVersion": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
-  "fixturesSha256": "91314a92ceb3e7dc9d41542e0c20ff568fc70febbf18be7ba8b01fd83a6dc104",
+  "fixturesSha256": "940536ff9c5746146074973258636cd272b1c6ffe24132f17b4fa047452288e0",
   "hostMethods": [
     "initialize",
     "runtime/status",
@@ -95,7 +95,7 @@
     "host/attachment/acquire",
     "host/attachment/release"
   ],
-  "runtimeVersion": "0.1.2",
-  "schemaSha256": "36bdaa3e92c1c888a2d749cb29f82398c9a7ad84b9b91e3db65c5d9edb1aa500",
+  "runtimeVersion": "0.1.3",
+  "schemaSha256": "97ecc46dfa8d6081bb2abe42aadac2eff1bb0def574e69f7641cfb9369d96270",
   "sessionFormat": "dsh-session-events-v2"
 }

@@ -29,6 +29,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import { supportsFileSymlinks } from "./setup/symlink-capability.js";
 
 const mountCheckpointLoop = async (context: Context): Promise<void> => {
   await context.plugin(LlmRuntime);
@@ -702,7 +703,7 @@ describe("ProductCheckpointService", () => {
     await state.context.fiber.dispose();
   });
 
-  it("captures only bounded singly-linked files inside the selected write root", async () => {
+  it.skipIf(!supportsFileSymlinks)("captures only bounded singly-linked files inside the selected write root", async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-checkpoint-io-")));
     roots.push(root);
     const workspace = join(root, "workspace");

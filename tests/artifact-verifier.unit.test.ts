@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { lstatSync } from "node:fs";
 import { chmod, link, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -369,11 +370,15 @@ describe("repository and packed-artifact forbidden-content policy", () => {
     const repositoryRoot = resolve(import.meta.dirname, "..");
     await expect(readRegularFileNoFollow(resolve(repositoryRoot, "AGENTS.md")))
       .resolves.toBeInstanceOf(Buffer);
-    await expect(readRegularFileNoFollow(resolve(repositoryRoot, "CLAUDE.md")))
-      .rejects.toThrow("singly linked regular file");
     expect(readRegularFileNoFollowSync(resolve(repositoryRoot, "AGENTS.md"))).toBeInstanceOf(Buffer);
-    expect(() => readRegularFileNoFollowSync(resolve(repositoryRoot, "CLAUDE.md")))
-      .toThrow("singly linked regular file");
+    const claudePath = resolve(repositoryRoot, "CLAUDE.md");
+    if (lstatSync(claudePath).isSymbolicLink()) {
+      await expect(readRegularFileNoFollow(claudePath)).rejects.toThrow("singly linked regular file");
+      expect(() => readRegularFileNoFollowSync(claudePath)).toThrow("singly linked regular file");
+    } else {
+      await expect(readRegularFileNoFollow(claudePath)).resolves.toBeInstanceOf(Buffer);
+      expect(readRegularFileNoFollowSync(claudePath).toString("utf8").trim()).toBe("AGENTS.md");
+    }
     const hardlinkRoot = await mkdtemp(resolve(tmpdir(), "myagents-dsh-hardlink-canary-"));
     try {
       const source = resolve(hardlinkRoot, "source.txt");
