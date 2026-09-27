@@ -423,8 +423,8 @@ const staticSkillCatalog = validateStaticSkillCatalog(Object.freeze({
   digest: staticSkillCatalogDigest(staticSkillCatalogAuthority),
 }));
 
-const waitUntil = async (predicate: () => boolean, description: string | (() => string)): Promise<void> => {
-  const deadline = Date.now() + 10_000;
+const waitUntil = async (predicate: () => boolean, description: string | (() => string), timeoutMs = 10_000): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await delay(10);
@@ -3092,6 +3092,9 @@ const stopJobDeliveryBarrier = composition.context.on("agent/turn-stopping", asy
     && event.data.inserted.some(({ source }) => source.kind === "tool-jobs"
       && source.form === "notice")).length === 2, () => `both real Jobs publish their native completion notices: ${JSON.stringify({
     jobs: composition.context.jobs.list(agent.session.id).map(({ id, status, detail }) => ({ id, status, detail })),
+    liveProcesses: composition.context.productProcesses.snapshot().liveProcesses,
+    jobReads: composition.context.jobs.list(agent.session.id).map(({ id }) => ({ id,
+      chunks: composition.context.jobs.read(id, agent.session.id).chunks.map(({ text }) => text.slice(0, 120)) })),
     backgroundToolResults: agent.session.deriveMessages().filter(({ role, source }) => role === "tool"
       && ["artifact-background-bash-call", "artifact-background-flood-call"]
         .includes(String(source.callId))).map(({ source, content }) => ({
@@ -3099,7 +3102,7 @@ const stopJobDeliveryBarrier = composition.context.on("agent/turn-stopping", asy
       content: content.map((block) => block.type === "text" ? block.text.slice(0, 300) : block.type),
     })),
     pendingStepSources: agent.inbox.nextStep.map(({ source }) => source),
-  })}`);
+  })}`, process.platform === "win32" ? 30_000 : 10_000);
 });
 await composition.context.sdkOperations.start({
   ...turnStartParams,
