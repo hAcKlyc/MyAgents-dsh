@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -75,6 +76,6 @@ describe("Batch 1 pre-artifact gate", () => {
     const existing = resolve(parent, "existing");
     await mkdir(existing);
     expect(() => resolveExternalOutputRoot(existing)).toThrow("must not already exist");
-    expect(resolveExternalOutputRoot(resolve(parent, "new"))).toBe(resolve(await realpath(parent), "new"));
+    expect(resolveExternalOutputRoot(resolve(parent, "new"))).toBe(resolve(realpathSync(parent), "new"));
   });
 });

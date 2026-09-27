@@ -9,9 +9,58 @@ permissions:
   contents: read
 
 jobs:
+  verify-windows:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      COREPACK_HOME: ${{ github.workspace }}/.myagents-dsh-corepack
+    defaults:
+      run:
+        working-directory: myagents-dsh
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: myagents-dsh
+          persist-credentials: false
+      - name: Checkout pinned DSH baseline
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: 47f943859bef60e4160492346772ded9b24f765a
+          path: deepseek-harness
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.20.0
+      - name: Install pinned npm
+        working-directory: ${{ runner.temp }}
+        run: npm install --global npm@11.19.0
+      - name: Enable long Git paths
+        run: git config --global core.longpaths true
+      - name: Prepare exact dependencies and verified DSH for repository checks
+        env:
+          DSH_SOURCE: ${{ github.workspace }}/deepseek-harness
+        shell: bash
+        run: npm run setup -- --checks-only --dsh-source "$DSH_SOURCE"
+      - name: Test Windows without credentials or network
+        run: npm test
+      - name: Preserve failed patched DSH manifest
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-ci-windows
+          path: myagents-dsh/tmp/setup/artifacts/*/patched-dsh-artifact-v1.json
+          if-no-files-found: ignore
+          retention-days: 2
+
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    env:
+      COREPACK_HOME: ${{ github.workspace }}/.myagents-dsh-corepack
     defaults:
       run:
         working-directory: myagents-dsh
@@ -39,7 +88,7 @@ jobs:
       - name: Prepare exact dependencies and verified DSH for repository checks
         env:
           DSH_SOURCE: ${{ github.workspace }}/deepseek-harness
-        run: npm exec -- node scripts/setup.mjs --checks-only --dsh-source "$DSH_SOURCE"
+        run: npm run setup -- --checks-only --dsh-source "$DSH_SOURCE"
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
@@ -72,6 +121,14 @@ jobs:
             --npm-cache "$npm_cache" \
             --pi-ai-source "$PI_AI_SOURCE_DIR" \
             --runtime-artifact-out "$RUNTIME_ARTIFACT_OUT"
+      - name: Preserve failed patched DSH manifest
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-ci-linux
+          path: myagents-dsh/tmp/setup/artifacts/*/patched-dsh-artifact-v1.json
+          if-no-files-found: ignore
+          retention-days: 2
 
   patched-dsh-seams:
     runs-on: ubuntu-24.04

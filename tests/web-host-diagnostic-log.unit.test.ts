@@ -53,6 +53,6 @@ describe("Reference Web diagnostic log", () => {
     expect(bytes).toContain('"pendingBytes":4096');
     expect(bytes).toContain('"commandKind":"config.apply"');
     expect(bytes).toContain('"commandId":"command-1"');
-    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 });

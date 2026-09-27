@@ -60,7 +60,7 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "4d588bc3e3f08070baaf6acd4e459693cfd785f521973aaf6770256e42e29f96",
+    "artifactManifestSha256": "e680c02e045c1bd4f97d05c75bbe9311730827a19ced881d6378a2ae8a84139a",
     "artifactVersion": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.4",
@@ -177,7 +177,7 @@
       "host/attachment/acquire",
       "host/attachment/release"
     ],
-    "schemaSha256": "ed080dba2f192b4ebe59aabbc6593a5ee675753f1f5a28b22e1121de68a097ff",
+    "schemaSha256": "2675f910dd4991085aa3a9b9ef39c693be34254e9f6b36481a8ac6545af2154e",
     "version": "6.0.0"
   },
   "runtimeActivation": "workstream-evidence-only",

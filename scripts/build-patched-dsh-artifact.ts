@@ -355,17 +355,20 @@ const compareCodePoints = (left: string, right: string): number => left < right 
 
 const readPackedMembers = (
   artifactPath: string,
-  cwd: string,
   environment: NodeJS.ProcessEnv,
 ): readonly PackedMember[] => {
-  const listed = run("tar", ["-tzf", artifactPath], {
+  // GNU tar treats a Windows drive prefix (for example D:) as a remote host.
+  // Resolve the archive through cwd so the argument is portable on every host.
+  const archiveDirectory = dirname(artifactPath);
+  const archiveFilename = basename(artifactPath);
+  const listed = run("tar", ["-tzf", archiveFilename], {
     capture: true,
-    cwd,
+    cwd: archiveDirectory,
     env: environment,
   }).split(/\r?\n/u).filter(Boolean);
-  const verbose = run("tar", ["-tvzf", artifactPath], {
+  const verbose = run("tar", ["-tvzf", archiveFilename], {
     capture: true,
-    cwd,
+    cwd: archiveDirectory,
     env: environment,
   }).split(/\r?\n/u).filter(Boolean);
   if (listed.length !== verbose.length || verbose.some((line) => !line.startsWith("-"))) {
@@ -380,7 +383,7 @@ const readPackedMembers = (
     return Object.freeze({
       bytes: canonicalPackedMember(
         path,
-        runBuffer("tar", ["-xOzf", artifactPath, path], { cwd, env: environment }),
+        runBuffer("tar", ["-xOzf", archiveFilename, path], { cwd: archiveDirectory, env: environment }),
       ),
       path,
     });
@@ -428,10 +431,9 @@ export const canonicalTarGzip = (members: readonly PackedMember[]): Buffer => {
 
 const canonicalizeTarball = (
   artifactPath: string,
-  cwd: string,
   environment: NodeJS.ProcessEnv,
 ): void => {
-  const runtimeMembers = readPackedMembers(artifactPath, cwd, environment).filter(
+  const runtimeMembers = readPackedMembers(artifactPath, environment).filter(
     ({ path }) => !/^package\/README(?:\.|$)/u.test(path),
   );
   writeFileSync(artifactPath, canonicalTarGzip(runtimeMembers));
@@ -454,13 +456,12 @@ const packPass = (
     ], { capture: true, cwd: resolve(worktree, pkg.path), env: environment });
     const expected = resolve(destination, tarballFilename(pkg.name, plan.artifactVersion));
     if (!existsSync(expected)) throw new Error(`${pkg.name} produced no tarball at ${expected}`);
-    canonicalizeTarball(expected, destination, environment);
+    canonicalizeTarball(expected, environment);
   }
 };
 
 const packedPayload = (
   artifactPath: string,
-  cwd: string,
   environment: NodeJS.ProcessEnv,
 ): {
   readonly entries: Readonly<Record<string, string>>;
@@ -468,7 +469,7 @@ const packedPayload = (
   readonly members: readonly PackedMember[];
   readonly sha256: string;
 } => {
-  const members = readPackedMembers(artifactPath, cwd, environment);
+  const members = readPackedMembers(artifactPath, environment);
   const files = members.map(({ path }) => path);
   const digest = createHash("sha256");
   const entries: Record<string, string> = {};
@@ -501,8 +502,8 @@ const inspectPackedPass = (
   const bytes = readFileSync(artifactPath);
   const reproducibleBytes = readFileSync(reproduciblePath);
   const digest = sha256(bytes);
-  const payload = packedPayload(artifactPath, directory, environment);
-  const secondPayload = packedPayload(reproduciblePath, reproducibleDirectory, environment);
+  const payload = packedPayload(artifactPath, environment);
+  const secondPayload = packedPayload(reproduciblePath, environment);
   if (!bytes.equals(reproducibleBytes)
     || payload.sha256 !== secondPayload.sha256
     || JSON.stringify(payload.files) !== JSON.stringify(secondPayload.files)) {
@@ -514,7 +515,7 @@ const inspectPackedPass = (
   }
   const packedManifest = parseDshPackageManifest(run("tar", [
     "-xOzf",
-    artifactPath,
+    tarball,
     "package/package.json",
   ], {
     capture: true,
@@ -914,7 +915,7 @@ export const verifyExistingBundle = (
     }
     const auditTarball = resolve(tarAuditRoot, `${String(index)}.tgz`);
     writeFileSync(auditTarball, bytes);
-    const payload = packedPayload(auditTarball, tarAuditRoot, environment);
+    const payload = packedPayload(auditTarball, environment);
     if (!bytes.equals(canonicalTarGzip(payload.members)) || payload.sha256 !== evidence.payloadSha256) {
       throw new Error(`${evidence.name} is not the canonical deterministic tarball`);
     }

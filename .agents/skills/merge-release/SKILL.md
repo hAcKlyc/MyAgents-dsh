@@ -21,9 +21,9 @@ Follow the requested scope: merge only, release only, or the complete merge-to-r
 
 ## Release
 
-1. Check that `v<version>` is unused on origin and no Release exists for it. Run the `release.yml` manual dispatch on `main` as a four-platform preflight and wait for its result. Manual dispatch builds and verifies artifacts but does **not** publish a Release.
-2. If preflight is green and publication was requested, create the matching tag at the verified `origin/main` commit and push it once. Never force-push, delete, or retarget a published tag. A tag push starts the four native target jobs and, after they succeed, the `publish` job.
-3. Watch the tag-triggered workflow to completion. Its publisher checks all four target archive/manifest pairs, creates `manifest.json`, verifies the uploaded bytes, and publishes a nine-asset GitHub Release using the matching versioned notes file. Confirm the public Release and its asset set; do not equate a pushed tag or a successful preflight with a completed publication.
-4. On failure, identify the failing job and exact cause. Do not manually assemble assets, relabel old evidence, or retry by moving the tag. If publication is incomplete, report the state and the next safe recovery step from the workflow and publisher script.
+1. Check that `v<version>` is unused on origin and no Release exists for it. A manual `release.yml` dispatch is available when explicitly requested, but the normal merge-to-release path does not run a separate branch or main preflight.
+2. Once the reviewed PR and required CI pass, create the matching tag at `origin/main` and push it once. Never force-push, delete, or retarget a pushed tag. The tag workflow runs all four native targets and starts `publish` only after they succeed.
+3. Watch the tag-triggered workflow to completion. Its publisher checks all four target archive/manifest pairs, creates `manifest.json`, verifies the uploaded bytes, and publishes a nine-asset GitHub Release using the matching versioned notes file. Confirm the public Release and its asset set; a pushed tag alone is not a release.
+4. On failure, identify the failing job and exact cause. Do not manually assemble assets, relabel old evidence, or retry by moving the tag. Fix the cause in a new commit and release a new version if the pushed tag cannot produce a verified Release.
 
 The GitHub workflow owns automated Release publication. The local `publish:batch-3-release` script is for a verified recovery path, not a routine second publisher. Keep MyAgents client version binding separate; this repository owns its own four-platform Release and manifest.
