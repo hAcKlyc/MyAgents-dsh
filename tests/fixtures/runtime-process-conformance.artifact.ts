@@ -137,7 +137,8 @@ const independentlyVerifiedArtifact = verifyInstalledRuntimeArtifact(
 );
 assert.equal(independentlyVerifiedArtifact.fileCount, selfCheckReport.runtime.artifactFileCount);
 const expectedRuntimeManifestSha256 = selfCheckReport.runtime.artifactManifestSha256;
-const launch = (): ArtifactRuntimeProcess => {
+const launch = (scenario: string): ArtifactRuntimeProcess => {
+  process.stderr.write(`process conformance: ${scenario}\n`);
   verifyInstalledRuntimeArtifact(dirname(entrypoint), expectedRuntimeManifestSha256);
   return launchArtifactRuntime({
     nodeExecutable: process.execPath,
@@ -158,8 +159,8 @@ assert.equal(invalidCli.status, 1);
 assert.equal(invalidCli.stdout, "");
 assert.match(invalidCli.stderr, /allows only --self-check/u);
 
-const normal = launch();
-const initialized = await normal.client.initialize(initializeParams());
+const normal = launch("normal");
+const initialized = await normal.client.initialize(initializeParams(), { signal: AbortSignal.timeout(30_000) });
 assert.equal(initialized.protocolVersion, PROTOCOL_VERSION);
 assert.equal(initialized.profileDigest, selfCheckReport.profile.digest);
 assert.equal(initialized.schemaSha256, selfCheckReport.protocol.schemaSha256);
@@ -188,35 +189,35 @@ assert.equal(normal.stderr, "");
 transportClosures.normal = assertTransportClosed(normal, "normal-shutdown");
 await normal.close();
 
-const eof = launch();
+const eof = launch("stdin-eof");
 eof.endRuntimeInput();
 assert.deepEqual(await waitForExit(eof, "stdin-eof"), { code: 1, signal: null });
 assert.equal(eof.stderr, "");
 transportClosures.eof = assertTransportClosed(eof, "stdin-eof");
 await eof.close();
 
-const malformed = launch();
+const malformed = launch("malformed-frame");
 malformed.writeRaw("{not-json}\n");
 assert.deepEqual(await waitForExit(malformed, "malformed-frame"), { code: 1, signal: null });
 assert.equal(malformed.stderr, "");
 transportClosures.malformed = assertTransportClosed(malformed, "malformed-frame");
 await malformed.close();
 
-const invalidUtf8 = launch();
+const invalidUtf8 = launch("invalid-utf8");
 invalidUtf8.writeRaw(Uint8Array.from([0xff, 0x0a]));
 assert.deepEqual(await waitForExit(invalidUtf8, "invalid-utf8"), { code: 1, signal: null });
 assert.equal(invalidUtf8.stderr, "");
 transportClosures.invalidUtf8 = assertTransportClosed(invalidUtf8, "invalid-utf8");
 await invalidUtf8.close();
 
-const oversized = launch();
+const oversized = launch("oversized-frame");
 oversized.writeRaw(`{${"a".repeat(REFERENCE_PROTOCOL_LIMITS.maxFrameBytes + 1)}}\n`);
 assert.deepEqual(await waitForExit(oversized, "oversized-frame"), { code: 1, signal: null });
 assert.equal(oversized.stderr, "");
 transportClosures.oversized = assertTransportClosed(oversized, "oversized-frame");
 await oversized.close();
 
-const preStartSignal = launch();
+const preStartSignal = launch("pre-start-signal");
 preStartSignal.signal("SIGTERM");
 assert.deepEqual(await waitForExit(preStartSignal, "pre-start-signal"), {
   code: null,
@@ -228,8 +229,8 @@ await preStartSignal.close();
 
 const signalResults: Array<Readonly<{ signal: "SIGINT" | "SIGTERM"; code: number | null }>> = [];
 for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
-  const runtime = launch();
-  await runtime.client.initialize(initializeParams());
+  const runtime = launch(signal);
+  await runtime.client.initialize(initializeParams(), { signal: AbortSignal.timeout(30_000) });
   runtime.signal(signal);
   const exit = await waitForExit(runtime, signal);
   assert.deepEqual(exit, process.platform === "win32"
@@ -241,16 +242,16 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
   await runtime.close();
 }
 
-const forcedKill = launch();
-await forcedKill.client.initialize(initializeParams());
+const forcedKill = launch("forced-kill");
+await forcedKill.client.initialize(initializeParams(), { signal: AbortSignal.timeout(30_000) });
 forcedKill.signal("SIGKILL");
 assert.deepEqual(await waitForExit(forcedKill, "forced-kill"), { code: null, signal: "SIGKILL" });
 assert.equal(forcedKill.stderr, "");
 transportClosures.forcedKill = assertTransportClosed(forcedKill, "forced-kill");
 await forcedKill.close();
 
-const restarted = launch();
-const restartedInitialize = await restarted.client.initialize(initializeParams());
+const restarted = launch("restart-after-force-kill");
+const restartedInitialize = await restarted.client.initialize(initializeParams(), { signal: AbortSignal.timeout(30_000) });
 assert.equal(restartedInitialize.profileDigest, selfCheckReport.profile.digest);
 await restarted.client.initialized();
 assert.deepEqual(await restarted.client.runtimeShutdown({ reason: "restart-conformance" }), { ok: true });
@@ -259,7 +260,7 @@ assert.equal(restarted.stderr, "");
 transportClosures.restart = assertTransportClosed(restarted, "restart-after-force-kill");
 await restarted.close();
 
-const timedOut = launch();
+const timedOut = launch("timeout-cleanup");
 await assert.rejects(
   waitForExit(timedOut, "timeout-cleanup", 100),
   /did not converge: timeout-cleanup/u,
@@ -269,7 +270,7 @@ assert.equal(timedOut.stderr, "");
 transportClosures.timeout = assertTransportClosed(timedOut, "timeout-cleanup");
 await timedOut.close();
 
-const writerFailure = launch();
+const writerFailure = launch("writer-failure");
 writerFailure.closeRuntimeOutput();
 writerFailure.writeRaw(`${JSON.stringify({
   jsonrpc: "2.0",

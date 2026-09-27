@@ -27,7 +27,7 @@ import {
   type SessionStorageMetadata,
   type SessionInspection,
 } from "@deepseek-ai/dsh-session-persistence";
-import type { SqliteDurabilityPlan } from "@myagents-dsh/product-profile";
+import type { PlatformAdapterContract, SqliteDurabilityPlan } from "@myagents-dsh/product-profile";
 import { canonicalSessionReadData } from "@myagents-dsh/protocol";
 import type {
   CheckpointDirectoryPlan,
@@ -82,6 +82,7 @@ export interface ProductStoredSession extends SessionInspection {
 
 interface ProductSqliteStoreOptions {
   readonly ownership: ProductSessionOwnershipProvider;
+  readonly platform: PlatformAdapterContract;
   readonly durability: SqliteDurabilityPlan;
   readonly runtimeHome: string;
 }
@@ -3230,6 +3231,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         durability: Object.freeze({ ...this.#options.durability, databasePath }),
         runtimeHome: targetRuntimeHome,
         ownership: this.#options.ownership,
+        platform: this.#options.platform,
       });
       this.#forkTargetStores.set(targetRuntimeHome, store);
     }
@@ -3839,7 +3841,8 @@ export class ProductSqliteStore implements ProductCheckpointStore,
 
   async #validateDirectory(path: string, description: string): Promise<FileIdentity> {
     const info = await lstat(path, { bigint: true });
-    if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== path) {
+    if (!info.isDirectory() || info.isSymbolicLink()
+      || !this.#options.platform.samePath(realpathSync(path), path)) {
       throw new Error(`${description} must be a canonical real directory`);
     }
     const uid = process.getuid?.();
@@ -3866,7 +3869,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     const named = await lstat(path, { bigint: true });
     if (!named.isFile() || named.isSymbolicLink() || named.nlink !== 1n
       || named.size > BigInt(PRODUCT_PERSISTENCE_LIMITS.maxDatabaseBytes)
-      || await realpath(path) !== path) {
+      || !this.#options.platform.samePath(realpathSync(path), path)) {
       throw new Error("product SQLite database must be one canonical singly-linked regular file");
     }
     const uid = process.getuid?.();
@@ -3901,7 +3904,8 @@ export class ProductSqliteStore implements ProductCheckpointStore,
   ): void {
     if (expected === undefined) throw new Error(`${description} identity is unavailable`);
     const info = lstatSync(path, { bigint: true });
-    if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(path) !== path
+    if (!info.isDirectory() || info.isSymbolicLink()
+      || !this.#options.platform.samePath(realpathSync(path), path)
       || !sameIdentity(expected, info)) {
       throw new Error(`${description} identity changed after persistence initialization`);
     }
@@ -3918,7 +3922,8 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     const named = lstatSync(path, { bigint: true });
     if (!named.isFile() || named.isSymbolicLink() || named.nlink !== 1n
       || named.size > BigInt(PRODUCT_PERSISTENCE_LIMITS.maxDatabaseBytes)
-      || realpathSync(path) !== path || !sameIdentity(expected, named)) {
+      || !this.#options.platform.samePath(realpathSync(path), path)
+      || !sameIdentity(expected, named)) {
       throw new Error("product SQLite database identity changed after opening");
     }
     const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;

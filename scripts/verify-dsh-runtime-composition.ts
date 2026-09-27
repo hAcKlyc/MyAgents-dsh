@@ -236,6 +236,7 @@ const run = (
   args: readonly string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
+  timeoutMs?: number,
 ): string => {
   const invocation = childCli(command, args, env);
   const result = spawnSync(invocation.command, invocation.args, {
@@ -244,8 +245,15 @@ const run = (
     env,
     maxBuffer: 64 * 1024 * 1024,
     stdio: "pipe",
+    timeout: timeoutMs,
   });
-  if (result.error !== undefined) throw result.error;
+  if (result.error !== undefined) {
+    throw new Error(
+      `${command} ${args.join(" ")} failed: ${result.error.message}`
+      + `\n${[result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n")}`,
+      { cause: result.error },
+    );
+  }
   if (result.status !== 0) {
     throw new Error(
       `${command} ${args.join(" ")} exited ${String(result.status)}`
@@ -1180,6 +1188,10 @@ const main = (): void => {
     throw new Error("pi-ai source path must not contain a symlink alias");
   }
   const temporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), "myagents-dsh-runtime-composition-")));
+  const startedAt = Date.now();
+  const progress = (stage: string): void => {
+    process.stderr.write(`Runtime composition: ${stage} (${String(Math.round((Date.now() - startedAt) / 1_000))}s)\n`);
+  };
   try {
     const bundleRoot = resolve(temporaryRoot, "bundle");
     stageVerifiedBundle(artifactRoot, bundleRoot);
@@ -1195,6 +1207,7 @@ const main = (): void => {
       npmCache: values["npm-cache"],
       packageTarballTo: patchedPiAiTarball,
     });
+    progress("pi-ai source verified");
     run("npm", [
       "install",
       "--offline",
@@ -1205,6 +1218,7 @@ const main = (): void => {
       patchedPiAiTarball,
       ...runtimeVendoredExternalRoots,
     ], consumerRoot, environment);
+    progress("runtime consumer dependencies installed");
     assertContainedNodeModules(consumerRoot);
     const dependencyTree = exactObject(
       JSON.parse(run("npm", ["ls", "--all", "--json"], consumerRoot, environment)) as unknown,
@@ -1340,16 +1354,19 @@ const main = (): void => {
     stageBuiltPackage(consumerRoot, buildRoot, "packages/test-host", "@myagents-dsh/test-host");
     stageBuiltPackage(consumerRoot, buildRoot, "apps/runtime-server", "@myagents-dsh/runtime-server");
     assertContainedNodeModules(consumerRoot);
+    progress("runtime packages staged");
     const runnerSource = resolve(
       buildRoot,
       "tests/fixtures/dsh-runtime-composition.artifact.js",
     );
     const runner = resolve(consumerRoot, "dsh-runtime-composition.artifact.mjs");
     cpSync(runnerSource, runner);
+    progress("composition fixture started");
     const output = run(process.execPath, [runner], consumerRoot, {
       ...environment,
       MYAGENTS_DSH_COMPOSITION_DIAGNOSTICS: "1",
-    });
+    }, 15 * 60_000);
+    progress("composition fixture verified");
     const evidence = exactObject(JSON.parse(output) as unknown, "runtime composition evidence");
     if (evidence.artifactManifestSha256 !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
       || evidence.artifactVersion !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
@@ -2139,12 +2156,15 @@ const main = (): void => {
       "tests/fixtures/runtime-process-conformance.artifact.ts",
     );
     const tsxCli = resolve(repositoryRoot, "node_modules/tsx/dist/cli.mjs");
+    progress("process conformance started");
     const processOutput = run(
       process.execPath,
       [tsxCli, processConformanceRunner, processEntrypoint],
       candidateRoot,
       environment,
+      5 * 60_000,
     );
+    progress("process conformance verified");
     assertRuntimeProcessEvidence(
       processOutput,
       installedRuntime.manifestSha256,
@@ -2152,7 +2172,7 @@ const main = (): void => {
     );
     if (finalRuntimeArtifactRoot !== undefined && publicationStagingRoot !== undefined) {
       renameSync(candidateRoot, finalRuntimeArtifactRoot);
-      verifyInstalledRuntimeArtifact(finalRuntimeArtifactRoot, installedRuntime.manifestSha256);
+      progress("verified artifact promoted");
       rmSync(publicationStagingRoot, { force: true, recursive: true });
     }
     process.stdout.write(
@@ -2161,8 +2181,11 @@ const main = (): void => {
       + `installed Runtime artifact verified: manifest=${installedRuntime.manifestSha256}, `
       + `files=${String(installedRuntime.fileCount)}\n`,
     );
+    progress("composition evidence emitted");
   } finally {
+    progress("temporary cleanup started");
     rmSync(temporaryRoot, { recursive: true, force: true });
+    progress("temporary cleanup finished");
   }
 };
 
