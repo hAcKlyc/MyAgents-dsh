@@ -32,7 +32,7 @@
   "developmentDshVersion": "0.1.7-rc.2",
   "dshArtifactManifestSha256": "4d588bc3e3f08070baaf6acd4e459693cfd785f521973aaf6770256e42e29f96",
   "dshEngineVersion": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
-  "fixturesSha256": "a021632ebe865d53a6e8b7269db09c14cacd2176c51fba917aa3a34caacdf545",
+  "fixturesSha256": "03297fc85d253dd102db92d9ad9854337bd1380a2f3d5303859230812ab439a0",
   "hostMethods": [
     "initialize",
     "runtime/status",
@@ -95,7 +95,7 @@
     "host/attachment/acquire",
     "host/attachment/release"
   ],
-  "runtimeVersion": "0.1.0",
-  "schemaSha256": "ed080dba2f192b4ebe59aabbc6593a5ee675753f1f5a28b22e1121de68a097ff",
+  "runtimeVersion": "0.1.1",
+  "schemaSha256": "2675f910dd4991085aa3a9b9ef39c693be34254e9f6b36481a8ac6545af2154e",
   "sessionFormat": "dsh-session-events-v2"
 }

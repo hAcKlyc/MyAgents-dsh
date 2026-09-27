@@ -12,6 +12,8 @@ jobs:
   verify-windows:
     runs-on: windows-2025
     timeout-minutes: 90
+    env:
+      COREPACK_HOME: ${{ github.workspace }}/.myagents-dsh-corepack
     defaults:
       run:
         working-directory: myagents-dsh
@@ -45,10 +47,20 @@ jobs:
         run: npm run setup -- --checks-only --dsh-source "$DSH_SOURCE"
       - name: Test Windows without credentials or network
         run: npm test
+      - name: Preserve failed patched DSH manifest
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-ci-windows
+          path: myagents-dsh/tmp/setup/artifacts/*/patched-dsh-artifact-v1.json
+          if-no-files-found: ignore
+          retention-days: 2
 
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    env:
+      COREPACK_HOME: ${{ github.workspace }}/.myagents-dsh-corepack
     defaults:
       run:
         working-directory: myagents-dsh
@@ -109,6 +121,14 @@ jobs:
             --npm-cache "$npm_cache" \
             --pi-ai-source "$PI_AI_SOURCE_DIR" \
             --runtime-artifact-out "$RUNTIME_ARTIFACT_OUT"
+      - name: Preserve failed patched DSH manifest
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-ci-linux
+          path: myagents-dsh/tmp/setup/artifacts/*/patched-dsh-artifact-v1.json
+          if-no-files-found: ignore
+          retention-days: 2
 
   patched-dsh-seams:
     runs-on: ubuntu-24.04

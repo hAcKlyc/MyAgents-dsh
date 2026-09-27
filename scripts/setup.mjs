@@ -106,6 +106,8 @@ const main = () => {
   if (!/^pnpm@\d+\.\d+\.\d+$/.test(dshPackage.packageManager)) {
     throw new Error("Pinned DSH source has no exact pnpm package manager");
   }
+  // Corepack preparation and the offline builder must resolve the same pnpm cache on every OS.
+  if (process.env.COREPACK_HOME === undefined) process.env.COREPACK_HOME = resolve(cacheRoot, "corepack");
   run("corepack", ["prepare", dshPackage.packageManager, "--activate"]);
 
   const accepted = JSON.parse(readFileSync(resolve(root,
