@@ -42,7 +42,7 @@ jobs:
         env:
           DSH_SOURCE: ${{ github.workspace }}/deepseek-harness
         shell: bash
-        run: npm exec -- node scripts/setup.mjs --checks-only --dsh-source "$DSH_SOURCE"
+        run: node scripts/setup.mjs --checks-only --dsh-source "$DSH_SOURCE"
       - name: Test Windows without credentials or network
         run: npm test
 
