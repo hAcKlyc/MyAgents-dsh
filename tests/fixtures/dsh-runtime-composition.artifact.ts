@@ -1072,7 +1072,7 @@ assert.throws(() => createHostBackedInteractionProvider(composition, Object.free
 let preAssistantCommitTransformHits = 0;
 const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
-const artifactRipgrepPath = await resolveRgPath();
+const artifactRipgrepPath = await realpath(await resolveRgPath());
 const artifactShellPath = await realpath(process.platform === "win32"
   ? resolvePwshPath()
   : "/bin/bash");
