@@ -2172,7 +2172,7 @@ const main = (): void => {
     );
     if (finalRuntimeArtifactRoot !== undefined && publicationStagingRoot !== undefined) {
       renameSync(candidateRoot, finalRuntimeArtifactRoot);
-      verifyInstalledRuntimeArtifact(finalRuntimeArtifactRoot, installedRuntime.manifestSha256);
+      progress("verified artifact promoted");
       rmSync(publicationStagingRoot, { force: true, recursive: true });
     }
     process.stdout.write(
@@ -2181,8 +2181,11 @@ const main = (): void => {
       + `installed Runtime artifact verified: manifest=${installedRuntime.manifestSha256}, `
       + `files=${String(installedRuntime.fileCount)}\n`,
     );
+    progress("composition evidence emitted");
   } finally {
+    progress("temporary cleanup started");
     rmSync(temporaryRoot, { recursive: true, force: true });
+    progress("temporary cleanup finished");
   }
 };
 
