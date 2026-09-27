@@ -29,7 +29,7 @@ describe("Reference Web Host mutation recovery journal", () => {
       state: "committed",
       targetWebSessionId: "target-1",
     }]);
-    expect((await lstat(path)).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect((await lstat(path)).mode & 0o777).toBe(0o600);
     expect(await readFile(path, "utf8")).not.toContain("DEEPSEEK_API_KEY");
     await expect(store.put({
       sourceWebSessionId: "source-1",

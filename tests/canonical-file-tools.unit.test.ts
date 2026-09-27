@@ -626,7 +626,7 @@ describe("canonical filesystem tools", () => {
     const missingFile = join(state.workspace, "absent.txt");
     const read = await state.execute("Read", { file_path: missingFile });
     expect(read).toMatchObject({ isError: true, error: { info: { code: "file_not_found" } } });
-    expect(JSON.stringify(read)).toContain(missingFile);
+    expect(read.error?.message).toContain(missingFile);
     await state.context.fiber.dispose();
   });
 
@@ -841,7 +841,7 @@ describe("canonical filesystem tools", () => {
       new_string: "y",
     });
     expect(ambiguous).toMatchObject({ isError: true, error: { info: { code: "ambiguous_match" } } });
-    expect(JSON.stringify(ambiguous)).toContain(path);
+    expect(ambiguous.error?.message).toContain(path);
     await writeFile(path, "added x x");
     const edited = await state.execute("Edit", {
       file_path: path,

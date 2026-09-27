@@ -244,7 +244,7 @@ describe("static declarative Skill tool", () => {
       text: [
         '<skill_content name="fixture-audit">',
         "<skill_resources>",
-        `Base directory for this skill: ${state.workspace}/winner`,
+        `Base directory for this skill: ${join(state.workspace, "winner")}`,
         "Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.",
         "</skill_resources>",
         "",
