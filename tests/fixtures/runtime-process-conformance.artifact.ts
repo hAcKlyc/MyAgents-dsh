@@ -35,6 +35,7 @@ const cleanupProcessTestRoot = (): void => rmSync(processTestRoot, { force: true
 process.once("exit", cleanupProcessTestRoot);
 
 const environment = Object.freeze({
+  ...(process.platform === "win32" ? { SystemRoot: process.env.SystemRoot ?? "C:\\Windows" } : {}),
   ...Object.fromEntries([
     "LANG",
     "LC_ALL",
