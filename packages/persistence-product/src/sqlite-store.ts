@@ -3841,9 +3841,13 @@ export class ProductSqliteStore implements ProductCheckpointStore,
 
   async #validateDirectory(path: string, description: string): Promise<FileIdentity> {
     const info = await lstat(path, { bigint: true });
+    const resolvedPath = await realpath(path);
     if (!info.isDirectory() || info.isSymbolicLink()
-      || !this.#options.platform.samePath(await realpath(path), path)) {
-      throw new Error(`${description} must be a canonical real directory`);
+      || !this.#options.platform.samePath(resolvedPath, path)) {
+      const diagnostics = process.env.MYAGENTS_DSH_TEST_PERSISTENCE_DIAGNOSTICS === "1"
+        ? `: ${JSON.stringify({ path, resolvedPath, isDirectory: info.isDirectory(), isSymbolicLink: info.isSymbolicLink(), samePath: this.#options.platform.samePath(resolvedPath, path) })}`
+        : "";
+      throw new Error(`${description} must be a canonical real directory${diagnostics}`);
     }
     const uid = process.getuid?.();
     if (uid !== undefined && (info.uid !== BigInt(uid) || (info.mode & 0o022n) !== 0n)) {
