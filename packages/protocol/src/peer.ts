@@ -705,6 +705,9 @@ export class JsonRpcPeer {
         });
         responseSent = true;
       } else {
+        if (process.env.MYAGENTS_DSH_COMPOSITION_DIAGNOSTICS === "1") {
+          process.stderr.write(`Composition RPC ${frame.method} failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+        }
         await this.#sendError(frame.id, JSON_RPC_ERROR.internalError, "Internal request error");
         responseSent = true;
       }

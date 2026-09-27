@@ -1343,7 +1343,10 @@ const main = (): void => {
     );
     const runner = resolve(consumerRoot, "dsh-runtime-composition.artifact.mjs");
     cpSync(runnerSource, runner);
-    const output = run(process.execPath, [runner], consumerRoot, environment);
+    const output = run(process.execPath, [runner], consumerRoot, {
+      ...environment,
+      MYAGENTS_DSH_COMPOSITION_DIAGNOSTICS: "1",
+    });
     const evidence = exactObject(JSON.parse(output) as unknown, "runtime composition evidence");
     if (evidence.artifactManifestSha256 !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
       || evidence.artifactVersion !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
