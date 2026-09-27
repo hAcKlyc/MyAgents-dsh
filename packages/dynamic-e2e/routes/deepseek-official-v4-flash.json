@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "provider": {
-    "revision": "deepseek-official-v4-flash-v2",
+    "revision": "deepseek-official-v4-flash-v3",
     "providerRouteId": "deepseek-official",
-    "api": "openai-completions",
+    "api": "anthropic-messages",
     "provider": "deepseek",
     "modelId": "deepseek-v4-flash",
-    "baseUrl": "https://api.deepseek.com",
+    "baseUrl": "https://api.deepseek.com/anthropic",
     "credentialRef": "DEEPSEEK_API_KEY",
     "contextWindow": 1000000,
     "maxTokens": 32768,

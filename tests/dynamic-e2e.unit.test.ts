@@ -9,6 +9,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MethodParams } from "@myagents-dsh/protocol";
+import { validateHostDeepSeekProfile } from "@myagents-dsh/runtime-product";
 
 import {
   ApprovedDynamicRouteCredentialUnavailableError,
@@ -402,12 +403,12 @@ describe("dynamic E2E harness", () => {
     try {
       const route = await loadApprovedDynamicRoute(path, environmentName);
       expect(route.provider).toEqual({
-        revision: "deepseek-official-v4-flash-v2",
+        revision: "deepseek-official-v4-flash-v3",
         providerRouteId: "deepseek-official",
-        api: "openai-completions",
+        api: "anthropic-messages",
         provider: "deepseek",
         modelId: "deepseek-v4-flash",
-        baseUrl: "https://api.deepseek.com",
+        baseUrl: "https://api.deepseek.com/anthropic",
         credentialRef: "DEEPSEEK_API_KEY",
         contextWindow: 1_000_000,
         maxTokens: 32_768,
@@ -415,9 +416,10 @@ describe("dynamic E2E harness", () => {
         effort: "high",
       });
       expect(route.networkPolicyRef).toBe("deepseek-official-web-search-v1");
+      expect(validateHostDeepSeekProfile(route.provider)).toEqual(route.provider);
       expect(route.webSearchAdapters).toEqual(["deepseek-official-native-web-search"]);
       expect(route.routeConfigSha256).toBe(
-        "59a300e6cf244890fb5731117856daede308aa42eec99c84beebae6fc532a62e",
+        "fc0666d2ce387016f4af853e45fb40604c045a76a48ae5533586a63201389ed1",
       );
       expect(await readFile(path, "utf8")).not.toContain(material);
     } finally {
@@ -435,11 +437,12 @@ describe("dynamic E2E harness", () => {
     try {
       const route = await loadApprovedDynamicRoute(path, environmentName);
       expect(route.provider).toMatchObject({
-        revision: "deepseek-official-v4-flash-compaction-v3",
+        revision: "deepseek-official-v4-flash-compaction-v4",
         providerRouteId: "deepseek-official",
         contextWindow: 16_384,
         maxTokens: 4_096,
       });
+      expect(validateHostDeepSeekProfile(route.provider)).toEqual(route.provider);
     } finally {
       delete process.env[environmentName];
     }

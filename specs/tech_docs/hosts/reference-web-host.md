@@ -79,7 +79,7 @@ persistence/attachment backing paths, arbitrary unauthorized paths, stderr or cr
 The UI exposes workspace/Session navigation, full assistant Turns, thinking/text/tool blocks, interactions and permission choices in the conversation flow, queue/interrupt controls, attachments, model/reasoning configuration, component inspection, mutations, diagnostics, accessibility, and responsive behavior. Every enabled control must map to a real Host command and visible outcome.
 
 This Reference profile is intentionally narrow, not a MyAgents policy template: it fixes one
-`deepseek-official` / OpenAI-completions / `deepseek-v4-flash` route, starter Skills, high/max
+`deepseek-official` / Anthropic Messages / `deepseek-v4-flash` route, starter Skills, high/max
 reasoning and a sealed execution environment. Startup currently requires `DEEPSEEK_API_KEY` before
 the page opens, so an actionable in-page missing-credential state remains unimplemented.
 

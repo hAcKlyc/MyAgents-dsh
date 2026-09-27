@@ -46,12 +46,12 @@ export const REFERENCE_WEB_NETWORK_POLICY_REVISION = DEEPSEEK_WEB_SEARCH_POLICY_
 export const REFERENCE_WEB_EXTENSION_REVISION = "reference-web-starter-components-v1" as const;
 
 export const REFERENCE_WEB_PROVIDER = Object.freeze({
-  revision: "deepseek-official-v4-flash-v2",
+  revision: "deepseek-official-v4-flash-v3",
   providerRouteId: "deepseek-official",
-  api: "openai-completions" as const,
+  api: "anthropic-messages" as const,
   provider: "deepseek",
   modelId: "deepseek-v4-flash",
-  baseUrl: "https://api.deepseek.com",
+  baseUrl: "https://api.deepseek.com/anthropic",
   credentialRef: "DEEPSEEK_API_KEY",
   contextWindow: 1_000_000,
   maxTokens: 32_768,
