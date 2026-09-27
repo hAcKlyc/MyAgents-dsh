@@ -125,6 +125,15 @@ const exactFileMode = (value: unknown, description: string): 0o644 | 0o755 => {
   return value;
 };
 
+// Windows stat does not expose POSIX execute bits or the requested chmod mode.
+// The content manifest records a stable logical mode there; byte, type and identity
+// checks still run on every file. POSIX targets retain their exact mode checks.
+const observedFileMode = (entry: Stats, description: string): 0o644 | 0o755 =>
+  process.platform === "win32" ? 0o644 : exactFileMode(entry.mode & 0o777, description);
+
+const hasCanonicalDirectoryMode = (entry: Stats): boolean =>
+  process.platform === "win32" || (entry.mode & 0o777) === 0o755;
+
 const exactRelativePath = (value: unknown, description: string): string => {
   const path = exactString(value, description, 4_096);
   if (path.includes("\\") || path.startsWith("/") || posix.normalize(path) !== path
@@ -160,7 +169,7 @@ const scanRuntimeArtifactEntries = (value: string): readonly RuntimeArtifactEntr
 
   const walk = (absoluteDirectory: string, relativeDirectory: string): void => {
     const before = lstatSync(absoluteDirectory);
-    if (!before.isDirectory() || before.isSymbolicLink() || (before.mode & 0o777) !== 0o755) {
+    if (!before.isDirectory() || before.isSymbolicLink() || !hasCanonicalDirectoryMode(before)) {
       throw new TypeError("Runtime artifact directory changed into an alias or special file");
     }
     directories.push(Object.freeze({
@@ -183,7 +192,7 @@ const scanRuntimeArtifactEntries = (value: string): readonly RuntimeArtifactEntr
       if (entry.isDirectory() && !entry.isSymbolicLink()) {
         walk(absolutePath, relativePath);
       } else if (entry.isFile() && !entry.isSymbolicLink()) {
-        const mode = exactFileMode(entry.mode & 0o777, "Runtime artifact file mode");
+        const mode = observedFileMode(entry, "Runtime artifact file mode");
         const snapshot = readRegularFileNoFollowSnapshotSync(absolutePath);
         entries.push(Object.freeze({
           path: relativePath,
@@ -252,13 +261,13 @@ const scanRuntimeArtifactEntries = (value: string): readonly RuntimeArtifactEntr
         mtimeMs: entry.mtimeMs,
         nlink: entry.nlink,
         size: entry.size,
-        mode: exactFileMode(entry.mode & 0o777, "Runtime artifact file mode"),
+        mode: observedFileMode(entry, "Runtime artifact file mode"),
       });
     if (current !== item.identity) throw new TypeError("Runtime artifact entry changed identity during audit");
   }
   for (const directory of directories.reverse()) {
     const after = lstatSync(directory.path);
-    if (!after.isDirectory() || after.isSymbolicLink() || (after.mode & 0o777) !== 0o755
+    if (!after.isDirectory() || after.isSymbolicLink() || !hasCanonicalDirectoryMode(after)
       || stableDirectoryIdentity(after) !== directory.identity) {
       throw new TypeError("Runtime artifact directory changed identity during audit");
     }
@@ -378,7 +387,7 @@ export const verifyInstalledRuntimeArtifact = (
 ): VerifiedRuntimeArtifact => {
   const root = containedRoot(artifactRoot);
   const manifestPath = resolve(root, RUNTIME_ARTIFACT_MANIFEST_FILENAME);
-  if (exactFileMode(lstatSync(manifestPath).mode & 0o777, "Runtime artifact manifest mode") !== 0o644) {
+  if (observedFileMode(lstatSync(manifestPath), "Runtime artifact manifest mode") !== 0o644) {
     throw new TypeError("Runtime artifact manifest must use canonical mode 0644");
   }
   const manifestSnapshot = readRegularFileNoFollowSnapshotSync(manifestPath);
@@ -438,7 +447,7 @@ export const verifyInstalledRuntimeArtifact = (
     throw new TypeError("Runtime artifact installed bytes differ from their content manifest");
   }
   const manifestAfter = readRegularFileNoFollowSnapshotSync(manifestPath);
-  if ((lstatSync(manifestPath).mode & 0o777) !== 0o644
+  if (observedFileMode(lstatSync(manifestPath), "Runtime artifact manifest mode") !== 0o644
     || sha256(manifestAfter.bytes) !== manifestSha256
     || JSON.stringify(manifestAfter.identity) !== JSON.stringify(manifestSnapshot.identity)) {
     throw new TypeError("Runtime artifact manifest changed identity during verification");

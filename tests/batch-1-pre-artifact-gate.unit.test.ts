@@ -52,7 +52,11 @@ describe("Batch 1 pre-artifact gate", () => {
     expect(summarizeVitestReport({
       success: true,
       testResults: [{ status: "passed", assertionResults: [{ status: "passed" }, { status: "passed" }] }],
-    })).toEqual({ testFiles: 1, tests: 2 });
+    })).toEqual({ testFiles: 1, tests: 2, skippedTests: 0 });
+    expect(summarizeVitestReport({
+      success: true,
+      testResults: [{ status: "passed", assertionResults: [{ status: "passed" }, { status: "skipped" }] }],
+    })).toEqual({ testFiles: 1, tests: 1, skippedTests: 1 });
     expect(() => summarizeVitestReport({ success: false, testResults: [] })).toThrow(
       "passing non-empty run",
     );

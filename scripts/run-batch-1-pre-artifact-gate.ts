@@ -82,6 +82,7 @@ interface CommandEvidence {
   readonly status: "passed";
   readonly testFiles?: number;
   readonly tests?: number;
+  readonly skippedTests?: number;
 }
 
 interface VitestJsonReport {
@@ -117,12 +118,13 @@ const exactObject = (value: unknown, label: string): JsonObject => {
   return value as JsonObject;
 };
 
-export const summarizeVitestReport = (value: unknown): { testFiles: number; tests: number } => {
+export const summarizeVitestReport = (value: unknown): { testFiles: number; tests: number; skippedTests: number } => {
   const report = exactObject(value, "Vitest report") as VitestJsonReport;
   if (report.success !== true || !Array.isArray(report.testResults) || report.testResults.length === 0) {
     throw new Error("Vitest report must describe a passing non-empty run");
   }
   let tests = 0;
+  let skippedTests = 0;
   for (const [fileIndex, entry] of report.testResults.entries()) {
     const file = exactObject(entry, `Vitest file ${String(fileIndex)}`);
     if (file.status !== "passed" || !Array.isArray(file.assertionResults)) {
@@ -130,6 +132,10 @@ export const summarizeVitestReport = (value: unknown): { testFiles: number; test
     }
     for (const [testIndex, assertion] of file.assertionResults.entries()) {
       const test = exactObject(assertion, `Vitest assertion ${String(fileIndex)}:${String(testIndex)}`);
+      if (test.status === "skipped") {
+        skippedTests += 1;
+        continue;
+      }
       if (test.status !== "passed") {
         throw new Error(`Vitest assertion ${String(fileIndex)}:${String(testIndex)} did not pass`);
       }
@@ -137,7 +143,7 @@ export const summarizeVitestReport = (value: unknown): { testFiles: number; test
     }
   }
   if (tests === 0) throw new Error("Vitest report contains no passing assertions");
-  return { testFiles: report.testResults.length, tests };
+  return { testFiles: report.testResults.length, tests, skippedTests };
 };
 
 const isContained = (parent: string, child: string): boolean => {

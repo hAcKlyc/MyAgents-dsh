@@ -38,7 +38,7 @@ import {
   validateProductCompactionReceipt,
 } from "@myagents-dsh/persistence-product";
 import { canonicalSessionReadData, SessionReadAssembler } from "@myagents-dsh/protocol";
-import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
+import { resolveRuntimePlatformTarget, selectPlatformAdapter } from "@myagents-dsh/product-profile";
 
 const fixtureWriters = new WeakMap<object, Map<SessionId, SessionHandle>>();
 const fixtureIdentity = (persistence: SessionPersistence): object =>
@@ -67,6 +67,8 @@ const mountNativeLoop = async (ctx: Context): Promise<void> => {
   await ctx.plugin(AgentRegistry);
   await ctx.plugin(AgentLoop, { agents: [] });
 };
+
+const nativePlatform = () => selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch));
 
 const roots: string[] = [];
 
@@ -108,7 +110,7 @@ const mount = async (runtimeHome: string): Promise<Context> => {
   const context = new Context();
   try {
     await context.plugin(SessionStore);
-    const platform = selectPlatformAdapter("darwin-arm64");
+    const platform = nativePlatform();
     const databasePath = productSessionDatabasePath(platform, runtimeHome);
     await context.plugin(ProductSqliteSessionPersistence, {
       durability: platform.sqliteDurabilityPlan(databasePath),
@@ -184,7 +186,7 @@ describe("ProductSqliteSessionPersistence", () => {
   it("derives one fixed database location from every selected platform adapter", () => {
     expect(Object.isFrozen(PRODUCT_PERSISTENCE_LIMITS)).toBe(true);
     expect(productSessionDatabasePath(
-      selectPlatformAdapter("darwin-arm64"),
+      nativePlatform(),
       "/Users/fixture/Library/Application Support/MyAgents",
     )).toBe("/Users/fixture/Library/Application Support/MyAgents/persistence/sessions-v1.sqlite");
     expect(productSessionDatabasePath(
@@ -201,7 +203,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-storage-bounds");
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
 
@@ -243,7 +245,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-journal-bound");
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
     if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
@@ -289,7 +291,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-database-substitution");
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
 
@@ -303,7 +305,7 @@ describe("ProductSqliteSessionPersistence", () => {
 
   it("refuses the old v1 store without migrating its schema", async () => {
     const runtimeHome = await makeRuntimeHome();
-    const platform = selectPlatformAdapter("darwin-arm64");
+    const platform = nativePlatform();
     const databasePath = productSessionDatabasePath(platform, runtimeHome);
     await mkdir(join(runtimeHome, "persistence"), { mode: 0o700 });
     const database = new DatabaseSync(databasePath);
@@ -327,7 +329,7 @@ describe("ProductSqliteSessionPersistence", () => {
 
   it("refuses v8 stores without adding directory ownership", async () => {
     const runtimeHome = await makeRuntimeHome();
-    const platform = selectPlatformAdapter("darwin-arm64");
+    const platform = nativePlatform();
     const databasePath = productSessionDatabasePath(platform, runtimeHome);
     await mkdir(join(runtimeHome, "persistence"), { mode: 0o700 });
     const database = new DatabaseSync(databasePath);
@@ -345,7 +347,7 @@ describe("ProductSqliteSessionPersistence", () => {
 
   it("refuses legacy fork metadata while preserving its original header and event bytes", async () => {
     const runtimeHome = await makeRuntimeHome();
-    const platform = selectPlatformAdapter("darwin-arm64");
+    const platform = nativePlatform();
     const databasePath = productSessionDatabasePath(platform, runtimeHome);
     await mkdir(join(runtimeHome, "persistence"), { mode: 0o700 });
     const database = new DatabaseSync(databasePath);
@@ -400,7 +402,7 @@ describe("ProductSqliteSessionPersistence", () => {
     });
     expect(second.durableHead.stableBoundaryId).toBe(first.durableHead.stableBoundaryId);
 
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
     expect(probe.prepare(`
       SELECT boundary_id, seq_exclusive, turn, policy_version FROM stable_boundaries
@@ -456,7 +458,7 @@ describe("ProductSqliteSessionPersistence", () => {
       phase: "committed",
       receipt: { durableSequence: 2, rewindEventSequence: 1 },
     });
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
     expect((probe.prepare(`
       SELECT e.type FROM session_events AS e
@@ -549,7 +551,7 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(await persistence.list()).toEqual([]);
     await expect(inspectFixtureSession(persistence, id, SessionLogOffset(0))).rejects.toThrow(/not found|unavailable/u);
 
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     const tombstoneProbe = new DatabaseSync(databasePath);
     tombstoneProbe.prepare("UPDATE sessions SET revision = revision + 1 WHERE id = ?").run(id);
     tombstoneProbe.close();
@@ -650,7 +652,7 @@ describe("ProductSqliteSessionPersistence", () => {
       throw new Error("recovery fixture did not install product persistence");
     }
     const database = new DatabaseSync(productSessionDatabasePath(
-      selectPlatformAdapter("darwin-arm64"),
+      nativePlatform(),
       runtimeHome,
     ));
     database.prepare(
@@ -731,7 +733,7 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(await persistence.commitRewind(prepared.token, "rewind-client-1")).toEqual(committed);
     expect((await persistence.list()).map(({ header: { id: sessionId } }) => String(sessionId)).sort())
       .toEqual([String(id)]);
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
     const rewoundEvents = (probe.prepare(`
       SELECT envelope_json FROM session_events AS e
@@ -807,7 +809,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const boundaryId = sourceRead.durableHead.stableBoundaryId;
     if (boundaryId === undefined) throw new Error("fork source boundary is unavailable");
     const sourceDatabasePath = productSessionDatabasePath(
-      selectPlatformAdapter("darwin-arm64"),
+      nativePlatform(),
       sourceRuntimeHome,
     );
     let probe = new DatabaseSync(sourceDatabasePath);
@@ -888,7 +890,7 @@ describe("ProductSqliteSessionPersistence", () => {
     })).toEqual(prepared);
 
     const targetDatabasePath = productSessionDatabasePath(
-      selectPlatformAdapter("darwin-arm64"),
+      nativePlatform(),
       committedTargetHome,
     );
     probe = new DatabaseSync(targetDatabasePath, { readOnly: true });
@@ -976,7 +978,7 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(aborted.phase).toBe("aborted");
     expect(await persistence.abortFork(abortPrepared.token, "fork-client-abort")).toEqual(aborted);
     probe = new DatabaseSync(productSessionDatabasePath(
-      selectPlatformAdapter("darwin-arm64"),
+      nativePlatform(),
       abortedTargetHome,
     ), { readOnly: true });
     expect(scalar(probe, "SELECT count(*) AS value FROM sessions")).toBe(0);
@@ -991,7 +993,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-primary");
     const meta = header(id);
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
 
     await createFixtureSession(context.sessionPersistence, meta);
     let probe = new DatabaseSync(databasePath, { readOnly: true });
@@ -1063,7 +1065,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-suffix");
     const meta = header(id);
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
 
     await createFixtureSession(context.sessionPersistence, meta);
     await appendFixtureEvents(context.sessionPersistence, id, [...turn(0, 1), ...turn(2, 2)]);
@@ -1283,7 +1285,7 @@ describe("ProductSqliteSessionPersistence", () => {
     });
     if (first.nextCursor === undefined) throw new Error("corrupt suffix fixture must span pages");
 
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath);
     const before = probe.prepare(
       "SELECT event_count, head_hash, revision FROM sessions WHERE id = ?",
@@ -1354,7 +1356,7 @@ describe("ProductSqliteSessionPersistence", () => {
     }) as unknown as SessionEvent, ...turn(1, 1)]);
     await first.fiber.dispose();
 
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     // Synthesize a well-hashed log from a newer harness; current writers must
     // reject unknown required events before admission.
     const fixture = new DatabaseSync(databasePath);
@@ -1405,7 +1407,7 @@ describe("ProductSqliteSessionPersistence", () => {
     await accepted.value.append(turn(0, 1));
     await accepted.value.close();
 
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
     expect(scalar(probe, "SELECT count(*) AS value FROM sessions WHERE id = ?", id)).toBe(1);
     expect(scalar(
@@ -1429,7 +1431,7 @@ describe("ProductSqliteSessionPersistence", () => {
     session.append("turn/start", { turn: 1 });
     await context.fiber.dispose();
 
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
     expect(scalar(
       probe,
@@ -1450,14 +1452,14 @@ describe("ProductSqliteSessionPersistence", () => {
     await mkdir(persistenceDirectory, { mode: 0o700 });
     const outside = join(root, "outside.sqlite");
     await writeFile(outside, "");
-    const databasePath = productSessionDatabasePath(selectPlatformAdapter("darwin-arm64"), runtimeHome);
+    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
     await link(outside, databasePath);
     await expect(mount(runtimeHome)).rejects.toThrow(/singly-linked regular file/u);
   });
 
   it("validates plugin configuration without executing nested accessors", async () => {
     const runtimeHome = await makeRuntimeHome();
-    const platform = selectPlatformAdapter("darwin-arm64");
+    const platform = nativePlatform();
     const databasePath = productSessionDatabasePath(platform, runtimeHome);
     const expected = platform.sqliteDurabilityPlan(databasePath);
     let getterHits = 0;

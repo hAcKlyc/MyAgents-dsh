@@ -117,6 +117,8 @@ jobs:
           path: |
             ${{ runner.temp }}/myagents-dsh-release/patched-dsh-artifact/*
             ${{ runner.temp }}/myagents-dsh-release/pre-artifact-gate/raw/*.json
+            ${{ runner.temp }}/myagents-dsh-release/native-campaign/native-campaign.json
+            ${{ runner.temp }}/myagents-dsh-release/native-campaign/dynamic/*/campaign.json
           if-no-files-found: ignore
           retention-days: 2
       - name: Transfer only the verified target pair

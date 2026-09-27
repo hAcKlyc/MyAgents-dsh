@@ -226,13 +226,15 @@ describe("Runtime artifact self-check", () => {
       .toThrow("expected handoff digest");
     rmSync(tamperedDsh.root, { force: true, recursive: true });
 
-    const modeTampered = createArtifactFixture();
-    chmodSync(resolve(modeTampered.root, "runtime-server-process.artifact.mjs"), 0o755);
-    expect(() => verifyInstalledRuntimeArtifact(
-      modeTampered.root,
-      modeTampered.integrity.manifestSha256,
-    )).toThrow("installed bytes differ");
-    rmSync(modeTampered.root, { force: true, recursive: true });
+    if (process.platform !== "win32") {
+      const modeTampered = createArtifactFixture();
+      chmodSync(resolve(modeTampered.root, "runtime-server-process.artifact.mjs"), 0o755);
+      expect(() => verifyInstalledRuntimeArtifact(
+        modeTampered.root,
+        modeTampered.integrity.manifestSha256,
+      )).toThrow("installed bytes differ");
+      rmSync(modeTampered.root, { force: true, recursive: true });
+    }
 
     const emptyDirectory = createArtifactFixture();
     mkdirSync(resolve(emptyDirectory.root, "unowned-empty"));
