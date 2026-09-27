@@ -236,6 +236,7 @@ const run = (
   args: readonly string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
+  timeoutMs?: number,
 ): string => {
   const invocation = childCli(command, args, env);
   const result = spawnSync(invocation.command, invocation.args, {
@@ -244,8 +245,15 @@ const run = (
     env,
     maxBuffer: 64 * 1024 * 1024,
     stdio: "pipe",
+    timeout: timeoutMs,
   });
-  if (result.error !== undefined) throw result.error;
+  if (result.error !== undefined) {
+    throw new Error(
+      `${command} ${args.join(" ")} failed: ${result.error.message}`
+      + `\n${[result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n")}`,
+      { cause: result.error },
+    );
+  }
   if (result.status !== 0) {
     throw new Error(
       `${command} ${args.join(" ")} exited ${String(result.status)}`
@@ -1349,7 +1357,7 @@ const main = (): void => {
     const output = run(process.execPath, [runner], consumerRoot, {
       ...environment,
       MYAGENTS_DSH_COMPOSITION_DIAGNOSTICS: "1",
-    });
+    }, 15 * 60_000);
     const evidence = exactObject(JSON.parse(output) as unknown, "runtime composition evidence");
     if (evidence.artifactManifestSha256 !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
       || evidence.artifactVersion !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
@@ -2144,6 +2152,7 @@ const main = (): void => {
       [tsxCli, processConformanceRunner, processEntrypoint],
       candidateRoot,
       environment,
+      5 * 60_000,
     );
     assertRuntimeProcessEvidence(
       processOutput,

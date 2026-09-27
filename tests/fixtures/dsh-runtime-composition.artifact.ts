@@ -6,6 +6,7 @@ declare module "@deepseek-ai/dsh-session/types" {
 }
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { writeSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
@@ -5101,7 +5102,7 @@ runtimeInput.destroy();
 runtimeOutput.destroy();
 await rm(fixtureRoot, { force: true, recursive: true });
 
-process.stdout.write(`${JSON.stringify({
+writeSync(1, `${JSON.stringify({
   artifactManifestSha256: snapshot.artifactManifestSha256,
   artifactVersion: snapshot.artifactVersion,
   authorityMutationRejected: true,
@@ -5341,3 +5342,6 @@ process.stdout.write(`${JSON.stringify({
   ],
   toolContractRuntimeConsumerVerified: true,
 })}\n`);
+// Every asserted Runtime/Host lifecycle has settled above. A third-party timer must not
+// keep this one-shot artifact gate alive after its evidence has been flushed.
+process.exit(0);
