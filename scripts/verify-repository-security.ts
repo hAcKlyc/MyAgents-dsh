@@ -115,7 +115,8 @@ for (const relativePath of repositoryPaths) {
   const absolutePath = resolve(repositoryRoot, relativePath);
   const entry = await lstat(absolutePath);
   if (entry.isSymbolicLink()) {
-    const target = await readlink(absolutePath);
+    // Windows resolves Git symlink targets with backslashes even when the index stores POSIX paths.
+    const target = (await readlink(absolutePath)).replaceAll("\\", "/");
     const approvedAlias = (relativePath === "CLAUDE.md" && target === "AGENTS.md")
       || (relativePath === ".claude/skills" && target === "../.agents/skills");
     if (!approvedAlias) {
@@ -252,7 +253,7 @@ try {
       env: packEnvironment,
       maxBuffer: 16 * 1024 * 1024,
     });
-    const archivePaths = listed.stdout.split("\n").filter((path) => path.length > 0);
+    const archivePaths = listed.stdout.split(/\r?\n/u).filter((path) => path.length > 0);
     const actualPaths: string[] = [];
     for (const archivePathname of archivePaths) {
       if (!archivePathname.startsWith("package/")) {

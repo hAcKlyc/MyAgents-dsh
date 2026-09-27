@@ -17,7 +17,7 @@ import {
   productTranscriptPostcondition,
   productSessionDatabasePath,
 } from "@myagents-dsh/persistence-product";
-import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
+import { resolveRuntimePlatformTarget, selectPlatformAdapter } from "@myagents-dsh/product-profile";
 import type {
   ProductToolContext,
   ProductToolExecutionEnvironment,
@@ -45,7 +45,7 @@ const digest = (value: Uint8Array): string => createHash("sha256").update(value)
 const environment = (
   runtimeHome: string,
   workspace = "/fixture/workspace",
-  platformTarget: "darwin-arm64" | "linux-x64" | "win32-x64" = "darwin-arm64",
+  platformTarget: ReturnType<typeof resolveRuntimePlatformTarget> = resolveRuntimePlatformTarget(process.platform, process.arch),
 ): ProductToolExecutionEnvironment => Object.freeze({
   attachmentStagingRoot: join(runtimeHome, "attachments"),
   checkpoint: Object.freeze({
@@ -101,7 +101,7 @@ const checkpointHarness = async (options: Readonly<{ nativeFs?: boolean; reopenR
   if (options.reopenRuntimeHome === undefined) await mkdir(runtimeHome, { mode: 0o700 });
   const context = new Context();
   await context.plugin(SessionStore);
-  const platform = selectPlatformAdapter("darwin-arm64");
+  const platform = selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch));
   let store: ProductCheckpointStore | undefined;
   await context.plugin(ProductSqliteSessionPersistence, {
     durability: platform.sqliteDurabilityPlan(productSessionDatabasePath(platform, runtimeHome)),
@@ -121,7 +121,7 @@ const checkpointHarness = async (options: Readonly<{ nativeFs?: boolean; reopenR
   await context.sessions.flush(session);
   const workspace = options.nativeFs === true ? join(root, "workspace") : "/fixture/workspace";
   if (options.nativeFs === true && options.reopenRuntimeHome === undefined) await mkdir(workspace);
-  const platformTarget = `${process.platform}-${process.arch}` as "darwin-arm64" | "linux-x64" | "win32-x64";
+  const platformTarget = resolveRuntimePlatformTarget(process.platform, process.arch);
   const executionEnvironment = environment(runtimeHome, workspace, platformTarget);
   if (options.nativeFs === true) await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(platformTarget) });
   let bytes: Uint8Array | undefined = Buffer.from("before", "utf8");
@@ -440,7 +440,7 @@ describe("ProductCheckpointService", () => {
     await mkdir(runtimeHome, { mode: 0o700 });
     const context = new Context();
     await context.plugin(SessionStore);
-    const platform = selectPlatformAdapter("darwin-arm64");
+    const platform = selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch));
     let store: ProductCheckpointStore | undefined;
     await context.plugin(ProductSqliteSessionPersistence, {
       durability: platform.sqliteDurabilityPlan(productSessionDatabasePath(platform, runtimeHome)),
@@ -711,7 +711,7 @@ describe("ProductCheckpointService", () => {
     await Promise.all([mkdir(workspace), mkdir(runtimeHome), mkdir(outside)]);
     const target = join(workspace, "file.txt");
     await writeFile(target, "checkpoint", { mode: 0o600 });
-    const platformTarget = `${process.platform}-${process.arch}` as "darwin-arm64" | "linux-x64" | "win32-x64";
+    const platformTarget = resolveRuntimePlatformTarget(process.platform, process.arch);
     const context = new Context();
     await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(platformTarget) });
     const io = (context.fs as LocalWorkspaceFileSystem).createCheckpointIoAuthority();

@@ -51,7 +51,9 @@ export function buildNativeHandoff({ work, source, piAiSource, credentialEnv, ar
       "--pnpm-store", pnpmStore, "--npm-cache", npmCache]);
   }
   const observed = sha256(readFileSync(resolve(patched, "patched-dsh-artifact-v1.json")));
-  if (observed !== expected) throw new Error("Built DSH artifact differs from the accepted profile digest");
+  if (observed !== expected) {
+    throw new Error(`Built DSH artifact manifest ${observed} differs from the accepted profile digest ${expected}`);
+  }
   run("npm", ["run", "install:verified-dsh-checks", "--", "--artifact", patched]);
   run("npm", ["run", "check:pre-artifact", "--", "--dsh-source", source,
     "--output", resolve(work, "pre-artifact-gate")]);

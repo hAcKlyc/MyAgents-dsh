@@ -1149,6 +1149,34 @@ function git(sourceRoot: string, args: string[], env?: NodeJS.ProcessEnv, input?
   });
 }
 
+// Keep the online store prime and offline seam compile on the same workspace closure.
+export const DSH_SEAM_INSTALL_FILTERS = Object.freeze([
+  "--filter", "@deepseek-ai/dsh-system-prompt...",
+  "--filter", "@deepseek-ai/dsh-agent-instructions...",
+  "--filter", "@deepseek-ai/dsh-agent-loop...",
+  "--filter", "@deepseek-ai/dsh-session-persistence...",
+  "--filter", "@deepseek-ai/dsh-session-persistence-jsonl...",
+  "--filter", "@deepseek-ai/dsh-fs-local...",
+  "--filter", "@deepseek-ai/dsh-tool-fs...",
+  // The subagent closure reaches unrelated document and office packages.
+  "--filter", "@deepseek-ai/dsh-subagent",
+  "--filter", "@deepseek-ai/dsh-subagent-in-process-driver",
+  "--filter", "@deepseek-ai/dsh-subagent-spawn-in-process",
+  "--filter", "@deepseek-ai/dsh-subagent-fork-in-process",
+  "--filter", "@deepseek-ai/dsh-session-title",
+  "--filter", "@deepseek-ai/dsh-tool-todo",
+  "--filter", "@deepseek-ai/dsh-session-projection-cache",
+  "--filter", "@deepseek-ai/dsh-permission-presets",
+  "--filter", "@deepseek-ai/dsh-chunked-list",
+  "--filter", "@deepseek-ai/dsh-schedule",
+  "--filter", "@deepseek-ai/dsh-llm-deepseek...",
+  "--filter", "@deepseek-ai/dsh-llm-deepseek-api-key...",
+  "--filter", "@deepseek-ai/dsh-llm-pi-ai...",
+  "--filter", "@deepseek-ai/dsh-compaction-basic...",
+  "--filter", "@deepseek-ai/dsh-compaction...",
+  "--filter", "@deepseek-ai/dsh-token-meter...",
+]);
+
 const run = (command: string, args: string[], cwd: string, input?: Buffer): void => {
   const invocation = childCli(command, args);
   execFileSync(invocation.command, [...invocation.args], {
@@ -1196,6 +1224,12 @@ export function verifyDshSeamSource(
   }
 
   if (!compileAndTest) return;
+  const storeInvocation = childCli("corepack", ["pnpm", "store", "path"]);
+  const pnpmStore = execFileSync(storeInvocation.command, storeInvocation.args, {
+    cwd: root,
+    encoding: "utf8",
+    env: process.env,
+  }).trim();
   const worktreeParent = mkdtempSync(join(tmpdir(), "myagents-dsh-patched-source-"));
   const worktree = join(worktreeParent, "deepseek-harness");
   try {
@@ -1205,37 +1239,8 @@ export function verifyDshSeamSource(
     }
     run("git", ["diff", "--check"], worktree);
     run("corepack", [
-      "pnpm",
-      "install",
-      "--offline",
-      "--frozen-lockfile",
-      "--ignore-scripts",
-      "--reporter=append-only",
-      "--filter", "@deepseek-ai/dsh-system-prompt...",
-      "--filter", "@deepseek-ai/dsh-agent-instructions...",
-      "--filter", "@deepseek-ai/dsh-agent-loop...",
-      "--filter", "@deepseek-ai/dsh-session-persistence...",
-      "--filter", "@deepseek-ai/dsh-session-persistence-jsonl...",
-      "--filter", "@deepseek-ai/dsh-fs-local...",
-      "--filter", "@deepseek-ai/dsh-tool-fs...",
-      // The subagent workspace dependency closure reaches unrelated document/office packages.
-      // These four packages are compiled below; the other filters provide their shared build inputs.
-      "--filter", "@deepseek-ai/dsh-subagent",
-      "--filter", "@deepseek-ai/dsh-subagent-in-process-driver",
-      "--filter", "@deepseek-ai/dsh-subagent-spawn-in-process",
-      "--filter", "@deepseek-ai/dsh-subagent-fork-in-process",
-      "--filter", "@deepseek-ai/dsh-session-title",
-      "--filter", "@deepseek-ai/dsh-tool-todo",
-      "--filter", "@deepseek-ai/dsh-session-projection-cache",
-      "--filter", "@deepseek-ai/dsh-permission-presets",
-      "--filter", "@deepseek-ai/dsh-chunked-list",
-      "--filter", "@deepseek-ai/dsh-schedule",
-      "--filter", "@deepseek-ai/dsh-llm-deepseek...",
-      "--filter", "@deepseek-ai/dsh-llm-deepseek-api-key...",
-      "--filter", "@deepseek-ai/dsh-llm-pi-ai...",
-      "--filter", "@deepseek-ai/dsh-compaction-basic...",
-      "--filter", "@deepseek-ai/dsh-compaction...",
-      "--filter", "@deepseek-ai/dsh-token-meter...",
+      "pnpm", "install", "--offline", "--frozen-lockfile", "--ignore-scripts",
+      "--reporter=append-only", "--store-dir", pnpmStore, ...DSH_SEAM_INSTALL_FILTERS,
     ], worktree);
     run("corepack", [
       "pnpm", "exec", "tsc", "-b",

@@ -6,7 +6,7 @@ import {
   type HostAttachmentStoreController,
   type HostPortServiceController,
 } from "@myagents-dsh/host-ports";
-import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
+import { resolveRuntimePlatformTarget, selectPlatformAdapter } from "@myagents-dsh/product-profile";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
 import { createInMemoryPeerPair, StandardTestHost } from "@myagents-dsh/test-host";
 import { LocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
@@ -455,23 +455,22 @@ describe("Local attachment staging authority", () => {
     await mkdir(stagingRoot);
     const context = new Context();
     try {
-      await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter("darwin-arm64") });
+      await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)) });
       const io = (context.fs as LocalWorkspaceFileSystem).createAttachmentIoAuthority();
       const staged = await io.stage(stagingRoot, PNG, new AbortController().signal);
       const info = await stat(staged.path);
       expect({
         bytes: await readFile(staged.path),
-        mode: info.mode & 0o777,
         nlink: info.nlink,
         sha256: staged.sha256,
         sizeBytes: staged.sizeBytes,
       }).toEqual({
         bytes: Buffer.from(PNG),
-        mode: 0o600,
         nlink: 1,
         sha256: PNG_SHA256,
         sizeBytes: PNG.byteLength,
       });
+      if (process.platform !== "win32") expect(info.mode & 0o777).toBe(0o600);
       await staged.discard();
       await staged.discard();
       await expect(stat(staged.path)).rejects.toMatchObject({ code: "ENOENT" });
@@ -487,7 +486,7 @@ describe("Local attachment staging authority", () => {
     await mkdir(stagingRoot);
     const context = new Context();
     try {
-      await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter("darwin-arm64") });
+      await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)) });
       const io = (context.fs as LocalWorkspaceFileSystem).createAttachmentIoAuthority();
       const valid = join(stagingRoot, "valid.png");
       await writeFile(valid, PNG, { mode: 0o400 });
@@ -503,18 +502,22 @@ describe("Local attachment staging authority", () => {
 
       const writable = join(stagingRoot, "writable.png");
       await writeFile(writable, PNG, { mode: 0o600 });
-      await expect(io.readLease(stagingRoot, writable, PNG.byteLength, new AbortController().signal))
-        .rejects.toMatchObject({ code: "FS_PERMISSION_DENIED" });
+      if (process.platform !== "win32") {
+        await expect(io.readLease(stagingRoot, writable, PNG.byteLength, new AbortController().signal))
+          .rejects.toMatchObject({ code: "FS_PERMISSION_DENIED" });
+      }
 
       const hardlink = join(stagingRoot, "hardlink.png");
       await link(outside, hardlink);
       await expect(io.readLease(stagingRoot, hardlink, PNG.byteLength, new AbortController().signal))
         .rejects.toMatchObject({ code: "FS_NOT_REGULAR_FILE" });
 
-      const symbolic = join(stagingRoot, "symbolic.png");
-      await symlink(outside, symbolic);
-      await expect(io.readLease(stagingRoot, symbolic, PNG.byteLength, new AbortController().signal))
-        .rejects.toMatchObject({ code: "FS_NOT_REGULAR_FILE" });
+      if (process.platform !== "win32") {
+        const symbolic = join(stagingRoot, "symbolic.png");
+        await symlink(outside, symbolic);
+        await expect(io.readLease(stagingRoot, symbolic, PNG.byteLength, new AbortController().signal))
+          .rejects.toMatchObject({ code: "FS_NOT_REGULAR_FILE" });
+      }
 
       const previousRoot = join(temporary, "previous-staging");
       await rename(stagingRoot, previousRoot);

@@ -10,6 +10,9 @@ import {
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const canonicalMode = (mode: number): 0o644 | 0o755 => {
+  // Windows stat cannot preserve POSIX executable bits; Runtime aliases are
+  // consumed through Node and use the same logical file mode as the manifest.
+  if (process.platform === "win32") return 0o644;
   const exact = mode & 0o777;
   if (exact !== 0o644 && exact !== 0o755) {
     throw new TypeError("Runtime artifact link target has a non-canonical file mode");

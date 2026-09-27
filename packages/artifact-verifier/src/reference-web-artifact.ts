@@ -124,7 +124,12 @@ const exactMode = (value: unknown, description: string): 0o644 | 0o755 => {
   return value;
 };
 
-const scanFiles = (artifactRoot: string): readonly ReferenceWebArtifactFileEntry[] => {
+const observedMode = (mode: number, path: string, posixLauncher: string): 0o644 | 0o755 =>
+  process.platform === "win32"
+    ? path === posixLauncher ? 0o755 : 0o644
+    : exactMode(mode & 0o777, "Reference Web artifact file mode");
+
+const scanFiles = (artifactRoot: string, posixLauncher: string): readonly ReferenceWebArtifactFileEntry[] => {
   const root = resolve(artifactRoot);
   if (realpathSync(root) !== root) throw new TypeError("Reference Web artifact root must be canonical");
   const rootEntry = lstatSync(root);
@@ -135,7 +140,8 @@ const scanFiles = (artifactRoot: string): readonly ReferenceWebArtifactFileEntry
   let totalBytes = 0;
   const walk = (absoluteDirectory: string, relativeDirectory: string): void => {
     const directory = lstatSync(absoluteDirectory);
-    if (!directory.isDirectory() || directory.isSymbolicLink() || (directory.mode & 0o777) !== 0o755) {
+    if (!directory.isDirectory() || directory.isSymbolicLink()
+      || (process.platform !== "win32" && (directory.mode & 0o777) !== 0o755)) {
       throw new TypeError("Reference Web artifact contains a non-canonical directory");
     }
     const entries = readdirSync(absoluteDirectory, { withFileTypes: true })
@@ -158,7 +164,7 @@ const scanFiles = (artifactRoot: string): readonly ReferenceWebArtifactFileEntry
         throw new TypeError("Reference Web artifact must not contain source, declaration, or source-map files");
       }
       const snapshot = readRegularFileNoFollowSnapshotSync(absolutePath);
-      const mode = exactMode(metadata.mode & 0o777, "Reference Web artifact file mode");
+      const mode = observedMode(metadata.mode, relativePath, posixLauncher);
       totalBytes += snapshot.bytes.length;
       if (totalBytes > MAX_ARTIFACT_BYTES) throw new TypeError("Reference Web artifact exceeds its byte bound");
       const findings = scanForbiddenContent(relativePath, snapshot.bytes);
@@ -352,7 +358,7 @@ export const createReferenceWebArtifactManifest = (
   value: ReferenceWebArtifactAuthority,
 ): ReferenceWebArtifactManifest => {
   const authority = validateAuthority(value);
-  const files = scanFiles(artifactRoot);
+  const files = scanFiles(artifactRoot, authority.launchers.posix);
   validateRequiredFiles(authority, files);
   return Object.freeze({ schemaVersion: 1 as const, ...authority, files });
 };
@@ -368,7 +374,7 @@ export const verifyInstalledReferenceWebArtifact = (
   const manifestPath = resolve(root, REFERENCE_WEB_ARTIFACT_MANIFEST_FILENAME);
   const manifestEntry = lstatSync(manifestPath);
   if (!manifestEntry.isFile() || manifestEntry.isSymbolicLink() || manifestEntry.nlink !== 1
-    || (manifestEntry.mode & 0o777) !== 0o644) {
+    || (process.platform !== "win32" && (manifestEntry.mode & 0o777) !== 0o644)) {
     throw new TypeError("Reference Web artifact manifest must be one canonical regular file");
   }
   const snapshot = readRegularFileNoFollowSnapshotSync(manifestPath);
@@ -417,7 +423,7 @@ export const verifyInstalledReferenceWebArtifact = (
     const previous = files[index - 1];
     return previous !== undefined && compare(previous.path, path) >= 0;
   })) throw new TypeError("Reference Web artifact files must be unique and sorted");
-  const observed = scanFiles(root);
+  const observed = scanFiles(root, authority.launchers.posix);
   if (JSON.stringify(files) !== JSON.stringify(observed)) {
     throw new TypeError("Reference Web artifact bytes differ from their content manifest");
   }

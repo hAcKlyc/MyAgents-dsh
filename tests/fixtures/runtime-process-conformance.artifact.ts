@@ -103,9 +103,9 @@ const initializeParams = (): InitializeParams => {
     shellDialect: process.platform === "win32" ? "pwsh" : "bash", pathPolicy: "sealed",
     allowedCommandRefs: ["runtime-shell", "bundled-node", "bundled-ripgrep"],
   };
-  if (process.platform === "darwin" && process.arch === "arm64") {
+  if (process.platform === "darwin" && (process.arch === "arm64" || process.arch === "x64")) {
     params.host.platform = "darwin";
-    params.host.arch = "arm64";
+    params.host.arch = process.arch;
   } else if (process.platform === "linux" && process.arch === "x64") {
     params.host.platform = "linux";
     params.host.arch = "x64";

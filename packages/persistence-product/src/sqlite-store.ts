@@ -2226,7 +2226,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     if (createdParent && this.#options.durability.parentDirectoryFlush === "required") {
       await this.#syncDirectory(this.#options.runtimeHome);
     }
-    const created = await this.#createDatabaseFile(path);
+    await this.#createDatabaseFile(path);
     const identity = await this.#validateDatabaseFile(path);
     const database = new DatabaseSync(path, {
       allowExtension: false,
@@ -2267,7 +2267,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       await this.#validateDatabaseIdentity();
       await this.#validateSidecarIfPresent(`${path}-wal`);
       await this.#validateSidecarIfPresent(`${path}-shm`);
-      if (created || this.#options.durability.parentDirectoryFlush === "required") {
+      if (this.#options.durability.parentDirectoryFlush === "required") {
         await this.#syncDirectory(parent);
       }
     } catch (error) {
@@ -3849,16 +3849,14 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     return Object.freeze({ dev: info.dev, ino: info.ino });
   }
 
-  async #createDatabaseFile(path: string): Promise<boolean> {
+  async #createDatabaseFile(path: string): Promise<void> {
     const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
     let handle: FileHandle | undefined;
     try {
       handle = await open(path, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | noFollow, 0o600);
       await handle.sync();
-      return true;
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
-      return false;
     } finally {
       await handle?.close();
     }

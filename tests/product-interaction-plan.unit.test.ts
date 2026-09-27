@@ -350,7 +350,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     const exit = await state.execute("ExitPlanMode", {});
     expect(exit.isError).toBe(true);
     expect(JSON.stringify(exit.content)).toContain("No plan has been written");
-    expect(JSON.stringify(exit.content)).toContain(entered.planPath);
+    expect(JSON.stringify(exit.content)).toContain(JSON.stringify(entered.planPath).slice(1, -1));
     expect(state.questionRequests).toHaveLength(0);
     expect((await state.execute("Write", { file_path: entered.planPath, content: "# Synthetic plan\n" })).isError).toBe(false);
     state.questionResponders.push(state.answer(["Approve"]));

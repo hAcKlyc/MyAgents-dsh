@@ -11,7 +11,7 @@ import { SkillRegistry } from "@deepseek-ai/dsh-skill";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
-import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
+import { resolveRuntimePlatformTarget, selectPlatformAdapter } from "@myagents-dsh/product-profile";
 import {
   PRODUCT_STATIC_SKILL_PROVIDER,
   ProductSkillService,
@@ -110,7 +110,9 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
   await context.plugin(SystemPrompt);
   await context.plugin(ToolRuntime, { mode: "native" });
   await context.plugin(ToolCallTimeoutPolicy);
-  await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter("darwin-arm64") });
+  await context.plugin(LocalWorkspaceFileSystem, {
+    platform: selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)),
+  });
   await context.plugin(SkillRegistry);
   const session = context.sessions.create(SessionId("skill-session"));
   const agent = Object.freeze({ ctx: context, id: "skill-session", session }) as unknown as Agent;

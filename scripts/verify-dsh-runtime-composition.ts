@@ -1348,7 +1348,7 @@ const main = (): void => {
       || evidence.directRootLifecycleDisposed !== true
       || evidence.snapshotPreflightFailureDisposed !== true
       || evidence.startupFailureDisposed !== true
-      || typeof evidence.lateJobNoticeRequests !== "number" || evidence.lateJobNoticeRequests < 1
+      || typeof evidence.jobNoticeModelRequests !== "number" || evidence.jobNoticeModelRequests < 1
       || evidence.patchedWakePending !== true
       || evidence.publicationGuardsVerified !== true
       || evidence.publicationTransientVerified !== true

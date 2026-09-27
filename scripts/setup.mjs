@@ -94,7 +94,7 @@ const main = () => {
     throw new Error(`Full setup builds a Runtime artifact and needs Node 24.20.0 with npm 11.19.0:\n${failures.join("\n")}`);
   }
   if (!lstatSync(resolve(root, ".claude/skills")).isSymbolicLink()
-    || readlinkSync(resolve(root, ".claude/skills")) !== "../.agents/skills") {
+    || readlinkSync(resolve(root, ".claude/skills")).replaceAll("\\", "/") !== "../.agents/skills") {
     throw new Error(".claude/skills must be checked out as a symlink; enable Git symlink support and restore this path");
   }
   capture("git", ["--version"]);

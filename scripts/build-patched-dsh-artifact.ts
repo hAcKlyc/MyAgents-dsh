@@ -149,9 +149,11 @@ const safeEnvironment = (
     COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
     COREPACK_ENABLE_NETWORK: "0",
     COREPACK_HOME: corepackHome,
-    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_COUNT: "2",
     GIT_CONFIG_KEY_0: "core.autocrlf",
     GIT_CONFIG_VALUE_0: "false",
+    GIT_CONFIG_KEY_1: "core.longpaths",
+    GIT_CONFIG_VALUE_1: "true",
     HOME: home,
     NPM_CONFIG_OFFLINE: "true",
     NPM_CONFIG_GLOBALCONFIG: join(isolationRoot, "global.npmrc"),
@@ -360,12 +362,12 @@ const readPackedMembers = (
     capture: true,
     cwd,
     env: environment,
-  }).split("\n").filter(Boolean);
+  }).split(/\r?\n/u).filter(Boolean);
   const verbose = run("tar", ["-tvzf", artifactPath], {
     capture: true,
     cwd,
     env: environment,
-  }).split("\n").filter(Boolean);
+  }).split(/\r?\n/u).filter(Boolean);
   if (listed.length !== verbose.length || verbose.some((line) => !line.startsWith("-"))) {
     throw new Error(`${artifactPath} must contain regular files only`);
   }
@@ -805,7 +807,8 @@ const verifyArtifactCompile = (
     },
     files: fixturePaths,
   }, null, 2)}\n`);
-  const resolutionTrace = run(resolve(compileRoot, "node_modules/.bin/tsc"), [
+  const resolutionTrace = run(process.execPath, [
+    resolve(compileRoot, "node_modules/typescript/bin/tsc"),
     "-p",
     tsconfigPath,
     "--pretty",
@@ -1133,13 +1136,18 @@ const main = (): void => {
   const stagingRoot = mkdtempSync(resolve(dirname(outputRoot), ".myagents-dsh-artifact-"));
   const bundleRoot = resolve(stagingRoot, "bundle");
   const reproducibleRoot = resolve(stagingRoot, "reproducible");
-  const worktreeParent = mkdtempSync(join(tmpdir(), "myagents-dsh-artifact-source-"));
-  const worktree = resolve(worktreeParent, "deepseek-harness");
+  const worktreeBase = process.platform === "win32" && process.env.RUNNER_TEMP
+    ? process.env.RUNNER_TEMP
+    : tmpdir();
+  const worktreeParent = mkdtempSync(join(worktreeBase, "dsh-"));
+  const worktree = resolve(worktreeParent, "s");
   const isolationRoot = resolve(worktreeParent, "isolation");
   mkdirSync(isolationRoot);
   const isolatedHome = createIsolation(isolationRoot);
   const buildEnvironment = safeEnvironment(corepackHome, isolationRoot, isolatedHome);
   let worktreeRegistered = false;
+  let buildError: unknown;
+  let cleanupError: Error | undefined;
   try {
     const actualPnpm = run("corepack", ["pnpm", "--version"], {
       capture: true,
@@ -1225,16 +1233,26 @@ const main = (): void => {
     console.log(
       `patched DSH artifact OK: ${plan.artifactVersion}, ${packageEvidence.length} packages at ${outputRoot}`,
     );
+  } catch (error) {
+    buildError = error;
+    throw error;
   } finally {
-    if (worktreeRegistered) {
-      run("git", ["-C", sourceRoot, "worktree", "remove", "--force", worktree], {
-        cwd: repositoryRoot,
-        env: buildEnvironment,
-      });
+    try {
+      if (worktreeRegistered) {
+        run("git", ["-C", sourceRoot, "worktree", "remove", "--force", worktree], {
+          cwd: repositoryRoot,
+          env: buildEnvironment,
+        });
+      }
+    } catch (error) {
+      cleanupError = error instanceof Error ? error : new Error(String(error));
+      if (buildError !== undefined) console.error("artifact worktree cleanup failed after a build error:", error);
+    } finally {
+      rmSync(worktreeParent, { recursive: true, force: true });
+      rmSync(stagingRoot, { recursive: true, force: true });
     }
-    rmSync(worktreeParent, { recursive: true, force: true });
-    rmSync(stagingRoot, { recursive: true, force: true });
   }
+  if (cleanupError !== undefined) throw cleanupError;
 };
 
 if (resolve(process.argv[1] ?? "") === resolve(fileURLToPath(import.meta.url))) main();

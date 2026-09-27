@@ -47,7 +47,7 @@ import {
   resolveProductProcessAuthority,
   type ProductProcessRuntimeConfig,
 } from "@myagents-dsh/tools-process";
-import { selectPlatformAdapter } from "@myagents-dsh/product-profile";
+import { resolveRuntimePlatformTarget, selectPlatformAdapter } from "@myagents-dsh/product-profile";
 import { ProductPlanService, type ProductPlanController } from "@myagents-dsh/tools-interaction";
 import { LocalWorkspaceFileSystem, requireLocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 import { createHash } from "node:crypto";
@@ -232,7 +232,7 @@ const harness = async (options: Readonly<{
   )) as unknown as ProductProcessRuntimeConfig["executableSha256"]);
   const context = new Context();
   await context.plugin(FakeSubprocessRuntime);
-  await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter("darwin-arm64") });
+  await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)) });
   await context.plugin(AgentRegistry);
   const fakeSubprocess = context.subprocess as FakeSubprocessRuntime;
   const inject = vi.fn<(message: unknown) => void>();
@@ -275,7 +275,7 @@ const harness = async (options: Readonly<{
       pathPolicy: "sealed" as const,
       ripgrepRef: "ripgrep-v1",
     }),
-    platformTarget: "darwin-arm64" as const,
+    platformTarget: resolveRuntimePlatformTarget(process.platform, process.arch),
     network: Object.freeze({ mode: "deny" as const }),
     process: Object.freeze({
       backgroundRetention: options.backgroundRetention ?? "allow",
@@ -855,7 +855,7 @@ describe("official Shell tools with product policy", () => {
     });
     const result = await state.execute({ command: "large-output" });
     expect(result).toMatchObject({ isError: false, value: { stdout: { spillPath: output } }, meta: { exitCode: 0 } });
-    expect(JSON.stringify(result.content)).toContain(output);
+    expect(JSON.stringify(result.content)).toContain(JSON.stringify(output).slice(1, -1));
     const product: ProductToolContext = {
       agent: state.agent, birth: state.operation.birth, callId: "read-spill", catalog,
       clientOperationId: state.operation.clientOperationId, dshTurn: 1, environment: state.environment,

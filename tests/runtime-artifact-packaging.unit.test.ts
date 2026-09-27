@@ -43,7 +43,7 @@ describe("Runtime artifact packaging", () => {
     expect(materializeRuntimeArtifactFileLinks(artifact)).toBe(1);
     expect(lstatSync(alias).isFile()).toBe(true);
     expect(lstatSync(alias).isSymbolicLink()).toBe(false);
-    expect(lstatSync(alias).mode & 0o777).toBe(0o755);
+    if (process.platform !== "win32") expect(lstatSync(alias).mode & 0o777).toBe(0o755);
     expect(readFileSync(alias)).toEqual(readFileSync(target));
     expect(materializeRuntimeArtifactFileLinks(artifact)).toBe(0);
   });

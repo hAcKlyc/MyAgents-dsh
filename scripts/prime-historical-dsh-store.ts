@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { childCli } from "./child-cli.mjs";
-import { DSH_SEAM_SOURCE } from "./dsh-seam-decisions.js";
+import { DSH_SEAM_INSTALL_FILTERS, DSH_SEAM_SOURCE } from "./dsh-seam-decisions.js";
 import {
   PATCHED_DSH_COMPILE_TOOLING_AUTHORITY,
   PATCHED_DSH_EXTERNAL_PACKAGE_AUTHORITY,
@@ -16,8 +16,11 @@ if (sourceFlag < 0 || !sourceArgument) {
   throw new Error("usage: prime-historical-dsh-store --source <pinned DSH checkout>");
 }
 const source = realpathSync(resolve(sourceArgument));
-const parent = realpathSync(mkdtempSync(join(tmpdir(), "myagents-dsh-prime-")));
-const worktree = join(parent, "deepseek-harness");
+const worktreeBase = process.platform === "win32" && process.env.RUNNER_TEMP
+  ? process.env.RUNNER_TEMP
+  : tmpdir();
+const parent = realpathSync(mkdtempSync(join(worktreeBase, "dsh-prime-")));
+const worktree = join(parent, "s");
 const run = (command: string, args: readonly string[], cwd: string): void => {
   const env = { ...process.env, CI: "1" };
   const invocation = childCli(command, args, env);
@@ -44,11 +47,17 @@ try {
   mkdirSync(pnpmStore, { recursive: true });
   run("git", ["worktree", "add", "--detach", worktree, DSH_SEAM_SOURCE.commit], source);
   registered = true;
-  // Prime every required lockfile tarball while omitting unrelated optional Office engines.
+  // The offline artifact install includes optional dependencies, so the store
+  // must contain the same platform-selected graph before network isolation.
   run("corepack", ["pnpm", "install", "--frozen-lockfile", "--trust-lockfile",
-    "--ignore-scripts", "--no-optional", "--reporter=append-only", "--store-dir", pnpmStore], worktree);
-  // Prime platform-native packages from the historical lock. A full optional
-  // install also pulls unrelated Office engines, which this artifact never uses.
+    "--ignore-scripts", "--reporter=append-only", "--store-dir", pnpmStore], worktree);
+  // The seam compile uses a narrower workspace selection with dependencies
+  // omitted by the full install on some platforms. Warm that exact closure.
+  run("corepack", ["pnpm", "install", "--frozen-lockfile", "--trust-lockfile",
+    "--ignore-scripts", "--reporter=append-only", "--store-dir", pnpmStore,
+    ...DSH_SEAM_INSTALL_FILTERS], worktree);
+  // Prime platform-native packages from the historical lock even when an
+  // optional dependency is not selected by the workspace's own install.
   const platform = `${process.platform}-${process.arch}`;
   const markers: Record<string, readonly string[]> = {
     "darwin-arm64": ["darwin-arm64"],

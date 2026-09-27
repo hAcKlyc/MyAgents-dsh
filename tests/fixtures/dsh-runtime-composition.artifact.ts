@@ -63,6 +63,7 @@ import {
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_CANDIDATE_PROFILE_SHA256,
+  resolveRuntimePlatformTarget,
   selectPlatformAdapter,
 } from "@myagents-dsh/product-profile";
 import {
@@ -338,8 +339,14 @@ assert.throws(() => validateEffectiveToolCatalog({
   effectiveTools: ["StockWrongTool"],
 }), /effective tool catalog/u);
 
+const fixturePlatformTarget = resolveRuntimePlatformTarget(process.platform, process.arch);
+const fixtureHostPlatform = fixturePlatformTarget.startsWith("darwin") ? "darwin"
+  : fixturePlatformTarget === "linux-x64" ? "linux" : "win32";
+const fixtureHostArch = fixturePlatformTarget === "darwin-arm64" ? "arm64" : "x64";
 const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "myagents-dsh-w2-a2-artifact-")));
 const fixtureWorkspace = join(fixtureRoot, "workspace");
+const jobReleasePath = join(fixtureWorkspace, ".artifact-job-release");
+const shellLiteral = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 const fixtureRuntimeHome = join(fixtureRoot, "runtime-home");
 const fixtureForkRuntimeHome = join(fixtureRoot, "fork-runtime-home");
 const fixtureAbortedForkRuntimeHome = join(fixtureRoot, "fork-aborted-runtime-home");
@@ -411,13 +418,13 @@ const staticSkillCatalog = validateStaticSkillCatalog(Object.freeze({
   digest: staticSkillCatalogDigest(staticSkillCatalogAuthority),
 }));
 
-const waitUntil = async (predicate: () => boolean, description: string): Promise<void> => {
+const waitUntil = async (predicate: () => boolean, description: string | (() => string)): Promise<void> => {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await delay(10);
   }
-  throw new Error(`timed out waiting for ${description}`);
+  throw new Error(`timed out waiting for ${typeof description === "string" ? description : description()}`);
 };
 
 // The accumulated composition campaign intentionally keeps every prior tool,
@@ -439,8 +446,12 @@ const childAdapter = new ScriptedFakeLlmAdapter({
 const lateJobNoticeAdapter = new ScriptedFakeLlmAdapter({
   provider: "fixture", model: "fixture-model", contextWindow: artifactContextWindow,
 });
+const backgroundAgentReportAdapter = new ScriptedFakeLlmAdapter({
+  provider: "fixture", model: "fixture-model", contextWindow: artifactContextWindow,
+});
 class ArtifactRoutingLlmAdapter extends LlmAdapter {
   readonly completedInputs = new Set<string>();
+  readonly routeFacts: Array<Record<string, unknown>> = [];
   override providerInfo(provider: string): LlmProviderInfo {
     return adapter.providerInfo(provider);
   }
@@ -456,6 +467,21 @@ class ArtifactRoutingLlmAdapter extends LlmAdapter {
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const selected = options.sessionId === "dsh-artifact-primary" ? adapter : childAdapter;
     const input = options.messages.findLast(({ role, source }) => role === "user" && source?.kind === "myagents-operation");
+    this.routeFacts.push({
+      selected: selected === adapter,
+      inputId: input?.id,
+      operationId: input?.source?.kind === "myagents-operation" ? input.source.clientOperationId : undefined,
+      completed: input?.id === undefined ? false : this.completedInputs.has(input.id),
+      tailSource: options.messages.at(-1)?.source,
+    });
+    const tail = options.messages.at(-1);
+    if (selected === adapter && input?.source?.kind === "myagents-operation"
+      && input.source.clientOperationId === "artifact-background-agent-operation"
+      && tail?.role === "user" && tail.source?.kind === "agent-message") {
+      backgroundAgentReportAdapter.enqueue({ kind: "complete", text: "background Agent report reconciled" });
+      yield* backgroundAgentReportAdapter.stream(options);
+      return;
+    }
     // Real background Jobs can report after the scripted final answer. That
     // legitimate extra step must not consume the next user scenario's script.
     // The latest model message need not be the Job notice: DSH may append
@@ -486,7 +512,7 @@ await assert.rejects(startNativeRpcLifecycle(startupFailureComposition, {
   input: closedStartupInput,
   output: openStartupOutput,
   runtimeGeneration: "startup-failure-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }), /must be open before plugin installation/u);
 assert.throws(() => startupFailureComposition.snapshot(), /disposing or disposed/u);
 openStartupOutput.destroy();
@@ -505,7 +531,7 @@ await assert.rejects(startNativeRpcLifecycle(snapshotFailureComposition, {
   input: snapshotFailureInput,
   output: snapshotFailureOutput,
   runtimeGeneration: "snapshot-failure-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }), /provider registry differs from its authority/u);
 assert.throws(() => snapshotFailureComposition.snapshot(), /disposing or disposed/u);
 snapshotFailureInput.destroy();
@@ -531,7 +557,7 @@ for (const childContext of [
     input: childInput,
     output: childOutput,
     runtimeGeneration: "child-scope-generation",
-    platformTarget: "darwin-arm64",
+    platformTarget: fixturePlatformTarget,
   })), /direct-root RuntimeProcessLifecycle authority/u);
   childInput.destroy();
   childOutput.destroy();
@@ -807,7 +833,7 @@ adapter.enqueue({
       name: "bash",
       arguments: JSON.stringify({
         description: "Artifact large output check",
-        command: `while [ ! -f .artifact-job-release ]; do /bin/sleep 0.01; done; ${JSON.stringify(process.execPath)} -e 'process.stdout.write("x".repeat(200004))'`,
+        command: `while [ ! -f ${shellLiteral(jobReleasePath)} ]; do /bin/sleep 0.01; done; ${shellLiteral(process.execPath)} -e 'process.stdout.write("x".repeat(200004))'`,
         run_in_background: true,
       }),
     },
@@ -1036,8 +1062,11 @@ let preAssistantCommitTransformHits = 0;
 const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
 const artifactRipgrepPath = await resolveRgPath();
+const artifactShellPath = await realpath(process.platform === "win32"
+  ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe")
+  : "/bin/bash");
 const executableSha256 = Object.freeze({
-  shell: createHash("sha256").update(await readFile("/bin/bash")).digest("hex"),
+  shell: createHash("sha256").update(await readFile(artifactShellPath)).digest("hex"),
   bundledNode: createHash("sha256").update(await readFile(process.execPath)).digest("hex"),
   ripgrep: createHash("sha256").update(await readFile(artifactRipgrepPath)).digest("hex"),
 });
@@ -1097,14 +1126,14 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
     mode: "default",
   }),
   plan: Object.freeze({ revision: "artifact-plan-v1" }),
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
   process: Object.freeze({
     shellDialect: "bash",
     allowedCommandRefs: Object.freeze(["bundled-bash", "bundled-node", "bundled-ripgrep"]),
     environmentValues: Object.freeze({}),
     executableSha256,
     executablePaths: Object.freeze({
-      shell: "/bin/bash",
+      shell: artifactShellPath,
       bundledNode: process.execPath,
       ripgrep: artifactRipgrepPath,
     }),
@@ -1286,7 +1315,7 @@ await assert.rejects(Promise.resolve(mismatchedPlatformComposition.context.plugi
   input: mismatchedPlatformInput,
   output: mismatchedPlatformOutput,
   runtimeGeneration: "mismatched-platform-generation",
-  platformTarget: "linux-x64",
+  platformTarget: fixturePlatformTarget === "linux-x64" ? "darwin-arm64" : "linux-x64",
 })), /direct-root RuntimeProcessLifecycle authority/u);
 await mismatchedPlatformComposition.dispose();
 mismatchedPlatformInput.destroy();
@@ -1322,7 +1351,7 @@ await assert.rejects(Promise.resolve(bareContext.plugin(NativeRpcServer, {
   input: bareInput,
   output: bareOutput,
   runtimeGeneration: "bare-accepted-context",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 })), /direct-root RuntimeProcessLifecycle authority/u);
 await bareContext.fiber.dispose();
 bareInput.destroy();
@@ -1362,7 +1391,7 @@ const runtimeLifecycle = await startNativeRpcLifecycle(composition, {
   input: runtimeInput,
   output: runtimeOutput,
   runtimeGeneration: "artifact-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }, {
   processBoundary: {
     subscribe: (listener) => {
@@ -1628,8 +1657,8 @@ const initializeRequest: InitializeParams = {
   host: {
     name: "artifact-standard-test-host",
     version: "0.1.0",
-    platform: "darwin",
-    arch: "arm64",
+    platform: fixtureHostPlatform,
+    arch: fixtureHostArch,
     nodeVersion: "24.20.0",
   },
   productSessionId: "artifact-product-session",
@@ -1848,7 +1877,7 @@ await hostModelComposition.context.plugin(NativeRpcServer, {
   input: hostModelInput,
   output: hostModelOutput,
   runtimeGeneration: "artifact-host-model-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 });
 const hostModelServer = hostModelComposition.context.nativeRpc;
 const hostModelClient = new GeneratedHostClient(hostModelPeer);
@@ -2151,7 +2180,7 @@ await directRootComposition.context.plugin(NativeRpcServer, {
   input: directRootInput,
   output: directRootOutput,
   runtimeGeneration: "direct-root-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 });
 await assert.rejects(
   installCanonicalToolPlane(directRootComposition, canonicalToolPlaneConfig),
@@ -2342,7 +2371,7 @@ configurationMismatchComposition.context.productSession.bindExecutionEnvironment
   environment: initializeRequest.executionEnvironment.environment,
   executables: initializeRequest.executionEnvironment.executables,
   network: initializeRequest.executionEnvironment.network,
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
   process: initializeRequest.executionEnvironment.process,
   revision: initializeRequest.executionEnvironment.revision,
   runtimeHome: initializeRequest.runtimeHome,
@@ -2351,7 +2380,7 @@ configurationMismatchComposition.context.productSession.bindExecutionEnvironment
 configurationMismatchComposition.context.productSession.bindWorkspace({
   identity: initializeRequest.workspace.identity,
   path: initializeRequest.workspace.path,
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 });
 await assert.rejects(
   configurationMismatchComposition.context.productSession.bindCreate({
@@ -2616,7 +2645,7 @@ const approvalRuntimeContext = "Current runtime context. This snapshot supersede
   + `${fixtureWorkspace}\n\n`
   + "Use this exact absolute path for file and search tools that require one. The available Shell tool runs in this workspace. "
   + "Do not infer access outside it.\n\n"
-  + "Runtime platform: darwin-arm64. Available Shell tool: bash. Executable: /bin/bash. "
+  + `Runtime platform: ${fixturePlatformTarget}. Available Shell tool: bash. Executable: ${artifactShellPath}. `
   + "Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. "
   + "Query the executable's version before relying on version-specific features. "
   + "Execution uses the local user's OS permissions; no OS file sandbox is active. "
@@ -2795,7 +2824,7 @@ assert.deepEqual(await hostClient.sessionForkCommit({
 }), forkCommitted);
 assert.deepEqual(primaryAgent.session.snapshotEvents(), rewindTargetEvents);
 const forkDatabase = new DatabaseSync(productSessionDatabasePath(
-  selectPlatformAdapter("darwin-arm64"),
+  selectPlatformAdapter(fixturePlatformTarget),
   fixtureForkRuntimeHome,
 ), { readOnly: true });
 const forkSession = forkDatabase.prepare(`
@@ -2855,7 +2884,7 @@ assert.deepEqual(forkTailEvent, {
 forkDatabase.close();
 const forkReloadContext = new Context();
 await forkReloadContext.plugin(SessionStore);
-const forkPlatform = selectPlatformAdapter("darwin-arm64");
+const forkPlatform = selectPlatformAdapter(fixturePlatformTarget);
 await forkReloadContext.plugin(ProductSqliteSessionPersistence, {
   durability: forkPlatform.sqliteDurabilityPlan(productSessionDatabasePath(
     forkPlatform,
@@ -2892,7 +2921,7 @@ assert.deepEqual(await hostClient.sessionForkAbort({
   token: forkAbortPrepared.token,
 }), forkAborted);
 const abortedForkDatabase = new DatabaseSync(productSessionDatabasePath(
-  selectPlatformAdapter("darwin-arm64"),
+  selectPlatformAdapter(fixturePlatformTarget),
   fixtureAbortedForkRuntimeHome,
 ), { readOnly: true });
 assert.equal(
@@ -3046,10 +3075,19 @@ let backgroundJobsReleased = false;
 const stopJobDeliveryBarrier = composition.context.on("agent/turn-stopping", async ({ agent }) => {
   if (agent !== primaryAgent || backgroundJobsReleased) return;
   backgroundJobsReleased = true;
-  await writeFile(join(fixtureWorkspace, ".artifact-job-release"), "synthetic job barrier\n");
+  await writeFile(jobReleasePath, "synthetic job barrier\n");
   await waitUntil(() => agent.session.snapshotEvents().filter((event) => event.type === "agent/inbox/spliced"
     && event.data.inserted.some(({ source }) => source.kind === "tool-jobs"
-      && source.form === "notice")).length === 2, "both real Jobs publish their native completion notices");
+      && source.form === "notice")).length === 2, () => `both real Jobs publish their native completion notices: ${JSON.stringify({
+    jobs: composition.context.jobs.list(agent.session.id).map(({ id, status, detail }) => ({ id, status, detail })),
+    backgroundToolResults: agent.session.deriveMessages().filter(({ role, source }) => role === "tool"
+      && ["artifact-background-bash-call", "artifact-background-flood-call"]
+        .includes(String(source.callId))).map(({ source, content }) => ({
+      source,
+      content: content.map((block) => block.type === "text" ? block.text.slice(0, 300) : block.type),
+    })),
+    pendingStepSources: agent.inbox.nextStep.map(({ source }) => source),
+  })}`);
 });
 await composition.context.sdkOperations.start({
   ...turnStartParams,
@@ -3063,7 +3101,23 @@ await waitUntil(
   "bounded process/search operation terminal",
 );
 stopJobDeliveryBarrier();
-assert.ok(lateJobNoticeAdapter.requests.length >= 1, "the real late Job notice must execute an additional model step");
+const processSearchModelRequests = [...adapter.requests, ...lateJobNoticeAdapter.requests].filter(({ messages }) => {
+  const source = messages.findLast(({ role, source }) => role === "user" && source?.kind === "myagents-operation")?.source;
+  return source?.kind === "myagents-operation" && source.clientOperationId === "artifact-process-search-operation";
+});
+const modeledJobNoticeIds = new Set(processSearchModelRequests.flatMap(({ messages }) =>
+  messages.filter(({ source }) => source?.kind === "tool-jobs" && source.form === "notice").map(({ id }) => id)));
+assert.equal(modeledJobNoticeIds.size, 2, `both real Job notices must reach the model: ${JSON.stringify({
+  modeledIds: [...modeledJobNoticeIds],
+  modelRequestSources: processSearchModelRequests.map(({ messages }) => messages.slice(-6).map(({ source }) => source)),
+  durableNotices: primaryAgent.session.deriveMessages().filter(({ source }) => source.kind === "tool-jobs")
+    .map(({ id, source }) => ({ id, source })),
+  pendingStepSources: primaryAgent.inbox.nextStep.map(({ source }) => source),
+  agentStatus: primaryAgent.status,
+  terminal: composition.context.sdkOperations.lookup("artifact-process-search-operation")?.terminal,
+  hostFatalErrors: hostFatalErrors.map(({ message }) => message),
+  routes: routedAdapter.routeFacts.slice(-8),
+})}`);
 assert.ok(lateJobNoticeAdapter.requests.every(({ messages }) => {
   const source = messages.findLast(({ role, source }) => role === "user" && source?.kind === "myagents-operation")?.source;
   return source?.kind === "myagents-operation" && source.clientOperationId === "artifact-process-search-operation";
@@ -3106,7 +3160,10 @@ const processSearchText = (callId: string): string => {
 const durableToolText = (callId: string, expectedContentLength = 1): string => {
   const event = primaryAgent.session.snapshotEvents().findLast((candidate) => candidate.type === "tool/result"
     && String(candidate.data.message.source.callId) === callId);
-  assert.ok(event?.type === "tool/result");
+  assert.ok(event?.type === "tool/result", `missing ${callId}: ${JSON.stringify({
+    routes: routedAdapter.routeFacts.slice(-8),
+    adapterRequests: adapter.requests.length,
+  })}`);
   const resultBlock = event.data.message;
   assert.equal(resultBlock.role, "tool");
   let productWorkDiagnostic: unknown;
@@ -3562,7 +3619,6 @@ childAdapter.enqueue({
 });
 childAdapter.enqueue({ kind: "await-abort" });
 adapter.enqueue({ kind: "complete", text: "background Agent admitted" });
-adapter.enqueue({ kind: "complete", text: "background Agent report reconciled" });
 await composition.context.sdkOperations.start({
   ...turnStartParams,
   clientOperationId: "artifact-background-agent-operation",
@@ -4240,7 +4296,7 @@ assert.equal(processSignalListener, undefined);
 assert.equal(adapter.activeStreamCount, 0);
 assert.equal(nativeRpc.phase, "disposed");
 assert.equal(hostAttachmentLeases.size, 0);
-const persistencePlatform = selectPlatformAdapter("darwin-arm64");
+const persistencePlatform = selectPlatformAdapter(fixturePlatformTarget);
 const persistencePath = productSessionDatabasePath(persistencePlatform, fixtureRuntimeHome);
 const persistenceProbe = new DatabaseSync(persistencePath, { readOnly: true });
 const persistenceMeta = persistenceProbe.prepare(
@@ -4326,7 +4382,7 @@ const failedResumeLifecycle = await startNativeRpcLifecycle(failedResumeComposit
   input: failedResumeInput,
   output: failedResumeOutput,
   runtimeGeneration: "artifact-failed-resume-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }, {
   processBoundary: {
     subscribe: () => () => undefined,
@@ -4455,7 +4511,7 @@ const resumedLifecycle = await startNativeRpcLifecycle(resumedComposition, {
   input: resumeRuntimeInput,
   output: resumeRuntimeOutput,
   runtimeGeneration: "artifact-resume-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }, {
   processBoundary: {
     subscribe: () => () => undefined,
@@ -4918,7 +4974,7 @@ const purgeLifecycle = await startNativeRpcLifecycle(purgeComposition, {
   input: purgeRuntimeInput,
   output: purgeRuntimeOutput,
   runtimeGeneration: "artifact-purge-generation",
-  platformTarget: "darwin-arm64",
+  platformTarget: fixturePlatformTarget,
 }, {
   processBoundary: {
     subscribe: () => () => undefined,
@@ -5039,7 +5095,8 @@ process.stdout.write(`${JSON.stringify({
   snapshotPreflightFailureDisposed: true,
   startupFailureDisposed: true,
   contexts: adapter.requests.slice(0, 2).map(({ messages }) => messages.length),
-  lateJobNoticeRequests: lateJobNoticeAdapter.requests.length,
+  jobNoticeModelRequests: processSearchModelRequests.filter(({ messages }) =>
+    messages.some(({ source }) => source?.kind === "tool-jobs" && source.form === "notice")).length,
   nativeRpcEngineVersion: rpcInitialization.runtimeEngine.version,
   nativeRpcInitialized: rpcStatus.initialized,
   nativeRpcProfileDigest: rpcInitialization.profileDigest,

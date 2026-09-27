@@ -1,5 +1,6 @@
 import type { MethodParams, MethodResult } from "@myagents-dsh/protocol";
 import type { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
+import { validateHostDeepSeekProfile } from "@myagents-dsh/runtime-product";
 import {
   REFERENCE_WEB_CONFIG_REVISION,
   REFERENCE_WEB_CREDENTIAL_REVISION,
@@ -47,6 +48,10 @@ const extensionCatalog: MethodResult<"extension/catalog"> = {
 };
 
 describe("Reference Web Host production profile", () => {
+  it("uses the official DeepSeek route accepted by the Runtime", () => {
+    expect(validateHostDeepSeekProfile(REFERENCE_WEB_PROVIDER)).toEqual(REFERENCE_WEB_PROVIDER);
+  });
+
   it("keeps the DeepSeek credential behind the reverse port", async () => {
     const secret = "synthetic-reference-web-key";
     const resolveCredential = createReferenceWebCredentialResolver(secret);
