@@ -31,7 +31,8 @@ export const inspectDynamicArtifact = (
   const entrypoint = resolve(root, installed.manifest.entrypoint);
   const entry = lstatSync(entrypoint);
   if (!entry.isFile() || entry.isSymbolicLink() || entry.nlink !== 1
-    || ((entry.mode & 0o777) !== 0o644 && (entry.mode & 0o777) !== 0o755)) {
+    || (process.platform !== "win32"
+      && (entry.mode & 0o777) !== 0o644 && (entry.mode & 0o777) !== 0o755)) {
     throw new TypeError("dynamic Runtime artifact entrypoint must be one canonical singly-linked file");
   }
   return Object.freeze({

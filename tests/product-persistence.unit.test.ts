@@ -186,7 +186,7 @@ describe("ProductSqliteSessionPersistence", () => {
   it("derives one fixed database location from every selected platform adapter", () => {
     expect(Object.isFrozen(PRODUCT_PERSISTENCE_LIMITS)).toBe(true);
     expect(productSessionDatabasePath(
-      nativePlatform(),
+      selectPlatformAdapter("darwin-arm64"),
       "/Users/fixture/Library/Application Support/MyAgents",
     )).toBe("/Users/fixture/Library/Application Support/MyAgents/persistence/sessions-v1.sqlite");
     expect(productSessionDatabasePath(
@@ -296,6 +296,12 @@ describe("ProductSqliteSessionPersistence", () => {
     await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
 
     const moved = `${databasePath}.moved`;
+    if (process.platform === "win32") {
+      await expect(rename(databasePath, moved)).rejects.toMatchObject({ code: "EBUSY" });
+      expect(await context.sessionPersistence.list()).toHaveLength(1);
+      await context.fiber.dispose();
+      return;
+    }
     await rename(databasePath, moved);
     await symlink(moved, databasePath);
     await expect(context.sessionPersistence.list()).rejects.toThrow(/identity changed/u);
@@ -1133,6 +1139,7 @@ describe("ProductSqliteSessionPersistence", () => {
       cursor = page.nextCursor;
     } while (cursor !== undefined);
     expect(assembler.finish().map(({ data }) => data)).toEqual(events.map(({ data }) => data));
+    await context.fiber.dispose();
   });
 
   it("projects one stable hash-verified cursor chain and chunks an oversized event", async () => {

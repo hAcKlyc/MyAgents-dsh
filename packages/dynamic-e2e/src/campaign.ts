@@ -93,7 +93,7 @@ export const verifyDynamicCampaign = async (
   const campaignPath = resolve(lexicalRoot, "campaign.json");
   const campaignEntry = await lstat(campaignPath);
   if (!campaignEntry.isFile() || campaignEntry.isSymbolicLink() || campaignEntry.nlink !== 1
-    || (campaignEntry.mode & 0o777) !== 0o400) {
+    || (process.platform !== "win32" && (campaignEntry.mode & 0o777) !== 0o400)) {
     throw new TypeError("dynamic campaign manifest identity is unsafe");
   }
   const bytes = await readFile(campaignPath);

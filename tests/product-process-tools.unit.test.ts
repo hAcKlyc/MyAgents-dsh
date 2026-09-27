@@ -855,7 +855,7 @@ describe("official Shell tools with product policy", () => {
     });
     const result = await state.execute({ command: "large-output" });
     expect(result).toMatchObject({ isError: false, value: { stdout: { spillPath: output } }, meta: { exitCode: 0 } });
-    expect(JSON.stringify(result.content)).toContain(output);
+    expect(JSON.stringify(result.content)).toContain(JSON.stringify(output).slice(1, -1));
     const product: ProductToolContext = {
       agent: state.agent, birth: state.operation.birth, callId: "read-spill", catalog,
       clientOperationId: state.operation.clientOperationId, dshTurn: 1, environment: state.environment,

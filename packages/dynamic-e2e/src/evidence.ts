@@ -163,7 +163,7 @@ export const verifySealedDynamicEvidence = async (
   const manifestPath = resolve(lexicalRoot, "manifest.json");
   const manifestEntry = await lstat(manifestPath);
   if (!manifestEntry.isFile() || manifestEntry.isSymbolicLink() || manifestEntry.nlink !== 1
-    || (manifestEntry.mode & 0o777) !== 0o400) {
+    || (process.platform !== "win32" && (manifestEntry.mode & 0o777) !== 0o400)) {
     throw new TypeError("sealed dynamic evidence manifest identity is unsafe");
   }
   const manifestBytes = await readFile(manifestPath);
@@ -195,7 +195,8 @@ export const verifySealedDynamicEvidence = async (
     }
     const filePath = resolve(lexicalRoot, path);
     const fileEntry = await lstat(filePath);
-    if (!fileEntry.isFile() || fileEntry.isSymbolicLink() || fileEntry.nlink !== 1 || (fileEntry.mode & 0o777) !== 0o400) {
+    if (!fileEntry.isFile() || fileEntry.isSymbolicLink() || fileEntry.nlink !== 1
+      || (process.platform !== "win32" && (fileEntry.mode & 0o777) !== 0o400)) {
       throw new TypeError("sealed dynamic evidence file identity is unsafe");
     }
     const bytes = await readFile(filePath);
