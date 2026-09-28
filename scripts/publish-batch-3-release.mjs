@@ -97,7 +97,7 @@ export function renderReleaseNotesWithDshProvenance(notes, sourceCommit, baselin
     + `| Pinned upstream DSH source | [\`${upstream.commit}\`](https://github.com/deepseek-ai/deepseek-harness/commit/${upstream.commit}) |\n`
     + `| Pinned upstream source tree | \`${upstream.tree}\` |\n`
     + `| Package release/source association | \`${baseline.executableBaseline.sourceAssociation}\` |\n`
-    + `| MyAgents patched DSH package | \`${dsh.version}\` |\n`
+    + `| MyAgents patched DSH package | \`${dsh.artifactVersion}\` |\n`
     + `| Patch series SHA-256 | \`${dsh.patchSeriesSha256}\` |\n`
     + `| Patched DSH artifact manifest SHA-256 | \`${dsh.artifactManifestSha256}\` |\n`;
 }
