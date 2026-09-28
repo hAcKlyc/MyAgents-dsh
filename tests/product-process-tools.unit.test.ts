@@ -741,7 +741,7 @@ describe("official Shell tools with product policy", () => {
       const result = await state.execute({ command: "printf output; exit 7" });
       expect(result).toMatchObject({ isError: false, meta: { exitCode: 7, status: "failed" }, value: { kind: "foreground", exitCode: 7, timedOut: false, stdout: { text: "output\n" }, stderr: { text: "warning\n" } } });
       const spec = state.fakeSubprocess.specs[0];
-      expect(spec?.argv).toEqual([state.config.executablePaths.shell, "-c", "printf output; exit 7"]);
+      expect(spec?.argv).toEqual(["bash", "-c", "printf output; exit 7"]);
       expect(spec?.cwd).toBe(state.workspace);
       expect(spec?.env).toMatchObject({ PATH: "/usr/bin:/bin", DSH_HOME: state.runtimeHome, DSH_SESSION_ID: state.agent.id, DSH_SHELL: "1" });
       expect(spec?.env?.MYAGENTS_SHELL_PRIVATE_FIXTURE).toBeUndefined();

@@ -381,9 +381,9 @@ export class ProductProcessRuntime extends Service {
     if (this.live.size + this.reservations >= authority.maxChildren) {
       throw new ProductToolError("process_failed", "process quota is exhausted");
     }
+    // The Shell executor owns argv, including the sandbox runner when confined.
     const handle = spawn({
       ...spec,
-      argv: [authority.shellPath, ...spec.argv.slice(1)],
       cwd: call.cwd,
       env: { ...authority.env, ...spec.env },
     });

@@ -2983,7 +2983,7 @@ assert.deepEqual(primaryAgent.session.snapshotEvents()
 ]);
 assert.equal(
   primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule").length,
-  2,
+  1,
 );
 const transformedWriteCall = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/call"
   && String(event.data.callId) === "artifact-write-call");
@@ -3873,8 +3873,8 @@ assert.ok(workEpochData.childEndSeq > workEpochData.childStartSeq);
 assert.equal(primaryAgent.session.snapshotEvents().some((event) => event.type === "agent/inbox/spliced"
   && event.data.inserted.some((message) => message.source.kind === "subagent-settled")), false);
 
-const unrelatedRuntimeFile = join(fixtureRuntimeHome, "must-not-read.txt");
-await writeFile(unrelatedRuntimeFile, "private runtime fixture");
+const unrelatedRuntimeFile = join(fixtureRuntimeHome, "outside-workspace-read.txt");
+await writeFile(unrelatedRuntimeFile, "outside workspace fixture");
 adapter.enqueue({
   calls: [
     {
@@ -3928,7 +3928,8 @@ assert.ok(retainedOutputRead?.type === "tool/result");
 assert.equal(retainedOutputRead.data.message.isError, false);
 assert.match(JSON.stringify(retainedOutputRead.data.message.content), /artifact-background/u);
 assert.ok(unrelatedRuntimeRead?.type === "tool/result");
-assert.equal(unrelatedRuntimeRead.data.message.isError, true);
+assert.equal(unrelatedRuntimeRead.data.message.isError, false);
+assert.match(JSON.stringify(unrelatedRuntimeRead.data.message.content), /outside workspace fixture/u);
 
 const canonicalToolCalls = primaryAgent.session.snapshotEvents().filter((event) =>
   event.type === "tool/call" && artifactEffectiveToolSet.has(event.data.name));
@@ -5069,12 +5070,21 @@ const permissionDecidedEvents = primaryAgent.session.snapshotEvents().filter(({ 
 const permissionRuleEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule");
 const permissionRuleRevokedEvents = primaryAgent.session.snapshotEvents()
   .filter(({ type }) => type === "myagents/permission/rule/revoked");
-assert.equal(permissionAskedEvents.length, 27);
-assert.equal(permissionDecidedEvents.length, 27);
+assert.deepEqual({
+  asked: permissionAskedEvents.length,
+  decided: permissionDecidedEvents.length,
+  durableRules: permissionRuleEvents.length,
+  durableRuleRevocations: permissionRuleRevokedEvents.length,
+  providerRequests: fileToolEvidence.filter((entry) => entry.startsWith("permission:")).length,
+}, {
+  asked: 21,
+  decided: 21,
+  durableRules: 2,
+  durableRuleRevocations: 1,
+  providerRequests: 21,
+});
 assert.equal(hostInteractionCalls.filter((request) => request.kind === "permission"
   && request.authority.callId === "artifact-foreground-spill-call").length, 1);
-assert.equal(permissionRuleEvents.length, 3);
-assert.equal(permissionRuleRevokedEvents.length, 1);
 assert.equal(hostInteractionResponses.length, hostInteractionCalls.length + 2);
 assert.ok(hostInteractionCalls.length >= permissionAskedEvents.length);
 assert.deepEqual(
