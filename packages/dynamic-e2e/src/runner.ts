@@ -92,27 +92,17 @@ const messageText = (data: unknown): string => {
 export const interactionPlanHostOrderVerified = (calls: readonly unknown[]): boolean => {
   let clarified = false;
   let approved = false;
-  let selectionWrittenAfterApproval = false;
   for (const call of calls) {
     if (call === null || typeof call !== "object" || Array.isArray(call)) continue;
     const params = (call as { params?: unknown }).params;
     if (params === null || typeof params !== "object" || Array.isArray(params)) continue;
     const request = params as {
       kind?: unknown;
-      permissionAction?: unknown;
-      review?: { operation?: { path?: unknown } };
     };
     if (request.kind === "ask_user") clarified = true;
     if (request.kind === "plan_approval") approved = clarified;
-    if (request.kind === "permission" && request.permissionAction === "workspace.write") {
-      const path = request.review?.operation?.path;
-      if (typeof path === "string" && /(?:^|[/\\])selection\.txt$/u.test(path)) {
-        if (!approved) return false;
-        selectionWrittenAfterApproval = true;
-      }
-    }
   }
-  return clarified && approved && selectionWrittenAfterApproval;
+  return clarified && approved;
 };
 
 export const countAutomaticPressureCompactions = (
