@@ -16,7 +16,7 @@
   "credentialRevision": "deepseek-official-credential-v1",
   "materialField": "apiKey",
   "systemPrompt": "Operate only within the synthetic compaction continuity fixture. Preserve the latest user goal, corrections, exact identifiers, verified state, and immediate next action. Do not modify files, call tools, or expose hidden Runtime details.",
-  "permissionMode": "default",
+  "permissionMode": "approval-required",
   "interactionScenario": "host-interaction-v1",
   "networkPolicyRef": "deepseek-official-web-search-v1",
   "webSearchAdapters": ["deepseek-official-native-web-search"]

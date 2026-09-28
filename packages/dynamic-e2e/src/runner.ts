@@ -237,8 +237,6 @@ const createInitializeParams = (
       workspace: {
         identity: `workspace-${workspace.runId}`,
         canonicalRoot: workspace.workspace,
-        allowedReadRoots: [workspace.workspace],
-        allowedWriteRoots: [workspace.workspace],
       },
       executables: {
         bundledNodeRef: "bundled-node",

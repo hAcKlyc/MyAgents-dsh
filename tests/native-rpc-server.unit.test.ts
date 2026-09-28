@@ -112,7 +112,7 @@ vi.mock("@myagents-dsh/runtime-product", async () => {
         ...(params.mode === "plan" ? { planPath: "/fixture/runtime-home/plans/plan.md" } : {}),
       })),
       permissionRulesList: () => Object.freeze({
-        permissionMode: "dontAsk",
+        permissionMode: "workspace-autonomous",
         autoAllowTools: Object.freeze(["Read"]),
         revision: "c".repeat(64),
         rules: Object.freeze([]),
@@ -403,8 +403,6 @@ const initializeParams = (): InitializeParams => ({
     workspace: {
       identity: "synthetic-workspace",
       canonicalRoot: "/fixture/workspace",
-      allowedReadRoots: ["/fixture/workspace"],
-      allowedWriteRoots: ["/fixture/workspace"],
     },
     executables: {
       bundledNodeRef: "bundled-node",
@@ -455,8 +453,6 @@ const initializeParamsForTarget = (target: PlatformTarget): InitializeParams => 
     params.runtimeHome = "C:\\fixture\\runtime-home";
     params.workspace.path = "C:\\fixture\\workspace";
     params.executionEnvironment.workspace.canonicalRoot = "C:\\fixture\\workspace";
-    params.executionEnvironment.workspace.allowedReadRoots = ["C:\\fixture\\workspace"];
-    params.executionEnvironment.workspace.allowedWriteRoots = ["C:\\fixture\\workspace"];
     params.executionEnvironment.attachmentStagingRoot = "C:\\fixture\\attachments";
   }
   return params;
@@ -482,7 +478,7 @@ const sessionParams = (
   configRevision: "config-v1",
   extensionDigest: digest,
   systemPrompt: "Synthetic primary Session prompt.",
-  permissionMode: "default",
+  permissionMode: "approval-required",
   interactionScenario: "deterministic-headless",
 });
 
@@ -622,7 +618,7 @@ describe("native RPC Cordis service", () => {
       await expect(within("config/apply", harness.client.configApply({
         revision: "config-v2",
         provider: { ...session.provider, revision: "provider-v2" },
-        permissionMode: "dontAsk",
+        permissionMode: "workspace-autonomous",
         interactionScenario: "deterministic-headless-v2",
         systemPrompt: "Updated synthetic prompt.",
         executionEnvironmentRevision: "environment-v1",
@@ -645,7 +641,7 @@ describe("native RPC Cordis service", () => {
       });
       await expect(within("permission/rules/list", harness.client.permissionRulesList({})))
         .resolves.toEqual({
-          permissionMode: "dontAsk",
+          permissionMode: "workspace-autonomous",
           autoAllowTools: ["Read"],
           revision: "c".repeat(64),
           rules: [],

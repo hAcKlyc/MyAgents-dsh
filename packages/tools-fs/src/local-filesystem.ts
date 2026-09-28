@@ -1,5 +1,6 @@
 import { type FileSystem, FsError, FsTargetKey, FsVersion } from "@deepseek-ai/dsh-fs";
-import { LocalFileSystem } from "@deepseek-ai/dsh-fs-local";
+import { SandboxedFileSystem } from "@deepseek-ai/dsh-fs-sandbox";
+import type { SandboxExecutionPolicy } from "@deepseek-ai/dsh-sandbox";
 import type {
   FsDirEntry,
   FsEditOutcome,
@@ -194,7 +195,7 @@ export interface LocalAttachmentIoAuthority {
   ) => Promise<LocalAttachmentStagingFile>;
 }
 
-export class LocalWorkspaceFileSystem extends LocalFileSystem {
+export class LocalWorkspaceFileSystem extends SandboxedFileSystem {
   // Platform selection belongs to composition, not the stock provider's cwd config.
   static override Config = undefined as never;
   private readonly fileCalls = new AsyncLocalStorage<Readonly<{ target: FsTarget; beforePublish?: () => Promise<void> }>>();
@@ -614,9 +615,10 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
     content: string,
     expected?: FsWriteIntent,
     signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsWriteOutcome> {
     return this.withPublicationGuard(target, expected, signal,
-      () => super.writeText(target, content, expected, signal));
+      () => super.writeText(target, content, expected, signal, sandboxPolicy));
   }
 
   override async editText(
@@ -624,10 +626,11 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
     edit: FsEditRequest,
     expected?: { version: ReturnType<typeof FsVersion> },
     signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsEditOutcome> {
     return this.withPublicationGuard(target,
       expected === undefined ? undefined : { kind: "replaceIfVersion", version: expected.version }, signal,
-      () => super.editText(target, edit, expected, signal));
+      () => super.editText(target, edit, expected, signal, sandboxPolicy));
   }
 
   private lexicalPath(value: string, cwd?: string): string {
@@ -1008,16 +1011,13 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
     }
     const target = await this.resolve(path, { signal });
     if (target.displayPath !== path) throw new FsError("checkpoint directory aliases are forbidden", "FS_SANDBOX_DENIED");
-    let contained = false;
-    for (const rootPath of environment.workspace.allowedWriteRoots) {
-      const root = await this.resolve(rootPath, { signal });
-      const rootInfo = await lstat(rootPath);
-      if (root.displayPath !== rootPath || !rootInfo.isDirectory() || rootInfo.isSymbolicLink()) {
-        throw new FsError("checkpoint directory write root changed", "FS_SANDBOX_DENIED");
-      }
-      if (this.contains(root, target)) contained = true;
+    const rootPath = environment.workspace.canonicalRoot;
+    const root = await this.resolve(rootPath, { signal });
+    const rootInfo = await lstat(rootPath);
+    if (root.displayPath !== rootPath || !rootInfo.isDirectory() || rootInfo.isSymbolicLink()
+      || !this.contains(root, target)) {
+      throw new FsError("checkpoint directory is outside the workspace", "FS_SANDBOX_DENIED");
     }
-    if (!contained) throw new FsError("checkpoint directory is outside write roots", "FS_SANDBOX_DENIED");
     const info = await lstat(path).catch((error: unknown) => {
       if (errorCode(error) === "ENOENT") return undefined;
       return fsError(error, "checkpoint directory inspection failed");
@@ -1072,7 +1072,7 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
   private async removeCheckpointDirectory(
     environment: ProductToolExecutionEnvironment, path: string, identity: string, signal: AbortSignal,
   ): Promise<boolean> {
-    if (environment.workspace.allowedWriteRoots.includes(path)) throw new FsError("checkpoint cannot remove a write root", "FS_SANDBOX_DENIED");
+    if (environment.workspace.canonicalRoot === path) throw new FsError("checkpoint cannot remove the workspace root", "FS_SANDBOX_DENIED");
     const actual = await this.inspectCheckpointDirectory(environment, path, signal);
     if (actual === undefined) return true;
     if (actual !== identity) return false;
@@ -1097,17 +1097,15 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
       || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 8 * 1_024 * 1_024) {
       throw new FsError("checkpoint file authority is invalid", "FS_SANDBOX_DENIED");
     }
-    const roots = await Promise.all(environment.workspace.allowedWriteRoots.map(async (rootPath) => {
-      const root = await this.resolve(rootPath, { signal });
-      const info = await this.lstat(rootPath, {}, signal);
-      if (root.displayPath !== rootPath || info?.type !== "directory") {
-        throw new FsError("checkpoint write root is unavailable", "FS_SANDBOX_DENIED");
-      }
-      return root;
-    }));
+    const rootPath = environment.workspace.canonicalRoot;
+    const root = await this.resolve(rootPath, { signal });
+    const rootInfo = await this.lstat(rootPath, {}, signal);
+    if (root.displayPath !== rootPath || rootInfo?.type !== "directory") {
+      throw new FsError("checkpoint workspace root is unavailable", "FS_SANDBOX_DENIED");
+    }
     const target = await this.resolve(path, { signal });
-    if (target.displayPath !== path || !roots.some((root) => this.contains(root, target))) {
-      throw new FsError("checkpoint path is outside the operation-frozen write roots", "FS_SANDBOX_DENIED");
+    if (target.displayPath !== path || !this.contains(root, target)) {
+      throw new FsError("checkpoint path is outside the workspace", "FS_SANDBOX_DENIED");
     }
     const before = await lstat(path).catch((error: unknown) => {
       if (errorCode(error) === "ENOENT") return undefined;
@@ -1135,7 +1133,7 @@ export class LocalWorkspaceFileSystem extends LocalFileSystem {
     const finalTarget = await this.resolve(path, { signal });
     if (!after.isFile() || after.isSymbolicLink() || after.nlink !== 1
       || String(versionOf(after)) !== beforeVersion || finalTarget.displayPath !== target.displayPath
-      || finalTarget.targetKey !== target.targetKey || !roots.some((root) => this.contains(root, finalTarget))) {
+      || finalTarget.targetKey !== target.targetKey || !this.contains(root, finalTarget)) {
       throw new FsError("checkpoint target identity changed during capture", "FS_STALE_VERSION");
     }
     return Object.freeze({

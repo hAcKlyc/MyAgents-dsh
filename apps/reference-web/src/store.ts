@@ -44,7 +44,7 @@ export type HostTraceEntry = Readonly<{
   count: number;
 }>;
 export type ControlTab = "settings" | "components" | "session" | "runtime";
-export type ReferencePermissionMode = "default" | "acceptEdits" | "dontAsk" | "bypassPermissions";
+export type ReferencePermissionMode = "approval-required" | "workspace-autonomous" | "full-autonomous";
 export type ConfigurationApplyOutcome = Readonly<{
   desiredRevision: string;
   effectiveRevision: string;

@@ -71,8 +71,7 @@ export function App(props: Readonly<{ store: ReferenceWebStore }>): React.JSX.El
           sendDisabled={state.connection !== "online"}
           busy={busy}
           permissionScope={selectedId}
-          permissionMode={state.controlInspection?.controls.configuration.permissionMode as
-            | "default" | "acceptEdits" | "dontAsk" | "bypassPermissions" | undefined}
+          permissionMode={state.controlInspection?.controls.configuration.permissionMode}
           permissionDisabled={selectedId === undefined || selected?.lifecycle !== "ready"
             || state.connection !== "online" || state.controlInspection === undefined}
           onSubmit={(text, attachments, delivery) => props.store.submitInput(text, attachments, delivery)}

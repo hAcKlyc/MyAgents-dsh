@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
-import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
-import { ApprovalService } from "@deepseek-ai/dsh-user-approval";
+import { ApprovalService, setApprovalPolicy } from "@deepseek-ai/dsh-user-approval";
+import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { UserQuestionService, type AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import {
   ProductPermissionService,
@@ -95,7 +95,7 @@ const mounted = async (
   interaction: ProductLocalInteractionProvider,
   overrides: Partial<Pick<
     ProductPermissionServiceConfig,
-    "autoAllowTools" | "hook" | "interactionRegistrationDeadlineMs" | "maxRules" | "mode"
+    "autoAllowTools" | "hook" | "interactionRegistrationDeadlineMs" | "maxRules" | "mode" | "resolveSandboxContext"
   >> = {},
 ) => {
   const context = new Context();
@@ -120,10 +120,11 @@ const mounted = async (
       },
     }),
     interaction,
+    ...(overrides.resolveSandboxContext === undefined ? {} : { resolveSandboxContext: overrides.resolveSandboxContext }),
     ...(overrides.hook === undefined ? {} : { hook: overrides.hook }),
     interactionRegistrationDeadlineMs: overrides.interactionRegistrationDeadlineMs ?? 1_000,
     maxRules: overrides.maxRules ?? 8,
-    mode: overrides.mode ?? "default",
+    mode: overrides.mode ?? "approval-required",
     registerController: (controller) => { permissionController = controller; },
   });
   if (permissionController === undefined) throw new Error("permission controller was not registered");
@@ -201,7 +202,7 @@ describe("product permission policy and local interaction provider", () => {
   it("allows both Web tools in Auto mode while still applying an explicit Hook", async () => {
     const local = provider("scenario-web-auto", (pending, settlement) => response(pending, "deny", settlement));
     const hook = vi.fn(() => Promise.resolve("continue" as "continue" | "deny"));
-    const state = await mounted(local.provider, { mode: "acceptEdits", hook: { authorize: hook } });
+    const state = await mounted(local.provider, { mode: "workspace-autonomous", hook: { authorize: hook } });
     for (const tool of ["WebSearch", "WebFetch"] as const) {
       await expect(state.context.productPermission.authorize({ ...state.product(), callId: tool }, request(tool, CANONICAL_TOOL_CONTRACTS[tool].permissionClass, "https://example.invalid"))).resolves.toBe("allow");
     }
@@ -212,24 +213,65 @@ describe("product permission policy and local interaction provider", () => {
     }
   });
 
-  it.each(["default", "acceptEdits", "dontAsk", "bypassPermissions"] as const)("enforces the complete built-in permission matrix in %s", async mode => {
+  it.each(["approval-required", "workspace-autonomous", "full-autonomous"] as const)("enforces the complete built-in permission matrix in %s", async mode => {
     const local = provider(`scenario-matrix-${mode}`, (pending, settlement) => response(pending, "deny", settlement));
     const state = await mounted(local.provider, { mode });
-    const safe = new Set(["Read", "ls", "Glob", "Grep", "job_list", "job_output", "TaskGet", "TaskList", "EnterPlanMode"]);
+    const safe = new Set(["workspace.read", "workspace.search", "workspace.write", "task_graph.read", "interaction.ask", "session.plan.enter", "session.plan.exit"]);
     const expectedPrompts: string[] = [];
     for (const tool of Object.values(CANONICAL_TOOL_CONTRACTS)) {
-      const allowed = mode === "bypassPermissions" || safe.has(tool.name)
-        || (mode === "acceptEdits" && tool.name !== "bash" && tool.name !== "pwsh");
+      const allowed = mode !== "approval-required" || safe.has(tool.permissionClass);
       await expect(state.context.productPermission.authorize({ ...state.product(), callId: tool.name }, request(tool.name, tool.permissionClass)))
         .resolves.toBe(allowed ? "allow" : "deny");
-      if (!allowed && mode !== "dontAsk") expectedPrompts.push(tool.name);
+      if (!allowed) expectedPrompts.push(tool.name);
     }
     expect(local.permissionRequests.map(({ tool }) => tool)).toEqual(expectedPrompts);
     for (const tool of ["mcp__fixture__write", "mcp__myagents_host__fixture"] as const) {
       await expect(state.context.productPermission.authorizeExternal({ ...state.product(), callId: tool }, {
         tool, permissionClass: tool.includes("myagents_host") ? "host_tool.call" : "mcp.call", target: tool,
-      })).resolves.toBe(mode === "bypassPermissions" ? "allow" : "deny");
+      })).resolves.toBe(mode === "approval-required" ? "deny" : "allow");
     }
+  });
+
+  it("approves one sandbox retry without creating a Session rule", async () => {
+    const local = provider("scenario-sandbox-escalation", (pending, settlement) => response(pending, "allow_once", settlement));
+    const product: { current?: () => ProductToolContext } = {};
+    const state = await mounted(local.provider, { resolveSandboxContext: () => required(product.current)() });
+    product.current = state.product;
+    await expect(state.context.approval.request({
+      agent: state.agent,
+      callId: ToolCallId("permission-call"),
+      toolName: "Write",
+      reason: "escalate sandbox to danger-full-access: write the selected file",
+    })).resolves.toBe("allowed-once");
+    expect(local.permissionRequests).toMatchObject([{ permissionClass: "sandbox.escalation", tool: "Write" }]);
+    expect(state.permissionController.snapshot(state.agent).rules).toEqual([]);
+  });
+
+  it("does not turn sandbox escalation into an always-allow rule", async () => {
+    const local = provider("scenario-sandbox-always", (pending, settlement) => response(pending, "always_allow", settlement));
+    const product: { current?: () => ProductToolContext } = {};
+    const state = await mounted(local.provider, { resolveSandboxContext: () => required(product.current)() });
+    product.current = state.product;
+    await expect(state.context.approval.request({
+      agent: state.agent,
+      callId: ToolCallId("permission-call"),
+      toolName: "Write",
+      reason: "escalate sandbox to danger-full-access: write the selected file",
+    })).resolves.toBe("rejected");
+    expect(state.permissionController.snapshot(state.agent).rules).toEqual([]);
+  });
+
+  it("rejects sandbox escalation without a Host prompt under the autonomous approval policy", async () => {
+    const local = provider("scenario-sandbox-never", (pending, settlement) => response(pending, "allow_once", settlement));
+    const state = await mounted(local.provider, { mode: "workspace-autonomous" });
+    setApprovalPolicy(state.agent.session, "never");
+    await expect(state.context.approval.request({
+      agent: state.agent,
+      callId: ToolCallId("permission-call"),
+      toolName: "Write",
+      reason: "escalate sandbox to danger-full-access: write the selected file",
+    })).resolves.toBe("rejected");
+    expect(local.permissionRequests).toEqual([]);
   });
 
   it("distinguishes parallel child approvals when the model reuses a tool call ID", async () => {
@@ -260,13 +302,13 @@ describe("product permission policy and local interaction provider", () => {
         .resolves.toBe("allow");
     }
     expect(local.permissionRequests.map(({ tool }) => tool)).toEqual([
-      "bash", "WebSearch", "WebFetch", "TaskCreate", "Skill", "Agent", "AskUserQuestion",
+      "bash", "WebSearch", "WebFetch", "TaskCreate", "Skill", "Agent",
     ]);
     expect(local.permissionRequests.slice(1).every(({ expectedPermissionRevision }) =>
       expectedPermissionRevision === state.context.productPermission.currentRevision(state.agent))).toBe(true);
     await expect(state.context.productPermission.authorize({ ...original, callId: "bash-again" }, request()))
       .resolves.toBe("allow");
-    expect(local.permissionRequests).toHaveLength(7);
+    expect(local.permissionRequests).toHaveLength(6);
     expect(original.birth.permissionRevision).not.toBe(state.context.productPermission.currentRevision(state.agent));
   });
 
@@ -357,7 +399,7 @@ describe("product permission policy and local interaction provider", () => {
 
   it.each(["grant", "revoke"] as const)("rejects old births after an external %s even for automatic tools", async (mutation) => {
     const local = provider("scenario-external-change", (pending, settlement) => response(pending, "always_allow", settlement));
-    const state = await mounted(local.provider, { mode: "acceptEdits" });
+    const state = await mounted(local.provider, { mode: "approval-required" });
     const original = state.product();
     await state.context.productPermission.authorize(original, request());
     const snapshot = state.permissionController.snapshot(state.agent);
@@ -400,7 +442,7 @@ describe("product permission policy and local interaction provider", () => {
     const state = await mounted(first.provider);
     const before = state.context.productPermission.currentRevision(state.agent);
     await state.permissionController.applyConfiguration(state.agent, Object.freeze({
-      mode: "dontAsk",
+      mode: "approval-required",
       autoAllowTools: Object.freeze([]),
       interaction: second.provider,
     }));
@@ -429,7 +471,7 @@ describe("product permission policy and local interaction provider", () => {
     const desired = provider("scenario-v2", (pending, settlement) => response(pending, "deny", settlement));
     const source = await mounted(initial.provider);
     await source.permissionController.applyConfiguration(source.agent, Object.freeze({
-      mode: "acceptEdits",
+      mode: "workspace-autonomous",
       autoAllowTools: Object.freeze([]),
       interaction: desired.provider,
     }));
@@ -446,7 +488,7 @@ describe("product permission policy and local interaction provider", () => {
     }
     const beforeEventCount = resumed.session.snapshotEvents().length;
     resumed.permissionController.restoreConfiguration(resumed.agent, Object.freeze({
-      mode: "acceptEdits",
+      mode: "workspace-autonomous",
       autoAllowTools: Object.freeze([]),
       interaction: desired.provider,
     }));
@@ -497,12 +539,11 @@ describe("product permission policy and local interaction provider", () => {
     expect(state.session.snapshotEvents().filter(({ type }) => type.startsWith("approval/"))).toEqual([]);
   });
 
-  it("enforces the complete four-mode behavior matrix", async () => {
+  it("enforces the three-mode approval behavior matrix", async () => {
     const cases = [
-      { mode: "default" as const, write: "deny", bash: "deny", prompts: 2 },
-      { mode: "acceptEdits" as const, write: "allow", bash: "deny", prompts: 1 },
-      { mode: "dontAsk" as const, write: "deny", bash: "deny", prompts: 0 },
-      { mode: "bypassPermissions" as const, write: "allow", bash: "allow", prompts: 0 },
+      { mode: "approval-required" as const, write: "allow", bash: "deny", prompts: 1 },
+      { mode: "workspace-autonomous" as const, write: "allow", bash: "allow", prompts: 0 },
+      { mode: "full-autonomous" as const, write: "allow", bash: "allow", prompts: 0 },
     ];
     for (const fixture of cases) {
       const local = provider(`scenario-${fixture.mode}`, (pending, settlement) =>
@@ -528,7 +569,7 @@ describe("product permission policy and local interaction provider", () => {
     const local = provider("scenario-bypass-hook", (pending, settlement) =>
       response(pending, "allow_once", settlement));
     const state = await mounted(local.provider, {
-      mode: "bypassPermissions",
+      mode: "full-autonomous",
       hook: Object.freeze({ authorize: () => Promise.resolve("deny" as const) }),
     });
     await expect(state.context.productPermission.authorize(state.product(), request()))
@@ -536,12 +577,12 @@ describe("product permission policy and local interaction provider", () => {
     expect(local.permissionRequests).toEqual([]);
   });
 
-  it("lets a Host list, pre-authorize, retry, and revoke exact dontAsk rules durably", async () => {
+  it("lets a Host pre-authorize and revoke exact approval rules durably", async () => {
     const local = provider("scenario-managed-rules", (pending, settlement) =>
       response(pending, "deny", settlement));
-    const state = await mounted(local.provider, { mode: "dontAsk" });
+    const state = await mounted(local.provider, { mode: "approval-required" });
     const before = state.permissionController.snapshot(state.agent);
-    expect(before).toMatchObject({ mode: "dontAsk", rules: [] });
+    expect(before).toMatchObject({ mode: "approval-required", rules: [] });
     await expect(state.context.productPermission.authorize(state.product(before.revision), request()))
       .resolves.toBe("deny");
 
@@ -585,7 +626,7 @@ describe("product permission policy and local interaction provider", () => {
       expectedRevision: before.revision,
       ruleId: applied.rule.ruleId,
     }))).resolves.toMatchObject({ state: "already_absent", revision: revoked.revision });
-    expect(local.permissionRequests).toEqual([]);
+    expect(local.permissionRequests).toHaveLength(2);
   });
 
   it("routes an identified one-shot decision through DSH approval audit", async () => {
@@ -756,55 +797,6 @@ describe("product permission policy and local interaction provider", () => {
     })).rejects.toMatchObject({ code: "interaction_provider_invalid" });
     expect(() => state.context.productPermission.currentRevision(state.agent))
       .toThrow(expect.objectContaining({ code: "permission_recovery_required" }));
-  });
-
-  it("restores released v1/v2 grants as Session rules without rewriting history or reviving revoked/cleared grants", async () => {
-    // Frozen legacy bytes use the released v1 config and v1/v2 rule hashes.
-    const legacy = JSON.parse(readFileSync(new URL("./fixtures/legacy-permission-rules-v1.json", import.meta.url), "utf8")) as SessionEvent[];
-    const local = provider("scenario-legacy", (pending, settlement) => response(pending, "deny", settlement));
-    const state = await mounted(local.provider, { mode: "dontAsk" });
-    for (const event of legacy) state.session.append(event.type, event.data);
-    const before = JSON.stringify(state.session.snapshotEvents());
-    state.setNow(1_000_000_000_000);
-    const snapshot = state.permissionController.snapshot(state.agent);
-    expect(snapshot.rules).toHaveLength(1);
-    expect(snapshot.rules[0]).toMatchObject({ target: "workspace-command", expiresAt: null });
-    await expect(state.context.productPermission.authorize(state.product(), request())).resolves.toBe("allow");
-    for (const target of ["revoked-command", "cleared-by-config", "different-target"]) {
-      await expect(state.context.productPermission.authorize(state.product(), request("bash", "process.execute", target))).resolves.toBe("deny");
-    }
-    expect(JSON.stringify(state.session.snapshotEvents())).toBe(before);
-    expect(state.flushes).toEqual([]);
-    expect(local.permissionRequests).toEqual([]);
-    const retry = await state.permissionController.grantRule(state.agent, {
-      expectedRevision: snapshot.revision, tool: "bash", permissionClass: "process.execute", target: "workspace-command",
-    });
-    expect(retry.state).toBe("already_effective");
-    const added = await state.permissionController.grantRule(state.agent, {
-      expectedRevision: snapshot.revision, tool: "bash", permissionClass: "process.execute", target: "new-command",
-    });
-    expect(added).toMatchObject({ state: "applied", rule: { expiresAt: null } });
-    await state.permissionController.revokeRule(state.agent, { expectedRevision: added.revision, ruleId: required(snapshot.rules[0]).ruleId });
-    expect(state.permissionController.snapshot(state.agent).rules.map(rule => rule.target)).toEqual(["new-command"]);
-    await expect(state.context.productPermission.authorize(state.product(), request())).resolves.toBe("deny");
-
-    const isolatedSession = state.context.sessions.create(SessionId("independent-session"));
-    isolatedSession.append("turn/start", { turn: 1 });
-    const isolatedAgent = { ...state.agent, id: "independent-session", session: isolatedSession } as Agent;
-    state.context.agents.enter(isolatedAgent, undefined);
-    const isolated = { ...state.product(), agent: isolatedAgent, birth: { ...state.product().birth, permissionRevision: state.context.productPermission.currentRevision(isolatedAgent) } };
-    expect(state.permissionController.snapshot(isolatedAgent).rules).toEqual([]);
-    await expect(state.context.productPermission.authorize(isolated, request("bash", "process.execute", "new-command"))).resolves.toBe("deny");
-  });
-
-  it("does not accept a legacy expiry relabelled as a Session rule without its original identity", async () => {
-    const legacy = JSON.parse(readFileSync(new URL("./fixtures/legacy-permission-rules-v1.json", import.meta.url), "utf8")) as SessionEvent[];
-    const local = provider("scenario-legacy", (pending, settlement) => response(pending, "deny", settlement));
-    const state = await mounted(local.provider, { mode: "dontAsk" });
-    for (const event of legacy) {
-      state.session.append(event.type, event.type === "myagents/permission/rule" ? { ...event.data, expiresAt: null } : event.data);
-    }
-    expect(() => state.permissionController.snapshot(state.agent)).toThrow(expect.objectContaining({ code: "permission_recovery_required" }));
   });
 
   it("persists and reloads an exact Session-lifetime always-allow rule for a later birth", async () => {

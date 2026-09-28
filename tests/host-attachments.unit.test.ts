@@ -455,6 +455,7 @@ describe("Local attachment staging authority", () => {
     await mkdir(stagingRoot);
     const context = new Context();
     try {
+      context.provide("sandboxPolicy", { defaultMode: "danger-full-access", resolve: () => ({ mode: "danger-full-access", workspaceRoot: process.cwd() }) } as never);
       await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)) });
       const io = (context.fs as LocalWorkspaceFileSystem).createAttachmentIoAuthority();
       const staged = await io.stage(stagingRoot, PNG, new AbortController().signal);
@@ -486,6 +487,7 @@ describe("Local attachment staging authority", () => {
     await mkdir(stagingRoot);
     const context = new Context();
     try {
+      context.provide("sandboxPolicy", { defaultMode: "danger-full-access", resolve: () => ({ mode: "danger-full-access", workspaceRoot: process.cwd() }) } as never);
       await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)) });
       const io = (context.fs as LocalWorkspaceFileSystem).createAttachmentIoAuthority();
       const valid = join(stagingRoot, "valid.png");

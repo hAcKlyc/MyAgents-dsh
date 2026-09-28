@@ -39,9 +39,6 @@ export interface CanonicalFileToolsConfig {
   readonly attachments: Readonly<{
     run<T>(context: ProductToolContext, action: () => Promise<T>): Promise<T>;
   }>;
-  readonly retainedOutput?: Readonly<{
-    resolve(context: ProductToolContext, path: string): Promise<FsTarget | undefined>;
-  }>;
 }
 
 type JsonValue = Parameters<ToolDefinition["output"]["render"]>[1];
@@ -205,15 +202,14 @@ export class CanonicalFileTools extends Service {
   static inject = ["fs", "tools", "productProcesses", "productTools"];
   readonly #intents = new AsyncLocalStorage<Readonly<{ target: FsTarget; intent: FsWriteIntent }>>();
   readonly #attachments: CanonicalFileToolsConfig["attachments"];
-  readonly #retainedOutput: CanonicalFileToolsConfig["retainedOutput"];
   readonly #toolStrategy: DshToolStrategy;
 
   constructor(ctx: Context, config: CanonicalFileToolsConfig) {
     super(ctx, "canonicalFileTools");
     const candidate: unknown = config;
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
-      || Reflect.ownKeys(candidate).length < 1 || Reflect.ownKeys(candidate).length > 3
-      || Reflect.ownKeys(candidate).some((key) => key !== "attachments" && key !== "retainedOutput" && key !== "toolStrategy")) {
+      || Reflect.ownKeys(candidate).length < 1 || Reflect.ownKeys(candidate).length > 2
+      || Reflect.ownKeys(candidate).some((key) => key !== "attachments" && key !== "toolStrategy")) {
       throw new TypeError("CanonicalFileTools requires one attachment publication authority");
     }
     const configuredStrategy: unknown = config.toolStrategy;
@@ -251,29 +247,6 @@ export class CanonicalFileTools extends Service {
       if (intent.kind !== "replaceIfVersion") throw new ProductToolError("read_required", "Edit requires a current file");
       return Promise.resolve({ version: intent.version });
     });
-    const retainedDescriptor = Object.getOwnPropertyDescriptor(candidate, "retainedOutput");
-    const retained: unknown = retainedDescriptor !== undefined && "value" in retainedDescriptor
-      ? retainedDescriptor.value as unknown
-      : undefined;
-    if (retained !== undefined) {
-      if (retained === null || typeof retained !== "object" || Array.isArray(retained)
-        || isProxy(retained) || Reflect.ownKeys(retained).length !== 1) {
-        throw new TypeError("CanonicalFileTools retained-output authority is invalid");
-      }
-      const resolveDescriptor = Object.getOwnPropertyDescriptor(retained, "resolve");
-      const resolve: unknown = resolveDescriptor !== undefined && "value" in resolveDescriptor
-        ? resolveDescriptor.value as unknown
-        : undefined;
-      if (typeof resolve !== "function" || isProxy(resolve)) {
-        throw new TypeError("CanonicalFileTools retained-output authority is invalid");
-      }
-      const retainedOwner = retained;
-      const resolveAuthority = resolve as NonNullable<CanonicalFileToolsConfig["retainedOutput"]>["resolve"];
-      this.#retainedOutput = Object.freeze({
-        resolve: (context: ProductToolContext, path: string) =>
-          resolveAuthority.call(retainedOwner, context, path),
-      });
-    }
     ctx.effect(() => {
       const native = this.#toolStrategy === "dsh_first";
       const disposers = native ? [
@@ -493,7 +466,7 @@ export class CanonicalFileTools extends Service {
         const content = args.content as string;
         const afterBytes = Buffer.from(content, "utf8");
         const afterSha256 = sha256(content);
-        const checkpoint = authority.checkpointEligible || (product.origin !== "root" && current === undefined)
+        const checkpoint = authority.checkpointEligible
           ? await ctx.productTools.prepareCheckpoint(product, {
             afterBytes,
             afterSha256,
@@ -984,13 +957,6 @@ export class CanonicalFileTools extends Service {
       cwd: product.environment.workspace.canonicalRoot,
       signal: product.signal,
     });
-    let contained = false;
-    for (const root of product.environment.workspace.allowedReadRoots) {
-      const allowed = await ctx.fs.resolve(root, { signal: product.signal });
-      if (allowed.displayPath !== root) throw new ProductToolError("path_denied", "allowed read root identity changed");
-      if (ctx.fs.contains(allowed, target)) contained = true;
-    }
-    if (!contained) throw new ProductToolError("path_denied", `${tool} root is outside allowed read roots`);
     if (tool === "ls" && pathInfo.type === "file") {
       throw new ProductToolError("directory_not_found", `ls root is a file, not a directory: ${JSON.stringify(input)}`);
     }
@@ -1081,28 +1047,12 @@ export class CanonicalFileTools extends Service {
       }
       throw error;
     }
-    const roots = mode === "read"
-      ? product.environment.workspace.allowedReadRoots
-      : product.environment.workspace.allowedWriteRoots;
-    let contained = false;
-    for (const root of roots) {
-      const rootTarget = await ctx.fs.resolve(root, { signal: product.signal });
-      if (rootTarget.displayPath !== root) throw new ProductToolError("path_denied", "allowed root identity changed");
-      if (ctx.fs.contains(rootTarget, target)) contained = true;
-    }
-    if (!contained) {
-      if (tool === "Read" && mode === "read") {
-        const retained = this.#retainedOutput !== undefined
-          ? await this.#retainedOutput.resolve(product, target.displayPath)
-          : await ctx.productProcesses.resolveRetainedOutput(product, target.displayPath);
-        if (retained !== undefined) return Object.freeze({ checkpointEligible: false, target: retained });
-      }
-      throw new ProductToolError("path_denied", `${tool} target is outside its allowed ${mode} roots: ${target.displayPath}. Use a path inside the configured roots or ask the Host to update the workspace access settings.`);
-    }
     // The v1 rollback claim is intentionally root-origin only. Child mutations still
     // use the same governed file tool and permission path, but do not advertise a
     // checkpoint receipt that the checkpoint service cannot restore as child work.
-    return Object.freeze({ checkpointEligible: mode === "write" && product.origin === "root", target });
+    const workspace = await ctx.fs.resolve(product.environment.workspace.canonicalRoot, { signal: product.signal });
+    return Object.freeze({ checkpointEligible: mode === "write" && product.origin === "root"
+      && ctx.fs.contains(workspace, target), target });
   }
 
   async #regularFile(ctx: Context, target: FsTarget, signal: AbortSignal): Promise<FsInfo> {

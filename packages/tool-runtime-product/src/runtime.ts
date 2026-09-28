@@ -62,8 +62,6 @@ export interface ProductToolExecutionEnvironment {
   readonly revision: string;
   readonly runtimeHome: string;
   readonly workspace: Readonly<{
-    readonly allowedReadRoots: readonly string[];
-    readonly allowedWriteRoots: readonly string[];
     readonly canonicalRoot: string;
     readonly identity: string;
   }>;
@@ -438,7 +436,7 @@ export class ProductToolRuntime extends Service {
     return this.catalogSnapshot;
   }
 
-  resolve(exec: Readonly<ToolExecution>): ProductToolContext {
+  resolve(exec: Readonly<Pick<ToolExecution, "agent" | "callId" | "rootCallId" | "name" | "signal" | "parent">>): ProductToolContext {
     if (exec.agent === undefined) throw new ProductToolError("tool_operation_denied", "tool call lacks one Agent owner");
     if (exec.parent !== undefined || String(exec.callId) !== String(exec.rootCallId)) {
       throw new ProductToolError(

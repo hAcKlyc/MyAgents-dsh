@@ -38,7 +38,6 @@ import type {
 } from "@myagents-dsh/tools-process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { supportsFileSymlinks, supportsDirectorySymlinks } from "./setup/symlink-capability.js";
@@ -87,7 +86,9 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
     ...activeCatalogWithoutDigest,
     digest: effectiveToolCatalogDigest(activeCatalogWithoutDigest),
   }) : catalog;
-  const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-file-tools-")));
+  const fixtureRoot = join(process.cwd(), "tmp");
+  await mkdir(fixtureRoot, { recursive: true });
+  const root = await realpath(await mkdtemp(join(fixtureRoot, "myagents-file-tools-")));
   temporaryRoots.push(root);
   const workspace = join(root, "workspace");
   const runtimeHome = join(root, "runtime-home");
@@ -142,11 +143,6 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
     revision: "environment-v1",
     runtimeHome,
     workspace: Object.freeze({
-      allowedReadRoots: Object.freeze([
-        workspace,
-        ...(options.additionalReadRoot === true ? [additionalReadRoot] : []),
-      ]),
-      allowedWriteRoots: Object.freeze([workspace]),
       canonicalRoot: workspace,
       identity: "workspace-v1",
     }),
@@ -191,6 +187,10 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
   const searchCommands: string[][] = [];
   const searchWorkdirs: string[] = [];
   await context.plugin(SystemPrompt);
+  context.provide("sandboxPolicy", {
+    defaultMode: "workspace-write",
+    resolve: () => ({ mode: "workspace-write", workspaceRoot: workspace }),
+  } as never);
   await context.plugin(ToolRuntime, { mode: "native" });
   if (!native) await context.plugin(ToolCallTimeoutPolicy);
   if (native) await context.plugin(LocalSubprocessRuntime);
@@ -435,7 +435,7 @@ describe("canonical filesystem tools", () => {
     expect(state.saveImage).not.toHaveBeenCalled();
     await state.context.fiber.dispose();
   });
-  it("preserves a product provider's path denial without manufacturing sandbox escalation", async () => {
+  it("renders a file sandbox denial without publishing a write", async () => {
     const state = await harness();
     const path = join(state.workspace, "denied.txt");
     await writeFile(path, "before");
@@ -443,7 +443,7 @@ describe("canonical filesystem tools", () => {
     vi.spyOn(state.context.fs, "writeText").mockRejectedValue(new FsError("product path identity denied", "FS_SANDBOX_DENIED"));
     const result = await state.execute("Write", { file_path: path, content: "after" });
     expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toContain("product path identity denied");
+    expect(JSON.stringify(result.content)).toContain("[sandbox: file access denied under workspace-write mode]");
     expect(await readFile(path, "utf8")).toBe("before");
     expect(state.checkpoints.at(-1)).toBe("abort");
     await state.context.fiber.dispose();
@@ -652,7 +652,7 @@ describe("canonical filesystem tools", () => {
     const outside = join(state.root, "outside.txt");
     await writeFile(outside, "secret");
     await expect(state.execute("Read", { file_path: outside }))
-      .resolves.toMatchObject({ isError: true, error: { info: { code: "path_denied" } } });
+      .resolves.toMatchObject({ isError: false });
     const controller = new AbortController();
     controller.abort(new Error("cancelled fixture"));
     await expect(state.execute("Read", { file_path: path }, controller.signal))
@@ -677,7 +677,7 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
-  it("preserves a registered retained-output resolver failure instead of reporting an ordinary path miss", async () => {
+  it("reads an existing file outside the workspace without retained-output registration", async () => {
     const state = await harness();
     const path = join(state.root, "retained.txt");
     await writeFile(path, "retained");
@@ -685,13 +685,11 @@ describe("canonical filesystem tools", () => {
       new ProductToolError("path_denied", "retained output identity changed"),
     );
     const result = await state.execute("Read", { file_path: path });
-    expect(result.isError).toBe(true);
-    expect(JSON.stringify(result)).toContain("retained output identity changed");
-    expect(JSON.stringify(result)).not.toContain("outside its allowed");
+    expect(result.isError).toBe(false);
     await state.context.fiber.dispose();
   });
 
-  it.skipIf(!supportsFileSymlinks || !supportsDirectorySymlinks)("resolves directory aliases for file and search tools without extending allowed roots", async () => {
+  it.skipIf(!supportsFileSymlinks || !supportsDirectorySymlinks)("reads through aliases while workspace-write fences mutations", async () => {
     const state = await harness();
     const alias = join(state.root, "workspace-alias");
     await symlink(state.workspace, alias, "dir");
@@ -715,10 +713,10 @@ describe("canonical filesystem tools", () => {
     await writeFile(outside, "outside");
     const escaped = join(state.workspace, "outside-alias");
     await symlink(outside, escaped);
-    const denied = await state.execute("Read", { file_path: escaped });
-    expect(denied).toMatchObject({ isError: true, error: { info: { code: "path_denied" } } });
-    expect(JSON.stringify(denied)).toContain("outside its allowed read roots");
-    expect(JSON.stringify(denied)).not.toContain("Shell output");
+    await expect(state.execute("Read", { file_path: escaped })).resolves.toMatchObject({ isError: false });
+    const denied = await state.execute("Write", { file_path: escaped, content: "changed" });
+    expect(denied.isError).toBe(true);
+    expect(await readFile(outside, "utf8")).toBe("outside");
     await state.context.fiber.dispose();
   });
 
@@ -1531,8 +1529,7 @@ describe("canonical filesystem tools", () => {
       value: ".hidden\nAlpha/\nbeta.txt",
     });
     await expect(state.execute("ls", { path: state.root })).resolves.toMatchObject({
-      isError: true,
-      error: { info: { code: "path_denied" } },
+      isError: false,
     });
     await state.context.fiber.dispose();
   });

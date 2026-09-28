@@ -206,7 +206,7 @@ const harness = async (options: Readonly<{
   backgroundRetention?: "allow" | "deny";
   dialect?: "bash" | "pwsh";
   realPermission?: ProductLocalInteractionProvider;
-  permissionMode?: "default" | "bypassPermissions";
+  permissionMode?: "approval-required" | "full-autonomous";
   planMode?: boolean;
   readEnvironment?: ProductProcessRuntimeConfig["readEnvironment"];
 }> = {}) => {
@@ -233,6 +233,10 @@ const harness = async (options: Readonly<{
   )) as unknown as ProductProcessRuntimeConfig["executableSha256"]);
   const context = new Context();
   await context.plugin(FakeSubprocessRuntime);
+  context.provide("sandboxPolicy", {
+    defaultMode: "workspace-write",
+    resolve: () => ({ mode: "workspace-write", workspaceRoot: workspace }),
+  } as never);
   await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)) });
   await context.plugin(AgentRegistry);
   const fakeSubprocess = context.subprocess as FakeSubprocessRuntime;
@@ -286,8 +290,6 @@ const harness = async (options: Readonly<{
     revision: "environment-v1",
     runtimeHome,
     workspace: Object.freeze({
-      allowedReadRoots: Object.freeze([workspace]),
-      allowedWriteRoots: Object.freeze([workspace]),
       canonicalRoot: workspace,
       identity: "workspace-v1",
     }),
@@ -343,7 +345,7 @@ const harness = async (options: Readonly<{
     await context.plugin(ProductPermissionService, {
       autoAllowTools: [], clock: Date.now, durability: { flush: () => Promise.resolve(true) },
       interaction: options.realPermission, interactionRegistrationDeadlineMs: 1_000,
-      maxRules: 8, mode: options.permissionMode ?? "default",
+      maxRules: 8, mode: options.permissionMode ?? "approval-required",
       registerController: () => undefined,
     });
     currentOperation = Object.freeze({ ...operation, birth: Object.freeze({ ...operation.birth, permissionRevision: context.productPermission.currentRevision(agent) }) });

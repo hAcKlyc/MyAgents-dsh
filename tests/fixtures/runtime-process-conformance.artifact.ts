@@ -95,8 +95,6 @@ const initializeParams = (): InitializeParams => {
   params.runtimeHome = runtimeHome;
   params.workspace.path = workspace;
   params.executionEnvironment.workspace.canonicalRoot = workspace;
-  params.executionEnvironment.workspace.allowedReadRoots = [workspace];
-  params.executionEnvironment.workspace.allowedWriteRoots = [workspace];
   params.executionEnvironment.attachmentStagingRoot = attachmentStagingRoot;
   params.executionEnvironment.environment.allowedKeys = Object.keys(environment).sort();
   params.executionEnvironment.executables = {

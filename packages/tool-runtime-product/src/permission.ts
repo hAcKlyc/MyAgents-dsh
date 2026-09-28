@@ -49,13 +49,12 @@ export const isProductPermissionEventType = (value: string): value is ProductPer
   productPermissionEventTypes.has(value);
 
 export type ProductPermissionMode =
-  | "default"
-  | "acceptEdits"
-  | "bypassPermissions"
-  | "dontAsk";
+  | "approval-required"
+  | "workspace-autonomous"
+  | "full-autonomous";
 
 export type ProductPermissionDecision = "allow_once" | "always_allow" | "deny" | "cancelled";
-export type ProductPermissionClass = PermissionClass | "host_tool.call" | "mcp.call";
+export type ProductPermissionClass = PermissionClass | "host_tool.call" | "mcp.call" | "sandbox.escalation";
 
 type ProductPermissionRequest = Readonly<{
   permissionClass: ProductPermissionClass;
@@ -74,8 +73,7 @@ export interface ProductPermissionRuleEvent {
   readonly target: string;
   readonly origin: "root";
   readonly createdAt: number;
-  /** null for Session grants; numeric only when validating pre-upgrade history. */
-  readonly expiresAt: number | null;
+  readonly expiresAt: null;
   readonly inlineGrant?: ProductPermissionInlineGrant;
 }
 
@@ -167,6 +165,7 @@ export interface ProductPermissionPlaneConfig {
 }
 
 export interface ProductPermissionServiceConfig extends ProductPermissionPlaneConfig {
+  readonly resolveSandboxContext?: (request: ApprovalRequest) => ProductToolContext;
   readonly withInteractionWait?: <T>(agent: Agent, signal: AbortSignal, operation: () => Promise<T>) => Promise<T>;
   readonly clock: () => number;
   readonly durability: Readonly<{
@@ -270,7 +269,7 @@ type JsonObject = Record<string, unknown>;
 
 const canonicalToolNames = new Set<string>(CANONICAL_TOOL_NAMES);
 const permissionModes = new Set<ProductPermissionMode>([
-  "default", "acceptEdits", "bypassPermissions", "dontAsk",
+  "approval-required", "workspace-autonomous", "full-autonomous",
 ]);
 const permissionDecisions = new Set<ProductPermissionDecision>([
   "allow_once", "always_allow", "deny", "cancelled",
@@ -430,8 +429,7 @@ const ruleKey = (rule: Readonly<{
 
 const computeRuleId = (event: Omit<ProductPermissionRuleEvent, "ruleId" | "revision">): string =>
   sha256(JSON.stringify([
-    event.expiresAt === null ? "myagents-permission-rule-v3"
-      : event.inlineGrant === undefined ? "myagents-permission-rule-v1" : "myagents-permission-rule-v2",
+    "myagents-permission-rule-v3",
     event.sessionId,
     event.fromRevision,
     event.tool,
@@ -467,23 +465,17 @@ const computeRuleRevocationRevision = (
   event.revokedAt,
 ]));
 
-// Keep the published v1 configuration hash byte-compatible for existing Sessions.
-// This reserved historical slot is not a TTL setting or an execution deadline.
-// Runtime artifact/protocol identity versions the new Session-lifetime semantics.
-const LEGACY_PERMISSION_POLICY_TTL_IDENTITY = 86_400_000;
-
 export const permissionBaseRevision = (
   config: Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction" | "interactionRegistrationDeadlineMs" | "maxRules">,
   sessionId: string,
 ): string => sha256(JSON.stringify([
-  "myagents-permission-policy-v1",
+  "myagents-permission-policy-v2",
   boundedIdentifier(sessionId, "permission Session id"),
   config.mode,
   config.autoAllowTools,
   config.interaction.revision,
   config.interactionRegistrationDeadlineMs,
   config.maxRules,
-  LEGACY_PERMISSION_POLICY_TTL_IDENTITY,
 ]));
 
 const validateToolName = (value: unknown, description: string): CanonicalToolName => {
@@ -541,10 +533,7 @@ const validateRuleEvent = (value: unknown): ProductPermissionRuleEvent => {
   const origin = event.origin;
   if (origin !== "root") throw new TypeError("product permission rule origin must be root");
   const createdAt = safeEpoch(event.createdAt, "permission rule creation time");
-  const expiresAt = event.expiresAt === null ? null : safeEpoch(event.expiresAt, "legacy permission rule expiry time");
-  if (expiresAt !== null && expiresAt - createdAt !== LEGACY_PERMISSION_POLICY_TTL_IDENTITY) {
-    throw new TypeError("legacy permission rule lifetime differs from the published policy");
-  }
+  if (event.expiresAt !== null) throw new TypeError("permission rule must last for its Session");
   const tool = boundedIdentifier(event.tool, "permission rule tool");
   return Object.freeze({
     sessionId: boundedIdentifier(event.sessionId, "permission rule Session id"),
@@ -556,7 +545,7 @@ const validateRuleEvent = (value: unknown): ProductPermissionRuleEvent => {
     target: boundedTarget(event.target),
     origin,
     createdAt,
-    expiresAt,
+    expiresAt: null,
     ...(event.inlineGrant === undefined ? {} : { inlineGrant: validateInlineGrant(event.inlineGrant) }),
   });
 };
@@ -756,8 +745,6 @@ export const foldProductPermissions = (
       target: candidate.target,
       origin: candidate.origin,
       createdAt: candidate.createdAt,
-      // Old grants retain their verified hashes and revocations, but now have
-      // the same Session lifetime as new grants. Never rewrite durable events.
       expiresAt: null,
     }));
     history.push(Object.freeze({
@@ -843,7 +830,7 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
   const config = exactOwnDataObject(value, [
     "mode", "autoAllowTools", "interaction", "interactionRegistrationDeadlineMs", "maxRules",
     "clock", "durability",
-  ], ["hook", "registerController", "withInteractionWait"], "product permission service config");
+  ], ["hook", "registerController", "withInteractionWait", "resolveSandboxContext"], "product permission service config");
   const plane = validateProductPermissionPlaneConfig({
     mode: config.mode,
     autoAllowTools: config.autoAllowTools,
@@ -865,11 +852,17 @@ const validateServiceConfig = (value: unknown): ProductPermissionServiceConfig =
     : dataFunction(config, "registerController", "permission controller registration");
   const withInteractionWait = config.withInteractionWait === undefined ? undefined
     : dataFunction(config, "withInteractionWait", "interaction execution capacity");
+  const resolveSandboxContext = config.resolveSandboxContext === undefined ? undefined
+    : dataFunction(config, "resolveSandboxContext", "sandbox approval context");
   return Object.freeze({
     ...plane,
     ...(withInteractionWait === undefined ? {} : {
       withInteractionWait: <T>(agent: Agent, signal: AbortSignal, operation: () => Promise<T>) =>
         Reflect.apply(withInteractionWait, config, [agent, signal, operation]) as Promise<T>,
+    }),
+    ...(resolveSandboxContext === undefined ? {} : {
+      resolveSandboxContext: (request: ApprovalRequest) =>
+        Reflect.apply(resolveSandboxContext, config, [request]) as ProductToolContext,
     }),
     clock: () => Reflect.apply(clock, config, []) as number,
     durability: Object.freeze({
@@ -1077,13 +1070,8 @@ type RegisteredLocalInteraction<T> = Readonly<{
 }>;
 
 const safeAutoAllow = new Set<PermissionClass>([
-  "workspace.read", "workspace.search", "task_graph.read", "session.plan.enter",
-]);
-
-// Product Action defaults. Shell and extension tools retain explicit approval.
-const actionAutoAllow = new Set<CanonicalToolName>([
-  "Write", "Edit", "WebSearch", "WebFetch", "Skill", "TaskCreate", "TaskUpdate",
-  "Agent", "SendMessage", "TaskStop", "job_kill", "AskUserQuestion", "ExitPlanMode",
+  "workspace.read", "workspace.search", "workspace.write", "task_graph.read",
+  "interaction.ask", "session.plan.enter", "session.plan.exit",
 ]);
 
 const pendingKey = (agent: Agent, callId: string): string => `${agent.id}\0${callId}`;
@@ -1452,7 +1440,6 @@ export class ProductPermissionService extends Service {
       // Validated, durable grants have the advertised Session-tree scope even
       // when a child uses them during the operation that created the grant.
       if (this.isAutomaticallyAllowed(normalized, fold.history.at(-1)?.rules ?? [])) return "allow";
-      if (this.configValue.mode === "dontAsk") return "deny";
       return await this.requestApproval(context, normalized, fold.latestRevision);
     } finally {
       release();
@@ -1494,10 +1481,9 @@ export class ProductPermissionService extends Service {
     request: ProductPermissionRequest,
     rules: readonly ProductPermissionRule[],
   ): boolean {
-    if (this.configValue.mode === "bypassPermissions"
+    if (this.configValue.mode !== "approval-required"
       || safeAutoAllow.has(request.permissionClass as PermissionClass)
-      || this.configValue.autoAllowTools.includes(request.tool as CanonicalToolName)
-      || (this.configValue.mode === "acceptEdits" && actionAutoAllow.has(request.tool as CanonicalToolName))) {
+      || this.configValue.autoAllowTools.includes(request.tool as CanonicalToolName)) {
       return true;
     }
     return rules.some((rule) => rule.tool === request.tool
@@ -1626,7 +1612,14 @@ export class ProductPermissionService extends Service {
     const callId = request.callId === undefined ? undefined : String(request.callId);
     if (callId === undefined) return next();
     const pending = this.pending.get(pendingKey(request.agent, callId));
-    if (pending?.agent !== request.agent || pending.request.tool !== request.toolName) return next();
+    if (pending?.agent !== request.agent || pending.request.tool !== request.toolName) {
+      if (this.configValue.mode === "approval-required"
+        && request.reason?.startsWith("escalate sandbox to ")
+        && this.configValue.resolveSandboxContext !== undefined) {
+        return this.answerSandboxApproval(request);
+      }
+      return next();
+    }
     if (pending.started) return Promise.resolve("unavailable");
     pending.started = true;
     const settlement = this.runInteractionWait(pending.request.agent, pending.request.signal, () => this.registerInteraction<ProductPermissionInteractionResponse>(
@@ -1643,6 +1636,46 @@ export class ProductPermissionService extends Service {
     pending.settlement = settlement;
     void settlement.catch(() => undefined);
     return settlement;
+  }
+
+  private async answerSandboxApproval(request: ApprovalRequest): Promise<ApprovalOutcome> {
+    const context = this.configValue.resolveSandboxContext?.(request);
+    if (context === undefined) return "unavailable";
+    const revision = this.currentRevision(productRootAgent(context));
+    const signal = request.signal ?? context.signal;
+    const interactionId = `sandbox-${sha256(JSON.stringify([
+      context.agent.id, context.clientOperationId, context.callId, request.reason, revision,
+    ]))}`;
+    const interactionRequest: ProductPermissionInteractionRequest = Object.freeze({
+      agent: context.agent,
+      interactionId,
+      clientOperationId: context.clientOperationId,
+      productTurnId: context.productTurnId,
+      dshTurn: context.dshTurn,
+      callId: context.callId,
+      rootCallId: context.rootCallId,
+      tool: request.toolName,
+      permissionClass: "sandbox.escalation",
+      target: request.reason ?? "sandbox escalation",
+      review: { kind: "generic" as const, action: "sandbox escalation (this operation only)", target: request.reason ?? "sandbox escalation" },
+      origin: context.origin,
+      expectedPermissionRevision: revision,
+      interactionScenarioRevision: context.birth.interactionScenarioRevision,
+      signal,
+    });
+    try {
+      const registered = await this.runInteractionWait(context.agent, signal, () =>
+        this.registerInteraction<ProductPermissionInteractionResponse>(
+          signal,
+          (callbacks) => this.configValue.interaction.decidePermission(interactionRequest, callbacks),
+          (candidate) => validateProductPermissionInteractionResponse(candidate, interactionRequest),
+        ));
+      registered.apply({ effectivePolicyRevision: revision });
+      if (registered.value.decision === "allow_once") return "allowed-once";
+      return registered.value.decision === "cancelled" ? "cancelled" : "rejected";
+    } catch {
+      return "unavailable";
+    }
   }
 
   private async answerQuestions(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> {

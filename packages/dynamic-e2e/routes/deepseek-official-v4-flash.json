@@ -16,7 +16,7 @@
   "credentialRevision": "deepseek-official-credential-v1",
   "materialField": "apiKey",
   "systemPrompt": "Operate only within the synthetic dynamic acceptance fixture. Follow Runtime permissions, report uncertainty truthfully, and leave every owned resource quiescent.",
-  "permissionMode": "default",
+  "permissionMode": "approval-required",
   "interactionScenario": "host-interaction-v1",
   "networkPolicyRef": "deepseek-official-web-search-v1",
   "webSearchAdapters": ["deepseek-official-native-web-search"]

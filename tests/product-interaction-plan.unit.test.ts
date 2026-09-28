@@ -102,6 +102,7 @@ const mounted = async (options: MountedOptions = {}) => {
   await context.plugin(ToolCallTimeoutPolicy);
   await context.plugin(ApprovalService, { policy: "ask" });
   await context.plugin(UserQuestionService);
+  context.provide("sandboxPolicy", { defaultMode: "danger-full-access", resolve: () => ({ mode: "danger-full-access", workspaceRoot: process.cwd() }) } as never);
   await context.plugin(LocalWorkspaceFileSystem, {
     platform: selectPlatformAdapter(`${process.platform}-${process.arch}`),
   });
@@ -134,8 +135,6 @@ const mounted = async (options: MountedOptions = {}) => {
     revision: "environment-v1",
     runtimeHome,
     workspace: Object.freeze({
-      allowedReadRoots: Object.freeze([workspace]),
-      allowedWriteRoots: Object.freeze([workspace]),
       canonicalRoot: workspace,
       identity: "workspace-v1",
     }),
@@ -183,7 +182,7 @@ const mounted = async (options: MountedOptions = {}) => {
     }),
     interactionRegistrationDeadlineMs: 1_000,
     maxRules: 8,
-    mode: "default",
+    mode: "approval-required",
   });
 
   let currentOperation: ProductOperationRecord;

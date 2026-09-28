@@ -702,9 +702,8 @@ const fixtureSha256 = (...parts: readonly string[]): string => {
   return hash.digest("hex");
 };
 
-const fixtureDescriptorDigest = (allowedReadRoots: readonly string[]): string => {
+const fixtureDescriptorDigest = (): string => {
   const value = {
-    allowedReadRoots,
     allowedTools: ["TaskStop", "SendMessage"],
     interaction: "unavailable",
     maxTurns: 10_000,
@@ -821,7 +820,6 @@ const seedRejectedAgentOperationCall = (
 const seedSettledForegroundWork = (
   session: Session,
   count: number,
-  allowedReadRoots: readonly string[] = [],
   usage: ProductWorkSettledEventData["usage"] = zeroUsage,
 ): void => {
   for (let index = 0; index < count; index += 1) {
@@ -841,12 +839,11 @@ const seedSettledForegroundWork = (
         toolCatalogRevision: "catalog-v1",
       },
       birth: {
-        allowedReadRoots,
         allowedTools: ["TaskStop", "SendMessage"],
         componentDigest: "b".repeat(64),
         componentRevision: "components-v1",
         depth: 1,
-        descriptorDigest: fixtureDescriptorDigest(allowedReadRoots),
+        descriptorDigest: fixtureDescriptorDigest(),
         interaction: "unavailable",
         maxTurns: 10_000,
         model: "fixture-model",
@@ -1629,12 +1626,11 @@ describe("canonical Agent Work projection", () => {
             toolCatalogRevision: "catalog-v1",
           },
           birth: {
-            allowedReadRoots: [],
             allowedTools: ["TaskStop", "SendMessage"],
             componentDigest: "b".repeat(64),
             componentRevision: "components-v1",
             depth: 1,
-            descriptorDigest: fixtureDescriptorDigest([]),
+            descriptorDigest: fixtureDescriptorDigest(),
             interaction: "unavailable",
             maxTurns: 10_000,
             model: "fixture-model",
@@ -1758,12 +1754,11 @@ describe("canonical Agent Work projection", () => {
             toolCatalogRevision: "catalog-v1",
           },
           birth: {
-            allowedReadRoots: [],
             allowedTools: ["TaskStop", "SendMessage"],
             componentDigest: "b".repeat(64),
             componentRevision: "components-v1",
             depth: 1,
-            descriptorDigest: fixtureDescriptorDigest([]),
+            descriptorDigest: fixtureDescriptorDigest(),
             interaction: "unavailable",
             maxTurns: 10_000,
             model: "fixture-model",
@@ -2507,16 +2502,10 @@ describe("canonical Agent Work projection", () => {
     })).rejects.toThrow("product work durability became uncertain");
   });
 
-  it("rejects persisted Work birth expansion and forged usage totals", async () => {
+  it("rejects persisted Work birth with forged usage totals", async () => {
     await expect(harness({
       beforeProductWork: (session) => {
-        seedSettledForegroundWork(session, 1, ["/forged-read-root"]);
-      },
-    })).rejects.toThrow("product work durability became uncertain");
-
-    await expect(harness({
-      beforeProductWork: (session) => {
-        seedSettledForegroundWork(session, 1, [], Object.freeze({
+        seedSettledForegroundWork(session, 1, Object.freeze({
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
           inputTokens: 1,
@@ -2544,12 +2533,11 @@ describe("canonical Agent Work projection", () => {
           toolCatalogRevision: "catalog-v1",
         },
         birth: {
-          allowedReadRoots: [],
           allowedTools: ["TaskStop", "SendMessage"],
           componentDigest: "b".repeat(64),
           componentRevision: "components-v1",
           depth: 1,
-          descriptorDigest: fixtureDescriptorDigest([]),
+          descriptorDigest: fixtureDescriptorDigest(),
           interaction: "unavailable",
           maxTurns: 10_000,
           model: "fixture-model",

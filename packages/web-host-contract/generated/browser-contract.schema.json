@@ -4072,10 +4072,20 @@
                   ]
                 },
                 "permissionMode": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256,
-                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "approval-required"
+                    },
+                    {
+                      "type": "string",
+                      "const": "workspace-autonomous"
+                    },
+                    {
+                      "type": "string",
+                      "const": "full-autonomous"
+                    }
+                  ]
                 },
                 "interactionScenario": {
                   "type": "string",

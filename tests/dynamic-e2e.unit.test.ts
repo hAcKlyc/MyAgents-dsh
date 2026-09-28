@@ -376,7 +376,7 @@ describe("dynamic E2E harness", () => {
       credentialRevision: "credential-v1",
       materialField: "apiKey",
       systemPrompt: "Operate only within the synthetic dynamic acceptance fixture.",
-      permissionMode: "default",
+      permissionMode: "approval-required",
       interactionScenario: "dynamic-scripted-v1",
       networkPolicyRef: "dynamic-network-v1",
       webSearchAdapters: ["approved-search"],
@@ -433,7 +433,7 @@ describe("dynamic E2E harness", () => {
       expect(validateHostDeepSeekProfile(route.provider)).toEqual(route.provider);
       expect(route.webSearchAdapters).toEqual(["deepseek-official-native-web-search"]);
       expect(route.routeConfigSha256).toBe(
-        "fc0666d2ce387016f4af853e45fb40604c045a76a48ae5533586a63201389ed1",
+        "7761cca141e49f949a8f134e5cf83cd3852998b64840bb66c77797a5f726bea2",
       );
       expect(await readFile(path, "utf8")).not.toContain(material);
     } finally {

@@ -82,8 +82,6 @@ const environment = (
   revision: "environment-v1",
   runtimeHome,
   workspace: Object.freeze({
-    allowedReadRoots: Object.freeze([workspace]),
-    allowedWriteRoots: Object.freeze([workspace]),
     canonicalRoot: workspace,
     identity: "workspace-v1",
   }),
@@ -124,7 +122,10 @@ const checkpointHarness = async (options: Readonly<{ nativeFs?: boolean; reopenR
   if (options.nativeFs === true && options.reopenRuntimeHome === undefined) await mkdir(workspace);
   const platformTarget = resolveRuntimePlatformTarget(process.platform, process.arch);
   const executionEnvironment = environment(runtimeHome, workspace, platformTarget);
-  if (options.nativeFs === true) await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(platformTarget) });
+  if (options.nativeFs === true) {
+    context.provide("sandboxPolicy", { defaultMode: "danger-full-access", resolve: () => ({ mode: "danger-full-access", workspaceRoot: process.cwd() }) } as never);
+    await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(platformTarget) });
+  }
   let bytes: Uint8Array | undefined = Buffer.from("before", "utf8");
   let snapshotOverride: unknown;
   const capture = (): Promise<ProductCheckpointFileSnapshot> => Promise.resolve(
@@ -714,6 +715,7 @@ describe("ProductCheckpointService", () => {
     await writeFile(target, "checkpoint", { mode: 0o600 });
     const platformTarget = resolveRuntimePlatformTarget(process.platform, process.arch);
     const context = new Context();
+    context.provide("sandboxPolicy", { defaultMode: "danger-full-access", resolve: () => ({ mode: "danger-full-access", workspaceRoot: process.cwd() }) } as never);
     await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(platformTarget) });
     const io = (context.fs as LocalWorkspaceFileSystem).createCheckpointIoAuthority();
     const executionEnvironment = environment(runtimeHome, workspace, platformTarget);

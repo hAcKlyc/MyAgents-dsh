@@ -349,7 +349,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     behaviorFixtureIds: ["text_range_and_read_receipt", "image_attachment_projection", "text_model_image_refusal", "pdf_conversion_guidance", "notebook_json_text", "symlink_and_size_rejection"],
     resultSemantics: "Return the official bounded UTF-8 text view or validated image content for an image-capable calling model. PDF conversion belongs to document processing.",
     errorCodes: errors(
-      ["path_denied", false, "The canonical target is outside an allowed read root or crosses a forbidden symlink."],
+      ["path_denied", false, "The canonical target crosses a forbidden symbolic link."],
       ["file_not_found", false, "The canonical target is absent or not a regular readable file."],
       ["unsupported_format", false, "The requested projection is unsupported."],
       ["read_limit_exceeded", false, "The requested or decoded content exceeds a declared bound."],
@@ -358,8 +358,13 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Write: contract({
     name: "Write",
-    description: "Creates missing parent directories and a new file, or atomically replaces a previously read file, inside an allowed workspace. Existing files require a current complete Read receipt.",
-    inputSchema: strictObject({ file_path: boundedPath, content: boundedText }),
+    description: "Creates a new file or atomically replaces a previously read file. Writes follow the current sandbox mode; after a workspace-write denial, request one approved retry with sandbox_permissions and justification. Existing files require a current complete Read receipt.",
+    inputSchema: strictObject({
+      file_path: boundedPath,
+      content: boundedText,
+      sandbox_permissions: Type.Optional(Type.Literal("danger-full-access")),
+      justification: Type.Optional(Type.String({ minLength: 1, maxLength: 8_192 })),
+    }),
     outputSchema: writeOutput,
     concurrency: "canonical_path",
     sideEffect: "workspace",
@@ -372,19 +377,21 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     errorCodes: errors(
       ["read_required", false, "An existing target has no current complete Read receipt."],
       ["stale_read", true, "The target changed after its qualifying Read."],
-      ["path_denied", false, "The target is outside an allowed write root or changes identity."],
+      ["path_denied", false, "The target changes identity or the sandbox denies the write."],
       ["mutation_conflict", true, "The atomic commit precondition no longer matches."],
     ),
     lifecycle: lifecycle("bounded_executor", "policy_required"),
   }),
   Edit: contract({
     name: "Edit",
-    description: "Performs an exact string replacement in a UTF-8 text file using official DSH edit semantics, including CRLF preservation. By default old_string must occur exactly once; replace_all replaces every non-overlapping occurrence.",
+    description: "Performs an exact string replacement in a UTF-8 text file using official DSH edit semantics, including CRLF preservation. Writes follow the current sandbox mode; after a workspace-write denial, request one approved retry with sandbox_permissions and justification. By default old_string must occur exactly once; replace_all replaces every non-overlapping occurrence.",
     inputSchema: strictObject({
       file_path: boundedPath,
       old_string: boundedText,
       new_string: boundedText,
       replace_all: Type.Optional(Type.Boolean()),
+      sandbox_permissions: Type.Optional(Type.Literal("danger-full-access")),
+      justification: Type.Optional(Type.String({ minLength: 1, maxLength: 8_192 })),
     }),
     outputSchema: editOutput,
     concurrency: "canonical_path",
@@ -405,7 +412,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Glob: contract({
     name: "Glob",
-    description: "Finds files by glob pattern under an allowed directory. Results include ignored files, are ordered by modification time, and are capped at 100 paths.",
+    description: "Finds files by glob pattern under a readable directory. Results include ignored files, are ordered by modification time, and are capped at 100 paths.",
     inputSchema: strictObject({
       pattern: Type.String({ minLength: 1, maxLength: 4_096 }),
       path: Type.Optional(boundedPath),
@@ -426,7 +433,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     behaviorFixtureIds: ["mtime_order_and_100_cap", "ignored_files_included", "workspace_relative_projection", "invalid_pattern", "abort_search"],
     resultSemantics: "Return at most 100 canonical paths ordered by modification time with explicit truncation.",
     errorCodes: errors(
-      ["path_denied", false, "The search root is outside an allowed workspace."],
+      ["path_denied", false, "The search root is unavailable or changes identity."],
       ["invalid_pattern", false, "The glob pattern is invalid or over limit."],
       ["search_failed", true, "The bounded search failed after validation."],
     ),
@@ -487,7 +494,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     behaviorFixtureIds: ["content_mode_context", "files_with_matches_mode", "count_mode", "head_limit_and_offset", "multiline_and_abort"],
     resultSemantics: "Return bounded content, file-name, or count records with stable pagination and truncation metadata.",
     errorCodes: errors(
-      ["path_denied", false, "The search root is outside an allowed read root."],
+      ["path_denied", false, "The search root is unavailable or changes identity."],
       ["invalid_pattern", false, "The expression or option combination is invalid."],
       ["search_dependency_missing", false, "The pinned ripgrep executable is unavailable."],
       ["search_failed", true, "The bounded search process fails."],
@@ -516,7 +523,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     behaviorFixtureIds: ["exact_pi_description_and_schema", "alphabetical_directory_suffix", "dotfiles", "500_entry_or_50kb_truncation", "runtime_path_gate"],
     resultSemantics: "Return the retained lowercase ls textual result with alphabetical entries, directory suffixes, dotfiles, and exact truncation bounds.",
     errorCodes: errors(
-      ["path_denied", false, "The target directory is outside the allowed workspace."],
+      ["path_denied", false, "The target directory changes identity."],
       ["directory_not_found", false, "The target is absent or not a readable directory."],
       ["list_failed", true, "The bounded provider enumeration fails."],
     ),

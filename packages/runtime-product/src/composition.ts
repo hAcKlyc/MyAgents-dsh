@@ -25,8 +25,10 @@ import * as TimeContext from "@deepseek-ai/dsh-time-context";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
 import { SubagentRuntime } from "@deepseek-ai/dsh-subagent";
 import * as SubagentSpawnInProcess from "@deepseek-ai/dsh-subagent-spawn-in-process";
-import { LocalBashExecutor } from "@deepseek-ai/dsh-bash-local";
-import { PwshLocalExecutor } from "@deepseek-ai/dsh-pwsh-local";
+import { SandboxBashExecutor } from "@deepseek-ai/dsh-bash-sandbox";
+import { SandboxPwshExecutor } from "@deepseek-ai/dsh-pwsh-sandbox";
+import { LocalSandboxProvider } from "@deepseek-ai/dsh-sandbox-local";
+import { SandboxPolicyService, setSandboxMode } from "@deepseek-ai/dsh-sandbox-policy";
 import { SkillRegistry } from "@deepseek-ai/dsh-skill";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import type { Config as SystemPromptConfig } from "@deepseek-ai/dsh-system-prompt";
@@ -595,6 +597,12 @@ const nativeRpcLifecycleAuthorities = new WeakMap<object, NativeRpcLifecycleAuth
 const equalStringArrays = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index]);
 
+type DshPermissionMode = MethodParams<"session/create">["permissionMode"];
+const sandboxModeFor = (mode: DshPermissionMode): "workspace-write" | "danger-full-access" =>
+  mode === "full-autonomous" ? "danger-full-access" : "workspace-write";
+const approvalPolicyFor = (mode: DshPermissionMode): "ask" | "never" =>
+  mode === "approval-required" ? "ask" : "never";
+
 const assertInitialSessionConfiguration = (
   state: CompositionAuthorityState,
   request: PrimarySessionBackendRequest,
@@ -613,13 +621,7 @@ const assertInitialSessionConfiguration = (
   const toolPolicy = params.toolPolicy;
   const effective = catalog.effectiveTools;
   const disabled = catalog.implementationCatalog.filter((tool) => !effective.includes(tool));
-  const restoresPersistedPermissionConfiguration = request.mode === "resume";
-  if ((!restoresPersistedPermissionConfiguration
-      && (params.permissionMode !== state.canonicalPermissionMode
-        || params.interactionScenario !== state.hostInteractionRevision
-        || (toolPolicy?.autoAllowTools !== undefined
-          && !equalStringArrays(toolPolicy.autoAllowTools, state.canonicalAutoAllowTools))))
-    || (toolPolicy?.builtinTools !== undefined
+  if ((toolPolicy?.builtinTools !== undefined
       && !equalStringArrays(toolPolicy.builtinTools, effective))
     || (toolPolicy?.disallowedTools !== undefined
       && !equalStringArrays(toolPolicy.disallowedTools, disabled))) {
@@ -801,14 +803,14 @@ export const claimNativeRpcLifecycleAuthority = (
               ?? state.canonicalAutoAllowTools ?? Object.freeze([]);
             await state.context.productSession.replaceConfiguration(candidate, async (agent) => {
               await permission.applyConfiguration(agent, Object.freeze({
-                mode: params.permissionMode as Parameters<
-                  ProductPermissionController["applyConfiguration"]
-                >[1]["mode"],
+                mode: params.permissionMode,
                 autoAllowTools: autoAllowTools as Parameters<
                   ProductPermissionController["applyConfiguration"]
                 >[1]["autoAllowTools"],
                 interaction: nextInteraction,
               }));
+              setSandboxMode(agent.session, sandboxModeFor(params.permissionMode));
+              state.context.approval.setPolicy(agent, approvalPolicyFor(params.permissionMode));
               state.canonicalPermissionMode = params.permissionMode;
               state.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
               state.hostInteractionRevision = params.interactionScenario;
@@ -1248,6 +1250,8 @@ export const installCanonicalToolPlane = async (
     }
     fibers.push(await root.plugin(ProductSubprocessRuntime));
     fibers.push(await root.plugin(LocalJobRegistry, { maxConcurrentJobsPerOwner: 10 }));
+    fibers.push(await root.plugin(SandboxPolicyService, { mode: "workspace-write" }));
+    fibers.push(await root.plugin(LocalSandboxProvider));
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
     fibers.push(await root.plugin(AgentInstructions, {
       candidateSelection: "first",
@@ -1318,6 +1322,16 @@ export const installCanonicalToolPlane = async (
     let permissionController: ProductPermissionController | undefined;
     fibers.push(await root.plugin(ProductPermissionService, {
       ...permissionConfig,
+      resolveSandboxContext: (request) => {
+        if (request.callId === undefined) throw new Error("sandbox approval has no tool call identity");
+        return root.productTools.resolve({
+          agent: request.agent,
+          callId: request.callId,
+          rootCallId: request.callId,
+          name: request.toolName,
+          signal: request.signal ?? new AbortController().signal,
+        });
+      },
       withInteractionWait: (agent, signal, operation) => agent === root.productSession.requireAgent()
         ? operation() : root.productWork.withWaitingAgent(agent, "interaction", signal, operation),
       clock: Date.now,
@@ -1554,13 +1568,13 @@ export const installCanonicalToolPlane = async (
       name: "runtime:shell",
       order: 91,
       interpolate: false,
-      text: `Runtime platform: ${platform.target}. Available Shell tool: ${platform.shell.dialect}. Executable: ${processConfig.executablePaths.shell}. Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. Query the executable's version before relying on version-specific features. Execution uses the local user's OS permissions; no OS file sandbox is active. Governed file-tool roots do not constrain files or network accessed by shell commands.`,
+      text: `Runtime platform: ${platform.target}. Available Shell tool: ${platform.shell.dialect}. Executable: ${processConfig.executablePaths.shell}. Use this Shell's syntax. Each call starts in the current workspace; shell state does not persist between calls. Query the executable's version before relying on version-specific features. File writes follow the current Session sandbox mode; reads follow the local user's OS permissions.`,
     });
     if (platform.shell.dialect === "pwsh") {
-      fibers.push(await root.plugin(PwshLocalExecutor, { pwshPath: processConfig.executablePaths.shell }));
+      fibers.push(await root.plugin(SandboxPwshExecutor, { pwshPath: processConfig.executablePaths.shell }));
       fibers.push(await root.plugin(ToolPwsh, { enableRunInBackground: true, promoteOnTimeout: false }));
     } else {
-      fibers.push(await root.plugin(LocalBashExecutor));
+      fibers.push(await root.plugin(SandboxBashExecutor));
       fibers.push(await root.plugin(ToolBash, { enableRunInBackground: true, promoteOnTimeout: false }));
     }
     fibers.push(await root.plugin(ToolJobs, { completionDelivery: "quiet" }));
@@ -1598,7 +1612,14 @@ export const installCanonicalToolPlane = async (
           try {
             // Official delegation seeds "never". Product-managed children use
             // the same permission owner and Host interaction port as the root.
-            if (root.approval.overrideOf(child.session) !== "ask") setApprovalPolicy(child.session, "ask");
+            const inheritedApproval = root.approval.overrideOf(parent.session) ?? "ask";
+            if (root.approval.overrideOf(child.session) !== inheritedApproval) {
+              setApprovalPolicy(child.session, inheritedApproval);
+            }
+            const inheritedSandbox = root.sandboxPolicy.resolve({ session: parent.session }).mode;
+            if (root.sandboxPolicy.overrideOf(child.session) !== inheritedSandbox) {
+              setSandboxMode(child.session, inheritedSandbox);
+            }
             child.ctx.on("system-prompt/assemble", async (_assembly, _context, next) => {
               const assembled = await next();
               return {
@@ -1709,14 +1730,6 @@ export const installCanonicalToolPlane = async (
           }));
           assertCurrent();
           return installedAttachmentController.runWithRequestScope(scope, action);
-        },
-      }),
-      retainedOutput: Object.freeze({
-        resolve: async (context: ProductToolContext, path: string) => {
-          await root.productWork.initialize();
-          return root.productWork.hasRetainedOutput(productRootAgent(context), path)
-            ? await root.productWork.resolveRetainedOutput(context, path)
-            : await root.productProcesses.resolveRetainedOutput(context, path);
         },
       }),
     }));
@@ -2617,6 +2630,31 @@ export const composeDshRootServices = async (
         await root.productWork.resumeReady(agent);
         await root.sdkOperations.reconcileResumed(agent);
       },
+      initializeCreate: (agent, request) => {
+        const authority = compositionAuthorities.get(root);
+        const permission = authority?.permissionController;
+        const interaction = authority?.hostInteractionProvider;
+        if (authority === undefined || permission === undefined || interaction === undefined) {
+          throw new ProtocolError("primary_session_not_ready", "create permission authority is unavailable", true);
+        }
+        const nextInteraction: ProductLocalInteractionProvider = Object.freeze({
+          revision: request.params.interactionScenario,
+          decidePermission: (permissionRequest: Parameters<ProductLocalInteractionProvider["decidePermission"]>[0], settlement: Parameters<ProductLocalInteractionProvider["decidePermission"]>[1]) => interaction.decidePermission(permissionRequest, settlement),
+          answerQuestions: (questionRequest: Parameters<ProductLocalInteractionProvider["answerQuestions"]>[0], settlement: Parameters<ProductLocalInteractionProvider["answerQuestions"]>[1]) => interaction.answerQuestions(questionRequest, settlement),
+        });
+        const autoAllowTools = request.params.toolPolicy?.autoAllowTools ?? authority.canonicalAutoAllowTools ?? Object.freeze([]);
+        permission.restoreConfiguration(agent, Object.freeze({
+          mode: request.params.permissionMode,
+          autoAllowTools: autoAllowTools as Parameters<ProductPermissionController["restoreConfiguration"]>[1]["autoAllowTools"],
+          interaction: nextInteraction,
+        }));
+        setSandboxMode(agent.session, sandboxModeFor(request.params.permissionMode));
+        setApprovalPolicy(agent.session, approvalPolicyFor(request.params.permissionMode));
+        authority.canonicalPermissionMode = request.params.permissionMode;
+        authority.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
+        authority.hostInteractionRevision = request.params.interactionScenario;
+        return Promise.resolve();
+      },
       validateResume: async (agent, request) => {
         const authority = compositionAuthorities.get(root);
         const permission = authority?.permissionController;
@@ -2645,14 +2683,16 @@ export const composeDshRootServices = async (
         const autoAllowTools = request.params.toolPolicy?.autoAllowTools
           ?? authority.canonicalAutoAllowTools;
         permission.restoreConfiguration(agent, Object.freeze({
-          mode: request.params.permissionMode as Parameters<
-            ProductPermissionController["restoreConfiguration"]
-          >[1]["mode"],
+          mode: request.params.permissionMode,
           autoAllowTools: autoAllowTools as Parameters<
             ProductPermissionController["restoreConfiguration"]
           >[1]["autoAllowTools"],
           interaction: nextInteraction,
         }));
+        if (root.sandboxPolicy.overrideOf(agent.session) !== sandboxModeFor(request.params.permissionMode)
+          || root.approval.overrideOf(agent.session) !== approvalPolicyFor(request.params.permissionMode)) {
+          throw new ProtocolError("primary_session_configuration_stale", "resumed sandbox policy differs from the requested permission mode");
+        }
         authority.canonicalPermissionMode = request.params.permissionMode;
         authority.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
         authority.hostInteractionRevision = request.params.interactionScenario;

@@ -92,8 +92,6 @@ const productContext = (signal = new AbortController().signal): ProductToolConte
     revision: "environment-v1",
     runtimeHome: "/runtime",
     workspace: Object.freeze({
-      allowedReadRoots: Object.freeze(["/workspace"]),
-      allowedWriteRoots: Object.freeze(["/workspace"]),
       canonicalRoot: "/workspace",
       identity: "workspace-v1",
     }),

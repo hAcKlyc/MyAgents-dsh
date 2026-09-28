@@ -1135,7 +1135,7 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
     interaction: hostInteractionProvider,
     interactionRegistrationDeadlineMs: 5_000,
     maxRules: 16,
-    mode: "default",
+    mode: "approval-required",
   }),
   plan: Object.freeze({ revision: "artifact-plan-v1" }),
   platformTarget: fixturePlatformTarget,
@@ -1684,8 +1684,6 @@ const initializeRequest: InitializeParams = {
     workspace: {
       identity: "artifact-workspace",
       canonicalRoot: fixtureWorkspace,
-      allowedReadRoots: [fixtureWorkspace],
-      allowedWriteRoots: [fixtureWorkspace],
     },
     executables: {
       bundledNodeRef: "bundled-node",
@@ -1923,7 +1921,7 @@ await hostModelComposition.context.productSession.bindCreate({
   configRevision: "artifact-host-model-config-v1",
   extensionDigest: hostModelComposition.context.productComponents.catalog().digest,
   systemPrompt: "Synthetic credential-free Host model evidence.",
-  permissionMode: "default",
+  permissionMode: "approval-required",
   interactionScenario: "artifact-interaction-v1",
 });
 const previousFetch = globalThis.fetch;
@@ -2009,7 +2007,7 @@ try {
   const appliedConfig = await hostModelClient.configApply({
     revision: "artifact-host-model-config-v2",
     provider: nextHostModelProfile,
-    permissionMode: "default",
+    permissionMode: "approval-required",
     interactionScenario: "artifact-interaction-v1",
     systemPrompt: "Updated credential-free Host model evidence.",
     executionEnvironmentRevision: initializeRequest.executionEnvironment.revision,
@@ -2352,7 +2350,7 @@ const primarySessionParams = {
   configRevision: "artifact-config-v1",
   extensionDigest: composition.context.productComponents.catalog().digest,
   systemPrompt: "Artifact primary Session persona.",
-  permissionMode: "default",
+  permissionMode: "approval-required",
   interactionScenario: "artifact-interaction-v1",
 } satisfies MethodParams<"session/create">;
 const configurationMismatchComposition = await composeDshRootServices({
@@ -2480,7 +2478,7 @@ assert.equal(rpcStatus.desiredConfigRevision, "artifact-config-v1");
 assert.equal(rpcStatus.effectiveConfigRevision, "artifact-config-v1");
 
 const initialPermissionPolicy = await hostClient.permissionRulesList({});
-assert.equal(initialPermissionPolicy.permissionMode, "default");
+assert.equal(initialPermissionPolicy.permissionMode, "approval-required");
 assert.deepEqual(initialPermissionPolicy.autoAllowTools, []);
 assert.deepEqual(initialPermissionPolicy.rules, []);
 const grantedPermissionRule = await hostClient.permissionRulesAdd({

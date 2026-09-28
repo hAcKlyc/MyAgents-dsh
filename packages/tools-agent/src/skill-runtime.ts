@@ -319,9 +319,6 @@ interface ParsedSkillDocument {
 }
 
 interface StaticSkillRootAuthority {
-  readonly allowedRoot: FsTarget;
-  readonly allowedRootPathVersion: string;
-  readonly allowedRootVersion: string;
   readonly resourceRoot: FsTarget;
   readonly resourceRootPathVersion: string;
   readonly resourceRootVersion: string;
@@ -521,35 +518,17 @@ const captureApprovedSkillRoot = async (
     product.signal,
     "Skill resource root",
   );
-  for (const allowedPath of product.environment.workspace.allowedReadRoots) {
-    const allowed = await captureDirectoryIdentity(
-      ctx,
-      allowedPath,
-      product.signal,
-      "Skill allowed read root",
-    );
-    if (ctx.fs.contains(allowed.target, resource.target)) {
-      return Object.freeze({
-        allowedRoot: allowed.target,
-        allowedRootPathVersion: allowed.pathVersion,
-        allowedRootVersion: allowed.version,
-        resourceRoot: resource.target,
-        resourceRootPathVersion: resource.pathVersion,
-        resourceRootVersion: resource.version,
-      });
-    }
-  }
-  throw new TypeError("Skill resource root is outside operation-frozen allowed read roots");
+  return Object.freeze({
+    resourceRoot: resource.target,
+    resourceRootPathVersion: resource.pathVersion,
+    resourceRootVersion: resource.version,
+  });
 };
 
 const sameRootAuthority = (
   left: StaticSkillRootAuthority,
   right: StaticSkillRootAuthority,
-): boolean => left.allowedRoot.displayPath === right.allowedRoot.displayPath
-  && left.allowedRoot.targetKey === right.allowedRoot.targetKey
-  && left.allowedRootPathVersion === right.allowedRootPathVersion
-  && left.allowedRootVersion === right.allowedRootVersion
-  && left.resourceRoot.displayPath === right.resourceRoot.displayPath
+): boolean => left.resourceRoot.displayPath === right.resourceRoot.displayPath
   && left.resourceRoot.targetKey === right.resourceRoot.targetKey
   && left.resourceRootPathVersion === right.resourceRootPathVersion
   && left.resourceRootVersion === right.resourceRootVersion;
@@ -559,19 +538,13 @@ const revalidateSkillRoot = async (
   expected: StaticSkillRootAuthority,
   signal: AbortSignal,
 ): Promise<void> => {
-  const [allowed, resource] = await Promise.all([
-    captureDirectoryIdentity(ctx, expected.allowedRoot.displayPath, signal, "Skill allowed read root"),
-    captureDirectoryIdentity(ctx, expected.resourceRoot.displayPath, signal, "Skill resource root"),
-  ]);
+  const resource = await captureDirectoryIdentity(ctx, expected.resourceRoot.displayPath, signal, "Skill resource root");
   const observed = Object.freeze({
-    allowedRoot: allowed.target,
-    allowedRootPathVersion: allowed.pathVersion,
-    allowedRootVersion: allowed.version,
     resourceRoot: resource.target,
     resourceRootPathVersion: resource.pathVersion,
     resourceRootVersion: resource.version,
   });
-  if (!ctx.fs.contains(allowed.target, resource.target) || !sameRootAuthority(expected, observed)) {
+  if (!sameRootAuthority(expected, observed)) {
     throw new TypeError("Skill resource-root authority changed during execution");
   }
 };
