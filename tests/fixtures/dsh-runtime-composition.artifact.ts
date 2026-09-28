@@ -2399,7 +2399,7 @@ await assert.rejects(
     ...primarySessionParams,
     clientOperationId: "artifact-configuration-mismatch",
     runtimeSessionId: "artifact-configuration-mismatch",
-    interactionScenario: "stale-interaction-v0",
+    toolPolicy: { builtinTools: [] },
   }),
   /configuration differs from the installed Runtime authorities/u,
 );
