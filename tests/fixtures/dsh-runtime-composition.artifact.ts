@@ -389,8 +389,8 @@ const fixtureSkillSource = [
   "Inspect $ARGUMENTS through the accepted static Skill catalog; focus=$focus.",
 ].join("\n");
 const fixturePlanPath = join(
-  fixtureRuntimeHome,
-  "plans",
+  fixtureWorkspace,
+  ".myagents-dsh-plans",
   `${createHash("sha256").update("myagents-plan-artifact-v1\0").update("dsh-artifact-primary").digest("hex")}.md`,
 );
 await Promise.all([
