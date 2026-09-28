@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import { assetName } from "./package-batch-3-release.mjs";
-import { serializeReleaseManifest, validateReleaseSet } from "./publish-batch-3-release.mjs";
+import { renderReleaseNotesWithDshProvenance, serializeReleaseManifest, validateReleaseSet } from "./publish-batch-3-release.mjs";
 import { configuredReleaseTag } from "./release-version.mjs";
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -16,6 +16,19 @@ const targets = ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64"];
 const sourceCommit = "a".repeat(40);
 const releaseTag = configuredReleaseTag();
 const otherTag = releaseTag.replace(/\d+$/, (patch) => String(Number(patch) + 1));
+
+test("release notes use the patched artifact version from the Runtime manifest", () => {
+  const rendered = renderReleaseNotesWithDshProvenance("# MyAgents-dsh 0.1.9\n", sourceCommit, {
+    sourceBaseline: { commit: "b".repeat(40), tree: "c".repeat(40) },
+    executableBaseline: { dshRelease: "0.1.7-rc.2", sourceAssociation: "unproven" },
+  }, {
+    artifactVersion: "0.1.7-rc.2.myagents.test",
+    patchSeriesSha256: "d".repeat(64),
+    artifactManifestSha256: "e".repeat(64),
+  });
+  assert.match(rendered, /MyAgents patched DSH package \| `0\.1\.7-rc\.2\.myagents\.test`/u);
+  assert.doesNotMatch(rendered, /undefined/u);
+});
 
 test("publisher requires four complete verified target archives from one source", (t) => {
   const directory = mkdtempSync(resolve(tmpdir(), "myagents-dsh-release-set-"));
