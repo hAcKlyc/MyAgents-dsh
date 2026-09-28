@@ -266,6 +266,7 @@ describe("ProductSqliteSessionPersistence", () => {
         receipt_json, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, 'prepared', 0, NULL, 1, 1)
     `);
+    probe.exec("BEGIN IMMEDIATE");
     for (let index = 0; index < PRODUCT_PERSISTENCE_LIMITS.maxPendingMutationsPerSession; index += 1) {
       insert.run(
         `del_bound_${String(index)}`,
@@ -276,6 +277,7 @@ describe("ProductSqliteSessionPersistence", () => {
         sourceRevision,
       );
     }
+    probe.exec("COMMIT");
     probe.close();
     await expect(persistence.prepareDelete({
       clientMutationId: "journal-bound-overflow",

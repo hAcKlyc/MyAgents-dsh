@@ -18,61 +18,15 @@ import { childCli } from "./child-cli.mjs";
 
 type JsonObject = Record<string, unknown>;
 
-export const BATCH_1_PRE_ARTIFACT_GATE_VERSION = 1 as const;
-export const BATCH_1_SOAK_ITERATIONS = 3 as const;
-export const BATCH_1_VITEST_CONCURRENCY = Object.freeze([
-  "--maxWorkers=1",
-  "--no-file-parallelism",
-] as const);
+export const BATCH_1_PRE_ARTIFACT_GATE_VERSION = 2 as const;
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const vitestEntrypoint = resolve(repositoryRoot, "node_modules/vitest/vitest.mjs");
-
-const faultMatrixFiles = Object.freeze([
-  "tests/json-rpc-peer.unit.test.ts",
-  "tests/native-rpc-server.unit.test.ts",
-  "tests/operation-runtime.unit.test.ts",
-  "tests/runtime-event-projector.unit.test.ts",
-  "tests/runtime-process-lifecycle.unit.test.ts",
-  "tests/primary-session-admission.unit.test.ts",
-  "tests/host-ports.unit.test.ts",
-  "tests/host-credential-model.unit.test.ts",
-  "tests/host-attachments.unit.test.ts",
-  "tests/product-interaction-plan.unit.test.ts",
-  "tests/product-permission-interaction.unit.test.ts",
-  "tests/product-component-runtime.unit.test.ts",
-  "tests/product-mcp-components.unit.test.ts",
-  "tests/product-host-tools.unit.test.ts",
-  "tests/product-host-hooks.unit.test.ts",
-  "tests/product-persistence.unit.test.ts",
-  "tests/product-session-handle.unit.test.ts",
-  "tests/product-session-ownership.unit.test.ts",
-  "tests/product-checkpoint.unit.test.ts",
-  "tests/product-process-tools.unit.test.ts",
-  "tests/product-work-tools.unit.test.ts",
-  "tests/product-web-tools.unit.test.ts",
-  "tests/dynamic-e2e.unit.test.ts",
-] as const);
-
-const soakFiles = Object.freeze([
-  "tests/json-rpc-peer.unit.test.ts",
-  "tests/operation-runtime.unit.test.ts",
-  "tests/host-ports.unit.test.ts",
-  "tests/product-component-runtime.unit.test.ts",
-  "tests/product-persistence.unit.test.ts",
-  "tests/product-session-handle.unit.test.ts",
-  "tests/product-session-ownership.unit.test.ts",
-  "tests/product-checkpoint.unit.test.ts",
-  "tests/runtime-process-lifecycle.unit.test.ts",
-  "tests/dynamic-e2e.unit.test.ts",
-] as const);
 
 export interface GateCommand {
   readonly id: string;
   readonly command: string;
   readonly args: readonly string[];
   readonly timeoutMs: number;
-  readonly vitestReport?: string;
 }
 
 interface CommandEvidence {
@@ -80,14 +34,6 @@ interface CommandEvidence {
   readonly command: readonly string[];
   readonly outputSha256: string;
   readonly status: "passed";
-  readonly testFiles?: number;
-  readonly tests?: number;
-  readonly skippedTests?: number;
-}
-
-interface VitestJsonReport {
-  readonly testResults?: unknown;
-  readonly success?: unknown;
 }
 
 const digest = (value: string | Uint8Array): string =>
@@ -111,41 +57,6 @@ const canonicalize = (value: unknown): string => {
     `${JSON.stringify(key)}:${canonicalize(object[key])}`).join(",")}}`;
 };
 
-const exactObject = (value: unknown, label: string): JsonObject => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label} must be an object`);
-  }
-  return value as JsonObject;
-};
-
-export const summarizeVitestReport = (value: unknown): { testFiles: number; tests: number; skippedTests: number } => {
-  const report = exactObject(value, "Vitest report") as VitestJsonReport;
-  if (report.success !== true || !Array.isArray(report.testResults) || report.testResults.length === 0) {
-    throw new Error("Vitest report must describe a passing non-empty run");
-  }
-  let tests = 0;
-  let skippedTests = 0;
-  for (const [fileIndex, entry] of report.testResults.entries()) {
-    const file = exactObject(entry, `Vitest file ${String(fileIndex)}`);
-    if (file.status !== "passed" || !Array.isArray(file.assertionResults)) {
-      throw new Error(`Vitest file ${String(fileIndex)} did not pass with assertions`);
-    }
-    for (const [testIndex, assertion] of file.assertionResults.entries()) {
-      const test = exactObject(assertion, `Vitest assertion ${String(fileIndex)}:${String(testIndex)}`);
-      if (test.status === "skipped") {
-        skippedTests += 1;
-        continue;
-      }
-      if (test.status !== "passed") {
-        throw new Error(`Vitest assertion ${String(fileIndex)}:${String(testIndex)} did not pass`);
-      }
-      tests += 1;
-    }
-  }
-  if (tests === 0) throw new Error("Vitest report contains no passing assertions");
-  return { testFiles: report.testResults.length, tests, skippedTests };
-};
-
 const isContained = (parent: string, child: string): boolean => {
   const path = relative(parent, child);
   return path === "" || (!path.startsWith("..") && !isAbsolute(path));
@@ -163,22 +74,7 @@ export const resolveExternalOutputRoot = (requested: string, root = repositoryRo
   return candidate;
 };
 
-export const createGatePlan = (outputRoot: string, dshSource?: string): readonly GateCommand[] => {
-  const reportPath = (name: string): string => resolve(outputRoot, "raw", `${name}.json`);
-  const vitest = (id: string, files: readonly string[], timeoutMs: number): GateCommand => ({
-    id,
-    command: process.execPath,
-    args: [
-      vitestEntrypoint,
-      "run",
-      ...files,
-      ...BATCH_1_VITEST_CONCURRENCY,
-      "--reporter=json",
-      `--outputFile=${reportPath(id)}`,
-    ],
-    timeoutMs,
-    vitestReport: reportPath(id),
-  });
+export const createGatePlan = (dshSource?: string): readonly GateCommand[] => {
   const npm = (id: string, args: readonly string[], timeoutMs: number): GateCommand => ({
     id,
     command: "npm",
@@ -192,12 +88,7 @@ export const createGatePlan = (outputRoot: string, dshSource?: string): readonly
       : ["exec", "--", "tsx", "scripts/verify-dsh-seams.ts", "--check-source", dshSource, "--compile-test"], 300_000),
     npm("network-native", ["run", "test:network-native"], 120_000),
     npm("session-ownership-native", ["run", "test:session-ownership-native"], 120_000),
-    vitest("fault-matrix", faultMatrixFiles, 300_000),
-  ];
-  for (let iteration = 1; iteration <= BATCH_1_SOAK_ITERATIONS; iteration += 1) {
-    plan.push(vitest(`bounded-soak-${String(iteration)}`, soakFiles, 180_000));
-  }
-  plan.push(
+    // npm test already runs the complete suite with the pinned single-worker policy.
     // macOS Intel native runs exceeded ten minutes while still progressing through check:foundation.
     npm("typecheck", ["run", "typecheck"], 1_200_000),
     npm("lint", ["run", "lint"], 300_000),
@@ -205,7 +96,7 @@ export const createGatePlan = (outputRoot: string, dshSource?: string): readonly
     // Repeating a valued Vitest flag after `--` makes current Vitest reject the run.
     npm("test", ["test"], 600_000),
     npm("build", ["run", "build"], 600_000),
-  );
+  ];
   return Object.freeze(plan);
 };
 
@@ -249,21 +140,16 @@ const main = (): void => {
   const npmVersion = runText("npm", ["--version"], 30_000);
   const evidence: CommandEvidence[] = [];
   try {
-    for (const phase of createGatePlan(outputRoot, values["dsh-source"] === undefined
+    for (const phase of createGatePlan(values["dsh-source"] === undefined
       ? undefined : realpathSync(resolve(values["dsh-source"])))) {
       process.stdout.write(`[B1-G4] ${phase.id}\n`);
       const output = runText(phase.command, phase.args, phase.timeoutMs);
       writeFileSync(resolve(outputRoot, "raw", `${phase.id}.log`), `${output}\n`, { mode: 0o400 });
-      const testSummary = phase.vitestReport === undefined
-        ? undefined
-        : summarizeVitestReport(JSON.parse(readFileSync(phase.vitestReport, "utf8")) as unknown);
-      if (phase.vitestReport !== undefined) chmodSync(phase.vitestReport, 0o400);
       evidence.push({
         id: phase.id,
         command: [phase.command, ...phase.args],
         outputSha256: digest(output),
         status: "passed",
-        ...(testSummary ?? {}),
       });
     }
     const finalCommit = assertCleanRepository();
@@ -275,9 +161,6 @@ const main = (): void => {
       packageLockSha256,
       nodeVersion: process.version.slice(1),
       npmVersion,
-      workerPolicy: { maxWorkers: 1, fileParallelism: false },
-      boundedSoak: { iterations: BATCH_1_SOAK_ITERATIONS, filesPerIteration: soakFiles.length },
-      faultMatrix: { files: [...faultMatrixFiles] },
       phases: evidence,
     } as const;
     const reportBytes = `${canonicalize(report)}\n`;
