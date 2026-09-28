@@ -2665,7 +2665,7 @@ const approvalRuntimeContext = "Current runtime context. This snapshot supersede
   + "- fixture-audit — Audits the synthetic Runtime artifact and returns bounded evidence.\n"
   + "- release-audit — Audit one accepted Runtime component generation\n\n"
   + "Call Skill with `skill: <name>` to load the full instructions only when needed.\n\n"
-  + `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: "${fixtureWorkspace}". Some platform temporary areas may also be writable.\n\n`
+  + `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(fixtureWorkspace)}. Some platform temporary areas may also be writable.\n\n`
   + "Approval policy: ask. Operations that require approval may ask through the configured answerers; "
   + "without an available answerer, the request fails closed.";
 const approvalContextMessage = {
