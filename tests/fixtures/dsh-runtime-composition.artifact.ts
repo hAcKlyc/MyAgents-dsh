@@ -3223,7 +3223,7 @@ assert.deepEqual({
   records: [{ path: "governed.txt" }],
   truncated: false,
 });
-assert.equal(processSearchText("artifact-ls-call"), "governed.txt\npixel.png\nsearch-fixtures/\nskills/");
+assert.equal(processSearchText("artifact-ls-call"), ".myagents-dsh-plans/\ngoverned.txt\npixel.png\nsearch-fixtures/\nskills/");
 const broadCount = JSON.parse(processSearchText("artifact-grep-broad-count")) as { records: unknown[]; truncated: boolean };
 assert.deepEqual(broadCount.records, [{ count: fixtureSearchCount, path: "search-fixtures/lines.fixture" }]);
 assert.equal(broadCount.truncated, false);
