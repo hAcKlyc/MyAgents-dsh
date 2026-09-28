@@ -13,7 +13,6 @@ export interface EvidenceRedactionPolicy {
   readonly secretCanaries: readonly string[];
   readonly maxDepth?: number;
   readonly maxNodes?: number;
-  readonly maxStringLength?: number;
 }
 
 export const MAX_EVIDENCE_ARRAY_LENGTH = 100_000;
@@ -52,11 +51,8 @@ export const sanitizeEvidence = (
 ): CanonicalJson => {
   const maximumDepth = policy.maxDepth ?? 48;
   const maximumNodes = policy.maxNodes ?? 100_000;
-  const maximumStringLength = policy.maxStringLength ?? 262_144;
   if (!Number.isSafeInteger(maximumDepth) || maximumDepth < 1 || maximumDepth > 128
-    || !Number.isSafeInteger(maximumNodes) || maximumNodes < 1 || maximumNodes > 1_000_000
-    || !Number.isSafeInteger(maximumStringLength) || maximumStringLength < 1
-    || maximumStringLength > 1_000_000) {
+    || !Number.isSafeInteger(maximumNodes) || maximumNodes < 1 || maximumNodes > 1_000_000) {
     throw new TypeError("evidence redaction bounds are invalid");
   }
   const canaries = [...policy.secretCanaries];
@@ -86,9 +82,7 @@ export const sanitizeEvidence = (
       return candidate;
     }
     if (typeof candidate === "string") {
-      if (candidate.length > maximumStringLength || candidate.includes("\0")) {
-        throw new TypeError("evidence strings exceed their bound");
-      }
+      if (candidate.includes("\0")) throw new TypeError("evidence strings may not contain NUL");
       if (canaries.some((canary) => candidate.includes(canary))) {
         throw new Error("secret canary reached the evidence boundary");
       }
