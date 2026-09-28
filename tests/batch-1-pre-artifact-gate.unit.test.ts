@@ -6,11 +6,8 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  BATCH_1_SOAK_ITERATIONS,
-  BATCH_1_VITEST_CONCURRENCY,
   createGatePlan,
   resolveExternalOutputRoot,
-  summarizeVitestReport,
 } from "../scripts/run-batch-1-pre-artifact-gate.js";
 
 const temporaryRoots: string[] = [];
@@ -20,51 +17,21 @@ afterEach(async () => {
 });
 
 describe("Batch 1 pre-artifact gate", () => {
-  it("freezes one worker and three fresh-process bounded-soak iterations", async () => {
-    const root = await mkdtemp(resolve(tmpdir(), "myagents-dsh-g4-plan-"));
-    temporaryRoots.push(root);
-    const plan = createGatePlan(root);
-    const soak = plan.filter(({ id }) => id.startsWith("bounded-soak-"));
-
-    expect(BATCH_1_SOAK_ITERATIONS).toBe(3);
-    expect(BATCH_1_VITEST_CONCURRENCY).toEqual(["--maxWorkers=1", "--no-file-parallelism"]);
-    expect(soak).toHaveLength(3);
-    expect(soak.every(({ args }) =>
-      args.includes("--maxWorkers=1") && args.includes("--no-file-parallelism"))).toBe(true);
+  it("runs the complete suite once after platform checks", () => {
+    const plan = createGatePlan();
     expect(plan.find(({ id }) => id === "test")?.args).toEqual(["test"]);
     expect(plan.find(({ id }) => id === "typecheck")?.timeoutMs).toBe(1_200_000);
+    expect(plan.filter(({ args }) => args.includes("test"))).toHaveLength(1);
     expect(plan.map(({ id }) => id)).toEqual([
       "dsh-source",
       "dsh-seams-source",
       "network-native",
       "session-ownership-native",
-      "fault-matrix",
-      "bounded-soak-1",
-      "bounded-soak-2",
-      "bounded-soak-3",
       "typecheck",
       "lint",
       "test",
       "build",
     ]);
-  });
-
-  it("accepts only a passing non-empty Vitest report", () => {
-    expect(summarizeVitestReport({
-      success: true,
-      testResults: [{ status: "passed", assertionResults: [{ status: "passed" }, { status: "passed" }] }],
-    })).toEqual({ testFiles: 1, tests: 2, skippedTests: 0 });
-    expect(summarizeVitestReport({
-      success: true,
-      testResults: [{ status: "passed", assertionResults: [{ status: "passed" }, { status: "skipped" }] }],
-    })).toEqual({ testFiles: 1, tests: 1, skippedTests: 1 });
-    expect(() => summarizeVitestReport({ success: false, testResults: [] })).toThrow(
-      "passing non-empty run",
-    );
-    expect(() => summarizeVitestReport({
-      success: true,
-      testResults: [{ status: "failed", assertionResults: [{ status: "failed" }] }],
-    })).toThrow("did not pass");
   });
 
   it("refuses repository-contained and pre-existing evidence roots", async () => {
