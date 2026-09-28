@@ -3,7 +3,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
@@ -66,7 +65,7 @@ export function packageBatch3Release({ handoff, handoffSha256, tag, target, out,
   if (outer.platforms.length !== 1 || !platformClaim || platformClaim.claim !== "verified") {
     throw new Error(`Release handoff must contain only its verified ${target} platform claim`);
   }
-  const staging = mkdtempSync(resolve(tmpdir(), "myagents-dsh-package-"));
+  const staging = mkdtempSync(resolve(output, ".myagents-dsh-package-"));
   try {
     const temporaryArchive = resolve(staging, name);
     const payload = resolve(staging, "payload");
