@@ -2969,9 +2969,7 @@ assert.equal(governedToolResults.length, 2, JSON.stringify(governedToolResults))
 assert.equal(governedToolResults.every((event) => event.type === "tool/result"
   && event.data.message.isError !== true), true, JSON.stringify(governedToolResults));
 assert.equal(await readFile(fixtureFile, "utf8"), transformedWriteContent);
-assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
-  `permission:Write:${fixtureFile}`,
-]);
+assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), []);
 await waitUntil(
   () => primaryAgent.session.snapshotEvents().some((event) => event.type === "myagents/checkpoint/state"
     && event.data.callId === "artifact-write-call" && event.data.phase === "settled"),
@@ -3056,10 +3054,7 @@ assert.equal(governedEditReadResult.data.message.isError, false, JSON.stringify(
 assert.ok(governedEditResult?.type === "tool/result");
 assert.equal(governedEditResult.data.message.isError, false, JSON.stringify(governedEditResult));
 assert.equal(await readFile(fixtureFile, "utf8"), editedFileContent);
-assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
-  `permission:Write:${fixtureFile}`,
-  `permission:Edit:${fixtureFile}`,
-]);
+assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), []);
 await waitUntil(
   () => primaryAgent.session.snapshotEvents().some((event) => event.type === "myagents/checkpoint/state"
     && event.data.callId === "artifact-edit-call" && event.data.phase === "settled"),
@@ -3269,7 +3264,7 @@ const backgroundFloodRecord = { jobId: shellMeta("artifact-background-flood-call
 assert.equal(typeof backgroundRecord.jobId, "string");
 assert.equal(typeof backgroundFloodRecord.jobId, "string");
 assert.ok(fileToolEvidence.some((entry) => entry.startsWith(`permission:${fixtureShellTool}:`)));
-for (const safeTool of ["Read", "Glob", "Grep", "ls"]) {
+for (const safeTool of ["Read", "Write", "Edit", "Glob", "Grep", "ls"]) {
   assert.equal(fileToolEvidence.some((entry) => entry.startsWith(`permission:${safeTool}:`)), false);
 }
 const backgroundJobs = composition.context.jobs.list(primaryAgent.session.id);
@@ -5313,7 +5308,7 @@ writeSync(1, `${JSON.stringify({
     durableRules: permissionRuleEvents.length,
     durableRuleRevocations: permissionRuleRevokedEvents.length,
     providerRequests: fileToolEvidence.filter((entry) => entry.startsWith("permission:")).length,
-    safeToolsAutoAllowed: ["Read", "Glob", "Grep", "ls", "TaskGet", "TaskList"].every((tool) =>
+    safeToolsAutoAllowed: ["Read", "Write", "Edit", "Glob", "Grep", "ls", "TaskGet", "TaskList"].every((tool) =>
       !fileToolEvidence.some((entry) => entry.startsWith(`permission:${tool}:`))),
   },
   canonicalWebEvidence: {
