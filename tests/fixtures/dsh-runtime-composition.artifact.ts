@@ -2658,14 +2658,14 @@ const approvalRuntimeContext = "Current runtime context. This snapshot supersede
   + "Use this exact absolute path for file and search tools that require one. The available Shell tool runs in this workspace. "
   + "Do not infer access outside it.\n\n"
   + `Runtime platform: ${fixturePlatformTarget}. Available Shell tool: ${fixtureShellTool}. Executable: ${artifactShellPath}. `
-  + "Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. "
+  + "Use this Shell's syntax. Each call starts in the current workspace; shell state does not persist between calls. "
   + "Query the executable's version before relying on version-specific features. "
-  + "Execution uses the local user's OS permissions; no OS file sandbox is active. "
-  + "Governed file-tool roots do not constrain files or network accessed by shell commands.\n\n"
+  + "File writes follow the current Session sandbox mode; reads follow the local user's OS permissions.\n\n"
   + "Available Skills:\n"
   + "- fixture-audit — Audits the synthetic Runtime artifact and returns bounded evidence.\n"
   + "- release-audit — Audit one accepted Runtime component generation\n\n"
   + "Call Skill with `skill: <name>` to load the full instructions only when needed.\n\n"
+  + `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: "${fixtureWorkspace}". Some platform temporary areas may also be writable.\n\n`
   + "Approval policy: ask. Operations that require approval may ask through the configured answerers; "
   + "without an available answerer, the request fails closed.";
 const approvalContextMessage = {
