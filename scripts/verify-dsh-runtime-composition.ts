@@ -13,6 +13,7 @@ import {
   rmSync,
   statSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -1155,7 +1156,7 @@ const main = (): void => {
       ], runtimeRoot, environment);
       assertRuntimeProcessEvidence(processOutput, installed.manifestSha256, installed.manifest.build);
       verifyInstalledRuntimeArtifact(runtimeRoot, installed.manifestSha256);
-      process.stdout.write(
+      writeSync(1,
         `installed Runtime artifact verified: manifest=${installed.manifestSha256}, `
         + `files=${String(installed.fileCount)}\n`,
       );
@@ -2175,7 +2176,7 @@ const main = (): void => {
       progress("verified artifact promoted");
       rmSync(publicationStagingRoot, { force: true, recursive: true });
     }
-    process.stdout.write(
+    writeSync(1,
       `patched DSH runtime composition verified: ${output}\n`
       + `patched DSH runtime process verified: ${processOutput}\n`
       + `installed Runtime artifact verified: manifest=${installedRuntime.manifestSha256}, `
@@ -2194,4 +2195,10 @@ const main = (): void => {
 };
 
 const entrypoint = process.argv[1];
-if (entrypoint !== undefined && import.meta.url === pathToFileURL(resolve(entrypoint)).href) main();
+if (entrypoint !== undefined && import.meta.url === pathToFileURL(resolve(entrypoint)).href) {
+  main();
+  // This artifact gate owns one synchronous CLI run. Product modules loaded by
+  // the checks can retain timers after evidence is complete; they must not hold
+  // a release runner open after the verified output has been published.
+  process.exit(0);
+}
