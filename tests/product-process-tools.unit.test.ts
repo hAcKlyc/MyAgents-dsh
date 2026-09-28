@@ -814,11 +814,17 @@ describe("official Shell tools with product policy", () => {
     await state.context.fiber.dispose();
   });
 
-  it("denies background policy and workdirs outside the workspace before spawning", async () => {
+  it("denies disallowed background execution without spawning", async () => {
     const state = await harness({ backgroundRetention: "deny" });
     expect((await state.execute({ command: "background", run_in_background: true })).isError).toBe(true);
-    expect((await state.execute({ command: "outside", workdir: ".." })).isError).toBe(true);
     expect(state.fakeSubprocess.specs).toHaveLength(0);
+    await state.context.fiber.dispose();
+  });
+
+  it("allows a Shell working directory outside the workspace", async () => {
+    const state = await harness();
+    expect((await state.execute({ command: "outside", workdir: ".." })).isError).toBe(false);
+    expect(state.fakeSubprocess.specs[0]?.cwd).toBe(state.root);
     await state.context.fiber.dispose();
   });
 
