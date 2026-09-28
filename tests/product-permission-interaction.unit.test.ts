@@ -565,7 +565,7 @@ describe("product permission policy and local interaction provider", () => {
     }
   });
 
-  it("keeps the Host Hook deny authoritative in bypassPermissions", async () => {
+  it("keeps the Host Hook deny authoritative in full-autonomous mode", async () => {
     const local = provider("scenario-bypass-hook", (pending, settlement) =>
       response(pending, "allow_once", settlement));
     const state = await mounted(local.provider, {
