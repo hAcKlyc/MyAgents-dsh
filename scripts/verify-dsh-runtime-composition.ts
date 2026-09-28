@@ -987,13 +987,13 @@ const buildInstalledRuntimeCandidate = (
     resolve(candidateRoot, "runtime-server-process.artifact.mjs"),
   );
   assertNoAncestorNodeModules(candidateRoot);
-  run("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], candidateRoot, environment);
+  run("npm", ["install", "--prefer-offline", "--ignore-scripts", "--no-audit", "--no-fund"], candidateRoot, environment);
   assertContainedNodeModules(candidateRoot);
   assertCleanRuntimeDependencyTree(candidateRoot, environment);
   const initialLock = JSON.parse(readFileSync(resolve(candidateRoot, "package-lock.json"), "utf8")) as unknown;
   assertArtifactLocalFileReferences(initialLock, "installed Runtime lock");
   rmSync(resolve(candidateRoot, "node_modules"), { force: true, recursive: true });
-  run("npm", ["ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], candidateRoot, environment);
+  run("npm", ["ci", "--prefer-offline", "--ignore-scripts", "--no-audit", "--no-fund"], candidateRoot, environment);
   assertContainedNodeModules(candidateRoot);
   assertCleanRuntimeDependencyTree(candidateRoot, environment);
   const finalLock = JSON.parse(readFileSync(resolve(candidateRoot, "package-lock.json"), "utf8")) as unknown;
@@ -2177,8 +2177,8 @@ const main = (): void => {
       rmSync(publicationStagingRoot, { force: true, recursive: true });
     }
     writeSync(1,
-      `patched DSH runtime composition verified: ${output}\n`
-      + `patched DSH runtime process verified: ${processOutput}\n`
+      `patched DSH runtime composition verified: sha256=${digestBytes(Buffer.from(output))}\n`
+      + `patched DSH runtime process verified: sha256=${digestBytes(Buffer.from(processOutput))}\n`
       + `installed Runtime artifact verified: manifest=${installedRuntime.manifestSha256}, `
       + `files=${String(installedRuntime.fileCount)}\n`,
     );
