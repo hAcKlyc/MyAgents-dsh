@@ -1231,7 +1231,7 @@ export class LocalWorkspaceFileSystem extends SandboxedFileSystem {
       throw new FsError("managed plan identity is invalid", "FS_SANDBOX_DENIED");
     }
     const stem = createHash("sha256").update("myagents-plan-artifact-v1\0").update(sessionId).digest("hex");
-    return this.adapterValue.normalizeAbsolutePath(this.pathValue.join(runtimeHome, "plans", `${stem}.md`));
+    return this.adapterValue.normalizeAbsolutePath(this.pathValue.join(runtimeHome, ".myagents-dsh-plans", `${stem}.md`));
   }
 
   private async planDirectory(
@@ -1255,7 +1255,7 @@ export class LocalWorkspaceFileSystem extends SandboxedFileSystem {
     }
     const rootInfo = await this.stat(root, signal);
     if (rootInfo?.type !== "directory") throw new FsError("Runtime home is unavailable", "FS_NOT_FOUND");
-    const directory = this.pathValue.join(runtimeHome, "plans");
+    const directory = this.pathValue.join(runtimeHome, ".myagents-dsh-plans");
     let before = await lstat(directory).catch((error: unknown) => {
       if (errorCode(error) === "ENOENT") return undefined;
       return fsError(error, "managed plan directory inspection failed");

@@ -54,23 +54,12 @@ afterEach(async () => {
 describe("approved-route scripted interaction", () => {
   const hostCall = (params: unknown): unknown => ({ method: "host/interaction/request", params });
 
-  it("checks clarification, approval and mutation order without depending on file tool names", () => {
-    const selectionWrite = hostCall({
-      kind: "permission",
-      permissionAction: "workspace.write",
-      review: { operation: { path: "C:\\workspace\\selection.txt" } },
-    });
-    const planWrite = hostCall({
-      kind: "permission",
-      permissionAction: "workspace.write",
-      review: { operation: { path: "C:\\plans\\draft.md" } },
-    });
+  it("recognizes plan approval after clarification", () => {
     const clarification = hostCall({ kind: "ask_user" });
     const approval = hostCall({ kind: "plan_approval" });
-    expect(interactionPlanHostOrderVerified([clarification, planWrite, approval, selectionWrite])).toBe(true);
-    expect(interactionPlanHostOrderVerified([clarification, selectionWrite, approval])).toBe(false);
-    expect(interactionPlanHostOrderVerified([clarification, approval])).toBe(false);
-    expect(interactionPlanHostOrderVerified([approval, selectionWrite])).toBe(false);
+    expect(interactionPlanHostOrderVerified([clarification, approval])).toBe(true);
+    expect(interactionPlanHostOrderVerified([clarification])).toBe(false);
+    expect(interactionPlanHostOrderVerified([approval, clarification])).toBe(false);
   });
 
   const request = (

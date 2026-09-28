@@ -43,7 +43,7 @@ import {
 } from "@myagents-dsh/tools-interaction";
 import { link, mkdir, mkdtemp, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setImmediate as yieldImmediate } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -494,6 +494,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
       mode: string; planPath: string; revision: string;
     };
     expect(entered.mode).toBe("plan");
+    expect(dirname(entered.planPath)).toBe(join(state.workspace, ".myagents-dsh-plans"));
     expect(typeof entered.revision).toBe("string");
     expect(state.flushes).toContain("plan:interaction-plan-session");
     expect((await state.execute("DynamicMutation", {})).isError).toBe(true);
@@ -669,7 +670,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     const movedHome = `${state.runtimeHome}-moved`;
     await rename(state.runtimeHome, movedHome);
     await mkdir(state.runtimeHome);
-    await mkdir(join(state.runtimeHome, "plans"));
+    await mkdir(join(state.runtimeHome, ".myagents-dsh-plans"));
     await writeFile(target.displayPath, "replacement plan", "utf8");
     await expect(state.fileSystem.readBytes(resolved, signal, 240_000))
       .rejects.toMatchObject({ code: "FS_STALE_VERSION" });

@@ -31,35 +31,27 @@ Composition supplies `withInteractionWait` to the permission service. Child perm
 
 ## 2. Permission modes
 
-The permission mode controls only the fallback after hard guards, Hooks, safe policy, configured auto-allow tools and active exact rules have been evaluated.
+The product supplies one of three modes to each Session. Reads and searches use the local user's access on all three modes. The first two modes apply the upstream `workspace-write` sandbox to governed file mutations and Shell processes; `full-autonomous` uses `danger-full-access`.
 
-| Mode | Safe read/search | `Write` / `Edit` | Other unapproved tools | Unapproved fallback |
-| --- | --- | --- | --- | --- |
-| `default` | allow | ask | ask | block on Host interaction |
-| `acceptEdits` | allow | allow | Built-in Skill, task/Agent work, Web and interaction tools allow; Shell and external tools ask | block on Host interaction |
-| `dontAsk` | allow | deny unless pre-authorized | deny unless pre-authorized | deny without interaction |
-| `bypassPermissions` | allow | allow | allow | allow without permission interaction |
+| Mode | Ordinary tool approval | Local file and Shell writes | Sandbox escalation |
+| --- | --- | --- | --- |
+| `approval-required` | Bash/PowerShell, Web, MCP/Host, Skills, Agent work and other effectful tools ask; file Read/Write/Edit/Search do not | Workspace and sandbox temp roots | A denied operation may request one explicit wider retry |
+| `workspace-autonomous` | No prompt | Workspace and sandbox temp roots | Denied automatically |
+| `full-autonomous` | No prompt | Current OS user's access | Not needed |
 
-`dontAsk` means **default deny**, not silent allow. It is useful for headless or policy-template execution when paired with `autoAllowTools` and/or exact rules. `bypassPermissions` bypasses the permission prompt only; it does not bypass visibility, Hook denial, Plan policy, operation identity, workspace checks inside governed file tools, execution-environment revision, cancellation or other hard policy.
-
-The fixed safe permission classes are `workspace.read`, `workspace.search`, `task_graph.read` and `session.plan.enter`. Tool visibility remains a different plane: `disallowedTools` removes definitions from the effective catalog, while `autoAllowTools` grants tool-level permission. Neither field should be presented as the other.
+MCP/Host tools and Host-side internal CLI actions do not inherit the local file sandbox. The workspace boundary governs DSH's native file tools and Shell processes. Exact `always_allow` rules apply only within the root Session lifetime; sandbox escalation grants only the current operation. Tool visibility, Hooks, plan state and execution identity still apply in every mode.
 
 ## 3. Decision order
 
 ```text
 visible current tool + frozen operation birth
   -> workspace / Plan / origin / catalog hard guards
-  -> durable permission progress validation (serialized with pending commits)
+  -> durable permission progress validation
   -> PermissionRequest Host Hook
-       deny       -> deny
-       allow_once -> allow this call
-       continue   -> continue
-  -> bypassPermissions / safe class / configured autoAllowTools / acceptEdits built-in Action allowance
-  -> active exact rule from the latest operation-validated durable snapshot
-  -> dontAsk denial
-  -> exact-tuple single-flight gate and authority re-check
-  -> default/acceptEdits blocking Host permission interaction
-  -> execution-time current-authority revalidation
+  -> mode's safe classes, configured auto-allow tools and exact Session rules
+  -> approval-required: exact-tuple Host interaction if still needed
+  -> workspace-autonomous / full-autonomous: run without ordinary interaction
+  -> execution-time authority and sandbox enforcement
 ```
 
 An operation freezes its permission revision at birth. Each later revision must be a proven additive inline grant from that same operation and birth; external grants, revocations, configuration transitions and unknown history invalidate the old operation even for automatically allowed tools. A successful inline `always_allow` records its originating Agent/client-operation/origin and exact tool/class/target only after the durable rule has flushed. Once that additive chain is validated, the rule applies throughout the Session tree, including children executing in that same operation. A different tool or target still asks independently. Call-scoped allow-once responses and pending settlement identities are never shared. The Host bridge carries that permission-owner-validated card revision unchanged; it checks operation/Session identity, not equality between the card revision and the original birth revision. Repeating that equality check would suppress every new approval after an inline grant.
@@ -90,7 +82,7 @@ Inline grants add versioned `inlineGrant` provenance containing the operation ID
 
 New Session grants use v3 rule hashes with `expiresAt: null`. Recovery validates released v1/v2 grant hashes and their original 24-hour fields before projecting surviving grants as Session-lifetime rules; it never rewrites history or restores revoked/config-cleared grants. The v1 configuration hash keeps its historical numeric slot solely for byte-compatible Session restoration. That reserved identity value is not configurable and never participates in matching, listing or granting. Runtime/protocol artifact identity versions the changed lifetime semantics.
 
-The effective configuration base is also durable history. On process resume the Host sends the Session's desired permission mode, auto-allow set and interaction revision in `session/resume`. Before any persisted permission fold, the Runtime validates the history against that requested base and installs it in the replacement generation without appending another `myagents/permission/config` event or flushing storage. Ordinary live `config/apply` remains the only path that appends a configuration transition. This ordering is required: validating a previously configured Session against the composition's bootstrap `default` would falsely classify healthy history as `persisted_product_state_invalid`.
+The effective configuration base is also durable history. On process resume the Host sends the Session's desired permission mode, auto-allow set and interaction revision in `session/resume`. Before any persisted permission fold, the Runtime validates the history against that requested base and installs it in the replacement generation without appending another `myagents/permission/config` event or flushing storage. Ordinary live `config/apply` remains the only path that appends a configuration transition. This ordering is required: validating a previously configured Session against the composition's bootstrap `approval-required` would falsely classify healthy history as `persisted_product_state_invalid`.
 
 `always_allow` from an inline permission interaction uses the same grant implementation. Its effect receipt returns the actual durable rule revision after append, flush and fold; a durability failure rejects the interaction effect and installs no operation-local grant. The Host management RPC is therefore not a parallel policy store.
 
@@ -102,7 +94,7 @@ The current protocol carries typed ephemeral `review` independently of the autho
 
 The entire review travels inline when it fits the negotiated frame budget, otherwise as an existing JSON attachment reference. MyAgents consumes that reference and uses its existing `/refs` route for large UI payloads, retains full details until settlement/cancellation, and enables approval after successful loading. Failed loading or response delivery stays on the same request with retry; unknown presentation variants use full generic detail. Actual call/rootCall IDs accompany the interaction, while its settlement ID includes the executing Agent to distinguish reused provider call IDs. Input validation precedes settlement ownership: an invalid response returns interaction_response_invalid and leaves the same card correctable or cancellable. Concurrent valid responses share one pending effect; retries preserve actual effect failures instead of reporting them as applied. An accepted cancellation acknowledges applied while rejecting the waiting question with interaction_cancelled. Host question answers retain selected labels and custom text independently; comma-containing labels and free text are not parsed as an option list.
 
-MyAgents Action/Auto selects Runtime `acceptEdits`. Its explicit product defaults permit file reading/search/writing, both Web tools, Skill, TaskCreate/Update/Get/List, Agent, SendMessage, TaskStop, job_list/output/kill, EnterPlanMode, AskUserQuestion and ExitPlanMode. Shell and namespaced Host/MCP tools still require approval unless an exact rule matches. AskUserQuestion still waits for an answer, and ExitPlanMode still requires review of the actual plan. The Host does not inject a new tool-policy configuration merely to enable this fixed default, so existing Session configuration histories retain their restore identity. Neither becomes a globally safe permission class; explicit Hooks, network policy and visibility constraints still run. Always Allow retains the Runtime's session-tree scope with no time limit. Protocol `expiresAt: null` and review `lifetimeMs: null` explicitly express this lifetime; numeric values remain readable for older projections.
+In `approval-required`, local file Read/Write/Edit/Search and task reads run without an ordinary tool card; Bash/PowerShell, Web, MCP/Host, Skill, Agent work and other effectful tools ask. `workspace-autonomous` and `full-autonomous` skip ordinary permission cards, but only the latter removes the workspace write sandbox. AskUserQuestion still waits for an answer, and Agent-initiated ExitPlanMode still requires review of the actual plan. Exact Always Allow grants remain scoped to the root Session tree without an elapsed-time limit.
 
 Permission, AskUserQuestion and plan approval register through `host/interaction/request`. Registration acknowledgment does not settle the interaction. Host registration and response transport are bounded, but an established desktop interaction has no elapsed human-decision timeout. The Runtime blocks the owning AgentLoop path until `interaction/respond`, explicit operation/Session cancellation or teardown settles it exactly once. Duplicate, late, stale-revision and wrong-operation responses fail closed. Runtime cancellation is projected through `host/interaction/cancel`. A DSH `unavailable` outcome is an interaction failure, not a user denial: the permission owner preserves its known typed failure or reports `interaction_unavailable` with a Host/retry instruction. An unavailable attempt does not install an allow rule.
 
@@ -112,13 +104,13 @@ An unbounded human wait must not retain an execution resource. Governed file mut
 
 Permission decisions are `deny`, `allow_once`, `always_allow` and `cancelled`. AskUser and plan approval use `answered` or `cancelled`. Calls sharing the same executing Agent, client operation, origin and exact authorization tuple serialize behind one gate: one prompt is pending at a time, an `always_allow` leader releases matching waiters through the exact operation-local proof, while `allow_once`, deny and cancellation remain call-scoped and allow a later waiter to ask independently. Different Agents or tuples never share settlement.
 
-In `default` mode, model-driven interaction tools can produce two Host interactions; Action/Auto skips the permission card and retains only the question or plan review. `AskUserQuestion` first authorizes `interaction.ask`, then opens `ask_user`; `ExitPlanMode` first authorizes `session.plan.exit`, then reads exact managed Plan bytes and opens `plan_approval`. `EnterPlanMode` uses the safe `session.plan.enter` class and normally skips a permission card. DSH approval audit facts are written in the executing root or child Session, while durable permission rules and Plan ownership remain in the primary root Session. The Host UI is a disposable projection.
+The safe interaction classes skip an ordinary permission card and retain the question or plan review. `AskUserQuestion` first authorizes `interaction.ask`, then opens `ask_user`; `ExitPlanMode` first authorizes `session.plan.exit`, then reads exact managed Plan bytes and opens `plan_approval`. `EnterPlanMode` uses the safe `session.plan.enter` class and normally skips a permission card. DSH approval audit facts are written in the executing root or child Session, while durable permission rules and Plan ownership remain in the primary root Session. The Host UI is a disposable projection.
 
 ## 6. Host-controlled Plan state
 
 Plan is not a fifth permission mode. `ProductPlanService` owns one durable `normal | plan` state, the managed plan artifact, prompt contribution and monotonic tool guard. Model-visible `EnterPlanMode` and `ExitPlanMode` continue to use that service.
 
-Plan keeps the platform's ordinary `bash` or `pwsh` tool available for research, matching the Explore role's prompt-guided read-only use. The Plan prompt permits inspection and forbids file changes, dependency installation, builds, configuration changes and other Shell side effects. The Runtime does not classify command text or claim a read-only process sandbox. Shell calls still traverse the existing permission, Hook, operation-revision, workspace-cwd and executable checks; Plan itself grants no Shell approval. Governed `Write`/`Edit` remain limited to the managed plan file, and submitting the plan still requires explicit review.
+Plan keeps the platform's ordinary `bash` or `pwsh` tool available for research, matching the Explore role's prompt-guided read-only use. The Plan prompt permits inspection and forbids file changes, dependency installation, builds, configuration changes and other Shell side effects. The Runtime does not classify command text or claim a read-only process sandbox. Shell calls still traverse the existing permission, Hook, operation-revision, sandbox and executable checks; Plan itself grants no Shell approval. Governed `Write`/`Edit` remain limited to the managed plan file, and submitting the plan still requires explicit review.
 
 The accepted protocol retains `plan/apply` so a first-party Host can
 apply the product's Plan selector at a quiescent boundary. The request carries a client operation
@@ -129,29 +121,25 @@ DSH `plan/mode` facts, flushes them, and returns `applied`. A same-mode call ret
 
 There is no separate `plan/get`. A Host that lacks the current Plan revision may use the same-mode `already_effective` result as a revision probe, then apply the desired transition. This is Host orchestration over the one Runtime Plan authority, not a second state store.
 
-Entering Plan reserves a managed path; it does not invent plan contents. The plan prompt explicitly tells the Agent to author that file with Write before submission. Missing-file Read/Exit failures explain this recovery and the Host mode selector; identity or stale-content failures retain their distinct validation meaning.
+Entering Plan reserves a managed path under the workspace’s hidden `.myagents-dsh-plans` directory. The governed file tools can write this artifact under `workspace-write`; the plan state still owns its exact identity. It does not invent plan contents. The plan prompt explicitly tells the Agent to author that file with Write before submission. Missing-file Read/Exit failures explain this recovery and the Host mode selector; identity or stale-content failures retain their distinct validation meaning.
 
 A Host-initiated exit is itself the explicit user/product decision and does not open a second plan-approval interaction. Agent-initiated `ExitPlanMode` still reads the exact managed bytes and requires the existing inline plan review.
 
 ## 7. MyAgents product mapping
 
-The first MyAgents integration keeps its existing universal product vocabulary:
+| MyAgents mode | DSH mode | Sandbox |
+| --- | --- | --- |
+| 请求批准 | `approval-required` | `workspace-write`, one-operation escalation by approval |
+| 工作区自主 | `workspace-autonomous` | `workspace-write`, escalation denied |
+| 完全自主 | `full-autonomous` | `danger-full-access` |
 
-| MyAgents product mode | Runtime behavior |
-| --- | --- |
-| `auto` | `permissionMode=acceptEdits`, Plan `normal` |
-| `plan` | `permissionMode=acceptEdits`, then call `plan/apply(mode=plan)` before the first turn or at the next quiescent boundary |
-| `fullAgency` | `permissionMode=bypassPermissions`, Plan `normal` |
-
-`default` and `dontAsk` remain available Runtime modes but are not required as ordinary MyAgents desktop choices. A future headless/enterprise policy surface may expose `dontAsk` with `permission/rules/*`; it must not reinterpret `disallowedTools` as a permission-rule blacklist.
-
-MyAgents owns generated-client calls, desired/effective state, inline interaction projection, exact settlement, Session freezing/new-Session behavior and diagnostics. Exact current Runtime/handoff identity belongs to the [verification and handoff guide](../assurance/verification-artifacts-and-handoff.md) and Host lock, not this policy chapter.
+MyAgents owns the desired Session mode and UI. DSH compiles it into the ordinary approval policy and per-call upstream sandbox policy, then reports the effective mode. MyAgents does not maintain a read/write root list or a second path blacklist.
 
 ## 8. Security and platform boundary
 
-The protocol truth remains `execution=trusted-local-user-process` and `osSandbox=false` on every platform. Application-level governed file tools enforce canonical roots and symlink/identity checks. Web tools enforce the selected Host network policy. Shell commands run as real local-user processes; the official DSH subprocess Provider owns process-group/taskkill cleanup, not security isolation. Shell commands may reach resources available to the local user, including network paths outside Web tool policy.
+The integrated Runtime uses the upstream filesystem sandbox for native Write/Edit and the platform Shell sandbox for Bash/PowerShell and their child processes. `workspace-write` allows workspace writes plus the platform sandbox's temp roots; all modes allow local-user reads outside the workspace. If the platform sandbox is unavailable, restricted Shell commands fail rather than running without a sandbox. `danger-full-access` removes the product write boundary but does not elevate OS permissions. MCP/Host tools and internal CLI effects remain outside this local sandbox boundary.
 
-Product permission semantics are platform-neutral. A platform is not promoted beyond `implementation-complete_pending-native-validation` until its complete native campaign passes against the exact current Runtime artifact; historical Runtime/campaign results cannot be inherited. No new OS-sandbox claim is introduced by this module.
+A platform's release claim requires its own native campaign against the exact Runtime artifact; another platform's evidence cannot substitute for it.
 
 ## 9. Change and release discipline
 
