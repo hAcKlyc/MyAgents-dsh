@@ -101,6 +101,8 @@ export const evaluateDynamicScenarioPostconditions = (
       break;
     case "adversarial-boundaries":
     case "degraded-host":
+      record("fixture-inputs-preserved", preservesFixtureInputs(before, after));
+      break;
     case "compaction-continuity":
     case "persistence-lifecycle":
       record("fixture-tree-remains-unmodified", assertUnchanged(before, after));
