@@ -45,25 +45,13 @@ const codingWorkspaceIsRepaired = (
     JSON.stringify(beforeByPath.get(path)) === JSON.stringify(afterByPath.get(path)));
 };
 
-const hasOnlyBoundedRootMarkdownAdditions = (
+const preservesFixtureInputs = (
   before: readonly WorkspaceManifestEntry[],
   after: readonly WorkspaceManifestEntry[],
-  maxAdditions: number,
 ): boolean => {
-  const beforeByPath = new Map(before.map((entry) => [entry.path, entry]));
   const afterByPath = new Map(after.map((entry) => [entry.path, entry]));
-  if ([...beforeByPath].some(([path, entry]) =>
-    JSON.stringify(afterByPath.get(path)) !== JSON.stringify(entry))) return false;
-  const additions = [...afterByPath].filter(([path]) => !beforeByPath.has(path));
-  return additions.length <= maxAdditions && additions.every(([reportPath, report]) =>
-    !reportPath.includes("/")
-    && /^[a-z0-9][a-z0-9._-]{0,127}\.md$/iu.test(reportPath)
-    && report.kind === "file"
-    && typeof report.size === "number"
-    && report.size > 0
-    && report.size <= 65_536
-    && typeof report.sha256 === "string"
-    && /^[a-f0-9]{64}$/u.test(report.sha256));
+  return before.every((entry) =>
+    JSON.stringify(afterByPath.get(entry.path)) === JSON.stringify(entry));
 };
 
 const interactionSelectionIsStable = (
@@ -109,10 +97,7 @@ export const evaluateDynamicScenarioPostconditions = (
       record("approved-stable-selection", interactionSelectionIsStable(before, after));
       break;
     case "child-task-work":
-      record(
-        "fixture-inputs-preserved-with-optional-markdown-report",
-        hasOnlyBoundedRootMarkdownAdditions(before, after, 5),
-      );
+      record("fixture-inputs-preserved", preservesFixtureInputs(before, after));
       break;
     case "adversarial-boundaries":
     case "degraded-host":
@@ -121,10 +106,7 @@ export const evaluateDynamicScenarioPostconditions = (
       record("fixture-tree-remains-unmodified", assertUnchanged(before, after));
       break;
     case "web-components":
-      record(
-        "fixture-inputs-preserved-with-optional-markdown-report",
-        hasOnlyBoundedRootMarkdownAdditions(before, after, 1),
-      );
+      record("fixture-inputs-preserved", preservesFixtureInputs(before, after));
       break;
     default:
       record("known-scenario-checker", false);
