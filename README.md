@@ -44,6 +44,38 @@ MyAgents 客户端       其他 Host         Reference Web Host
 - **统一的执行策略：** 工具经过同一条 DSH 执行流水线，并在实际执行时校验工作区、权限和当前操作状态。构建时可选择产品工具定义或 DSH 原生定义，Host 对接边界保持一致。
 - **可验证的交付：** Runtime、协议、兼容声明和平台证据可以一起打包、校验并由 Host 固定到具体版本。
 
+### Agent 工具清单
+
+当前构建使用 `dsh_first`。下表列出基础模型可见工具的**实际名称**；`bash` 与 `pwsh` 按平台二选一，因此每个平台通常可见 24 项。MCP、Host 和组件工具由对应配置动态加入，不在这份固定清单内。
+
+| 工具 | 能力 | 备注 |
+| --- | --- | --- |
+| `read` | 读取文本文件 | DSH 原生定义；由 MyAgents 接入工作区与权限策略 |
+| `read_image` | 读取图片 | DSH 原生定义；需模型支持图片 |
+| `write` | 写入文件 | DSH 原生定义；由 MyAgents 接入权限与检查点 |
+| `edit` | 编辑文件 | DSH 原生定义；由 MyAgents 接入权限与检查点 |
+| `glob` | 按路径模式找文件 | DSH 原生定义 |
+| `grep` | 搜索文件内容 | DSH 原生定义 |
+| `web_fetch` | 获取网页内容 | DSH 原生定义；网络后端和策略由 Host 配置 |
+| `web_search` | 搜索网页 | DSH 原生定义；搜索后端由 Host 配置 |
+| `bash` | 执行 Shell 命令 | DSH 原生定义；MyAgents 接入进程和权限策略；macOS、Linux 可见 |
+| `pwsh` | 执行 PowerShell 命令 | DSH 原生定义；MyAgents 接入进程和权限策略；Windows 可见 |
+| `job_output` | 读取后台任务输出 | DSH 原生定义；MyAgents 接入后台任务管理 |
+| `job_list` | 列出后台任务 | DSH 原生定义；MyAgents 接入后台任务管理 |
+| `job_kill` | 停止后台任务 | DSH 原生定义；MyAgents 接入后台任务管理 |
+| `ls` | 列出工作区目录 | MyAgents 提供 |
+| `AskUserQuestion` | 向用户提问 | MyAgents 提供，交互由 Host 承接 |
+| `EnterPlanMode` | 进入计划模式 | MyAgents 提供 |
+| `ExitPlanMode` | 结束计划模式 | MyAgents 提供；未启用 DSH 的 `exit_plan_mode` |
+| `Skill` | 调用已配置的技能 | MyAgents 提供 |
+| `Agent` | 启动子 Agent | MyAgents 提供 |
+| `TaskStop` | 停止子任务 | MyAgents 提供 |
+| `SendMessage` | 向子 Agent 发送消息 | MyAgents 提供 |
+| `TaskCreate` | 创建任务图节点 | MyAgents 提供 |
+| `TaskGet` | 查询任务图节点 | MyAgents 提供 |
+| `TaskList` | 列出任务图节点 | MyAgents 提供 |
+| `TaskUpdate` | 更新任务图节点 | MyAgents 提供 |
+
 具体能力以所选版本的[兼容声明](./specs/tech_docs/assurance/compatibility-and-capability-truth.md)和协议协商结果为准。
 
 ## 在其他应用中集成
@@ -116,6 +148,38 @@ MyAgents client        Other Hosts        Reference Web Host
 - **Durable Sessions:** DSH stores conversation events. The Runtime provides Session reads, recovery, cancellation, forks, rewinds, and checkpoints for governed file changes.
 - **One execution policy:** Tools run through the same DSH pipeline and recheck workspace, permission, and current operation state at execution time. The build can select product tool definitions or native DSH definitions while keeping the Host interface consistent.
 - **Verifiable delivery:** The Runtime, protocol, compatibility declaration, and platform evidence can be packaged and verified together, then pinned to an exact version by the Host.
+
+#### Agent tool catalog
+
+The current build uses `dsh_first`. The table lists the **actual names** in the base model-visible catalog. A platform exposes either `bash` or `pwsh`, so it normally has 24 effective tools. MCP, Host, and component tools are added dynamically by their configuration and are outside this fixed catalog.
+
+| Tool | Capability | Source note |
+| --- | --- | --- |
+| `read` | Read text files | Native DSH definition; MyAgents supplies workspace and permission policy |
+| `read_image` | Read images | Native DSH definition; requires an image-capable model |
+| `write` | Write files | Native DSH definition; MyAgents supplies permissions and checkpoints |
+| `edit` | Edit files | Native DSH definition; MyAgents supplies permissions and checkpoints |
+| `glob` | Find files by path pattern | Native DSH definition |
+| `grep` | Search file contents | Native DSH definition |
+| `web_fetch` | Fetch web content | Native DSH definition; the Host configures the network backend and policy |
+| `web_search` | Search the web | Native DSH definition; the Host configures the search backend |
+| `bash` | Run Shell commands | Native DSH definition; MyAgents supplies process and permission policy; visible on macOS and Linux |
+| `pwsh` | Run PowerShell commands | Native DSH definition; MyAgents supplies process and permission policy; visible on Windows |
+| `job_output` | Read background job output | Native DSH definition; MyAgents integrates background job management |
+| `job_list` | List background jobs | Native DSH definition; MyAgents integrates background job management |
+| `job_kill` | Stop background jobs | Native DSH definition; MyAgents integrates background job management |
+| `ls` | List workspace directories | Provided by MyAgents |
+| `AskUserQuestion` | Ask the user a question | Provided by MyAgents; the Host handles the interaction |
+| `EnterPlanMode` | Enter plan mode | Provided by MyAgents |
+| `ExitPlanMode` | Leave plan mode | Provided by MyAgents; DSH `exit_plan_mode` is not installed |
+| `Skill` | Invoke a configured Skill | Provided by MyAgents |
+| `Agent` | Start a child Agent | Provided by MyAgents |
+| `TaskStop` | Stop child work | Provided by MyAgents |
+| `SendMessage` | Message a child Agent | Provided by MyAgents |
+| `TaskCreate` | Create a task graph node | Provided by MyAgents |
+| `TaskGet` | Read a task graph node | Provided by MyAgents |
+| `TaskList` | List task graph nodes | Provided by MyAgents |
+| `TaskUpdate` | Update a task graph node | Provided by MyAgents |
 
 Exact capabilities depend on the selected version's [compatibility declaration](./specs/tech_docs/assurance/compatibility-and-capability-truth.md) and the negotiated protocol capabilities.
 

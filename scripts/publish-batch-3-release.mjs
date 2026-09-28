@@ -88,6 +88,20 @@ export function serializeReleaseManifest(manifest) {
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
+export function renderReleaseNotesWithDshProvenance(notes, sourceCommit, baseline, dsh) {
+  const upstream = baseline.sourceBaseline;
+  return `${notes.trimEnd()}\n\n## Upstream DeepSeek Harness\n\n`
+    + `| Item | Exact version or identity |\n| --- | --- |\n`
+    + `| MyAgents-dsh source | [\`${sourceCommit}\`](https://github.com/hAcKlyc/MyAgents-dsh/commit/${sourceCommit}) |\n`
+    + `| Upstream DSH package release | \`${baseline.executableBaseline.dshRelease}\` |\n`
+    + `| Pinned upstream DSH source | [\`${upstream.commit}\`](https://github.com/deepseek-ai/deepseek-harness/commit/${upstream.commit}) |\n`
+    + `| Pinned upstream source tree | \`${upstream.tree}\` |\n`
+    + `| Package release/source association | \`${baseline.executableBaseline.sourceAssociation}\` |\n`
+    + `| MyAgents patched DSH package | \`${dsh.version}\` |\n`
+    + `| Patch series SHA-256 | \`${dsh.patchSeriesSha256}\` |\n`
+    + `| Patched DSH artifact manifest SHA-256 | \`${dsh.artifactManifestSha256}\` |\n`;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const { values } = parseArgs({ options: {
@@ -118,10 +132,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         writeFileSync(manifestPath, serializeReleaseManifest(result.manifest), { flag: "wx" });
         const notesPath = releaseNotesPath(tag);
         if (!existsSync(notesPath)) throw new Error(`Release notes file is missing: release-notes/${tag}.md`);
-        assertReleaseNotesHeading(tag, readFileSync(notesPath, "utf8"));
+        const notes = readFileSync(notesPath, "utf8");
+        assertReleaseNotesHeading(tag, notes);
+        const baseline = JSON.parse(readFileSync(resolve(repositoryRoot, "specs/dsh/dsh-baseline-v1.json"), "utf8"));
+        const runtime = JSON.parse(archiveFile(result.assets[0], "runtime-artifact/runtime-artifact-v1.json"));
+        const publishedNotesPath = resolve(staging, "release-notes.md");
+        writeFileSync(publishedNotesPath,
+          renderReleaseNotesWithDshProvenance(notes, sourceCommit, baseline, runtime.dsh));
         execFileSync("gh", ["release", "create", tag, ...result.assets, manifestPath,
           "--repo", "hAcKlyc/MyAgents-dsh", "--verify-tag", "--draft",
-          "--title", `MyAgents-dsh ${tag}`, "--notes-file", notesPath],
+          "--title", `MyAgents-dsh ${tag}`, "--notes-file", publishedNotesPath],
         { cwd: repositoryRoot, stdio: "inherit" });
         const downloaded = resolve(staging, "downloaded");
         execFileSync("gh", ["release", "download", tag, "--repo", "hAcKlyc/MyAgents-dsh",
