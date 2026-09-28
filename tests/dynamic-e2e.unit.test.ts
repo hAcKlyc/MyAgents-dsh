@@ -280,6 +280,8 @@ describe("dynamic E2E harness", () => {
       migrationRequest,
       stableSelection,
       Object.freeze({ path: "selection.txt.bak", kind: "file" as const, size: 8, sha256: currentDigest }),
+      Object.freeze({ path: ".myagents-dsh-plans", kind: "directory" as const }),
+      Object.freeze({ path: `.myagents-dsh-plans/${"a".repeat(64)}.md`, kind: "file" as const, size: 12, sha256: "b".repeat(64) }),
     ]);
     expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, interactionAfter)).toMatchObject({
       passed: true,

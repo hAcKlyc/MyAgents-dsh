@@ -68,7 +68,9 @@ const interactionSelectionIsStable = (
   const backupPath = /^selection\.txt\.bak(?:-[0-9]{8}T[0-9]{6}Z?)?$/u;
   if (after.some(({ path }) => !new Set([
     "migration-request.md", "selection.txt", "migration-plan.md",
-  ]).has(path) && !backupPath.test(path))) return false;
+  ]).has(path) && !backupPath.test(path)
+    && path !== ".myagents-dsh-plans"
+    && !/^\.myagents-dsh-plans\/[a-f0-9]{64}\.md$/u.test(path))) return false;
   const backups = after.filter(({ path }) => backupPath.test(path));
   if (backups.length > 1 || backups.some((backup) => backup.kind !== "file"
     || backup.sha256 !== beforeSelection.sha256
