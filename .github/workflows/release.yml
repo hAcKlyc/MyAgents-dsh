@@ -116,7 +116,6 @@ jobs:
           name: diagnostic-${{ matrix.target }}
           path: |
             ${{ runner.temp }}/myagents-dsh-release/patched-dsh-artifact/*
-            ${{ runner.temp }}/myagents-dsh-release/pre-artifact-gate/raw/*.json
             ${{ runner.temp }}/myagents-dsh-release/native-campaign/native-campaign.json
             ${{ runner.temp }}/myagents-dsh-release/native-campaign/dynamic/*/campaign.json
             ${{ runner.temp }}/myagents-dsh-release/native-campaign/dynamic/*/runs/*/evidence/*.json
