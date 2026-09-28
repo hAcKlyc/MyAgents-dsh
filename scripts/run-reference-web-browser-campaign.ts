@@ -96,17 +96,17 @@ const verifyComposerHostControls = async (page: Page): Promise<Readonly<{
 
   const permission = page.getByRole("combobox", { name: "Permission mode" });
   await permission.waitFor({ state: "visible", timeout: 20_000 });
-  await permission.selectOption("acceptEdits");
+  await permission.selectOption("workspace-autonomous");
   await page.locator(".permission-state", { hasText: /已生效|已排队/u }).waitFor({ timeout: 20_000 });
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitOnline(page);
   await page.getByRole("combobox", { name: "Permission mode" }).waitFor({ state: "visible", timeout: 20_000 });
   await page.waitForFunction(() => document.querySelector<HTMLSelectElement>(
     'select[aria-label="Permission mode"]',
-  )?.value === "acceptEdits", undefined, { timeout: 20_000 });
-  assert(await page.getByRole("combobox", { name: "Permission mode" }).inputValue() === "acceptEdits",
+  )?.value === "workspace-autonomous", undefined, { timeout: 20_000 });
+  assert(await page.getByRole("combobox", { name: "Permission mode" }).inputValue() === "workspace-autonomous",
     "composer permission mode did not survive a browser reload");
-  await page.getByRole("combobox", { name: "Permission mode" }).selectOption("default");
+  await page.getByRole("combobox", { name: "Permission mode" }).selectOption("approval-required");
   await page.locator(".permission-state", { hasText: /已生效|已排队/u }).waitFor({ timeout: 20_000 });
   return { attachmentRoundTrip: true, permissionRoundTrip: true };
 };

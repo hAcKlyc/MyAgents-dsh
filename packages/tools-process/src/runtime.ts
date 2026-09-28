@@ -313,10 +313,6 @@ export class ProductProcessRuntime extends Service {
           throw new ProductToolError("permission_denied", "background execution is disabled");
         }
         if (typeof args.workdir === "string") cwd = resolve(cwd, args.workdir);
-        const child = relative(authority.cwd, cwd);
-        if (isAbsolute(child) || child === ".." || child.startsWith("../") || child.startsWith("..\\") || resolve(authority.cwd, child) !== cwd) {
-          throw new ProductToolError("path_denied", "Shell working directory is outside the workspace");
-        }
       }
       const shell = exec.name === "bash" || exec.name === "pwsh";
       const workspace = shell ? await this.io.captureWorkspace(cwd, product.signal).catch((error: unknown) => {
@@ -381,9 +377,9 @@ export class ProductProcessRuntime extends Service {
     if (this.live.size + this.reservations >= authority.maxChildren) {
       throw new ProductToolError("process_failed", "process quota is exhausted");
     }
+    // The Shell executor owns argv, including the sandbox runner when confined.
     const handle = spawn({
       ...spec,
-      argv: [authority.shellPath, ...spec.argv.slice(1)],
       cwd: call.cwd,
       env: { ...authority.env, ...spec.env },
     });

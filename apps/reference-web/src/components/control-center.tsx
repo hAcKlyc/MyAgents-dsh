@@ -158,9 +158,9 @@ function SettingsPanel(props: Readonly<{
     <label className="field"><span>推理强度</span><select value={effort} onChange={(event) => setEffort(event.target.value as typeof effort)}>
       {(["high", "max"] as const).map((value) => <option key={value}>{value}</option>)}
     </select></label>
-    <label className="field"><span>权限模式</span><select value={permissionMode} onChange={(event) => setPermissionMode(event.target.value)}>
-      <option value="default">默认 · 按需询问</option><option value="acceptEdits">自动接受编辑</option>
-      <option value="dontAsk">不主动询问</option><option value="bypassPermissions">绕过交互权限</option>
+    <label className="field"><span>权限模式</span><select value={permissionMode} onChange={(event) => setPermissionMode(event.target.value as SessionConfiguration["permissionMode"])}>
+      <option value="approval-required">请求批准</option><option value="workspace-autonomous">工作区自主</option>
+      <option value="full-autonomous">完全自主</option>
     </select></label>
     <label className="field"><span>交互场景版本</span><input value={scenario} onChange={(event) => setScenario(event.target.value)} /></label>
     <label className="field"><span>System prompt</span><textarea rows={7} value={systemPrompt}

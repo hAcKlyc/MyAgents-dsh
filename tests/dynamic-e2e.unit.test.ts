@@ -54,23 +54,12 @@ afterEach(async () => {
 describe("approved-route scripted interaction", () => {
   const hostCall = (params: unknown): unknown => ({ method: "host/interaction/request", params });
 
-  it("checks clarification, approval and mutation order without depending on file tool names", () => {
-    const selectionWrite = hostCall({
-      kind: "permission",
-      permissionAction: "workspace.write",
-      review: { operation: { path: "C:\\workspace\\selection.txt" } },
-    });
-    const planWrite = hostCall({
-      kind: "permission",
-      permissionAction: "workspace.write",
-      review: { operation: { path: "C:\\plans\\draft.md" } },
-    });
+  it("recognizes plan approval after clarification", () => {
     const clarification = hostCall({ kind: "ask_user" });
     const approval = hostCall({ kind: "plan_approval" });
-    expect(interactionPlanHostOrderVerified([clarification, planWrite, approval, selectionWrite])).toBe(true);
-    expect(interactionPlanHostOrderVerified([clarification, selectionWrite, approval])).toBe(false);
-    expect(interactionPlanHostOrderVerified([clarification, approval])).toBe(false);
-    expect(interactionPlanHostOrderVerified([approval, selectionWrite])).toBe(false);
+    expect(interactionPlanHostOrderVerified([clarification, approval])).toBe(true);
+    expect(interactionPlanHostOrderVerified([clarification])).toBe(false);
+    expect(interactionPlanHostOrderVerified([approval, clarification])).toBe(false);
   });
 
   const request = (
@@ -291,6 +280,8 @@ describe("dynamic E2E harness", () => {
       migrationRequest,
       stableSelection,
       Object.freeze({ path: "selection.txt.bak", kind: "file" as const, size: 8, sha256: currentDigest }),
+      Object.freeze({ path: ".myagents-dsh-plans", kind: "directory" as const }),
+      Object.freeze({ path: `.myagents-dsh-plans/${"a".repeat(64)}.md`, kind: "file" as const, size: 12, sha256: "b".repeat(64) }),
     ]);
     expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, interactionAfter)).toMatchObject({
       passed: true,
@@ -376,7 +367,7 @@ describe("dynamic E2E harness", () => {
       credentialRevision: "credential-v1",
       materialField: "apiKey",
       systemPrompt: "Operate only within the synthetic dynamic acceptance fixture.",
-      permissionMode: "default",
+      permissionMode: "approval-required",
       interactionScenario: "dynamic-scripted-v1",
       networkPolicyRef: "dynamic-network-v1",
       webSearchAdapters: ["approved-search"],
@@ -433,7 +424,7 @@ describe("dynamic E2E harness", () => {
       expect(validateHostDeepSeekProfile(route.provider)).toEqual(route.provider);
       expect(route.webSearchAdapters).toEqual(["deepseek-official-native-web-search"]);
       expect(route.routeConfigSha256).toBe(
-        "fc0666d2ce387016f4af853e45fb40604c045a76a48ae5533586a63201389ed1",
+        "7761cca141e49f949a8f134e5cf83cd3852998b64840bb66c77797a5f726bea2",
       );
       expect(await readFile(path, "utf8")).not.toContain(material);
     } finally {

@@ -121,7 +121,6 @@ const workAuthoritySchema = strictObject({
   toolCatalogRevision: eventIdentifier,
 });
 const workBirthSchema = strictObject({
-  allowedReadRoots: Type.Array(Type.String({ minLength: 1, maxLength: 8_192 }), { maxItems: 256, uniqueItems: true }),
   allowedTools: Type.Array(eventIdentifier, { maxItems: 256, uniqueItems: true }),
   componentDigest: eventSha256,
   componentRevision: eventIdentifier,
@@ -729,7 +728,6 @@ const workCreationAuthority = (product: ProductToolContext): WorkCreationAuthori
 });
 
 const descriptorDigestForBirth = (birth: ProductWorkCreatedEventData["birth"]): string => sha256(stableJson({
-  allowedReadRoots: birth.allowedReadRoots,
   allowedTools: birth.allowedTools,
   interaction: birth.interaction,
   modelProfileRevision: birth.modelProfileRevision,
@@ -2557,7 +2555,6 @@ export class ProductWorkService extends Service {
             || created.birth.allowedTools.some((tool) => !parentEntry.created.birth.allowedTools.includes(tool)))
           || created.birth.parentOperationId !== created.authority.clientOperationId
           || created.birth.model !== created.model
-          || created.birth.allowedReadRoots.length !== 0
           || created.birth.descriptorDigest !== descriptorDigestForBirth(created.birth)
           || (created.mode === "continuable") !== (created.outputPath !== undefined)
           || (created.initialChildEventSeq === undefined) !== (created.initialContentSha256 === undefined)
@@ -3709,13 +3706,11 @@ export class ProductWorkService extends Service {
     if (root === undefined || this.rootForCaller(authority.agent) !== root) throw new Error("child birth lacks its root tree authority");
     const depth = this.lineageFor(authority.agent.id).length + 1;
     const birth = Object.freeze({
-      allowedReadRoots: Object.freeze([]),
       allowedTools: template.allowedTools,
       componentDigest: authority.birth.componentDigest,
       componentRevision: authority.birth.componentRevision,
       depth,
       descriptorDigest: sha256(stableJson({
-        allowedReadRoots: [],
         allowedTools: template.allowedTools,
         interaction: "unavailable",
         maxTurns: template.maxTurns,

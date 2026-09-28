@@ -1,6 +1,6 @@
 {
   "name": "myagents-dsh",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -122,6 +122,7 @@
     "@deepseek-ai/dsh-credentials": "0.1.7-rc.2",
     "@deepseek-ai/dsh-fs": "0.1.7-rc.2",
     "@deepseek-ai/dsh-fs-local": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-fs-sandbox": "0.1.7-rc.2",
     "@deepseek-ai/dsh-invariants": "0.1.7-rc.2",
     "@deepseek-ai/dsh-jobs": "0.1.7-rc.2",
     "@deepseek-ai/dsh-jobs-local": "0.1.7-rc.2",

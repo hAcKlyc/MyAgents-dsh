@@ -17,8 +17,8 @@
     "registry": "https://registry.npmjs.org",
     "dshRelease": "0.1.7-rc.2",
     "sourceAssociation": "unproven",
-    "directPackageCount": 73,
-    "productionPackageCount": 312
+    "directPackageCount": 74,
+    "productionPackageCount": 313
   },
   "publicCompileFixture": "packages/product-profile/src/dsh-public-surface.compile.ts",
   "publicSeams": [
@@ -119,6 +119,91 @@
         "prepareTextEdit"
       ],
       "types": []
+    },
+    {
+      "id": "sandbox-file-provider",
+      "package": "@deepseek-ai/dsh-fs-sandbox",
+      "importPath": "@deepseek-ai/dsh-fs-sandbox",
+      "classification": "provider",
+      "batchUse": [
+        "DSH-PERMISSION-MODES"
+      ],
+      "values": [
+        "SandboxedFileSystem"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "sandbox-policy",
+      "package": "@deepseek-ai/dsh-sandbox-policy",
+      "importPath": "@deepseek-ai/dsh-sandbox-policy",
+      "classification": "provider",
+      "batchUse": [
+        "DSH-PERMISSION-MODES"
+      ],
+      "values": [
+        "SandboxPolicyService",
+        "setSandboxMode"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "sandbox-contract",
+      "package": "@deepseek-ai/dsh-sandbox",
+      "importPath": "@deepseek-ai/dsh-sandbox",
+      "classification": "helper",
+      "batchUse": [
+        "DSH-PERMISSION-MODES"
+      ],
+      "values": [],
+      "types": [
+        "SandboxExecutionPolicy"
+      ],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "sandbox-local-provider",
+      "package": "@deepseek-ai/dsh-sandbox-local",
+      "importPath": "@deepseek-ai/dsh-sandbox-local",
+      "classification": "provider",
+      "batchUse": [
+        "DSH-PERMISSION-MODES"
+      ],
+      "values": [
+        "LocalSandboxProvider"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "sandbox-bash-executor",
+      "package": "@deepseek-ai/dsh-bash-sandbox",
+      "importPath": "@deepseek-ai/dsh-bash-sandbox",
+      "classification": "provider",
+      "batchUse": [
+        "DSH-PERMISSION-MODES"
+      ],
+      "values": [
+        "SandboxBashExecutor"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
+      "id": "sandbox-pwsh-executor",
+      "package": "@deepseek-ai/dsh-pwsh-sandbox",
+      "importPath": "@deepseek-ai/dsh-pwsh-sandbox",
+      "classification": "provider",
+      "batchUse": [
+        "DSH-PERMISSION-MODES"
+      ],
+      "values": [
+        "SandboxPwshExecutor"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
     },
     {
       "id": "file-tool-factories",
@@ -1088,7 +1173,7 @@
     },
     {
       "license": "MIT",
-      "count": 212
+      "count": 213
     },
     {
       "license": "Python-2.0",
@@ -1702,6 +1787,16 @@
       "version": "0.1.7-rc.2",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-fs-local/-/dsh-fs-local-0.1.7-rc.2.tgz",
       "integrity": "sha512-7XlSqUY2nk1S0GQNU7f7rimhBnYZYdtOtW5xr3oApHuaiWyP2Qj9D2Y0Xq5+jyFz7kQ9hoNHq3gA+g5IK1Dofw==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-fs-sandbox",
+      "name": "@deepseek-ai/dsh-fs-sandbox",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-fs-sandbox/-/dsh-fs-sandbox-0.1.7-rc.2.tgz",
+      "integrity": "sha512-E1f+stkuTefmMeOQ1lEQJum42igtOeg+V5J5P92dZp5QObt3VT1EcIkywe9zFHtEJ+jExVzACLIxj8XNmisiiA==",
       "license": "MIT",
       "direct": true,
       "optional": false

@@ -121,7 +121,7 @@ describe("Reference Web Host production profile", () => {
     const binding = composition.buildBinding(resumedRow, { extensionCatalog });
     expect(binding.mode).toBe("resume");
     expect(binding.params.configRevision).toMatch(/^reference-web-bootstrap-/u);
-    expect(binding.params.permissionMode).toBe("default");
+    expect(binding.params.permissionMode).toBe("approval-required");
   });
 
   it("routes browser turns with the exact initialized environment authority", async () => {
@@ -202,7 +202,7 @@ describe("Reference Web Host production profile", () => {
         providerRouteId: REFERENCE_WEB_PROVIDER.providerRouteId,
         modelId: REFERENCE_WEB_PROVIDER.modelId,
         reasoningEffort: "max",
-        permissionMode: "default",
+        permissionMode: "approval-required",
         interactionScenario: "host-interaction-v2",
         systemPrompt: "Updated public prompt",
         visibleTools: ["Read"],
@@ -227,7 +227,7 @@ describe("Reference Web Host production profile", () => {
         providerRouteId: REFERENCE_WEB_PROVIDER.providerRouteId,
         modelId: REFERENCE_WEB_PROVIDER.modelId,
         reasoningEffort: "medium",
-        permissionMode: "default",
+        permissionMode: "approval-required",
         interactionScenario: "host-interaction-v2",
         systemPrompt: "Unsupported effort",
       },

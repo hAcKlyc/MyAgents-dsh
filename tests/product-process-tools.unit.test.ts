@@ -206,7 +206,7 @@ const harness = async (options: Readonly<{
   backgroundRetention?: "allow" | "deny";
   dialect?: "bash" | "pwsh";
   realPermission?: ProductLocalInteractionProvider;
-  permissionMode?: "default" | "bypassPermissions";
+  permissionMode?: "approval-required" | "full-autonomous";
   planMode?: boolean;
   readEnvironment?: ProductProcessRuntimeConfig["readEnvironment"];
 }> = {}) => {
@@ -233,6 +233,10 @@ const harness = async (options: Readonly<{
   )) as unknown as ProductProcessRuntimeConfig["executableSha256"]);
   const context = new Context();
   await context.plugin(FakeSubprocessRuntime);
+  context.provide("sandboxPolicy", {
+    defaultMode: "workspace-write",
+    resolve: () => ({ mode: "workspace-write", workspaceRoot: workspace }),
+  } as never);
   await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)) });
   await context.plugin(AgentRegistry);
   const fakeSubprocess = context.subprocess as FakeSubprocessRuntime;
@@ -286,8 +290,6 @@ const harness = async (options: Readonly<{
     revision: "environment-v1",
     runtimeHome,
     workspace: Object.freeze({
-      allowedReadRoots: Object.freeze([workspace]),
-      allowedWriteRoots: Object.freeze([workspace]),
       canonicalRoot: workspace,
       identity: "workspace-v1",
     }),
@@ -343,7 +345,7 @@ const harness = async (options: Readonly<{
     await context.plugin(ProductPermissionService, {
       autoAllowTools: [], clock: Date.now, durability: { flush: () => Promise.resolve(true) },
       interaction: options.realPermission, interactionRegistrationDeadlineMs: 1_000,
-      maxRules: 8, mode: options.permissionMode ?? "default",
+      maxRules: 8, mode: options.permissionMode ?? "approval-required",
       registerController: () => undefined,
     });
     currentOperation = Object.freeze({ ...operation, birth: Object.freeze({ ...operation.birth, permissionRevision: context.productPermission.currentRevision(agent) }) });
@@ -739,7 +741,7 @@ describe("official Shell tools with product policy", () => {
       const result = await state.execute({ command: "printf output; exit 7" });
       expect(result).toMatchObject({ isError: false, meta: { exitCode: 7, status: "failed" }, value: { kind: "foreground", exitCode: 7, timedOut: false, stdout: { text: "output\n" }, stderr: { text: "warning\n" } } });
       const spec = state.fakeSubprocess.specs[0];
-      expect(spec?.argv).toEqual([state.config.executablePaths.shell, "-c", "printf output; exit 7"]);
+      expect(spec?.argv).toEqual(["bash", "-c", "printf output; exit 7"]);
       expect(spec?.cwd).toBe(state.workspace);
       expect(spec?.env).toMatchObject({ PATH: "/usr/bin:/bin", DSH_HOME: state.runtimeHome, DSH_SESSION_ID: state.agent.id, DSH_SHELL: "1" });
       expect(spec?.env?.MYAGENTS_SHELL_PRIVATE_FIXTURE).toBeUndefined();
@@ -812,11 +814,17 @@ describe("official Shell tools with product policy", () => {
     await state.context.fiber.dispose();
   });
 
-  it("denies background policy and workdirs outside the workspace before spawning", async () => {
+  it("denies disallowed background execution without spawning", async () => {
     const state = await harness({ backgroundRetention: "deny" });
     expect((await state.execute({ command: "background", run_in_background: true })).isError).toBe(true);
-    expect((await state.execute({ command: "outside", workdir: ".." })).isError).toBe(true);
     expect(state.fakeSubprocess.specs).toHaveLength(0);
+    await state.context.fiber.dispose();
+  });
+
+  it("allows a Shell working directory outside the workspace", async () => {
+    const state = await harness();
+    expect((await state.execute({ command: "outside", workdir: ".." })).isError).toBe(false);
+    expect(state.fakeSubprocess.specs[0]?.cwd).toBe(state.root);
     await state.context.fiber.dispose();
   });
 

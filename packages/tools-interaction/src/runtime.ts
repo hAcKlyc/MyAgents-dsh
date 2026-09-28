@@ -67,17 +67,17 @@ export interface ProductPlanArtifactRead {
 }
 
 export interface ProductPlanIoAuthority {
-  pathFor(runtimeHome: string, sessionId: string): string;
-  prepare(runtimeHome: string, sessionId: string, signal: AbortSignal): Promise<FsTarget>;
+  pathFor(planRoot: string, sessionId: string): string;
+  prepare(planRoot: string, sessionId: string, signal: AbortSignal): Promise<FsTarget>;
   read(
-    runtimeHome: string,
+    planRoot: string,
     sessionId: string,
     path: string,
     maxBytes: number,
     signal: AbortSignal,
   ): Promise<ProductPlanArtifactRead>;
   resolve(
-    runtimeHome: string,
+    planRoot: string,
     sessionId: string,
     path: string,
     allowMissingLeaf: boolean,
@@ -187,16 +187,17 @@ const boundedIdentifier = (value: unknown, description: string): string => {
   return value;
 };
 
-const planRuntimeHome = (value: unknown): string => {
+const planStorageRoot = (value: unknown): string => {
   const environment = exactDataObject(value, [
     "attachmentStagingRoot", "checkpoint", "digest", "environment", "executables", "network",
     "platformTarget", "process", "revision", "runtimeHome", "workspace",
   ], [], "plan execution environment");
-  if (typeof environment.runtimeHome !== "string" || environment.runtimeHome.length === 0
-    || environment.runtimeHome.length > 8_192 || environment.runtimeHome.includes("\0")) {
-    throw new TypeError("plan execution environment Runtime home is invalid");
+  const workspace = exactDataObject(environment.workspace, ["canonicalRoot", "identity"], [], "plan workspace");
+  if (typeof workspace.canonicalRoot !== "string" || workspace.canonicalRoot.length === 0
+    || workspace.canonicalRoot.length > 8_192 || workspace.canonicalRoot.includes("\0")) {
+    throw new TypeError("plan workspace root is invalid");
   }
-  return environment.runtimeHome;
+  return workspace.canonicalRoot;
 };
 
 const snapshotFsTarget = (value: unknown, description: string): FsTarget => {
@@ -496,18 +497,18 @@ const validateServiceConfig = (value: unknown): ProductPlanServiceConfig => {
     }),
     environment: () => Reflect.apply(environment, config, []) as ProductToolExecutionEnvironment,
     io: Object.freeze({
-      pathFor: (runtimeHome: string, sessionId: string) => Reflect.apply(pathFor, io, [runtimeHome, sessionId]) as string,
-      prepare: (runtimeHome: string, sessionId: string, signal: AbortSignal) =>
-        Reflect.apply(prepare, io, [runtimeHome, sessionId, signal]) as Promise<FsTarget>,
-      read: (runtimeHome: string, sessionId: string, path: string, maxBytes: number, signal: AbortSignal) =>
-        Reflect.apply(read, io, [runtimeHome, sessionId, path, maxBytes, signal]) as Promise<ProductPlanArtifactRead>,
+      pathFor: (planRoot: string, sessionId: string) => Reflect.apply(pathFor, io, [planRoot, sessionId]) as string,
+      prepare: (planRoot: string, sessionId: string, signal: AbortSignal) =>
+        Reflect.apply(prepare, io, [planRoot, sessionId, signal]) as Promise<FsTarget>,
+      read: (planRoot: string, sessionId: string, path: string, maxBytes: number, signal: AbortSignal) =>
+        Reflect.apply(read, io, [planRoot, sessionId, path, maxBytes, signal]) as Promise<ProductPlanArtifactRead>,
       resolve: (
-        runtimeHome: string,
+        planRoot: string,
         sessionId: string,
         path: string,
         allowMissingLeaf: boolean,
         signal: AbortSignal,
-      ) => Reflect.apply(resolve, io, [runtimeHome, sessionId, path, allowMissingLeaf, signal]) as Promise<FsTarget>,
+      ) => Reflect.apply(resolve, io, [planRoot, sessionId, path, allowMissingLeaf, signal]) as Promise<FsTarget>,
     }),
     requireAgent: () => Reflect.apply(requireAgent, config, []) as Agent,
     ...(registerController === undefined ? {} : {
@@ -637,9 +638,9 @@ export class ProductPlanService extends Service {
 
   validatePersisted(agent: Agent): ProductPlanSnapshot {
     this.assertHealthy();
-    const runtimeHome = planRuntimeHome(this.configValue.environment());
+    const planRoot = planStorageRoot(this.configValue.environment());
     const sessionId = boundedIdentifier(String(agent.session.id), "plan Session id");
-    const path = this.configValue.io.pathFor(runtimeHome, sessionId);
+    const path = this.configValue.io.pathFor(planRoot, sessionId);
     try {
       return foldProductPlan(agent.session.snapshotEvents(), sessionId, this.configValue.revision, path);
     } catch (error) {
@@ -657,9 +658,9 @@ export class ProductPlanService extends Service {
     if (agent !== this.configValue.requireAgent()) {
       throw new ProductToolError("plan_entry_forbidden", "plan state belongs to the exact primary root Agent");
     }
-    const runtimeHome = planRuntimeHome(this.configValue.environment());
+    const planRoot = planStorageRoot(this.configValue.environment());
     const sessionId = boundedIdentifier(String(agent.session.id), "plan Session id");
-    const path = this.configValue.io.pathFor(runtimeHome, sessionId);
+    const path = this.configValue.io.pathFor(planRoot, sessionId);
     try {
       return foldProductPlanWithPermit(
         agent.session.snapshotEvents(),
@@ -704,17 +705,17 @@ export class ProductPlanService extends Service {
     if (before.revision !== expectedRevision) {
       throw new ProductToolError("plan_revision_stale", "plan state changed before the Host transition");
     }
-    const runtimeHome = planRuntimeHome(this.configValue.environment());
+    const planRoot = planStorageRoot(this.configValue.environment());
     const sessionId = String(agent.session.id);
     const controller = this.controller(request.signal);
     let transitionStarted = false;
     try {
       if (request.mode === "plan") {
         const target = snapshotFsTarget(await this.track(exactNativePromise<FsTarget>(
-          this.configValue.io.prepare(runtimeHome, sessionId, controller.signal),
+          this.configValue.io.prepare(planRoot, sessionId, controller.signal),
           "Host managed plan artifact preparation",
         )), "Host managed plan artifact preparation result");
-        const expectedPath = this.configValue.io.pathFor(runtimeHome, sessionId);
+        const expectedPath = this.configValue.io.pathFor(planRoot, sessionId);
         if (target.displayPath !== expectedPath) {
           throw new ProductToolError("plan_state_conflict", "Host plan artifact identity changed");
         }
@@ -828,9 +829,9 @@ export class ProductPlanService extends Service {
     }
     const rootAgent = productRootAgent(context);
     const snapshot = this.snapshot(rootAgent);
-    const runtimeHome = planRuntimeHome(this.configValue.environment());
+    const planRoot = planStorageRoot(this.configValue.environment());
     const sessionId = String(rootAgent.session.id);
-    const managedPath = this.configValue.io.pathFor(runtimeHome, sessionId);
+    const managedPath = this.configValue.io.pathFor(planRoot, sessionId);
     if (snapshot.mode === "plan" && (tool === "Write" || tool === "Edit") && path !== managedPath) {
       throw new ProductToolError("plan_mode_side_effect_forbidden", "plan mode permits Write/Edit only on its managed artifact");
     }
@@ -841,7 +842,7 @@ export class ProductPlanService extends Service {
     try {
       return snapshotFsTarget(await exactNativePromise<FsTarget>(
         this.configValue.io.resolve(
-          runtimeHome,
+          planRoot,
           sessionId,
           path,
           tool === "Write",
@@ -975,13 +976,13 @@ export class ProductPlanService extends Service {
           this.ctx.productTools.assertCurrent(context, "EnterPlanMode");
           const rootAgent = productRootAgent(context);
           const before = this.snapshot(rootAgent);
-          const runtimeHome = planRuntimeHome(this.configValue.environment());
+          const planRoot = planStorageRoot(this.configValue.environment());
           const sessionId = String(rootAgent.session.id);
           const controller = this.controller(context.signal);
           let transitionStarted = false;
           try {
             const target = snapshotFsTarget(await this.track(exactNativePromise<FsTarget>(
-              this.configValue.io.prepare(runtimeHome, sessionId, controller.signal),
+              this.configValue.io.prepare(planRoot, sessionId, controller.signal),
               "managed plan artifact preparation",
             )), "managed plan artifact preparation result");
             throwIfProductToolAborted(context.signal);
@@ -1027,12 +1028,12 @@ export class ProductPlanService extends Service {
         tool: "ExitPlanMode",
       });
       this.ctx.productTools.assertCurrent(context, "ExitPlanMode");
-      const runtimeHome = planRuntimeHome(this.configValue.environment());
+      const planRoot = planStorageRoot(this.configValue.environment());
       const sessionId = String(rootAgent.session.id);
       const approval = await runWithProductToolExecutionDeadline(
         context,
         CANONICAL_TOOL_CONTRACTS.ExitPlanMode.timeoutMs,
-        async (execution) => this.readPlan(runtimeHome, sessionId, planPath, execution.signal),
+        async (execution) => this.readPlan(planRoot, sessionId, planPath, execution.signal),
       );
       const controller = this.controller(context.signal);
       try {
@@ -1081,7 +1082,7 @@ export class ProductPlanService extends Service {
           CANONICAL_TOOL_CONTRACTS.ExitPlanMode.timeoutMs,
           async (context) => {
             this.ctx.productTools.assertCurrent(context, "ExitPlanMode");
-            const current = await this.readPlan(runtimeHome, sessionId, planPath, context.signal);
+            const current = await this.readPlan(planRoot, sessionId, planPath, context.signal);
             if (current.revision !== approval.revision || current.content !== approval.content) {
               throw new ProductToolError("stale_plan_revision", "managed plan changed while approval was pending");
             }
@@ -1129,9 +1130,9 @@ export class ProductPlanService extends Service {
     });
   }
 
-  private readPlan(runtimeHome: string, sessionId: string, path: string, signal: AbortSignal): Promise<ProductPlanArtifactRead> {
+  private readPlan(planRoot: string, sessionId: string, path: string, signal: AbortSignal): Promise<ProductPlanArtifactRead> {
     return this.track(exactNativePromise<unknown>(
-      this.configValue.io.read(runtimeHome, sessionId, path, 240_000, signal),
+      this.configValue.io.read(planRoot, sessionId, path, 240_000, signal),
       "managed plan artifact read",
     )).then((value) => snapshotPlanRead(value, 240_000)).catch((error: unknown) => {
       signal.throwIfAborted();
@@ -1153,8 +1154,8 @@ export class ProductPlanService extends Service {
       throw new ProductToolError("plan_state_conflict", "plan transition does not change the durable state");
     }
     const sessionId = boundedIdentifier(String(session.id), "plan Session id");
-    const runtimeHome = planRuntimeHome(this.configValue.environment());
-    const planPath = this.configValue.io.pathFor(runtimeHome, sessionId);
+    const planRoot = planStorageRoot(this.configValue.environment());
+    const planPath = this.configValue.io.pathFor(planRoot, sessionId);
     const ownershipEventSeq = session.seq;
     const planEventSeq = ownershipEventSeq + 1;
     const nextRevision = transitionRevision(

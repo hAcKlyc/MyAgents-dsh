@@ -8,7 +8,7 @@ export class ApprovedDynamicRoute {
   readonly credentialRevision: string;
   readonly materialField: "apiKey" | "authorization" | "accessToken";
   readonly systemPrompt: string;
-  readonly permissionMode: string;
+  readonly permissionMode: MethodParams<"session/create">["permissionMode"];
   readonly interactionScenario: string;
   readonly networkPolicyRef: string;
   readonly webSearchAdapters: readonly string[];
@@ -21,7 +21,7 @@ export class ApprovedDynamicRoute {
     materialField: "apiKey" | "authorization" | "accessToken";
     secret: string;
     systemPrompt: string;
-    permissionMode: string;
+    permissionMode: MethodParams<"session/create">["permissionMode"];
     interactionScenario: string;
     networkPolicyRef: string;
     webSearchAdapters: readonly string[];
@@ -133,7 +133,7 @@ export const loadApprovedDynamicRoute = async (
     materialField: object.materialField,
     secret,
     systemPrompt: object.systemPrompt,
-    permissionMode: object.permissionMode,
+    permissionMode: validated.permissionMode,
     interactionScenario: object.interactionScenario,
     networkPolicyRef: object.networkPolicyRef,
     webSearchAdapters: Object.freeze([...(object.webSearchAdapters as string[])]),

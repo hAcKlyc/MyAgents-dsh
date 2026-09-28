@@ -10,5 +10,6 @@ coverage/
 .myagents/
 tmp/
 .claude/plans/myagents/
-/specs/prd/
+/specs/prd/*
+!/specs/prd/integrated-dsh-permission-modes.md
 /specs/research/

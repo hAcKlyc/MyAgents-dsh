@@ -389,8 +389,8 @@ const fixtureSkillSource = [
   "Inspect $ARGUMENTS through the accepted static Skill catalog; focus=$focus.",
 ].join("\n");
 const fixturePlanPath = join(
-  fixtureRuntimeHome,
-  "plans",
+  fixtureWorkspace,
+  ".myagents-dsh-plans",
   `${createHash("sha256").update("myagents-plan-artifact-v1\0").update("dsh-artifact-primary").digest("hex")}.md`,
 );
 await Promise.all([
@@ -1135,7 +1135,7 @@ const canonicalToolPlaneConfig: CanonicalToolPlaneConfig = Object.freeze({
     interaction: hostInteractionProvider,
     interactionRegistrationDeadlineMs: 5_000,
     maxRules: 16,
-    mode: "default",
+    mode: "approval-required",
   }),
   plan: Object.freeze({ revision: "artifact-plan-v1" }),
   platformTarget: fixturePlatformTarget,
@@ -1684,8 +1684,6 @@ const initializeRequest: InitializeParams = {
     workspace: {
       identity: "artifact-workspace",
       canonicalRoot: fixtureWorkspace,
-      allowedReadRoots: [fixtureWorkspace],
-      allowedWriteRoots: [fixtureWorkspace],
     },
     executables: {
       bundledNodeRef: "bundled-node",
@@ -1923,7 +1921,7 @@ await hostModelComposition.context.productSession.bindCreate({
   configRevision: "artifact-host-model-config-v1",
   extensionDigest: hostModelComposition.context.productComponents.catalog().digest,
   systemPrompt: "Synthetic credential-free Host model evidence.",
-  permissionMode: "default",
+  permissionMode: "approval-required",
   interactionScenario: "artifact-interaction-v1",
 });
 const previousFetch = globalThis.fetch;
@@ -2009,7 +2007,7 @@ try {
   const appliedConfig = await hostModelClient.configApply({
     revision: "artifact-host-model-config-v2",
     provider: nextHostModelProfile,
-    permissionMode: "default",
+    permissionMode: "approval-required",
     interactionScenario: "artifact-interaction-v1",
     systemPrompt: "Updated credential-free Host model evidence.",
     executionEnvironmentRevision: initializeRequest.executionEnvironment.revision,
@@ -2352,7 +2350,7 @@ const primarySessionParams = {
   configRevision: "artifact-config-v1",
   extensionDigest: composition.context.productComponents.catalog().digest,
   systemPrompt: "Artifact primary Session persona.",
-  permissionMode: "default",
+  permissionMode: "approval-required",
   interactionScenario: "artifact-interaction-v1",
 } satisfies MethodParams<"session/create">;
 const configurationMismatchComposition = await composeDshRootServices({
@@ -2401,7 +2399,7 @@ await assert.rejects(
     ...primarySessionParams,
     clientOperationId: "artifact-configuration-mismatch",
     runtimeSessionId: "artifact-configuration-mismatch",
-    interactionScenario: "stale-interaction-v0",
+    toolPolicy: { builtinTools: [] },
   }),
   /configuration differs from the installed Runtime authorities/u,
 );
@@ -2480,7 +2478,7 @@ assert.equal(rpcStatus.desiredConfigRevision, "artifact-config-v1");
 assert.equal(rpcStatus.effectiveConfigRevision, "artifact-config-v1");
 
 const initialPermissionPolicy = await hostClient.permissionRulesList({});
-assert.equal(initialPermissionPolicy.permissionMode, "default");
+assert.equal(initialPermissionPolicy.permissionMode, "approval-required");
 assert.deepEqual(initialPermissionPolicy.autoAllowTools, []);
 assert.deepEqual(initialPermissionPolicy.rules, []);
 const grantedPermissionRule = await hostClient.permissionRulesAdd({
@@ -2660,14 +2658,14 @@ const approvalRuntimeContext = "Current runtime context. This snapshot supersede
   + "Use this exact absolute path for file and search tools that require one. The available Shell tool runs in this workspace. "
   + "Do not infer access outside it.\n\n"
   + `Runtime platform: ${fixturePlatformTarget}. Available Shell tool: ${fixtureShellTool}. Executable: ${artifactShellPath}. `
-  + "Use this Shell's syntax. Each call starts in the governed workspace; shell state does not persist between calls. "
+  + "Use this Shell's syntax. Each call starts in the current workspace; shell state does not persist between calls. "
   + "Query the executable's version before relying on version-specific features. "
-  + "Execution uses the local user's OS permissions; no OS file sandbox is active. "
-  + "Governed file-tool roots do not constrain files or network accessed by shell commands.\n\n"
+  + "File writes follow the current Session sandbox mode; reads follow the local user's OS permissions.\n\n"
   + "Available Skills:\n"
   + "- fixture-audit — Audits the synthetic Runtime artifact and returns bounded evidence.\n"
   + "- release-audit — Audit one accepted Runtime component generation\n\n"
   + "Call Skill with `skill: <name>` to load the full instructions only when needed.\n\n"
+  + `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(fixtureWorkspace)}. Some platform temporary areas may also be writable.\n\n`
   + "Approval policy: ask. Operations that require approval may ask through the configured answerers; "
   + "without an available answerer, the request fails closed.";
 const approvalContextMessage = {
@@ -2971,9 +2969,7 @@ assert.equal(governedToolResults.length, 2, JSON.stringify(governedToolResults))
 assert.equal(governedToolResults.every((event) => event.type === "tool/result"
   && event.data.message.isError !== true), true, JSON.stringify(governedToolResults));
 assert.equal(await readFile(fixtureFile, "utf8"), transformedWriteContent);
-assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
-  `permission:Write:${fixtureFile}`,
-]);
+assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), []);
 await waitUntil(
   () => primaryAgent.session.snapshotEvents().some((event) => event.type === "myagents/checkpoint/state"
     && event.data.callId === "artifact-write-call" && event.data.phase === "settled"),
@@ -2987,7 +2983,7 @@ assert.deepEqual(primaryAgent.session.snapshotEvents()
 ]);
 assert.equal(
   primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule").length,
-  2,
+  1,
 );
 const transformedWriteCall = primaryAgent.session.snapshotEvents().findLast((event) => event.type === "tool/call"
   && String(event.data.callId) === "artifact-write-call");
@@ -3058,10 +3054,7 @@ assert.equal(governedEditReadResult.data.message.isError, false, JSON.stringify(
 assert.ok(governedEditResult?.type === "tool/result");
 assert.equal(governedEditResult.data.message.isError, false, JSON.stringify(governedEditResult));
 assert.equal(await readFile(fixtureFile, "utf8"), editedFileContent);
-assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), [
-  `permission:Write:${fixtureFile}`,
-  `permission:Edit:${fixtureFile}`,
-]);
+assert.deepEqual(fileToolEvidence.slice(governedFileEvidenceStart), []);
 await waitUntil(
   () => primaryAgent.session.snapshotEvents().some((event) => event.type === "myagents/checkpoint/state"
     && event.data.callId === "artifact-edit-call" && event.data.phase === "settled"),
@@ -3230,7 +3223,7 @@ assert.deepEqual({
   records: [{ path: "governed.txt" }],
   truncated: false,
 });
-assert.equal(processSearchText("artifact-ls-call"), "governed.txt\npixel.png\nsearch-fixtures/\nskills/");
+assert.equal(processSearchText("artifact-ls-call"), ".myagents-dsh-plans/\ngoverned.txt\npixel.png\nsearch-fixtures/\nskills/");
 const broadCount = JSON.parse(processSearchText("artifact-grep-broad-count")) as { records: unknown[]; truncated: boolean };
 assert.deepEqual(broadCount.records, [{ count: fixtureSearchCount, path: "search-fixtures/lines.fixture" }]);
 assert.equal(broadCount.truncated, false);
@@ -3271,7 +3264,7 @@ const backgroundFloodRecord = { jobId: shellMeta("artifact-background-flood-call
 assert.equal(typeof backgroundRecord.jobId, "string");
 assert.equal(typeof backgroundFloodRecord.jobId, "string");
 assert.ok(fileToolEvidence.some((entry) => entry.startsWith(`permission:${fixtureShellTool}:`)));
-for (const safeTool of ["Read", "Glob", "Grep", "ls"]) {
+for (const safeTool of ["Read", "Write", "Edit", "Glob", "Grep", "ls"]) {
   assert.equal(fileToolEvidence.some((entry) => entry.startsWith(`permission:${safeTool}:`)), false);
 }
 const backgroundJobs = composition.context.jobs.list(primaryAgent.session.id);
@@ -3880,8 +3873,8 @@ assert.ok(workEpochData.childEndSeq > workEpochData.childStartSeq);
 assert.equal(primaryAgent.session.snapshotEvents().some((event) => event.type === "agent/inbox/spliced"
   && event.data.inserted.some((message) => message.source.kind === "subagent-settled")), false);
 
-const unrelatedRuntimeFile = join(fixtureRuntimeHome, "must-not-read.txt");
-await writeFile(unrelatedRuntimeFile, "private runtime fixture");
+const unrelatedRuntimeFile = join(fixtureRuntimeHome, "outside-workspace-read.txt");
+await writeFile(unrelatedRuntimeFile, "outside workspace fixture");
 adapter.enqueue({
   calls: [
     {
@@ -3935,7 +3928,8 @@ assert.ok(retainedOutputRead?.type === "tool/result");
 assert.equal(retainedOutputRead.data.message.isError, false);
 assert.match(JSON.stringify(retainedOutputRead.data.message.content), /artifact-background/u);
 assert.ok(unrelatedRuntimeRead?.type === "tool/result");
-assert.equal(unrelatedRuntimeRead.data.message.isError, true);
+assert.equal(unrelatedRuntimeRead.data.message.isError, false);
+assert.match(JSON.stringify(unrelatedRuntimeRead.data.message.content), /outside workspace fixture/u);
 
 const canonicalToolCalls = primaryAgent.session.snapshotEvents().filter((event) =>
   event.type === "tool/call" && artifactEffectiveToolSet.has(event.data.name));
@@ -5076,12 +5070,21 @@ const permissionDecidedEvents = primaryAgent.session.snapshotEvents().filter(({ 
 const permissionRuleEvents = primaryAgent.session.snapshotEvents().filter(({ type }) => type === "myagents/permission/rule");
 const permissionRuleRevokedEvents = primaryAgent.session.snapshotEvents()
   .filter(({ type }) => type === "myagents/permission/rule/revoked");
-assert.equal(permissionAskedEvents.length, 27);
-assert.equal(permissionDecidedEvents.length, 27);
+assert.deepEqual({
+  asked: permissionAskedEvents.length,
+  decided: permissionDecidedEvents.length,
+  durableRules: permissionRuleEvents.length,
+  durableRuleRevocations: permissionRuleRevokedEvents.length,
+  providerRequests: fileToolEvidence.filter((entry) => entry.startsWith("permission:")).length,
+}, {
+  asked: 21,
+  decided: 21,
+  durableRules: 2,
+  durableRuleRevocations: 1,
+  providerRequests: 21,
+});
 assert.equal(hostInteractionCalls.filter((request) => request.kind === "permission"
   && request.authority.callId === "artifact-foreground-spill-call").length, 1);
-assert.equal(permissionRuleEvents.length, 3);
-assert.equal(permissionRuleRevokedEvents.length, 1);
 assert.equal(hostInteractionResponses.length, hostInteractionCalls.length + 2);
 assert.ok(hostInteractionCalls.length >= permissionAskedEvents.length);
 assert.deepEqual(
@@ -5315,7 +5318,7 @@ writeSync(1, `${JSON.stringify({
     durableRules: permissionRuleEvents.length,
     durableRuleRevocations: permissionRuleRevokedEvents.length,
     providerRequests: fileToolEvidence.filter((entry) => entry.startsWith("permission:")).length,
-    safeToolsAutoAllowed: ["Read", "Glob", "Grep", "ls", "TaskGet", "TaskList"].every((tool) =>
+    safeToolsAutoAllowed: ["Read", "Write", "Edit", "Glob", "Grep", "ls", "TaskGet", "TaskList"].every((tool) =>
       !fileToolEvidence.some((entry) => entry.startsWith(`permission:${tool}:`))),
   },
   canonicalWebEvidence: {

@@ -71,7 +71,7 @@ const createParams = (
   configRevision: "config-v1",
   extensionDigest: digest,
   systemPrompt: "Synthetic primary Session prompt.",
-  permissionMode: "default",
+  permissionMode: "approval-required",
   toolPolicy: { builtinTools: [], autoAllowTools: [], disallowedTools: [] },
   interactionScenario: "deterministic-headless",
   ...overrides,
@@ -320,7 +320,7 @@ describe("one-primary-session admission", () => {
         revision: "provider-v2",
         modelId: "fixture-model-v2",
       },
-      permissionMode: "dontAsk",
+      permissionMode: "workspace-autonomous",
       toolPolicy: { builtinTools: [], autoAllowTools: [], disallowedTools: [] },
       interactionScenario: "headless-v2",
       systemPrompt: "Replacement primary Session prompt.",
@@ -344,7 +344,7 @@ describe("one-primary-session admission", () => {
     expect(resume.mock.calls[0]?.[0].params).toMatchObject({
       configRevision: "config-v2",
       provider: { revision: "provider-v2", modelId: "fixture-model-v2" },
-      permissionMode: "dontAsk",
+      permissionMode: "workspace-autonomous",
       interactionScenario: "headless-v2",
       systemPrompt: "Replacement primary Session prompt.",
     });
@@ -819,8 +819,6 @@ describe("one-primary-session admission", () => {
       revision: "environment-v1",
       runtimeHome: "/fixture/runtime",
       workspace: {
-        allowedReadRoots: ["/fixture/workspace"],
-        allowedWriteRoots: ["/fixture/workspace"],
         canonicalRoot: "/fixture/workspace",
         identity: "fixture-workspace",
       },
@@ -846,28 +844,12 @@ describe("one-primary-session admission", () => {
     expect(networkGetterHits).toBe(0);
     expect(() => validateProductExecutionEnvironment({
       ...processEnvironmentFields(true),
-      attachmentStagingRoot: "C:\\fixture\\attachments",
-      digest,
-      platformTarget: "win32-x64",
-      revision: "environment-v1",
-      runtimeHome: "C:\\fixture\\runtime",
-      workspace: {
-        allowedReadRoots: ["C:\\fixture\\workspace", "c:\\fixture\\workspace"],
-        allowedWriteRoots: ["C:\\fixture\\workspace"],
-        canonicalRoot: "C:\\fixture\\workspace",
-        identity: "fixture-workspace",
-      },
-    })).toThrow("unique under platform path identity");
-    expect(() => validateProductExecutionEnvironment({
-      ...processEnvironmentFields(true),
       attachmentStagingRoot: "\\attachments",
       digest,
       platformTarget: "win32-x64",
       revision: "environment-v1",
       runtimeHome: "\\runtime",
       workspace: {
-        allowedReadRoots: ["\\workspace"],
-        allowedWriteRoots: ["\\workspace"],
         canonicalRoot: "\\workspace",
         identity: "fixture-workspace",
       },
@@ -880,8 +862,6 @@ describe("one-primary-session admission", () => {
       revision: "environment-v1",
       runtimeHome: "/runtime",
       workspace: {
-        allowedReadRoots: ["/workspace"],
-        allowedWriteRoots: ["/workspace"],
         canonicalRoot: "/workspace",
         identity: "fixture-workspace",
       },
@@ -912,8 +892,6 @@ describe("one-primary-session admission", () => {
       revision: "environment-v1",
       runtimeHome: "/fixture/runtime",
       workspace: {
-        allowedReadRoots: ["/fixture/other"],
-        allowedWriteRoots: ["/fixture/other"],
         canonicalRoot: "/fixture/other",
         identity: "different-workspace",
       },
@@ -955,8 +933,6 @@ describe("one-primary-session admission", () => {
       revision: "environment-v1",
       runtimeHome: "/fixture/runtime",
       workspace: {
-        allowedReadRoots: [workspace.path],
-        allowedWriteRoots: [workspace.path],
         canonicalRoot: workspace.path,
         identity: workspace.identity,
       },
@@ -965,7 +941,7 @@ describe("one-primary-session admission", () => {
     const candidate = await service.prepareConfiguration({
       revision: "config-v2",
       provider: { ...createParams().provider, revision: "provider-v2" },
-      permissionMode: "default",
+      permissionMode: "approval-required",
       toolPolicy: { builtinTools: [], autoAllowTools: [], disallowedTools: [] },
       interactionScenario: "deterministic-headless",
       systemPrompt: "Replacement primary Session prompt.",

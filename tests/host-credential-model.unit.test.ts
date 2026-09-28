@@ -61,7 +61,7 @@ const sessionRequest = (signal = controller.signal): PrimarySessionBackendReques
     configRevision: "config-v1",
     extensionDigest: "a".repeat(64),
     interactionScenario: "interaction-v1",
-    permissionMode: "default",
+    permissionMode: "approval-required",
     persistenceRef: "persistence-v1",
     provider: profile,
     systemPrompt: "fixture",

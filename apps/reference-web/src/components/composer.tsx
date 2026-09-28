@@ -9,10 +9,9 @@ import type {
 } from "../store.js";
 
 const permissionOptions: readonly Readonly<{ value: ReferencePermissionMode; label: string }>[] = [
-  { value: "default", label: "按需询问" },
-  { value: "acceptEdits", label: "自动允许编辑" },
-  { value: "dontAsk", label: "拒绝且不询问" },
-  { value: "bypassPermissions", label: "完全访问" },
+  { value: "approval-required", label: "请求批准" },
+  { value: "workspace-autonomous", label: "工作区自主" },
+  { value: "full-autonomous", label: "完全自主" },
 ];
 
 export function Composer(props: Readonly<{
@@ -175,10 +174,9 @@ export function Composer(props: Readonly<{
             <option value="steer">立即补充</option>
             <option value="follow_up">排队发送</option>
           </select>}
-          <label className="permission-control" title={selectedPermission === "bypassPermissions"
-            ? "完全访问会绕过交互式权限确认，Runtime 硬策略仍然有效。" : "设置当前 Session 的工具权限策略。"}>
+          <label className="permission-control" title="设置当前 Session 的工具权限策略。">
             <span>权限</span>
-            <select aria-label="Permission mode" data-danger={selectedPermission === "bypassPermissions"}
+            <select aria-label="Permission mode" data-danger={selectedPermission === "full-autonomous"}
               disabled={props.permissionDisabled || permissionState === "saving"}
               value={selectedPermission ?? ""} onChange={(event) => void changePermission(
                 event.target.value as ReferencePermissionMode,

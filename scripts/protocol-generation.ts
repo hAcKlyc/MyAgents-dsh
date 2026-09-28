@@ -67,8 +67,6 @@ const initializeParams = {
     workspace: {
       identity: "workspace-1",
       canonicalRoot: "/fixture/workspace",
-      allowedReadRoots: ["/fixture/workspace"],
-      allowedWriteRoots: ["/fixture/workspace"],
     },
     executables: {
       bundledNodeRef: "node-v24",
@@ -263,7 +261,7 @@ const buildFixtures = (schemaDigest: string): unknown => {
       ],
       contexts: [{ id: "workspace", order: 100, scope: "global", text: "Keep {{literal}}." }],
     },
-    permissionMode: "default",
+    permissionMode: "approval-required",
     interactionScenario: "fixture-interaction",
   } as const;
   return {

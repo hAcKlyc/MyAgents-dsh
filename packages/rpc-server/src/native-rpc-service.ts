@@ -302,15 +302,6 @@ const validateInitializationEnvironment = (
       || params.workspace.identity !== params.executionEnvironment.workspace.identity) {
       throw new TypeError("workspace or Runtime path identity differs");
     }
-    const readRoots = params.executionEnvironment.workspace.allowedReadRoots;
-    const writeRoots = params.executionEnvironment.workspace.allowedWriteRoots;
-    for (const root of [...readRoots, ...writeRoots]) {
-      if (adapter.normalizeAbsolutePath(root) !== root) throw new TypeError("allowed root is not canonical");
-    }
-    if (!readRoots.some((root) => adapter.samePath(root, params.workspace.path))
-      || !writeRoots.some((root) => adapter.samePath(root, params.workspace.path))) {
-      throw new TypeError("workspace root must be explicitly readable and writable");
-    }
     if (params.executionEnvironment.planDirectory !== undefined
       && adapter.normalizeAbsolutePath(params.executionEnvironment.planDirectory)
         !== params.executionEnvironment.planDirectory) {

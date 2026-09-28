@@ -70,7 +70,7 @@ export const REFERENCE_WEB_DEFAULT_CONFIGURATION: SessionConfiguration = Object.
   providerRouteId: REFERENCE_WEB_PROVIDER.providerRouteId,
   modelId: REFERENCE_WEB_PROVIDER.modelId,
   reasoningEffort: "high",
-  permissionMode: "default",
+  permissionMode: "approval-required",
   interactionScenario: REFERENCE_WEB_INTERACTION_SCENARIO,
   systemPrompt: REFERENCE_WEB_SYSTEM_PROMPT,
 });
@@ -259,8 +259,6 @@ export const createReferenceWebInitialize = (
     workspace: {
       identity: row.workspaceIdentity,
       canonicalRoot: paths.workspacePath,
-      allowedReadRoots: [paths.workspacePath],
-      allowedWriteRoots: [paths.workspacePath],
     },
     executables: {
       bundledNodeRef: "bundled-node",
@@ -463,7 +461,7 @@ const validateConfiguration = (value: SessionConfiguration): void => {
     || value.modelId !== REFERENCE_WEB_PROVIDER.modelId) {
     throw new WebHostError("reference_web_model_unavailable", "The selected model route is not installed");
   }
-  if (!["default", "acceptEdits", "bypassPermissions", "dontAsk"].includes(value.permissionMode)) {
+  if (!["approval-required", "workspace-autonomous", "full-autonomous"].includes(value.permissionMode)) {
     throw new WebHostError("reference_web_permission_mode_invalid", "The selected permission mode is invalid");
   }
   if (value.reasoningEffort !== undefined
@@ -871,7 +869,7 @@ export const createReferenceWebComposition = (
           ...bootstrapConfiguration,
           revision: `reference-web-bootstrap-${createHash("sha256")
             .update(JSON.stringify(controls.configuration)).digest("hex").slice(0, 16)}`,
-          permissionMode: "default",
+          permissionMode: "approval-required",
         }),
       });
       return createReferenceWebBinding(

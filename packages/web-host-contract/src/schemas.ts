@@ -1,4 +1,4 @@
-import { RuntimeEventEnvelopeSchema } from "@myagents-dsh/protocol";
+import { DshPermissionModeSchema, RuntimeEventEnvelopeSchema } from "@myagents-dsh/protocol";
 import { Type, type Static, type TSchema } from "typebox";
 
 export const WEB_HOST_CONTRACT_VERSION = "1.0.0-draft.1" as const;
@@ -183,7 +183,7 @@ export const SessionConfigurationSchema = strictObject({
   providerRouteId: identifier,
   modelId: identifier,
   reasoningEffort: Type.Optional(reasoningEffort),
-  permissionMode: identifier,
+  permissionMode: DshPermissionModeSchema,
   interactionScenario: identifier,
   systemPrompt: Type.String({ maxLength: 1_000_000 }),
   visibleTools: Type.Optional(Type.Array(identifier, { maxItems: 512, uniqueItems: true })),

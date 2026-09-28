@@ -59,8 +59,6 @@ const initialize = (
     workspace: {
       identity: row.workspaceIdentity,
       canonicalRoot: workspace,
-      allowedReadRoots: [workspace],
-      allowedWriteRoots: [workspace],
     },
     executables: {
       bundledNodeRef: "bundled-node",
@@ -110,7 +108,7 @@ const binding = (row: WebSessionCatalogRow): MethodParams<"session/create"> => (
   configRevision: "config-v1",
   extensionDigest: digest,
   systemPrompt: "",
-  permissionMode: "default",
+  permissionMode: "approval-required",
   interactionScenario: "interactive",
 });
 

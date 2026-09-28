@@ -94,8 +94,6 @@ export const ExecutionEnvironmentProfileSchema = strictObject({
   workspace: strictObject({
     identity: identifier,
     canonicalRoot: absolutePath,
-    allowedReadRoots: Type.Array(absolutePath, { minItems: 1, maxItems: 32, uniqueItems: true }),
-    allowedWriteRoots: Type.Array(absolutePath, { minItems: 1, maxItems: 32, uniqueItems: true }),
   }),
   executables: strictObject({
     bundledNodeRef: identifier,
@@ -146,6 +144,12 @@ const applyMode = Type.Union([
   Type.Literal("restart-when-idle"),
   Type.Literal("unsupported"),
 ]);
+export const DshPermissionModeSchema = Type.Union([
+  Type.Literal("approval-required"),
+  Type.Literal("workspace-autonomous"),
+  Type.Literal("full-autonomous"),
+]);
+const dshPermissionMode = DshPermissionModeSchema;
 const unavailable = Type.Literal("unavailable");
 const capability = <Schema extends TSchema>(schema: Schema) => Type.Union([schema, unavailable]);
 
@@ -755,7 +759,7 @@ export type PermissionOperation = Static<typeof PermissionOperationSchema>;
 export const PermissionReviewSchema = strictObject({
   operation: PermissionOperationSchema,
   actor: strictObject({ agentId: identifier, origin: Type.Union([Type.Literal("root"), Type.Literal("foreground_child"), Type.Literal("background_child")]) }),
-  scope: strictObject({ tool: identifier, permissionClass: identifier, target: Type.String(), lifetimeMs: Type.Union([Type.Null(), nonNegativeInteger]), owner: Type.Literal("session_tree") }),
+  scope: strictObject({ tool: identifier, permissionClass: identifier, target: Type.String(), lifetimeMs: Type.Union([Type.Null(), nonNegativeInteger]), owner: Type.Union([Type.Literal("session_tree"), Type.Literal("single_operation")]) }),
 });
 export type PermissionReview = Static<typeof PermissionReviewSchema>;
 export const PermissionReviewReferenceSchema = strictObject({ attachmentId: identifier, mimeType: Type.Literal("application/json"), sizeBytes: nonNegativeInteger, sha256 });
@@ -993,8 +997,8 @@ export const RPC_METHODS = {
   initialize: method("host_to_runtime", InitializeParamsSchema, InitializeResultSchema),
   "runtime/status": method("host_to_runtime", emptyParams, RuntimeStatusSchema),
   "runtime/shutdown": method("host_to_runtime", strictObject({ reason: Type.Optional(identifier) }), okResult),
-  "session/create": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: Type.Optional(identifier), persistenceRef: identifier, provider: ModelExecutionProfileSchema, collaboration: Type.Optional(AgentCollaborationConfigSchema), configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
-  "session/resume": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: identifier, persistenceRef: identifier, provider: ModelExecutionProfileSchema, collaboration: Type.Optional(AgentCollaborationConfigSchema), configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
+  "session/create": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: Type.Optional(identifier), persistenceRef: identifier, provider: ModelExecutionProfileSchema, collaboration: Type.Optional(AgentCollaborationConfigSchema), configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), permissionMode: dshPermissionMode, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
+  "session/resume": method("host_to_runtime", strictObject({ clientOperationId: identifier, runtimeSessionId: identifier, persistenceRef: identifier, provider: ModelExecutionProfileSchema, collaboration: Type.Optional(AgentCollaborationConfigSchema), configRevision: revision, extensionDigest: sha256, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), permissionMode: dshPermissionMode, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier }), sessionBindingResult),
   "session/read": method("host_to_runtime", strictObject({ cursor: Type.Optional(identifier) }), SessionReadResultSchema),
   "session/close": method("host_to_runtime", operationParams, okResult),
   "session/compact": method("host_to_runtime", operationParams, strictObject({ state: Type.Union([Type.Literal("accepted"), Type.Literal("already_known")]) })),
@@ -1022,9 +1026,9 @@ export const RPC_METHODS = {
   "turn/message/cancel": method("host_to_runtime", strictObject({ clientOperationId: identifier, messageId: identifier }), strictObject({ messageId: identifier, state: queuedMessageState })),
   "turn/interrupt": method("host_to_runtime", strictObject({ clientOperationId: identifier, cancelQueued: Type.Optional(Type.Boolean()) }), strictObject({ ok: Type.Literal(true), stillQueuedMessageIds: Type.Array(identifier, { maxItems: 4_096 }), cancelledMessageIds: Type.Array(identifier, { maxItems: 4_096 }) })),
   "command/invoke": method("host_to_runtime", strictObject({ clientOperationId: identifier, clientUserMessageId: identifier, commandId: identifier, arguments: Type.Array(boundedText, { maxItems: 256 }), configRevision: revision, extensionDigest: sha256, executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256, limits: operationLimits, origin: turnOrigin }), turnStartResult),
-  "config/apply": method("host_to_runtime", strictObject({ revision, provider: ModelExecutionProfileSchema, collaboration: Type.Optional(AgentCollaborationConfigSchema), permissionMode: identifier, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256 }), applyResult),
+  "config/apply": method("host_to_runtime", strictObject({ revision, provider: ModelExecutionProfileSchema, collaboration: Type.Optional(AgentCollaborationConfigSchema), permissionMode: dshPermissionMode, toolPolicy: Type.Optional(toolVisibilityPolicy), interactionScenario: identifier, systemPrompt: Type.String({ maxLength: 1_000_000 }), systemContext: Type.Optional(SystemContextSnapshotSchema), executionEnvironmentRevision: revision, executionEnvironmentDigest: sha256 }), applyResult),
   "plan/apply": method("host_to_runtime", strictObject({ clientOperationId: identifier, expectedRevision: revision, mode: Type.Union([Type.Literal("normal"), Type.Literal("plan")]) }), planApplyResult),
-  "permission/rules/list": method("host_to_runtime", emptyParams, strictObject({ permissionMode: identifier, autoAllowTools: Type.Array(identifier, { maxItems: 512, uniqueItems: true }), revision, rules: Type.Array(permissionRule, { maxItems: 512 }) })),
+  "permission/rules/list": method("host_to_runtime", emptyParams, strictObject({ permissionMode: dshPermissionMode, autoAllowTools: Type.Array(identifier, { maxItems: 512, uniqueItems: true }), revision, rules: Type.Array(permissionRule, { maxItems: 512 }) })),
   "permission/rules/add": method("host_to_runtime", strictObject({ expectedRevision: revision, tool: identifier, permissionClass: identifier, target: Type.String({ minLength: 1, maxLength: 8_192 }) }), permissionRuleMutationResult),
   "permission/rules/revoke": method("host_to_runtime", strictObject({ expectedRevision: revision, ruleId: identifier }), permissionRuleMutationResult),
   "credential/reconcile": method("host_to_runtime", strictObject({ subject: Type.Literal("mcp"), serverId: identifier, extensionDigest: sha256, previousCredentialRevision: Type.Optional(revision), credentialRevision: revision, reason: Type.Union([Type.Literal("rotated"), Type.Literal("revoked"), Type.Literal("logged_out")]) }), Type.Union([strictObject({ state: Type.Literal("applied"), effectiveCredentialRevision: revision }), strictObject({ state: Type.Literal("restart_when_idle"), blockedNewCalls: Type.Literal(true) }), strictObject({ state: Type.Literal("already_effective"), effectiveCredentialRevision: revision }), strictObject({ state: Type.Literal("failed"), code: identifier, retryable: Type.Boolean() })])),

@@ -170,7 +170,7 @@ describe("Reference Web React store", () => {
         providerRouteId: "deepseek-official",
         modelId: "deepseek-v4-flash",
         reasoningEffort: "high" as const,
-        permissionMode: "default",
+        permissionMode: "approval-required" as const,
         interactionScenario: "host-interaction-v1",
         systemPrompt: "Fixture prompt",
       },

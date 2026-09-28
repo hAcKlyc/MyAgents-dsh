@@ -1,6 +1,6 @@
 {
   "artifactFormatVersion": 1,
-  "canonicalToolContractSha256": "846de41bd872fd0996e20dd9f15884ba49892a7270fa6f498cae00418ce7f8e7",
+  "canonicalToolContractSha256": "7d7d7d67b5cf2e9e06c6886a8490896de6e6488dffb11f322e055e61a49d8d22",
   "canonicalTools": [
     "Read",
     "Write",
@@ -28,11 +28,11 @@
     "TaskUpdate"
   ],
   "capabilityProfileDigest": "ee13c2ba6852498a4d7a3c2f26ef6026dd8fa9697b442f3f7b878f1a3988d809",
-  "contractSourceSha256": "ebcebb9162e2b3679899f767447ec3d5f03f5a3c03fb95df8d776bd660bbb2f2",
+  "contractSourceSha256": "d13317fd8eae45391906be4d7d2d9c2a4907acb4f2c0dec4699d2c47283c1af3",
   "developmentDshVersion": "0.1.7-rc.2",
-  "dshArtifactManifestSha256": "864dac2acc807d4af413685b4ebd1534f0eff9f46a4c39f3fbf7f08445e0af5b",
+  "dshArtifactManifestSha256": "bcad0a0138fb68c97f2853a7357e452f947ee5c9cd2e926c22ac7d430e46c98b",
   "dshEngineVersion": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
-  "fixturesSha256": "a6e97e93bc037a36c8b6d1d326fd3524baf7461f8672c1b8c7d0be5cd3d053ed",
+  "fixturesSha256": "b96aba9e2f30c8661345bc09d1d4b2d9ab8500d39776fbcca2321b97b7600384",
   "hostMethods": [
     "initialize",
     "runtime/status",
@@ -95,7 +95,7 @@
     "host/attachment/acquire",
     "host/attachment/release"
   ],
-  "runtimeVersion": "0.1.8",
-  "schemaSha256": "0c5c7cb65ba453367c79174b390c31bcf93e64f92f43cb0ad980e579bf836e2a",
+  "runtimeVersion": "0.1.9",
+  "schemaSha256": "c52558486ded4d6e2f34ef0b00eb4937bcb5f5d33526f3a1d265c7e74b41e4fa",
   "sessionFormat": "dsh-session-events-v2"
 }

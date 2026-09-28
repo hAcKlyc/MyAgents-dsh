@@ -78,7 +78,7 @@ describe("Reference Web React shell", () => {
       sendDisabled={false}
       busy={false}
       permissionScope="web-session-1"
-      permissionMode="default"
+      permissionMode="approval-required"
       permissionDisabled={false}
       attachments={[]}
       onSubmit={() => Promise.resolve()}
@@ -98,9 +98,9 @@ describe("Reference Web React shell", () => {
     expect(await screen.findByText(/proof\.png · staged/u)).not.toBeNull();
 
     fireEvent.change(screen.getByRole("combobox", { name: "Permission mode" }), {
-      target: { value: "bypassPermissions" },
+      target: { value: "full-autonomous" },
     });
-    await waitFor(() => expect(onPermissionModeChange).toHaveBeenCalledWith("bypassPermissions"));
+    await waitFor(() => expect(onPermissionModeChange).toHaveBeenCalledWith("full-autonomous"));
     expect((await screen.findByRole("status")).textContent).toContain("已生效");
   });
 
@@ -112,7 +112,7 @@ describe("Reference Web React shell", () => {
           providerRouteId: "deepseek-official",
           modelId: "deepseek-v4-flash",
           reasoningEffort: "high",
-          permissionMode: "default",
+          permissionMode: "approval-required",
           interactionScenario: "host-interaction-v1",
           systemPrompt: "You are a workspace Agent.",
         },
@@ -138,13 +138,13 @@ describe("Reference Web React shell", () => {
     expect(save.disabled).toBe(true);
     expect(screen.getByText("当前设置已保存")).not.toBeNull();
     fireEvent.change(screen.getByRole("combobox", { name: "权限模式" }), {
-      target: { value: "acceptEdits" },
+      target: { value: "workspace-autonomous" },
     });
     expect(save.disabled).toBe(false);
     expect(screen.getByText("有未保存更改")).not.toBeNull();
     fireEvent.click(save);
     await waitFor(() => expect(onApplyConfiguration).toHaveBeenCalledOnce());
-    expect(onApplyConfiguration).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: "acceptEdits" }));
+    expect(onApplyConfiguration).toHaveBeenCalledWith(expect.objectContaining({ permissionMode: "workspace-autonomous" }));
     expect(await screen.findByText("✓ 设置已保存并生效。")).not.toBeNull();
   });
 
@@ -156,7 +156,7 @@ describe("Reference Web React shell", () => {
           providerRouteId: "deepseek-official",
           modelId: "deepseek-v4-flash",
           reasoningEffort: "high",
-          permissionMode: "default",
+          permissionMode: "approval-required",
           interactionScenario: "host-interaction-v1",
           systemPrompt: "You are a workspace Agent.",
         },
@@ -241,7 +241,7 @@ describe("Reference Web React shell", () => {
           providerRouteId: "deepseek-official",
           modelId: "deepseek-v4-flash",
           reasoningEffort: "high",
-          permissionMode: "default",
+          permissionMode: "approval-required",
           interactionScenario: "host-interaction-v1",
           systemPrompt: "You are a workspace Agent.",
         },

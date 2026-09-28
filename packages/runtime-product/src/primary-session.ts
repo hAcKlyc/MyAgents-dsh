@@ -96,8 +96,6 @@ export interface ProductExecutionEnvironment {
   readonly revision: string;
   readonly runtimeHome: string;
   readonly workspace: Readonly<{
-    readonly allowedReadRoots: readonly string[];
-    readonly allowedWriteRoots: readonly string[];
     readonly canonicalRoot: string;
     readonly identity: string;
   }>;
@@ -368,43 +366,6 @@ export const validatePrimarySessionWorkspace = (value: unknown): PrimarySessionW
   });
 };
 
-const exactPathArray = (
-  value: unknown,
-  description: string,
-  normalize: (path: string) => string,
-): readonly string[] => {
-  if (!Array.isArray(value) || utilTypes.isProxy(value) || value.length < 1 || value.length > 32) {
-    throw new TypeError(`${description} must be a bounded array`);
-  }
-  const descriptors = Object.getOwnPropertyDescriptors(value);
-  const result: string[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const descriptor = descriptors[String(index)];
-    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)
-      || typeof descriptor.value !== "string" || descriptor.value.length > 8_192
-      || descriptor.value.includes("\0") || normalize(descriptor.value) !== descriptor.value) {
-      throw new TypeError(`${description} contains a non-canonical path`);
-    }
-    result.push(descriptor.value);
-  }
-  if (Reflect.ownKeys(value).length !== value.length + 1 || new Set(result).size !== result.length) {
-    throw new TypeError(`${description} must be dense and unique`);
-  }
-  return Object.freeze(result);
-};
-
-const containsPlatformPath = (
-  target: PlatformTarget,
-  parent: string,
-  child: string,
-): boolean => {
-  const foldedParent = target === "win32-x64" ? parent.toLowerCase() : parent;
-  const foldedChild = target === "win32-x64" ? child.toLowerCase() : child;
-  const separator = target === "win32-x64" ? "\\" : "/";
-  return foldedChild === foldedParent
-    || foldedChild.startsWith(foldedParent.endsWith(separator) ? foldedParent : `${foldedParent}${separator}`);
-};
-
 export const validateProductExecutionEnvironment = (
   value: unknown,
 ): ProductExecutionEnvironment => {
@@ -459,7 +420,7 @@ export const validateProductExecutionEnvironment = (
   const adapter = selectPlatformAdapter(platformTarget);
   const workspace = exactOwnDataObject(
     environment.workspace,
-    ["allowedReadRoots", "allowedWriteRoots", "canonicalRoot", "identity"],
+    ["canonicalRoot", "identity"],
     [],
     "execution environment workspace",
   );
@@ -524,41 +485,12 @@ export const validateProductExecutionEnvironment = (
     ? normalize(workspace.canonicalRoot)
     : "";
   if (canonicalRoot !== workspace.canonicalRoot) throw new TypeError("workspace root must be canonical");
-  const allowedReadRoots = exactPathArray(workspace.allowedReadRoots, "allowed read roots", normalize);
-  const allowedWriteRoots = exactPathArray(workspace.allowedWriteRoots, "allowed write roots", normalize);
-  for (const [description, roots] of [
-    ["allowed read roots", allowedReadRoots],
-    ["allowed write roots", allowedWriteRoots],
-  ] as const) {
-    for (let left = 0; left < roots.length; left += 1) {
-      const leftRoot = roots[left];
-      if (leftRoot === undefined) continue;
-      for (let right = left + 1; right < roots.length; right += 1) {
-        const rightRoot = roots[right];
-        if (rightRoot !== undefined && adapter.samePath(leftRoot, rightRoot)) {
-          throw new TypeError(`${description} must be unique under platform path identity`);
-        }
-      }
-    }
-  }
   const runtimeHome = typeof environment.runtimeHome === "string" ? normalize(environment.runtimeHome) : "";
   const attachmentStagingRoot = typeof environment.attachmentStagingRoot === "string"
     ? normalize(environment.attachmentStagingRoot)
     : "";
   if (runtimeHome !== environment.runtimeHome || attachmentStagingRoot !== environment.attachmentStagingRoot) {
     throw new TypeError("execution environment owned roots must be canonical");
-  }
-  if (!allowedReadRoots.some((root) => adapter.samePath(root, canonicalRoot))
-    || !allowedWriteRoots.some((root) => adapter.samePath(root, canonicalRoot))) {
-    throw new TypeError("workspace root must be explicitly readable and writable");
-  }
-  for (const root of [...allowedReadRoots, ...allowedWriteRoots]) {
-    if (containsPlatformPath(platformTarget, root, runtimeHome)
-      || containsPlatformPath(platformTarget, runtimeHome, root)
-      || containsPlatformPath(platformTarget, root, attachmentStagingRoot)
-      || containsPlatformPath(platformTarget, attachmentStagingRoot, root)) {
-      throw new TypeError("allowed workspace roots must not overlap Runtime-owned roots");
-    }
   }
   return Object.freeze({
     attachmentStagingRoot,
@@ -595,8 +527,6 @@ export const validateProductExecutionEnvironment = (
     revision,
     runtimeHome,
     workspace: Object.freeze({
-      allowedReadRoots,
-      allowedWriteRoots,
       canonicalRoot,
       identity: boundedIdentifier(workspace.identity, "execution environment workspace identity"),
     }),
@@ -1576,6 +1506,10 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
       agent: Agent,
       request: PrimarySessionBackendRequest,
     ) => void,
+    private readonly initializeCreate?: (
+      agent: Agent,
+      request: PrimarySessionBackendRequest,
+    ) => Promise<void>,
     private readonly validateResume?: (
       agent: Agent,
       request: PrimarySessionBackendRequest,
@@ -1630,6 +1564,7 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
           registerRootSystemContext(agentContext, request.systemContext);
           request.signal.throwIfAborted();
           this.assertPublicationCurrent?.(agent, request);
+          await this.initializeCreate?.(agent, request);
           const preparedPublication = await publication.setup(agentContext, agent);
           if (preparedPublication === undefined) {
             throw new Error("primary Session publication guard did not prepare a commit boundary");
@@ -1796,6 +1731,10 @@ export interface ProductSessionServiceConfig {
   readonly inspectResume?: (
     request: PrimarySessionBackendRequest,
   ) => Promise<PrimarySessionResumeInspection>;
+  readonly initializeCreate?: (
+    agent: Agent,
+    request: PrimarySessionBackendRequest,
+  ) => Promise<void>;
   readonly rewindStore?: () => ProductRewindStore | undefined;
   readonly reconcileResume?: (agent: Agent) => Promise<void>;
   readonly validateResume?: (
@@ -1842,6 +1781,7 @@ export class ProductSessionService extends Service {
         "deleteStore",
         "forkStore",
         "inspectResume",
+        "initializeCreate",
         "providerAdmissionGuard",
         "providerAdmissionRollback",
         "providerConfigurationGuard",
@@ -1878,6 +1818,9 @@ export class ProductSessionService extends Service {
     const validateResume = Object.hasOwn(normalized, "validateResume")
       ? normalized.validateResume as ProductSessionServiceConfig["validateResume"]
       : undefined;
+    const initializeCreate = Object.hasOwn(normalized, "initializeCreate")
+      ? normalized.initializeCreate as ProductSessionServiceConfig["initializeCreate"]
+      : undefined;
     const reconcileResume = Object.hasOwn(normalized, "reconcileResume")
       ? normalized.reconcileResume as ((agent: Agent) => Promise<void>)
       : undefined;
@@ -1887,6 +1830,7 @@ export class ProductSessionService extends Service {
     for (const [description, callback] of [
       ["Session publication current-authority guard", assertPublicationCurrent],
       ["resume validator", validateResume],
+      ["create initializer", initializeCreate],
       ["resume reconciler", reconcileResume],
       ["resume recovery inspector", inspectResume],
     ] as const) {
@@ -1900,6 +1844,7 @@ export class ProductSessionService extends Service {
           ctx,
           this.publicationFenceValue,
           assertPublicationCurrent,
+          initializeCreate,
           validateResume,
           reconcileResume,
           inspectResume,

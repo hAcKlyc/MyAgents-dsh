@@ -111,6 +111,7 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
   await context.plugin(SystemPrompt);
   await context.plugin(ToolRuntime, { mode: "native" });
   await context.plugin(ToolCallTimeoutPolicy);
+  context.provide("sandboxPolicy", { defaultMode: "danger-full-access", resolve: () => ({ mode: "danger-full-access", workspaceRoot: process.cwd() }) } as never);
   await context.plugin(LocalWorkspaceFileSystem, {
     platform: selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)),
   });
@@ -135,7 +136,6 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
         dshTurn: 1,
         environment: Object.freeze({
           workspace: Object.freeze({
-            allowedReadRoots: Object.freeze([workspace]),
             canonicalRoot: workspace,
           }),
         }),
@@ -379,7 +379,7 @@ describe("static declarative Skill tool", () => {
     });
   });
 
-  it("accepts the fixed YAML argument array and rejects roots outside operation authority", async () => {
+  it("accepts the fixed YAML argument array and readable skill roots outside the workspace", async () => {
     const arraySource = defaultSource
       .replace("arguments: focus", "arguments: [person, target]")
       .replace(
@@ -406,11 +406,8 @@ describe("static declarative Skill tool", () => {
       name: "fixture-audit",
       outsideWorkspace: true,
     }]);
-    await expect(outside.execute({ skill: "fixture-audit" })).resolves.toMatchObject({
-      isError: true,
-      error: { info: { code: "skill_invalid" } },
-    });
-    expect(outside.permissions).toHaveLength(0);
+    await expect(outside.execute({ skill: "fixture-audit" })).resolves.toMatchObject({ isError: false });
+    expect(outside.permissions).toHaveLength(1);
   });
 
   it.skipIf(!supportsFileSymlinks)("fails closed on source drift, symbolic sources, and executable frontmatter", async () => {
