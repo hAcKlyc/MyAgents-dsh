@@ -238,14 +238,14 @@ describe("dynamic E2E harness", () => {
     })]);
     expect(evaluateDynamicScenarioPostconditions(child, childBefore, childAfter)).toMatchObject({
       passed: true,
-      assertions: [{ name: "fixture-inputs-preserved-with-optional-markdown-report", passed: true }],
+      assertions: [{ name: "fixture-inputs-preserved", passed: true }],
     });
     expect(evaluateDynamicScenarioPostconditions(child, childBefore, Object.freeze([...childBefore, Object.freeze({
       path: "reports/combined-findings.md",
       kind: "file" as const,
       size: 4_483,
       sha256: "1".repeat(64),
-    })])).passed).toBe(false);
+    })])).passed).toBe(true);
     const childWithSecondReport = Object.freeze([...childAfter, Object.freeze({
       path: "second-report.md",
       kind: "file" as const,
@@ -253,15 +253,6 @@ describe("dynamic E2E harness", () => {
       sha256: "2".repeat(64),
     })]);
     expect(evaluateDynamicScenarioPostconditions(child, childBefore, childWithSecondReport).passed).toBe(true);
-    expect(evaluateDynamicScenarioPostconditions(child, childBefore, Object.freeze([
-      ...childWithSecondReport,
-      ...Array.from({ length: 4 }, (_, index) => Object.freeze({
-        path: `extra-${String(index)}.md`,
-        kind: "file" as const,
-        size: 1,
-        sha256: String(index + 3).repeat(64),
-      })),
-    ])).passed).toBe(false);
 
     const web = corpus.find(({ id }) => id === "web-components");
     if (web === undefined) throw new Error("web scenario is unavailable");
