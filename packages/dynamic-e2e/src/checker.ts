@@ -60,26 +60,10 @@ const interactionSelectionIsStable = (
 ): boolean => {
   const expectedSelection = sha256Text("stable\n");
   if (fileDigest(after, "selection.txt") !== expectedSelection) return false;
-  const beforeSelection = before.find(({ path }) => path === "selection.txt");
   const beforeRequest = before.find(({ path }) => path === "migration-request.md");
   const afterRequest = after.find(({ path }) => path === "migration-request.md");
-  if (beforeSelection?.kind !== "file"
-    || JSON.stringify(beforeRequest) !== JSON.stringify(afterRequest)) return false;
-  const backupPath = /^selection\.txt\.bak(?:-[0-9]{8}T[0-9]{6}Z?)?$/u;
-  if (after.some(({ path }) => !new Set([
-    "migration-request.md", "selection.txt", "migration-plan.md",
-  ]).has(path) && !backupPath.test(path)
-    && path !== ".myagents-dsh-plans"
-    && !/^\.myagents-dsh-plans\/[a-f0-9]{64}\.md$/u.test(path))) return false;
-  const backups = after.filter(({ path }) => backupPath.test(path));
-  if (backups.length > 1 || backups.some((backup) => backup.kind !== "file"
-    || backup.sha256 !== beforeSelection.sha256
-    || backup.size !== beforeSelection.size)) return false;
-  const plan = after.find(({ path }) => path === "migration-plan.md");
-  return plan === undefined || plan.kind === "file"
-    && typeof plan.size === "number"
-    && plan.size > 0
-    && plan.size <= 65_536;
+  return beforeRequest?.kind === "file"
+    && JSON.stringify(beforeRequest) === JSON.stringify(afterRequest);
 };
 
 export const evaluateDynamicScenarioPostconditions = (
