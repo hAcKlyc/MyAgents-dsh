@@ -2007,7 +2007,7 @@ try {
   const appliedConfig = await hostModelClient.configApply({
     revision: "artifact-host-model-config-v2",
     provider: nextHostModelProfile,
-    permissionMode: "approval-required",
+    permissionMode: "workspace-autonomous",
     interactionScenario: "artifact-interaction-v1",
     systemPrompt: "Updated credential-free Host model evidence.",
     executionEnvironmentRevision: initializeRequest.executionEnvironment.revision,
@@ -2019,6 +2019,7 @@ try {
     state: "applied",
     components: hostModelComposition.context.productComponents.status().components,
   });
+  assert.equal((await hostModelClient.permissionRulesList({})).permissionMode, "workspace-autonomous");
   assert.equal(
     hostModelComposition.context.productSession.requireOperationConfigRevision(),
     "artifact-host-model-config-v2",

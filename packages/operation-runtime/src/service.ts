@@ -23,6 +23,7 @@ import {
   foldProductOperations,
   foldProductOperationsForLiveClaim,
   foldProductOperationsForLiveDiscard,
+  isNativeApprovalNotice,
   readOperationMessageSource,
   validateOperationBirthSnapshot,
   type ProductOperationFold,
@@ -430,6 +431,7 @@ export class SdkOperationService extends Service {
             return;
           }
           this.assertHealthy();
+          if (source === undefined && isNativeApprovalNotice(message.source)) return;
           if (source === undefined && this.configValue.ownsRootContextMessage(agent, message.source, message.id)
             && !agent.session.snapshotEvents().some((event) =>
               (event.type === "myagents/operation/accepted" && event.data.rootContextMessage === true && event.data.rootMessageId === message.id)
@@ -493,6 +495,7 @@ export class SdkOperationService extends Service {
             return;
           }
           this.assertHealthy();
+          if (source === undefined && isNativeApprovalNotice(message.source)) return;
           if (source === undefined && this.configValue.ownsRootContextMessage(agent, message.source, message.id)
             && !agent.session.snapshotEvents().some((event) =>
               (event.type === "myagents/operation/accepted" && event.data.rootContextMessage === true && event.data.rootMessageId === message.id)

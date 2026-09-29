@@ -96,6 +96,7 @@ export interface ProductPermissionRuleRevokedEvent {
 export interface ProductPermissionConfigEvent {
   readonly sessionId: string;
   readonly previousBaseRevision: string;
+  readonly nextBaseRevision: string;
   readonly fromRevision: string;
   readonly revision: string;
 }
@@ -465,6 +466,15 @@ const computeRuleRevocationRevision = (
   event.revokedAt,
 ]));
 
+const computeConfigRevision = (event: Omit<ProductPermissionConfigEvent, "revision">): string =>
+  sha256(JSON.stringify([
+    "myagents-permission-config-revision-v1",
+    event.sessionId,
+    event.fromRevision,
+    event.previousBaseRevision,
+    event.nextBaseRevision,
+  ]));
+
 export const permissionBaseRevision = (
   config: Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction" | "interactionRegistrationDeadlineMs" | "maxRules">,
   sessionId: string,
@@ -589,7 +599,7 @@ const validateRuleRevokeRequest = (value: unknown): ProductPermissionRuleRevokeR
 const validateConfigEvent = (value: unknown): ProductPermissionConfigEvent => {
   const event = exactOwnDataObject(
     value,
-    ["sessionId", "previousBaseRevision", "fromRevision", "revision"],
+    ["sessionId", "previousBaseRevision", "nextBaseRevision", "fromRevision", "revision"],
     [],
     "product permission config event",
   );
@@ -599,6 +609,7 @@ const validateConfigEvent = (value: unknown): ProductPermissionConfigEvent => {
       event.previousBaseRevision,
       "permission previous base revision",
     ),
+    nextBaseRevision: boundedIdentifier(event.nextBaseRevision, "permission next base revision"),
     fromRevision: boundedIdentifier(event.fromRevision, "permission config source revision"),
     revision: boundedIdentifier(event.revision, "permission config revision"),
   });
@@ -648,10 +659,16 @@ export const foldProductPermissions = (
       if (candidate.sessionId !== normalizedSessionId
         || candidate.previousBaseRevision !== policyBase
         || candidate.fromRevision !== latestRevision
-        || candidate.revision === policyBase) {
+        || candidate.nextBaseRevision === policyBase
+        || candidate.revision !== computeConfigRevision({
+          sessionId: candidate.sessionId,
+          previousBaseRevision: candidate.previousBaseRevision,
+          nextBaseRevision: candidate.nextBaseRevision,
+          fromRevision: candidate.fromRevision,
+        })) {
         throw new ProductPermissionFoldError("product permission config revision chain is invalid");
       }
-      policyBase = candidate.revision;
+      policyBase = candidate.nextBaseRevision;
       latestRevision = candidate.revision;
       rules = new Map();
       history.push(Object.freeze({ revision: latestRevision, rules: Object.freeze([]) }));
@@ -1278,11 +1295,15 @@ export class ProductPermissionService extends Service {
     const previous = this.foldInternal(agent.session);
     const nextBase = permissionBaseRevision(candidate, String(agent.session.id));
     if (nextBase !== previous.baseRevision) {
-      agent.session.append("myagents/permission/config", {
+      const transition = {
         sessionId: String(agent.session.id),
         previousBaseRevision: previous.baseRevision,
+        nextBaseRevision: nextBase,
         fromRevision: previous.latestRevision,
-        revision: nextBase,
+      };
+      agent.session.append("myagents/permission/config", {
+        ...transition,
+        revision: computeConfigRevision(transition),
       });
       const pending = Promise.resolve<boolean>(this.configValue.durability.flush(agent.session));
       if (!(await pending)) {

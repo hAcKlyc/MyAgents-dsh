@@ -121,6 +121,11 @@ export type RootContextMessageOwnership = (
 
 const ownsNoRootContextMessage: RootContextMessageOwnership = () => false;
 
+export const isNativeApprovalNotice = (source: MessageSource | undefined): boolean => {
+  const kind: string | undefined = source?.kind;
+  return kind === "user-approval";
+};
+
 const fail = (message: string): never => {
   throw new ProductOperationFoldError(message);
 };
@@ -958,7 +963,8 @@ const foldProductOperationsValue = (
           if (openTurn === undefined) return fail("DSH Inbox pure-delete occurred outside an open turn");
           for (const pending of removed) {
             if (pending.operationCorrelation === undefined
-              && ownsRootContextMessage(pending.source, pending.id)) {
+              && (isNativeApprovalNotice(pending.source)
+                || ownsRootContextMessage(pending.source, pending.id))) {
               continue;
             }
             if (removedClaimCandidates.has(pending.id)) {
@@ -969,7 +975,8 @@ const foldProductOperationsValue = (
         } else if (splice.outcome === "canceled") {
           for (const pending of removed) {
             if (pending.operationCorrelation === undefined
-              && ownsRootContextMessage(pending.source, pending.id)) {
+              && (isNativeApprovalNotice(pending.source)
+                || ownsRootContextMessage(pending.source, pending.id))) {
               continue;
             }
             if (removedDiscardCandidates.has(pending.id)) {

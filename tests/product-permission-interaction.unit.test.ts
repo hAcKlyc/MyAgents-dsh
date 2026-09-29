@@ -447,12 +447,14 @@ describe("product permission policy and local interaction provider", () => {
       interaction: second.provider,
     }));
     const after = state.context.productPermission.currentRevision(state.agent);
+    const nextBase = state.context.productPermission.baseRevision(state.session);
     expect(after).not.toBe(before);
     expect(state.session.snapshotEvents().at(-1)).toMatchObject({
       type: "myagents/permission/config",
       data: {
         sessionId: "permission-session",
         previousBaseRevision: before,
+        nextBaseRevision: nextBase,
         fromRevision: before,
         revision: after,
       },
@@ -461,9 +463,29 @@ describe("product permission policy and local interaction provider", () => {
     expect(foldProductPermissions(
       state.session.snapshotEvents(),
       "permission-session",
-      after,
+      nextBase,
       8,
-    )).toMatchObject({ baseRevision: after, latestRevision: after });
+    )).toMatchObject({ baseRevision: nextBase, latestRevision: after });
+  });
+
+  it("keeps operation revisions unique when a Session returns to an earlier mode", async () => {
+    const local = provider("scenario-v1", (pending, settlement) => response(pending, "deny", settlement));
+    const state = await mounted(local.provider);
+    const firstRevision = state.context.productPermission.currentRevision(state.agent);
+    for (const mode of ["workspace-autonomous", "full-autonomous", "approval-required"] as const) {
+      await state.permissionController.applyConfiguration(state.agent, Object.freeze({
+        mode,
+        autoAllowTools: Object.freeze([]),
+        interaction: local.provider,
+      }));
+    }
+    const currentRevision = state.context.productPermission.currentRevision(state.agent);
+    expect(currentRevision).not.toBe(firstRevision);
+    await expect(state.context.productPermission.authorize(state.product(currentRevision), request()))
+      .resolves.toBe("deny");
+    expect(local.permissionRequests).toHaveLength(1);
+    await expect(state.context.productPermission.authorize(state.product(firstRevision), request()))
+      .rejects.toThrow("permission policy changed outside this operation's proven inline grants");
   });
 
   it("restores the persisted permission base before resume validation", async () => {
