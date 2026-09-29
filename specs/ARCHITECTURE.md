@@ -134,7 +134,7 @@ Product coordination is implemented inside Cordis as DSH-native services:
 - Identified input receipts remain owned by that service after terminal settlement; exact retries read durable consumption/cancellation without creating another turn. Per-message claims and the distinct operation turn set are described in [Operations/messages/turns](./tech_docs/runtime/operations-messages-and-turns.md).
 - `ProductComponentService`: desired/effective component staging and atomic promotion.
 - `HostPortService` definitions and RPC-backed providers.
-- `ProductSessionService`: generation-wide canonical workspace binding, one-primary-Session admission and exact DSH `AgentHandle` ownership, native RPC session projection, read cursors, and mutation coordination. The official composition installs its exact-object permit through the pinned public `SessionStore` and `AgentRegistry` pre-publication guards; DSH remains the Session/Agent registry and lifecycle authority.
+- `ProductSessionService`: generation-wide canonical workspace binding, one-primary-Session admission and exact DSH `AgentHandle` ownership, native RPC session projection, read cursors, and mutation coordination. The official composition installs its exact-object permit through the pinned public `SessionStore` and `AgentRegistry` pre-publication guards; DSH remains the Session/Agent registry and lifecycle authority. Native child reports use DSH catalog/Inbox provenance and gain Product operation correlation at the awaited pre-step boundary.
 - `ProductInvariantService`: startup and runtime checks for the official profile.
 
 These services coordinate DSH; they do not drive a second model loop.

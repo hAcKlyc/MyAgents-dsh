@@ -776,6 +776,7 @@ export class SdkOperationService extends Service {
     value: MethodParams<"turn/start">,
     message: UserMessage,
     timing: "realtime" | "turn",
+    claimedTurn?: number,
   ): Promise<"delivered" | "suppressed"> {
     const params = validateMethodParams("turn/start", value);
     const timingInput: unknown = timing;
@@ -789,7 +790,7 @@ export class SdkOperationService extends Service {
       this.assertHealthy();
       const sourceKind: unknown = Reflect.get(message.source, "kind");
       if (agent !== this.primaryAgent() || agent !== this.configValue.requireAgent()
-        || (sourceKind !== "agent-message" && sourceKind !== "subagent-report")) {
+        || (sourceKind !== "agent-message" && sourceKind !== "subagent-report" && sourceKind !== "subagent-settled")) {
         throw new ProtocolError("context_message_denied", "collaboration requires its exact root and actual source");
       }
       await this.reconcileAgent(agent);
@@ -806,7 +807,7 @@ export class SdkOperationService extends Service {
         if (existing.deliveryTiming !== undefined) timing = existing.deliveryTiming;
       } else {
         const pending = [...agent.inbox.nextStep, ...agent.inbox.nextTurn].find((candidate) => candidate.id === message.id);
-        if (pending === undefined && this.configValue.ownsRootContextMessage(agent, message.source, message.id)) {
+        if (claimedTurn === undefined && pending === undefined && this.configValue.ownsRootContextMessage(agent, message.source, message.id)) {
           // A legacy quiet report may already have been consumed inside a user
           // operation. Preserve that fact instead of manufacturing another run.
           return "delivered";
@@ -841,6 +842,14 @@ export class SdkOperationService extends Service {
             rootContextMessage: true, rootDeliveryTiming: timing, rootInputFingerprint: inputFingerprint(params.input), rootMessageId: message.id,
           });
         }
+        if (claimedTurn !== undefined) {
+          const admitted = this.foldValueForContextClaim(agent, message.id, claimedTurn).operations
+            .find((candidate) => candidate.messages.some((owned) => owned.messageId === message.id));
+          if (admitted === undefined) throw this.fence(new Error("native context lost its operation admission"));
+          agent.session.append("myagents/operation/claimed", {
+            clientOperationId: admitted.clientOperationId, messageId: message.id, dshTurn: claimedTurn,
+          });
+        }
         await this.flush(agent);
         fold = this.foldValue(agent);
         operation = fold.operations.find((candidate) => candidate.messages.some((owned) => owned.messageId === message.id));
@@ -854,6 +863,7 @@ export class SdkOperationService extends Service {
       if (!this.configValue.ownsRootContextMessage(agent, message.source, message.id)) {
         throw this.fence(new Error("collaboration insertion lacks durable ProductWork ownership"));
       }
+      if (claimedTurn !== undefined) return "delivered";
       const current = this.foldValue(agent).operations.find((candidate) => candidate.clientOperationId === operation.clientOperationId);
       const currentMessage = current?.messages.find((candidate) => candidate.messageId === message.id);
       if (currentMessage?.state === "queued" && !this.wakeExactPending(agent, message.id)) {
@@ -2001,6 +2011,11 @@ export class SdkOperationService extends Service {
         this.fence(error);
       });
     return failure;
+  }
+
+  private foldValueForContextClaim(agent: Agent, messageId: string, dshTurn: number): ProductOperationFold {
+    return foldProductOperationsForLiveClaim(agent.session.snapshotEvents(), { messageId, dshTurn }, agent.id,
+      (source, id) => this.configValue.ownsRootContextMessage(agent, source, id));
   }
 
   private fence(cause: unknown): ProtocolError {

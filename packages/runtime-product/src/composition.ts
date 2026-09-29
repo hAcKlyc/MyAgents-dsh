@@ -2882,6 +2882,33 @@ export const composeDshRootServices = async (
       },
       settlementDeadlineAuthority: root.productSession.settlementDeadlineAuthority(),
     });
+    if (root.get("productWork") === undefined) {
+      // DSH sends/wakes its native messages itself. Admit their Product envelope
+      // at the awaited pre-step seam, after the Inbox claim and before any model call.
+      const stopNativeContext = root.on("agent/pre-step", async ({ agent, messages, turn }, next) => {
+        if (root.productSession.snapshot().state !== "ready" || agent !== root.productSession.requireAgent()) return next();
+        for (const message of messages) {
+          if (message.source.kind !== "agent-message" && message.source.kind !== "subagent-settled") continue;
+          if (!ownsProductWorkRootContextMessage(agent.session, message.source, message.id)) continue;
+          const environment = root.productSession.requireExecutionEnvironment();
+          await root.sdkOperations.deliverContext(agent, {
+            clientOperationId: `collaboration-${createHash("sha256").update(String(message.id)).digest("hex").slice(0, 48)}`,
+            clientUserMessageId: String(message.id),
+            input: { parts: message.content.map((block) => {
+              if (block.type !== "text") throw new Error("native child context must contain text only");
+              return { kind: "text" as const, text: block.text };
+            }) },
+            configRevision: root.productSession.requireOperationConfigRevision(),
+            extensionDigest: root.productComponents.catalog().digest,
+            executionEnvironmentRevision: environment.revision, executionEnvironmentDigest: environment.digest,
+            limits: {},
+            origin: { kind: "headless", scenario: "runtime-collaboration" },
+          }, message, "realtime", turn);
+        }
+        return next();
+      });
+      root.effect(() => stopNativeContext, "Native child context operation correlation");
+    }
     const operationLifecycle = operationLifecycleController;
     if (operationLifecycle === undefined) {
       throw new Error("root composition did not capture its operation lifecycle controller");

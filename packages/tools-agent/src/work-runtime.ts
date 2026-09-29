@@ -1025,7 +1025,15 @@ export const ownsProductWorkRootContextMessage = (
   source: MessageSource | undefined,
   messageId: string,
 ): boolean => {
-  if (ownsOfficialJobNotice(session.snapshotEvents(), source, messageId)) return true;
+  const events = session.ownEvents();
+  if (ownsOfficialJobNotice(events, source, messageId)) return true;
+  // DSH owns native relay/settlement provenance through the parent catalog and Inbox.
+  // These messages do not have (or need) a legacy ProductWork ledger.
+  if ((source?.kind === "agent-message" || source?.kind === "subagent-settled")
+    && events.some((event) => event.type === "subagent/catalog" && event.data.childId === source.senderSessionId)
+    && events.some((event) => event.type === "agent/inbox/spliced" && event.data.inserted.some((message) =>
+      message.id === messageId && message.source.kind === source.kind
+      && "senderSessionId" in message.source && message.source.senderSessionId === source.senderSessionId))) return true;
   if (session.header.origin === "subagent"
     || (source?.kind !== "subagent-report" && source?.kind !== "agent-message")) return false;
   const insertions = correlatedInboxMessages(session.snapshotEvents(), session.id, "subagent-report")

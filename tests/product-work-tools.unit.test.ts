@@ -56,6 +56,24 @@ afterEach(async () => {
   await Promise.allSettled(contexts.splice(0).map((context) => context.fiber.dispose()));
 });
 
+describe("native DSH child message provenance", () => {
+  it.each(["agent-message", "subagent-settled"] as const)("uses native catalog/Inbox facts for %s without a ProductWork ledger", async (kind) => {
+    const context = new Context();
+    contexts.push(context);
+    await context.plugin(SessionStore);
+    const session = context.sessions.create(SessionId("native-root"), { meta: { cwd: "/tmp/native-root" } });
+    const childId = SessionId("native-child");
+    session.append("subagent/catalog", { version: 0, childId, childCreatedAt: 1, mode: "continuable", label: "Tester" });
+    const message = freezeMessage({ id: MessageId("native-result"), role: "user", content: [{ type: "text", text: "Result" }],
+      source: kind === "agent-message" ? { kind, form: "relay", senderSessionId: childId }
+        : { kind, form: "notice", summary: "Child finished", senderSessionId: childId } });
+    const inbox = new Inbox(session, { claimed: () => {}, discarded: () => {}, inserted: () => {} });
+    inbox.append("next-step", message);
+    expect(ownsProductWorkRootContextMessage(session, message.source, message.id)).toBe(true);
+    expect(ownsProductWorkRootContextMessage(session, message.source, "other-message")).toBe(false);
+  });
+});
+
 const fakeAgent = (
   context: Context,
   id: string,

@@ -633,7 +633,17 @@ const foldProductOperationsValue = (
       }) });
       message.delivered = true;
     }
+    const claimed = nativeContextClaims.get(message.messageId);
+    if (claimed !== undefined) {
+      removedClaimCandidates.set(message.messageId, { ...claimed, operationCorrelation: Object.freeze({
+        clientOperationId: operationId, clientMessageId: message.clientMessageId, delivery: message.kind,
+      }) });
+      message.delivered = true;
+    }
   };
+  // Native child messages can already be claimed when the awaited pre-step
+  // seam admits their Product correlation. Keep their exact Inbox deletion.
+  const nativeContextClaims = new Map<string, RemovedClaimCandidate>();
   const removedClaimCandidates = new Map<string, RemovedClaimCandidate>();
   const removedDiscardCandidates = new Map<string, PendingInboxMessage>();
   let openTurn: number | undefined;
@@ -763,6 +773,7 @@ const foldProductOperationsValue = (
         message.state = "claimed";
         message.dshTurn = claim.dshTurn;
         removedClaimCandidates.delete(claim.messageId);
+        nativeContextClaims.delete(claim.messageId);
         break;
       }
       case "myagents/operation/request-context": {
@@ -965,6 +976,9 @@ const foldProductOperationsValue = (
             if (pending.operationCorrelation === undefined
               && (isNativeApprovalNotice(pending.source)
                 || ownsRootContextMessage(pending.source, pending.id))) {
+              if (ownsRootContextMessage(pending.source, pending.id)) {
+                nativeContextClaims.set(pending.id, { ...pending, dshTurn: openTurn });
+              }
               continue;
             }
             if (removedClaimCandidates.has(pending.id)) {

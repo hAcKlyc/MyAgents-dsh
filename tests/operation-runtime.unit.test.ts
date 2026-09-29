@@ -543,6 +543,30 @@ describe("durable product-operation fold", () => {
     expect(() => foldProductOperations(events, fixture.agent.id)).toThrow("independent ProductWork source authority");
   });
 
+  it.each(["idle", "active"])("admits a DSH child message already claimed before pre-step (%s)", async (mode) => {
+    const id = MessageId("native-claimed-context");
+    const fixture = await mountService(undefined, undefined, undefined, undefined, undefined, true, undefined, undefined,
+      (_agent, source, messageId) => messageId === id && source?.kind === "agent-message");
+    if (mode === "active") {
+      await fixture.service.start(params());
+      fixture.agent.session.append("turn/start", { turn: 1 });
+      fixture.inbox.claim("next-turn", 1);
+    } else fixture.agent.session.append("turn/start", { turn: 1 });
+    const message = freezeMessage({ id, role: "user", content: [{ type: "text", text: "Native child result" }],
+      source: { kind: "agent-message", form: "relay", senderSessionId: SessionId("native-child") } });
+    fixture.agent.send(message, "next-step", false);
+    fixture.inbox.claim("next-step", 1);
+    await expect(fixture.service.deliverContext(fixture.agent, {
+      ...params("native-collaboration"), input: { parts: [{ kind: "text", text: "Native child result" }] },
+    }, message, "realtime", 1)).resolves.toBe("delivered");
+    const operation = fixture.service.snapshot().operations[0];
+    expect(operation).toMatchObject({ dshTurns: [1], state: "active" });
+    expect(operation?.messages.at(-1)).toMatchObject({ messageId: id, state: "claimed", contextMessage: true });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "aborted", reason: { kind: "user" } } });
+    await fixture.service.reconcileResumed(fixture.agent, false);
+    expect(fixture.service.snapshot().operations[0]?.state).toBe("terminal");
+  });
+
   it.each([false, true])("admits one idle Root collaboration operation from its exact Inbox identity (already pending=%s)", async (alreadyPending) => {
     const id = MessageId("idle-context-message");
     const fixture = await mountService(undefined, undefined, undefined, undefined, undefined, true, undefined, undefined,
