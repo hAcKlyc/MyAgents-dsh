@@ -923,6 +923,7 @@ adapter.enqueue({
     id: "artifact-tg-create-prerequisite-call",
     name: "TaskCreate",
     arguments: JSON.stringify({
+      list: "shared",
       subject: "Verify durable TaskGraph",
       description: "Prove the Session-local prerequisite first",
       metadata: { scope: "artifact" },
@@ -935,6 +936,7 @@ adapter.enqueue({
     id: "artifact-tg-create-dependent-call",
     name: "TaskCreate",
     arguments: JSON.stringify({
+      list: "shared",
       subject: "Publish TaskGraph result",
       description: "Wait for the durable prerequisite",
     }),
@@ -945,7 +947,7 @@ adapter.enqueue({
   calls: [{
     id: "artifact-tg-link-call",
     name: "TaskUpdate",
-    arguments: JSON.stringify({ taskId: "task-2", addBlockedBy: ["task-1"], owner: "root" }),
+    arguments: JSON.stringify({ taskId: "task-2", list: "shared", addBlockedBy: ["task-1"], owner: "root" }),
   }],
   kind: "tool-calls",
 });
@@ -953,7 +955,7 @@ adapter.enqueue({
   calls: [{
     id: "artifact-tg-cycle-call",
     name: "TaskUpdate",
-    arguments: JSON.stringify({ taskId: "task-1", addBlockedBy: ["task-2"] }),
+    arguments: JSON.stringify({ taskId: "task-1", list: "shared", addBlockedBy: ["task-2"] }),
   }],
   kind: "tool-calls",
 });
@@ -961,7 +963,7 @@ adapter.enqueue({
   calls: [{
     id: "artifact-tg-complete-prerequisite-call",
     name: "TaskUpdate",
-    arguments: JSON.stringify({ taskId: "task-1", owner: "root", status: "completed" }),
+    arguments: JSON.stringify({ taskId: "task-1", list: "shared", owner: "root", status: "completed" }),
   }],
   kind: "tool-calls",
 });
@@ -969,14 +971,14 @@ adapter.enqueue({
   calls: [{
     id: "artifact-tg-start-dependent-call",
     name: "TaskUpdate",
-    arguments: JSON.stringify({ taskId: "task-2", status: "in_progress" }),
+    arguments: JSON.stringify({ taskId: "task-2", list: "shared", status: "in_progress" }),
   }],
   kind: "tool-calls",
 });
 adapter.enqueue({
   calls: [
-    { id: "artifact-tg-get-call", name: "TaskGet", arguments: JSON.stringify({ taskId: "task-2" }) },
-    { id: "artifact-tg-list-call", name: "TaskList", arguments: "{}" },
+    { id: "artifact-tg-get-call", name: "TaskGet", arguments: JSON.stringify({ taskId: "task-2", list: "shared" }) },
+    { id: "artifact-tg-list-call", name: "TaskList", arguments: JSON.stringify({ list: "shared" }) },
   ],
   kind: "tool-calls",
 });
@@ -984,7 +986,7 @@ adapter.enqueue({
   calls: [{
     id: "artifact-tg-complete-dependent-call",
     name: "TaskUpdate",
-    arguments: JSON.stringify({ taskId: "task-2", status: "completed" }),
+    arguments: JSON.stringify({ taskId: "task-2", list: "shared", status: "completed" }),
   }],
   kind: "tool-calls",
 });
