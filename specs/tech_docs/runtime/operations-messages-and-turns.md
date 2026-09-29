@@ -98,6 +98,8 @@ preserving fail-closed identity checks at every non-lifecycle entry.
 
 On resume the fold validates Product events against exact DSH Inbox splice/claim, turn, request-context, assistant and usage facts. Incomplete but recoverable work is reconstructed under the exact primary generation. When an accepted DSH message remains pending, the Runtime appends an explicit recovery-wake fact and calls the accepted patched `Agent.wakePending(MessageId)` seam. A mismatched Agent, missing birth authority or contradictory fold/terminal first fences `SdkOperationService`; if encountered while binding/resuming the primary Session it yields `recovery_required` rather than fabricating completion.
 
+DSH approval-policy switches insert a native `user-approval` Inbox notice. The Product operation fold and live Inbox observers recognize that source as DSH-owned, so retiring a completed Agent after a permission-mode switch cannot mistake its discarded notice for unowned Product input. Other unowned Inbox messages still fail the operation ownership check.
+
 Transport cancellation before durable admission is retryable. Once admission is durable, a disconnected caller recovers through operation lookup/read and the same idempotency identity; it does not resend a semantically new user tail.
 
 The MyAgents Host additionally journals a Product user before DSH root admission. Process loss
