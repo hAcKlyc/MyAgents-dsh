@@ -968,7 +968,7 @@ export class RuntimeEventProjector {
         this.#fail(error);
       }
     });
-    this.#stopTaskCommitted = config.context.productTaskGraph.onCommitted((agent, list, snapshot) => {
+    this.#stopTaskCommitted = config.context.get("productTaskGraph")?.onCommitted((agent, list, snapshot) => {
       if (this.#stopped || this.#closed || this.#failure !== undefined || list !== "personal"
         || this.#config.productSession.snapshot().state !== "ready") return;
       const root = this.#config.productSession.requireAgent();
@@ -990,7 +990,7 @@ export class RuntimeEventProjector {
         this.#pendingLiveBytes += bytes;
         this.#scheduleDrain();
       } catch (error) { this.#fail(error); }
-    });
+    }) ?? (() => undefined);
   }
 
   publishReadySnapshot(): Promise<void> {

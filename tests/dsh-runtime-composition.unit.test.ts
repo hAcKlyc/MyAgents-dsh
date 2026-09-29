@@ -28,6 +28,7 @@ describe("DSH root service composition boundary", () => {
           "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
         ]));
         expect(official.context.get("productWork")).toBeUndefined();
+        expect(official.context.productTaskGraph).toBeDefined();
       } finally { await official.dispose(); }
     } else {
       await expect(composeDshRootServices({ adapter, providers: ["fixture"] }))
