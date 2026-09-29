@@ -2886,10 +2886,13 @@ export const composeDshRootServices = async (
       // DSH sends/wakes its native messages itself. Admit their Product envelope
       // at the awaited pre-step seam, after the Inbox claim and before any model call.
       const stopNativeContext = root.on("agent/pre-step", async ({ agent, messages, turn }, next) => {
-        if (root.productSession.snapshot().state !== "ready" || agent !== root.productSession.requireAgent()) return next();
+        if (root.get("productWork") !== undefined || root.productSession.snapshot().state !== "ready"
+          || agent !== root.productSession.requireAgent()) return next();
         for (const message of messages) {
           if (message.source.kind !== "agent-message" && message.source.kind !== "subagent-settled") continue;
           if (!ownsProductWorkRootContextMessage(agent.session, message.source, message.id)) continue;
+          if (root.sdkOperations.snapshot().operations.some((operation) => operation.messages.some((owned) =>
+            owned.messageId === message.id && owned.state === "claimed"))) continue;
           const environment = root.productSession.requireExecutionEnvironment();
           await root.sdkOperations.deliverContext(agent, {
             clientOperationId: `collaboration-${createHash("sha256").update(String(message.id)).digest("hex").slice(0, 48)}`,
