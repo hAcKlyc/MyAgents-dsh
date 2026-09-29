@@ -1058,12 +1058,21 @@ const foldProductOperationsValue = (
   }
 
   if (removedClaimCandidates.size > 0) {
-    if (liveClaim === undefined) {
+    // Session append observers can see the admission event before its matching
+    // claimed event. DSH has already claimed these catalog-owned messages;
+    // their exact native deletion remains valid within this open turn.
+    const nativeAdmissionPending = [...removedClaimCandidates.values()].every((candidate) => {
+      const kind: string | undefined = candidate.source?.kind;
+      return (kind === "agent-message" || kind === "subagent-settled")
+        && candidate.dshTurn === openTurn
+        && nativeContextClaims.get(candidate.id)?.dshTurn === candidate.dshTurn;
+    });
+    if (liveClaim === undefined && !nativeAdmissionPending) {
       return fail("DSH Inbox claim lacks durable product-operation ownership");
     }
-    const candidate = removedClaimCandidates.get(liveClaim.messageId);
-    if (candidate?.dshTurn !== liveClaim.dshTurn
-      || [...removedClaimCandidates.values()].some(({ dshTurn }) => dshTurn !== liveClaim.dshTurn)) {
+    const candidate = liveClaim === undefined ? undefined : removedClaimCandidates.get(liveClaim.messageId);
+    if (liveClaim !== undefined && (candidate?.dshTurn !== liveClaim.dshTurn
+      || [...removedClaimCandidates.values()].some(({ dshTurn }) => dshTurn !== liveClaim.dshTurn))) {
       return fail("DSH Inbox claim differs from the live claim boundary");
     }
   }

@@ -559,6 +559,14 @@ describe("durable product-operation fold", () => {
     await expect(fixture.service.deliverContext(fixture.agent, {
       ...params("native-collaboration"), input: { parts: [{ kind: "text", text: "Native child result" }] },
     }, message, "realtime", 1)).resolves.toBe("delivered");
+    // The RPC projector reads every event prefix, including the brief interval
+    // between native-context admission and its matching Product claim.
+    const events = fixture.agent.session.snapshotEvents();
+    for (const event of events.filter((event) => event.type === "myagents/operation/accepted"
+      || event.type === "myagents/operation/message" || event.type === "myagents/operation/claimed")) {
+      expect(() => foldProductOperations(events.slice(0, event.seq + 1), fixture.agent.id,
+        (_source, messageId) => messageId === id)).not.toThrow();
+    }
     const operation = fixture.service.snapshot().operations[0];
     expect(operation).toMatchObject({ dshTurns: [1], state: "active" });
     expect(operation?.messages.at(-1)).toMatchObject({ messageId: id, state: "claimed", contextMessage: true });
