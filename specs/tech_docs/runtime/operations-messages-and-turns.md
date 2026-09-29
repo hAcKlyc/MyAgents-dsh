@@ -100,7 +100,6 @@ On resume the fold validates Product events against exact DSH Inbox splice/claim
 
 DSH approval-policy switches insert a native `user-approval` Inbox notice. The Product operation fold and live Inbox observers recognize that source as DSH-owned, so retiring a completed Agent after a permission-mode switch cannot mistake its discarded notice for unowned Product input. Other unowned Inbox messages still fail the operation ownership check.
 
-Permission config events keep the effective policy base digest separate from the transition revision. The transition revision includes the preceding revision, so switching back to an earlier mode gives the next operation a new birth revision; approval checks cannot confuse it with an operation from before the intervening switches.
 
 Transport cancellation before durable admission is retryable. Once admission is durable, a disconnected caller recovers through operation lookup/read and the same idempotency identity; it does not resend a semantically new user tail.
 
