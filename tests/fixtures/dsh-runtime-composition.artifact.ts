@@ -3445,6 +3445,7 @@ assert.deepEqual(taskGet.task, {
   description: "Wait for the durable prerequisite",
   status: "in_progress",
   owner: "root",
+  offerTo: [],
   blockedBy: ["task-1"],
   createdSequence: 2,
   updatedSequence: 5,
