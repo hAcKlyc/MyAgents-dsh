@@ -106,6 +106,8 @@ export const evaluateDynamicScenarioPostconditions = (
       record("fixture-inputs-preserved", preservesFixtureInputs(before, after));
       break;
     case "compaction-continuity":
+      record("fixture-inputs-preserved", preservesFixtureInputs(before, after));
+      break;
     case "persistence-lifecycle":
       record("fixture-tree-remains-unmodified", assertUnchanged(before, after));
       break;
