@@ -13,12 +13,17 @@ import type {
   MutationDraft,
 } from "../store.js";
 
-const componentKinds = ["skill", "mcp", "agent", "command", "hook", "host_tool"] as const;
+const componentKinds = ["skill", "mcp", "command", "hook", "host_tool"] as const;
 const canonicalTools = [
   "Read", "Write", "Edit", "Glob", "Grep", "bash", "pwsh", "job_output", "job_list", "job_kill", "ls", "WebFetch", "WebSearch",
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "Skill", "Agent", "TaskStop",
   "SendMessage", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
 ] as const;
+const toolLabels: Readonly<Record<string, string>> = {
+  Read: "read / read_image", Write: "write", Edit: "edit", Glob: "glob", Grep: "grep",
+  WebFetch: "web_fetch", WebSearch: "web_search", Agent: "subagent / fork_agent",
+  TaskStop: "interrupt_agent", SendMessage: "send_message",
+};
 
 const starterConfiguration = (kind: BrowserComponentDefinition["kind"]): unknown => {
   switch (kind) {
@@ -165,9 +170,9 @@ function SettingsPanel(props: Readonly<{
     <label className="field"><span>交互场景版本</span><input value={scenario} onChange={(event) => setScenario(event.target.value)} /></label>
     <label className="field"><span>System prompt</span><textarea rows={7} value={systemPrompt}
       onChange={(event) => setSystemPrompt(event.target.value)} /></label>
-    <fieldset className="tool-policy"><legend>无需逐次询问的工具</legend><p>全部 20 个 Runtime 工具保持可见；这里仅配置自动允许集合。</p>
+    <fieldset className="tool-policy"><legend>无需逐次询问的工具</legend><p>当前有 {props.inspection.catalog.tools.length} 个 Runtime 工具；这里配置自动允许的权限项。</p>
       <div>{canonicalTools.map((tool) => <label key={tool}><input type="checkbox" checked={autoAllow.includes(tool)}
-        onChange={() => toggleTool(tool)} />{tool}</label>)}</div></fieldset>
+        onChange={() => toggleTool(tool)} />{toolLabels[tool] ?? tool}</label>)}</div></fieldset>
     <div className="control-save-row"><span data-dirty={dirty}>{dirty ? "有未保存更改" : "当前设置已保存"}</span>
     <button className="primary-control" type="button" disabled={props.disabled || !dirty || systemPrompt.length > 1_000_000}
       onClick={() => void props.onApply({
