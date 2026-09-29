@@ -288,28 +288,16 @@ describe("dynamic E2E harness", () => {
       assertions: [{ name: "approved-stable-selection", passed: true }],
     });
     expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, Object.freeze([
-      migrationRequest,
-      stableSelection,
-      Object.freeze({
-        path: "selection.txt.bak-20260829T042129",
-        kind: "file" as const,
-        size: 8,
-        sha256: currentDigest,
-      }),
-    ])).passed).toBe(true);
-    expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, Object.freeze([
-      migrationRequest,
-      stableSelection,
-      Object.freeze({
-        path: "selection.txt.bak-20260828T215629Z",
-        kind: "file" as const,
-        size: 8,
-        sha256: currentDigest,
-      }),
-    ])).passed).toBe(true);
-    expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, Object.freeze([
       ...interactionAfter,
-      Object.freeze({ path: "unexpected.txt", kind: "file" as const, size: 1, sha256: "4".repeat(64) }),
+      Object.freeze({ path: "selection.bak.txt", kind: "file" as const, size: 8, sha256: currentDigest }),
+    ])).passed).toBe(true);
+    expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, Object.freeze([
+      migrationRequest,
+      currentSelection,
+    ])).passed).toBe(false);
+    expect(evaluateDynamicScenarioPostconditions(interaction, interactionBefore, Object.freeze([
+      Object.freeze({ ...migrationRequest, sha256: "4".repeat(64) }),
+      stableSelection,
     ])).passed).toBe(false);
   });
 
