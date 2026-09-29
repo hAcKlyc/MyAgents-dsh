@@ -41,7 +41,7 @@ Documentation governance starts at `specs/README.md`. That index owns document p
 - Pin the exact DSH version/commit. Imports from package-private `src/*` or `dist/*` paths are forbidden.
 - Before auditing or integrating an official DSH update, use `.agents/skills/dsh-upstream-maintenance/SKILL.md`; read its complete patch inventory and every affected ADR/module guide.
 - Repository skills live in `.agents/skills/`; `.claude/skills` points to that directory. For merge or versioned release work, use `.agents/skills/merge-release/SKILL.md`.
-- For a fresh machine or a local MyAgents integration build, read `specs/tech_docs/assurance/development-and-local-integration.md`. `setup.sh` / `setup.ps1` prepare the exact patched DSH and pi-ai inputs; `npm run build` only builds source. After committing a clean DSH change, `scripts/build-local-handoff.mjs` produces one native verified handoff for a MyAgents Dev build. Local handoff selection does not change the MyAgents release version binding or create a DSH Release.
+- For a fresh machine or a local MyAgents integration build, read `specs/tech_docs/assurance/development-and-local-integration.md`. `setup.sh` / `setup.ps1` prepare the exact patched DSH and pi-ai inputs; `npm run build` only builds source. After committing a clean DSH change, `scripts/build-local-handoff.mjs` produces one handoff with a pending native-validation claim for a MyAgents Dev build. Local handoff selection does not change the MyAgents release version binding or create a DSH Release.
 - Default tests use fake model adapters, fake Host ports, temporary homes/workspaces, and no real network or credentials.
 - Use explicit `git add <files...>` and Conventional Commits with a non-empty body.
 
@@ -62,7 +62,7 @@ The root `package.json` and lockfile own the exact command definitions and toolc
 
 When asked to generate, refresh, or package the MyAgents integration delivery, use the official builder; do not hand-write a delivery README or assemble selected files manually. Read `specs/tech_docs/assurance/verification-artifacts-and-handoff.md` and `specs/tech_docs/runtime/protocol.md` first.
 
-The builder requires a clean checkout, an already verified Runtime artifact whose `repositoryHead` equals the current Git `HEAD`, and exact content-addressed platform evidence. It accepts one native target for local handoff/release-target construction or the four-target historical input; each current Release target is built and verified separately. Old Runtime or platform evidence cannot be relabeled for a newer source commit. If those inputs do not exist on the current machine, rebuild and re-run the affected Runtime/native evidence campaign before generating the handoff.
+The builder requires a clean checkout, a Runtime artifact whose `repositoryHead` equals the current Git `HEAD`, and content-addressed platform evidence. It accepts one native target for local handoff/release-target construction or the four-target historical input. Local Dev uses a pending native-validation claim; each current Release target runs a native campaign and requires `verified`. Old Runtime or platform evidence cannot be relabeled for a newer source commit. Rebuild any missing inputs for the current commit before generating the handoff.
 
 ```bash
 npm run build:batch-3-integration-handoff -- \
