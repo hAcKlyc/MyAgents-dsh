@@ -620,8 +620,8 @@ export const buildProtocolArtifacts = async (repositoryRoot: string): Promise<Ge
   const reverseMethods = Object.entries(RPC_METHODS)
     .filter(([, definition]) => definition.direction === "runtime_to_host");
   const notifications = Object.entries(RPC_NOTIFICATIONS);
-  if (hostMethods.length !== 44 || reverseMethods.length !== 7 || notifications.length !== 4) {
-    throw new Error("Protocol inventory must contain exactly 44 Host methods, 7 reverse methods, and 4 notifications");
+  if (hostMethods.length !== 48 || reverseMethods.length !== 7 || notifications.length !== 4) {
+    throw new Error("Protocol inventory must contain exactly 48 Host methods, 7 reverse methods, and 4 notifications");
   }
   const canonicalTools: readonly string[] = CANONICAL_TOOL_NAMES;
   if (new Set(canonicalTools).size !== canonicalTools.length) {

@@ -93,11 +93,17 @@ import type {
   SkillSummary,
 } from "@deepseek-ai/dsh-skill";
 import { finalAssistantOutput, SubagentRuntime } from "@deepseek-ai/dsh-subagent";
+import { queueHostSubagentPrompt } from "@deepseek-ai/dsh-subagent/internal";
 import type { SubagentInterruptAuthority, SubagentProvider, SubagentResult } from "@deepseek-ai/dsh-subagent";
 import { startInProcessRun } from "@deepseek-ai/dsh-subagent-in-process-driver";
 import type { InProcessRunOptions } from "@deepseek-ai/dsh-subagent-in-process-driver";
 import { apply as applySubagentSpawnInProcess } from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import type { Config as SubagentSpawnInProcessConfig } from "@deepseek-ai/dsh-subagent-spawn-in-process";
+import { apply as applySubagentForkInProcess } from "@deepseek-ai/dsh-subagent-fork-in-process";
+import type { Config as SubagentForkInProcessConfig } from "@deepseek-ai/dsh-subagent-fork-in-process";
+import { apply as applyToolSubagent } from "@deepseek-ai/dsh-tool-subagent";
+import type { Config as ToolSubagentConfig } from "@deepseek-ai/dsh-tool-subagent";
+import { apply as applyToolSubagentControl } from "@deepseek-ai/dsh-tool-subagent-control";
 import { SubprocessRuntime, scrubbedParentEnv } from "@deepseek-ai/dsh-subprocess";
 import type { SubprocessHandle, SubprocessSpawnSpec } from "@deepseek-ai/dsh-subprocess";
 import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
@@ -186,6 +192,10 @@ export const dshPublicSurfaceValues = Object.freeze({
   applyMcpClient,
   applyAgentInstructions,
   applySubagentSpawnInProcess,
+  applySubagentForkInProcess,
+  applyToolSubagent,
+  applyToolSubagentControl,
+  queueHostSubagentPrompt,
   applyToolCallTimeoutPolicy,
   assertUsableApiKey,
   buildGlobCommand,
@@ -251,6 +261,8 @@ export interface DshPublicSurfaceTypes {
   subagent: [SubagentInterruptAuthority, SubagentProvider, SubagentResult];
   subagentInProcess: [InProcessRunOptions];
   subagentSpawnInProcess: [SubagentSpawnInProcessConfig];
+  subagentForkInProcess: [SubagentForkInProcessConfig];
+  toolSubagent: [ToolSubagentConfig];
   subprocess: [SubprocessHandle, SubprocessSpawnSpec];
   systemPrompt: [PromptAssembly, PromptContext, PromptSection];
   timeout: [Deadline];

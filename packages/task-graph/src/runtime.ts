@@ -28,6 +28,7 @@ import {
 
 type JsonObject = Record<string, unknown>;
 export type ProductTaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
+export type ProductTaskList = "personal" | "shared";
 export type ProductTaskMetadataValue = string | number | boolean | null;
 
 export interface ProductTaskNode {
@@ -38,6 +39,8 @@ export interface ProductTaskNode {
   readonly id: string;
   readonly metadata?: Readonly<Record<string, ProductTaskMetadataValue>>;
   readonly owner?: string;
+  readonly offerTo?: readonly string[];
+  readonly hasHiddenBlockers?: boolean;
   readonly status: ProductTaskStatus;
   readonly subject: string;
   readonly updatedSequence: number;
@@ -57,6 +60,7 @@ export interface ProductTaskGraphServiceConfig {
   readonly durability: Readonly<{ flush(session: Session): Promise<unknown> }>;
   readonly requireAgent: () => Agent;
   readonly isKnownCollaborator?: (root: Agent, agentId: string) => boolean;
+  readonly notifySharedTask?: (root: Agent, childId: string, taskId: string, signal: AbortSignal) => Promise<void>;
 }
 
 export const PRODUCT_TASK_EVENT_TYPES = Object.freeze([
@@ -94,6 +98,7 @@ const taskUpdateFieldSchema = Type.Union([
   Type.Literal("description"),
   Type.Literal("activeForm"),
   Type.Literal("owner"),
+  Type.Literal("offerTo"),
   Type.Literal("addBlocks"),
   Type.Literal("addBlockedBy"),
   Type.Literal("metadata"),
@@ -109,10 +114,12 @@ const taskUpdatePatchSchema = Type.Object({
   description: Type.Optional(Type.String({ minLength: 1, maxLength: 65_536 })),
   activeForm: Type.Optional(Type.String({ maxLength: 512 })),
   owner: Type.Optional(eventIdentifierSchema),
+  offerTo: Type.Optional(Type.Array(eventIdentifierSchema, { maxItems: 32, uniqueItems: true })),
   addBlocks: Type.Optional(Type.Array(eventIdentifierSchema, { maxItems: 256, uniqueItems: true })),
   addBlockedBy: Type.Optional(Type.Array(eventIdentifierSchema, { maxItems: 256, uniqueItems: true })),
   metadata: Type.Optional(boundedTaskMetadata),
 }, { additionalProperties: false, minProperties: 1 });
+const taskListSchema = Type.Union([Type.Literal("personal"), Type.Literal("shared")]);
 
 export const PRODUCT_TASK_EVENT_SCHEMAS = deepFreeze({
   "myagents/task/created": strictObject({
@@ -120,6 +127,7 @@ export const PRODUCT_TASK_EVENT_SCHEMAS = deepFreeze({
     authority: taskMutationAuthoritySchema,
     description: Type.String({ minLength: 1, maxLength: 65_536 }),
     eventSeq: eventSequenceSchema,
+    list: Type.Optional(taskListSchema),
     metadata: Type.Optional(boundedTaskMetadata),
     priorRevision: eventSha256Schema,
     revision: eventSha256Schema,
@@ -130,8 +138,9 @@ export const PRODUCT_TASK_EVENT_SCHEMAS = deepFreeze({
   }),
   "myagents/task/updated": strictObject({
     authority: taskMutationAuthoritySchema,
-    changedFields: Type.Array(taskUpdateFieldSchema, { minItems: 1, maxItems: 8, uniqueItems: true }),
+    changedFields: Type.Array(taskUpdateFieldSchema, { minItems: 1, maxItems: 9, uniqueItems: true }),
     eventSeq: eventSequenceSchema,
+    list: Type.Optional(taskListSchema),
     patch: taskUpdatePatchSchema,
     priorRevision: eventSha256Schema,
     revision: eventSha256Schema,
@@ -189,7 +198,7 @@ const MAX_METADATA_BYTES = 65_536;
 const MAX_TASK_OUTPUT_BYTES = 65_536;
 const MAX_LIST_OUTPUT_BYTES = 262_144;
 const TASK_UPDATE_FIELDS = Object.freeze([
-  "status", "subject", "description", "activeForm", "owner", "addBlocks", "addBlockedBy", "metadata",
+  "status", "subject", "description", "activeForm", "owner", "offerTo", "addBlocks", "addBlockedBy", "metadata",
 ] as const);
 
 const exactDataObject = (
@@ -425,6 +434,7 @@ const freezeTask = (task: InternalTaskNode): InternalTaskNode => Object.freeze({
   ...(task.activeForm === undefined ? {} : { activeForm: task.activeForm }),
   status: task.status,
   ...(task.owner === undefined ? {} : { owner: task.owner }),
+  ...(task.offerTo === undefined ? {} : { offerTo: Object.freeze([...task.offerTo]) }),
   blocks: Object.freeze([...task.blocks]),
   blockedBy: Object.freeze([...task.blockedBy]),
   ...(task.metadata === undefined ? {} : { metadata: deepFreeze(structuredClone(task.metadata)) }),
@@ -439,6 +449,7 @@ const projectTask = (task: InternalTaskNode): ProductTaskNode => Object.freeze({
   ...(task.activeForm === undefined ? {} : { activeForm: task.activeForm }),
   status: task.status,
   ...(task.owner === undefined ? {} : { owner: task.owner }),
+  ...(task.offerTo === undefined ? {} : { offerTo: Object.freeze([...task.offerTo]) }),
   blockedBy: Object.freeze([...task.blockedBy]),
   ...(task.metadata === undefined || Object.keys(task.metadata).length === 0
     ? {}
@@ -451,6 +462,29 @@ const taskIdOrder = (left: string, right: string): number => {
   const leftNumber = Number(/^task-([1-9][0-9]*)$/u.exec(left)?.[1]);
   const rightNumber = Number(/^task-([1-9][0-9]*)$/u.exec(right)?.[1]);
   return leftNumber - rightNumber || (left < right ? -1 : left > right ? 1 : 0);
+};
+
+const listFromArgs = (args: JsonObject): ProductTaskList => args.list === "shared" ? "shared" : "personal";
+
+const visibleTasks = (
+  tasks: readonly ProductTaskNode[],
+  list: ProductTaskList,
+  caller: Agent,
+  root: Agent,
+): readonly ProductTaskNode[] => {
+  if (list !== "shared" || caller === root) return tasks;
+  const visible = tasks.filter((task) => task.owner === String(caller.id) || task.offerTo?.includes(String(caller.id)) === true);
+  const ids = new Set(visible.map((task) => task.id));
+  return Object.freeze(visible.map((task) => {
+    const blockedBy = task.blockedBy.filter((id) => ids.has(id));
+    const { offerTo: _offerTo, ...safe } = task;
+    return Object.freeze({
+      ...safe,
+      blockedBy: Object.freeze(blockedBy),
+      ...(blockedBy.length === task.blockedBy.length ? {} : { hasHiddenBlockers: true }),
+      ...(task.offerTo?.includes(String(caller.id)) ? { offerTo: Object.freeze([String(caller.id)]) } : {}),
+    });
+  }));
 };
 
 const statusRank = (status: ProductTaskStatus): number =>
@@ -479,7 +513,7 @@ const unresolvedBlockers = (tasks: readonly InternalTaskNode[], task: InternalTa
 
 const validateTaskProjection = (task: ProductTaskNode): void => {
   try {
-    validateCanonicalToolOutput("TaskGet", { task, revision: "a".repeat(64) });
+    validateCanonicalToolOutput("TaskGet", { list: "personal", task, revision: "a".repeat(64) });
   } catch (error) {
     throw new ProductTaskGraphFoldError("TaskGraph task exceeds its canonical projection", { cause: error });
   }
@@ -494,6 +528,8 @@ const applyUpdate = (
   patch: JsonObject,
   sequence: number,
   authority: TaskMutationAuthority,
+  list: ProductTaskList = "shared",
+  legacy = true,
 ): readonly InternalTaskNode[] => {
   const tasks = tasksValue.map((task) => freezeTask(task));
   const index = tasks.findIndex((task) => task.id === taskId);
@@ -504,8 +540,15 @@ const applyUpdate = (
     throw new ProductToolError("task_terminal_conflict", `Task is terminal: ${taskId}`);
   }
   const actor = authority.actorId;
+  const offeredClaim = !legacy && list === "shared" && actor !== undefined && actor !== "root"
+    && current.owner === undefined && current.offerTo?.includes(actor) === true
+    && patch.status === "in_progress" && patch.owner === actor
+    && Array.isArray(patch.offerTo) && patch.offerTo.length === 0
+    && Object.keys(patch).every((field) => ["status", "owner", "offerTo"].includes(field));
   if (actor !== undefined && ((authority.origin === "root") !== (actor === "root")
-    || (current.owner !== undefined && actor !== "root" && actor !== current.owner))) {
+    || (current.owner !== undefined && actor !== "root" && actor !== current.owner)
+    || (!legacy && list === "shared" && actor !== "root" && current.owner === undefined && !offeredClaim)
+    || (!legacy && list === "personal" && (patch.owner !== undefined && patch.owner !== actor || patch.offerTo !== undefined)))) {
     throw new ProductToolError("task_graph_conflict", "TaskUpdate caller does not own this task");
   }
   const changedFields = TASK_UPDATE_FIELDS.filter((field) => Object.hasOwn(patch, field));
@@ -528,6 +571,16 @@ const applyUpdate = (
       throw new ProductToolError("task_graph_conflict", `Task is already owned by ${next.owner}`);
     }
     next = freezeTask({ ...next, owner });
+  }
+  if (Object.hasOwn(patch, "offerTo")) {
+    const offerTo = patch.offerTo as readonly string[];
+    if (!legacy && list === "shared" && actor !== "root" && !offeredClaim) {
+      throw new ProductToolError("task_graph_conflict", "only root may offer shared work");
+    }
+    next = freezeTask({ ...next, offerTo });
+  }
+  if (!legacy && list === "shared" && actor !== "root" && patch.owner !== undefined && !offeredClaim) {
+    throw new ProductToolError("task_graph_conflict", "only root may assign shared work");
   }
   const mutable = tasks.map((task, taskIndex) => taskIndex === index ? next : task).map((task) => ({
     ...task,
@@ -587,8 +640,8 @@ const applyUpdate = (
       && unresolvedBlockers(mutable, selected).length > 0) {
       throw new ProductToolError("task_graph_conflict", "Task cannot advance while dependencies are unresolved");
     }
-    if (candidate === "in_progress" && selected.owner === undefined) {
-      throw new ProductToolError("task_graph_conflict", "An in-progress task must be owned by root");
+    if (list === "shared" && candidate === "in_progress" && selected.owner === undefined) {
+      throw new ProductToolError("task_graph_conflict", "An in-progress shared task must have an owner");
     }
     mutable[index] = { ...selected, status: candidate };
   }
@@ -603,6 +656,7 @@ const parseCreateEvent = (value: unknown): Readonly<{
   authority: TaskMutationAuthority;
   eventSeq: number;
   input: JsonObject;
+  list: ProductTaskList;
   priorRevision: string;
   revision: string;
   sessionId: string;
@@ -612,7 +666,7 @@ const parseCreateEvent = (value: unknown): Readonly<{
   const data = exactDataObject(
     validateProductTaskEventData("myagents/task/created", value),
     ["authority", "description", "eventSeq", "priorRevision", "revision", "sessionId", "subject", "taskId", "taskSequence"],
-    ["activeForm", "metadata"],
+    ["activeForm", "metadata", "list"],
     "durable TaskCreate event",
   );
   if (!Number.isSafeInteger(data.taskSequence) || (data.taskSequence as number) < 1
@@ -629,6 +683,7 @@ const parseCreateEvent = (value: unknown): Readonly<{
     authority: parseMutationAuthority(data.authority, "TaskCreate mutation authority"),
     eventSeq: data.eventSeq as number,
     input: exactTaskInput("TaskCreate", input),
+    list: (data.list ?? "shared") as ProductTaskList,
     priorRevision: boundedIdentifier(data.priorRevision, "TaskCreate prior revision"),
     revision: boundedIdentifier(data.revision, "TaskCreate revision"),
     sessionId: boundedIdentifier(data.sessionId, "TaskCreate Session id"),
@@ -641,6 +696,8 @@ const parseUpdateEvent = (value: unknown): Readonly<{
   authority: TaskMutationAuthority;
   changedFields: readonly string[];
   eventSeq: number;
+  legacy: boolean;
+  list: ProductTaskList;
   patch: JsonObject;
   priorRevision: string;
   revision: string;
@@ -651,7 +708,7 @@ const parseUpdateEvent = (value: unknown): Readonly<{
   const data = exactDataObject(
     validateProductTaskEventData("myagents/task/updated", value),
     ["authority", "changedFields", "eventSeq", "patch", "priorRevision", "revision", "sessionId", "taskId", "taskSequence"],
-    [],
+    ["list"],
     "durable TaskUpdate event",
   );
   if (!Number.isSafeInteger(data.taskSequence) || (data.taskSequence as number) < 1
@@ -688,6 +745,8 @@ const parseUpdateEvent = (value: unknown): Readonly<{
     authority: parseMutationAuthority(data.authority, "TaskUpdate mutation authority"),
     changedFields: Object.freeze([...expectedFields]),
     eventSeq: data.eventSeq as number,
+    legacy: data.list === undefined,
+    list: (data.list ?? "shared") as ProductTaskList,
     patch,
     priorRevision: boundedIdentifier(data.priorRevision, "TaskUpdate prior revision"),
     revision: boundedIdentifier(data.revision, "TaskUpdate revision"),
@@ -700,21 +759,24 @@ const parseUpdateEvent = (value: unknown): Readonly<{
 export const foldProductTaskGraph = (
   events: readonly SessionEvent[],
   sessionIdValue: string,
+  list: ProductTaskList = "shared",
 ): ProductTaskGraphSnapshot => {
   const sessionId = boundedIdentifier(sessionIdValue, "TaskGraph Session id");
   const safeEvents = safeEventSnapshot(events);
   let sequence = 0;
-  let revision = graphBaseRevision(sessionId);
+  const graphIdentity = list === "personal" ? `${sessionId}:personal` : sessionId;
+  let revision = graphBaseRevision(graphIdentity);
   let tasks: readonly InternalTaskNode[] = Object.freeze([]);
   for (const event of safeEvents) {
     if (!isProductTaskEventType(event.type)) continue;
     if (event.type === "myagents/task/created") {
       const data = parseCreateEvent(event.data);
+      if (data.list !== list) continue;
       const expectedId = `task-${tasks.length + 1}`;
       const expectedSequence = sequence + 1;
       const expectedRevision = transitionRevision(
         revision,
-        sessionId,
+        graphIdentity,
         expectedSequence,
         event.type,
         { authority: data.authority, eventSeq: data.eventSeq, input: data.input },
@@ -746,10 +808,11 @@ export const foldProductTaskGraph = (
       continue;
     }
     const data = parseUpdateEvent(event.data);
+    if (data.list !== list) continue;
     const expectedSequence = sequence + 1;
     const expectedRevision = transitionRevision(
       revision,
-      sessionId,
+      graphIdentity,
       expectedSequence,
       event.type,
       {
@@ -765,7 +828,7 @@ export const foldProductTaskGraph = (
       throw new ProductTaskGraphFoldError("durable TaskUpdate event differs from the prior graph authority");
     }
     try {
-      tasks = applyUpdate(tasks, data.taskId, data.patch, expectedSequence, data.authority);
+      tasks = applyUpdate(tasks, data.taskId, data.patch, expectedSequence, data.authority, list, data.legacy);
     } catch (error) {
       throw new ProductTaskGraphFoldError("durable TaskUpdate event violates TaskGraph rules", { cause: error });
     }
@@ -791,7 +854,7 @@ const exactNativePromise = <T>(value: unknown, description: string): Promise<T> 
 };
 
 const validateConfig = (value: unknown): ProductTaskGraphServiceConfig => {
-  const config = exactDataObject(value, ["durability", "requireAgent"], ["isKnownCollaborator"], "ProductTaskGraphService config");
+  const config = exactDataObject(value, ["durability", "requireAgent"], ["isKnownCollaborator", "notifySharedTask"], "ProductTaskGraphService config");
   const durability = exactDataObject(config.durability, ["flush"], [], "TaskGraph durability authority");
   const flushDescriptor = Object.getOwnPropertyDescriptor(durability, "flush");
   const agentDescriptor = Object.getOwnPropertyDescriptor(config, "requireAgent");
@@ -807,10 +870,15 @@ const validateConfig = (value: unknown): ProductTaskGraphServiceConfig => {
     throw new TypeError("TaskGraph collaborator authority must be a non-Proxy function");
   }
   const isKnownCollaborator = config.isKnownCollaborator as ProductTaskGraphServiceConfig["isKnownCollaborator"];
+  if (config.notifySharedTask !== undefined && (typeof config.notifySharedTask !== "function" || utilTypes.isProxy(config.notifySharedTask))) {
+    throw new TypeError("TaskGraph notification authority must be a non-Proxy function");
+  }
+  const notifySharedTask = config.notifySharedTask as ProductTaskGraphServiceConfig["notifySharedTask"];
   return Object.freeze({
     durability: Object.freeze({ flush: (session: Session) => Reflect.apply(flush, durability, [session]) }),
     requireAgent: () => Reflect.apply(requireAgent, config, []),
     ...(isKnownCollaborator === undefined ? {} : { isKnownCollaborator: (root: Agent, agentId: string) => Reflect.apply(isKnownCollaborator, config, [root, agentId]) }),
+    ...(notifySharedTask === undefined ? {} : { notifySharedTask: (root: Agent, childId: string, taskId: string, signal: AbortSignal) => Reflect.apply(notifySharedTask, config, [root, childId, taskId, signal]) }),
   });
 };
 
@@ -832,6 +900,7 @@ export class ProductTaskGraphService extends Service {
   static inject = ["agents", "productTools", "sessions", "tools"];
   private readonly configValue: ProductTaskGraphServiceConfig;
   private readonly settlements = new Set<Promise<unknown>>();
+  private readonly committedListeners = new Set<(agent: Agent, list: ProductTaskList, snapshot: ProductTaskGraphSnapshot) => void>();
   private tail: Promise<void> = Promise.resolve();
   private permit: TaskEventPermit | undefined;
   private failure: unknown;
@@ -881,23 +950,30 @@ export class ProductTaskGraphService extends Service {
     });
   }
 
-  snapshot(agent: Agent): ProductTaskGraphSnapshot {
+  snapshot(agent: Agent, list: ProductTaskList = "shared"): ProductTaskGraphSnapshot {
     this.assertHealthy();
-    if (agent !== this.configValue.requireAgent()) {
-      throw new ProductToolError("task_graph_unavailable", "TaskGraph belongs to the exact primary root Agent");
+    if (list === "shared" ? agent !== this.configValue.requireAgent() : this.ctx.agents.get(agent.id) !== agent) {
+      throw new ProductToolError("task_graph_unavailable", "TaskGraph lacks its exact Agent owner");
     }
     try {
-      return foldProductTaskGraph(agent.session.snapshotEvents(), String(agent.session.id));
+      return foldProductTaskGraph(agent.session.ownEvents(), String(agent.session.id), list);
     } catch (error) {
       this.failure ??= error;
       throw new ProductToolError("task_graph_unavailable", "durable TaskGraph projection cannot be trusted", { cause: error });
     }
   }
 
+  onCommitted(listener: (agent: Agent, list: ProductTaskList, snapshot: ProductTaskGraphSnapshot) => void): () => void {
+    this.committedListeners.add(listener);
+    return () => { this.committedListeners.delete(listener); };
+  }
+
   validatePersisted(agent: Agent): ProductTaskGraphSnapshot {
     this.assertHealthy();
     try {
-      return foldProductTaskGraph(agent.session.snapshotEvents(), String(agent.session.id));
+      const shared = foldProductTaskGraph(agent.session.ownEvents(), String(agent.session.id), "shared");
+      foldProductTaskGraph(agent.session.ownEvents(), String(agent.session.id), "personal");
+      return shared;
     } catch (error) {
       this.failure ??= error;
       throw new ProductToolError(
@@ -935,15 +1011,20 @@ export class ProductTaskGraphService extends Service {
     return this.definition("TaskCreate", false, async (args, exec) => {
       const context = this.ctx.productTools.resolve(exec);
       const rootAgent = productRootAgent(context);
+      const list = listFromArgs(args);
+      if (list === "shared" && context.agent !== rootAgent) {
+        throw new ProductToolError("task_graph_conflict", "only the root Agent may create shared tasks");
+      }
+      const target = list === "shared" ? rootAgent : context.agent;
       await this.ctx.productTools.authorize(context, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.TaskCreate.permissionClass,
-        target: `task-graph:${String(rootAgent.session.id)}`,
+        target: `task-graph:${list}:${String(target.session.id)}`,
         tool: "TaskCreate",
       });
       return await runWithProductToolExecutionDeadline(
         context,
         CANONICAL_TOOL_CONTRACTS.TaskCreate.timeoutMs,
-        async (context) => this.mutate(context, "myagents/task/created", (before) => {
+        async (context) => this.mutate(context, list, "myagents/task/created", (before) => {
         if (before.tasks.length >= MAX_TASKS) {
           throw new ProductToolError("task_graph_limit", "Session TaskGraph reached its bounded task limit");
         }
@@ -957,18 +1038,19 @@ export class ProductTaskGraphService extends Service {
         };
         const revision = transitionRevision(
           before.revision,
-          String(rootAgent.session.id),
+          list === "personal" ? `${String(target.session.id)}:personal` : String(target.session.id),
           taskSequence,
           "myagents/task/created",
-          { authority: authorityForContext(context), eventSeq: rootAgent.session.seq, input: payload },
+          { authority: authorityForContext(context), eventSeq: target.session.seq, input: payload },
         );
         const data = Object.freeze({
           ...payload,
           authority: authorityForContext(context),
-          eventSeq: rootAgent.session.seq,
+          eventSeq: target.session.seq,
+          list,
           priorRevision: before.revision,
           revision,
-          sessionId: String(rootAgent.session.id),
+          sessionId: String(target.session.id),
           taskId,
           taskSequence,
         });
@@ -978,7 +1060,7 @@ export class ProductTaskGraphService extends Service {
         if (task === undefined || after.revision !== revision) {
           throw new ProductTaskGraphFoldError("committed TaskCreate did not fold to its exact task");
         }
-        const output = Object.freeze({ task, revision: after.revision });
+        const output = Object.freeze({ list, task, revision: after.revision });
         validateCanonicalToolOutput("TaskCreate", output);
         return output;
         }),
@@ -990,49 +1072,52 @@ export class ProductTaskGraphService extends Service {
     return this.definition("TaskGet", true, async (args, exec) => {
       const context = this.ctx.productTools.resolve(exec);
       const rootAgent = productRootAgent(context);
+      const list = listFromArgs(args);
       await this.ctx.productTools.authorize(context, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.TaskGet.permissionClass,
-        target: `task:${String(args.taskId)}`,
+        target: `task:${list}:${String(args.taskId)}`,
         tool: "TaskGet",
       });
       return await runWithProductToolExecutionDeadline(
         context,
         CANONICAL_TOOL_CONTRACTS.TaskGet.timeoutMs,
         (context) => {
-          const snapshot = this.snapshot(rootAgent);
-          const task = snapshot.tasks.find((candidate) => candidate.id === args.taskId);
+          const snapshot = this.snapshot(list === "shared" ? rootAgent : context.agent, list);
+          const task = visibleTasks(snapshot.tasks, list, context.agent, rootAgent)
+            .find((candidate) => candidate.id === args.taskId);
           if (task === undefined) {
-            throw new ProductToolError("task_not_found", `Task does not exist: ${String(args.taskId)}`);
+            throw new ProductToolError("task_not_found", "Task does not exist or is inaccessible");
           }
           this.ctx.productTools.assertCurrent(context, "TaskGet");
-          return Object.freeze({ task, revision: snapshot.revision });
+          return Object.freeze({ list, task, revision: snapshot.revision });
         },
       );
     });
   }
 
   private listDefinition(): ToolDefinition {
-    return this.definition("TaskList", true, async (_args, exec) => {
+    return this.definition("TaskList", true, async (args, exec) => {
       const context = this.ctx.productTools.resolve(exec);
       const rootAgent = productRootAgent(context);
+      const list = listFromArgs(args);
       await this.ctx.productTools.authorize(context, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.TaskList.permissionClass,
-        target: `task-graph:${String(rootAgent.session.id)}`,
+        target: `task-graph:${list}:${String(list === "shared" ? rootAgent.session.id : context.agent.session.id)}`,
         tool: "TaskList",
       });
       return await runWithProductToolExecutionDeadline(
         context,
         CANONICAL_TOOL_CONTRACTS.TaskList.timeoutMs,
         (context) => {
-          const snapshot = this.snapshot(rootAgent);
-          const ordered = [...snapshot.tasks].sort((left, right) =>
+          const snapshot = this.snapshot(list === "shared" ? rootAgent : context.agent, list);
+          const ordered = [...visibleTasks(snapshot.tasks, list, context.agent, rootAgent)].sort((left, right) =>
             statusRank(left.status) - statusRank(right.status)
             || left.createdSequence - right.createdSequence
             || taskIdOrder(left.id, right.id));
           let tasks = ordered.slice(0, MAX_LISTED_TASKS);
           let truncated = ordered.length > tasks.length;
           while (tasks.length > 0) {
-            const candidate = { tasks, revision: snapshot.revision, truncated };
+            const candidate = { list, tasks, revision: snapshot.revision, truncated };
             try {
               if (Buffer.byteLength(JSON.stringify(candidate), "utf8") <= MAX_LIST_OUTPUT_BYTES) {
                 validateCanonicalToolOutput("TaskList", candidate);
@@ -1048,7 +1133,7 @@ export class ProductTaskGraphService extends Service {
             throw new ProductToolError("task_graph_limit", "TaskGraph list cannot fit its canonical output budget");
           }
           this.ctx.productTools.assertCurrent(context, "TaskList");
-          return Object.freeze({ tasks: Object.freeze(tasks), revision: snapshot.revision, truncated });
+          return Object.freeze({ list, tasks: Object.freeze(tasks), revision: snapshot.revision, truncated });
         },
       );
     });
@@ -1058,15 +1143,19 @@ export class ProductTaskGraphService extends Service {
     return this.definition("TaskUpdate", false, async (args, exec) => {
       const context = this.ctx.productTools.resolve(exec);
       const rootAgent = productRootAgent(context);
+      const list = listFromArgs(args);
+      const target = list === "shared" ? rootAgent : context.agent;
       await this.ctx.productTools.authorize(context, {
         permissionClass: CANONICAL_TOOL_CONTRACTS.TaskUpdate.permissionClass,
-        target: `task:${String(args.taskId)}`,
+        target: `task:${list}:${String(args.taskId)}`,
         tool: "TaskUpdate",
       });
       return await runWithProductToolExecutionDeadline(
         context,
         CANONICAL_TOOL_CONTRACTS.TaskUpdate.timeoutMs,
-        async (context) => this.mutate(context, "myagents/task/updated", (before) => {
+        async (context) => {
+        let notificationTargets: readonly string[] = [];
+        const committed = await this.mutate(context, list, "myagents/task/updated", (before) => {
         const taskId = args.taskId as string;
         const patch: JsonObject = {};
         for (const field of TASK_UPDATE_FIELDS) {
@@ -1076,13 +1165,32 @@ export class ProductTaskGraphService extends Service {
         if (this.ctx.agents.get(context.agent.id) !== context.agent
           || ((context.origin === "root") !== (context.agent === rootAgent))
           || (context.agent !== rootAgent && (context.agent.session.header.origin !== "subagent"
-            || !(this.configValue.isKnownCollaborator?.(rootAgent, context.agent.id)
-              ?? context.agent.session.header.parentSession === rootAgent.id)))) {
+            || (list === "shared" && !(this.configValue.isKnownCollaborator?.(rootAgent, context.agent.id)
+              ?? context.agent.session.header.parentSession === rootAgent.id))))) {
           throw new ProductToolError("task_graph_conflict", "TaskUpdate caller lacks its registered collaboration identity");
         }
         const task = before.tasks.find((candidate) => candidate.id === taskId);
-        if (patch.status === "in_progress" && patch.owner === undefined && task?.owner === undefined) {
+        if (task === undefined || (list === "shared" && context.agent !== rootAgent
+          && task.owner !== String(context.agent.id)
+          && !task.offerTo?.includes(String(context.agent.id)))) {
+          throw new ProductToolError("task_not_found", "Task does not exist or is inaccessible");
+        }
+        if (list === "personal" && (patch.owner !== undefined || patch.offerTo !== undefined)) {
+          throw new ProductToolError("task_graph_conflict", "personal tasks cannot be assigned or offered");
+        }
+        if (list === "shared" && context.agent !== rootAgent && (patch.owner !== undefined || patch.offerTo !== undefined)) {
+          throw new ProductToolError("task_graph_conflict", "only root may assign or offer shared tasks");
+        }
+        if (list === "shared" && patch.status === "in_progress" && patch.owner === undefined && task.owner === undefined) {
           patch.owner = authority.actorId;
+          if (list === "shared" && context.agent !== rootAgent) patch.offerTo = [];
+        }
+        if (list === "shared" && context.agent !== rootAgent && task.owner === undefined
+          && (patch.status !== "in_progress" || task.offerTo?.includes(String(context.agent.id)) !== true)) {
+          throw new ProductToolError("task_graph_conflict", "shared task must be offered before a child can claim it");
+        }
+        if (list === "shared" && context.agent === rootAgent && patch.owner !== undefined) {
+          patch.offerTo = [];
         }
         if (patch.owner !== undefined && patch.owner !== "root") {
           const owner = this.ctx.agents.get(SessionId(patch.owner as string));
@@ -1092,24 +1200,52 @@ export class ProductTaskGraphService extends Service {
             throw new ProductToolError("task_graph_conflict", "Task owner is outside the current collaboration domain");
           }
         }
+        if (patch.offerTo !== undefined) {
+          const claimingOffer = context.agent !== rootAgent && patch.status === "in_progress"
+            && patch.owner === String(context.agent.id) && (patch.offerTo as readonly string[]).length === 0
+            && task.offerTo?.includes(String(context.agent.id)) === true;
+          if (list !== "shared" || (context.agent !== rootAgent && !claimingOffer)
+            || patch.owner !== undefined && (patch.offerTo as readonly string[]).length > 0) {
+            throw new ProductToolError("task_graph_conflict", "task offer targets conflict with its assignment");
+          }
+          for (const id of patch.offerTo as readonly string[]) {
+            if (!(this.configValue.isKnownCollaborator?.(rootAgent, id)
+              ?? this.ctx.agents.get(SessionId(id))?.session.header.parentSession === rootAgent.id)) {
+              throw new ProductToolError("task_graph_conflict", "task offer target is outside the collaboration domain");
+            }
+          }
+        }
+        if (list === "shared" && context.agent === rootAgent) {
+          const recipients = new Set<string>();
+          if (typeof patch.owner === "string" && patch.owner !== "root" && patch.owner !== task.owner) {
+            recipients.add(patch.owner);
+          }
+          if (Array.isArray(patch.offerTo)) {
+            for (const id of patch.offerTo as string[]) {
+              if (!task.offerTo?.includes(id)) recipients.add(id);
+            }
+          }
+          notificationTargets = [...recipients];
+        }
         const changedFields = TASK_UPDATE_FIELDS.filter((field) => Object.hasOwn(patch, field));
         const taskSequence = before.sequence + 1;
         const transitionPayload = { taskId, patch, changedFields };
         const revision = transitionRevision(
           before.revision,
-          String(rootAgent.session.id),
+          list === "personal" ? `${String(target.session.id)}:personal` : String(target.session.id),
           taskSequence,
           "myagents/task/updated",
-          { ...transitionPayload, authority, eventSeq: rootAgent.session.seq },
+          { ...transitionPayload, authority, eventSeq: target.session.seq },
         );
         const data = Object.freeze({
           authority,
           changedFields: Object.freeze([...changedFields]) as unknown as string[],
-          eventSeq: rootAgent.session.seq,
+          eventSeq: target.session.seq,
+          list,
           patch: Object.freeze(structuredClone(patch)),
           priorRevision: before.revision,
           revision,
-          sessionId: String(rootAgent.session.id),
+          sessionId: String(target.session.id),
           taskId,
           taskSequence,
         });
@@ -1120,13 +1256,30 @@ export class ProductTaskGraphService extends Service {
           throw new ProductTaskGraphFoldError("committed TaskUpdate did not fold to its exact task");
         }
         const output = Object.freeze({
-          task,
+          list,
+          task: visibleTasks([task], list, context.agent, rootAgent)[0] ?? task,
           revision: after.revision,
           changedFields: Object.freeze([...plan.changedFields]),
         });
         validateCanonicalToolOutput("TaskUpdate", output);
         return output;
-        }),
+        });
+        if (notificationTargets.length === 0 || this.configValue.notifySharedTask === undefined) return committed;
+        const deliveredTo: string[] = [];
+        const failedTo: string[] = [];
+        for (const childId of notificationTargets) {
+          try {
+            await this.configValue.notifySharedTask(rootAgent, childId, String(args.taskId), context.signal);
+            deliveredTo.push(childId);
+          } catch {
+            failedTo.push(childId);
+          }
+        }
+        return validateCanonicalToolOutput("TaskUpdate", {
+          ...committed,
+          notification: { deliveredTo, failedTo },
+        });
+        },
       );
     });
   }
@@ -1137,6 +1290,7 @@ export class ProductTaskGraphService extends Service {
     changedFields?: readonly string[];
   }>, TResult>(
     context: ProductToolContext,
+    list: ProductTaskList,
     type: ProductTaskEventType,
     prepare: (before: ProductTaskGraphSnapshot) => TPlan,
     project: (after: ProductTaskGraphSnapshot, revision: string, plan: TPlan) => TResult,
@@ -1151,20 +1305,22 @@ export class ProductTaskGraphService extends Service {
       context.signal.throwIfAborted();
       this.ctx.productTools.assertCurrent(context, type === "myagents/task/created" ? "TaskCreate" : "TaskUpdate");
       const rootAgent = productRootAgent(context);
-      const before = this.snapshot(rootAgent);
+      const target = list === "shared" ? rootAgent : context.agent;
+      const before = this.snapshot(target, list);
       let plan: TPlan;
       try {
         plan = prepare(before);
         validateProductTaskEventData(type, plan.data);
         const synthetic: SessionEvent = Object.freeze({
           data: plan.data,
-          seq: SessionSeq(rootAgent.session.seq),
+          seq: SessionSeq(target.session.seq),
           time: 0,
           type,
         }) as SessionEvent;
         const candidate = foldProductTaskGraph(
-          Object.freeze([...rootAgent.session.snapshotEvents(), synthetic]),
-          String(rootAgent.session.id),
+          Object.freeze([...target.session.ownEvents(), synthetic]),
+          String(target.session.id),
+          list,
         );
         project(candidate, plan.revision, plan);
       } catch (error) {
@@ -1177,12 +1333,12 @@ export class ProductTaskGraphService extends Service {
       if (this.permit !== undefined) throw new ProductToolError("task_graph_conflict", "another TaskGraph append is in progress");
       this.permit = Object.freeze({
         dataDigest: sha256(canonicalJson(plan.data)),
-        eventSeq: rootAgent.session.seq,
-        session: rootAgent.session,
+        eventSeq: target.session.seq,
+        session: target.session,
         type,
       });
       try {
-        rootAgent.session.append(type, plan.data as never);
+        target.session.append(type, plan.data as never);
         appended = true;
         if (this.hasPermit()) {
           throw new ProductTaskGraphFoldError("TaskGraph append was not observed at the Session boundary");
@@ -1192,12 +1348,15 @@ export class ProductTaskGraphService extends Service {
         throw error;
       }
       const flush = exactNativePromise<unknown>(
-        this.configValue.durability.flush(rootAgent.session),
+        this.configValue.durability.flush(target.session),
         "TaskGraph durability flush",
       );
       const result = await this.track(flush);
       if (result !== true) throw new Error("no Session durability Provider participated in the TaskGraph flush");
-      const after = this.snapshot(rootAgent);
+      const after = this.snapshot(target, list);
+      for (const listener of this.committedListeners) {
+        try { listener(target, list, after); } catch { /* Observation cannot undo a durable task mutation. */ }
+      }
       return project(after, plan.revision, plan);
     } catch (error) {
       if (appended) this.failure ??= error;

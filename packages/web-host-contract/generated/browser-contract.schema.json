@@ -2182,6 +2182,24 @@
                                 "type": "string",
                                 "const": "task_graph"
                               },
+                              "agentId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                              },
+                              "list": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "const": "personal"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "shared"
+                                  }
+                                ]
+                              },
                               "snapshot": {
                                 "type": "object",
                                 "required": [
@@ -2219,6 +2237,35 @@
                                         "activeForm": {
                                           "type": "string",
                                           "maxLength": 512
+                                        },
+                                        "owner": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 256,
+                                          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                        },
+                                        "offerTo": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "maxItems": 32
+                                        },
+                                        "blockedBy": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 256,
+                                            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                          },
+                                          "maxItems": 256
+                                        },
+                                        "hasHiddenBlockers": {
+                                          "type": "boolean"
                                         },
                                         "status": {
                                           "anyOf": [
@@ -6873,6 +6920,24 @@
                                     "type": "string",
                                     "const": "task_graph"
                                   },
+                                  "agentId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 256,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                  },
+                                  "list": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "const": "personal"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "shared"
+                                      }
+                                    ]
+                                  },
                                   "snapshot": {
                                     "type": "object",
                                     "required": [
@@ -6910,6 +6975,35 @@
                                             "activeForm": {
                                               "type": "string",
                                               "maxLength": 512
+                                            },
+                                            "owner": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 256,
+                                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                            },
+                                            "offerTo": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 256,
+                                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                              },
+                                              "maxItems": 32
+                                            },
+                                            "blockedBy": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 256,
+                                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                              },
+                                              "maxItems": 256
+                                            },
+                                            "hasHiddenBlockers": {
+                                              "type": "boolean"
                                             },
                                             "status": {
                                               "anyOf": [
@@ -10455,6 +10549,24 @@
                               "type": "string",
                               "const": "task_graph"
                             },
+                            "agentId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                            },
+                            "list": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "const": "personal"
+                                },
+                                {
+                                  "type": "string",
+                                  "const": "shared"
+                                }
+                              ]
+                            },
                             "snapshot": {
                               "type": "object",
                               "required": [
@@ -10492,6 +10604,35 @@
                                       "activeForm": {
                                         "type": "string",
                                         "maxLength": 512
+                                      },
+                                      "owner": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 256,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                      },
+                                      "offerTo": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 256,
+                                          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                        },
+                                        "maxItems": 32
+                                      },
+                                      "blockedBy": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 256,
+                                          "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                                        },
+                                        "maxItems": 256
+                                      },
+                                      "hasHiddenBlockers": {
+                                        "type": "boolean"
                                       },
                                       "status": {
                                         "anyOf": [

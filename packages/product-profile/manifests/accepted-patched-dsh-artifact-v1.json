@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
   "artifactVersion": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
-  "manifestSha256": "995cc1e0492cac02b2d6a806e7d165ca655b012ea9520fec2c6af2c7c06e471c",
-  "sha256SumsSha256": "edb3df9cf4a2d88001494b0557cac5e6ea7af8fc37131cdd0a0ef7a2f2fb20a7",
-  "consumerLockSha256": "73f03252ef9e85f90f24b67de17c7882d71eafc361fad7e13688fd105da0a8a8",
-  "packageCount": 101,
+  "manifestSha256": "7c3a6bdc8b433baa5d7cb8048e85a7024856e9ed8b84fba002e0ee61d2cd0ad1",
+  "sha256SumsSha256": "747d4f28acc9274f16448b5bcd27253d39e1e6b8eef2eab4350b04eef0ee3fc1",
+  "consumerLockSha256": "e634da40e73056470d16f25cdbf45710310521c88898d62ad0ba8d1a7e68e07e",
+  "packageCount": 104,
   "runtimePackages": {
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/dsh-agent": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
@@ -37,6 +37,7 @@
     "@deepseek-ai/dsh-spill-local": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "@deepseek-ai/dsh-spill-policy": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "@deepseek-ai/dsh-subagent": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
+    "@deepseek-ai/dsh-subagent-fork-in-process": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "@deepseek-ai/dsh-system-prompt": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "@deepseek-ai/dsh-time-context": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "@deepseek-ai/dsh-token-meter": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
@@ -44,6 +45,8 @@
     "@deepseek-ai/dsh-tool-fs": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "@deepseek-ai/dsh-tool-jobs": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "@deepseek-ai/dsh-tool-pwsh": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
+    "@deepseek-ai/dsh-tool-subagent": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
+    "@deepseek-ai/dsh-tool-subagent-control": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "@deepseek-ai/dsh-tools": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
     "@deepseek-ai/dsh-util-values": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e"
   },

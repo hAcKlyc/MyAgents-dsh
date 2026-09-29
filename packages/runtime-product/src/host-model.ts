@@ -53,6 +53,7 @@ import { isProxy } from "node:util/types";
 
 import type { PrimarySessionBackendRequest } from "./primary-session.js";
 import { AgentCollaborationPolicy } from "./collaboration-policy.js";
+import { nativeChildAuthority } from "./native-child-authority.js";
 
 export type HostProviderProfile = MethodParams<"session/create">["provider"];
 type ProviderProfile = HostProviderProfile;
@@ -904,7 +905,7 @@ export class HostModelAuthority {
     scope: HostProviderRequestScope;
     runWithAttachments: ModelRequestRunner;
   }> {
-    const primaryBinding = this.requireBinding();
+    this.requireBinding();
     const binding = this.bindingFor(options.provider, options.model);
     const signal = nativeSignal(options.signal);
     if (options.provider !== binding.profile.providerRouteId
@@ -968,11 +969,9 @@ export class HostModelAuthority {
           binding.configRevision,
           binding.profile.revision,
         )
-      : this.#context.productWork.createChildModelRequestAuthority(
-          agent,
-          binding.configRevision,
-          primaryBinding.profile.revision,
-        );
+      : this.#context.get("productWork")?.createChildModelRequestAuthority(
+          agent, binding.configRevision, this.requireBinding().profile.revision,
+        ) ?? nativeChildAuthority(this.#context).createModelRequestAuthority(agent, binding.configRevision);
     const assertCurrent = (): void => {
       if (!this.bindingIsCurrent(binding) || signal.aborted) {
         throw new ProtocolError(
@@ -1173,8 +1172,6 @@ export class HostModelAuthority {
     }
     if (root === context.agent) {
       if (context.birth.modelProfileRevision !== binding.profile.revision) throw new ProtocolError("model_profile_stale", "tool Provider profile differs from its root operation");
-    } else {
-      this.#context.productWork.resolveActiveChildToolOperation(context.agent);
     }
     if (String(root.id) !== binding.runtimeSessionId) throw new ProtocolError("provider_request_stale", "tool Provider belongs to another Session");
     return binding;

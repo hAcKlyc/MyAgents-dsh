@@ -2,7 +2,7 @@
 import { ProtocolError, type JsonRpcPeer, type MethodParams, type MethodResult, type NotificationParams, type RequestContext } from "../src/index.js";
 
 export const GENERATED_PROTOCOL_VERSION = "6.0.0" as const;
-export const GENERATED_SCHEMA_SHA256 = "dd2790a6c433d16264ea9c16f8e62cd561078d405eb19a2210c8b393ca792297" as const;
+export const GENERATED_SCHEMA_SHA256 = "417b57f39fcbe47269e593836641f0b9c02a727761c507f7f82136bd6aface8b" as const;
 export const GENERATED_CAPABILITY_PROFILE_DIGEST = "ee13c2ba6852498a4d7a3c2f26ef6026dd8fa9697b442f3f7b878f1a3988d809" as const;
 
 export type GeneratedHostRequestHandlers = {
@@ -116,6 +116,22 @@ export class GeneratedHostClient {
 
   workList(params: MethodParams<"work/list">, options?: { signal?: AbortSignal }): Promise<MethodResult<"work/list">> {
     return this.peer.request("work/list", params, options);
+  }
+
+  subagentList(params: MethodParams<"subagent/list">, options?: { signal?: AbortSignal }): Promise<MethodResult<"subagent/list">> {
+    return this.peer.request("subagent/list", params, options);
+  }
+
+  subagentTasks(params: MethodParams<"subagent/tasks">, options?: { signal?: AbortSignal }): Promise<MethodResult<"subagent/tasks">> {
+    return this.peer.request("subagent/tasks", params, options);
+  }
+
+  subagentPrompt(params: MethodParams<"subagent/prompt">, options?: { signal?: AbortSignal }): Promise<MethodResult<"subagent/prompt">> {
+    return this.peer.request("subagent/prompt", params, options);
+  }
+
+  subagentInterrupt(params: MethodParams<"subagent/interrupt">, options?: { signal?: AbortSignal }): Promise<MethodResult<"subagent/interrupt">> {
+    return this.peer.request("subagent/interrupt", params, options);
   }
 
   workAgentResume(params: MethodParams<"work/agent/resume">, options?: { signal?: AbortSignal }): Promise<MethodResult<"work/agent/resume">> {

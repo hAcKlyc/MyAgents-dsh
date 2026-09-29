@@ -238,7 +238,7 @@ export const composeOfficialRuntimeServices = async (
       compilers: Object.freeze([
         createProductManagedMcpComponentCompiler(configured),
         createProductSkillComponentCompiler(configured),
-        createProductAgentComponentCompiler(configured),
+        ...(BUILD_TOOL_STRATEGY === "ma_first" ? [createProductAgentComponentCompiler(configured)] : []),
         createProductCommandComponentCompiler(configured),
         createProductHookComponentCompiler(configured),
         createProductHostToolComponentCompiler(configured),

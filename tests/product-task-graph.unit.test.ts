@@ -26,6 +26,7 @@ afterEach(async () => {
 interface MountedOptions {
   readonly isKnownCollaborator?: (root: Agent, agentId: string) => boolean;
   readonly flush?: (session: Session) => Promise<unknown>;
+  readonly notifySharedTask?: (root: Agent, childId: string, taskId: string, signal: AbortSignal) => Promise<void>;
 }
 
 const mounted = async (options: MountedOptions = {}) => {
@@ -73,6 +74,7 @@ const mounted = async (options: MountedOptions = {}) => {
   const flushes: string[] = [];
   await context.plugin(ProductTaskGraphService, {
     ...(options.isKnownCollaborator === undefined ? {} : { isKnownCollaborator: options.isKnownCollaborator }),
+    ...(options.notifySharedTask === undefined ? {} : { notifySharedTask: options.notifySharedTask }),
     durability: Object.freeze({
       flush: (candidate: Session) => {
         flushes.push(String(candidate.id));
@@ -126,49 +128,74 @@ const successful = async (
 
 describe("durable Session-local product TaskGraph", () => {
   it("atomically claims for the real child, fences concurrent claims, and governs explicit transfer", async () => {
-    const state = await mounted();
+    const state = await mounted({ isKnownCollaborator: (_root, id) => id === "child-first" || id === "child-second" });
     const first = state.child("child-first");
     const second = state.child("child-second");
-    await successful(state, "TaskCreate", { subject: "Claim", description: "Shared root graph" });
+    await successful(state, "TaskCreate", { subject: "Claim", description: "Shared root graph", list: "shared" });
+    await successful(state, "TaskUpdate", { taskId: "task-1", list: "shared", offerTo: [first.id, second.id] });
     const claims = await Promise.all([first, second].map((actor) =>
-      state.execute("TaskUpdate", { taskId: "task-1", status: "in_progress" }, undefined, actor)));
+      state.execute("TaskUpdate", { taskId: "task-1", list: "shared", status: "in_progress" }, undefined, actor)));
     expect(claims.filter((result) => !result.isError)).toHaveLength(1);
     expect(claims.filter((result) => result.isError)).toHaveLength(1);
     const owner = (state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.owner);
     const winner = owner === first.id ? first : second;
     const loser = winner === first ? second : first;
-    expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: loser.id }, undefined, loser)).isError).toBe(true);
-    expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: loser.id }, undefined, winner)).isError).toBe(false);
-    expect((await state.execute("TaskUpdate", { taskId: "task-1", status: "completed" }, undefined, winner)).isError).toBe(true);
-    expect((await state.execute("TaskUpdate", { taskId: "task-1", status: "completed" }, undefined, loser)).isError).toBe(false);
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", list: "shared", owner: loser.id }, undefined, loser)).isError).toBe(true);
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", list: "shared", owner: loser.id })).isError).toBe(false);
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", list: "shared", status: "completed" }, undefined, winner)).isError).toBe(true);
+    expect((await state.execute("TaskUpdate", { taskId: "task-1", list: "shared", status: "completed" }, undefined, loser)).isError).toBe(false);
     expect(foldProductTaskGraph(structuredClone(state.session.snapshotEvents()), String(state.agent.id)))
       .toEqual(state.context.productTaskGraph.snapshot(state.agent));
   });
 
-  it("uses the shared tree authority for nested actors and retained targets without granting another branch control", async () => {
-    const admitted = new Set(["nested-actor", "retained-target"]);
-    const state = await mounted({ isKnownCollaborator: (root, id) => root.id === "task-graph-session" && admitted.has(id) });
-    const actor = state.child("nested-actor", SessionId("direct-parent"));
-    const stranger = state.child("registered-stranger", state.agent.id);
-    await successful(state, "TaskCreate", { subject: "Nested ownership", description: "Shared authority for a nested collaborator." });
-    expect((await state.execute("TaskUpdate", { taskId: "task-1", status: "in_progress" }, undefined, actor)).isError).toBe(false);
-    expect(state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.owner).toBe(actor.id);
-    expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: "retained-target" }, undefined, stranger)).isError).toBe(true);
-    expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: "retained-target" }, undefined, actor)).isError).toBe(false);
-    admitted.delete("nested-actor");
-    expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: actor.id })).isError).toBe(true);
+  it("keeps personal lists isolated and shared tasks invisible until explicitly offered", async () => {
+    const state = await mounted({ isKnownCollaborator: (_root, id) => id === "child-first" });
+    const child = state.child("child-first");
+    await successful(state, "TaskCreate", { subject: "Root private", description: "Root step" });
+    expect(state.output(await state.execute("TaskList", {}, undefined, child))).toMatchObject({ list: "personal", tasks: [] });
+    const childPrivate = state.output(await state.execute("TaskCreate", { subject: "Child private", description: "Review" }, undefined, child)) as Record<string, unknown>;
+    expect(childPrivate.list).toBe("personal");
+    expect(state.context.productTaskGraph.snapshot(state.agent, "personal").tasks).toHaveLength(1);
+    expect(state.context.productTaskGraph.snapshot(child, "personal").tasks).toHaveLength(1);
+    await successful(state, "TaskCreate", { subject: "Shared", description: "Only after offer", list: "shared" });
+    expect(state.output(await state.execute("TaskList", { list: "shared" }, undefined, child))).toMatchObject({ list: "shared", tasks: [] });
+    await successful(state, "TaskUpdate", { taskId: "task-1", list: "shared", offerTo: [child.id] });
+    expect(state.output(await state.execute("TaskList", { list: "shared" }, undefined, child))).toMatchObject({ list: "shared", tasks: [{ id: "task-1" }] });
+  });
+
+  it("reports a failed child notification without rolling back the committed shared assignment", async () => {
+    const delivered: string[] = [];
+    const state = await mounted({
+      isKnownCollaborator: (_root, id) => id === "child-first" || id === "child-second",
+      notifySharedTask: async (_root, childId, taskId) => {
+        expect(taskId).toBe("task-1");
+        if (childId === "child-second") throw new Error("recipient is offline");
+        delivered.push(childId);
+      },
+    });
+    const first = state.child("child-first");
+    const second = state.child("child-second");
+    await successful(state, "TaskCreate", { subject: "Review", description: "Shared review", list: "shared" });
+    const result = await successful(state, "TaskUpdate", {
+      taskId: "task-1", list: "shared", offerTo: [first.id, second.id],
+    });
+    expect(result.notification).toEqual({ deliveredTo: [first.id], failedTo: [second.id] });
+    expect(delivered).toEqual([first.id]);
+    expect(state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.offerTo).toEqual([first.id, second.id]);
+    expect(state.output(await state.execute("TaskList", { list: "shared" }, undefined, second)))
+      .toMatchObject({ tasks: [{ id: "task-1" }] });
   });
 
   it("rejects unregistered and foreign callers or transfer targets before publishing ownership", async () => {
     const state = await mounted();
-    await successful(state, "TaskCreate", { subject: "Identity", description: "Root domain only" });
+    await successful(state, "TaskCreate", { subject: "Identity", description: "Root domain only", list: "shared" });
     const actors = [state.child("unregistered", state.agent.id, false), state.child("foreign", SessionId("foreign-root"))];
     for (const actor of actors) {
-      expect((await state.execute("TaskUpdate", { taskId: "task-1", status: "in_progress" }, undefined, actor)).isError).toBe(true);
-      expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: actor.id })).isError).toBe(true);
+      expect((await state.execute("TaskUpdate", { taskId: "task-1", list: "shared", status: "in_progress" }, undefined, actor)).isError).toBe(true);
+      expect((await state.execute("TaskUpdate", { taskId: "task-1", list: "shared", owner: actor.id })).isError).toBe(true);
     }
     expect(state.session.snapshotEvents().filter(({ type }) => type === "myagents/task/updated")).toHaveLength(0);
-    expect((await successful(state, "TaskGet", { taskId: "task-1" })).task).not.toHaveProperty("owner");
+    expect((await successful(state, "TaskGet", { taskId: "task-1", list: "shared" })).task).not.toHaveProperty("owner");
   });
 
   it("creates stable IDs and resumes Get/List from the append-only Session fold", async () => {
@@ -199,21 +226,21 @@ describe("durable Session-local product TaskGraph", () => {
 
     const get = await successful(state, "TaskGet", { taskId: "task-1" });
     const list = await successful(state, "TaskList", {});
-    expect(get).toEqual({ task: first.task, revision: second.revision });
-    expect(list).toMatchObject({ tasks: [first.task, second.task], revision: second.revision, truncated: false });
+    expect(get).toEqual({ list: "personal", task: first.task, revision: second.revision });
+    expect(list).toMatchObject({ list: "personal", tasks: [first.task, second.task], revision: second.revision, truncated: false });
 
     const resumed = foldProductTaskGraph(
       structuredClone(state.session.snapshotEvents()),
-      String(state.session.id),
+      String(state.session.id), "personal",
     );
-    expect(resumed).toEqual(state.context.productTaskGraph.snapshot(state.agent));
+    expect(resumed).toEqual(state.context.productTaskGraph.snapshot(state.agent, "personal"));
     expect(resumed.sequence).toBe(2);
     expect(resumed.revision).toBe(second.revision);
 
     const projected = resumed.tasks[0]?.metadata as Readonly<Record<string, unknown>>;
     expect(Object.isFrozen(projected)).toBe(true);
     expect(() => { (projected as Record<string, unknown>).priority = 2; }).toThrow(TypeError);
-    expect(state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.metadata)
+    expect(state.context.productTaskGraph.snapshot(state.agent, "personal").tasks[0]?.metadata)
       .toEqual({ priority: 1, category: "inspection", pinned: true });
   });
 
@@ -240,21 +267,20 @@ describe("durable Session-local product TaskGraph", () => {
     const linked = await successful(state, "TaskUpdate", {
       taskId: "task-2",
       addBlockedBy: ["task-1"],
-      owner: "root",
     });
-    expect(linked.task).toMatchObject({ id: "task-2", blockedBy: ["task-1"], owner: "root" });
+    expect(linked.task).toMatchObject({ id: "task-2", blockedBy: ["task-1"] });
     expect((await successful(state, "TaskGet", { taskId: "task-1" })).task)
       .toMatchObject({ id: "task-1", updatedSequence: 3 });
     expect((await state.execute("TaskUpdate", { taskId: "task-1", addBlockedBy: ["task-2"] })).isError).toBe(true);
     const unowned = await state.execute("TaskUpdate", { taskId: "task-1", status: "in_progress" });
     expect(unowned).toMatchObject({ isError: false, value: {
-      task: { status: "in_progress", owner: "root" }, changedFields: ["status", "owner"],
+      task: { status: "in_progress" }, changedFields: ["status"],
     } });
     expect((await state.execute("TaskUpdate", { taskId: "task-1", owner: "outside" })).isError).toBe(true);
 
-    await successful(state, "TaskUpdate", { taskId: "task-1", owner: "root", status: "completed" });
+    await successful(state, "TaskUpdate", { taskId: "task-1", status: "completed" });
     const active = await successful(state, "TaskUpdate", { taskId: "task-2", status: "in_progress" });
-    expect(active.task).toMatchObject({ id: "task-2", status: "in_progress", owner: "root" });
+    expect(active.task).toMatchObject({ id: "task-2", status: "in_progress" });
     const cancelled = await successful(state, "TaskUpdate", { taskId: "task-2", status: "cancelled" });
     expect(cancelled.task).toMatchObject({ status: "cancelled" });
     expect((await state.execute("TaskUpdate", { taskId: "task-2", subject: "cannot mutate" })).isError).toBe(true);
@@ -272,13 +298,11 @@ describe("durable Session-local product TaskGraph", () => {
     const result = await successful(state, "TaskUpdate", {
       taskId: "task-1",
       description: "Patched bounded JSON",
-      owner: "root",
       metadata: { remove: null, estimate: 2 },
     });
-    expect(result.changedFields).toEqual(["description", "owner", "metadata"]);
+    expect(result.changedFields).toEqual(["description", "metadata"]);
     expect(result.task).toMatchObject({
       description: "Patched bounded JSON",
-      owner: "root",
       metadata: { keep: true, estimate: 2 },
     });
     expect((result.task as { metadata: Record<string, unknown> }).metadata).not.toHaveProperty("remove");
@@ -436,7 +460,7 @@ describe("durable Session-local product TaskGraph", () => {
 
     const third = await successful(state, "TaskCreate", { subject: "Third", description: "Third" });
     expect(third.task).toMatchObject({ id: "task-2" });
-    expect(state.context.productTaskGraph.snapshot(state.agent).sequence).toBe(2);
+    expect(state.context.productTaskGraph.snapshot(state.agent, "personal").sequence).toBe(2);
   });
 });
 

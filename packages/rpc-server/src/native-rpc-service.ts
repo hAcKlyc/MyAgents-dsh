@@ -1,4 +1,7 @@
 import { Service, symbols, type Context } from "@deepseek-ai/cordis";
+import type {} from "@deepseek-ai/dsh-subagent";
+import type {} from "@deepseek-ai/dsh-session-persistence";
+import { foldProductTaskGraph } from "@myagents-dsh/task-graph";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   BATCH1_AVAILABLE_HOST_METHODS,
@@ -587,7 +590,9 @@ export class NativeRpcServer extends Service {
           this.productSessionValue.rewindStatus(params, context.signal))),
         registered("work/list", this.peerValue.registerRequestHandler("work/list", async (params, context) => {
           this.productSessionValue.requireAgent();
-          const snapshots = await compositionAuthority.context.productWork.readSnapshots(context.signal, params.afterTaskId);
+          const work = compositionAuthority.context.get("productWork");
+          if (work === undefined) return { items: [] };
+          const snapshots = await work.readSnapshots(context.signal, params.afterTaskId);
           const items: MethodResult<"work/list">["items"] = [];
           // Stable creation-order pages, one bounded preview per Agent, and the
           // largest legal RPC envelope keep a retained tree within negotiated limits.
@@ -604,19 +609,102 @@ export class NativeRpcServer extends Service {
           const nextTaskId = snapshots.length > items.length ? items.at(-1)?.taskId : undefined;
           return { items, ...(nextTaskId === undefined ? {} : { nextTaskId }) };
         })),
+        registered("subagent/list", this.peerValue.registerRequestHandler("subagent/list", async (_params, context) => {
+          const root = this.productSessionValue.requireAgent();
+          const entries = await compositionAuthority.context.subagents.listDescendants(root.id, context.signal);
+          return { items: entries.filter((entry) => entry.kind === "child").slice(0, 256).map((entry) => {
+            if (entry.kind !== "child") throw new Error("subagent catalog entry changed during projection");
+            return {
+              id: String(entry.id), parentId: String(entry.parentId), depth: entry.depth,
+              mode: entry.mode, activity: entry.activity,
+              ...(entry.label === undefined ? {} : { label: entry.label }),
+            };
+          }) };
+        })),
+        registered("subagent/tasks", this.peerValue.registerRequestHandler("subagent/tasks", async (params, context) => {
+          const root = this.productSessionValue.requireAgent();
+          const rootId = String(root.id);
+          if (params.list === "shared" && params.agentId !== rootId) {
+            throw new ProtocolError("task_not_found", "shared tasks belong to the root Agent");
+          }
+          if (params.agentId !== rootId) {
+            const descendants = await compositionAuthority.context.subagents.listDescendants(root.id, context.signal);
+            if (!descendants.some((entry) => entry.kind === "child" && String(entry.id) === params.agentId)) {
+              throw new ProtocolError("task_not_found", "subagent is unavailable");
+            }
+          }
+          const live = compositionAuthority.context.agents.list().find((agent) => String(agent.id) === params.agentId);
+          const snapshot = live === undefined
+            ? await (async () => {
+                const reader = await compositionAuthority.context.sessionPersistence.open(
+                  params.agentId as Parameters<typeof compositionAuthority.context.sessionPersistence.open>[0], "read", { signal: context.signal },
+                );
+                try {
+                  const events = (await reader.read(reader.inheritedEventCount, undefined, { signal: context.signal })).events;
+                  return foldProductTaskGraph(events, params.agentId, params.list);
+                } finally { await reader.close(); }
+              })()
+            : compositionAuthority.context.productTaskGraph.snapshot(live, params.list);
+          return { agentId: params.agentId, list: params.list, snapshot: {
+            revision: snapshot.revision,
+            tasks: snapshot.tasks.map((task) => ({
+              id: task.id, subject: task.subject, status: task.status,
+              ...(task.activeForm === undefined ? {} : { activeForm: task.activeForm }),
+              ...(task.owner === undefined ? {} : { owner: task.owner }),
+              ...(task.offerTo === undefined ? {} : { offerTo: [...task.offerTo] }),
+              blockedBy: [...task.blockedBy],
+              ...(task.hasHiddenBlockers === undefined ? {} : { hasHiddenBlockers: task.hasHiddenBlockers }),
+            })),
+          } };
+        })),
+        registered("subagent/prompt", this.peerValue.registerRequestHandler("subagent/prompt", async (params, context) => {
+          const root = this.productSessionValue.requireAgent();
+          const entries = await compositionAuthority.context.subagents.listDescendants(root.id, context.signal);
+          const child = entries.find((entry) => entry.kind === "child" && String(entry.id) === params.agentId);
+          if (child?.kind !== "child" || child.mode !== "continuable") {
+            throw new ProtocolError("task_not_found", "continuable subagent is unavailable");
+          }
+          context.commit();
+          await compositionAuthority.context.subagents.prompt({
+            requestId: params.clientMessageId as Parameters<typeof compositionAuthority.context.subagents.prompt>[0]["requestId"],
+            parentSessionId: child.parentId,
+            childSessionId: child.id,
+            mode: "continuable",
+            delivery: "queue",
+            content: [{ type: "text", text: params.message }],
+          }, context.signal);
+          return { ok: true as const };
+        })),
+        registered("subagent/interrupt", this.peerValue.registerRequestHandler("subagent/interrupt", async (params, context) => {
+          const root = this.productSessionValue.requireAgent();
+          const entries = await compositionAuthority.context.subagents.listDescendants(root.id, context.signal);
+          const child = entries.find((entry) => entry.kind === "child" && String(entry.id) === params.agentId);
+          if (child?.kind !== "child" || child.mode !== "continuable") {
+            throw new ProtocolError("task_not_found", "continuable subagent is unavailable");
+          }
+          context.commit();
+          compositionAuthority.context.subagents.interruptByParent(child.id, child.parentId, "continuable");
+          return { ok: true as const };
+        })),
         registered("work/agent/resume", this.peerValue.registerRequestHandler("work/agent/resume", async (params, context) => {
           context.signal.throwIfAborted(); this.productSessionValue.requireAgent(); context.commit();
-          await compositionAuthority.context.productWork.resumeFromHost(params.agentId, params.clientRequestId, params.expectedHandleRevision, context.signal);
+          const work = compositionAuthority.context.get("productWork");
+          if (work === undefined) throw new ProtocolError("method_unavailable", "legacy Agent resume is unavailable with native DSH subagents");
+          await work.resumeFromHost(params.agentId, params.clientRequestId, params.expectedHandleRevision, context.signal);
           return { ok: true as const };
         })),
         registered("work/agent/stop", this.peerValue.registerRequestHandler("work/agent/stop", async (params, context) => {
           context.signal.throwIfAborted(); this.productSessionValue.requireAgent(); context.commit();
-          await compositionAuthority.context.productWork.stopFromHost(params.agentId, params.expectedHandleRevision, context.signal);
+          const work = compositionAuthority.context.get("productWork");
+          if (work === undefined) throw new ProtocolError("method_unavailable", "legacy Agent stop is unavailable with native DSH subagents");
+          await work.stopFromHost(params.agentId, params.expectedHandleRevision, context.signal);
           return { ok: true as const };
         })),
         registered("work/agent/message", this.peerValue.registerRequestHandler("work/agent/message", async (params, context) => {
           context.signal.throwIfAborted(); this.productSessionValue.requireAgent(); context.commit();
-          await compositionAuthority.context.productWork.messageFromHost(params.agentId, params.clientMessageId, params.message, context.signal);
+          const work = compositionAuthority.context.get("productWork");
+          if (work === undefined) throw new ProtocolError("method_unavailable", "legacy Agent message is unavailable with native DSH subagents");
+          await work.messageFromHost(params.agentId, params.clientMessageId, params.message, context.signal);
           return { ok: true as const };
         })),
         registered("turn/start", this.peerValue.registerRequestHandler("turn/start", (params, context) =>

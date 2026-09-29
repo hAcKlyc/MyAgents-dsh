@@ -266,6 +266,11 @@
         "version": "0.1.7-rc.2"
       },
       {
+        "name": "@deepseek-ai/dsh-subagent-fork-in-process",
+        "role": "dsh-library",
+        "version": "0.1.7-rc.2"
+      },
+      {
         "name": "@deepseek-ai/dsh-subagent-in-process-driver",
         "role": "dsh-library",
         "version": "0.1.7-rc.2"
@@ -332,6 +337,16 @@
       },
       {
         "name": "@deepseek-ai/dsh-tool-pwsh",
+        "role": "dsh-library",
+        "version": "0.1.7-rc.2"
+      },
+      {
+        "name": "@deepseek-ai/dsh-tool-subagent",
+        "role": "dsh-library",
+        "version": "0.1.7-rc.2"
+      },
+      {
+        "name": "@deepseek-ai/dsh-tool-subagent-control",
         "role": "dsh-library",
         "version": "0.1.7-rc.2"
       },
@@ -413,7 +428,7 @@
     ]
   },
   "dsh": {
-    "baselineSha256": "6d0fa3578632d56bd4df61028e0161599ce68c6d678576f778ea97b64a7d6bd5",
+    "baselineSha256": "78ef248d6035a902f0d586c11beb396ae5cec53d5eaf028bfb0995bcaeec95b9",
     "release": "0.1.7-rc.2"
   },
   "formatVersion": 1,
@@ -428,7 +443,7 @@
   },
   "profileId": "myagents-dsh-official-v1",
   "protocol": {
-    "schemaSha256": "dd2790a6c433d16264ea9c16f8e62cd561078d405eb19a2210c8b393ca792297",
+    "schemaSha256": "417b57f39fcbe47269e593836641f0b9c02a727761c507f7f82136bd6aface8b",
     "version": "6.0.0"
   },
   "runtimeActivation": "forbidden-until-patched-dsh-and-batch-1-gate",

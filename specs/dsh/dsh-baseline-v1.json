@@ -17,8 +17,8 @@
     "registry": "https://registry.npmjs.org",
     "dshRelease": "0.1.7-rc.2",
     "sourceAssociation": "unproven",
-    "directPackageCount": 74,
-    "productionPackageCount": 313
+    "directPackageCount": 77,
+    "productionPackageCount": 316
   },
   "publicCompileFixture": "packages/product-profile/src/dsh-public-surface.compile.ts",
   "publicSeams": [
@@ -738,6 +738,19 @@
       ]
     },
     {
+      "id": "subagent-host-prompt",
+      "package": "@deepseek-ai/dsh-subagent",
+      "importPath": "@deepseek-ai/dsh-subagent/internal",
+      "classification": "helper",
+      "batchUse": [
+        "NATIVE-SUBAGENTS"
+      ],
+      "values": [
+        "queueHostSubagentPrompt"
+      ],
+      "types": []
+    },
+    {
       "id": "subagent-in-process-driver",
       "package": "@deepseek-ai/dsh-subagent-in-process-driver",
       "importPath": "@deepseek-ai/dsh-subagent-in-process-driver",
@@ -766,6 +779,49 @@
       "types": [
         "Config"
       ]
+    },
+    {
+      "id": "subagent-fork-in-process",
+      "package": "@deepseek-ai/dsh-subagent-fork-in-process",
+      "importPath": "@deepseek-ai/dsh-subagent-fork-in-process",
+      "classification": "provider",
+      "batchUse": [
+        "NATIVE-SUBAGENTS"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [
+        "Config"
+      ]
+    },
+    {
+      "id": "tool-subagent",
+      "package": "@deepseek-ai/dsh-tool-subagent",
+      "importPath": "@deepseek-ai/dsh-tool-subagent",
+      "classification": "provider",
+      "batchUse": [
+        "NATIVE-SUBAGENTS"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": [
+        "Config"
+      ]
+    },
+    {
+      "id": "tool-subagent-control",
+      "package": "@deepseek-ai/dsh-tool-subagent-control",
+      "importPath": "@deepseek-ai/dsh-tool-subagent-control",
+      "classification": "provider",
+      "batchUse": [
+        "NATIVE-SUBAGENTS"
+      ],
+      "values": [
+        "apply"
+      ],
+      "types": []
     },
     {
       "id": "jobs",
@@ -1173,7 +1229,7 @@
     },
     {
       "license": "MIT",
-      "count": 213
+      "count": 216
     },
     {
       "license": "Python-2.0",
@@ -2312,6 +2368,16 @@
       "optional": false
     },
     {
+      "path": "node_modules/@deepseek-ai/dsh-subagent-fork-in-process",
+      "name": "@deepseek-ai/dsh-subagent-fork-in-process",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-subagent-fork-in-process/-/dsh-subagent-fork-in-process-0.1.7-rc.2.tgz",
+      "integrity": "sha512-tGJ06AG1JXXTLQBdskJRaggA/gg601+lr52kxvuT1sx/L404hRdw18OdPOebDh9wrj8gt2zxeVEkHA0QY6Hkhg==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
       "path": "node_modules/@deepseek-ai/dsh-subagent-in-process-driver",
       "name": "@deepseek-ai/dsh-subagent-in-process-driver",
       "version": "0.1.7-rc.2",
@@ -2447,6 +2513,26 @@
       "version": "0.1.7-rc.2",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-tool-pwsh/-/dsh-tool-pwsh-0.1.7-rc.2.tgz",
       "integrity": "sha512-GMFZT35QKoFOXzFV576FbohrdfcXtrMJlOPqdQvNvUdMLYPiiJEIR4WSuqQuGBoez0bLxKVwtodGzwcvPBP+dQ==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-tool-subagent",
+      "name": "@deepseek-ai/dsh-tool-subagent",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-tool-subagent/-/dsh-tool-subagent-0.1.7-rc.2.tgz",
+      "integrity": "sha512-tsClP3op2uxw3itf/L2EQ37QLS6LEdcKuBKUmq0XNnOvAjut4xUByDzI52W94leJ2hVbWYipmDzlGis27mo95g==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-tool-subagent-control",
+      "name": "@deepseek-ai/dsh-tool-subagent-control",
+      "version": "0.1.7-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-tool-subagent-control/-/dsh-tool-subagent-control-0.1.7-rc.2.tgz",
+      "integrity": "sha512-GQASFI77x8ly7HSJ64Uxd281LqnPlnuQnF860Xx0z36OPHLzDzdFksFiFeT8nI1llun6FoqkZli3EUsPAXme1g==",
       "license": "MIT",
       "direct": true,
       "optional": false

@@ -3758,7 +3758,7 @@
       ],
       "checkpoint": "none",
       "concurrency": "session_serial",
-      "description": "Creates a task in the current Runtime Session-local TaskGraph. It does not create a product task or scheduled automation.",
+      "description": "Create a task for your own work. Without list, it belongs to this agent's personal list and other agents cannot access it through Task tools. Use meaningful steps for multi-step work, not trivial one-step answers. Only the root agent may use list: shared for collaborative work; shared tasks start unassigned and must be assigned or offered with TaskUpdate. This does not create a MyAgents product task, reminder, or scheduled automation.",
       "errorCodes": [
         {
           "code": "task_graph_limit",
@@ -3782,6 +3782,18 @@
             "maxLength": 65536,
             "minLength": 1,
             "type": "string"
+          },
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
           },
           "metadata": {
             "maxProperties": 128,
@@ -3834,6 +3846,18 @@
             "maxLength": 65536,
             "minLength": 1,
             "type": "string"
+          },
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
           },
           "metadata": {
             "maxProperties": 128,
@@ -3893,6 +3917,18 @@
       "outputSchema": {
         "additionalProperties": false,
         "properties": {
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          },
           "revision": {
             "maxLength": 256,
             "minLength": 1,
@@ -3925,6 +3961,9 @@
               "description": {
                 "maxLength": 65536,
                 "type": "string"
+              },
+              "hasHiddenBlockers": {
+                "type": "boolean"
               },
               "id": {
                 "maxLength": 256,
@@ -3959,6 +3998,17 @@
                   "type": "string"
                 },
                 "type": "object"
+              },
+              "offerTo": {
+                "items": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array",
+                "uniqueItems": true
               },
               "owner": {
                 "maxLength": 256,
@@ -4009,6 +4059,7 @@
           }
         },
         "required": [
+          "list",
           "task",
           "revision"
         ],
@@ -4033,7 +4084,7 @@
       ],
       "checkpoint": "none",
       "concurrency": "parallel",
-      "description": "Gets one task and its current dependency, owner, flat scalar metadata, and revision snapshot from the Session-local TaskGraph.",
+      "description": "Read one task by ID in your personal list by default, or pass list: shared for collaborative work. Read its requirements and blockers before changing it. You can read only your own personal tasks and shared tasks assigned or offered to you. Use TaskList in the same list to discover IDs. Missing and inaccessible tasks have the same not-found result.",
       "errorCodes": [
         {
           "code": "task_not_found",
@@ -4049,6 +4100,18 @@
       "executionInputSchema": {
         "additionalProperties": false,
         "properties": {
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          },
           "taskId": {
             "maxLength": 256,
             "minLength": 1,
@@ -4064,6 +4127,18 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          },
           "taskId": {
             "maxLength": 256,
             "minLength": 1,
@@ -4094,6 +4169,18 @@
       "outputSchema": {
         "additionalProperties": false,
         "properties": {
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          },
           "revision": {
             "maxLength": 256,
             "minLength": 1,
@@ -4126,6 +4213,9 @@
               "description": {
                 "maxLength": 65536,
                 "type": "string"
+              },
+              "hasHiddenBlockers": {
+                "type": "boolean"
               },
               "id": {
                 "maxLength": 256,
@@ -4160,6 +4250,17 @@
                   "type": "string"
                 },
                 "type": "object"
+              },
+              "offerTo": {
+                "items": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array",
+                "uniqueItems": true
               },
               "owner": {
                 "maxLength": 256,
@@ -4210,6 +4311,7 @@
           }
         },
         "required": [
+          "list",
           "task",
           "revision"
         ],
@@ -4234,7 +4336,7 @@
       ],
       "checkpoint": "none",
       "concurrency": "parallel",
-      "description": "Lists a bounded, stable snapshot of non-deleted tasks in the current Runtime collaboration domain.",
+      "description": "List this agent's personal tasks by default. Use list: shared to inspect collaborative tasks assigned or offered to you. The root agent sees all shared tasks; a child sees only its own shared work. An empty shared result reveals nothing about other agents' tasks. After finishing shared work, list again to find newly unblocked work.",
       "errorCodes": [
         {
           "code": "task_graph_unavailable",
@@ -4249,12 +4351,38 @@
       ],
       "executionInputSchema": {
         "additionalProperties": false,
-        "properties": {},
+        "properties": {
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "inputSchema": {
         "additionalProperties": false,
-        "properties": {},
+        "properties": {
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "lifecycle": {
@@ -4275,6 +4403,18 @@
       "outputSchema": {
         "additionalProperties": false,
         "properties": {
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          },
           "revision": {
             "maxLength": 256,
             "minLength": 1,
@@ -4309,6 +4449,9 @@
                   "maxLength": 65536,
                   "type": "string"
                 },
+                "hasHiddenBlockers": {
+                  "type": "boolean"
+                },
                 "id": {
                   "maxLength": 256,
                   "minLength": 1,
@@ -4342,6 +4485,17 @@
                     "type": "string"
                   },
                   "type": "object"
+                },
+                "offerTo": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "maxItems": 32,
+                  "type": "array",
+                  "uniqueItems": true
                 },
                 "owner": {
                   "maxLength": 256,
@@ -4398,6 +4552,7 @@
           }
         },
         "required": [
+          "list",
           "tasks",
           "revision",
           "truncated"
@@ -4423,7 +4578,7 @@
       ],
       "checkpoint": "none",
       "concurrency": "session_serial",
-      "description": "Atomically updates one Session-local task, including status, ownership, dependencies, text, and bounded flat scalar metadata. When starting an unassigned task, owner may be omitted: the Runtime assigns the actual calling Agent. An existing owner is preserved; the root or current owner may explicitly transfer to root or a registered child agentId in this Session. Dependencies must remain acyclic.",
+      "description": "Update a task by ID in your personal list by default, or pass list: shared for collaborative work. Read its latest state with TaskGet first. Only the root agent may assign shared work to a continuable child or offer it to specific child IDs with offerTo. An offered child may claim an unassigned, unblocked task atomically. Do not claim someone else's task, change another agent's personal list, or mark unfinished work complete. Dependencies stay within one list and cannot cycle.",
       "errorCodes": [
         {
           "code": "task_not_found",
@@ -4480,6 +4635,18 @@
             "minLength": 1,
             "type": "string"
           },
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          },
           "metadata": {
             "maxProperties": 128,
             "patternProperties": {
@@ -4507,6 +4674,17 @@
               "type": "string"
             },
             "type": "object"
+          },
+          "offerTo": {
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array",
+            "uniqueItems": true
           },
           "owner": {
             "maxLength": 256,
@@ -4585,6 +4763,18 @@
             "minLength": 1,
             "type": "string"
           },
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          },
           "metadata": {
             "maxProperties": 128,
             "patternProperties": {
@@ -4612,6 +4802,17 @@
               "type": "string"
             },
             "type": "object"
+          },
+          "offerTo": {
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array",
+            "uniqueItems": true
           },
           "owner": {
             "maxLength": 256,
@@ -4698,6 +4899,10 @@
                   "type": "string"
                 },
                 {
+                  "const": "offerTo",
+                  "type": "string"
+                },
+                {
                   "const": "addBlocks",
                   "type": "string"
                 },
@@ -4711,10 +4916,54 @@
                 }
               ]
             },
-            "maxItems": 8,
+            "maxItems": 9,
             "minItems": 1,
             "type": "array",
             "uniqueItems": true
+          },
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          },
+          "notification": {
+            "additionalProperties": false,
+            "properties": {
+              "deliveredTo": {
+                "items": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "failedTo": {
+                "items": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array",
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "deliveredTo",
+              "failedTo"
+            ],
+            "type": "object"
           },
           "revision": {
             "maxLength": 256,
@@ -4749,6 +4998,9 @@
                 "maxLength": 65536,
                 "type": "string"
               },
+              "hasHiddenBlockers": {
+                "type": "boolean"
+              },
               "id": {
                 "maxLength": 256,
                 "minLength": 1,
@@ -4782,6 +5034,17 @@
                   "type": "string"
                 },
                 "type": "object"
+              },
+              "offerTo": {
+                "items": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array",
+                "uniqueItems": true
               },
               "owner": {
                 "maxLength": 256,
@@ -4832,6 +5095,7 @@
           }
         },
         "required": [
+          "list",
           "task",
           "revision",
           "changedFields"

@@ -1193,7 +1193,8 @@ export class ProductWorkService extends Service {
       });
       const childSetup = ctx.subagents.registerContinuableSetup((childCtx, child) => {
         const descriptor = foldSubagentDescriptor(child.session.snapshotEvents());
-        if (descriptor?.mode !== "continuable" || descriptor.provider !== this.config.provider) {
+        if (descriptor?.provider !== this.config.provider) return () => undefined;
+        if (descriptor.mode !== "continuable") {
           throw new Error("continuable child lacks the exact ProductWork descriptor authority");
         }
         const entry = this.byAgent.get(child.id);
