@@ -6,8 +6,8 @@
   "fixture": "compaction-continuity",
   "platforms": ["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64"],
   "prompts": [
-    "Start a continuity audit. The current goal is finish-compaction-continuity-audit. Confirm only the current goal.",
-    "Record working path specs/continuity-target.md and identifier COMPACTION_SENTINEL_42. Confirm both exactly.",
+    "Start a conversational continuity audit. Do not call tools or create, edit, or read workspace files during this audit. The current goal is finish-compaction-continuity-audit. Confirm only the current goal.",
+    "Remember working path specs/continuity-target.md and identifier COMPACTION_SENTINEL_42. The path is a memory fact, not a request to open or create a file. Confirm both exactly without using tools.",
     "The initial priority is speed-first. This is provisional and may be corrected later. Confirm the current priority.",
     "Verified state: the synthetic fixture was read by the Host; no file edit or test run has occurred. Distinguish verified facts from unperformed work.",
     "Correction: replace the old priority speed-first with integrity-first. The old priority is now stale. Confirm only the corrected priority.",
@@ -25,7 +25,7 @@
   ],
   "experienceFocus": ["Repeated automatic compaction", "Latest-correction precedence", "Truthful planned/applied/verified state", "Exact continuity facts"],
   "capabilityCoverage": ["automatic-compaction", "structured-checkpoint", "continuity", "model-capacity", "secret-canary"],
-  "postconditions": ["At least three automatic compactions complete durably", "The terminal answer retains every current exact fact", "Superseded values are absent from the terminal answer", "The fixture tree remains unchanged", "No prohibited content enters evidence"],
+  "postconditions": ["At least three automatic compactions complete durably", "The terminal answer retains every current exact fact", "Superseded values are absent from the terminal answer", "The fixture input remains unchanged", "No prohibited content enters evidence"],
   "hostPolicy": {"interaction": "deny", "network": "deny", "credentials": "approved-provider-only"},
   "budgets": {"wallTimeMs": 900000, "operations": 16, "turns": 96, "modelCalls": 64, "toolCalls": 0, "children": 0, "processes": 0, "networkAttempts": 0, "bytes": 8388608, "retries": 1}
 }
