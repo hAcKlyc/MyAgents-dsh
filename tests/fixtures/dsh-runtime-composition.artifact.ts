@@ -3524,12 +3524,14 @@ const declarativeCommandRequest = adapter.requests.find(({ messages }) => messag
   message.role === "user" && message.content.some((block) =>
     block.type === "text" && block.text.includes("Load the release-audit Skill for accepted-runtime"))));
 assert.ok(declarativeCommandRequest);
-assert.deepEqual(await composition.context.skills.snapshot({
+const composedSkills = await composition.context.skills.snapshot({
   cwd: fixtureWorkspace,
   scope: primaryAgent,
-}), {
-  complete: true,
-  skills: [{
+});
+assert.equal(composedSkills.complete, true);
+// The fixture owns these two providers; native platform skills may coexist.
+assert.deepEqual(composedSkills.skills.filter((skill) =>
+  skill.provider === "myagents-static-skills" || skill.provider === "myagents-component-skills"), [{
     name: "fixture-audit",
     path: fixtureSkillSourcePath,
     description: "Audits the synthetic Runtime artifact and returns bounded evidence.",
@@ -3544,8 +3546,7 @@ assert.deepEqual(await composition.context.skills.snapshot({
     invocation: { modelInvocable: true, userInvocable: true },
     source: "runtime",
     provider: "myagents-component-skills",
-  }],
-});
+  }]);
 
 const hostToolAttachmentEvidenceStart = hostAttachmentEvidence.length;
 await composition.context.sdkOperations.start({
