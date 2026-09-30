@@ -16,6 +16,7 @@ import {
   writeSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -728,7 +729,13 @@ const assertExactWorkspaceDependency = (
   if (typeof expectedVersion !== "string") {
     throw new Error(`${workspaceDirectory} does not declare ${packageName}`);
   }
-  const source = realpathSync(resolve(repositoryRoot, "node_modules", ...packageName.split("/")));
+  const requireFromWorkspace = createRequire(resolve(repositoryRoot, workspaceDirectory, "package.json"));
+  let source = dirname(requireFromWorkspace.resolve(packageName));
+  while (!existsSync(resolve(source, "package.json"))) {
+    const parent = dirname(source);
+    if (parent === source) throw new Error(`${packageName} has no installed package manifest`);
+    source = parent;
+  }
   const installedManifest = exactObject(
     JSON.parse(readFileSync(resolve(source, "package.json"), "utf8")) as unknown,
     `${packageName} installed manifest`,
