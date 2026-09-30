@@ -2132,7 +2132,7 @@ describe("canonical Agent Work projection", () => {
       const report = messages.find((message) => message.source.kind === "subagent-report");
       if (background) {
         expect(report).toBeDefined();
-        expect(ownsProductWorkRootContextMessage(state.agent.session, report?.source, String(report?.id))).toBe(true);
+        expect(ownsProductWorkRootContextMessage(state.agent.session, report?.source, String(report?.id), state.context)).toBe(true);
       } else {
         expect(report).toBeUndefined();
         expect(state.agent.session.snapshotEvents().some(event => event.type === "myagents/work/epoch")).toBe(true);
@@ -2438,6 +2438,7 @@ describe("canonical Agent Work projection", () => {
       state.agent.session,
       Object.freeze({ kind: "subagent-report", form: "relay", senderSessionId: SessionId(firstId) }),
       (delivery?.data as { dshMessageId: string }).dshMessageId,
+      state.context,
     )).toBe(true);
 
     const sibling = await state.executeAs(firstId, "SendMessage", {

@@ -941,7 +941,7 @@ export class RuntimeEventProjector {
           session,
           value as ContextPressureValue,
           sequence,
-          (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId),
+          (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId, this.#config.context),
         );
         if (projection !== undefined) this.#capture(sequence, projection);
       } catch (error) {
@@ -1066,7 +1066,7 @@ export class RuntimeEventProjector {
             session,
             pressure,
             projectionCut.asOfSeq,
-            (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId),
+            (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId, this.#config.context),
           );
       if (context !== undefined) baseline.push(context);
       baseline.push(taskGraphProjection(personalTaskGraph, String(agent.id), "personal"));
@@ -1230,7 +1230,7 @@ export class RuntimeEventProjector {
     if (frame.type === "start") {
       if (this.#liveAttempt !== undefined) throw new TypeError("assistant attempts overlap");
       const operation = operationForTurn(session, frame.turn, session.seq - 1,
-        (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId));
+        (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId, this.#config.context));
       if (operation === undefined) throw new TypeError("assistant attempt lacks its Product operation owner");
       const boundary = operationTurnBoundary(session.snapshotEvents(), operation, frame.turn);
       if (boundary.end !== undefined) throw new TypeError("assistant attempt began after its turn ended");
@@ -1392,6 +1392,7 @@ export class RuntimeEventProjector {
           session,
           messageSource,
           messageId,
+          this.#config.context,
         ),
       ),
       ...(this.#capturedProjections.get(source.seq) ?? []),

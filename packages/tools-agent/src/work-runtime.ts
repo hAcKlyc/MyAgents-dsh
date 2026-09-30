@@ -1041,9 +1041,11 @@ export const ownsProductWorkRootContextMessage = (
   session: Session,
   source: MessageSource | undefined,
   messageId: string,
-  ctx?: Context,
+  ctx: Context,
 ): boolean => {
-  const events = ctx?.sessionProjections.stateOf(session, "myagentsContextProvenance")?.events ?? [];
+  const kind: string | undefined = source?.kind;
+  const events = kind === "tool-jobs" || kind === "agent-message" || kind === "subagent-settled"
+    ? ctx.sessionProjections.stateOf(session, "myagentsContextProvenance")?.events ?? [] : [];
   if (ownsOfficialJobNotice(events, source, messageId)) return true;
   // DSH owns native relay/settlement provenance through the parent catalog and Inbox.
   // These messages do not have (or need) a legacy ProductWork ledger.

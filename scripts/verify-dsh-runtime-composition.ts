@@ -715,10 +715,10 @@ const cleanBuildRuntimeComposition = (
   return buildRoot;
 };
 
-const assertExactWorkspaceDependency = (
+const assertExactWorkspaceTypebox = (
   consumerRoot: string,
   workspaceDirectory: string,
-  packageName: string,
+  packageName: "typebox",
 ): void => {
   const workspaceManifest = exactObject(
     JSON.parse(readFileSync(resolve(repositoryRoot, workspaceDirectory, "package.json"), "utf8")) as unknown,
@@ -730,7 +730,7 @@ const assertExactWorkspaceDependency = (
     throw new Error(`${workspaceDirectory} does not declare ${packageName}`);
   }
   const requireFromWorkspace = createRequire(resolve(repositoryRoot, workspaceDirectory, "package.json"));
-  let source = dirname(requireFromWorkspace.resolve(packageName));
+  let source = dirname(requireFromWorkspace.resolve("typebox"));
   while (!existsSync(resolve(source, "package.json"))) {
     const parent = dirname(source);
     if (parent === source) throw new Error(`${packageName} has no installed package manifest`);
@@ -1229,7 +1229,7 @@ const main = (): void => {
       "packages/product-profile",
       "@myagents-dsh/product-profile",
     );
-    assertExactWorkspaceDependency(consumerRoot, "packages/tool-contracts", "typebox");
+    assertExactWorkspaceTypebox(consumerRoot, "packages/tool-contracts", "typebox");
     stageBuiltPackage(
       consumerRoot,
       buildRoot,
