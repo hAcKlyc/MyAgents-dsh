@@ -6,10 +6,8 @@ export type {
   CanonicalWebFetchToolsConfig,
   CanonicalWebSearchToolsConfig,
   CanonicalWebToolsConfig,
-  ProductHostWebFetchRequest,
   ProductWebContentRequest,
   ProductWebSearchRequest,
-  ProductWebUtilityRequest,
 } from "./runtime.js";
 export {
   ProductSafeHttpClient,

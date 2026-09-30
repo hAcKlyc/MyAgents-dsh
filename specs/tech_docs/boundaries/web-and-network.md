@@ -45,7 +45,7 @@ uses the complete existing Host WebFetch seam. No arbitrary HTTP reverse port is
 
 For Runtime-owned HTTP fetch, `ProductSafeHttpClient` validates HTTP(S) URL syntax, forbids credentials, applies allow/deny host and port policy, resolves DNS, rejects non-public and embedded/translated private addresses, dispatches to the selected address, and repeats validation at every redirect. It bounds redirects, compressed/decompressed bytes, concurrency, queue depth and deadline and always disposes the response body. An explicit composition-owned proxy retains URL, hostname, literal-address, redirect, permission, size and deadline checks; the trusted proxy owns remote DNS for names. Local DNS pinning/private-answer defense is a direct-route guarantee, not a claim about the proxy's resolver. Proxy failure never retries directly.
 
-The official composition passes its installed general network transport into the native `web_fetch` client's proxy selector. This is required for the build-time `dsh_first` tool strategy: a Host canonical `WebFetch` proxy setting alone does not affect the DSH-native fetch client. The same generation-owned transport already serves managed remote MCP; Provider model request scopes remain separate.
+The official composition passes its installed general network transport into the native `web_fetch` client's proxy selector. Native `web_fetch` consumes that transport directly; a Host WebFetch setting alone does not configure the native client. The same generation-owned transport already serves managed remote MCP; Provider model request scopes remain separate.
 
 The trusted transport passes Undici's response headers directly to `ProductSafeHttpClient`. Undici may attach symbol-keyed TLS metadata to proxied HTTPS headers; WebFetch reads the HTTP header names it needs and does not impose an exact object-shape validator on the trusted response. URL, address, redirect, deadline and body-size policy remain enforced by the client.
 `ProductSafeHttpClient` also supplies the same bounded default Accept, compression, and User-Agent headers to both direct and proxied WebFetch requests; a proxy route must not silently omit them and change a target's response.
@@ -122,7 +122,6 @@ Add a backend behind the canonical web Provider/Host capability, not as a second
 | Exact schemas/claims | `packages/tool-contracts/`, `packages/artifact-verifier/src/integration-compatibility.ts` |
 
 HTTP status failures report the actual status code in both Runtime-owned and Host-owned WebFetch. The Host connection error text includes its already-classified system code (for example `ECONNRESET`); raw proxy URLs, credentials and upstream exception messages remain outside model-visible errors.
-
 
 ## Request-scoped network composition
 

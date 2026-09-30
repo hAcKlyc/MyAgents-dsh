@@ -27,7 +27,7 @@ Exact current behavior is owned by:
 - **Consumed by:** every governed root/child tool call, AskUserQuestion, Plan tools, Host permission UI and resume recovery.
 - **Does not own:** tool visibility, hard OS sandboxing, Host UI policy, model execution or TaskGraph state.
 
-Composition supplies `withInteractionWait` to the permission service. Child permission and question waits release ProductWork execution capacity, persist the waiting phase, and reacquire the shared FIFO before returning an answer to the tool. Interaction registration, identity, decisions and cancellation remain owned by the permission/Host interaction plane.
+Permission and question waits use the existing interaction/Host owners for registration, identity, decisions and cancellation. There is no ProductWork capacity queue or waiting-phase ledger. Native DSH owns child execution and resource limits.
 
 ## 2. Permission modes
 

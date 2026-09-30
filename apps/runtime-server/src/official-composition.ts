@@ -1,7 +1,7 @@
 import { resolvePwshPath } from "@deepseek-ai/dsh-pwsh-local";
 import {
   CANONICAL_TOOL_NAMES,
-  modelToolNamesForStrategy,
+  modelToolNames,
   CANONICAL_TOOL_CONTRACT_SHA256,
   DEEPSEEK_WEB_SEARCH_POLICY_REF,
   effectiveToolCatalogDigest,
@@ -10,7 +10,6 @@ import {
   type EffectiveToolCatalogSnapshot,
   type MethodParams,
 } from "@myagents-dsh/protocol";
-import { BUILD_TOOL_STRATEGY } from "./tool-strategy.build.js";
 import {
   ACCEPTED_PATCHED_DSH_ARTIFACT,
   resolveRuntimePlatformTarget,
@@ -22,7 +21,6 @@ import {
   createHostProviderWebFetchPlaneConfig,
   createHostProviderWebSearchPlaneConfig,
   createHostBackedInteractionProvider,
-  createProductAgentComponentCompiler,
   createProductCommandComponentCompiler,
   createProductHookComponentCompiler,
   createProductHostToolComponentCompiler,
@@ -44,13 +42,13 @@ import { delimiter, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 export const OFFICIAL_HOST_INTERACTION_REVISION = "host-interaction-v1" as const;
-export const OFFICIAL_TOOL_CATALOG_REVISION = `official-canonical-tools-v5-${BUILD_TOOL_STRATEGY}` as const;
 export const OFFICIAL_EXTENSION_REVISION = "official-empty-extensions-v1" as const;
 export const OFFICIAL_PLAN_REVISION = "official-plan-v1" as const;
 export const OFFICIAL_ORIGIN_REVISION = "official-root-origin-v1" as const;
 
 const unavailableShellTools = new Set<string>([selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)).shell.dialect === "pwsh" ? "bash" : "pwsh"]);
-const implementationTools = modelToolNamesForStrategy(CANONICAL_TOOL_NAMES, BUILD_TOOL_STRATEGY);
+const OFFICIAL_TOOL_CATALOG_REVISION = "official-native-tools-v1";
+const implementationTools = modelToolNames(CANONICAL_TOOL_NAMES);
 const effectiveTools = Object.freeze(implementationTools.filter((tool) => !unavailableShellTools.has(tool)));
 const toolCatalogAuthority = Object.freeze({
   formatVersion: 1 as const,
@@ -209,7 +207,6 @@ export const composeOfficialRuntimeServices = async (
     }));
     await installCanonicalToolPlane(configured, Object.freeze({
       catalog: () => OFFICIAL_TOOL_CATALOG,
-      toolStrategy: BUILD_TOOL_STRATEGY,
       permission: Object.freeze({
         autoAllowTools: Object.freeze([]),
         interaction,
@@ -238,7 +235,6 @@ export const composeOfficialRuntimeServices = async (
       compilers: Object.freeze([
         createProductManagedMcpComponentCompiler(configured),
         createProductSkillComponentCompiler(configured),
-        ...(BUILD_TOOL_STRATEGY === "ma_first" ? [createProductAgentComponentCompiler(configured)] : []),
         createProductCommandComponentCompiler(configured),
         createProductHookComponentCompiler(configured),
         createProductHostToolComponentCompiler(configured),

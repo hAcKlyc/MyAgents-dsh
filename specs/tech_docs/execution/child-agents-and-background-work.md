@@ -8,9 +8,9 @@ patch_authority: ../../dsh/seam-decisions-v1.json
 
 # Child agents and background work
 
-## Current build (`dsh_first`)
+## Native child execution
 
-The build-time choice in `apps/runtime-server/src/tool-strategy.build.ts` selects DSH's model-facing `subagent`, `fork_agent`, `send_message`, and `interrupt_agent`. `list_agents` also uses the official public plugin; 0.2.0-rc.2 fixes its export, so the former distribution adapter is removed. DSH's SubagentRuntime, spawn/fork providers, Session, Inbox, and Jobs own child and background execution. MyAgents does not install ProductWork in this strategy.
+The sole official composition installs DSH's model-facing `subagent`, `fork_agent`, `send_message`, and `interrupt_agent`. `list_agents` also uses the official public plugin; 0.2.0-rc.2 fixes its export, so the former distribution adapter is removed. DSH's SubagentRuntime, spawn/fork providers, Session, Inbox, and Jobs own child and background execution. The former ProductWork lifecycle and role compiler have been removed.
 
 `subagent` creates a fresh child Session; `fork_agent` inherits the parent's completed history. Each supports the official one-shot or continuable mode. A one-shot child returns a result to its caller and cannot subsequently be assigned shared work by ID. A continuable child has a stable Session ID, accepts native follow-up messages, and may be interrupted during its current turn. Interrupting a turn does not close the child or its descendants. The model-visible schemas and cancellation semantics are those of the locked DSH packages; the Host does not add ProductWork task IDs, role names, or subtree-stop semantics.
 
@@ -32,14 +32,14 @@ The Task tools are separate from child lifecycle. Each Agent has a personal Task
 
 DSH Jobs remain the owner of Shell background processes and their `job_output`, `job_list`, and `job_kill` tools. They are distinct from delegated Agent Sessions.
 
-## Legacy `ma_first` build
+## Historical Session compatibility
 
-The optional legacy build strategy still installs `packages/tools-agent/src/work-runtime.ts` for the historical `Agent`, `TaskStop`, and `SendMessage` vocabulary. Its ProductWork records and `work/*` Host methods are compatibility surfaces, not the architecture used by the current `dsh_first` build. They do not define DSH's native child semantics. The current client reads the native catalog when that protocol method exists; older bound artifacts keep their legacy projection. Historical `myagents/work/*` events remain historical facts and are not migrated into the native child catalog.
+Historical `myagents/work/*` events remain readable in persisted Sessions. The read-only decoder validates their original payloads and message provenance; it does not create, resume, stop or message legacy children. Those records are not migrated into the native catalog. The former `work/*` RPC method names remain reserved in protocol v6 and return `method_unavailable`; Hosts use `subagent/*` controls. Historical role descriptors have no current compiler.
 
 ## Implementation map
 
 - Official native services and policy wiring: `packages/runtime-product/src/composition.ts`, `native-child-authority.ts`, `native-task-notification.ts`.
-- Model-facing vocabulary: `packages/protocol/src/tool-strategy.ts` and the locked DSH subagent tool packages.
+- Model-facing vocabulary: `packages/protocol/src/native-tool-names.ts` and the locked DSH subagent tool packages.
 - Task ownership and access: `packages/task-graph/src/runtime.ts`.
 - Host control and observation: `packages/rpc-server/src/native-rpc-service.ts`, `event-projector.ts`.
-- Legacy compatibility: `packages/tools-agent/src/work-runtime.ts`.
+- Historical event decoding only: `packages/tools-agent/src/historical-work-events.ts`; root context provenance: `context-provenance.ts`.

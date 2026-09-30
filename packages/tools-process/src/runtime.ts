@@ -61,12 +61,6 @@ export interface ProductProcessIoAuthority {
   verifyExecutable(path: string, sha256: string, signal: AbortSignal): Promise<void>;
 }
 
-export interface ProductSearchResult {
-  readonly durationMs: number;
-  readonly exitCode: number;
-  readonly stderr: string;
-}
-
 export interface ResolvedProductProcessAuthority {
   readonly backgroundRetention: "allow" | "deny";
   readonly shellPath: string;
@@ -168,7 +162,6 @@ const exactEnvironmentValues = (value: unknown): Readonly<Record<string, string>
   return Object.freeze(environmentValues);
 };
 
-
 const exactConfig = (value: unknown): ProductProcessRuntimeConfig => {
   const config = exactPlainObject(value, ["allowedCommandRefs", "executableSha256", "executablePaths", "executableRefs", "shellDialect", "environmentValues",
     ...(value !== null && typeof value === "object" && Object.hasOwn(value, "readEnvironment") ? ["readEnvironment"] : [])], "process configuration");
@@ -242,7 +235,6 @@ const mergeExplicitEnvironment = (values: Readonly<Record<string, string>>): Nod
   return environment;
 };
 
-
 /** The sole DSH ToolRuntime, with only the official presentation callback added. */
 export class ShellPresentationToolRuntime extends ToolRuntime {
   override register(definition: ToolDefinition): () => void {
@@ -290,7 +282,6 @@ export class ProductProcessRuntime extends Service {
   private readonly runtimeContext: Context;
   private readonly calls = new AsyncLocalStorage<Readonly<{ product: ProductToolContext; cwd: string; shell: boolean; search?: "Glob" | "Grep"; searchRoot?: string }>>();
   private readonly live = new Set<SubprocessHandle>();
-  private reservations = 0;
   private readonly outputs = new WeakMap<Agent, Map<string, FsTarget>>();
 
   constructor(ctx: Context, value: Readonly<{ io: ProductProcessIoAuthority; process: ProductProcessRuntimeConfig }>) {
@@ -374,7 +365,7 @@ export class ProductProcessRuntime extends Service {
     if (call?.shell !== true) return undefined;
     this.runtimeContext.productTools.assertCurrent(call.product, this.config.shellDialect);
     const authority = this.authorityFor(call.product);
-    if (this.live.size + this.reservations >= authority.maxChildren) {
+    if (this.live.size >= authority.maxChildren) {
       throw new ProductToolError("process_failed", "process quota is exhausted");
     }
     // The Shell executor owns argv, including the sandbox runner when confined.
@@ -406,7 +397,7 @@ export class ProductProcessRuntime extends Service {
       || realpathSync(spec.argv[0] ?? "") !== authority.ripgrepPath) {
       throw new ProductToolError("search_failed", "official search command differs from sealed ripgrep authority");
     }
-    if (this.live.size + this.reservations >= authority.maxChildren) {
+    if (this.live.size >= authority.maxChildren) {
       throw new ProductToolError("search_failed", "search process quota is exhausted");
     }
     const searchRoot = call.search === "Glob" ? call.searchRoot : undefined;
@@ -455,121 +446,6 @@ export class ProductProcessRuntime extends Service {
     }
   }
   private resolveRipgrep(product: ProductToolContext): Promise<string> { return this.resolveExecutable("ripgrep", product); }
-  private reserve(limit: number, code: "search_failed"): () => void {
-    if (this.live.size + this.reservations >= limit) throw new ProductToolError(code, "process quota is exhausted");
-    this.reservations += 1;
-    return () => { this.reservations -= 1; };
-  }
-  private trackHandle(handle: SubprocessHandle): () => void {
-    this.live.add(handle);
-    return () => { this.live.delete(handle); };
-  }
-  async runSearch(
-    product: ProductToolContext,
-    workspace: ProductProcessWorkspaceAuthority,
-    tool: "Glob" | "Grep",
-    argv: readonly string[],
-    consumeStdout: (stdout: AsyncIterable<Uint8Array>) => Promise<void>,
-  ): Promise<ProductSearchResult> {
-    const authority = this.authorityFor(product);
-    try {
-      await this.io.revalidateWorkspace(
-        workspace,
-        workspace.target.displayPath,
-        product.signal,
-      );
-      await this.resolveRipgrep(product);
-      await this.io.revalidateWorkspace(
-        workspace,
-        workspace.target.displayPath,
-        product.signal,
-      );
-      await this.resolveRipgrep(product);
-    } catch (error) {
-      throwIfProductToolAborted(product.signal);
-      if (error instanceof ProductToolError) {
-        if (tool === "Glob" && error.code === "search_dependency_missing") {
-          throw new ProductToolError("search_failed", "Glob search dependency is unavailable", { cause: error });
-        }
-        throw error;
-      }
-      throw new ProductToolError("path_denied", `${tool} search root identity changed`, { cause: error });
-    }
-    const searchRoot = this.io.processPath(workspace.target);
-    const releaseReservation = this.reserve(authority.maxChildren, "search_failed");
-    const startedAt = Date.now();
-    let handle: SubprocessHandle;
-    try {
-      handle = this.runtimeContext.subprocess.spawn({
-        argv: [authority.ripgrepPath, ...argv],
-        cwd: searchRoot,
-        env: authority.env,
-        graceMs: 2_000,
-        signal: product.signal,
-        stdio: {
-          stdin: "ignore",
-          stdout: "pipe",
-          stderr: { maxBytes: 65_536 },
-        },
-      });
-    } catch (error) {
-      throwIfProductToolAborted(product.signal);
-      throw new ProductToolError("search_failed", "search process could not start", { cause: error });
-    } finally {
-      releaseReservation();
-    }
-    let marker: () => void;
-    try {
-      marker = this.trackHandle(handle);
-    } catch (error) {
-      handle.terminate();
-      await handle.waitForExit().catch(() => undefined);
-      throw new ProductToolError("search_failed", "search process returned invalid output streams", { cause: error });
-    }
-    let stdoutConsumption: Promise<void> | undefined;
-    try {
-      if (handle.stdout === undefined) throw new ProductToolError("search_failed", "search stdout is unavailable");
-      stdoutConsumption = consumeStdout(handle.stdout);
-      const [outcome] = await Promise.all([handle.done, stdoutConsumption]);
-      await handle.waitForExit();
-      await this.io.revalidateWorkspace(
-        workspace,
-        workspace.target.displayPath,
-        product.signal,
-      );
-      const stderr = handle.collected.stderr?.readFrom(0);
-      if (stderr === undefined) throw new ProductToolError("search_failed", "search diagnostics are unavailable");
-      if (product.signal.aborted) throwIfProductToolAborted(product.signal);
-      return Object.freeze({
-        durationMs: Math.max(0, Date.now() - startedAt),
-        exitCode: outcome.exitCode ?? 2,
-        stderr: stderr.text,
-      });
-    } catch (error) {
-      handle.terminate();
-      const cleanup = await Promise.allSettled([handle.done, handle.waitForExit(), stdoutConsumption?.catch(() => undefined)]);
-      const cleanupErrors = cleanup.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
-      if (product.signal.aborted) {
-        try {
-          throwIfProductToolAborted(product.signal);
-        } catch (abort) {
-          if (cleanupErrors.length > 0) {
-            throw new AggregateError([abort, ...cleanupErrors], "cancelled search process cleanup failed", { cause: abort });
-          }
-          throw abort;
-        }
-      }
-      const failure = error instanceof ProductToolError
-        ? error
-        : new ProductToolError("search_failed", "search process failed before settlement", { cause: error });
-      if (cleanupErrors.length > 0) {
-        throw new AggregateError([failure, ...cleanupErrors], "search process execution and cleanup failed", { cause: error });
-      }
-      throw failure;
-    } finally {
-      marker();
-    }
-  }
 
 }
 

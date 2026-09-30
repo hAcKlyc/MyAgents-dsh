@@ -973,9 +973,7 @@ export class HostModelAuthority {
           binding.configRevision,
           binding.profile.revision,
         )
-      : this.#context.get("productWork")?.createChildModelRequestAuthority(
-          agent, binding.configRevision, this.requireBinding().profile.revision,
-        ) ?? nativeChildAuthority(this.#context).createModelRequestAuthority(agent, binding.configRevision);
+      : nativeChildAuthority(this.#context).createModelRequestAuthority(agent, binding.configRevision);
     const assertCurrent = (): void => {
       if (!this.bindingIsCurrent(binding) || signal.aborted) {
         throw new ProtocolError(

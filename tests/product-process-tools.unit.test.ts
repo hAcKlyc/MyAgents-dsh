@@ -1,3 +1,4 @@
+import { modelToolNames } from "@myagents-dsh/protocol";
 import { Readable } from "node:stream";
 import { LocalBashExecutor } from "@deepseek-ai/dsh-bash-local";
 import { PwshLocalExecutor } from "@deepseek-ai/dsh-pwsh-local";
@@ -188,10 +189,10 @@ class FakeSubprocessRuntime extends SubprocessRuntime {
 const catalogWithoutDigest = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
-  implementationCatalog: CANONICAL_TOOL_NAMES,
+  implementationCatalog: modelToolNames(CANONICAL_TOOL_NAMES),
   effectiveTools: Object.freeze(["bash", "pwsh", "job_output", "job_list", "job_kill"] as const),
   revision: "process-tools-v1",
-  diagnostics: Object.freeze(CANONICAL_TOOL_NAMES.map((tool) => Object.freeze(
+  diagnostics: Object.freeze(modelToolNames(CANONICAL_TOOL_NAMES).map((tool) => Object.freeze(
     ["bash", "pwsh", "job_output", "job_list", "job_kill"].includes(tool)
       ? { tool, available: true as const }
       : { tool, available: false as const, reasonCode: "not-installed" },
@@ -600,127 +601,6 @@ describe("official Shell tools with product policy", () => {
     await mkdir(state.workspace);
     releaseWorkspace("allow");
     await expect(staleWorkspace).resolves.toMatchObject({ isError: true });
-    expect(state.fakeSubprocess.specs).toHaveLength(0);
-    await state.context.fiber.dispose();
-  });
-
-  it("revalidates a search root after executable resolution and before spawn", async () => {
-    const state = await harness();
-    let releaseExecutable!: (path: string) => void;
-    state.fakeSubprocess.resolveExecutablePromise = new Promise((resolve) => { releaseExecutable = resolve; });
-    const signal = new AbortController().signal;
-    const product = Object.freeze({
-      agent: state.agent,
-      birth: state.operation.birth,
-      callId: "search-root-race",
-      catalog,
-      clientOperationId: state.operation.clientOperationId,
-      dshTurn: 1,
-      environment: state.environment,
-      origin: "root" as const,
-      productTurnId: state.operation.productTurnId,
-      rootCallId: "search-root-race",
-      signal,
-    }) satisfies ProductToolContext;
-    const authority = await state.processIo.captureWorkspace(state.workspace, signal);
-    const pending = state.context.productProcesses.runSearch(product, authority, "Glob", ["--files"], async (stdout) => { for await (const chunk of stdout) { expect(chunk).toBeInstanceOf(Uint8Array); } });
-    const rejection = expect(pending).rejects.toThrow(/identity changed|stale|workspace is unavailable/u);
-    await new Promise<void>((resolve) => { setImmediate(resolve); });
-    await rename(state.workspace, join(state.root, "search-root.displaced"));
-    await mkdir(state.workspace);
-    releaseExecutable(state.config.executablePaths.ripgrep);
-    await rejection;
-    expect(state.fakeSubprocess.specs).toHaveLength(0);
-    expect(state.context.productProcesses.snapshot()).toEqual({ liveProcesses: 0 });
-    await state.context.fiber.dispose();
-  });
-
-  it("keeps directory searches valid while sibling files are edited", async () => {
-    const state = await harness();
-    const signal = new AbortController().signal;
-    const product = Object.freeze({
-      agent: state.agent,
-      birth: state.operation.birth,
-      callId: "search-directory-metadata",
-      catalog,
-      clientOperationId: state.operation.clientOperationId,
-      dshTurn: 1,
-      environment: state.environment,
-      origin: "root" as const,
-      productTurnId: state.operation.productTurnId,
-      rootCallId: "search-directory-metadata",
-      signal,
-    }) satisfies ProductToolContext;
-    const authority = await state.processIo.captureWorkspace(state.workspace, signal);
-    await writeFile(join(state.workspace, "edited-during-search.txt"), "changed\n");
-    state.fakeSubprocess.plans.push(Object.freeze({
-      outcome: Object.freeze({ exitCode: 0, signal: null }),
-      stderr: "",
-      stdout: "",
-    }));
-    await expect(state.context.productProcesses.runSearch(
-      product,
-      authority,
-      "Grep",
-      ["--files"],
-      async (stdout) => { for await (const chunk of stdout) { expect(chunk).toBeInstanceOf(Uint8Array); } },
-    )).resolves.toMatchObject({ exitCode: 0 });
-    await state.context.fiber.dispose();
-  });
-
-  it("revalidates the ripgrep digest after the final workspace await and immediately before spawn", async () => {
-    const state = await harness();
-    state.fakeSubprocess.resolveExecutableHook = async (command, call) => {
-      if (call === 2) {
-        const displaced = `${state.config.executablePaths.ripgrep}.original`;
-        await rename(state.config.executablePaths.ripgrep, displaced);
-        await writeFile(state.config.executablePaths.ripgrep, "replaced executable\n");
-        await chmod(state.config.executablePaths.ripgrep, 0o700);
-      }
-      return command;
-    };
-    const signal = new AbortController().signal;
-    const product = Object.freeze({
-      agent: state.agent,
-      birth: state.operation.birth,
-      callId: "search-executable-race",
-      catalog,
-      clientOperationId: state.operation.clientOperationId,
-      dshTurn: 1,
-      environment: state.environment,
-      origin: "root" as const,
-      productTurnId: state.operation.productTurnId,
-      rootCallId: "search-executable-race",
-      signal,
-    }) satisfies ProductToolContext;
-    const authority = await state.processIo.captureWorkspace(state.workspace, signal);
-    await expect(state.context.productProcesses.runSearch(product, authority, "Grep", ["--files"], async (stdout) => { for await (const chunk of stdout) { expect(chunk).toBeInstanceOf(Uint8Array); } }))
-      .rejects.toThrow(/configured executable is unavailable/u);
-    expect(state.fakeSubprocess.specs).toHaveLength(0);
-    await state.context.fiber.dispose();
-  });
-
-  it("maps sealed ripgrep failures to each canonical search contract", async () => {
-    const state = await harness();
-    state.fakeSubprocess.resolveExecutableHook = () => Promise.reject(new Error("synthetic ripgrep unavailable"));
-    const product = Object.freeze({
-      agent: state.agent,
-      birth: state.operation.birth,
-      callId: "dependency-search",
-      catalog,
-      clientOperationId: state.operation.clientOperationId,
-      dshTurn: 1,
-      environment: state.environment,
-      origin: "root" as const,
-      productTurnId: state.operation.productTurnId,
-      rootCallId: "dependency-search",
-      signal: new AbortController().signal,
-    }) satisfies ProductToolContext;
-    const workspace = await state.processIo.captureWorkspace(state.workspace, product.signal);
-    await expect(state.context.productProcesses.runSearch(product, workspace, "Glob", ["--files"], async (stdout) => { for await (const chunk of stdout) { expect(chunk).toBeInstanceOf(Uint8Array); } }))
-      .rejects.toMatchObject({ code: "search_failed" });
-    await expect(state.context.productProcesses.runSearch(product, workspace, "Grep", ["--json"], async (stdout) => { for await (const chunk of stdout) { expect(chunk).toBeInstanceOf(Uint8Array); } }))
-      .rejects.toMatchObject({ code: "search_dependency_missing" });
     expect(state.fakeSubprocess.specs).toHaveLength(0);
     await state.context.fiber.dispose();
   });

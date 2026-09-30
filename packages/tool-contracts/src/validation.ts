@@ -122,7 +122,7 @@ const validateToolValue = (
   value: unknown,
 ): unknown => {
   const normalized = normalizeCanonicalJson(value, `${name} ${direction}`);
-  if (direction === "output" && (name === "WebFetch" || name === "WebSearch" || name === "Agent")
+  if (direction === "output" && (name === "WebFetch" || name === "WebSearch")
     && normalized !== null && typeof normalized === "object" && !Array.isArray(normalized)) {
     const output = normalized as Record<string, unknown>;
     const usage = output.usage;

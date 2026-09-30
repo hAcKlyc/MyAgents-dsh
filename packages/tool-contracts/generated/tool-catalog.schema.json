@@ -3,2423 +3,1284 @@
   "additionalProperties": false,
   "properties": {
     "contractSha256": {
-      "const": "2328363c025a310a373d1b959b3c6cb33e864e2e63a86981c30e49c777f3437c",
+      "const": "11c30b274c2b94c5851a15ef8b454bfdca0ca2f5542c31afe73b0cd507b9b8c1",
       "type": "string"
     },
     "diagnostics": {
-      "anyOf": [
+      "additionalItems": false,
+      "items": [
         {
-          "additionalItems": false,
-          "items": [
+          "anyOf": [
             {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "Read",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "Read",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
+                "tool": {
+                  "const": "read",
+                  "type": "string"
                 }
-              ]
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
             },
             {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "Write",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "Write",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "Edit",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "Edit",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
+                "tool": {
+                  "const": "read",
+                  "type": "string"
                 }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "Glob",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "Glob",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "Grep",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "Grep",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "bash",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "bash",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "pwsh",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "pwsh",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "job_output",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "job_output",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "job_list",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "job_list",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "job_kill",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "job_kill",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "ls",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "ls",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "WebFetch",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "WebFetch",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "WebSearch",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "WebSearch",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "AskUserQuestion",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "AskUserQuestion",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "EnterPlanMode",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "EnterPlanMode",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "ExitPlanMode",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "ExitPlanMode",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "Skill",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "Skill",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "Agent",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "Agent",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "TaskStop",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "TaskStop",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "SendMessage",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "SendMessage",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "TaskCreate",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "TaskCreate",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "TaskGet",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "TaskGet",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "TaskList",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "TaskList",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "TaskUpdate",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "TaskUpdate",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
             }
-          ],
-          "minItems": 24,
-          "type": "array"
+          ]
         },
         {
-          "additionalItems": false,
-          "items": [
+          "anyOf": [
             {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "read",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "read",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
+                "tool": {
+                  "const": "read_image",
+                  "type": "string"
                 }
-              ]
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
             },
             {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "read_image",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "read_image",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "write",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "write",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
+                "tool": {
+                  "const": "read_image",
+                  "type": "string"
                 }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "edit",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "edit",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "glob",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "glob",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "grep",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "grep",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "bash",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "bash",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "pwsh",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "pwsh",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "job_output",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "job_output",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "job_list",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "job_list",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "job_kill",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "job_kill",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "ls",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "ls",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "web_fetch",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "web_fetch",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "web_search",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "web_search",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "AskUserQuestion",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "AskUserQuestion",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "EnterPlanMode",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "EnterPlanMode",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "ExitPlanMode",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "ExitPlanMode",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "Skill",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "Skill",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "subagent",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "subagent",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "fork_agent",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "fork_agent",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "interrupt_agent",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "interrupt_agent",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "send_message",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "send_message",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "list_agents",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "list_agents",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "TaskCreate",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "TaskCreate",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "TaskGet",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "TaskGet",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "TaskList",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "TaskList",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "tool": {
-                      "const": "TaskUpdate",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "available": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "reasonCode": {
-                      "maxLength": 256,
-                      "minLength": 1,
-                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                      "type": "string"
-                    },
-                    "tool": {
-                      "const": "TaskUpdate",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "tool",
-                    "available",
-                    "reasonCode"
-                  ],
-                  "type": "object"
-                }
-              ]
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
             }
-          ],
-          "minItems": 27,
-          "type": "array"
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "write",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "write",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "edit",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "edit",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "glob",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "glob",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "grep",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "grep",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "bash",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "bash",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "pwsh",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "pwsh",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "job_output",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "job_output",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "job_list",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "job_list",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "job_kill",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "job_kill",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "ls",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "ls",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "web_fetch",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "web_fetch",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "web_search",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "web_search",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "AskUserQuestion",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "AskUserQuestion",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "EnterPlanMode",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "EnterPlanMode",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "ExitPlanMode",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "ExitPlanMode",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "Skill",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "Skill",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "subagent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "subagent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "fork_agent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "fork_agent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "interrupt_agent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "interrupt_agent",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "send_message",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "send_message",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "list_agents",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "list_agents",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "TaskCreate",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "TaskCreate",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "TaskGet",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "TaskGet",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "TaskList",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "TaskList",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": true,
+                  "type": "boolean"
+                },
+                "tool": {
+                  "const": "TaskUpdate",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "available": {
+                  "const": false,
+                  "type": "boolean"
+                },
+                "reasonCode": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "tool": {
+                  "const": "TaskUpdate",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "available",
+                "reasonCode"
+              ],
+              "type": "object"
+            }
+          ]
         }
-      ]
+      ],
+      "minItems": 27,
+      "type": "array"
     },
     "digest": {
       "pattern": "^[a-f0-9]{64}$",
@@ -2429,23 +1290,27 @@
       "items": {
         "anyOf": [
           {
-            "const": "Read",
+            "const": "read",
             "type": "string"
           },
           {
-            "const": "Write",
+            "const": "read_image",
             "type": "string"
           },
           {
-            "const": "Edit",
+            "const": "write",
             "type": "string"
           },
           {
-            "const": "Glob",
+            "const": "edit",
             "type": "string"
           },
           {
-            "const": "Grep",
+            "const": "glob",
+            "type": "string"
+          },
+          {
+            "const": "grep",
             "type": "string"
           },
           {
@@ -2473,11 +1338,11 @@
             "type": "string"
           },
           {
-            "const": "WebFetch",
+            "const": "web_fetch",
             "type": "string"
           },
           {
-            "const": "WebSearch",
+            "const": "web_search",
             "type": "string"
           },
           {
@@ -2494,66 +1359,6 @@
           },
           {
             "const": "Skill",
-            "type": "string"
-          },
-          {
-            "const": "Agent",
-            "type": "string"
-          },
-          {
-            "const": "TaskStop",
-            "type": "string"
-          },
-          {
-            "const": "SendMessage",
-            "type": "string"
-          },
-          {
-            "const": "TaskCreate",
-            "type": "string"
-          },
-          {
-            "const": "TaskGet",
-            "type": "string"
-          },
-          {
-            "const": "TaskList",
-            "type": "string"
-          },
-          {
-            "const": "TaskUpdate",
-            "type": "string"
-          },
-          {
-            "const": "read",
-            "type": "string"
-          },
-          {
-            "const": "read_image",
-            "type": "string"
-          },
-          {
-            "const": "write",
-            "type": "string"
-          },
-          {
-            "const": "edit",
-            "type": "string"
-          },
-          {
-            "const": "glob",
-            "type": "string"
-          },
-          {
-            "const": "grep",
-            "type": "string"
-          },
-          {
-            "const": "web_fetch",
-            "type": "string"
-          },
-          {
-            "const": "web_search",
             "type": "string"
           },
           {
@@ -2575,6 +1380,22 @@
           {
             "const": "list_agents",
             "type": "string"
+          },
+          {
+            "const": "TaskCreate",
+            "type": "string"
+          },
+          {
+            "const": "TaskGet",
+            "type": "string"
+          },
+          {
+            "const": "TaskList",
+            "type": "string"
+          },
+          {
+            "const": "TaskUpdate",
+            "type": "string"
           }
         ]
       },
@@ -2587,226 +1408,119 @@
       "type": "number"
     },
     "implementationCatalog": {
-      "anyOf": [
+      "additionalItems": false,
+      "items": [
         {
-          "additionalItems": false,
-          "items": [
-            {
-              "const": "Read",
-              "type": "string"
-            },
-            {
-              "const": "Write",
-              "type": "string"
-            },
-            {
-              "const": "Edit",
-              "type": "string"
-            },
-            {
-              "const": "Glob",
-              "type": "string"
-            },
-            {
-              "const": "Grep",
-              "type": "string"
-            },
-            {
-              "const": "bash",
-              "type": "string"
-            },
-            {
-              "const": "pwsh",
-              "type": "string"
-            },
-            {
-              "const": "job_output",
-              "type": "string"
-            },
-            {
-              "const": "job_list",
-              "type": "string"
-            },
-            {
-              "const": "job_kill",
-              "type": "string"
-            },
-            {
-              "const": "ls",
-              "type": "string"
-            },
-            {
-              "const": "WebFetch",
-              "type": "string"
-            },
-            {
-              "const": "WebSearch",
-              "type": "string"
-            },
-            {
-              "const": "AskUserQuestion",
-              "type": "string"
-            },
-            {
-              "const": "EnterPlanMode",
-              "type": "string"
-            },
-            {
-              "const": "ExitPlanMode",
-              "type": "string"
-            },
-            {
-              "const": "Skill",
-              "type": "string"
-            },
-            {
-              "const": "Agent",
-              "type": "string"
-            },
-            {
-              "const": "TaskStop",
-              "type": "string"
-            },
-            {
-              "const": "SendMessage",
-              "type": "string"
-            },
-            {
-              "const": "TaskCreate",
-              "type": "string"
-            },
-            {
-              "const": "TaskGet",
-              "type": "string"
-            },
-            {
-              "const": "TaskList",
-              "type": "string"
-            },
-            {
-              "const": "TaskUpdate",
-              "type": "string"
-            }
-          ],
-          "minItems": 24,
-          "type": "array"
+          "const": "read",
+          "type": "string"
         },
         {
-          "additionalItems": false,
-          "items": [
-            {
-              "const": "read",
-              "type": "string"
-            },
-            {
-              "const": "read_image",
-              "type": "string"
-            },
-            {
-              "const": "write",
-              "type": "string"
-            },
-            {
-              "const": "edit",
-              "type": "string"
-            },
-            {
-              "const": "glob",
-              "type": "string"
-            },
-            {
-              "const": "grep",
-              "type": "string"
-            },
-            {
-              "const": "bash",
-              "type": "string"
-            },
-            {
-              "const": "pwsh",
-              "type": "string"
-            },
-            {
-              "const": "job_output",
-              "type": "string"
-            },
-            {
-              "const": "job_list",
-              "type": "string"
-            },
-            {
-              "const": "job_kill",
-              "type": "string"
-            },
-            {
-              "const": "ls",
-              "type": "string"
-            },
-            {
-              "const": "web_fetch",
-              "type": "string"
-            },
-            {
-              "const": "web_search",
-              "type": "string"
-            },
-            {
-              "const": "AskUserQuestion",
-              "type": "string"
-            },
-            {
-              "const": "EnterPlanMode",
-              "type": "string"
-            },
-            {
-              "const": "ExitPlanMode",
-              "type": "string"
-            },
-            {
-              "const": "Skill",
-              "type": "string"
-            },
-            {
-              "const": "subagent",
-              "type": "string"
-            },
-            {
-              "const": "fork_agent",
-              "type": "string"
-            },
-            {
-              "const": "interrupt_agent",
-              "type": "string"
-            },
-            {
-              "const": "send_message",
-              "type": "string"
-            },
-            {
-              "const": "list_agents",
-              "type": "string"
-            },
-            {
-              "const": "TaskCreate",
-              "type": "string"
-            },
-            {
-              "const": "TaskGet",
-              "type": "string"
-            },
-            {
-              "const": "TaskList",
-              "type": "string"
-            },
-            {
-              "const": "TaskUpdate",
-              "type": "string"
-            }
-          ],
-          "minItems": 27,
-          "type": "array"
+          "const": "read_image",
+          "type": "string"
+        },
+        {
+          "const": "write",
+          "type": "string"
+        },
+        {
+          "const": "edit",
+          "type": "string"
+        },
+        {
+          "const": "glob",
+          "type": "string"
+        },
+        {
+          "const": "grep",
+          "type": "string"
+        },
+        {
+          "const": "bash",
+          "type": "string"
+        },
+        {
+          "const": "pwsh",
+          "type": "string"
+        },
+        {
+          "const": "job_output",
+          "type": "string"
+        },
+        {
+          "const": "job_list",
+          "type": "string"
+        },
+        {
+          "const": "job_kill",
+          "type": "string"
+        },
+        {
+          "const": "ls",
+          "type": "string"
+        },
+        {
+          "const": "web_fetch",
+          "type": "string"
+        },
+        {
+          "const": "web_search",
+          "type": "string"
+        },
+        {
+          "const": "AskUserQuestion",
+          "type": "string"
+        },
+        {
+          "const": "EnterPlanMode",
+          "type": "string"
+        },
+        {
+          "const": "ExitPlanMode",
+          "type": "string"
+        },
+        {
+          "const": "Skill",
+          "type": "string"
+        },
+        {
+          "const": "subagent",
+          "type": "string"
+        },
+        {
+          "const": "fork_agent",
+          "type": "string"
+        },
+        {
+          "const": "interrupt_agent",
+          "type": "string"
+        },
+        {
+          "const": "send_message",
+          "type": "string"
+        },
+        {
+          "const": "list_agents",
+          "type": "string"
+        },
+        {
+          "const": "TaskCreate",
+          "type": "string"
+        },
+        {
+          "const": "TaskGet",
+          "type": "string"
+        },
+        {
+          "const": "TaskList",
+          "type": "string"
+        },
+        {
+          "const": "TaskUpdate",
+          "type": "string"
         }
-      ]
+      ],
+      "minItems": 27,
+      "type": "array"
     },
     "revision": {
       "maxLength": 256,

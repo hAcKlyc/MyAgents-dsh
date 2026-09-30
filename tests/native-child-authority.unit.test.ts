@@ -1,3 +1,4 @@
+import type {} from "@deepseek-ai/dsh-subagent";
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { MessageId, freezeMessage } from "@deepseek-ai/dsh-llm";

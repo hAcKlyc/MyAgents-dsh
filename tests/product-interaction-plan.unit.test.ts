@@ -1,3 +1,4 @@
+import { modelToolNames } from "@myagents-dsh/protocol";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import type { FsTarget } from "@deepseek-ai/dsh-fs";
@@ -56,7 +57,7 @@ afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((path) => rm(path, { force: true, recursive: true })));
 });
 
-const effectiveTools = Object.freeze([
+const effectiveTools = modelToolNames([
   "Read", "Write", "Edit", "Glob", "Grep", "bash", "ls", "WebFetch", "WebSearch",
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
 ] as const);
@@ -64,10 +65,10 @@ const effectiveSet = new Set<string>(effectiveTools);
 const catalogBase = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
-  implementationCatalog: CANONICAL_TOOL_NAMES,
+  implementationCatalog: modelToolNames(CANONICAL_TOOL_NAMES),
   effectiveTools,
   revision: "interaction-plan-tools-v1",
-  diagnostics: Object.freeze(CANONICAL_TOOL_NAMES.map((tool) => Object.freeze(
+  diagnostics: Object.freeze(modelToolNames(CANONICAL_TOOL_NAMES).map((tool) => Object.freeze(
     effectiveSet.has(tool)
       ? { tool, available: true as const }
       : { tool, available: false as const, reasonCode: "not-installed-in-w2-a6-test" },
@@ -321,7 +322,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const state = await mounted();
     const entered = state.output(await state.execute("EnterPlanMode", {})) as Readonly<{ planPath: string }>;
-    expect((await state.execute("Write", {
+    expect((await state.execute("write", {
       content: "# Pending plan\n",
       file_path: entered.planPath,
     })).isError).toBe(false);
@@ -343,7 +344,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
   it("explains an unwritten plan and remains recoverable through Write or the Host selector", async () => {
     const state = await mounted();
     const entered = state.output(await state.execute("EnterPlanMode", {})) as Readonly<{ planPath: string }>;
-    const read = await state.execute("Read", { file_path: entered.planPath });
+    const read = await state.execute("read", { file_path: entered.planPath });
     expect(read.isError).toBe(true);
     expect(JSON.stringify(read.content)).toContain("Use Write");
     const exit = await state.execute("ExitPlanMode", {});
@@ -351,7 +352,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     expect(JSON.stringify(exit.content)).toContain("No plan has been written");
     expect(JSON.stringify(exit.content)).toContain(JSON.stringify(entered.planPath).slice(1, -1));
     expect(state.questionRequests).toHaveLength(0);
-    expect((await state.execute("Write", { file_path: entered.planPath, content: "# Synthetic plan\n" })).isError).toBe(false);
+    expect((await state.execute("write", { file_path: entered.planPath, content: "# Synthetic plan\n" })).isError).toBe(false);
     state.questionResponders.push(state.answer(["Approve"]));
     expect(state.output(await state.execute("ExitPlanMode", {}))).toMatchObject({ mode: "normal", disposition: "approved" });
   });
@@ -499,20 +500,20 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     expect(state.flushes).toContain("plan:interaction-plan-session");
     expect((await state.execute("DynamicMutation", {})).isError).toBe(true);
     expect(dynamicExecutions).toBe(1);
-    const write = await state.execute("Write", {
+    const write = await state.execute("write", {
       content: "# Accepted plan\n\n1. Keep DSH authoritative.\n",
       file_path: entered.planPath,
     });
     expect(write.isError, JSON.stringify(write)).toBe(false);
     state.useOperation(staleConcurrentOperation);
-    const staleBirth = await state.execute("Read", { file_path: entered.planPath });
+    const staleBirth = await state.execute("read", { file_path: entered.planPath });
     expect(staleBirth.isError).toBe(true);
     state.useOperation(admittedOperation);
 
     const idempotentEntry = state.output(await state.execute("EnterPlanMode", {}));
     expect(idempotentEntry).toEqual(entered);
     expect(state.session.snapshotEvents().filter(({ type }) => type === "plan/mode")).toHaveLength(1);
-    const read = await state.execute("Read", { file_path: entered.planPath });
+    const read = await state.execute("read", { file_path: entered.planPath });
     expect(read.isError).toBe(false);
 
     const planPrompt = (await state.context.systemPrompt.assemble({ agent: state.agent })).sections
@@ -530,7 +531,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
       rootCallId: rootCall,
       signal: new AbortController().signal,
     } as never)).not.toThrow();
-    expect((await state.execute("Write", {
+    expect((await state.execute("write", {
       content: "unapproved implementation",
       file_path: join(state.workspace, "implementation.txt"),
     })).isError).toBe(true);
@@ -757,7 +758,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     const entered = state.output(await state.execute("EnterPlanMode", {})) as Readonly<{ planPath: string }>;
     const largePlan = `# Large plan\n\n${"bounded plan detail\n".repeat(2_500)}`;
     expect(Buffer.byteLength(largePlan, "utf8")).toBeGreaterThan(32_768);
-    expect((await state.execute("Write", { content: largePlan, file_path: entered.planPath })).isError).toBe(false);
+    expect((await state.execute("write", { content: largePlan, file_path: entered.planPath })).isError).toBe(false);
     state.questionResponders.push(state.answer(["Approve"]));
     const approved = state.output(await state.execute("ExitPlanMode", {})) as Readonly<{
       disposition: string;

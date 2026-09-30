@@ -5,5 +5,5 @@ export * from "./errors.js";
 export * from "./peer.js";
 export * from "./session-read.js";
 export * from "./tool-catalog.js";
-export * from "./tool-strategy.js";
+export * from "./native-tool-names.js";
 export * from "./validation.js";

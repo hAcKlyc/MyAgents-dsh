@@ -297,7 +297,7 @@
         },
         "runtimeGeneration": "generation-1",
         "runtimeVersion": "0.1.11",
-        "schemaSha256": "5132dd4efccefba11ce90f5bd44fdc336a686936e1cce3a8b9e5eb5c35b389e5",
+        "schemaSha256": "651c420c55b1c8abfdbc0ec96b4d0946bec37de037975bb528de0cd17d5737f6",
         "sessionFormat": "dsh-session-events-v2"
       }
     },
@@ -326,27 +326,31 @@
         "runtimeSessionId": "runtime-session-1",
         "state": "ready",
         "toolCatalog": {
-          "contractSha256": "2328363c025a310a373d1b959b3c6cb33e864e2e63a86981c30e49c777f3437c",
+          "contractSha256": "11c30b274c2b94c5851a15ef8b454bfdca0ca2f5542c31afe73b0cd507b9b8c1",
           "diagnostics": [
             {
               "available": true,
-              "tool": "Read"
+              "tool": "read"
             },
             {
               "available": true,
-              "tool": "Write"
+              "tool": "read_image"
             },
             {
               "available": true,
-              "tool": "Edit"
+              "tool": "write"
             },
             {
               "available": true,
-              "tool": "Glob"
+              "tool": "edit"
             },
             {
               "available": true,
-              "tool": "Grep"
+              "tool": "glob"
+            },
+            {
+              "available": true,
+              "tool": "grep"
             },
             {
               "available": true,
@@ -374,11 +378,11 @@
             },
             {
               "available": true,
-              "tool": "WebFetch"
+              "tool": "web_fetch"
             },
             {
               "available": true,
-              "tool": "WebSearch"
+              "tool": "web_search"
             },
             {
               "available": true,
@@ -398,15 +402,23 @@
             },
             {
               "available": true,
-              "tool": "Agent"
+              "tool": "subagent"
             },
             {
               "available": true,
-              "tool": "TaskStop"
+              "tool": "fork_agent"
             },
             {
               "available": true,
-              "tool": "SendMessage"
+              "tool": "interrupt_agent"
+            },
+            {
+              "available": true,
+              "tool": "send_message"
+            },
+            {
+              "available": true,
+              "tool": "list_agents"
             },
             {
               "available": true,
@@ -425,28 +437,31 @@
               "tool": "TaskUpdate"
             }
           ],
-          "digest": "85b35e22cd3032c2a6f5dc4182d2f610cc73bfcd1fd7ccd28bace0acc2df4eb9",
+          "digest": "af657ffb261cd8d603e7725b6744c7837a40232157ebb1502f1b041364eb121a",
           "effectiveTools": [
-            "Read",
-            "Write",
-            "Edit",
-            "Glob",
-            "Grep",
+            "read",
+            "read_image",
+            "write",
+            "edit",
+            "glob",
+            "grep",
             "bash",
             "pwsh",
             "job_output",
             "job_list",
             "job_kill",
             "ls",
-            "WebFetch",
-            "WebSearch",
+            "web_fetch",
+            "web_search",
             "AskUserQuestion",
             "EnterPlanMode",
             "ExitPlanMode",
             "Skill",
-            "Agent",
-            "TaskStop",
-            "SendMessage",
+            "subagent",
+            "fork_agent",
+            "interrupt_agent",
+            "send_message",
+            "list_agents",
             "TaskCreate",
             "TaskGet",
             "TaskList",
@@ -454,26 +469,29 @@
           ],
           "formatVersion": 1,
           "implementationCatalog": [
-            "Read",
-            "Write",
-            "Edit",
-            "Glob",
-            "Grep",
+            "read",
+            "read_image",
+            "write",
+            "edit",
+            "glob",
+            "grep",
             "bash",
             "pwsh",
             "job_output",
             "job_list",
             "job_kill",
             "ls",
-            "WebFetch",
-            "WebSearch",
+            "web_fetch",
+            "web_search",
             "AskUserQuestion",
             "EnterPlanMode",
             "ExitPlanMode",
             "Skill",
-            "Agent",
-            "TaskStop",
-            "SendMessage",
+            "subagent",
+            "fork_agent",
+            "interrupt_agent",
+            "send_message",
+            "list_agents",
             "TaskCreate",
             "TaskGet",
             "TaskList",
@@ -1209,7 +1227,7 @@
     }
   ],
   "protocolVersion": "6.0.0",
-  "schemaSha256": "5132dd4efccefba11ce90f5bd44fdc336a686936e1cce3a8b9e5eb5c35b389e5",
+  "schemaSha256": "651c420c55b1c8abfdbc0ec96b4d0946bec37de037975bb528de0cd17d5737f6",
   "valid": [
     {
       "frame": {
@@ -1418,7 +1436,7 @@
           },
           "runtimeGeneration": "generation-1",
           "runtimeVersion": "0.1.11",
-          "schemaSha256": "5132dd4efccefba11ce90f5bd44fdc336a686936e1cce3a8b9e5eb5c35b389e5",
+          "schemaSha256": "651c420c55b1c8abfdbc0ec96b4d0946bec37de037975bb528de0cd17d5737f6",
           "sessionFormat": "dsh-session-events-v2"
         }
       },

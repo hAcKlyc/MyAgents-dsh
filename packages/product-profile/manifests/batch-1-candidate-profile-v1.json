@@ -34,7 +34,6 @@
       "@myagents-dsh/artifact-verifier": "0.0.0",
       "@myagents-dsh/checkpoint": "0.0.0",
       "@myagents-dsh/component-runtime": "0.0.0",
-      "@myagents-dsh/components-agents": "0.0.0",
       "@myagents-dsh/components-commands": "0.0.0",
       "@myagents-dsh/components-hooks": "0.0.0",
       "@myagents-dsh/components-host-tools": "0.0.0",
@@ -185,13 +184,13 @@
       "host/attachment/acquire",
       "host/attachment/release"
     ],
-    "schemaSha256": "5132dd4efccefba11ce90f5bd44fdc336a686936e1cce3a8b9e5eb5c35b389e5",
+    "schemaSha256": "651c420c55b1c8abfdbc0ec96b4d0946bec37de037975bb528de0cd17d5737f6",
     "version": "6.0.0"
   },
   "runtimeActivation": "workstream-evidence-only",
   "stage": "batch-1-w4-a11",
   "tools": {
     "contractProfile": "canonical-agent-experience-v1",
-    "contractSha256": "2328363c025a310a373d1b959b3c6cb33e864e2e63a86981c30e49c777f3437c"
+    "contractSha256": "11c30b274c2b94c5851a15ef8b454bfdca0ca2f5542c31afe73b0cd507b9b8c1"
   }
 }

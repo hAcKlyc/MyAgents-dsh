@@ -34,7 +34,7 @@ Ownership is split:
 
 - TokenMeter publishes `contextPressure` into `SessionProjectionRegistry`; it owns the projected-token
   math, while the registry owns the consistent cut/change feed;
-- `ProductTaskGraphService`, `ProductWorkService` and `ProductPlanService` own their snapshots;
+- `ProductTaskGraphService`, native DSH subagent catalog and `ProductPlanService` own their snapshots;
 - RuntimeEventProjector correlates those facts with the bound root Session and maps them to wire;
 - protocol `RuntimeEventSchema` owns exact required fields.
 
@@ -42,7 +42,7 @@ Provider-tool structure is durable assistant content owned by DSH. The projector
 wire-safe identities from exact durable fields, bounds input/result projection, fails closed on an
 uncorrelated or cross-route result, and preserves ordinary assistant text independently. Provider
 activity is observational: it cannot settle Product operations or mutate permission, interaction,
-TaskGraph, ProductWork, Plan, queue or root loading state.
+TaskGraph, native child lifecycle, Plan, queue or root loading state.
 
 Provider failure projection recognizes explicit error flags, typed errors, structured HTTP error
 statuses and errors inside bounded result arrays/envelopes (including JSON-serialized data).
@@ -50,10 +50,7 @@ It never infers status from decorative prose. A call with no corresponding resul
 a synthetic successful end event; the Host stops its animation at the turn boundary and shows the
 result as unconfirmed. A returned result indicates Provider completion, not content-quality approval.
 
-Operation correlation for durable projection and close uses ProductWork's exported Session-only
-root-context proof. It never calls `ProductSessionService.requireAgent()` or dynamically resolves
-ProductWork merely to interpret durable history; a closing generation therefore uses the same
-fail-closed ownership rule as cold validation and operation retirement.
+Operation correlation for durable projection and close uses `packages/tools-agent/src/context-provenance.ts`. The predicate reads native owned catalog/Inbox facts and delegates historical work reports to the read-only decoder. It does not require a live primary Agent or ProductWork service, so cold validation, closing projection and operation retirement classify the same facts.
 
 DSH records a native `agent/inbox/spliced` boundary removing an Inbox batch before publishing its synchronous per-message claim/cancellation
 receipts. Projection validates each receipt through the adjacent receipts of that same boundary,

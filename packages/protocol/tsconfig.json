@@ -17,7 +17,7 @@
     "src/session-read.ts",
     "src/tool-catalog-schema.ts",
     "src/tool-catalog.ts",
-    "src/tool-strategy.ts",
+    "src/native-tool-names.ts",
     "src/validation.ts",
     "generated/host-client.generated.ts",
     "generated/public-contract.generated.ts"

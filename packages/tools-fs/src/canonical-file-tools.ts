@@ -6,16 +6,7 @@ import { createReadTool, createReadImageTool, createWriteTool, createEditTool } 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
-import type { DshToolStrategy } from "@myagents-dsh/protocol";
-import { buildGlobCommand, buildGrepCommand, parseGlobArgs, parseGrepArgs } from "@deepseek-ai/dsh-tool-fs-search";
-import {
-  CANONICAL_TOOL_CONTRACTS,
-  CANONICAL_JSON_LIMITS,
-  canonicalInputSchemaForDsh,
-  canonicalOutputSchemaForDsh,
-  validateCanonicalToolInput,
-  validateCanonicalToolOutput,
-} from "@myagents-dsh/tool-contracts";
+import { CANONICAL_TOOL_CONTRACTS, canonicalInputSchemaForDsh, canonicalOutputSchemaForDsh, validateCanonicalToolInput, validateCanonicalToolOutput } from "@myagents-dsh/tool-contracts";
 import {
   ProductToolError,
   runWithProductToolExecutionDeadline,
@@ -26,7 +17,7 @@ import type {} from "@myagents-dsh/tools-process";
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
 import { isProxy } from "node:util/types";
-import { StringDecoder } from "node:string_decoder";
+
 import {
   LocalWorkspaceFileSystem,
   requireLocalWorkspaceFileSystem,
@@ -35,13 +26,11 @@ import {
 } from "./local-filesystem.js";
 
 export interface CanonicalFileToolsConfig {
-  readonly toolStrategy?: DshToolStrategy;
   readonly attachments: Readonly<{
     run<T>(context: ProductToolContext, action: () => Promise<T>): Promise<T>;
   }>;
 }
 
-type JsonValue = Parameters<ToolDefinition["output"]["render"]>[1];
 type JsonObject = Record<string, unknown>;
 
 const sha256 = (value: Uint8Array | string): string => createHash("sha256").update(value).digest("hex");
@@ -89,134 +78,23 @@ const truncateHeadCompleteLines = (
   return Object.freeze({ text: retained.join("\n"), truncated: true });
 };
 
-
-
-const renderJson = (_args: unknown, value: unknown): ContentBlock[] =>
-  textBlocks(JSON.stringify(value, undefined, 2));
-
 const renderText = (_args: unknown, value: unknown): ContentBlock[] => textBlocks(String(value));
 
-interface RipgrepLineRecord {
-  readonly context: boolean;
-  readonly line: number;
-  readonly matches: readonly string[];
-  readonly path: string;
-  readonly text: string;
-}
-
 type SearchRootAuthority = LocalSearchTargetAuthority;
-
-const ripgrepText = (value: unknown, description: string): string => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new ProductToolError("search_failed", `${description} is malformed`);
-  }
-  const record = value as JsonObject;
-  if (typeof record.text === "string") return record.text;
-  if (typeof record.bytes === "string") return "(line is not valid UTF-8)";
-  throw new ProductToolError("search_failed", `${description} is malformed`);
-};
-
-// Consume one native record at a time. Retention belongs to the tool projection;
-// a broad search must not fail because its raw transport exceeds an inline budget.
-const consumeSearchRecords = async (
-  stdout: AsyncIterable<Uint8Array>,
-  delimiters: readonly [string] | readonly [string, string],
-  consume: (fields: readonly string[]) => Promise<void>,
-): Promise<void> => {
-  const decoder = new StringDecoder("utf8");
-  let pending = "";
-  let fields: string[] = [];
-  const drain = async (): Promise<void> => {
-    let start = 0;
-    for (;;) {
-      const delimiter = fields.length === 0 || delimiters.length === 1 ? delimiters[0] : delimiters[1];
-      const end = pending.indexOf(delimiter, start);
-      if (end < 0) break;
-      fields.push(pending.slice(start, end));
-      start = end + delimiter.length;
-      if (fields.length === delimiters.length) {
-        await consume(fields);
-        fields = [];
-      }
-    }
-    pending = pending.slice(start);
-  };
-  for await (const chunk of stdout) {
-    pending += decoder.write(chunk);
-    await drain();
-  }
-  pending += decoder.end();
-  await drain();
-  if (pending.length > 0) fields.push(pending);
-  if (fields.length === delimiters.length) await consume(fields);
-  else if (fields.length > 0) throw new ProductToolError("search_failed", "ripgrep emitted an incomplete record");
-};
-
-const parseRipgrepLine = (line: string, onlyMatching: boolean): RipgrepLineRecord | undefined => {
-  if (line.length === 0) return;
-  let parsed: unknown;
-  try { parsed = JSON.parse(line); } catch (error) {
-    throw new ProductToolError("search_failed", "ripgrep emitted malformed JSON", { cause: error });
-  }
-  const record = asObject(parsed, "ripgrep record", "search_failed");
-  if (record.type !== "match" && record.type !== "context") return;
-  const data = asObject(record.data, "ripgrep match data", "search_failed");
-  if (!Number.isSafeInteger(data.line_number) || (data.line_number as number) < 1) {
-    throw new ProductToolError("search_failed", "ripgrep emitted an invalid line number");
-  }
-  const matches: string[] = [];
-  if (onlyMatching && record.type === "match") {
-    if (!Array.isArray(data.submatches)) {
-      throw new ProductToolError("search_failed", "ripgrep omitted required only-match submatches");
-    }
-    for (const submatch of data.submatches) {
-      matches.push(ripgrepText(asObject(submatch, "ripgrep submatch", "search_failed").match, "ripgrep submatch"));
-    }
-  }
-  return {
-    context: record.type === "context",
-    line: data.line_number as number,
-    matches,
-    path: ripgrepText(data.path, "ripgrep path"),
-    text: ripgrepText(data.lines, "ripgrep line").replace(/\r?\n$/u, ""),
-  };
-};
-
-const truncateGrepLine = (value: string): Readonly<{ text: string; truncated: boolean }> =>
-  value.length <= 500
-    ? Object.freeze({ text: value, truncated: false })
-    : Object.freeze({ text: `${value.slice(0, 500)}... [truncated]`, truncated: true });
-
-const searchDiagnostic = (value: string, fallback: string): string => {
-  const normalized = Array.from(value, (character) => {
-    const codePoint = character.codePointAt(0) ?? 0;
-    return codePoint <= 0x1f || codePoint === 0x7f ? " " : character;
-  }).join("").trim().slice(0, 1_024);
-  return normalized.length === 0 ? fallback : normalized;
-};
-
-const searchReportsInvalidPattern = (value: string): boolean =>
-  /(?:regex parse error|error parsing (?:glob|regex)|unrecognized file type|invalid (?:glob|pattern)|glob parse error)/iu.test(value);
 
 export class CanonicalFileTools extends Service {
   static inject = ["fs", "tools", "productProcesses", "productTools"];
   readonly #intents = new AsyncLocalStorage<Readonly<{ target: FsTarget; intent: FsWriteIntent }>>();
   readonly #attachments: CanonicalFileToolsConfig["attachments"];
-  readonly #toolStrategy: DshToolStrategy;
 
   constructor(ctx: Context, config: CanonicalFileToolsConfig) {
     super(ctx, "canonicalFileTools");
     const candidate: unknown = config;
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
-      || Reflect.ownKeys(candidate).length < 1 || Reflect.ownKeys(candidate).length > 2
-      || Reflect.ownKeys(candidate).some((key) => key !== "attachments" && key !== "toolStrategy")) {
+      || Reflect.ownKeys(candidate).length !== 1
+      || Reflect.ownKeys(candidate).some((key) => key !== "attachments")) {
       throw new TypeError("CanonicalFileTools requires one attachment publication authority");
     }
-    const configuredStrategy: unknown = config.toolStrategy;
-    if (configuredStrategy !== undefined && configuredStrategy !== "ma_first" && configuredStrategy !== "dsh_first") {
-      throw new TypeError("CanonicalFileTools tool strategy is invalid");
-    }
-    this.#toolStrategy = configuredStrategy ?? "ma_first";
     const attachmentsDescriptor = Object.getOwnPropertyDescriptor(candidate, "attachments");
     const attachments: unknown = attachmentsDescriptor !== undefined && "value" in attachmentsDescriptor
       ? attachmentsDescriptor.value as unknown
@@ -248,60 +126,53 @@ export class CanonicalFileTools extends Service {
       return Promise.resolve({ version: intent.version });
     });
     ctx.effect(() => {
-      const native = this.#toolStrategy === "dsh_first";
-      const disposers = native ? [
-        ctx.tools.register(this.#readDefinition(ctx, true)),
-        ctx.tools.register(this.#readImageDefinition(ctx)),
-        ctx.tools.register(this.#writeDefinition(ctx, true)),
-        ctx.tools.register(this.#editDefinition(ctx, true)),
-        ctx.tools.register(this.#lsDefinition(ctx)),
-      ] : [
+      const disposers = [
         ctx.tools.register(this.#readDefinition(ctx)),
+        ctx.tools.register(this.#readImageDefinition(ctx)),
         ctx.tools.register(this.#writeDefinition(ctx)),
         ctx.tools.register(this.#editDefinition(ctx)),
-        ctx.tools.register(this.#globDefinition(ctx)),
-        ctx.tools.register(this.#grepDefinition(ctx)),
         ctx.tools.register(this.#lsDefinition(ctx)),
       ];
       return () => { for (const dispose of disposers.reverse()) dispose(); };
     }, "canonical-file-tools");
-    if (this.#toolStrategy === "dsh_first") {
-      ctx.on("tools/execute", async (exec, next) => {
-        if (exec.name !== "glob" && exec.name !== "grep") return next();
-        const tool = exec.name === "glob" ? "Glob" : "Grep";
-        const args = asObject(exec.arguments, `${exec.name} input`);
-        const path = args.path as string | undefined;
-        const product = ctx.productTools.resolve(exec);
-        const before = await this.#searchRoot(ctx, product, tool, path);
-        await ctx.productTools.authorize(product, {
-          permissionClass: CANONICAL_TOOL_CONTRACTS[tool].permissionClass,
-          target: before.authorizationTarget.displayPath,
-          tool,
-        });
-        await this.#revalidateSearchRoot(ctx, product, tool, path, before);
-        const result = await runWithProductToolExecutionDeadline(product, CANONICAL_TOOL_CONTRACTS[tool].timeoutMs,
-          async (execution) => {
-            const upstream = exec.signal;
-            exec.signal = execution.signal;
-            try { return await ctx.productProcesses.runWithNativeSearch(execution, tool, next, before.root.displayPath); }
-            finally { exec.signal = upstream; }
-          });
-        await this.#revalidateSearchRoot(ctx, product, tool, path, before);
-        return result;
+    ctx.on("tools/execute", async (exec, next) => {
+      if (exec.name !== "glob" && exec.name !== "grep") return next();
+      const tool = exec.name === "glob" ? "Glob" : "Grep";
+      const args = asObject(exec.arguments, `${exec.name} input`);
+      const path = args.path as string | undefined;
+      const product = ctx.productTools.resolve(exec);
+      const before = await this.#searchRoot(ctx, product, tool, path);
+      await ctx.productTools.authorize(product, {
+        permissionClass: CANONICAL_TOOL_CONTRACTS[tool].permissionClass,
+        target: before.authorizationTarget.displayPath,
+        tool,
       });
-    }
+      await this.#revalidateSearchRoot(ctx, product, tool, path, before);
+      const result = await runWithProductToolExecutionDeadline(product, CANONICAL_TOOL_CONTRACTS[tool].timeoutMs,
+        async (execution) => {
+          const upstream = exec.signal;
+          exec.signal = execution.signal;
+          try { return await ctx.productProcesses.runWithNativeSearch(execution, tool, next, before.root.displayPath); }
+          finally { exec.signal = upstream; }
+        });
+      await this.#revalidateSearchRoot(ctx, product, tool, path, before);
+      return result;
+    });
+  }
+
+  #nativeDefinition(
+    native: ToolDefinition,
+    execute: (args: JsonObject, exec: ToolRunContext) => Promise<unknown>,
+  ): ToolDefinition {
+    return Object.freeze({ ...native, execute: async (value: unknown, exec: ToolRunContext) =>
+      execute(asObject(value, `${native.name} input`), exec) });
   }
 
   #definition(
-    name: "Read" | "Write" | "Edit" | "Glob" | "Grep" | "ls",
+    name: "ls",
     render: (args: unknown, value: unknown) => ContentBlock[],
     execute: (args: JsonObject, exec: ToolRunContext) => Promise<unknown>,
-    native?: ToolDefinition,
   ): ToolDefinition {
-    if (native !== undefined) {
-      return Object.freeze({ ...native, execute: async (value: unknown, exec: ToolRunContext) =>
-        execute(asObject(value, `${native.name} input`), exec) });
-    }
     const contract = CANONICAL_TOOL_CONTRACTS[name];
     return Object.freeze({
       description: contract.description,
@@ -319,15 +190,9 @@ export class CanonicalFileTools extends Service {
     });
   }
 
-  #readDefinition(ctx: Context, native = false): ToolDefinition {
+  #readDefinition(ctx: Context): ToolDefinition {
     const textTool: ToolDefinition = createReadTool(ctx, { limit: 2_000, maxLineLength: 2_000, maxBytes: 240_000, streamMinSize: 1024 * 1024 });
-    const imageTool: ToolDefinition = createReadImageTool(ctx);
-    return this.#definition("Read", (args, value) => {
-      const output = asObject(value, "Read output");
-      return output.kind === "image"
-        ? imageTool.output.render(args, value as JsonValue)
-        : textBlocks(output.content as string);
-    }, async (args, exec) => {
+    return this.#nativeDefinition(textTool, async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
       const path = args.file_path as string;
       const { target } = await this.#authorizedTarget(ctx, product, "Read", path, "read");
@@ -343,45 +208,28 @@ export class CanonicalFileTools extends Service {
         if (extension === ".pdf" || args.pages !== undefined) {
           throw new ProductToolError("unsupported_format", "Read does not extract PDF pages. Convert the PDF to text/Markdown with MyAgents document processing, then Read the converted file. In MyAgents, use the myagents-anydoc skill or `myagents anydoc convert --file <path> --wait --json`. Publishing a PDF attachment does not expose its contents to the model.");
         }
-        let image = !native && [".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(extension);
         const info = await this.#regularFile(ctx, target, product.signal);
         const input = { ...args, file_path: target.displayPath };
         const run = { ...exec, signal: product.signal };
-        let tool = image ? imageTool : textTool;
         const executePinned = () => requireLocalWorkspaceFileSystem(ctx.fs).runWithAuthorizedTarget(
-          target, () => Promise.resolve(tool.execute(input, run)),
+          target, () => Promise.resolve(textTool.execute(input, run)),
         );
-        const execute = () => image ? this.#attachments.run(product, executePinned) : executePinned();
-        let value: JsonObject;
-        try {
-          value = asObject(await execute(), "official Read output");
-        } catch (error) {
-          // Normalized attachment paths may have no suffix. Let the stock image
-          // reader sniff them only after the stock text reader rejects binary data.
-          if (native || image || extension !== "" || !(error instanceof FsError) || error.code !== "FS_NOT_TEXT") throw error;
-          image = true;
-          tool = imageTool;
-          value = asObject(await execute(), "official Read output");
-        }
+        const value = asObject(await executePinned(), "official Read output");
         // Receipts are product mutation authority, committed only with the durable
         // tool result. Large/partial reads remain useful without authorizing overwrite.
-        const bytes = info.size !== undefined && info.size <= (image ? 20 : 8) * 1024 * 1024
+        const bytes = info.size !== undefined && info.size <= 8 * 1024 * 1024
           ? await ctx.fs.readBytes(target, product.signal, 20 * 1024 * 1024) : undefined;
         const settled = await ctx.fs.stat(target, product.signal);
         if (settled?.version !== info.version) throw new ProductToolError("stale_read", "File changed during Read; read it again");
-        const lines = image ? [] : value.lines as { number: number; text: string }[];
+        const lines = value.lines as { number: number; text: string }[];
         const raw = bytes === undefined ? undefined : new TextDecoder("utf-8").decode(bytes).replace(/\r\n/gu, "\n").replace(/\n$/u, "");
-        const complete = bytes !== undefined && (image || (value.offset === 1 && lines.map((line) => line.text).join("\n") === raw));
+        const complete = bytes !== undefined && (value.offset === 1 && lines.map((line) => line.text).join("\n") === raw);
         if (bytes !== undefined) ctx.productTools.stageRead(exec, product, {
           complete, sha256: sha256(bytes), targetKey: String(target.targetKey), version: String(info.version),
         });
-        if (native) return value;
-        if (image) return { path: target.displayPath, kind: "image", image: value.image };
-        const content = tool.output.render(input, value as JsonValue).filter((block) => block.type === "text").map((block) => block.text).join("\n");
-        return { path: target.displayPath, kind: "text", mimeType: "text/plain", offset: value.offset,
-          lineCount: lines.length, truncated: !complete, content };
+        return value;
       });
-    }, native ? textTool : undefined);
+    });
   }
 
   #readImageDefinition(ctx: Context): ToolDefinition {
@@ -404,19 +252,21 @@ export class CanonicalFileTools extends Service {
         const value = await this.#attachments.run(execution, () =>
           requireLocalWorkspaceFileSystem(ctx.fs).runWithAuthorizedTarget(target,
             () => Promise.resolve(official.execute(input, { ...exec, signal: execution.signal }))));
+        const bytes = info.size !== undefined && info.size <= 8 * 1024 * 1024
+          ? await ctx.fs.readBytes(target, execution.signal, 8 * 1024 * 1024) : undefined;
         const settled = await ctx.fs.stat(target, execution.signal);
         if (settled?.version !== info.version) throw new ProductToolError("stale_read", "Image changed during read");
+        if (bytes !== undefined) ctx.productTools.stageRead(exec, execution, {
+          complete: true, sha256: sha256(bytes), targetKey: String(target.targetKey), version: String(info.version),
+        });
         return value;
       });
     } });
   }
 
-  #writeDefinition(ctx: Context, native = false): ToolDefinition {
+  #writeDefinition(ctx: Context): ToolDefinition {
     const official: ToolDefinition = createWriteTool(ctx);
-    return this.#definition("Write", (args, value) => {
-      const output = asObject(value, "Write output");
-      return official.output.render(args, { path: String(output.path), operation: output.created === true ? "create" : "update" });
-    }, async (args, exec) => {
+    return this.#nativeDefinition(official, async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
       const path = args.file_path as string;
       const authority = await this.#authorizedTarget(ctx, product, "Write", path, "write");
@@ -501,14 +351,7 @@ export class CanonicalFileTools extends Service {
             targetKey: String(target.targetKey),
             version: String((await this.#regularFile(ctx, target, product.signal)).version),
           });
-          if (native) return outcome;
-          return Object.freeze({
-            bytes: Buffer.byteLength(content, "utf8"),
-            ...(checkpoint === undefined || !authority.checkpointEligible ? {} : { checkpointReceipt: checkpoint.receipt }),
-            created: outcome.operation === "create",
-            path: target.displayPath,
-            sha256: afterSha256,
-          });
+          return outcome;
         } catch (error) {
           if (published) {
             await settleCheckpoint(checkpoint, settlement, "conflict");
@@ -534,12 +377,12 @@ export class CanonicalFileTools extends Service {
       } finally {
         release();
       }
-    }, native ? official : undefined);
+    });
   }
 
-  #editDefinition(ctx: Context, native = false): ToolDefinition {
+  #editDefinition(ctx: Context): ToolDefinition {
     const official: ToolDefinition = createEditTool(ctx);
-    return this.#definition("Edit", (args, value) => official.output.render(args, value as JsonValue), async (args, exec) => {
+    return this.#nativeDefinition(official, async (args, exec) => {
       const product = ctx.productTools.resolve(exec);
       const path = args.file_path as string;
       const authority = await this.#authorizedTarget(ctx, product, "Edit", path, "write");
@@ -590,8 +433,6 @@ export class CanonicalFileTools extends Service {
           throw new ProductToolError("mutation_conflict", "Edit match count changed while awaiting execution; Read the file and retry Edit with the intended replacement range");
         }
         const next = currentEdit.next;
-        const externalChangesRetained = prior.version !== String(currentInfo.version)
-          || prior.sha256 !== sha256(currentBytes);
         const afterSha256 = sha256(next);
         const checkpoint = authority.checkpointEligible
           ? await ctx.productTools.prepareCheckpoint(product, {
@@ -617,14 +458,7 @@ export class CanonicalFileTools extends Service {
             targetKey: String(target.targetKey),
             version: String((await this.#regularFile(ctx, target, product.signal)).version),
           });
-          if (native) return officialValue;
-          return Object.freeze({
-            ...(checkpoint === undefined ? {} : { checkpointReceipt: checkpoint.receipt }),
-            externalChangesRetained,
-            path: target.displayPath,
-            replacements: args.replace_all === true ? replacements : 1,
-            sha256: afterSha256,
-          });
+          return officialValue;
         } catch (error) {
           if (published) {
             await settleCheckpoint(checkpoint, settlement, "conflict");
@@ -650,7 +484,7 @@ export class CanonicalFileTools extends Service {
       } finally {
         release();
       }
-    }, native ? official : undefined);
+    });
   }
 
   #editContent(before: string, oldString: string, newString: string, replaceAll: boolean, path: string): Readonly<{ next: string; replacements: number }> {
@@ -667,200 +501,6 @@ export class CanonicalFileTools extends Service {
       throw new ProductToolError("mutation_conflict", "Edit result exceeds the mutation bound");
     }
     return { next, replacements };
-  }
-
-  #globDefinition(ctx: Context): ToolDefinition {
-    return this.#definition("Glob", renderJson, async (args, exec) => {
-      const product = ctx.productTools.resolve(exec);
-      const rootBefore = await this.#searchRoot(ctx, product, "Glob", args.path as string | undefined);
-      await ctx.productTools.authorize(product, {
-        permissionClass: CANONICAL_TOOL_CONTRACTS.Glob.permissionClass,
-        target: rootBefore.authorizationTarget.displayPath,
-        tool: "Glob",
-      });
-      return await runWithProductToolExecutionDeadline(
-        product,
-        CANONICAL_TOOL_CONTRACTS.Glob.timeoutMs,
-        async (product) => {
-      const root = await this.#revalidateSearchRoot(
-        ctx,
-        product,
-        "Glob",
-        args.path as string | undefined,
-        rootBefore,
-      );
-      let command: string[];
-      try {
-        command = buildGlobCommand(parseGlobArgs({ pattern: args.pattern as string, path: "." }));
-      } catch (error) {
-        throw new ProductToolError("invalid_pattern", "Glob pattern is invalid", { cause: error });
-      }
-      command = command.map((argument) => argument === "--sort=modified" ? "--sortr=modified" : argument);
-      const separator = command.indexOf("--");
-      if (separator < 0) command.push("--null");
-      else command.splice(separator, 0, "--null");
-      const filenames: string[] = [];
-      const truncation = { value: false };
-      let bytes = 2;
-      const result = await ctx.productProcesses.runSearch(
-        product,
-        Object.freeze({ target: root.root, identity: root.rootIdentity }),
-        "Glob",
-        command,
-        async (stdout) => consumeSearchRecords(stdout, ["\0"], async ([value]) => {
-          if (!value) return;
-          if (filenames.length >= 100 || truncation.value) { truncation.value = true; return; }
-          const path = await this.#searchResultPath(ctx, product, root.root, value);
-          const size = Buffer.byteLength(JSON.stringify(path), "utf8") + (filenames.length > 0 ? 1 : 0);
-          if (bytes + size > 60_000) { truncation.value = true; return; }
-          filenames.push(path);
-          bytes += size;
-        }),
-      );
-      if (result.exitCode !== 0 && result.exitCode !== 1) {
-        throw new ProductToolError(
-          searchReportsInvalidPattern(result.stderr) ? "invalid_pattern" : "search_failed",
-          searchReportsInvalidPattern(result.stderr)
-            ? "Glob pattern is invalid. Check the glob syntax and try a simpler pattern."
-            : searchDiagnostic(result.stderr, "Glob search failed"),
-        );
-      }
-      return Object.freeze({
-        durationMs: result.durationMs,
-        filenames: Object.freeze(filenames),
-        numFiles: filenames.length,
-        truncated: truncation.value,
-        ...(truncation.value ? { hint: "Narrow the glob pattern or choose a more specific path to see omitted matches." } : {}),
-      });
-        },
-      );
-    });
-  }
-
-  #grepDefinition(ctx: Context): ToolDefinition {
-    return this.#definition("Grep", renderJson, async (args, exec) => {
-      const product = ctx.productTools.resolve(exec);
-      const rootBefore = await this.#searchRoot(ctx, product, "Grep", args.path as string | undefined);
-      await ctx.productTools.authorize(product, {
-        permissionClass: CANONICAL_TOOL_CONTRACTS.Grep.permissionClass,
-        target: rootBefore.authorizationTarget.displayPath,
-        tool: "Grep",
-      });
-      return await runWithProductToolExecutionDeadline(
-        product,
-        CANONICAL_TOOL_CONTRACTS.Grep.timeoutMs,
-        async (product) => {
-      const root = await this.#revalidateSearchRoot(
-        ctx,
-        product,
-        "Grep",
-        args.path as string | undefined,
-        rootBefore,
-      );
-      let base: string[];
-      try {
-        base = buildGrepCommand(parseGrepArgs({
-          pattern: args.pattern as string,
-          path: root.argument,
-          ...(args.glob === undefined ? {} : { include: args.glob as string }),
-        }));
-      } catch (error) {
-        throw new ProductToolError("invalid_pattern", "Grep expression or glob is invalid", { cause: error });
-      }
-      const mode = (args.output_mode as "content" | "files_with_matches" | "count" | undefined)
-        ?? "files_with_matches";
-      if (mode !== "content") base = base.filter(argument => argument !== "--json");
-      const separator = base.indexOf("--");
-      const options: string[] = ["--no-config", mode === "files_with_matches" ? "--sortr=modified" : "--sort=path"];
-      if (mode === "files_with_matches") options.push("--files-with-matches", "--null");
-      if (mode === "count") options.push("--count", "--null", "--with-filename");
-      if (mode === "content" && args["-n"] !== false) options.push("--line-number");
-      if (args["-i"] === true) options.push("--ignore-case");
-      if (mode === "content" && args["-o"] === true) options.push("--only-matching");
-      if (args.multiline === true) options.push("--multiline", "--multiline-dotall");
-      if (typeof args.type === "string") options.push(`--type=${args.type}`);
-      const before = args["-B"] as number | undefined;
-      const after = args["-A"] as number | undefined;
-      const around = (args.context ?? args["-C"]) as number | undefined;
-      if (mode === "content") {
-        if (around !== undefined) options.push(`--context=${around}`);
-        else {
-          if (before !== undefined) options.push(`--before-context=${before}`);
-          if (after !== undefined) options.push(`--after-context=${after}`);
-        }
-      }
-      const command = separator < 0
-        ? [...base, ...options]
-        : [...base.slice(0, separator), ...options, ...base.slice(separator)];
-      const offset = (args.offset as number | undefined) ?? 0;
-      const limit = (args.head_limit as number | undefined) ?? 250;
-      const capacity = limit === 0 ? CANONICAL_JSON_LIMITS.maxArrayItems : Math.min(limit, CANONICAL_JSON_LIMITS.maxArrayItems);
-      const selected: JsonObject[] = [];
-      let ordinal = 0;
-      let bytes = 2;
-      let full = false;
-      let truncated = false;
-      // Resolve only paths that enter the visible page, once per contiguous file.
-      let lastPath: string | undefined;
-      let resolvedPath = "";
-      const retain = async (path: string, fields: JsonObject): Promise<void> => {
-        if (ordinal++ < offset) return;
-        if (selected.length >= capacity || full) { truncated = true; return; }
-        if (lastPath !== path) {
-          resolvedPath = await this.#searchResultPath(ctx, product, root.root, path);
-          lastPath = path;
-        }
-        const record = { ...fields, path: resolvedPath };
-        const size = Buffer.byteLength(JSON.stringify(record), "utf8") + (selected.length > 0 ? 1 : 0);
-        if (bytes + size > 250_000) { full = true; truncated = true; return; }
-        selected.push(record);
-        bytes += size;
-      };
-      const result = await ctx.productProcesses.runSearch(
-        product,
-        Object.freeze({ target: root.root, identity: root.rootIdentity }),
-        "Grep",
-        command,
-        async (stdout) => consumeSearchRecords(stdout,
-          mode === "content" ? ["\n"] : mode === "count" ? ["\0", "\n"] : ["\0"],
-          async ([value, count]) => {
-            if (!value) return;
-            if (mode === "files_with_matches") { await retain(value, {}); return; }
-            if (mode === "count") {
-              const total = Number(count);
-              if (!Number.isSafeInteger(total) || total < 0) throw new ProductToolError("search_failed", "ripgrep emitted an invalid count");
-              await retain(value, { count: total });
-              return;
-            }
-            const record = parseRipgrepLine(value, args["-o"] === true);
-            if (record === undefined) return;
-            const texts = args["-o"] === true ? (record.context ? [] : record.matches) : [record.text];
-            for (const text of texts) {
-              const bounded = truncateGrepLine(text);
-              if (bounded.truncated && ordinal >= offset && selected.length < capacity && !full) truncated = true;
-              await retain(record.path, { ...(args["-n"] === false ? {} : { line: record.line }), text: bounded.text });
-            }
-          }),
-      );
-      if (result.exitCode !== 0 && result.exitCode !== 1) {
-        throw new ProductToolError(
-          searchReportsInvalidPattern(result.stderr) ? "invalid_pattern" : "search_failed",
-          searchReportsInvalidPattern(result.stderr)
-            ? "Grep expression or glob is invalid. Check its syntax and try a simpler pattern."
-            : searchDiagnostic(result.stderr, "Grep search failed"),
-        );
-      }
-      return Object.freeze({
-        durationMs: result.durationMs,
-        limit,
-        mode,
-        offset,
-        records: Object.freeze(selected),
-        truncated,
-      });
-        },
-      );
-    });
   }
 
   #lsDefinition(ctx: Context): ToolDefinition {
@@ -999,28 +639,6 @@ export class CanonicalFileTools extends Service {
       throw new ProductToolError("path_denied", `${tool} root changed during authorization`);
     }
     return after;
-  }
-
-  async #searchResultPath(
-    ctx: Context,
-    product: ProductToolContext,
-    searchRoot: FsTarget,
-    value: string,
-  ): Promise<string> {
-    try {
-      const local = requireLocalWorkspaceFileSystem(ctx.fs);
-      const target = await local.resolveRelativeChild(searchRoot, value, product.signal);
-      const workspace = await ctx.fs.resolve(product.environment.workspace.canonicalRoot, {
-        signal: product.signal,
-      });
-      if (workspace.displayPath !== product.environment.workspace.canonicalRoot) {
-        throw new FsError("workspace root identity changed", "FS_STALE_VERSION");
-      }
-      return local.contains(workspace, target) ? local.projectRelative(workspace, target) : target.displayPath;
-    } catch (error) {
-      throwIfProductToolAborted(product.signal);
-      throw new ProductToolError("search_failed", "search path projection failed closed", { cause: error });
-    }
   }
 
   async #authorizedTarget(

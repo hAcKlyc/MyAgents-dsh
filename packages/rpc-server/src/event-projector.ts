@@ -25,8 +25,7 @@ import {
 import type { ProductSessionService } from "@myagents-dsh/runtime-product";
 import type { ProductTaskGraphSnapshot, ProductTaskList } from "@myagents-dsh/task-graph";
 import {
-  ownsProductWorkRootContextMessage,
-  type ProductWorkSnapshot,
+  ownsRootContextMessage,
 } from "@myagents-dsh/tools-agent";
 import type { ProductPlanSnapshot } from "@myagents-dsh/tools-interaction";
 
@@ -524,39 +523,6 @@ const taskGraphProjection = (
   }),
 });
 
-export const projectWorkStatusSnapshot = (snapshot: ProductWorkSnapshot): Extract<RuntimeEvent, { kind: "work" }>["snapshot"] => Object.freeze({
-      taskId: snapshot.taskId,
-      parentToolCallId: snapshot.parentToolCallId,
-      agentId: snapshot.agentId,
-      agentType: snapshot.agentType,
-      description: snapshot.description,
-      mode: snapshot.mode,
-      model: snapshot.model,
-      modelRoute: snapshot.modelRoute,
-      tree: snapshot.tree,
-      lastActivityAt: snapshot.lastActivityAt,
-      state: snapshot.state,
-      activation: snapshot.activation,
-      handleState: snapshot.handleState,
-      handleRevision: snapshot.handleRevision,
-      ...(snapshot.context === undefined ? {} : { context: snapshot.context }),
-      ...(snapshot.totalUsage === undefined ? {} : { totalUsage: { ...snapshot.totalUsage, costUsd: null } }),
-      startedAt: snapshot.startedAt,
-      ...(snapshot.finishedAt === undefined ? {} : { finishedAt: snapshot.finishedAt }),
-      ...(snapshot.result === undefined ? {} : { result: snapshot.result }),
-      ...(snapshot.resultTruncated === undefined ? {} : {
-        resultTruncated: snapshot.resultTruncated,
-      }),
-      ...(snapshot.usage === undefined ? {} : {
-        usage: Object.freeze({ ...snapshot.usage, costUsd: null }),
-      }),
-});
-
-const workProjection = (snapshot: ProductWorkSnapshot): RuntimeEventProjection => Object.freeze({
-  toolCallId: snapshot.parentToolCallId,
-  event: Object.freeze({ kind: "work", snapshot: projectWorkStatusSnapshot(snapshot) }),
-});
-
 const planProjection = (
   snapshot: ProductPlanSnapshot,
 ): RuntimeEventProjection => Object.freeze({
@@ -941,7 +907,7 @@ export class RuntimeEventProjector {
           session,
           value as ContextPressureValue,
           sequence,
-          (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId, this.#config.context),
+          (source, messageId) => ownsRootContextMessage(session, source, messageId, this.#config.context),
         );
         if (projection !== undefined) this.#capture(sequence, projection);
       } catch (error) {
@@ -1033,7 +999,6 @@ export class RuntimeEventProjector {
       const projectionCut = registry.snapshot(session);
       const sharedTaskGraph = this.#config.context.productTaskGraph.snapshot(agent, "shared");
       const personalTaskGraph = this.#config.context.productTaskGraph.snapshot(agent, "personal");
-      const work = this.#config.context.get("productWork")?.snapshot() ?? [];
       const plan = this.#config.context.productPlan.snapshot(agent);
       if (session.seq !== head || projectionCut.asOfSeq !== head - 1) {
         throw new ProtocolError(
@@ -1066,12 +1031,11 @@ export class RuntimeEventProjector {
             session,
             pressure,
             projectionCut.asOfSeq,
-            (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId, this.#config.context),
+            (source, messageId) => ownsRootContextMessage(session, source, messageId, this.#config.context),
           );
       if (context !== undefined) baseline.push(context);
       baseline.push(taskGraphProjection(personalTaskGraph, String(agent.id), "personal"));
       baseline.push(taskGraphProjection(sharedTaskGraph, String(agent.id), "shared"));
-      for (const snapshot of work) baseline.push(workProjection(snapshot));
       baseline.push(planProjection(plan));
       const emittedAt = new Date().toISOString();
       for (const projection of baseline) {
@@ -1102,17 +1066,9 @@ export class RuntimeEventProjector {
 
   #captureProductStatus(session: Session, source: SessionEvent): void {
     const isTask = source.type === "myagents/task/created" || source.type === "myagents/task/updated";
-    const isWork = source.type === "myagents/work/created"
-      || source.type === "myagents/work/started"
-      || source.type === "myagents/work/phase"
-      || source.type === "myagents/work/reopened"
-      || source.type === "myagents/work/activated"
-      || source.type === "myagents/work/epoch"
-      || source.type === "myagents/work/stopping"
-      || source.type === "myagents/work/settled";
     const sourceType: string = source.type;
     const isPlan = sourceType === "plan/mode";
-    if (!isTask && !isWork && !isPlan) return;
+    if (!isTask && !isPlan) return;
     const agent = this.#config.productSession.requireAgent();
     if (agent.session !== session) {
       throw new ProtocolError(
@@ -1125,9 +1081,6 @@ export class RuntimeEventProjector {
       this.#capture(source.seq, taskGraphProjection(
         this.#config.context.productTaskGraph.snapshot(agent, list), String(agent.id), list,
       ));
-    } else if (isWork) {
-      const snapshot = this.#config.context.get("productWork")?.snapshotForEvent(source);
-      if (snapshot !== undefined) this.#capture(source.seq, workProjection(snapshot));
     } else if (isPlan) {
       this.#capture(source.seq, planProjection(this.#config.context.productPlan.snapshot(agent)));
     }
@@ -1230,7 +1183,7 @@ export class RuntimeEventProjector {
     if (frame.type === "start") {
       if (this.#liveAttempt !== undefined) throw new TypeError("assistant attempts overlap");
       const operation = operationForTurn(session, frame.turn, session.seq - 1,
-        (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId, this.#config.context));
+        (source, messageId) => ownsRootContextMessage(session, source, messageId, this.#config.context));
       if (operation === undefined) throw new TypeError("assistant attempt lacks its Product operation owner");
       const boundary = operationTurnBoundary(session.snapshotEvents(), operation, frame.turn);
       if (boundary.end !== undefined) throw new TypeError("assistant attempt began after its turn ended");
@@ -1388,7 +1341,7 @@ export class RuntimeEventProjector {
       ...projectSessionEvent(
         session,
         source,
-        (messageSource, messageId) => ownsProductWorkRootContextMessage(
+        (messageSource, messageId) => ownsRootContextMessage(
           session,
           messageSource,
           messageId,

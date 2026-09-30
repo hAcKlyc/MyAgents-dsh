@@ -779,7 +779,7 @@ export class SdkOperationService extends Service {
     return this.serialize(() => this.followUpValue(params, signal));
   }
 
-  /** Trusted ProductWork composition port; this is never an RPC or model tool. */
+  /** Trusted collaboration composition port; this is never an RPC or model tool. */
   deliverContext(
     agent: Agent,
     value: MethodParams<"turn/start">,
@@ -870,7 +870,7 @@ export class SdkOperationService extends Service {
         await this.flush(agent);
       }
       if (!this.configValue.ownsRootContextMessage(agent, message.source, message.id)) {
-        throw this.fence(new Error("collaboration insertion lacks durable ProductWork ownership"));
+        throw this.fence(new Error("collaboration insertion lacks durable native message ownership"));
       }
       if (claimedTurn !== undefined) return "delivered";
       const current = this.foldValue(agent).operations.find((candidate) => candidate.clientOperationId === operation.clientOperationId);

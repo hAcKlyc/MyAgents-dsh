@@ -2,16 +2,16 @@
 type: technical-architecture
 status: implemented
 module: tool-runtime-and-policy
-updated: 2026-09-04
+updated: 2026-09-30
 ---
 
 # Tool runtime and policy
 
 ## 1. Purpose and authority
 
-This module owns the Agent tool experience exposed by the official Runtime: tool definitions, visibility, policy, permissions, execution, output, plan/task state, and child/background work. The Product policy contracts come from `packages/tool-contracts/src/contract-source.ts`; the `dsh_first` model schemas and result renderers come from the installed DSH tool packages.
+This module owns the Agent tool experience exposed by the official Runtime: tool definitions, visibility, policy, permissions, execution, output, plan/task state, and child/background work. The Product policy contracts come from `packages/tool-contracts/src/contract-source.ts`; the native model schemas and result renderers come from the installed DSH tool packages.
 
-The build chooses `ma_first` or `dsh_first` in `apps/runtime-server/src/tool-strategy.build.ts`. The selection is compiled into one tool catalog and immutable artifact, never changed by a Session or Host setting. `dsh_first` is the current source selection. It replaces `Read`, `Write`, `Edit`, `Glob`, `Grep`, `WebFetch`, and `WebSearch` with DSH `read`, `write`, `edit`, `glob`, `grep`, `web_fetch`, and `web_search`, and exposes DSH `read_image`. Product `ExitPlanMode` remains; DSH `exit_plan_mode` is not installed.
+The Runtime has one fixed tool composition: DSH `read`, `read_image`, `write`, `edit`, `glob`, `grep`, `web_fetch`, `web_search`, and native subagent tools, plus required MyAgents tools. There is no build or Session strategy switch. Product `ExitPlanMode` remains; DSH `exit_plan_mode` is not installed.
 
 ### 1.1 Relationships
 
@@ -22,7 +22,7 @@ The build chooses `ma_first` or `dsh_first` in `apps/runtime-server/src/tool-str
 
 ## 2. Single execution pipeline
 
-All model-visible tools register into the one DSH `ctx.tools` registry and execute through one ToolRuntime. A MyAgents compatibility tool may replace a stock DSH definition, but it does not create a parallel tool engine.
+All model-visible tools register into the one DSH `ctx.tools` registry and execute through one ToolRuntime. MyAgents policy adapters invoke public DSH executors in that pipeline; custom definitions provide product capabilities absent from DSH.
 
 ```text
 visible definition + frozen operation scope
@@ -31,26 +31,26 @@ visible definition + frozen operation scope
   -> validate transformed input against the visible definition
   -> commit authoritative assistant/tool-call representation
   -> DSH ToolRuntime scheduling and body dispatch
-       -> canonical input validation
+       -> visible native schema or custom-tool input validation
        -> operation / catalog / origin / Plan guards
        -> tool-specific workspace / identity guards
        -> permission, PermissionRequest Hook and interaction without a human-decision deadline
        -> post-authorization executor deadline
        -> current-authority revalidation and execution
-       -> canonical output validation
+       -> visible native schema or custom-tool output validation
   -> PostToolUse transform and transformed-output validation
   -> durable DSH tool result
 ```
 
 Visibility and permission remain separate. Hiding a tool does not authorize execution, and a visible definition still revalidates workspace, revision, mode, origin, and hard policy at the delayed execution boundary.
 
-Human waiting is not execution time. In `dsh_first`, the selected stock definitions declare timeouts, but the composition excludes those names from the outer DSH timeout policy and starts Product execution deadlines after permission. Unchanged tools retain the DSH timeout policy. Transport registration/response, network/provider calls, MCP calls, process work and cleanup retain their own bounded owners.
+Human waiting is not execution time. For the native tools, the selected stock definitions declare timeouts, but the composition excludes those names from the outer DSH timeout policy and starts Product execution deadlines after permission. Unchanged tools retain the DSH timeout policy. Transport registration/response, network/provider calls, MCP calls, process work and cleanup retain their own bounded owners.
 
 The four permission modes, durable exact-rule lifecycle, blocking interaction path and Host-controlled Plan transition are specified in [Permissions and interactions](./permissions-interactions-and-plan.md). This guide owns their placement in the tool pipeline; that guide owns their detailed policy semantics.
 
 ## 3. Canonical catalog and owners
 
-The Product contract catalog has twenty-four policy slots. The selected model catalog contains twenty-seven implementation names under `dsh_first`: `read_image`, `fork_agent`, and `list_agents` add definitions beyond one-to-one replacements. One Shell dialect is unavailable on each platform, leaving twenty-six effective names. Under `ma_first`, the twenty-four contract names remain the implementation catalog, with twenty-three effective names per platform.
+The Product contract catalog has twenty-four internal policy slots. The model catalog expands these to twenty-seven native/custom definitions; one Shell dialect is unavailable on each platform, leaving twenty-six effective tools. Uppercase policy keys such as `Read`, `Agent`, and `TaskStop` remain permission/Plan/checkpoint identifiers, not registered compatibility tools. Installed DSH definitions own their actual model schemas and renderers.
 
 ```text
 Read, Write, Edit, Glob, Grep, bash, pwsh, job_output, job_list, job_kill, ls,
@@ -67,11 +67,11 @@ TaskCreate, TaskGet, TaskList, TaskUpdate
 | Bash and managed process/search executor | `packages/tools-process/` |
 | Web tools | `packages/tools-web/` |
 | Questions and plan transitions | `packages/tools-interaction/` |
-| Skills and legacy `ma_first` Agent tools | `packages/tools-agent/` |
-| Current `dsh_first` child tools | Locked DSH subagent plugins, configured in `packages/runtime-product/src/composition.ts` |
+| Skills and historical event decoding | `packages/tools-agent/` |
+| Native child tools | Locked DSH subagent plugins, configured in `packages/runtime-product/src/composition.ts` |
 | Durable task graph | `packages/task-graph/` |
 
-The generated `specs/contracts/canonical-tools-v1.md` describes the Product policy contracts, including the canonical names used for permission, checkpoint, and Plan decisions. `packages/protocol/src/tool-strategy.ts` maps those names to the selected model definitions. The build-specific effective catalog is the model visibility authority.
+The generated `specs/contracts/canonical-tools-v1.md` describes the Product policy contracts, including the canonical names used for permission, checkpoint, and Plan decisions. `packages/protocol/src/native-tool-names.ts` maps internal policy slots to the sole model vocabulary. The build-specific effective catalog is the model visibility authority.
 
 TaskCreate and TaskList default to the calling Agent's personal list. `list: "shared"` addresses the root's collaborative list. Root assignment or `offerTo` names a direct continuable DSH child. An offered child may atomically claim an unassigned, unblocked task; another Agent cannot take that owner away. Task IDs are unique within a list, not across all Agents. A child's shared view includes only tasks assigned or offered to it, so a root personal plan and unrelated shared work remain hidden. TaskUpdate commits before any native assignment notification; failed delivery is explicit in its result. Durable events bind list, Session and actor; older root events remain in the shared list. TaskUpdate follows Claude Code's correction and cleanup behavior: completed tasks can be edited or reopened; `status: "deleted"` removes a task and its incoming/outgoing dependency references, returning `task: null`. Deletion remains an append-only event; the list's creation high-water mark prevents ID reuse during replay. Empty/unchanged updates return `changedFields: []` and the existing revision without appending. The legacy `cancelled` value stays readable and does not satisfy dependencies; delete obsolete blockers instead. A child's `hasHiddenBlockers` reports only unresolved invisible dependencies, and all read/update results use the same full-list visibility projection. Metadata null removes a key. This behavior is covered by `tests/product-task-graph.unit.test.ts`.
 
@@ -116,7 +116,7 @@ checkpoint bytes, including CRLF and UTF-8 BOM decoding. Actual publication rema
 `LocalFileSystem`; the product pre-publication guard rechecks identity/version after staging. Its
 `createParents: false` setting leaves all directory creation in the checkpoint journal.
 
-Under `dsh_first`, the wrappers register the official `read`, `read_image`, `write`, and `edit` schemas and renderers, then call their public executors inside the same Product path/permission/checkpoint guards. Stock `glob` and `grep` run through a Product search-root check and a sealed ripgrep subprocess authority; they cannot launch a command before approval. Stock `web_fetch` and `web_search` use the Product safe HTTP and approved Host search providers. Their interfaces intentionally differ from `WebFetch` and `WebSearch`: fetch returns page text without the utility-model `prompt` answer, while search accepts `queries` and merges official source results. The Host reverse ports and permission labels remain Product-owned.
+The the wrappers register the official `read`, `read_image`, `write`, and `edit` schemas and renderers, then call their public executors inside the same Product path/permission/checkpoint guards. Stock `glob` and `grep` run through a Product search-root check and a sealed ripgrep subprocess authority; they cannot launch a command before approval. Stock `web_fetch` and `web_search` use the Product safe HTTP and approved Host search providers. Their interfaces intentionally differ from `WebFetch` and `WebSearch`: fetch returns page text without the utility-model `prompt` answer, while search accepts `queries` and merges official source results. The Host reverse ports and permission labels remain Product-owned.
 
 An out-of-root `Read` may resolve an Agent-owned retained output. The optional resolver returns
 `undefined` only for an unregistered path; the file tool then reports its ordinary allowed-root error.
@@ -142,9 +142,9 @@ This restriction is part of the canonical Runtime tool contract, not a Provider-
 
 ### 5.2 Child authority
 
-In the current `dsh_first` build, official `subagent` and `fork_agent` create DSH child Sessions. Official `send_message` and `interrupt_agent` operate on DSH continuable children. MyAgents does not assign ProductWork roles, task IDs, epochs or subtree controls to those children. Its common tool and Host policy services still govern their model route, workspace, sandbox, Plan, permission and interactions. Child operations derive their Product authority from the DSH parent catalog and active turn. Managed-file checkpoint coverage remains root-origin Write/Edit only even when child writes use the governed file path. See [Child agents and background work](./child-agents-and-background-work.md).
+In the official composition, official `subagent` and `fork_agent` create DSH child Sessions. Official `send_message` and `interrupt_agent` operate on DSH continuable children. MyAgents does not assign ProductWork roles, task IDs, epochs or subtree controls to those children. Its common tool and Host policy services still govern their model route, workspace, sandbox, Plan, permission and interactions. Child operations derive their Product authority from the DSH parent catalog and active turn. Managed-file checkpoint coverage remains root-origin Write/Edit only even when child writes use the governed file path. See [Child agents and background work](./child-agents-and-background-work.md).
 
-The optional `ma_first` build retains historical `Agent`, `TaskStop` and `SendMessage` ProductWork behavior for old deployments; those semantics do not apply to `dsh_first`.
+Historical ProductWork events retain read-only payload and provenance validation so existing Sessions can be inspected and recovered. No legacy child lifecycle or tools are installed.
 
 ## 6. Changes and verification
 
@@ -166,7 +166,7 @@ The Host native fixture verifies image bytes in the actual next Anthropic wire r
 
 ## Streamed search and cancellation presentation
 
-Grep/Glob use the existing ProductProcess authority and DSH subprocess pipe. The process owner drains stdout concurrently with exit and joins the consumer during cancellation cleanup. The filesystem owner decodes complete native records incrementally, retaining only the requested visible page; memory depends on that page and the largest individual transport record, not the total response. Count uses native `--count --null --with-filename`; file lists use NUL separators and native modified-time ordering. Content uses JSON line records. Existing inline array/byte budgets and line previews report truncation without rejecting the entire broad search. Returned paths still pass filesystem authority; error/timeout/identity changes remain errors. No second executor or ambient ripgrep is introduced.
+DSH `glob` and `grep` own search argument parsing, subprocess consumption, output formatting and truncation. MyAgents resolves and revalidates the selected root, authorizes the internal search policy, and supplies the existing sealed ProductProcess subprocess authority. The removed custom parser/paginator and formatter are not retained. Cancellation and cleanup remain owned by the native subprocess and Product process services.
 
 When Glob receives a `path` inside the workspace, slash-bearing patterns are matched relative to that selected path. The process owner prefixes the selected path before passing the pattern to the official ripgrep command, which still runs from the sealed workspace cwd; basename patterns keep their recursive matching behavior. A partial Read of the unchanged file preserves an earlier complete Read receipt for Edit. A changed file version or digest still invalidates that receipt.
 

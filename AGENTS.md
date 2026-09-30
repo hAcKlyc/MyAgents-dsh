@@ -20,7 +20,7 @@ Documentation governance starts at `specs/README.md`. That index owns document p
 - The official production profile owns one runtime generation and at most one primary root session. No daemon, TCP listener, or implicit multi-session process.
 - MyAgents and the standalone Agent SDK are Hosts of the same runtime and protocol. The SDK is not a second runtime.
 - The native RPC protocol is bidirectional. Host-owned credentials, interaction, Host tools, Hooks, and attachment bytes cross only explicit reverse ports.
-- Model-visible tools execute through the single DSH `ctx.tools` pipeline. Product compatibility tools may replace DSH tool definitions but may not introduce another tool runtime.
+- Model-visible tools execute through the single DSH `ctx.tools` pipeline. Use DSH's native definitions for file/search/Web/subagent tools. Add MyAgents definitions only for required product capabilities; Host policy adapters stay in the same tool pipeline. There is no alternate tool strategy.
 - Visibility and permission are separate. Workspace, revision, mode, origin, and hard-policy checks fail closed at execution time.
 - Extension input from an SDK or Host is declarative. Arbitrary plugin JavaScript is installed only by trusted runtime builders at build/composition time.
 - Provider and MCP secrets are request- or connection-scoped and are never persisted, logged, emitted, or placed in declarative snapshots. The App-owned internal CLI capability is the sole process-environment exception for the internal Agent Shell; external CLI tokens remain forbidden.

@@ -2,7 +2,7 @@
 
 # Canonical tool contract and DSH reuse projection
 
-Contract SHA-256: `2328363c025a310a373d1b959b3c6cb33e864e2e63a86981c30e49c777f3437c`
+Contract SHA-256: `11c30b274c2b94c5851a15ef8b454bfdca0ca2f5542c31afe73b0cd507b9b8c1`
 
 | Tool | Concurrency | Side effect | Permission | Checkpoint | Public DSH reuse | Product owner |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -23,9 +23,9 @@ Contract SHA-256: `2328363c025a310a373d1b959b3c6cb33e864e2e63a86981c30e49c777f34
 | `EnterPlanMode` | `session_serial` | `session_state` | `session.plan.enter` | `none` | `@deepseek-ai/dsh-plan-mode` (helper) | `@myagents-dsh/tools-interaction` |
 | `ExitPlanMode` | `session_serial` | `interaction` | `session.plan.exit` | `none` | `@deepseek-ai/dsh-plan-mode` (helper)<br>`@deepseek-ai/dsh-user-questions` (provider) | `@myagents-dsh/tools-interaction` |
 | `Skill` | `session_serial` | `read` | `skill.load` | `none` | `@deepseek-ai/dsh-skill` (provider) | `@myagents-dsh/tools-agent` |
-| `Agent` | `parallel` | `delegation` | `agent.spawn` | `none` | `@deepseek-ai/dsh-subagent` (direct)<br>`@deepseek-ai/dsh-jobs` (provider) | `@myagents-dsh/tools-agent` |
-| `TaskStop` | `session_serial` | `session_state` | `work.stop` | `none` | `@deepseek-ai/dsh-subagent` (direct) | `@myagents-dsh/tools-agent` |
-| `SendMessage` | `session_serial` | `delegation` | `agent.message` | `none` | `@deepseek-ai/dsh-subagent` (direct) | `@myagents-dsh/tools-agent` |
+| `Agent` | `parallel` | `delegation` | `agent.spawn` | `none` | `@deepseek-ai/dsh-subagent` (direct)<br>`@deepseek-ai/dsh-jobs` (provider) | `@myagents-dsh/runtime-product` |
+| `TaskStop` | `parallel` | `session_state` | `work.stop` | `none` | `@deepseek-ai/dsh-subagent` (direct) | `@myagents-dsh/runtime-product` |
+| `SendMessage` | `parallel` | `delegation` | `agent.message` | `none` | `@deepseek-ai/dsh-subagent` (direct) | `@myagents-dsh/runtime-product` |
 | `TaskCreate` | `session_serial` | `session_state` | `task_graph.mutate` | `none` | `@deepseek-ai/dsh-session` (product-plugin) | `@myagents-dsh/task-graph` |
 | `TaskGet` | `parallel` | `read` | `task_graph.read` | `none` | `@deepseek-ai/dsh-session` (product-plugin) | `@myagents-dsh/task-graph` |
 | `TaskList` | `parallel` | `read` | `task_graph.read` | `none` | `@deepseek-ai/dsh-session` (product-plugin) | `@myagents-dsh/task-graph` |

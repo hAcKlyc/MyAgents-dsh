@@ -4,9 +4,6 @@ import type {
   ExtensionSnapshot,
 } from "@myagents-dsh/component-runtime";
 import {
-  createAgentComponentCompiler,
-} from "@myagents-dsh/components-agents";
-import {
   ProductCommandService,
   createCommandComponentCompiler,
   expandCommandTemplate,
@@ -17,7 +14,6 @@ import {
   createSkillComponentCompiler,
 } from "@myagents-dsh/components-skills";
 import type {
-  DynamicAgentRegistration,
   DynamicSkillRegistration,
 } from "@myagents-dsh/tools-agent";
 import {
@@ -242,63 +238,6 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
       new AbortController().signal,
       authority(component.id),
     )).toThrow(/must enable SKILL\.md/u);
-  });
-
-  it("compiles one immutable Agent birth template from its prompt and referenced Skills", async () => {
-    let observed: DynamicAgentRegistration | undefined;
-    const compiler = createAgentComponentCompiler({
-      controller: Object.freeze({
-        prepare: (registration: DynamicAgentRegistration) => {
-          observed = registration;
-          return Object.freeze({ dispose: vi.fn(), install: () => vi.fn() });
-        },
-      }),
-    });
-    const skillContent = "Inspect the changelog before reporting.";
-    const skill: ExtensionComponent = Object.freeze({
-      descriptor: Object.freeze({
-        description: "Changelog inspection",
-        invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
-        resourceId: "review-document",
-      }),
-      enabled: true,
-      id: "review-skill",
-      kind: "skill",
-    });
-    const agent: ExtensionComponent = Object.freeze({
-      descriptor: Object.freeze({
-        description: "Reviews releases",
-        maxTurns: 3,
-        prompt: "You are a bounded release reviewer.",
-        skills: ["review-skill"],
-        tools: ["Read", "bash", "SendMessage"],
-        disallowedTools: ["bash"],
-      }),
-      enabled: true,
-      id: "release-reviewer",
-      kind: "agent",
-    });
-    const source = snapshot([skill, agent], [Object.freeze({
-      content: skillContent,
-      id: "review-document",
-      kind: "skill_document",
-      mediaType: "text/markdown",
-      sha256: sha256(skillContent),
-    })]);
-    const plan = await compiler.prepare(agent, source, new AbortController().signal, authority(agent.id));
-    expect(observed).toMatchObject({
-      componentId: "release-reviewer",
-      disallowedTools: ["bash"],
-      maxTurns: 3,
-      tools: ["Read", "bash", "SendMessage"],
-      type: "release-reviewer",
-    });
-    expect(observed?.persona).toContain("bounded release reviewer");
-    expect(observed?.persona).toContain(skillContent);
-    expect(Object.isFrozen(observed)).toBe(true);
-    expect(Object.isFrozen(observed?.tools)).toBe(true);
-    expect(Object.isFrozen(observed?.disallowedTools)).toBe(true);
-    expect(plan.contributions[0]?.catalog).toEqual({ kind: "agent", name: "release-reviewer" });
   });
 
   it("compiles DSH command definitions and performs only bounded positional template expansion", async () => {

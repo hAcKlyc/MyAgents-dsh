@@ -6,7 +6,6 @@ import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { LlmRuntime, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { Context } from "@deepseek-ai/cordis";
-import { AsyncLocalStorage } from "node:async_hooks";
 import type { CredentialRef } from "@deepseek-ai/dsh-credentials";
 import { freezeMessage, MessageId, type GenerateOptions } from "@deepseek-ai/dsh-llm";
 import { SessionId } from "@deepseek-ai/dsh-session";
@@ -289,69 +288,6 @@ describe("Host credential and model route", () => {
     expect(fixed.select(parent, "general")).toMatchObject({ profile: third, selection: "fixed" });
     second.modelId = "changed-after-admission";
     expect(selectable.requireProfile(second.revision).modelId).toBe(profile.modelId);
-  });
-
-  it("executes different admitted DeepSeek models concurrently without sharing frozen request options", async () => {
-    const harness = await createHarness();
-    const childProfile = { ...profile, revision: "child-profile-v1", modelId: "child-model", maxTokens: 256 };
-    const context = fakeModelContext(harness.root);
-    const primary = context.productSession.requireAgent();
-    const child = { id: SessionId("child-session"), options: { provider: profile.providerRouteId, model: childProfile.modelId } };
-    const childAuthority = vi.fn(() => ({
-      assertCurrent: () => undefined, callId: "child-call", clientOperationId: "operation-1", dshTurn: 1,
-      modelRequestId: "child-model-request", rootCallId: "child-call", turnId: "turn-1",
-    }));
-    Object.assign(context, {
-      agents: { get: (id: string) => id === "child-session" ? child : id === "runtime-session-1" ? primary : undefined },
-    });
-    harness.pair.host.registerRequestHandler("host/credential/resolve", (params) => {
-      if (params.subject !== "provider") throw new Error("unexpected credential subject");
-      return params.purpose === "availability"
-        ? { authoritativeCredentialRevision: "credential-v1", available: true, kind: "availability" as const }
-        : { authoritativeCredentialRevision: "credential-v1", kind: "material" as const,
-            material: { [credentialValueField]: `synthetic-${params.profileRevision}` } };
-    });
-    harness.root.provide("productWork", { createChildModelRequestAuthority: childAuthority } as never);
-    const attachmentScope = new AsyncLocalStorage<string>();
-    const authority = new HostDeepSeekModelAuthority(context, harness.credentialController,
-      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" }, (input) => {
-        expect(input.runtimeSessionId).toBe("runtime-session-1");
-        return (action) => {
-          input.assertCurrent();
-          return attachmentScope.run(input.runtimeSessionId, action);
-        };
-      });
-    const request = sessionRequest();
-    const collaboration = { ...new AgentCollaborationPolicy(profile).config, modelProfiles: [childProfile] };
-    await authority.preflight({ ...request, params: { ...request.params, collaboration } });
-    const adapter = new HostDeepSeekLlmAdapter(authority, harness.credentials, harness.credentialController);
-    const observed: Array<{ authorization: string | null; model: string; maxTokens: number }> = [];
-    globalThis.fetch = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
-      expect(attachmentScope.getStore()).toBe("runtime-session-1");
-      if (typeof init?.body !== "string") throw new Error("fixture expected a JSON request body");
-      const body = JSON.parse(init.body) as { model: string; max_tokens: number };
-      observed.push({ authorization: new Headers(init.headers).get("x-api-key"), model: body.model, maxTokens: body.max_tokens });
-      return Promise.resolve(new Response(messagesSse("ok", body.model), { headers: { "content-type": "text/event-stream" } }));
-    });
-    const rootOptions = modelOptions();
-    const childOptions = { ...modelOptions(), sessionId: SessionId("child-session"), model: childProfile.modelId, maxTokens: 128 };
-    await Promise.all([rootOptions, childOptions].map(async (options) => {
-      const prepared = await adapter.prepareCall(options.provider, options.model);
-      const chunks = [];
-      for await (const chunk of prepared.stream(options)) chunks.push(chunk);
-      expect(chunks).toEqual(expect.arrayContaining([expect.objectContaining({ type: "finish" })]));
-    }));
-    expect(observed).toEqual(expect.arrayContaining([
-      { authorization: `synthetic-${profile.revision}`, model: profile.modelId, maxTokens: 512 },
-      { authorization: `synthetic-${childProfile.revision}`, model: childProfile.modelId, maxTokens: 128 },
-    ]));
-    expect(childAuthority).toHaveBeenCalledWith(child, "config-v1", profile.revision);
-    expect(attachmentScope.getStore()).toBeUndefined();
-    const preparedChild = await adapter.prepareCall(profile.providerRouteId, childProfile.modelId);
-    await authority.preflight({ ...request, params: { ...request.params, configRevision: "config-v2" } });
-    await expect((async () => { for await (const chunk of preparedChild.stream(childOptions)) { void chunk; } })())
-      .rejects.toMatchObject({ code: "provider_profile_stale" });
-    expect(observed).toHaveLength(2);
   });
 
   it("isolates concurrent model bindings sharing one credential reference and revokes in-flight material", async () => {

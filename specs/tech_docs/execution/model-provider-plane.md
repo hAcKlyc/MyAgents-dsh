@@ -38,14 +38,7 @@ The configured API family is preserved. Anthropic-compatible profiles use Anthro
 
 The installed pi-ai package catalog is advisory and dormant until a Host profile is admitted. An enabled ordinary API Provider becomes eligible when the Host maps its declared protocol to one of the three installed families; no Runtime catalog or Provider/model whitelist participates. The minimal pi-ai and DSH adapter patches preserve Provider-owned Anthropic content through the same message stream and exact matching-route replay; they do not add a transport or model loop.
 
-The accepted Runtime admits a bounded Host model set in addition to the primary profile.
-`AgentCollaborationPolicy` validates profile revision/Provider/model uniqueness and resolves
-inheritance, fixed Session/role constraints, or opt-in selection. Profile revisions disambiguate
-identically named models from different Providers; component and Host role constraints may not
-silently override one another. Native protocol configuration snapshots include depth/resource and
-collaboration-message policy, independently of each user message's delivery intent. ProductWork
-spawn now consumes this policy and persists the selected route before execution. Deep tree routing
-and MyAgents configuration delivery remain active UPG implementation work.
+The accepted Runtime admits a bounded Host model set in addition to the primary profile. `AgentCollaborationPolicy` resolves inheritance, fixed Host profile constraints or opt-in selection. Native child authority captures the delegated profile at the DSH publication boundary and uses the sending operation for continuations. Profile revisions disambiguate equal model names across Providers. The Host also supplies native depth/resource limits; it does not own a second child lifecycle.
 
 The credential owner atomically replaces the whole preflighted binding set. Request scopes select
 an exact binding, so multiple profiles may share a credential reference without overwriting each
@@ -95,13 +88,7 @@ source/build/SSE gate passes; installed Runtime bytes change only through the ar
 
 ## 6. Current capabilities and limits
 
-- Host-declared pi-ai routes directly support Anthropic Messages, OpenAI Chat Completions and OpenAI Responses. The `deepseek-official` route accepts opaque current Product model IDs and capacities on the official endpoint with a text-first text/image subset; it does not consume pi-ai compatibility overrides.
-- Credentials are API-key references resolved per request; native cloud, subscription OAuth and account-login routes are not advertised.
-- Stop sequences are not supported by the locked pi-ai route.
-- Pi-ai exposes reasoning content but does not project provider reasoning-token counts into DSH `TokenUsage`.
-- Structured Anthropic Provider blocks are retained generically. Representative family and Provider routes require honest wire and packaged evidence, but evidence coverage is not an execution allowlist; decorative assistant Markdown is never parsed into structure.
-- Child model selection uses the admitted Host collaboration policy: inherit the direct parent's actual route, require a Host/component fixed profile, or select an explicitly authorized profile when autonomous selection is enabled. ProductWork persists the exact selected profile revision, Provider/model and selection mode before DSH child creation. The original root-operation profile remains a separate lineage fact; each request also revalidates the selected profile against current Host authorization.
-- Utility calls are bounded, idempotent and non-conversation work. Compaction requests remain attached to the owning Session/operation context.
+- Child model selection uses the admitted Host collaboration policy and native child authority. The root-operation profile remains a separate lineage fact; each request revalidates the selected child profile against current Host authorization.
 
 These are implementation facts, not a claim that every Provider implements every optional server tool. Host policy exposes enabled ordinary API Providers and their current models; supported-family execution is independent of optional Provider capabilities.
 
@@ -121,7 +108,6 @@ Prefer an installed DSH/public adapter that natively supports the Host-selected 
 | Upstream request and Provider-content conformance | `tests/pi-ai-provider-conformance.unit.test.ts`, `specs/pi-ai/seam-evidence-v1.json`, official Provider composition/profile tests |
 | DSH adapter patch authority | `specs/dsh/seam-decisions-v1.json`, ADR 0011 |
 | Product route evidence | Host policy/conformance plus representative packed/native/live Provider campaigns |
-
 
 Provider requests may receive `providerNetwork` with credential material. The existing
 credential AsyncLocalStorage scope freezes that Host-selected policy, gates access on resolved and

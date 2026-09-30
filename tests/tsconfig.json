@@ -11,7 +11,6 @@
   "references": [
     { "path": "../packages/artifact-verifier" },
     { "path": "../packages/component-runtime" },
-    { "path": "../packages/components-agents" },
     { "path": "../packages/components-commands" },
     { "path": "../packages/components-host-tools" },
     { "path": "../packages/components-hooks" },

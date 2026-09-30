@@ -6,7 +6,7 @@ import type { Session } from "@deepseek-ai/dsh-session";
 import { ProtocolError } from "@myagents-dsh/protocol";
 import type { ProductToolOperationAuthority } from "@myagents-dsh/tool-runtime-product";
 import type { ModelRequestOperationAuthority } from "@myagents-dsh/operation-runtime";
-import { ownsProductWorkRootContextMessage } from "@myagents-dsh/tools-agent";
+import { ownsRootContextMessage } from "@myagents-dsh/tools-agent";
 import { createHash } from "node:crypto";
 
 type OperationIdentity = Readonly<{ clientOperationId: string; productTurnId: string }>;
@@ -199,11 +199,11 @@ export const nativeChildAuthority = (root: Context): NativeChildOperationAuthori
 /** Admit native Inbox claims before earlier-registered compaction or request hooks. */
 export const installNativeRootContext = (root: Context): (() => void) => {
   return root.on("agent/pre-step", async ({ agent, messages, turn }, next) => {
-    if (root.get("productWork") !== undefined || root.productSession.snapshot().state !== "ready"
+    if (root.productSession.snapshot().state !== "ready"
       || agent !== root.productSession.requireAgent()) return next();
     for (const message of messages) {
       if (message.source.kind !== "agent-message" && message.source.kind !== "subagent-settled") continue;
-      if (!ownsProductWorkRootContextMessage(agent.session, message.source, message.id, root)) continue;
+      if (!ownsRootContextMessage(agent.session, message.source, message.id, root)) continue;
       if (root.sdkOperations.snapshot().operations.some((operation) => operation.messages.some((owned) =>
         owned.messageId === message.id && owned.state === "claimed"))) continue;
       const environment = root.productSession.requireExecutionEnvironment();

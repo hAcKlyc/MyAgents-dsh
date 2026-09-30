@@ -67,32 +67,6 @@ export interface ProductToolExecutionEnvironment {
   }>;
 }
 
-export interface ProductRetainedOutputFile {
-  readonly path: string;
-  discard(): Promise<void>;
-  publish(text: string, maxBytes: number): Promise<Readonly<{ truncated: boolean }>>;
-  finalize(text: string, maxBytes: number): Promise<Readonly<{ truncated: boolean }>>;
-}
-
-export interface ProductRetainedOutputAuthority {
-  create(
-    runtimeHome: string,
-    ownerId: string,
-    signal: AbortSignal,
-  ): Promise<ProductRetainedOutputFile>;
-  resume(
-    path: string,
-    runtimeHome: string,
-    signal: AbortSignal,
-  ): Promise<ProductRetainedOutputFile>;
-  recover(
-    runtimeHome: string,
-    ownerId: string,
-    signal: AbortSignal,
-  ): Promise<readonly ProductRetainedOutputFile[]>;
-  resolve(path: string, runtimeHome: string, signal: AbortSignal): Promise<FsTarget>;
-}
-
 export interface ProductToolContext {
   /** Agent that issued the DSH tool call. */
   readonly agent: Agent;
@@ -191,7 +165,6 @@ export class ProductToolError extends HarnessError {
 type JsonObject = Record<string, unknown>;
 
 /** Trusted service callbacks follow ordinary Promise/thenable semantics. */
-
 
 /** DSH cancellation reasons are control records, not printable exceptions. */
 export const throwIfProductToolAborted = (signal: AbortSignal): void => {

@@ -4,8 +4,7 @@ import * as ToolPwsh from "@deepseek-ai/dsh-tool-pwsh";
 import * as ToolJobs from "@deepseek-ai/dsh-tool-jobs";
 import * as ToolFsSearch from "@deepseek-ai/dsh-tool-fs-search";
 import * as ShellEnv from "@deepseek-ai/dsh-shell-env";
-import { isDeepStrictEqual } from "node:util";
-import { AgentCollaborationPolicy } from "./collaboration-policy.js";
+
 import { Context } from "@deepseek-ai/cordis";
 import type { Plugin } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
@@ -45,10 +44,9 @@ import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 import { ApprovalService, setApprovalPolicy } from "@deepseek-ai/dsh-user-approval";
 import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
 import { WebRuntime } from "@deepseek-ai/dsh-web";
-import type { DshToolStrategy } from "@myagents-dsh/protocol";
 import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
 import { isProxy } from "node:util/types";
-import { createHash } from "node:crypto";
+
 import {
   SdkOperationService,
   type OperationBirthAuthority,
@@ -68,7 +66,6 @@ import {
   type ProductComponentPlaneConfig,
   type ProductComponentServiceController,
 } from "@myagents-dsh/component-runtime";
-import { createAgentComponentCompiler } from "@myagents-dsh/components-agents";
 import {
   ProductCommandService,
   createCommandComponentCompiler,
@@ -141,13 +138,11 @@ import {
 import { ProductTaskGraphService } from "@myagents-dsh/task-graph";
 import {
   ProductSkillService,
-  ProductWorkService,
-  ownsProductWorkRootContextMessage,
+  ownsRootContextMessage,
   installProductContextProjection,
   validateStaticSkillCatalog,
   type StaticSkillCatalog,
   type ProductDynamicSkillController,
-  type ProductDynamicAgentController,
 } from "@myagents-dsh/tools-agent";
 import {
   ProductProcessRuntime,
@@ -172,7 +167,6 @@ import {
   ProductSafeHttpClient,
   validateCanonicalWebToolsConfig,
   type CanonicalWebToolsConfig,
-  type ProductHostWebFetchRequest,
   type ProductWebSearchRequest,
   type ProductNetworkPolicy,
   type ProductSafeHttpOpenResponse,
@@ -519,7 +513,6 @@ type CompositionAuthorityState = {
   readonly operationLifecycle: OperationLifecycleController;
   readonly components: ProductComponentServiceController;
   dynamicSkills: ProductDynamicSkillController | undefined;
-  dynamicAgents: ProductDynamicAgentController | undefined;
   dynamicCommands: ProductDynamicCommandController | undefined;
   hooks: ProductHookRuntimeController | undefined;
   hostInteraction: HostInteractionResponseController | undefined;
@@ -1064,7 +1057,7 @@ export const createHostBackedInteractionProvider = (
     resolveAuthority: (agent, signal, expectedPermissionRevision, deadlineMs, correlation) => {
       const resolveOperation = () => agent === root.productSession.requireAgent()
         ? root.sdkOperations.resolveActiveToolOperation(agent)
-        : root.get("productWork")?.resolveActiveChildToolOperation(agent) ?? nativeChildAuthority(root).resolve(agent);
+        : nativeChildAuthority(root).resolve(agent);
       const initial = resolveOperation();
       // The permission owner validates additive inline grants against the frozen
       // operation birth. Carry its current card revision; transport must not
@@ -1194,7 +1187,6 @@ export class DshRootComposition {
 
 export interface CanonicalToolPlaneConfig {
   readonly catalog: ProductToolRuntimeConfig["catalog"];
-  readonly toolStrategy?: DshToolStrategy;
   readonly permission: ProductPermissionPlaneConfig;
   readonly plan: ProductPlanPlaneConfig;
   readonly platformTarget: PlatformTarget;
@@ -1222,7 +1214,7 @@ export const installCanonicalToolPlane = async (
   if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
     || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
     || Reflect.ownKeys(candidate).some((key) => typeof key !== "string"
-      || !["catalog", "permission", "plan", "platformTarget", "process", "skills", "temporaryRoot", "web", "toolStrategy"].includes(key))
+      || !["catalog", "permission", "plan", "platformTarget", "process", "skills", "temporaryRoot", "web"].includes(key))
     || Reflect.ownKeys(candidate).length < 7 || Reflect.ownKeys(candidate).length > 9
     || Reflect.ownKeys(candidate).some((key) => {
       const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
@@ -1231,8 +1223,6 @@ export const installCanonicalToolPlane = async (
     throw new TypeError("canonical tool plane config has an invalid exact shape");
   }
   const normalized = candidate as CanonicalToolPlaneConfig;
-  const toolStrategy: unknown = normalized.toolStrategy ?? "ma_first";
-  if (toolStrategy !== "ma_first" && toolStrategy !== "dsh_first") throw new TypeError("tool strategy is invalid");
   const processConfig = validateProductProcessRuntimeConfig(normalized.process);
   const permissionConfig = validateProductPermissionPlaneConfig(normalized.permission);
   if (normalized.permission.interaction !== authority.hostInteractionProvider
@@ -1264,7 +1254,7 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
     fibers.push(await root.plugin(AgentInstructions, {
       candidateSelection: "first",
-      fileTouchToolNames: toolStrategy === "dsh_first" ? ["read", "read_image", "write", "edit"] : ["Read", "Write", "Edit"],
+      fileTouchToolNames: ["read", "read_image", "write", "edit"],
       instructionFileCandidates: ["CLAUDE.md", "AGENTS.override.md", "AGENTS.md"],
       localInstructionFileCandidates: [],
       maxBytes: 512 * 1024,
@@ -1274,7 +1264,6 @@ export const installCanonicalToolPlane = async (
     const checkpointIo = localFileSystem.createCheckpointIoAuthority();
     const attachmentIo = localFileSystem.createAttachmentIoAuthority();
     const processIo = localFileSystem.createProcessIoAuthority();
-    const agentOutput = localFileSystem.createAgentOutputAuthority();
     const planIo = localFileSystem.createPlanIoAuthority();
     let attachmentController: HostAttachmentStoreController | undefined;
     fibers.push(await root.plugin(HostAttachmentStore, {
@@ -1296,8 +1285,7 @@ export const installCanonicalToolPlane = async (
       throw new Error("Host attachment Store did not install through the public DSH service seam");
     }
     const installedAttachmentController = attachmentController;
-    if (toolStrategy === "ma_first") fibers.push(await root.plugin(ToolCallTimeoutPolicy));
-    else root.on("tools/execute", async (exec, next) => {
+    root.on("tools/execute", async (exec, next) => {
       // Native file/search/web tools perform Product authorization first and
       // start their own bounded execution deadlines afterwards. Retain the
       // stock timeout policy for every unchanged DSH and dynamic tool.
@@ -1330,38 +1318,37 @@ export const installCanonicalToolPlane = async (
         maxActiveSubagents: { get: () => authority.hostModelAuthority?.collaborationConfig()?.maxActiveChildren ?? 32 },
       });
     }));
-    fibers.push(await root.plugin(SubagentSpawnInProcess, { providerName: "myagents-spawn" }));
     fibers.push(await root.plugin(SubagentSpawnInProcess, { providerName: "native-spawn" }));
     fibers.push(await root.plugin(SubagentForkInProcess, { providerName: "native-fork" }));
     fibers.push(await root.plugin(SkillRegistry));
     fibers.push(await root.plugin(ApprovalService, { policy: "ask" }));
-    if (toolStrategy === "dsh_first") {
-      const stopProjection = installNativeChildAuthorityProjection(root);
-      fibers.push({ dispose: () => { stopProjection(); return Promise.resolve(); } });
-      const stopChildPolicy = root.on("agent/created", ({ agent, source }) => {
-        if (agent.session.header.origin !== "subagent" || agent.session.header.parentSession === undefined) return undefined;
-        const parent = root.agents.get(agent.session.header.parentSession);
-        if (parent === undefined) throw new Error("native subagent lacks its live parent policy owner");
-        const approval = root.approval.overrideOf(parent.session) ?? "ask";
+
+    const stopProjection = installNativeChildAuthorityProjection(root);
+    fibers.push({ dispose: () => { stopProjection(); return Promise.resolve(); } });
+    const stopChildPolicy = root.on("agent/created", ({ agent, source }) => {
+      if (agent.session.header.origin !== "subagent" || agent.session.header.parentSession === undefined) return undefined;
+      const parent = root.agents.get(agent.session.header.parentSession);
+      if (parent === undefined) throw new Error("native subagent lacks its live parent policy owner");
+      const approval = root.approval.overrideOf(parent.session) ?? "ask";
+      if (root.approval.overrideOf(agent.session) !== approval) setApprovalPolicy(agent.session, approval);
+      const sandbox = root.sandboxPolicy.resolve({ session: parent.session }).mode;
+      if (root.sandboxPolicy.overrideOf(agent.session) !== sandbox) setSandboxMode(agent.session, sandbox);
+      if (source === "startup") nativeChildAuthority(root).captureAtCreation(agent);
+      return undefined;
+    });
+    fibers.push({ dispose: () => { stopChildPolicy(); return Promise.resolve(); } });
+    const stopChildTurnPolicy = root.on("agent/pre-step", ({ agent }, next) => {
+      if (agent.session.header.origin === "subagent") {
+        const primary = root.productSession.requireAgent();
+        const approval = root.approval.overrideOf(primary.session) ?? "ask";
         if (root.approval.overrideOf(agent.session) !== approval) setApprovalPolicy(agent.session, approval);
-        const sandbox = root.sandboxPolicy.resolve({ session: parent.session }).mode;
+        const sandbox = root.sandboxPolicy.resolve({ session: primary.session }).mode;
         if (root.sandboxPolicy.overrideOf(agent.session) !== sandbox) setSandboxMode(agent.session, sandbox);
-        if (source === "startup") nativeChildAuthority(root).captureAtCreation(agent);
-        return undefined;
-      });
-      fibers.push({ dispose: () => { stopChildPolicy(); return Promise.resolve(); } });
-      const stopChildTurnPolicy = root.on("agent/pre-step", ({ agent }, next) => {
-        if (agent.session.header.origin === "subagent") {
-          const primary = root.productSession.requireAgent();
-          const approval = root.approval.overrideOf(primary.session) ?? "ask";
-          if (root.approval.overrideOf(agent.session) !== approval) setApprovalPolicy(agent.session, approval);
-          const sandbox = root.sandboxPolicy.resolve({ session: primary.session }).mode;
-          if (root.sandboxPolicy.overrideOf(agent.session) !== sandbox) setSandboxMode(agent.session, sandbox);
-        }
-        return next();
-      });
-      fibers.push({ dispose: () => { stopChildTurnPolicy(); return Promise.resolve(); } });
-    }
+      }
+      return next();
+    });
+    fibers.push({ dispose: () => { stopChildTurnPolicy(); return Promise.resolve(); } });
+
     fibers.push(await root.plugin(UserQuestionService));
     const permissionDeadline = root.productSession.settlementDeadlineAuthority();
     let hookController: ProductHookRuntimeController | undefined;
@@ -1378,9 +1365,6 @@ export const installCanonicalToolPlane = async (
           signal: request.signal ?? new AbortController().signal,
         });
       },
-      withInteractionWait: (agent, signal, operation) => root.get("productWork") === undefined
-        ? operation() : agent === root.productSession.requireAgent()
-          ? operation() : root.productWork.withWaitingAgent(agent, "interaction", signal, operation),
       clock: Date.now,
       durability: Object.freeze({
         flush: (session: Session) => permissionDeadline.wait(
@@ -1426,7 +1410,7 @@ export const installCanonicalToolPlane = async (
     const resolveProductToolOperation: ProductToolRuntimeConfig["resolveOperation"] = (agent) =>
       agent === root.productSession.requireAgent()
         ? root.sdkOperations.resolveActiveToolOperation(agent)
-        : root.get("productWork")?.resolveActiveChildToolOperation(agent) ?? nativeChildAuthority(root).resolve(agent);
+        : nativeChildAuthority(root).resolve(agent);
     fibers.push(await root.plugin(ProductToolRuntime, {
       catalog: normalized.catalog,
       checkpoint: Object.freeze({
@@ -1437,31 +1421,31 @@ export const installCanonicalToolPlane = async (
       requireAgent: () => root.productSession.requireAgent(),
       resolveOperation: resolveProductToolOperation,
     }));
-    if (toolStrategy === "dsh_first") {
-      const nativePermission = Object.freeze({
-        subagent: { tool: "Agent", permissionClass: "agent.spawn" },
-        fork_agent: { tool: "Agent", permissionClass: "agent.spawn" },
-        send_message: { tool: "SendMessage", permissionClass: "agent.message" },
-        interrupt_agent: { tool: "TaskStop", permissionClass: "work.stop" },
-      } as const);
-      const stopNativePermission = root.on("tools/execute", async (exec, next) => {
-        const policy = Object.hasOwn(nativePermission, exec.name) ? nativePermission[exec.name as keyof typeof nativePermission] : undefined;
-        if (policy === undefined) return next();
-        const context = root.productTools.resolveExternal(exec, exec.name);
-        root.productPlan.assertExternalTool(context, exec.name);
-        const targetAgent = exec.arguments !== null && typeof exec.arguments === "object"
-          ? Reflect.get(exec.arguments, "agent_id") as unknown : undefined;
-        const decision = await root.productPermission.authorize(context, {
-          permissionClass: policy.permissionClass,
-          target: `${exec.name}:${typeof targetAgent === "string" ? targetAgent : String(exec.agent?.id)}`,
-          tool: policy.tool,
-        });
-        if (decision !== "allow") throw new ProductToolError("permission_denied", `${exec.name} permission was denied`);
-        root.productTools.assertExternalCurrent(context, exec.name);
-        return next();
+
+    const nativePermission = Object.freeze({
+      subagent: { tool: "Agent", permissionClass: "agent.spawn" },
+      fork_agent: { tool: "Agent", permissionClass: "agent.spawn" },
+      send_message: { tool: "SendMessage", permissionClass: "agent.message" },
+      interrupt_agent: { tool: "TaskStop", permissionClass: "work.stop" },
+    } as const);
+    const stopNativePermission = root.on("tools/execute", async (exec, next) => {
+      const policy = Object.hasOwn(nativePermission, exec.name) ? nativePermission[exec.name as keyof typeof nativePermission] : undefined;
+      if (policy === undefined) return next();
+      const context = root.productTools.resolveExternal(exec, exec.name);
+      root.productPlan.assertExternalTool(context, exec.name);
+      const targetAgent = exec.arguments !== null && typeof exec.arguments === "object"
+        ? Reflect.get(exec.arguments, "agent_id") as unknown : undefined;
+      const decision = await root.productPermission.authorize(context, {
+        permissionClass: policy.permissionClass,
+        target: `${exec.name}:${typeof targetAgent === "string" ? targetAgent : String(exec.agent?.id)}`,
+        tool: policy.tool,
       });
-      fibers.push({ dispose: () => { stopNativePermission(); return Promise.resolve(); } });
-    }
+      if (decision !== "allow") throw new ProductToolError("permission_denied", `${exec.name} permission was denied`);
+      root.productTools.assertExternalCurrent(context, exec.name);
+      return next();
+    });
+    fibers.push({ dispose: () => { stopNativePermission(); return Promise.resolve(); } });
+
     fibers.push(await root.plugin(ProductHookRuntime, {
       registerController: (controller) => {
         if (hookController !== undefined) throw new Error("Host Hook controller may register exactly once");
@@ -1553,13 +1537,11 @@ export const installCanonicalToolPlane = async (
       throw new Error("product plan service did not register its composition controller");
     }
     fibers.push(await root.plugin(ProductTaskGraphService, {
-      isKnownCollaborator: toolStrategy === "dsh_first"
-        ? isNativeContinuableChild
-        : (primary, agentId) => root.productWork.isKnownCollaborator(primary, agentId),
-      ...(toolStrategy === "dsh_first" ? {
+      isKnownCollaborator: isNativeContinuableChild,
+      ...({
         notifySharedTask: (primary: Agent, childId: string, taskId: string, signal: AbortSignal) =>
           notifyNativeSharedTask(root, primary, childId, taskId, signal),
-      } : {}),
+      }),
       durability: Object.freeze({
         flush: (session: Session) => permissionDeadline.wait(
           root.sessions.flush(session),
@@ -1658,148 +1640,17 @@ export const installCanonicalToolPlane = async (
       fibers.push(await root.plugin(ToolBash, { enableRunInBackground: true, promoteOnTimeout: false }));
     }
     fibers.push(await root.plugin(ToolJobs, { completionDelivery: "quiet" }));
-    if (toolStrategy === "dsh_first") {
-      fibers.push(await root.plugin(ToolSubagent, {
-        provider: "native-spawn", toolName: "subagent", backgroundMode: "continuable",
-      }));
-      fibers.push(await root.plugin(ToolSubagent, {
-        provider: "native-fork", toolName: "fork_agent", backgroundMode: "continuable",
-      }));
-      fibers.push(await root.plugin(ToolSubagentControl));
-      fibers.push(await root.plugin(ToolSubagentList));
-    }
-    let dynamicAgents: ProductDynamicAgentController | undefined;
-    if (toolStrategy === "ma_first") {
-    fibers.push(await root.plugin(ProductWorkService, {
-      durability: Object.freeze({
-        flush: async (session: Session) => {
-          if (root.sessions.get(session.id) === session) {
-            if (!await permissionDeadline.wait(root.sessions.flush(session), "product work durability flush")) {
-              throw new Error("ProductWork has no participating persistence provider");
-            }
-          } else {
-            // DSH emits subagent/end after final flush and handle disposal. Verify
-            // the captured immutable prefix through persistence; a detached Session
-            // cannot be sent back through the live SessionStore flush entry point.
-            const persisted = await permissionDeadline.wait((async () => {
-              const reader = await root.sessionPersistence.open(session.id, "read");
-              try { return { meta: reader.header, events: (await reader.read()).events }; }
-              finally { await reader.close(); }
-            })(), "completed child durability inspection");
-            const captured = session.snapshotEvents();
-            if (session.header.origin !== "subagent" || !isDeepStrictEqual(persisted.meta, session.header)
-              || persisted.events.length < captured.length
-              || !isDeepStrictEqual(persisted.events.slice(0, captured.length), captured)) {
-              throw new Error("completed child differs from its durable Session prefix");
-            }
-          }
-          return true as const;
-        },
-      }),
-      output: agentOutput,
-      publication: Object.freeze({
-        prepare: (child: Agent, parent: Agent) => {
-          const cancel = root.productSession.prepareChildPublication(authority.childPublicationAuthority, child, parent);
-          try {
-            // Official delegation seeds "never". Product-managed children use
-            // the same permission owner and Host interaction port as the root.
-            const inheritedApproval = root.approval.overrideOf(parent.session) ?? "ask";
-            if (root.approval.overrideOf(child.session) !== inheritedApproval) {
-              setApprovalPolicy(child.session, inheritedApproval);
-            }
-            const inheritedSandbox = root.sandboxPolicy.resolve({ session: parent.session }).mode;
-            if (root.sandboxPolicy.overrideOf(child.session) !== inheritedSandbox) {
-              setSandboxMode(child.session, inheritedSandbox);
-            }
-            child.ctx.on("system-prompt/assemble", async (_assembly, _context, next) => {
-              const assembled = await next();
-              return {
-                ...assembled,
-                contexts: assembled.contexts.map((context) => context.name === "subagent:delegation"
-                  ? {
-                      ...context,
-                      interpolate: false,
-                      text: "You are a delegated subagent in the current Session tree. Use your available tools normally. Product permissions and shared exact grants apply; operations needing approval are sent to the Host. Your role, workspace and delegation limits still apply.",
-                    }
-                  : context),
-              };
-            });
-            return cancel;
-          } catch (error) {
-            cancel();
-            throw error;
-          }
-        },
-      }),
-      provider: "myagents-spawn",
-      messageDelivery: () => authority.hostModelAuthority?.collaborationPolicy().config.messageDelivery ?? "realtime",
-      deliverRootMessage: async (request) => {
-        const state = root.productSession.snapshot().state;
-        if (state === "creating" || state === "resuming") {
-          // Recovery reconstructs native Inbox facts before publication. Only
-          // afterReady may admit or wake their model execution.
-          const owned = root.sdkOperations.snapshot().operations.flatMap((operation) => operation.messages)
-            .find((message) => message.messageId === request.message.id);
-          const timing = owned?.deliveryTiming ?? request.deliveryTiming;
-          if (![...request.root.inbox.nextStep, ...request.root.inbox.nextTurn].some((message) => message.id === request.message.id)) {
-            request.root.send(request.message, timing === "realtime" ? "next-step" : "next-turn", false);
-            await root.sessions.flush(request.root.session);
-          }
-          return "delivered";
-        }
-        if (state !== "ready") return "suppressed";
-        const environment = root.productSession.requireExecutionEnvironment();
-        const source = root.sdkOperations.lookup(request.sourceOperationId);
-        if (source === undefined) throw new Error("root collaboration lacks its originating Product operation");
-        const parts = request.message.content.map((block) => {
-          if (block.type !== "text") throw new Error("root collaboration must contain bounded text only");
-          return { kind: "text" as const, text: block.text };
-        });
-        return await root.sdkOperations.deliverContext(request.root, {
-          clientOperationId: `collaboration-${createHash("sha256").update(request.productMessageId).digest("hex").slice(0, 48)}`,
-          clientUserMessageId: request.productMessageId, input: { parts },
-          configRevision: root.productSession.requireOperationConfigRevision(),
-          extensionDigest: root.productComponents.catalog().digest,
-          executionEnvironmentRevision: environment.revision, executionEnvironmentDigest: environment.digest,
-          limits: source.birth.limits, origin: { kind: "headless", scenario: "runtime-collaboration" },
-        }, request.message, request.deliveryTiming);
-      },
-      limits: () => {
-        const config = authority.hostModelAuthority?.collaborationPolicy().config;
-        return config ?? { maxDepth: 1, maxActiveChildren: 32, maxRetainedChildren: 256 };
-      },
-      selectModel: (parent, role, requested, declaredProfileRef) => {
-        const policy = authority.hostModelAuthority?.collaborationPolicy()
-          ?? new AgentCollaborationPolicy(root.productSession.requireOperationModelProfile());
-        if (parent.options.provider === undefined || parent.options.model === undefined) {
-          throw new ProtocolError("child_model_unavailable", "Child model selection requires the admitted Host model policy");
-        }
-        const selected = policy.select({ provider: parent.options.provider, model: parent.options.model }, role, requested, declaredProfileRef);
-        return Object.freeze({
-          model: selected.profile.modelId,
-          provider: selected.profile.providerRouteId,
-          profileRevision: selected.profile.revision,
-          selection: selected.selection,
-        });
-      },
-      assertModel: (binding) => {
-        const policy = authority.hostModelAuthority?.collaborationPolicy()
-          ?? new AgentCollaborationPolicy(root.productSession.requireOperationModelProfile());
-        const profile = policy.requireProfile(binding.profileRevision);
-        if (profile.modelId !== binding.model || profile.providerRouteId !== binding.provider) {
-          throw new ProtocolError("child_model_unauthorized", "The child's frozen model route is no longer authorized");
-        }
-      },
-      registerDynamicAgentController: (controller) => {
-        if (dynamicAgents !== undefined) throw new Error("dynamic Agent controller may register exactly once");
-        dynamicAgents = controller;
-      },
-      requireAgent: () => root.productSession.requireAgent(),
-      runtimeHome: () => root.productSession.requireExecutionEnvironment().runtimeHome,
+
+    fibers.push(await root.plugin(ToolSubagent, {
+      provider: "native-spawn", toolName: "subagent", backgroundMode: "continuable",
     }));
-    }
+    fibers.push(await root.plugin(ToolSubagent, {
+      provider: "native-fork", toolName: "fork_agent", backgroundMode: "continuable",
+    }));
+    fibers.push(await root.plugin(ToolSubagentControl));
+    fibers.push(await root.plugin(ToolSubagentList));
+
     fibers.push(await root.plugin(CanonicalFileTools, {
-      toolStrategy,
       attachments: Object.freeze({
         run: async <T>(context: ProductToolContext, action: () => Promise<T>): Promise<T> => {
           const session = root.productSession.snapshot();
@@ -1825,9 +1676,9 @@ export const installCanonicalToolPlane = async (
         },
       }),
     }));
-    if (toolStrategy === "dsh_first") {
-      fibers.push(await root.plugin(ToolFsSearch, { sampleOverCapGlobResults: false }));
-    }
+
+    fibers.push(await root.plugin(ToolFsSearch, { sampleOverCapGlobResults: false }));
+
     if (webConfig !== undefined) {
       fibers.push(await root.plugin(WebRuntime, {
         fetchProvider: webConfig.fetch === undefined
@@ -1835,12 +1686,10 @@ export const installCanonicalToolPlane = async (
           : "myagents-safe-fetch",
         searchProvider: webConfig.search?.providerId ?? DISABLED_WEB_SEARCH_PROVIDER_ID,
       }));
-      fibers.push(await root.plugin(CanonicalWebTools, { ...webConfig, toolStrategy }));
+      fibers.push(await root.plugin(CanonicalWebTools, webConfig));
     }
-    if (dynamicSkills === undefined || (toolStrategy === "ma_first" && dynamicAgents === undefined)
-      || dynamicCommands === undefined) {
+    if (dynamicSkills === undefined || dynamicCommands === undefined) {
       throw new Error(`canonical component controllers did not register exactly once: ${JSON.stringify({
-        agents: dynamicAgents !== undefined,
         commands: dynamicCommands !== undefined,
         skills: dynamicSkills !== undefined,
       })}`);
@@ -1852,7 +1701,6 @@ export const installCanonicalToolPlane = async (
     authority.planController = planController;
     authority.hostAttachments = installedAttachmentController;
     authority.dynamicSkills = dynamicSkills;
-    authority.dynamicAgents = dynamicAgents;
     authority.dynamicCommands = dynamicCommands;
   } catch (error) {
     authority.canonicalToolPlane = "failed";
@@ -2225,22 +2073,6 @@ export const createProductSkillComponentCompiler = (
   return createSkillComponentCompiler({ controller: authority.dynamicSkills });
 };
 
-export const createProductAgentComponentCompiler = (
-  composition: DshRootComposition,
-): ComponentCompiler => {
-  const root = composition.context;
-  const authority = compositionAuthorities.get(root);
-  if (root !== root.root || authority?.composition !== composition || authority.claimed
-    || authority.canonicalToolPlane !== "installed" || authority.componentPlane !== "absent"
-    || authority.dynamicAgents === undefined) {
-    throw new Error(
-      "Agent compiler requires the exact unclaimed root composition with ProductWork installed",
-    );
-  }
-  composition.snapshot();
-  return createAgentComponentCompiler({ controller: authority.dynamicAgents });
-};
-
 export const createProductCommandComponentCompiler = (
   composition: DshRootComposition,
 ): ComponentCompiler => {
@@ -2413,27 +2245,10 @@ export const createHostProviderWebFetchPlaneConfig = (
     );
   }
   composition.snapshot();
-  const modelAuthority = authority.hostModelAuthority;
   const network = authority.networkTransport;
   if (network === undefined) throw new Error("Host Provider WebFetch requires the installed network plane");
-  const native = createHostDeepSeekWebFetchConfig(root, policyRef, {
+  return createHostDeepSeekWebFetchConfig(root, policyRef, {
     proxyTransportFor: network.proxyTransportFor,
-  });
-  return Object.freeze({
-    ...native,
-    host: Object.freeze({
-      available: () => modelAuthority.shouldUseHostCanonicalWeb(),
-      run: (request: ProductHostWebFetchRequest) => executeHostCanonicalWebTool(
-        root,
-        authority.hostPorts,
-        modelAuthority,
-        request.context,
-        "WebFetch",
-        Object.freeze({ prompt: request.prompt, url: request.url }),
-      ) as ReturnType<NonNullable<
-        NonNullable<CanonicalWebToolsConfig["fetch"]>["host"]
-      >["run"]>,
-    }),
   });
 };
 
@@ -2718,10 +2533,8 @@ export const composeDshRootServices = async (
       },
       reconcileResume: async (agent) => {
         await root.sdkOperations.reconcileResumed(agent, false);
-        await root.get("productWork")?.initialize(agent, true);
       },
       afterReady: async (agent) => {
-        await root.get("productWork")?.resumeReady(agent);
         await root.sdkOperations.reconcileResumed(agent);
       },
       initializeCreate: (agent, request) => {
@@ -2792,12 +2605,10 @@ export const composeDshRootServices = async (
         authority.hostInteractionRevision = request.params.interactionScenario;
         foldProductCompactions(agent.session.snapshotEvents());
         root.sdkOperations.prepareGenerationReplacement(agent);
-        root.get("productWork")?.prepareGenerationReplacement(agent);
         root.sdkOperations.validatePersisted(agent);
         root.productPermission.fold(agent.session);
         root.productPlan.validatePersisted(agent);
         root.productTaskGraph.validatePersisted(agent);
-        root.get("productWork")?.validatePersisted(agent);
         root.productCheckpoint.validatePersisted(agent);
         await root.productCheckpoint.reconcile(agent);
       },
@@ -2809,9 +2620,7 @@ export const composeDshRootServices = async (
           return root.productComponents.captureOperationBirth(params, birth);
         },
       }),
-      drainOwnedWork: async (agent) => {
-        await root.get("productWork")?.preparePrimaryRetirement(agent);
-      },
+      drainOwnedWork: () => Promise.resolve(),
       inputAuthority: Object.freeze({
         prepare: async (
           input: MethodParams<"turn/start">["input"],
@@ -2896,7 +2705,7 @@ export const composeDshRootServices = async (
         },
       }),
       ownsRootContextMessage: (agent, source, messageId) =>
-        ownsProductWorkRootContextMessage(agent.session, source, messageId, root),
+        ownsRootContextMessage(agent.session, source, messageId, root),
       registerRetirementGuard: (guard) => root.productSession.registerRetirementGuard(guard),
       requireAgent: () => root.productSession.requireAgent(),
       retirePrimary: (cause) => root.productSession.retire(cause),
@@ -2909,10 +2718,8 @@ export const composeDshRootServices = async (
       },
       settlementDeadlineAuthority: root.productSession.settlementDeadlineAuthority(),
     });
-    if (root.get("productWork") === undefined) {
-      const stopNativeContext = installNativeRootContext(root);
-      root.effect(() => stopNativeContext, "Native child context operation correlation");
-    }
+    const stopNativeContext = installNativeRootContext(root);
+    root.effect(() => stopNativeContext, "Native child context operation correlation");
     const operationLifecycle = operationLifecycleController;
     if (operationLifecycle === undefined) {
       throw new Error("root composition did not capture its operation lifecycle controller");
@@ -2953,8 +2760,7 @@ export const composeDshRootServices = async (
       },
       runAtCommitBoundary: (signal, commit) =>
         operationLifecycle.runAtQuiescentBoundary(signal, commit),
-      whenGenerationUnused: (identity) => root.get("productWork")
-        ?.whenComponentGenerationIdle(identity.revision, identity.digest) ?? Promise.resolve(),
+      whenGenerationUnused: () => Promise.resolve(),
     });
     const composition = new DshRootComposition(root, providers);
     composition.snapshot();
@@ -2997,7 +2803,6 @@ export const composeDshRootServices = async (
       operationLifecycle,
       components: componentController,
       componentPlane: "absent",
-      dynamicAgents: undefined,
       dynamicCommands: undefined,
       hooks: undefined,
       hostInteraction: undefined,
