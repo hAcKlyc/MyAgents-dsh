@@ -37,7 +37,7 @@ Earlier Runtime/handoff pairs remain historical evidence for their original byte
 - A reproducible official DSH product profile for MyAgents.
 - One native stdio JSON-RPC Runtime contract designed for MyAgents, the standalone Agent SDK, and other trusted Hosts.
 - A separately packaged local Reference Web Host that drives that exact artifact through the generated native client and provides a directly usable browser UI.
-- Canonical coding tools, permissions, interaction, Hooks, MCP, Skills, child/background work, TaskGraph, usage/context, and session operations.
+- Canonical coding tools, permissions, interaction, Hooks, MCP, Skills, native child/background work with Host-configured depth (default 2), personal/shared Task lists with reversible status and deletion cleanup, usage/context, and session operations.
 - Host-owned credentials, product interaction, Host tools, Hooks, and attachment bytes through reverse RPC ports.
 - Crash-aware durable sessions and explicitly bounded managed-file recovery.
 - A trusted plugin-builder surface for custom distributions, separate from ordinary SDK request input.

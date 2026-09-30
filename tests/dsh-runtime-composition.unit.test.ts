@@ -27,6 +27,7 @@ describe("DSH root service composition boundary", () => {
           "subagent", "fork_agent", "send_message", "interrupt_agent", "list_agents",
           "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
         ]));
+        expect(official.context.subagents.resolveMaxDepth()).toBe(2);
         expect(official.context.get("productWork")).toBeUndefined();
         expect(official.context.productTaskGraph).toBeDefined();
       } finally { await official.dispose(); }

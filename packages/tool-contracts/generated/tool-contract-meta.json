@@ -3,10 +3,10 @@
   "authority": "packages/tool-contracts/src/contract-source.ts",
   "behaviorFixtureCount": 122,
   "canonicalToolCount": 24,
-  "catalogSchemaSha256": "7bfdb72eb56baf94a449f041a63e0b636f633c76834aa76c749ff8a3d310526c",
-  "contractSha256": "cb9a98d3366a2a17b3e5fde5cdfc67b86d1ab6acd1427e563dda131eff379ae8",
-  "documentationSha256": "b529d510095255389d7bb4bab9d9aad0d82f5b16d50d22a21c12492ba05dd8ed",
-  "fixturesSha256": "e98164fa811c6ba3e7bfbd7863933318541fe73f68bc212058678fb96738dcc4",
+  "catalogSchemaSha256": "8b9b342e7d5a49238095aeeea72e3428d24a669b8a6bed941a0124c36fd80a3c",
+  "contractSha256": "d2359ccd5533aac96e9ac8fe7b1dbfb920a39dc14b6cbf69419f44050a6b39be",
+  "documentationSha256": "1b13ebf841461f181611f69aa7a4625763bdee424dfaa31009f7494508173683",
+  "fixturesSha256": "c4d8e4451218db0b32409ffed809d95b1093febef1fd266309630f52e3b2bb15",
   "generator": "scripts/generate-tool-contracts.ts",
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
@@ -15,7 +15,7 @@
     "packages/protocol/src/tool-strategy.ts"
   ],
   "profile": "canonical-agent-experience-v1",
-  "reuseMatrixSha256": "80275fede738745531e5a66cccbdb1e9c4ff16f13393fbdb9a134990b863557f",
+  "reuseMatrixSha256": "cf054e5dee1fddf1887a98542da26f6e3aee2653432f736d90b64603074987cc",
   "toolDigests": {
     "Agent": "e96aabde17104c59aa9a113951bbbd78be5e0744cf50d45b57930d4a16e20f89",
     "AskUserQuestion": "636c602d528e80a423e2eeae53dbf3fc60c881bedde405fb922f61ad30a25d1d",
@@ -31,7 +31,7 @@
     "TaskGet": "023dabd07ab8beeacff5728fdf7babfa9a059ba67a57bf4e0a93aa715f8561c9",
     "TaskList": "8c4b1375fa4825dd453030c96b9dc82156c7d292495563d26e63d69623ec983e",
     "TaskStop": "b445e07e0ac2883e2d987ccec646cdbb4ed2a3eaeef8950694346a8c12b84c49",
-    "TaskUpdate": "02147f0027b4db625230e9b73ede9e7d322952555304c1659d1e05e55b475e7a",
+    "TaskUpdate": "a098b10696d63f807c0dfc48be0c9d4e1d3981e2cf4501761a99828211c15e0b",
     "WebFetch": "8b84a4c8b06ae5ca1cb6d49ff3c4f153c6f6eeb3c97711bc69f4df22f2d1e6ff",
     "WebSearch": "dacdda127727dd003fef8f324e0a7a0f63c502251d118bae9c30c8bfde0ec8ec",
     "Write": "d4c10ea48511581f2506cf0c92ae2ba2a1ddfb0c2232e4851c2b1ee18c49a166",

@@ -258,7 +258,7 @@ describe("Host credential and model route", () => {
   it("resolves child models from explicit Host authority without ambiguous names or role overrides", () => {
     const parent = { provider: profile.providerRouteId, model: profile.modelId };
     const inherited = new AgentCollaborationPolicy(profile);
-    expect(inherited.config).toMatchObject({ maxDepth: 1, maxActiveChildren: 32, messageDelivery: "realtime" });
+    expect(inherited.config).toMatchObject({ maxDepth: 2, maxActiveChildren: 32, messageDelivery: "realtime" });
     expect(inherited.select(parent, "general")).toMatchObject({ profile, selection: "inherit" });
     const second: ModelExecutionProfile = { ...profile, revision: "child-profile", providerRouteId: "other-provider-route" };
     const third = { ...profile, revision: "third-profile", modelId: "third-model" };
@@ -500,6 +500,26 @@ describe("Host credential and model route", () => {
     await expect(harness.credentials.describe(profile.credentialRef as CredentialRef))
       .resolves.toEqual({ configured: false, writable: false });
     expect(() => authority.currentProfile()).toThrow("not ready");
+  });
+
+  it("exposes only the admitted collaboration limits and restores them on rollback", async () => {
+    const harness = await createHarness();
+    harness.pair.host.registerRequestHandler("host/credential/resolve", () => ({
+      authoritativeCredentialRevision: "credential-v1", available: true, kind: "availability" as const,
+    }));
+    const authority = new HostDeepSeekModelAuthority(fakeModelContext(harness.root), harness.credentialController,
+      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" });
+    expect(authority.collaborationConfig()).toBeUndefined();
+    const request = sessionRequest();
+    await authority.preflight(request);
+    authority.assertAdmission(request);
+    expect(authority.collaborationConfig()?.maxDepth).toBe(2);
+    const next = { ...request, params: { ...request.params, configRevision: "config-v2",
+      collaboration: { ...new AgentCollaborationPolicy(profile).config, maxDepth: 1, maxActiveChildren: 4 } } };
+    await authority.preflight(next);
+    expect(authority.collaborationConfig()).toMatchObject({ maxDepth: 1, maxActiveChildren: 4 });
+    await authority.rollbackAdmission("config-v2", "runtime-session-1");
+    expect(authority.collaborationConfig()).toMatchObject({ maxDepth: 2, maxActiveChildren: 32 });
   });
 
   it("keeps product credential controllers outside the public Cordis service surface", async () => {

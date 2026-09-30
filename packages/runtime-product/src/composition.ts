@@ -1319,7 +1319,15 @@ export const installCanonicalToolPlane = async (
         timer[Symbol.dispose]();
       }
     });
-    fibers.push(await root.plugin(SubagentRuntime));
+    // Native runtime reads Host-owned limits at each delegation/admission.
+    // Construct its public service with read-only config references so updates
+    // do not restart it and discard live children.
+    fibers.push(await root.plugin(function HostConfiguredSubagentRuntime(ctx: Context) {
+      return new SubagentRuntime(ctx, {
+        maxDepth: { get: () => authority.hostModelAuthority?.collaborationConfig()?.maxDepth ?? 2 },
+        maxActiveSubagents: { get: () => authority.hostModelAuthority?.collaborationConfig()?.maxActiveChildren ?? 32 },
+      });
+    }));
     fibers.push(await root.plugin(SubagentSpawnInProcess, { providerName: "myagents-spawn" }));
     fibers.push(await root.plugin(SubagentSpawnInProcess, { providerName: "native-spawn" }));
     fibers.push(await root.plugin(SubagentForkInProcess, { providerName: "native-fork" }));
@@ -1337,7 +1345,7 @@ export const installCanonicalToolPlane = async (
         if (source === "startup") nativeChildAuthority(root).captureAtCreation(agent);
         return undefined;
       });
-      fibers.push({ dispose: async () => { stopChildPolicy(); } });
+      fibers.push({ dispose: () => { stopChildPolicy(); return Promise.resolve(); } });
     }
     fibers.push(await root.plugin(UserQuestionService));
     const permissionDeadline = root.productSession.settlementDeadlineAuthority();
@@ -1422,20 +1430,19 @@ export const installCanonicalToolPlane = async (
         interrupt_agent: { tool: "TaskStop", permissionClass: "work.stop" },
       } as const);
       const stopNativePermission = root.on("tools/execute", async (exec, next) => {
-        const policy = nativePermission[exec.name as keyof typeof nativePermission];
+        const policy = Object.hasOwn(nativePermission, exec.name) ? nativePermission[exec.name as keyof typeof nativePermission] : undefined;
         if (policy === undefined) return next();
         const context = root.productTools.resolveExternal(exec, exec.name);
         root.productPlan.assertExternalTool(context, exec.name);
-        const decision = await root.productPermission.authorize(context, {
+        await root.productPermission.authorize(context, {
           permissionClass: policy.permissionClass,
           target: `${exec.name}:${String(exec.agent?.id)}`,
           tool: policy.tool,
         });
-        if (decision !== "allow") throw new ProtocolError("permission_denied", `${exec.name} permission was denied`);
         root.productTools.assertExternalCurrent(context, exec.name);
         return next();
       });
-      fibers.push({ dispose: async () => { stopNativePermission(); } });
+      fibers.push({ dispose: () => { stopNativePermission(); return Promise.resolve(); } });
     }
     fibers.push(await root.plugin(ProductHookRuntime, {
       registerController: (controller) => {
@@ -1640,7 +1647,7 @@ export const installCanonicalToolPlane = async (
       }));
       fibers.push(await root.plugin(ToolSubagentControl));
       const stopListAgents = registerNativeSubagentList(root);
-      fibers.push({ dispose: async () => { stopListAgents(); } });
+      fibers.push({ dispose: () => { stopListAgents(); return Promise.resolve(); } });
     }
     let dynamicAgents: ProductDynamicAgentController | undefined;
     if (toolStrategy === "ma_first") {

@@ -4573,12 +4573,12 @@
         "status_and_text_update",
         "owner_and_metadata_update",
         "dependency_cycle_rejected",
-        "terminal_transition_rejected",
+        "delete_and_reopen_task",
         "append_snapshot_crash_recovery"
       ],
       "checkpoint": "none",
       "concurrency": "session_serial",
-      "description": "Update a task by ID in your personal list by default, or pass list: shared for collaborative work. Read its latest state with TaskGet first. Only the root agent may assign shared work to a continuable child or offer it to specific child IDs with offerTo. An offered child may claim an unassigned, unblocked task atomically. Do not claim someone else's task, change another agent's personal list, or mark unfinished work complete. Dependencies stay within one list and cannot cycle.",
+      "description": "Update a task by ID in your personal list by default, or pass list: shared for collaborative work. Read its latest state with TaskGet first. Only the root agent may assign shared work to a continuable child or offer it to specific child IDs with offerTo. An offered child may claim an unassigned, unblocked task atomically. Do not claim someone else's task, change another agent's personal list, or mark unfinished work complete. Use the exact child runtime ID returned by subagent, fork_agent, or list_agents for owner/offerTo; owner: root names the root agent. Claim offered work with status: in_progress (owner is inferred). Normal statuses are pending, in_progress, completed; completed tasks may be corrected or reopened. Use status: deleted to remove obsolete work and clean all dependency references; deleted returns task: null. The legacy cancelled status is retained for compatibility and does not resolve blockers. An empty or unchanged update succeeds without changing the list revision. addBlocks/addBlockedBy add dependencies within the same list; cycles are rejected. metadata values of null remove keys. Results carry the list revision at the top level.",
       "errorCodes": [
         {
           "code": "task_not_found",
@@ -4589,11 +4589,6 @@
           "code": "task_dependency_invalid",
           "retryable": false,
           "when": "A dependency is absent, cross-Session, self-referential, or cyclic."
-        },
-        {
-          "code": "task_terminal_conflict",
-          "retryable": false,
-          "when": "The update attempts an invalid terminal transition."
         },
         {
           "code": "task_graph_conflict",
@@ -4708,6 +4703,10 @@
               },
               {
                 "const": "cancelled",
+                "type": "string"
+              },
+              {
+                "const": "deleted",
                 "type": "string"
               }
             ]
@@ -4837,6 +4836,10 @@
               {
                 "const": "cancelled",
                 "type": "string"
+              },
+              {
+                "const": "deleted",
+                "type": "string"
               }
             ]
           },
@@ -4917,7 +4920,7 @@
               ]
             },
             "maxItems": 9,
-            "minItems": 1,
+            "minItems": 0,
             "type": "array",
             "uniqueItems": true
           },
@@ -4972,126 +4975,133 @@
             "type": "string"
           },
           "task": {
-            "additionalProperties": false,
-            "properties": {
-              "activeForm": {
-                "maxLength": 512,
-                "type": "string"
-              },
-              "blockedBy": {
-                "items": {
-                  "maxLength": 256,
-                  "minLength": 1,
-                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                  "type": "string"
-                },
-                "maxItems": 256,
-                "type": "array",
-                "uniqueItems": true
-              },
-              "createdSequence": {
-                "maximum": 9007199254740991,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "description": {
-                "maxLength": 65536,
-                "type": "string"
-              },
-              "hasHiddenBlockers": {
-                "type": "boolean"
-              },
-              "id": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
-              "metadata": {
-                "maxProperties": 128,
-                "patternProperties": {
-                  "^.*$": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "activeForm": {
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "blockedBy": {
+                    "items": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                      "type": "string"
+                    },
+                    "maxItems": 256,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "createdSequence": {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "description": {
+                    "maxLength": 65536,
+                    "type": "string"
+                  },
+                  "hasHiddenBlockers": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "maxProperties": 128,
+                    "patternProperties": {
+                      "^.*$": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "maxLength": 65536,
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    },
+                    "propertyNames": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "offerTo": {
+                    "items": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "owner": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
+                  "status": {
                     "anyOf": [
                       {
-                        "type": "null"
+                        "const": "pending",
+                        "type": "string"
                       },
                       {
-                        "type": "boolean"
+                        "const": "in_progress",
+                        "type": "string"
                       },
                       {
-                        "type": "number"
+                        "const": "completed",
+                        "type": "string"
                       },
                       {
-                        "maxLength": 65536,
+                        "const": "cancelled",
                         "type": "string"
                       }
                     ]
+                  },
+                  "subject": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "updatedSequence": {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
                   }
                 },
-                "propertyNames": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "type": "string"
-                },
+                "required": [
+                  "id",
+                  "subject",
+                  "status",
+                  "blockedBy",
+                  "createdSequence",
+                  "updatedSequence"
+                ],
                 "type": "object"
               },
-              "offerTo": {
-                "items": {
-                  "maxLength": 256,
-                  "minLength": 1,
-                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                  "type": "string"
-                },
-                "maxItems": 32,
-                "type": "array",
-                "uniqueItems": true
-              },
-              "owner": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
-              "status": {
-                "anyOf": [
-                  {
-                    "const": "pending",
-                    "type": "string"
-                  },
-                  {
-                    "const": "in_progress",
-                    "type": "string"
-                  },
-                  {
-                    "const": "completed",
-                    "type": "string"
-                  },
-                  {
-                    "const": "cancelled",
-                    "type": "string"
-                  }
-                ]
-              },
-              "subject": {
-                "maxLength": 512,
-                "minLength": 1,
-                "type": "string"
-              },
-              "updatedSequence": {
-                "maximum": 9007199254740991,
-                "minimum": 1,
-                "type": "integer"
+              {
+                "type": "null"
               }
-            },
-            "required": [
-              "id",
-              "subject",
-              "status",
-              "blockedBy",
-              "createdSequence",
-              "updatedSequence"
-            ],
-            "type": "object"
+            ]
           }
         },
         "required": [

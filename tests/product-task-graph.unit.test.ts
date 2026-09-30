@@ -260,7 +260,7 @@ describe("durable Session-local product TaskGraph", () => {
     })).toThrow(ProductTaskGraphFoldError);
   });
 
-  it("enforces dependency cycles, ownership, blockers, and monotonic terminal state", async () => {
+  it("enforces dependency cycles, ownership and blockers while allowing corrections", async () => {
     const state = await mounted();
     await successful(state, "TaskCreate", { subject: "Prerequisite", description: "Complete first" });
     await successful(state, "TaskCreate", { subject: "Dependent", description: "Wait for prerequisite" });
@@ -283,9 +283,43 @@ describe("durable Session-local product TaskGraph", () => {
     expect(active.task).toMatchObject({ id: "task-2", status: "in_progress" });
     const cancelled = await successful(state, "TaskUpdate", { taskId: "task-2", status: "cancelled" });
     expect(cancelled.task).toMatchObject({ status: "cancelled" });
-    expect((await state.execute("TaskUpdate", { taskId: "task-2", subject: "cannot mutate" })).isError).toBe(true);
+    expect((await state.execute("TaskUpdate", { taskId: "task-2", subject: "Corrected" })).isError).toBe(false);
     const list = await successful(state, "TaskList", {});
     expect((list.tasks as Array<{ id: string }>).map(({ id }) => id)).toEqual(["task-1", "task-2"]);
+  });
+
+  it("deletes tasks and incident edges durably without reusing IDs, and permits reopen/no-op", async () => {
+    const state = await mounted();
+    const events: SessionEvent[] = [];
+    state.context.on("session/event", (session, event) => { if (session === state.session) events.push(event); });
+    await successful(state, "TaskCreate", { subject: "Obsolete", description: "Delete this blocker" });
+    await successful(state, "TaskCreate", { subject: "Work", description: "Dependent work" });
+    await successful(state, "TaskUpdate", { taskId: "task-2", addBlockedBy: ["task-1"] });
+    const deleted = await state.execute("TaskUpdate", { taskId: "task-1", status: "deleted" });
+    expect(deleted.isError, JSON.stringify(deleted)).toBe(false);
+    expect(state.output(deleted)).toMatchObject({ task: null, changedFields: ["status"] });
+    expect((await successful(state, "TaskGet", { taskId: "task-2" })).task).toMatchObject({ blockedBy: [] });
+    expect((await successful(state, "TaskCreate", { subject: "New", description: "Never reuse deleted ID" })).task).toMatchObject({ id: "task-3" });
+    await successful(state, "TaskUpdate", { taskId: "task-2", status: "completed" });
+    await successful(state, "TaskUpdate", { taskId: "task-2", status: "pending" });
+    const before = state.context.productTaskGraph.snapshot(state.agent, "personal");
+    const eventCount = state.session.seq;
+    expect(await successful(state, "TaskUpdate", { taskId: "task-2", status: "pending", addBlockedBy: [] })).toMatchObject({ changedFields: [], revision: before.revision });
+    expect(state.session.seq).toBe(eventCount);
+    expect(foldProductTaskGraph(events, String(state.agent.id), "personal")).toEqual(before);
+  });
+
+  it("projects shared update blockers consistently and clears resolved hidden blockers", async () => {
+    const state = await mounted();
+    const child = state.child("child");
+    for (const subject of ["Visible blocker", "Work", "Hidden blocker"]) await successful(state, "TaskCreate", { list: "shared", subject, description: subject });
+    for (const taskId of ["task-1", "task-2"]) await successful(state, "TaskUpdate", { list: "shared", taskId, owner: "child" });
+    await successful(state, "TaskUpdate", { list: "shared", taskId: "task-2", addBlockedBy: ["task-1", "task-3"] });
+    const update = state.output(await state.execute("TaskUpdate", { list: "shared", taskId: "task-2", description: "Updated" }, undefined, child)) as { task: unknown };
+    expect(update.task).toMatchObject({ blockedBy: ["task-1"], hasHiddenBlockers: true });
+    expect((state.output(await state.execute("TaskGet", { list: "shared", taskId: "task-2" }, undefined, child)) as { task: unknown }).task).toEqual(update.task);
+    await successful(state, "TaskUpdate", { list: "shared", taskId: "task-3", status: "completed" });
+    expect((state.output(await state.execute("TaskGet", { list: "shared", taskId: "task-2" }, undefined, child)) as { task: { hasHiddenBlockers?: boolean } }).task.hasHiddenBlockers).toBeUndefined();
   });
 
   it("applies deterministic metadata patches and exact changed-field order", async () => {
@@ -306,7 +340,7 @@ describe("durable Session-local product TaskGraph", () => {
       metadata: { keep: true, estimate: 2 },
     });
     expect((result.task as { metadata: Record<string, unknown> }).metadata).not.toHaveProperty("remove");
-    expect((await state.execute("TaskUpdate", { taskId: "task-1" })).isError).toBe(true);
+    expect((await state.execute("TaskUpdate", { taskId: "task-1" })).isError).toBe(false);
   });
 
   it("fences forged/corrupt history without executing Proxy traps", async () => {

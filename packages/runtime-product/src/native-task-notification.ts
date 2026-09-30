@@ -28,7 +28,7 @@ export const notifyNativeSharedTask = async (
     ctx.subagents,
     root,
     SessionId(childId),
-    [{ type: "text", text: `Shared task ${taskId} is available to you. Call TaskGet with {"taskId":"${taskId}","list":"shared"} to read its current requirements before acting.` }],
+    [{ type: "text", text: `Shared task ${taskId} assignment/offer changed. Call TaskGet with {"taskId":"${taskId}","list":"shared"} to read its current requirements and assignment before acting. If it is missing or no longer assigned/offered to you, do not act on this notification.` }],
     { kind: "myagents-task-assignment", taskId },
     signal,
   );

@@ -856,11 +856,11 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskUpdate: contract({
     name: "TaskUpdate",
-    description: "Update a task by ID in your personal list by default, or pass list: shared for collaborative work. Read its latest state with TaskGet first. Only the root agent may assign shared work to a continuable child or offer it to specific child IDs with offerTo. An offered child may claim an unassigned, unblocked task atomically. Do not claim someone else's task, change another agent's personal list, or mark unfinished work complete. Dependencies stay within one list and cannot cycle.",
+    description: "Update a task by ID in your personal list by default, or pass list: shared for collaborative work. Read its latest state with TaskGet first. Only the root agent may assign shared work to a continuable child or offer it to specific child IDs with offerTo. An offered child may claim an unassigned, unblocked task atomically. Do not claim someone else's task, change another agent's personal list, or mark unfinished work complete. Use the exact child runtime ID returned by subagent, fork_agent, or list_agents for owner/offerTo; owner: root names the root agent. Claim offered work with status: in_progress (owner is inferred). Normal statuses are pending, in_progress, completed; completed tasks may be corrected or reopened. Use status: deleted to remove obsolete work and clean all dependency references; deleted returns task: null. The legacy cancelled status is retained for compatibility and does not resolve blockers. An empty or unchanged update succeeds without changing the list revision. addBlocks/addBlockedBy add dependencies within the same list; cycles are rejected. metadata values of null remove keys. Results carry the list revision at the top level.",
     inputSchema: strictObject({
       taskId: boundedIdentifier,
       list: Type.Optional(taskList),
-      status: Type.Optional(Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed"), Type.Literal("cancelled")])),
+      status: Type.Optional(Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed"), Type.Literal("cancelled"), Type.Literal("deleted")])),
       subject: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
       description: Type.Optional(Type.String({ minLength: 1, maxLength: 65_536 })),
       activeForm: Type.Optional(Type.String({ maxLength: 512 })),
@@ -872,9 +872,9 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     }),
     outputSchema: strictObject({
       list: taskList,
-      task: taskNode,
+      task: Type.Union([taskNode, Type.Null()]),
       revision,
-      changedFields: Type.Array(taskChangedField, { minItems: 1, maxItems: 9, uniqueItems: true }),
+      changedFields: Type.Array(taskChangedField, { minItems: 0, maxItems: 9, uniqueItems: true }),
       notification: Type.Optional(strictObject({
         deliveredTo: Type.Array(boundedIdentifier, { maxItems: 32, uniqueItems: true }),
         failedTo: Type.Array(boundedIdentifier, { maxItems: 32, uniqueItems: true }),
@@ -886,12 +886,11 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     outputLimits: outputLimits(65_536, 512),
     permissionClass: "task_graph.mutate",
     checkpoint: "none",
-    behaviorFixtureIds: ["status_and_text_update", "owner_and_metadata_update", "dependency_cycle_rejected", "terminal_transition_rejected", "append_snapshot_crash_recovery"],
+    behaviorFixtureIds: ["status_and_text_update", "owner_and_metadata_update", "dependency_cycle_rejected", "delete_and_reopen_task", "append_snapshot_crash_recovery"],
     resultSemantics: "Atomically update one task and dependency graph and return the committed task, graph revision, and changed fields.",
     errorCodes: errors(
       ["task_not_found", false, "The target task does not exist."],
       ["task_dependency_invalid", false, "A dependency is absent, cross-Session, self-referential, or cyclic."],
-      ["task_terminal_conflict", false, "The update attempts an invalid terminal transition."],
       ["task_graph_conflict", true, "The graph revision precondition fails."],
     ),
     lifecycle: lifecycle("bounded_executor", "allowed"),

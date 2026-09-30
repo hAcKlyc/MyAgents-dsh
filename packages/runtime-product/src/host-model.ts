@@ -890,6 +890,10 @@ export class HostModelAuthority {
     ])]);
   }
 
+  collaborationConfig(): AgentCollaborationPolicy["config"] | undefined {
+    return this.#collaboration?.config;
+  }
+
   collaborationPolicy(): AgentCollaborationPolicy {
     this.requireBinding();
     if (this.#collaboration === undefined) throw new ProtocolError("provider_profile_not_ready", "Collaboration policy is not admitted");

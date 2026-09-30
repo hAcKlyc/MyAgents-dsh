@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { types as utilTypes } from "node:util";
+import { isDeepStrictEqual, types as utilTypes } from "node:util";
 
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
@@ -51,6 +51,7 @@ interface InternalTaskNode extends ProductTaskNode {
 }
 
 export interface ProductTaskGraphSnapshot {
+  readonly createdCount: number;
   readonly revision: string;
   readonly sequence: number;
   readonly tasks: readonly ProductTaskNode[];
@@ -109,6 +110,7 @@ const taskUpdatePatchSchema = Type.Object({
     Type.Literal("in_progress"),
     Type.Literal("completed"),
     Type.Literal("cancelled"),
+    Type.Literal("deleted"),
   ])),
   subject: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
   description: Type.Optional(Type.String({ minLength: 1, maxLength: 65_536 })),
@@ -477,11 +479,12 @@ const visibleTasks = (
   const ids = new Set(visible.map((task) => task.id));
   return Object.freeze(visible.map((task) => {
     const blockedBy = task.blockedBy.filter((id) => ids.has(id));
-    const { offerTo: _offerTo, ...safe } = task;
+    const safe = { ...task };
+    delete safe.offerTo;
     return Object.freeze({
       ...safe,
       blockedBy: Object.freeze(blockedBy),
-      ...(blockedBy.length === task.blockedBy.length ? {} : { hasHiddenBlockers: true }),
+      ...(task.blockedBy.some((id) => !ids.has(id) && tasks.find((candidate) => candidate.id === id)?.status !== "completed") ? { hasHiddenBlockers: true } : {}),
       ...(task.offerTo?.includes(String(caller.id)) ? { offerTo: Object.freeze([String(caller.id)]) } : {}),
     });
   }));
@@ -536,9 +539,6 @@ const applyUpdate = (
   if (index < 0) throw new ProductToolError("task_not_found", `Task does not exist: ${taskId}`);
   const current = tasks[index];
   if (current === undefined) throw new ProductToolError("task_not_found", `Task does not exist: ${taskId}`);
-  if (current.status === "completed" || current.status === "cancelled") {
-    throw new ProductToolError("task_terminal_conflict", `Task is terminal: ${taskId}`);
-  }
   const actor = authority.actorId;
   const offeredClaim = !legacy && list === "shared" && actor !== undefined && actor !== "root"
     && current.owner === undefined && current.offerTo?.includes(actor) === true
@@ -554,6 +554,14 @@ const applyUpdate = (
   const changedFields = TASK_UPDATE_FIELDS.filter((field) => Object.hasOwn(patch, field));
   if (changedFields.length === 0) {
     throw new ProductToolError("task_graph_conflict", "TaskUpdate must change at least one field");
+  }
+  if (patch.status === "deleted") {
+    return Object.freeze(tasks.filter((task) => task.id !== taskId).map((task) => freezeTask({
+      ...task,
+      blocks: task.blocks.filter((id) => id !== taskId),
+      blockedBy: task.blockedBy.filter((id) => id !== taskId),
+      ...(task.blocks.includes(taskId) || task.blockedBy.includes(taskId) ? { updatedSequence: sequence } : {}),
+    })));
   }
   let next: InternalTaskNode = freezeTask({
     ...current,
@@ -764,6 +772,7 @@ export const foldProductTaskGraph = (
   const sessionId = boundedIdentifier(sessionIdValue, "TaskGraph Session id");
   const safeEvents = safeEventSnapshot(events);
   let sequence = 0;
+  let createdCount = 0;
   const graphIdentity = list === "personal" ? `${sessionId}:personal` : sessionId;
   let revision = graphBaseRevision(graphIdentity);
   let tasks: readonly InternalTaskNode[] = Object.freeze([]);
@@ -772,7 +781,7 @@ export const foldProductTaskGraph = (
     if (event.type === "myagents/task/created") {
       const data = parseCreateEvent(event.data);
       if (data.list !== list) continue;
-      const expectedId = `task-${tasks.length + 1}`;
+      const expectedId = `task-${++createdCount}`;
       const expectedSequence = sequence + 1;
       const expectedRevision = transitionRevision(
         revision,
@@ -836,6 +845,7 @@ export const foldProductTaskGraph = (
     revision = expectedRevision;
   }
   return Object.freeze({
+    createdCount,
     revision,
     sequence,
     tasks: Object.freeze(tasks.map(projectTask)),
@@ -1029,7 +1039,7 @@ export class ProductTaskGraphService extends Service {
           throw new ProductToolError("task_graph_limit", "Session TaskGraph reached its bounded task limit");
         }
         const taskSequence = before.sequence + 1;
-        const taskId = `task-${before.tasks.length + 1}`;
+        const taskId = `task-${before.createdCount + 1}`;
         const payload = {
           subject: args.subject,
           description: args.description,
@@ -1161,6 +1171,9 @@ export class ProductTaskGraphService extends Service {
         for (const field of TASK_UPDATE_FIELDS) {
           if (Object.hasOwn(args, field)) patch[field] = args[field];
         }
+        if (patch.status === "deleted") {
+          for (const field of TASK_UPDATE_FIELDS) if (field !== "status") delete patch[field];
+        }
         const authority = authorityForContext(context);
         if (this.ctx.agents.get(context.agent.id) !== context.agent
           || ((context.origin === "root") !== (context.agent === rootAgent))
@@ -1183,7 +1196,7 @@ export class ProductTaskGraphService extends Service {
         }
         if (list === "shared" && patch.status === "in_progress" && patch.owner === undefined && task.owner === undefined) {
           patch.owner = authority.actorId;
-          if (list === "shared" && context.agent !== rootAgent) patch.offerTo = [];
+          if (context.agent !== rootAgent) patch.offerTo = [];
         }
         if (list === "shared" && context.agent !== rootAgent && task.owner === undefined
           && (patch.status !== "in_progress" || task.offerTo?.includes(String(context.agent.id)) !== true)) {
@@ -1227,6 +1240,20 @@ export class ProductTaskGraphService extends Service {
           }
           notificationTargets = [...recipients];
         }
+        // Elide unchanged values before committing; an empty update is a successful read.
+        for (const field of TASK_UPDATE_FIELDS) {
+          if (!Object.hasOwn(patch, field)) continue;
+          if (field === "addBlocks" || field === "addBlockedBy") {
+            const edges = field === "addBlocks" ? before.tasks.filter((candidate) => candidate.blockedBy.includes(taskId)).map((candidate) => candidate.id) : task.blockedBy;
+            patch[field] = (patch[field] as string[]).filter((id) => !edges.includes(id));
+            if ((patch[field] as string[]).length === 0) delete patch[field];
+          } else if (field === "metadata") {
+            const entries = Object.entries(patch.metadata as JsonObject).filter(([key, value]) =>
+              value === null ? Object.hasOwn(task.metadata ?? {}, key) : !isDeepStrictEqual(task.metadata?.[key], value));
+            if (entries.length === 0) delete patch.metadata;
+            else patch.metadata = Object.fromEntries(entries);
+          } else if (isDeepStrictEqual(patch[field], task[field as keyof ProductTaskNode])) delete patch[field];
+        }
         const changedFields = TASK_UPDATE_FIELDS.filter((field) => Object.hasOwn(patch, field));
         const taskSequence = before.sequence + 1;
         const transitionPayload = { taskId, patch, changedFields };
@@ -1249,15 +1276,15 @@ export class ProductTaskGraphService extends Service {
           taskId,
           taskSequence,
         });
-        return Object.freeze({ data, revision, changedFields });
+        return Object.freeze({ data, revision: changedFields.length === 0 ? before.revision : revision, changedFields, noOp: changedFields.length === 0 });
       }, (after, revision, plan) => {
         const task = after.tasks.find((candidate) => candidate.id === plan.data.taskId);
-        if (task?.updatedSequence !== after.sequence || after.revision !== revision) {
+        if ((!plan.noOp && plan.data.patch.status !== "deleted" && task?.updatedSequence !== after.sequence) || after.revision !== revision) {
           throw new ProductTaskGraphFoldError("committed TaskUpdate did not fold to its exact task");
         }
         const output = Object.freeze({
           list,
-          task: visibleTasks([task], list, context.agent, rootAgent)[0] ?? task,
+          task: visibleTasks(after.tasks, list, context.agent, rootAgent).find((candidate) => candidate.id === plan.data.taskId) ?? null,
           revision: after.revision,
           changedFields: Object.freeze([...plan.changedFields]),
         });
@@ -1288,6 +1315,7 @@ export class ProductTaskGraphService extends Service {
     data: Readonly<JsonObject> & Readonly<{ taskId: string }>;
     revision: string;
     changedFields?: readonly string[];
+    noOp?: boolean;
   }>, TResult>(
     context: ProductToolContext,
     list: ProductTaskList,
@@ -1310,6 +1338,7 @@ export class ProductTaskGraphService extends Service {
       let plan: TPlan;
       try {
         plan = prepare(before);
+        if (plan.noOp) return project(before, before.revision, plan);
         validateProductTaskEventData(type, plan.data);
         const synthetic: SessionEvent = Object.freeze({
           data: plan.data,

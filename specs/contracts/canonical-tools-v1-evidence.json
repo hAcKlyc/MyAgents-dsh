@@ -6,7 +6,7 @@
     "packages/protocol/generated/protocol-meta.json",
     "packages/product-profile/manifests/batch-1-candidate-profile-v1.json"
   ],
-  "contractSha256": "cb9a98d3366a2a17b3e5fde5cdfc67b86d1ab6acd1427e563dda131eff379ae8",
+  "contractSha256": "d2359ccd5533aac96e9ac8fe7b1dbfb920a39dc14b6cbf69419f44050a6b39be",
   "generator": "scripts/generate-tool-contracts.ts",
   "generatorSources": [
     "scripts/generate-tool-contracts.ts",
@@ -21,13 +21,13 @@
     "stockModelDefinitionCount": 0
   },
   "outputs": {
-    "canonical-tool-contracts-v1.json": "cb9a98d3366a2a17b3e5fde5cdfc67b86d1ab6acd1427e563dda131eff379ae8",
-    "canonical-tools-v1.md": "b529d510095255389d7bb4bab9d9aad0d82f5b16d50d22a21c12492ba05dd8ed",
-    "canonical-tools.generated.ts": "73b11353a02c4c3367fdddd4c422b9c6e98e181a13b600513e6fddf6bed81369",
-    "catalog-fixtures-v1.json": "e98164fa811c6ba3e7bfbd7863933318541fe73f68bc212058678fb96738dcc4",
-    "dsh-reuse-matrix-v1.json": "80275fede738745531e5a66cccbdb1e9c4ff16f13393fbdb9a134990b863557f",
-    "tool-catalog.schema.json": "7bfdb72eb56baf94a449f041a63e0b636f633c76834aa76c749ff8a3d310526c",
-    "tool-contract-meta.json": "52fa21bff78a0fdf7476724a4c961c36b5a09443952418374cc0da4416608db3"
+    "canonical-tool-contracts-v1.json": "d2359ccd5533aac96e9ac8fe7b1dbfb920a39dc14b6cbf69419f44050a6b39be",
+    "canonical-tools-v1.md": "1b13ebf841461f181611f69aa7a4625763bdee424dfaa31009f7494508173683",
+    "canonical-tools.generated.ts": "a3f7d327e20124daaf5fd6a779f2e22c28f790bc9a6566c584b64b8791da4027",
+    "catalog-fixtures-v1.json": "c4d8e4451218db0b32409ffed809d95b1093febef1fd266309630f52e3b2bb15",
+    "dsh-reuse-matrix-v1.json": "cf054e5dee1fddf1887a98542da26f6e3aee2653432f736d90b64603074987cc",
+    "tool-catalog.schema.json": "8b9b342e7d5a49238095aeeea72e3428d24a669b8a6bed941a0124c36fd80a3c",
+    "tool-contract-meta.json": "468a4548769f2049039bcb348443830e0e2461e582d96887d52dd3e2b1b13374"
   },
   "profile": "canonical-agent-experience-v1",
   "source": {
@@ -60,7 +60,7 @@
     "TaskGet": "023dabd07ab8beeacff5728fdf7babfa9a059ba67a57bf4e0a93aa715f8561c9",
     "TaskList": "8c4b1375fa4825dd453030c96b9dc82156c7d292495563d26e63d69623ec983e",
     "TaskStop": "b445e07e0ac2883e2d987ccec646cdbb4ed2a3eaeef8950694346a8c12b84c49",
-    "TaskUpdate": "02147f0027b4db625230e9b73ede9e7d322952555304c1659d1e05e55b475e7a",
+    "TaskUpdate": "a098b10696d63f807c0dfc48be0c9d4e1d3981e2cf4501761a99828211c15e0b",
     "WebFetch": "8b84a4c8b06ae5ca1cb6d49ff3c4f153c6f6eeb3c97711bc69f4df22f2d1e6ff",
     "WebSearch": "dacdda127727dd003fef8f324e0a7a0f63c502251d118bae9c30c8bfde0ec8ec",
     "Write": "d4c10ea48511581f2506cf0c92ae2ba2a1ddfb0c2232e4851c2b1ee18c49a166",
