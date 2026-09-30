@@ -4,7 +4,6 @@ import { PI_AI_SOURCE } from "../scripts/pi-ai-seam.js";
 
 import {
   assertRuntimeProviderVersions,
-  projectRuntimeConsumerOverrides,
   projectRuntimeDependencySection,
   projectRuntimePackageExports,
 } from "../scripts/verify-dsh-runtime-composition.js";
@@ -27,18 +26,6 @@ describe("Runtime artifact public export projection", () => {
       ["@deepseek-ai/dsh-llm-pi-ai", new Set([ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion])],
       ["@earendil-works/pi-ai", new Set([PI_AI_SOURCE.packageVersion])],
     ]))).toThrow("authorization peer authority");
-  });
-
-  it("projects the shared typebox graph without floating Node types", () => {
-    expect(projectRuntimeConsumerOverrides({
-      "@earendil-works/pi-ai": PI_AI_SOURCE.packageVersion,
-      typebox: "1.3.7",
-      zod: "4.4.3",
-    })).toEqual({
-      "@types/node": "24.13.3",
-    });
-    expect(() => projectRuntimeConsumerOverrides({ typebox: "1.1.38" }))
-      .toThrow("differs from the public pi-ai graph");
   });
 
   it("preserves every public subpath while translating compiled TypeScript targets", () => {

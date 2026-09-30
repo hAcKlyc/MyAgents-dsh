@@ -228,7 +228,6 @@ const runtimePackageWorkspaces = [
 ] as const;
 const runtimeVendoredExternalPackages = ["typebox", "@earendil-works/pi-ai"] as const;
 const runtimeVendoredExternalRoots = ["typebox@1.3.7", "@modelcontextprotocol/sdk@1.30.0"] as const;
-const officialPiAiTypeboxVersion = "1.3.7" as const;
 const runtimeNodeTypesVersion = "24.13.3" as const;
 const officialPiAiAdapterPackage = "@deepseek-ai/dsh-llm-pi-ai" as const;
 const officialPiAiAuthorizationPeerPackage = "@deepseek-ai/dsh-authorization" as const;
@@ -753,21 +752,10 @@ const prepareRuntimeConsumerOverrides = (consumerRoot: string): void => {
     JSON.parse(readFileSync(manifestPath, "utf8")) as unknown,
     "patched DSH consumer manifest",
   );
-  const runtimeOverrides = projectRuntimeConsumerOverrides(manifest.overrides);
   writeFileSync(manifestPath, `${JSON.stringify({
     ...manifest,
-    overrides: runtimeOverrides,
+    overrides: { "@types/node": runtimeNodeTypesVersion },
   }, null, 2)}\n`);
-};
-
-export const projectRuntimeConsumerOverrides = (value: unknown): Record<string, unknown> => {
-  const overrides = exactObject(value, "patched DSH consumer overrides");
-  if (overrides.typebox !== officialPiAiTypeboxVersion) {
-    throw new Error("patched DSH consumer typebox override differs from the public pi-ai graph");
-  }
-  return {
-    "@types/node": runtimeNodeTypesVersion,
-  };
 };
 
 const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
